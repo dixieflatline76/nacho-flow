@@ -40,19 +40,46 @@ nacho-flow/
 
 ---
 
-## 3. Building & Running Locally
+## 3. Makefile Command Reference & Key Targets
+
+Nacho Flow provides a comprehensive `Makefile` implementing Spice-grade quality, testing, security, tuning, and cross-platform compilation workflows:
+
+| Target | Command Executed | Description & When to Use |
+| :--- | :--- | :--- |
+| **`make check`** | `fmt vet sec test-race` | **Primary local gate**: Run before every commit or PR. |
+| **`make build`** | `go build ... -o bin/nacho-flow` | Compiles optimized local binary with embedded version. |
+| **`make fmt`** | `gofmt -s -w .` | Simplifies and formats all Go source files. |
+| **`make vet`** | `go vet ./...` | Analyzes code for potential correctness and bug patterns. |
+| **`make lint`** | `golangci-lint run ./...` | Runs configured linter suite (`.golangci.yml`). |
+| **`make sec`** | `gosec -exclude=G706 ./...` | Runs AST security analysis for CWE vulnerabilities. |
+| **`make test`** | `go test -v ./...` | Runs standard unit tests across all packages. |
+| **`make test-race`** | `go test -v -race -count=1 ./...` | Runs test suite with Go's race detector active. |
+| **`make test-cover`**| `go test -coverprofile=...` | Generates interactive HTML test coverage report. |
+| **`make bench`** | `go run ./cmd/util/nacho_bench` | Runs pre-warmed high-concurrency benchmark suite. |
+| **`make tune`** | `go run ./cmd/nacho-flow tune` | Analyzes `traffic.jsonl` and prints advisory tuning report. |
+| **`make tune-apply`**| `go run ./cmd/nacho-flow tune --apply` | Synthesizes rules and atomically updates `config.yaml`. |
+| **`make bump-patch`**| `version_bump -type=patch` | Bumps patch version (e.g. `0.2.0` $\rightarrow$ `0.2.1`) & tags git. |
+| **`make bump-minor`**| `version_bump -type=minor` | Bumps minor version (e.g. `0.2.0` $\rightarrow$ `0.3.0`) & tags git. |
+| **`make bump-major`**| `version_bump -type=major` | Bumps major version (e.g. `0.2.0` $\rightarrow$ `1.0.0`) & tags git. |
+| **`make build-all`** | Multiple `GOOS`/`GOARCH` builds | Compiles binaries for Windows, Linux, and macOS (amd64/arm64). |
+| **`make ci`** | `check build-all` | Full CI verification gate. |
+| **`make clean`** | `rm -rf bin dist coverage.*` | Cleans temporary build artifacts and test reports. |
+
+---
+
+## 4. Building & Running Locally
 
 ```bash
-# Build the binary
-go build -o nacho-flow.exe ./cmd/nacho-flow
+# Build the binary using make
+make build
 
 # Run interactively on custom port with debug logging
-./nacho-flow.exe -config config.yaml -port 8080 -log-level debug
+./bin/nacho-flow -config config.yaml -port 8080 -log-level debug
 ```
 
 ---
 
-## 4. Quality Assurance, Security & Testing
+## 5. Quality Assurance, Security & Testing
 
 All contributions must pass code quality formatting, static analysis, AST security scans (`gosec`), and the entire test suite with race detection enabled:
 
@@ -79,7 +106,7 @@ make tune
 
 ---
 
-## 5. Benchmarking & Load Testing
+## 6. Benchmarking & Load Testing
 
 Nacho Flow includes both standard Go benchmarks and a dedicated high-throughput load test utility:
 
@@ -91,7 +118,8 @@ go test -bench=BenchmarkProxy_ChatCompletions_EndToEnd -benchmem ./pkg/server/..
 ### High-Concurrency Stress Benchmark
 ```bash
 # Run multi-tier stress test up to 1,000 parallel workers:
-go run ./cmd/util/nacho_bench
+make bench
+# or: go run ./cmd/util/nacho_bench
 
 # Or run custom load:
 go run ./cmd/util/nacho_bench -n 50000 -c 100
@@ -99,7 +127,7 @@ go run ./cmd/util/nacho_bench -n 50000 -c 100
 
 ---
 
-## 6. Extending Nacho Flow: Adding a Custom Provider Plugin
+## 7. Extending Nacho Flow: Adding a Custom Provider Plugin
 
 To add a specialized provider plugin:
 
