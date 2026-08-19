@@ -1,0 +1,21 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+
+# User config & environment
+.env
+*.log
+
+# IDEs & OS
+.DS_Store
+.vscode/
+.idea/

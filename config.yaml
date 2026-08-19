@@ -1,0 +1,41 @@
+port: 8000
+
+openrouter_key: "ENV_OPENROUTER_API_KEY"
+
+providers:
+  ollama: "http://127.0.0.1:11434/v1"
+  openrouter: "https://openrouter.ai/api/v1"
+
+# 1..N Dynamic Tiers evaluated sequentially using expr-lang/expr syntax (First Match Wins)
+tiers:
+  # Tier 1 (High Precedence): Concurrency & Reasoning Keywords
+  - name: "Cloud Reasoning"
+    model: "deepseek/deepseek-r1"
+    provider: "openrouter"
+    when: "any(Keywords, { # in ['deadlock', 'mutex', 'race', 'concurrency', 'atomic'] })"
+
+  # Tier 2 (High Precedence): Multimodal Vision (Screenshots attached)
+  - name: "Cloud Vision"
+    model: "google/gemini-2.5-flash-lite"
+    provider: "openrouter"
+    when: "HasImages"
+
+  # Tier 3: Local ROCm GPU (100% Free, Routine tasks < 16k context without images or tools)
+  - name: "Local ROCm GPU"
+    model: "qwen2.5-coder:14b"
+    provider: "ollama"
+    when: "Tokens < 16000 && !HasImages && !HasTools"
+    strip_images: true
+
+  # Tier 4: Fast Agentic Cloud (Large context >= 16k or active tools)
+  - name: "Cloud Agentic Fast"
+    model: "qwen/qwen3-coder-30b-a3b-instruct"
+    provider: "openrouter"
+    when: "Tokens >= 16000 || HasTools"
+
+# Fallback Tier if no expr rules match
+default_tier:
+  name: "Cloud Fallback"
+  model: "~deepseek/deepseek-v4-flash-latest"
+  provider: "openrouter"
+  when: "true"
