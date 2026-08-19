@@ -15,6 +15,11 @@ dist/
 .env
 *.log
 
+# Private Business Strategy & Roadmaps
+ROADMAP.md
+*roadmap*.md
+docs/business/
+
 # IDEs & OS
 .DS_Store
 .vscode/
