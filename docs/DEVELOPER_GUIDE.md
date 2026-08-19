@@ -52,17 +52,29 @@ go build -o nacho-flow.exe ./cmd/nacho-flow
 
 ---
 
-## 4. Test-Driven Development (TDD) & Testing
+## 4. Quality Assurance, Security & Testing
 
-All contributions must pass the entire test suite with race detection enabled:
+All contributions must pass code quality formatting, static analysis, AST security scans (`gosec`), and the entire test suite with race detection enabled:
 
 ```bash
-# Run all unit and integration tests with race detector
-go test -count=1 -v -race ./...
+# Run all-in-one quality gate (fmt, vet, gosec, race tests)
+make check
 
-# Run tests for a specific package (e.g. provider or server)
-go test -v -race ./pkg/provider/...
-go test -v -race ./pkg/server/...
+# Run AST security vulnerability analysis (matching Spice standards)
+make sec
+
+# Run golangci-lint suite
+make lint
+
+# Run all unit and integration tests with race detector
+make test-race
+# or: go test -count=1 -v -race ./...
+
+# Generate HTML code coverage report
+make test-cover
+
+# Run advisory route tuner
+make tune
 ```
 
 ---

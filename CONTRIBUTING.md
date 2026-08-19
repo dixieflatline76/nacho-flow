@@ -21,10 +21,11 @@ Thank you for your interest in contributing to **Nacho Flow**! We welcome bug re
    - Write failing tests first before writing implementation code.
    - Keep packages decoupled and adhere to clean Go patterns.
 
-4. **Verify Tests & Race Conditions**:
-   Ensure all tests pass with Go's race detector:
+4. **Verify Quality, Security & Race Tests**:
+   Run the all-in-one quality gate:
    ```bash
-   go test -count=1 -v -race ./...
+   make check
+   # Runs: gofmt, go vet, gosec AST analysis, and race-detected unit tests
    ```
 
 5. **Commit and Push**:
