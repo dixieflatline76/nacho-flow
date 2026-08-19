@@ -54,12 +54,14 @@ func main() {
 
 	log.Printf("Bumped version: %s -> %s (tag: %s)", currentVersion, newVersion, newTag)
 
-	// Git commit and tag
+	// Git commit, tag, and push
 	execCmd("git", "add", "version.txt")
 	execCmd("git", "commit", "-m", fmt.Sprintf("Bump version to %s", newTag))
 	execCmd("git", "tag", "-a", newTag, "-m", fmt.Sprintf("Release %s", newTag))
+	execCmd("git", "push", "origin", "main")
+	execCmd("git", "push", "origin", newTag)
 
-	fmt.Printf("Successfully bumped to %s and created git tag %s\n", newVersion, newTag)
+	fmt.Printf("Successfully bumped to %s, created git tag %s, and pushed to origin\n", newVersion, newTag)
 }
 
 func execCmd(name string, args ...string) {
