@@ -78,3 +78,22 @@ func TestFullRooCodeAgentTurnSequence(t *testing.T) {
 		t.Errorf("Turn 4 expected 'Local ROCm GPU', got '%s'", r4.Name)
 	}
 }
+
+// BenchmarkExprEvaluator measures nanosecond tier evaluation speed.
+func BenchmarkExprEvaluator(b *testing.B) {
+	tiers := []contract.Tier{
+		{Name: "Reasoning", Model: "r1", Provider: "openrouter", When: "any(Keywords, { # in ['mutex', 'deadlock'] })"},
+		{Name: "Vision", Model: "flash", Provider: "openrouter", When: "HasImages"},
+		{Name: "Local", Model: "qwen", Provider: "ollama", When: "Tokens < 16000 && !HasImages && !HasTools"},
+	}
+	defaultTier := contract.Tier{Name: "Default", Model: "v4-flash", Provider: "openrouter"}
+
+	eval, _ := NewExprEvaluator(tiers, defaultTier)
+	reqCtx := contract.RequestContext{Tokens: 5000, HasImages: false, HasTools: false, Keywords: []string{"go", "slice"}}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = eval.SelectTier(reqCtx)
+	}
+}

@@ -80,3 +80,28 @@ func stringsRepeat(s string, count int) string {
 	}
 	return string(b)
 }
+
+// BenchmarkClassifier measures request parsing and keyword extraction speed per operation.
+func BenchmarkClassifier(b *testing.B) {
+	classifier := NewClassifier()
+	jsonBody := []byte(`{
+		"model": "gpt-4",
+		"tools": [{"type": "function", "function": {"name": "read_file"}}],
+		"messages": [
+			{"role": "system", "content": "You are a helpful Go developer working on Spice."},
+			{
+				"role": "user",
+				"content": [
+					{"type": "text", "text": "Help fix a mutex deadlock in favorites_deadlock_test.go"},
+					{"type": "image_url", "image_url": {"url": "http://example.com/img.png"}}
+				]
+			}
+		]
+	}`)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = classifier.Classify(jsonBody)
+	}
+}

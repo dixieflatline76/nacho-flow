@@ -50,3 +50,26 @@ func TestSanitizer(t *testing.T) {
 		t.Errorf("Expected remaining part to be text, got %v", firstPart["type"])
 	}
 }
+
+// BenchmarkSanitizer measures image payload stripping performance.
+func BenchmarkSanitizer(b *testing.B) {
+	inputJSON := []byte(`{
+		"model": "text-model",
+		"messages": [
+			{
+				"role": "user",
+				"content": [
+					{"type": "text", "text": "Analyze this image"},
+					{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
+				]
+			}
+		]
+	}`)
+	sanitizer := NewSanitizer()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = sanitizer.SanitizePayload(inputJSON, false)
+	}
+}
