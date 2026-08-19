@@ -24,10 +24,10 @@ func TestFullRooCodeAgentTurnSequence(t *testing.T) {
 		},
 		// Tier 3: Local ROCm GPU (< 16k context, no images or tools)
 		{
-			Name:     "Local ROCm GPU",
-			Model:    "qwen2.5-coder:14b",
-			Provider: "ollama",
-			When:     "Tokens < 16000 && !HasImages && !HasTools",
+			Name:        "Local ROCm GPU",
+			Model:       "qwen2.5-coder:14b",
+			Provider:    "ollama",
+			When:        "Tokens < 16000 && !HasImages && !HasTools",
 			StripImages: true,
 		},
 		// Tier 4: Fast Cloud Coder (large context >= 16k or active tools)

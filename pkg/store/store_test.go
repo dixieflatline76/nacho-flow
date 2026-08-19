@@ -21,7 +21,7 @@ func TestDiskStore_SaveAndLoad(t *testing.T) {
 	initialSnapshot := telemetry.StatsSnapshot{
 		StartedAt:     time.Now().Format(time.RFC3339),
 		TotalRequests: 15420,
-		TierBreakdown: telemetry.TierBreakdown{
+		TierBreakdown: telemetry.TierMetrics{
 			Tier1LocalFree:      12000,
 			Tier2CloudCoder:     2420,
 			Tier3CloudReasoning: 1000,

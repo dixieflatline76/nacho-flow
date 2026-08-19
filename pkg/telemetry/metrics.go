@@ -10,12 +10,12 @@ import (
 
 // TierMetrics breaks down request counts across the multi-tiered model architecture.
 type TierMetrics struct {
-	Tier1LocalFree       int64 `json:"tier1_local_free"`
-	Tier2CloudCoder      int64 `json:"tier2_cloud_coder"`
-	Tier3CloudReasoning  int64 `json:"tier3_cloud_reasoning"`
-	Tier4CloudVision     int64 `json:"tier4_cloud_vision"`
-	ExplicitOverride     int64 `json:"explicit_override"`
-	Fallbacks            int64 `json:"fallbacks"`
+	Tier1LocalFree      int64 `json:"tier1_local_free"`
+	Tier2CloudCoder     int64 `json:"tier2_cloud_coder"`
+	Tier3CloudReasoning int64 `json:"tier3_cloud_reasoning"`
+	Tier4CloudVision    int64 `json:"tier4_cloud_vision"`
+	ExplicitOverride    int64 `json:"explicit_override"`
+	Fallbacks           int64 `json:"fallbacks"`
 }
 
 // StatsSnapshot provides an immutable snapshot of proxy metrics for reporting.
