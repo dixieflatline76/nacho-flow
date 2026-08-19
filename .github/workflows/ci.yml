@@ -62,6 +62,7 @@ jobs:
           go build -ldflags="-s -w -X main.version=$version" -o "dist/nacho-flow-${version}-windows-amd64.exe" ./cmd/nacho-flow
 
       - name: Sign Executable (Azure Trusted Signing)
+        if: ${{ secrets.AZURE_TENANT_ID != '' }}
         uses: azure/artifact-signing-action@v1.2.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
