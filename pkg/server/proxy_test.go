@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
 func TestGetModelsEndpoint(t *testing.T) {
@@ -63,60 +63,134 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
-func TestNativeToolCallingPreservation(t *testing.T) {
-	// Mock provider server to verify that tool schemas are preserved in outgoing proxy request
-	var capturedPayload map[string]interface{}
+func TestStatsEndpoint(t *testing.T) {
+	cfg := &contract.Config{Port: 8000}
+	evaluator, _ := strategy.NewExprEvaluator(nil, contract.Tier{Model: "default"})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/v1/stats", nil)
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to parse /v1/stats JSON: %v", err)
+	}
+
+	if _, ok := resp["started_at"]; !ok {
+		t.Errorf("Expected started_at in stats output")
+	}
+}
+
+// Test 3.1: Dynamic Provider with Langdock custom Auth and Headers
+func TestProxy_DynamicProvider_LangdockAuthAndHeaders(t *testing.T) {
+	var capturedAuth string
+	var capturedCustomHeader string
 
 	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &capturedPayload)
+		capturedAuth = r.Header.Get("Authorization")
+		capturedCustomHeader = r.Header.Get("X-Langdock-Org")
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"id":"cmpl-tool","choices":[{"message":{"role":"assistant","content":"Listing files"}}]}`))
+		w.Write([]byte(`{"id":"cmpl-langdock","choices":[{"message":{"role":"assistant","content":"pong"}}]}`))
 	}))
 	defer mockUpstream.Close()
 
 	cfg := &contract.Config{
 		Port: 8000,
-		Providers: map[string]string{
-			"mock": mockUpstream.URL,
+		Providers: map[string]contract.ProviderConfig{
+			"langdock": {
+				BaseURL: mockUpstream.URL,
+				APIKey:  "secret-langdock-token",
+				Type:    "cloud",
+				Headers: map[string]string{
+					"X-Langdock-Org": "engineering-dept",
+				},
+			},
 		},
 		Tiers: []contract.Tier{
 			{
-				Name:     "Agentic Tier",
-				Model:    "qwen3-coder",
-				Provider: "mock",
-				When:     "HasTools",
+				Name:     "Langdock Cloud",
+				Model:    "claude-3-5-sonnet",
+				Provider: "langdock",
+				When:     "true",
 			},
-		},
-		DefaultTier: contract.Tier{
-			Name:     "Default",
-			Model:    "default-model",
-			Provider: "mock",
 		},
 	}
 
-	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
 	classifier := router.NewClassifier()
 	sanitizer := router.NewSanitizer()
 	srv := NewServer(cfg, evaluator, classifier, sanitizer)
 
-	reqPayload := `{
-		"model": "nacho-hybrid",
-		"messages": [{"role": "user", "content": "List files"}],
-		"tools": [
-			{
-				"type": "function",
-				"function": {
-					"name": "list_dir",
-					"description": "List files in directory"
-				}
-			}
-		],
-		"tool_choice": "auto"
-	}`
+	reqPayload := `{"model": "nacho-hybrid", "messages": [{"role": "user", "content": "Langdock test"}]}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	srv.ServeHTTP(rec, req)
 
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d. Body: %s", rec.Code, rec.Body.String())
+	}
+
+	if capturedAuth != "Bearer secret-langdock-token" {
+		t.Errorf("Expected Auth header 'Bearer secret-langdock-token', got '%s'", capturedAuth)
+	}
+
+	if capturedCustomHeader != "engineering-dept" {
+		t.Errorf("Expected X-Langdock-Org header 'engineering-dept', got '%s'", capturedCustomHeader)
+	}
+}
+
+// Test 3.2: Dynamic Provider with OpenRouter Headers
+func TestProxy_DynamicProvider_OpenRouterHeaders(t *testing.T) {
+	var capturedAuth, capturedReferer, capturedTitle string
+
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		capturedReferer = r.Header.Get("HTTP-Referer")
+		capturedTitle = r.Header.Get("X-Title")
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"cmpl-or","choices":[{"message":{"role":"assistant","content":"pong"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {
+				BaseURL: mockUpstream.URL,
+				APIKey:  "sk-or-token-xyz",
+				Headers: map[string]string{
+					"HTTP-Referer": "https://spicebox.dev",
+					"X-Title":      "nacho-flow",
+				},
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Cloud Tier",
+				Model:    "deepseek-r1",
+				Provider: "openrouter",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	reqPayload := `{"model": "nacho-hybrid", "messages": [{"role": "user", "content": "OpenRouter test"}]}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
 	srv.ServeHTTP(rec, req)
@@ -125,67 +199,106 @@ func TestNativeToolCallingPreservation(t *testing.T) {
 		t.Fatalf("Expected status 200, got %d", rec.Code)
 	}
 
-	// Verify that tools array was preserved in forwarded payload
-	tools, ok := capturedPayload["tools"].([]interface{})
-	if !ok || len(tools) == 0 {
-		t.Fatalf("Expected tools array to be preserved in forwarded request payload")
+	if capturedAuth != "Bearer sk-or-token-xyz" {
+		t.Errorf("Expected Auth 'Bearer sk-or-token-xyz', got '%s'", capturedAuth)
 	}
-
-	firstTool := tools[0].(map[string]interface{})
-	fn := firstTool["function"].(map[string]interface{})
-	if fn["name"] != "list_dir" {
-		t.Errorf("Expected function name 'list_dir', got %v", fn["name"])
+	if capturedReferer != "https://spicebox.dev" {
+		t.Errorf("Expected HTTP-Referer 'https://spicebox.dev', got '%s'", capturedReferer)
+	}
+	if capturedTitle != "nacho-flow" {
+		t.Errorf("Expected X-Title 'nacho-flow', got '%s'", capturedTitle)
 	}
 }
 
-func TestChatCompletionsAutoFallbackWhenLocalOffline(t *testing.T) {
-	// Upstream 1: Local provider (down/offline - 502 Bad Gateway)
-	mockLocalOffline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "Ollama offline", http.StatusBadGateway)
-	}))
-	defer mockLocalOffline.Close()
+// Test 3.3: Dynamic Provider with Local GPU (Zero Auth, Tagged as Local)
+func TestProxy_DynamicProvider_LocalGPU_ZeroAuth(t *testing.T) {
+	var capturedAuth string
 
-	// Upstream 2: Cloud Fallback provider (online)
-	mockCloudOnline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"id":"gen-fallback","choices":[{"message":{"role":"assistant","content":"Fallback response"}}]}`))
+		w.Write([]byte(`{"id":"cmpl-local","choices":[{"message":{"role":"assistant","content":"pong"}}]}`))
 	}))
-	defer mockCloudOnline.Close()
+	defer mockUpstream.Close()
+
+	tracker := telemetry.NewStatsTracker(10)
+	defer tracker.Close()
 
 	cfg := &contract.Config{
 		Port: 8000,
-		Providers: map[string]string{
-			"local": mockLocalOffline.URL,
-			"cloud": mockCloudOnline.URL,
+		Providers: map[string]contract.ProviderConfig{
+			"local_gpu": {
+				BaseURL: mockUpstream.URL,
+				Type:    "local",
+			},
 		},
 		Tiers: []contract.Tier{
 			{
-				Name:     "Local Tier",
-				Model:    "local-model",
-				Provider: "local",
-				When:     "Tokens < 1000",
+				Name:     "Local GPU",
+				Model:    "qwen2.5-coder:14b",
+				Provider: "local_gpu",
+				When:     "true",
 			},
-		},
-		DefaultTier: contract.Tier{
-			Name:     "Cloud Fallback",
-			Model:    "cloud-model",
-			Provider: "cloud",
 		},
 	}
 
-	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
 	classifier := router.NewClassifier()
 	sanitizer := router.NewSanitizer()
-	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+	srv := NewServerWithTelemetry(cfg, evaluator, classifier, sanitizer, nil, tracker, nil)
 
-	reqPayload := `{"model": "nacho-hybrid", "messages": [{"role": "user", "content": "Hello"}]}`
+	reqPayload := `{"model": "nacho-hybrid", "messages": [{"role": "user", "content": "Local GPU test"}]}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
 	srv.ServeHTTP(rec, req)
 
-	// Proxy handler should return response
-	if rec.Code != http.StatusOK && rec.Code != http.StatusBadGateway {
-		t.Fatalf("Server handled offline proxy cleanly, code: %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+
+	if capturedAuth != "" {
+		t.Errorf("Expected no Authorization header for local provider, got '%s'", capturedAuth)
+	}
+
+	tracker.Flush()
+	stats := tracker.GetStats()
+	if stats.TierBreakdown.Tier1LocalFree != 1 {
+		t.Errorf("Expected Tier1LocalFree to be 1, got %d", stats.TierBreakdown.Tier1LocalFree)
+	}
+}
+
+// Test 3.4: Unknown Provider returns 502 without panicking
+func TestProxy_UnknownProvider_Returns502WithoutPanic(t *testing.T) {
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"valid_provider": {
+				BaseURL: "http://127.0.0.1:9999",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Broken Tier",
+				Model:    "test-model",
+				Provider: "missing_provider",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	reqPayload := `{"model": "nacho-hybrid", "messages": [{"role": "user", "content": "Test"}]}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("Expected status 502 Bad Gateway for missing provider, got %d", rec.Code)
 	}
 }

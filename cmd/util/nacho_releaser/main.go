@@ -86,7 +86,7 @@ func main() {
 	}
 
 	checksumBytes := checksumData.Bytes()
-	if err := os.WriteFile("checksums.txt", checksumBytes, 0644); err != nil {
+	if err := os.WriteFile("checksums.txt", checksumBytes, 0600); err != nil {
 		log.Fatalf("Failed to write checksums.txt: %v", err)
 	}
 	log.Println("[nacho-releaser] Successfully generated checksums.txt")
@@ -98,51 +98,50 @@ func main() {
 	if err != nil && resp != nil && resp.StatusCode == 404 {
 		log.Println("[nacho-releaser] Release not found, creating new release...")
 		newRelease := &github.RepositoryRelease{
-			TagName: github.String(tag),
-			Name:    github.String("Nacho Flow " + tag),
-			Body:    github.String("Automated release for Nacho Flow " + tag + " (spicerack.dev)"),
-			Draft:   github.Bool(false),
+			TagName:         github.String(tag),
+			TargetCommitish: github.String("main"),
+			Name:            github.String(fmt.Sprintf("Nacho Flow %s", tag)),
+			Body:            github.String(fmt.Sprintf("Automated release for version %s", tag)),
+			Draft:           github.Bool(false),
+			Prerelease:      github.Bool(false),
 		}
-		release, _, err = client.Repositories.CreateRelease(ctx, repoOwner, repoName, newRelease)
-		if err != nil {
-			log.Fatalf("Failed to create release: %v", err)
+		var createErr error
+		release, _, createErr = client.Repositories.CreateRelease(ctx, repoOwner, repoName, newRelease)
+		if createErr != nil {
+			log.Fatalf("Failed to create GitHub release: %v", createErr)
 		}
+		log.Printf("[nacho-releaser] Created release %s (ID: %d)", tag, release.GetID())
 	} else if err != nil {
-		log.Fatalf("Failed to fetch release: %v", err)
+		log.Fatalf("Failed to check existing release: %v", err)
+	} else {
+		log.Printf("[nacho-releaser] Found existing release %s (ID: %d)", tag, release.GetID())
 	}
 
-	// Upload artifacts + checksums
-	uploadFiles := []string{"checksums.txt"}
+	// 3. Upload Artifacts to Release
 	for _, a := range artifacts {
-		if _, err := os.Stat(a.Path); err == nil {
-			uploadFiles = append(uploadFiles, a.Path)
-		}
+		uploadAsset(ctx, client, release.GetID(), a.Path)
 	}
+	uploadAsset(ctx, client, release.GetID(), "checksums.txt")
 
-	for _, file := range uploadFiles {
-		uploadAsset(ctx, client, release.GetID(), file)
-	}
-
-	if strings.EqualFold(os.Getenv("SKIP_DISTRIBUTION"), "true") {
-		log.Println("[nacho-releaser] SKIP_DISTRIBUTION=true — skipping Homebrew/Winget sync.")
-		return
-	}
-
-	// 3. Winget Manifest Automation via Git Trees API
-	if winHash != "" {
-		log.Printf("[nacho-releaser] Syncing %s/%s for Winget manifest...", repoOwner, wingetRepo)
+	// 4. Push Winget Manifests to fork
+	if os.Getenv("WINGET_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "" {
+		log.Println("[nacho-releaser] Generating and pushing winget manifests...")
 		pushWingetManifests(ctx, client, version, winHash)
+	} else {
+		log.Println("[nacho-releaser] Skipping winget manifest push (no token provided)")
 	}
 
-	log.Println("[nacho-releaser] Release process completed successfully! 🚀")
+	log.Printf("🎉 Release %s completed successfully!", tag)
 }
 
 func hashFile(path string) (string, error) {
+	path = filepath.Clean(path)
+	// #nosec G304 - path is from vetted local release artifacts
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, file); err != nil {
@@ -152,24 +151,26 @@ func hashFile(path string) (string, error) {
 }
 
 func uploadAsset(ctx context.Context, client *github.Client, releaseID int64, path string) {
+	path = filepath.Clean(path)
+	// #nosec G304 - path is from vetted local release artifacts
 	file, err := os.Open(path)
 	if err != nil {
 		log.Printf("Failed to open %s: %v", path, err)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	baseName := filepath.Base(path)
 	assets, _, _ := client.Repositories.ListReleaseAssets(ctx, repoOwner, repoName, releaseID, nil)
 	for _, a := range assets {
 		if a.GetName() == baseName {
-			client.Repositories.DeleteReleaseAsset(ctx, repoOwner, repoName, a.GetID())
+			_, _ = client.Repositories.DeleteReleaseAsset(ctx, repoOwner, repoName, a.GetID())
 		}
 	}
 
 	opts := &github.UploadOptions{Name: baseName}
 	log.Printf("[nacho-releaser] Uploading asset: %s", baseName)
-	client.Repositories.UploadReleaseAsset(ctx, repoOwner, repoName, releaseID, opts, file)
+	_, _, _ = client.Repositories.UploadReleaseAsset(ctx, repoOwner, repoName, releaseID, opts, file)
 }
 
 func pushWingetManifests(ctx context.Context, client *github.Client, version, winHash string) {
@@ -201,7 +202,7 @@ PackageLocale: en-US
 Publisher: dixieflatline76
 PackageName: Nacho Flow
 License: MIT
-ShortDescription: High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs (spicerack.dev).
+ShortDescription: High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs (spicebox.dev).
 Moniker: nacho-flow
 Tags:
   - ai
@@ -236,18 +237,18 @@ ManifestVersion: 1.5.0
 	}
 	baseSHA := baseRef.Object.GetSHA()
 
-	client.Git.DeleteRef(ctx, repoOwner, wingetRepo, "refs/heads/"+branchName)
+	_, _ = client.Git.DeleteRef(ctx, repoOwner, wingetRepo, "refs/heads/"+branchName)
 	newRef := &github.Reference{
 		Ref:    github.String("refs/heads/" + branchName),
 		Object: &github.GitObject{SHA: github.String(baseSHA)},
 	}
-	client.Git.CreateRef(ctx, repoOwner, wingetRepo, newRef)
+	_, _, _ = client.Git.CreateRef(ctx, repoOwner, wingetRepo, newRef)
 
 	var treeEntries []*github.TreeEntry
 	for _, f := range files {
 		t, _ := template.New("t").Parse(f.Template)
 		var buf bytes.Buffer
-		t.Execute(&buf, data)
+		_ = t.Execute(&buf, data)
 		treeEntries = append(treeEntries, &github.TreeEntry{
 			Path:    github.String(f.Path),
 			Mode:    github.String("100644"),
@@ -267,7 +268,7 @@ ManifestVersion: 1.5.0
 		Ref:    github.String("refs/heads/" + branchName),
 		Object: &github.GitObject{SHA: newCommit.SHA},
 	}
-	client.Git.UpdateRef(ctx, repoOwner, wingetRepo, branchRef, true)
+	_, _, _ = client.Git.UpdateRef(ctx, repoOwner, wingetRepo, branchRef, true)
 
 	log.Printf("✅ Winget manifests pushed to branch '%s' for 1-click PR!", branchName)
 }

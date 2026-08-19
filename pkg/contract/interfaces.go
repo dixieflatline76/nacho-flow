@@ -23,13 +23,20 @@ type Tier struct {
 	ReasoningEffort string `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
 }
 
+// ProviderConfig defines a first-class LLM provider configuration.
+type ProviderConfig struct {
+	BaseURL string            `yaml:"base_url" json:"base_url"`
+	APIKey  string            `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+	Type    string            `yaml:"type,omitempty" json:"type,omitempty"` // "local" or "cloud"
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+}
+
 // Config defines the top-level configuration loaded from config.yaml.
 type Config struct {
-	Port         int               `yaml:"port"`
-	Providers    map[string]string `yaml:"providers"` // Name -> Base URL or API Key placeholder
-	OpenRouterKey string           `yaml:"openrouter_key"`
-	Tiers        []Tier            `yaml:"tiers"`
-	DefaultTier  Tier              `yaml:"default_tier"`
+	Port        int                       `yaml:"port" json:"port"`
+	Providers   map[string]ProviderConfig `yaml:"providers" json:"providers"`
+	Tiers       []Tier                    `yaml:"tiers" json:"tiers"`
+	DefaultTier Tier                      `yaml:"default_tier" json:"default_tier"`
 }
 
 // Evaluator evaluates N tiers sequentially to find the matching tier for a request.

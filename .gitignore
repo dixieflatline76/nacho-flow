@@ -1,4 +1,4 @@
-# Binaries
+# Binaries & cross-compilation
 bin/
 dist/
 *.exe
@@ -7,13 +7,25 @@ dist/
 *.so
 *.dylib
 
-# Test artifacts
+# Test & Coverage artifacts
 *.test
 *.out
+coverage.out
+coverage.html
+checksums.txt
 
-# User config & environment
-.env
+# Telemetry, logs & runtime data
+logs/
 *.log
+*.jsonl
+stats.json
+*.tmp.*
+config.tmp.*.yaml
+
+# Configuration backups & environment
+.env
+*.bak.*
+config.yaml.bak.*
 
 # Private Business Strategy & Roadmaps
 ROADMAP.md

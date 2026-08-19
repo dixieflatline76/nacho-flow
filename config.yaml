@@ -1,10 +1,18 @@
 port: 8000
 
-openrouter_key: "ENV_OPENROUTER_API_KEY"
-
 providers:
-  ollama: "http://127.0.0.1:11434/v1"
-  openrouter: "https://openrouter.ai/api/v1"
+  # Local GPU Provider (Ollama / vLLM / llama.cpp)
+  ollama:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+
+  # OpenRouter Cloud Gateway
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: "ENV_OPENROUTER_API_KEY"
+    headers:
+      HTTP-Referer: "https://spicebox.dev"
+      X-Title: "nacho-flow"
 
 # 1..N Dynamic Tiers evaluated sequentially using expr-lang/expr syntax (First Match Wins)
 tiers:

@@ -1,0 +1,33 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - ineffassign
+    - unused
+    - gosec
+    - misspell
+    - gocritic
+    - revive
+
+linters-settings:
+  gosec:
+    severity: "medium"
+    confidence: "medium"
+    excludes:
+      - G104 # We handle or explicitly ignore errors with _, _
+  govet:
+    check-shadowing: true
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

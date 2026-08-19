@@ -1,28 +1,30 @@
-# 🌮 Nacho Flow (`spicerack.dev/nacho-flow`)
+# 🌮 Nacho Flow (`spicebox.dev/nacho-flow`)
 
 > **Slash your monthly AI coding bills by 90–95% without sacrificing model intelligence.**
 
-**Nacho Flow** is a high-performance, zero-dependency OpenAI-compatible hybrid AI gateway built in pure Go. It automatically routes agent prompts between your **local GPU** (Ollama / vLLM / ROCm for $0.00) and **ultra-cheap cloud APIs** (OpenRouter / DeepSeek / Gemini) on a turn-by-turn basis.
+**Nacho Flow** is an ultra-high-performance, zero-dependency OpenAI-compatible hybrid AI gateway built in pure Go. It automatically routes agent prompt turns between your **local GPU** (Ollama / vLLM / ROCm for $0.00) and **cheap cloud APIs** (OpenRouter / Langdock / DeepSeek / Azure) with **< 0.29 ms overhead** and **32,250+ requests/sec throughput**.
 
-Part of the **[spicerack.dev](https://spicerack.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
+Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
 
 ---
 
 ## 🌟 Why Nacho Flow?
 
-Autonomous coding agents (Roo Code, Cline, Aider) dump full conversation histories into every prompt turn. After 10 turns, context hits 100k+ tokens—costing **$2.00 to $5.00 per prompt** on flagship models like Claude 3.5 Sonnet.
+Autonomous coding agents (Roo Code, Cline, Aider, Cursor) dump full conversation histories into every prompt turn. After 10 turns, context hits 100k+ tokens—costing **$2.00 to $5.00 per prompt** on flagship models like Claude 3.5 Sonnet.
 
-* **Local GPUs choke on huge history**: Local GPUs (e.g. RX 6900 XT / RTX 3090 / Mac Studio) run fast at small contexts (< 16k tokens), but run out of VRAM as history accumulates.
+* **Local GPUs choke on huge history**: Local GPUs (RX 6900 XT / RTX 3090 / Mac Studio) run blindingly fast on small contexts (< 16k tokens), but run out of VRAM as history accumulates.
 * **Nacho Flow solves the Agentic Context Trap**: It evaluates incoming prompts turn-by-turn. Turn 1 (small context) runs on your local GPU for **$0.00**. When history grows past 16k tokens or requests tool calls, it seamlessly hands off to cloud endpoints.
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-* **⚡ Microsecond Latency**: Built with native Go `net/http/httputil.ReverseProxy` (< 1ms proxy overhead, < 15MB RAM footprint).
-* **🎯 1..N Dynamic Tiers (`expr-lang/expr`)**: Configure unlimited custom routing rules in `config.yaml` using intuitive Go-like expressions.
+* **⚡ Wire-Speed Throughput (32,250+ req/sec)**: Built with zero-lock concurrency (`atomic.Pointer` RCU) and pooled HTTP transports (< 0.29 ms routing overhead, < 96 MB RAM under 1,000 parallel workers).
+* **🔌 Composable Capability Provider Subsystem**: Supports local GPUs (Ollama, vLLM, LM Studio) and cloud endpoints (OpenRouter, Langdock, DeepSeek, Azure, AWS) with dynamic header and bearer auth injection.
+* **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Configure unlimited custom routing rules in `config.yaml` based on context size, images, tool calling, and code keywords.
 * **🖼️ History Image Sanitization**: Automatically strips raw base64 `image_url` payloads from older historical turns when routing to text-only models, eliminating `400 Bad Request` crashes.
-* **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI OR installs natively as a background service on **Windows** (Windows Service), **Linux** (systemd), and **macOS** (launchd).
+* **💾 Persistent Telemetry Store**: Automatically saves cumulative token savings and USD cost metrics to disk (`~/.config/nacho-flow/stats.json`) across daemon restarts.
+* **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI OR installs natively as a persistent background daemon on **Windows** (Windows Service), **Linux** (systemd), and **macOS** (launchd).
 * **📦 Zero Dependencies**: Single static binary with zero CGO or Python requirements (`CGO_ENABLED=0`).
 
 ---
@@ -47,14 +49,30 @@ Create a `config.yaml` in your project folder or `~/.config/nacho-flow/config.ya
 
 ```yaml
 port: 8000
-openrouter_key: "ENV_OPENROUTER_API_KEY"
 
+# Upstream Providers (Local GPUs, Cloud Gateways, Private Tenants)
 providers:
-  ollama: "http://127.0.0.1:11434/v1"
-  openrouter: "https://openrouter.ai/api/v1"
+  # Local GPU (Ollama / vLLM / llama.cpp - $0.00 cost)
+  ollama:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
 
+  # OpenRouter Cloud Gateway
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: "ENV_OPENROUTER_API_KEY"
+    headers:
+      HTTP-Referer: "https://spicebox.dev"
+      X-Title: "nacho-flow"
+
+  # Langdock Enterprise / Private Tenant
+  langdock:
+    base_url: "https://api.langdock.com/v1"
+    api_key: "ENV_LANGDOCK_API_KEY"
+
+# Dynamic Routing Tiers (Evaluated top-to-bottom: First Match Wins)
 tiers:
-  # Tier 1 (High Precedence): Concurrency & Reasoning Keywords
+  # Tier 1: Concurrency & Complex Reasoning Keywords
   - name: "Cloud Reasoning"
     model: "deepseek/deepseek-r1"
     provider: "openrouter"
@@ -66,7 +84,7 @@ tiers:
     provider: "openrouter"
     when: "HasImages"
 
-  # Tier 3: Local ROCm / CUDA GPU (100% Free, Routine tasks < 16k context)
+  # Tier 3: Local ROCm GPU (100% Free, Routine tasks < 16k context without images or tools)
   - name: "Local ROCm GPU"
     model: "qwen2.5-coder:14b"
     provider: "ollama"
@@ -102,17 +120,37 @@ nacho-flow service start
 
 ---
 
-### 4. Connect Your IDE (Roo Code / Cline / Aider)
+### 4. Connect Your IDE (Roo Code / Cline / Aider / Cursor)
 
 In VS Code **Roo Code Settings**:
 * **Provider**: `OpenAI Compatible`
 * **Base URL**: `http://localhost:8000/v1`
-* **API Key**: `sk-dummy` *(the router holds your real keys)*
+* **API Key**: `sk-dummy` *(Nacho Flow holds your real keys)*
 * **Model ID**: `nacho-hybrid`
 * **Stream / Image Support**: `ON`
 
 ---
 
+## 🗺️ Vision & Future Roadmap
+
+* **🤖 Autonomous "Agent-on-Agent" Auto-Tuning**: A built-in optimizer agent (`nacho-flow tune`) that analyzes live routing telemetry, detects prompt retry patterns, and synthesizes/tunes `expr` rules in a closed loop.
+* **🛡️ 100% Air-Gapped Enterprise Deployment**: Ultra-lightweight distroless Docker container (< 15MB) with zero vulnerabilities, deploying as a private Kubernetes pod / service mesh sidecar.
+* **🔍 Data Loss Prevention (DLP) Sanitizer**: Inline secret scrubbing (API keys, credentials, PII) in `pkg/router/sanitizer.go` before prompts leave the private perimeter.
+
+---
+
+## 📚 Documentation
+
+For in-depth guides, benchmark data, and architecture deep-dives:
+- **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
+- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**32,254+ r/s up to 1,000 workers**) on AMD Ryzen hardware.
+- **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules.
+- **[User Guide](docs/USER_GUIDE.md)**: Full configuration reference, custom `expr` tier rules, OS service setup, and IDE walkthroughs.
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Development prerequisites, TDD workflow, plugin extension guide, and benchmarking.
+- **[Contributing](CONTRIBUTING.md)**: Guidelines for opening issues, code style, and pull requests.
+
+---
+
 ## 📜 License
 
-MIT License © 2026 [dixieflatline76](https://github.com/dixieflatline76) | [spicerack.dev](https://spicerack.dev)
+MIT License © 2026 [dixieflatline76](https://github.com/dixieflatline76) | [spicebox.dev](https://spicebox.dev)
