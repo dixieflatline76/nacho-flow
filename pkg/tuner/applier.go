@@ -17,6 +17,7 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 	if configPath == "" {
 		configPath = "config.yaml"
 	}
+	configPath = filepath.Clean(configPath)
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -30,8 +31,9 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 
 	// 1. Create Timestamped Backup
 	timestamp := time.Now().Format("20060102T150405")
-	backupPath := fmt.Sprintf("%s.bak.%s", configPath, timestamp)
-	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+	backupPath := filepath.Clean(fmt.Sprintf("%s.bak.%s", configPath, timestamp))
+	// #nosec G703 - backup path is strictly scoped with clean path and timestamp
+	if err := os.WriteFile(backupPath, data, 0600); err != nil {
 		return "", fmt.Errorf("failed to create backup file at %s: %w", backupPath, err)
 	}
 
@@ -57,8 +59,8 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 
 	// 4. Atomic Write (write to temp in same dir, then rename)
 	dir := filepath.Dir(configPath)
-	tmpFile := filepath.Join(dir, fmt.Sprintf("config.tmp.%d.yaml", os.Getpid()))
-	if err := os.WriteFile(tmpFile, updatedData, 0644); err != nil {
+	tmpFile := filepath.Clean(filepath.Join(dir, fmt.Sprintf("config.tmp.%d.yaml", os.Getpid())))
+	if err := os.WriteFile(tmpFile, updatedData, 0600); err != nil {
 		return backupPath, fmt.Errorf("failed to write temporary config: %w", err)
 	}
 

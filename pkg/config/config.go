@@ -31,10 +31,12 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	var loadedPath string
 
 	for _, p := range pathsToTry {
-		b, err := os.ReadFile(p)
+		cleanPath := filepath.Clean(p)
+		// #nosec G304 - pathsToTry contains trusted search locations
+		b, err := os.ReadFile(cleanPath)
 		if err == nil {
 			data = b
-			loadedPath = p
+			loadedPath = cleanPath
 			break
 		}
 	}

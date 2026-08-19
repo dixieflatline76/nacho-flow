@@ -31,12 +31,13 @@ func NewTrafficLogger(filePath string, bufferSize int) (*TrafficLogger, error) {
 		bufferSize = 5000
 	}
 
+	filePath = filepath.Clean(filePath)
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create traffic log directory: %w", err)
 	}
 
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open traffic log file: %w", err)
 	}
@@ -129,6 +130,7 @@ func (tl *TrafficLogger) Close() error {
 
 // ReadRecords reads historical TurnRecord entries from the JSONL file.
 func ReadRecords(filePath string, limit int) ([]TurnRecord, error) {
+	filePath = filepath.Clean(filePath)
 	file, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -136,7 +138,7 @@ func ReadRecords(filePath string, limit int) ([]TurnRecord, error) {
 		}
 		return nil, fmt.Errorf("failed to open traffic log for reading: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var records []TurnRecord
 	scanner := bufio.NewScanner(file)

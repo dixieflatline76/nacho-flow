@@ -81,6 +81,6 @@ func (p *GenericLLMProvider) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("provider '%s' ping failed: %w", p.id, err)
 	}
-	resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }

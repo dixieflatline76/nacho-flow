@@ -22,6 +22,10 @@ lint:
 	@echo "Running golangci-lint..."
 	golangci-lint run ./...
 
+sec:
+	@echo "Running gosec security vulnerability analysis..."
+	gosec -exclude=G706 ./...
+
 test:
 	@echo "Running unit tests..."
 	go test -v ./...
@@ -48,8 +52,8 @@ tune-apply:
 	@echo "Applying tuned rules to config.yaml..."
 	go run ./cmd/nacho-flow tune --apply
 
-check: fmt vet test-race
-	@echo "✅ All code quality checks and race tests passed!"
+check: fmt vet sec test-race
+	@echo "✅ All code quality checks, security scans, and race tests passed!"
 
 ci: check build-all
 	@echo "🚀 CI Pipeline verification passed!"

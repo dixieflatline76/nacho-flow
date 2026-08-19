@@ -73,7 +73,7 @@ func runBenchStep(client *http.Client, ts *httptest.Server, tracker *telemetry.S
 					atomic.AddInt64(&failedReqs, 1)
 				} else {
 					_, _ = io.Copy(io.Discard, resp.Body)
-					resp.Body.Close()
+					_ = resp.Body.Close()
 					atomic.AddInt64(&completedReqs, 1)
 					localLatencies = append(localLatencies, duration)
 				}

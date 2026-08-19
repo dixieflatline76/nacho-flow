@@ -52,7 +52,7 @@ func (nopCloser) Close() error { return nil }
 func NewInteractiveLogger(stdout io.Writer, logFilePath string, level slog.Level) (*slog.Logger, io.Closer) {
 	dir := filepath.Dir(logFilePath)
 	if dir != "" && dir != "." {
-		_ = os.MkdirAll(dir, 0755)
+		_ = os.MkdirAll(dir, 0750)
 	}
 
 	fileRotator := &lumberjack.Logger{

@@ -152,8 +152,9 @@ func (p *program) run(s service.Service) {
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 	p.server = &http.Server{
-		Addr:    addr,
-		Handler: srvHandler,
+		Addr:              addr,
+		Handler:           srvHandler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	appLogger.Info("🌮 Nacho Flow starting",

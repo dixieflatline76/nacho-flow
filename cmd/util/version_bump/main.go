@@ -48,7 +48,7 @@ func main() {
 	newVersion := fmt.Sprintf("%d.%d.%d", major, minor, patch)
 	newTag := fmt.Sprintf("v%s", newVersion)
 
-	if err := os.WriteFile("version.txt", []byte(newVersion+"\n"), 0644); err != nil {
+	if err := os.WriteFile("version.txt", []byte(newVersion+"\n"), 0600); err != nil {
 		log.Fatalf("Failed to write version.txt: %v", err)
 	}
 
@@ -63,6 +63,7 @@ func main() {
 }
 
 func execCmd(name string, args ...string) {
+	// #nosec G204 - version_bump executes trusted git commands
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

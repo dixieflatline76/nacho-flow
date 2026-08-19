@@ -26,8 +26,9 @@ func NewDiskStore(filePath string) (*DiskStore, error) {
 		filePath = filepath.Join(userConfigDir, "nacho-flow", "stats.json")
 	}
 
+	filePath = filepath.Clean(filePath)
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create store directory: %w", err)
 	}
 
@@ -42,7 +43,7 @@ func (s *DiskStore) Load() (telemetry.StatsSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data, err := os.ReadFile(s.filePath)
+	data, err := os.ReadFile(filepath.Clean(s.filePath))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return telemetry.StatsSnapshot{}, nil
@@ -69,8 +70,8 @@ func (s *DiskStore) Save(snapshot telemetry.StatsSnapshot) error {
 	}
 
 	// Write to temporary file in the same directory to ensure atomic same-filesystem rename
-	tmpFile := fmt.Sprintf("%s.tmp.%d", s.filePath, os.Getpid())
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	tmpFile := filepath.Clean(fmt.Sprintf("%s.tmp.%d", s.filePath, os.Getpid()))
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write temporary stats file: %w", err)
 	}
 
