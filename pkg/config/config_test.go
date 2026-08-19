@@ -3,31 +3,44 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestLoadConfig(t *testing.T) {
+// Test 1.1: Structured providers parsing
+func TestConfig_StructuredProviders_Success(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
 	yamlContent := `
-port: 9090
-openrouter_key: "test-key"
+port: 9000
 providers:
-  ollama: "http://localhost:11434/v1"
-  openrouter: "https://openrouter.ai/api/v1"
+  local_gpu:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: "sk-or-test-key"
+    headers:
+      HTTP-Referer: "https://spicerack.dev"
+      X-Title: "nacho-flow"
+  langdock:
+    base_url: "https://api.langdock.com/v1"
+    api_key: "sk-langdock-test"
+    headers:
+      X-Custom-Org: "engineering"
 tiers:
-  - name: "Local"
+  - name: "Local Fast"
     model: "qwen2.5-coder:14b"
-    provider: "ollama"
-    when: "Tokens < 1000"
+    provider: "local_gpu"
+    when: "Tokens < 8000"
 default_tier:
-  name: "Fallback"
+  name: "Cloud Fallback"
   model: "deepseek/deepseek-chat"
   provider: "openrouter"
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("Failed to write temp config: %v", err)
+		t.Fatalf("Failed to write config: %v", err)
 	}
 
 	cfg, err := LoadConfig(configPath)
@@ -35,19 +48,145 @@ default_tier:
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
-	if cfg.Port != 9090 {
-		t.Errorf("Expected port 9090, got %d", cfg.Port)
+	if cfg.Port != 9000 {
+		t.Errorf("Expected port 9000, got %d", cfg.Port)
 	}
 
-	if cfg.OpenRouterKey != "test-key" {
-		t.Errorf("Expected openrouter_key 'test-key', got %s", cfg.OpenRouterKey)
+	// Verify local provider
+	local, ok := cfg.Providers["local_gpu"]
+	if !ok {
+		t.Fatalf("Missing local_gpu provider")
+	}
+	if local.BaseURL != "http://127.0.0.1:11434/v1" || local.Type != "local" {
+		t.Errorf("Unexpected local_gpu config: %+v", local)
 	}
 
-	if len(cfg.Tiers) != 1 {
-		t.Errorf("Expected 1 tier, got %d", len(cfg.Tiers))
+	// Verify OpenRouter provider
+	or, ok := cfg.Providers["openrouter"]
+	if !ok {
+		t.Fatalf("Missing openrouter provider")
+	}
+	if or.BaseURL != "https://openrouter.ai/api/v1" || or.APIKey != "sk-or-test-key" {
+		t.Errorf("Unexpected openrouter config: %+v", or)
+	}
+	if or.Headers["HTTP-Referer"] != "https://spicerack.dev" {
+		t.Errorf("Missing HTTP-Referer header in openrouter config")
 	}
 
-	if cfg.DefaultTier.Model != "deepseek/deepseek-chat" {
-		t.Errorf("Expected default model 'deepseek/deepseek-chat', got %s", cfg.DefaultTier.Model)
+	// Verify Langdock provider
+	ld, ok := cfg.Providers["langdock"]
+	if !ok {
+		t.Fatalf("Missing langdock provider")
+	}
+	if ld.BaseURL != "https://api.langdock.com/v1" || ld.APIKey != "sk-langdock-test" {
+		t.Errorf("Unexpected langdock config: %+v", ld)
+	}
+	if ld.Headers["X-Custom-Org"] != "engineering" {
+		t.Errorf("Missing X-Custom-Org header in langdock config")
+	}
+}
+
+// Test 1.2: Environment variable resolution for API keys
+func TestConfig_EnvKeyResolution(t *testing.T) {
+	os.Setenv("TEST_LANGDOCK_API_SECRET", "resolved-secret-value-123")
+	defer os.Unsetenv("TEST_LANGDOCK_API_SECRET")
+
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 8000
+providers:
+  langdock:
+    base_url: "https://api.langdock.com/v1"
+    api_key: "ENV_TEST_LANGDOCK_API_SECRET"
+tiers:
+  - name: "Langdock Tier"
+    model: "claude-3-5-sonnet"
+    provider: "langdock"
+    when: "true"
+default_tier:
+  name: "Langdock Fallback"
+  model: "claude-3-5-sonnet"
+  provider: "langdock"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	ld := cfg.Providers["langdock"]
+	if ld.APIKey != "resolved-secret-value-123" {
+		t.Errorf("Expected resolved APIKey 'resolved-secret-value-123', got '%s'", ld.APIKey)
+	}
+}
+
+// Test 1.3: Validation fails if provider is missing base_url
+func TestConfig_Validation_MissingBaseURL(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 8000
+providers:
+  broken_provider:
+    api_key: "secret"
+tiers:
+  - name: "Broken Tier"
+    model: "test-model"
+    provider: "broken_provider"
+    when: "true"
+default_tier:
+  name: "Fallback"
+  model: "test-model"
+  provider: "broken_provider"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatalf("Expected error for missing base_url, got nil")
+	}
+	if !strings.Contains(err.Error(), "base_url") {
+		t.Errorf("Expected error to mention base_url, got: %v", err)
+	}
+}
+
+// Test 1.4: Validation fails if tier references an unknown provider
+func TestConfig_Validation_TierReferencingUnknownProvider(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434/v1"
+tiers:
+  - name: "Ghost Tier"
+    model: "claude-3-5-sonnet"
+    provider: "non_existent_provider"
+    when: "Tokens > 1000"
+default_tier:
+  name: "Fallback"
+  model: "qwen2.5"
+  provider: "ollama"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatalf("Expected error for tier referencing non_existent_provider, got nil")
+	}
+	if !strings.Contains(err.Error(), "non_existent_provider") {
+		t.Errorf("Expected error to mention non_existent_provider, got: %v", err)
 	}
 }

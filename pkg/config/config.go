@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"gopkg.in/yaml.v3"
@@ -49,6 +50,39 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 
 	if cfg.Port == 0 {
 		cfg.Port = 8000
+	}
+
+	// Validate providers and resolve ENV variables for API keys
+	if len(cfg.Providers) == 0 {
+		return nil, fmt.Errorf("config error: at least one provider must be defined in 'providers'")
+	}
+
+	for id, p := range cfg.Providers {
+		if strings.TrimSpace(p.BaseURL) == "" {
+			return nil, fmt.Errorf("config error: provider '%s' is missing required 'base_url'", id)
+		}
+
+		// Resolve ENV_... format
+		if strings.HasPrefix(p.APIKey, "ENV_") {
+			envVarName := strings.TrimPrefix(p.APIKey, "ENV_")
+			if envVal := os.Getenv(envVarName); envVal != "" {
+				p.APIKey = envVal
+			}
+		}
+		cfg.Providers[id] = p
+	}
+
+	// Validate that all tiers reference existing providers
+	for _, tier := range cfg.Tiers {
+		if _, exists := cfg.Providers[tier.Provider]; !exists {
+			return nil, fmt.Errorf("config error: tier '%s' references unknown provider '%s'", tier.Name, tier.Provider)
+		}
+	}
+
+	if cfg.DefaultTier.Provider != "" {
+		if _, exists := cfg.Providers[cfg.DefaultTier.Provider]; !exists {
+			return nil, fmt.Errorf("config error: default_tier references unknown provider '%s'", cfg.DefaultTier.Provider)
+		}
 	}
 
 	return &cfg, nil
