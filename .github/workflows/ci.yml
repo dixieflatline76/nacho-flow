@@ -203,7 +203,7 @@ jobs:
       - name: Run Nacho Releaser (Upload Binaries & Checksums)
         run: go run cmd/util/nacho_releaser/main.go
         env:
-          NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
+          NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           SKIP_DISTRIBUTION: ${{ github.event.release.prerelease }}
 
   distribute-release:
@@ -226,10 +226,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist
           gh release download $tagName --pattern "nacho-flow-*" --dir dist
         env:
-          GH_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
         shell: pwsh
 
       - name: Run Nacho Releaser (Sync Winget Manifests)
         run: go run cmd/util/nacho_releaser/main.go
         env:
-          NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
+          NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}

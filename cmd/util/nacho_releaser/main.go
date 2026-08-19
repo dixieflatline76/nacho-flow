@@ -31,7 +31,10 @@ func main() {
 		token = os.Getenv("GORELEASER_GITHUB_TOKEN")
 	}
 	if token == "" {
-		log.Fatal("NACHO_RELEASER_TOKEN or GORELEASER_GITHUB_TOKEN environment variable is not set")
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+	if token == "" {
+		log.Fatal("No GitHub token found in NACHO_RELEASER_TOKEN, GORELEASER_GITHUB_TOKEN, or GITHUB_TOKEN")
 	}
 
 	tag := os.Getenv("GITHUB_REF_NAME")
