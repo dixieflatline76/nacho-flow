@@ -160,7 +160,7 @@ func (p *program) run(s service.Service) {
 	appLogger.Info("🌮 Nacho Flow starting",
 		slog.String("address", fmt.Sprintf("http://%s", addr)),
 		slog.Int("providers_count", len(reg.All())),
-		slog.String("brand", "spicerack.dev"),
+		slog.String("brand", "spicebox.dev"),
 	)
 	if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		appLogger.Error("HTTP server error", slog.Any("error", err))
@@ -253,7 +253,7 @@ func main() {
 	svcConfig := &service.Config{
 		Name:        "nacho-flow",
 		DisplayName: "Nacho Flow AI Gateway",
-		Description: "Ultra-fast hybrid LLM proxy for local GPUs and cloud APIs (spicerack.dev)",
+		Description: "Ultra-fast hybrid LLM proxy for local GPUs and cloud APIs (spicebox.dev)",
 	}
 
 	prg := &program{}

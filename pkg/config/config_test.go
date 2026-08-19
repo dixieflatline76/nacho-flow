@@ -22,7 +22,7 @@ providers:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "sk-or-test-key"
     headers:
-      HTTP-Referer: "https://spicerack.dev"
+      HTTP-Referer: "https://spicebox.dev"
       X-Title: "nacho-flow"
   langdock:
     base_url: "https://api.langdock.com/v1"
@@ -39,7 +39,7 @@ default_tier:
   model: "deepseek/deepseek-chat"
   provider: "openrouter"
 `
-	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
@@ -69,7 +69,7 @@ default_tier:
 	if or.BaseURL != "https://openrouter.ai/api/v1" || or.APIKey != "sk-or-test-key" {
 		t.Errorf("Unexpected openrouter config: %+v", or)
 	}
-	if or.Headers["HTTP-Referer"] != "https://spicerack.dev" {
+	if or.Headers["HTTP-Referer"] != "https://spicebox.dev" {
 		t.Errorf("Missing HTTP-Referer header in openrouter config")
 	}
 

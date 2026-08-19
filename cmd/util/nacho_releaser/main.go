@@ -202,7 +202,7 @@ PackageLocale: en-US
 Publisher: dixieflatline76
 PackageName: Nacho Flow
 License: MIT
-ShortDescription: High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs (spicerack.dev).
+ShortDescription: High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs (spicebox.dev).
 Moniker: nacho-flow
 Tags:
   - ai

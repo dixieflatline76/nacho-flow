@@ -170,7 +170,7 @@ func TestProxy_DynamicProvider_OpenRouterHeaders(t *testing.T) {
 				BaseURL: mockUpstream.URL,
 				APIKey:  "sk-or-token-xyz",
 				Headers: map[string]string{
-					"HTTP-Referer": "https://spicerack.dev",
+					"HTTP-Referer": "https://spicebox.dev",
 					"X-Title":      "nacho-flow",
 				},
 			},
@@ -202,8 +202,8 @@ func TestProxy_DynamicProvider_OpenRouterHeaders(t *testing.T) {
 	if capturedAuth != "Bearer sk-or-token-xyz" {
 		t.Errorf("Expected Auth 'Bearer sk-or-token-xyz', got '%s'", capturedAuth)
 	}
-	if capturedReferer != "https://spicerack.dev" {
-		t.Errorf("Expected HTTP-Referer 'https://spicerack.dev', got '%s'", capturedReferer)
+	if capturedReferer != "https://spicebox.dev" {
+		t.Errorf("Expected HTTP-Referer 'https://spicebox.dev', got '%s'", capturedReferer)
 	}
 	if capturedTitle != "nacho-flow" {
 		t.Errorf("Expected X-Title 'nacho-flow', got '%s'", capturedTitle)

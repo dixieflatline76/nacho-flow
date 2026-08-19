@@ -49,7 +49,7 @@ providers:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
     headers:
-      HTTP-Referer: "https://spicerack.dev"
+      HTTP-Referer: "https://spicebox.dev"
       X-Title: "nacho-flow"
 
   # 3. Langdock Enterprise / Private Tenant

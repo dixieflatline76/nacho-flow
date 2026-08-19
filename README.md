@@ -1,10 +1,10 @@
-# 🌮 Nacho Flow (`spicerack.dev/nacho-flow`)
+# 🌮 Nacho Flow (`spicebox.dev/nacho-flow`)
 
 > **Slash your monthly AI coding bills by 90–95% without sacrificing model intelligence.**
 
 **Nacho Flow** is an ultra-high-performance, zero-dependency OpenAI-compatible hybrid AI gateway built in pure Go. It automatically routes agent prompt turns between your **local GPU** (Ollama / vLLM / ROCm for $0.00) and **cheap cloud APIs** (OpenRouter / Langdock / DeepSeek / Azure) with **< 0.29 ms overhead** and **32,250+ requests/sec throughput**.
 
-Part of the **[spicerack.dev](https://spicerack.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
+Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
 
 ---
 
@@ -62,7 +62,7 @@ providers:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
     headers:
-      HTTP-Referer: "https://spicerack.dev"
+      HTTP-Referer: "https://spicebox.dev"
       X-Title: "nacho-flow"
 
   # Langdock Enterprise / Private Tenant
@@ -153,4 +153,4 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 
 ## 📜 License
 
-MIT License © 2026 [dixieflatline76](https://github.com/dixieflatline76) | [spicerack.dev](https://spicerack.dev)
+MIT License © 2026 [dixieflatline76](https://github.com/dixieflatline76) | [spicebox.dev](https://spicebox.dev)
