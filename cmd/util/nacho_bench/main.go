@@ -254,6 +254,11 @@ func main() {
 	ts1, tracker1, cleanup1 := setupTestServer(false)
 	defer cleanup1()
 
+	// Warm up runtime and connection pool
+	fmt.Printf("  • Pre-warming connection pool & Go runtime (5,000 reqs)... ")
+	_ = runBenchStep(client, ts1, tracker1, 5000, 50)
+	fmt.Printf("✓ Ready\n")
+
 	baselineResults := make([]StepResult, 0, len(steps))
 	for _, step := range steps {
 		fmt.Printf("  • Running %d reqs across %d workers... ", step.requests, step.concurrency)
@@ -266,6 +271,11 @@ func main() {
 	fmt.Printf("\n▶ [TEST 2/2] RUNNING GATEWAY WITH ACTIVE AUTO-TUNER STREAMING LOGGER (traffic.jsonl)...\n")
 	ts2, tracker2, cleanup2 := setupTestServer(true)
 	defer cleanup2()
+
+	// Warm up runtime and connection pool
+	fmt.Printf("  • Pre-warming connection pool & Go runtime (5,000 reqs)... ")
+	_ = runBenchStep(client, ts2, tracker2, 5000, 50)
+	fmt.Printf("✓ Ready\n")
 
 	tunerResults := make([]StepResult, 0, len(steps))
 	for _, step := range steps {
