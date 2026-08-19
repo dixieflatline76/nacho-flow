@@ -204,6 +204,8 @@ func setupTestServer(enableTrafficLog bool) (*httptest.Server, *telemetry.StatsT
 
 func main() {
 	fullFlag := flag.Bool("full", false, "Run full 350k stress test")
+	reqFlag := flag.Int("n", 0, "Custom number of requests to run")
+	concFlag := flag.Int("c", 0, "Custom concurrency (workers) to run")
 	flag.Parse()
 
 	fmt.Printf("========================================================================================\n")
@@ -221,7 +223,14 @@ func main() {
 		{concurrency: 500, requests: 40000},
 	}
 
-	if *fullFlag {
+	if *reqFlag > 0 && *concFlag > 0 {
+		steps = []struct {
+			concurrency int
+			requests    int
+		}{
+			{concurrency: *concFlag, requests: *reqFlag},
+		}
+	} else if *fullFlag {
 		steps = []struct {
 			concurrency int
 			requests    int
