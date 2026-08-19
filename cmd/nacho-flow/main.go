@@ -20,6 +20,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/store"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+	"github.com/dixieflatline76/nacho-flow/pkg/tuner"
 	"github.com/kardianos/service"
 )
 
@@ -30,12 +31,13 @@ var (
 )
 
 type program struct {
-	server    *http.Server
-	tracker   *telemetry.StatsTracker
-	store     *store.DiskStore
-	logCloser io.Closer
-	slog      *slog.Logger
-	cancelBg  context.CancelFunc
+	server     *http.Server
+	tracker    *telemetry.StatsTracker
+	store      *store.DiskStore
+	trafficLog *telemetry.TrafficLogger
+	logCloser  io.Closer
+	slog       *slog.Logger
+	cancelBg   context.CancelFunc
 }
 
 func (p *program) Start(s service.Service) error {
@@ -119,6 +121,15 @@ func (p *program) run(s service.Service) {
 	tracker := telemetry.NewStatsTrackerWithInitialSnapshot(5000, initialSnapshot)
 	p.tracker = tracker
 
+	// 4. Attach Streaming TrafficLogger sink for Auto-Tuner
+	trafficLogger, err := telemetry.NewTrafficLogger("", 5000)
+	if err == nil {
+		p.trafficLog = trafficLogger
+		tracker.AddSink(trafficLogger)
+	} else {
+		appLogger.Warn("Failed to initialize traffic logger", slog.Any("error", err))
+	}
+
 	// Periodic stats sync to disk (every 1 minute)
 	if diskStore != nil {
 		go func() {
@@ -171,13 +182,71 @@ func (p *program) Stop(s service.Service) error {
 		}
 		p.tracker.Close()
 	}
+	if p.trafficLog != nil {
+		_ = p.trafficLog.Close()
+	}
 	if p.logCloser != nil {
 		_ = p.logCloser.Close()
 	}
 	return nil
 }
 
+func handleTuneSubcommand(args []string) {
+	tuneFlags := flag.NewFlagSet("tune", flag.ExitOnError)
+	configPath := tuneFlags.String("config", "config.yaml", "Path to config.yaml file")
+	trafficLogPath := tuneFlags.String("traffic-log", "logs/traffic.jsonl", "Path to traffic log JSONL")
+	sampleLimit := tuneFlags.Int("sample", 5000, "Maximum historical prompt turns to analyze")
+	apply := tuneFlags.Bool("apply", false, "Apply recommended rule optimizations to config.yaml")
+
+	_ = tuneFlags.Parse(args)
+
+	cfg, err := config.LoadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("Failed to load config at %s: %v", *configPath, err)
+	}
+
+	records, err := telemetry.ReadRecords(*trafficLogPath, *sampleLimit)
+	if err != nil {
+		log.Fatalf("Failed to read traffic log at %s: %v", *trafficLogPath, err)
+	}
+
+	if len(records) == 0 {
+		fmt.Printf("ℹ️  No historical traffic records found in %s.\n", *trafficLogPath)
+		fmt.Printf("   Run Nacho Flow under normal traffic to accumulate telemetry before tuning.\n")
+		return
+	}
+
+	optimizer := tuner.NewParetoBanditOptimizer()
+	result, err := optimizer.Optimize(records, cfg)
+	if err != nil {
+		log.Fatalf("Optimization analysis failed: %v", err)
+	}
+
+	// Generate and print human-readable report
+	report := tuner.GenerateAdvisoryReport(result, cfg)
+	fmt.Print(report)
+
+	if *apply {
+		backupPath, err := tuner.ApplyTuning(*configPath, result)
+		if err != nil {
+			log.Fatalf("Failed to apply tuning: %v", err)
+		}
+		fmt.Printf("✅ SUCCESS: Successfully updated %s with optimal rules!\n", *configPath)
+		fmt.Printf("   Backup saved at: %s\n", backupPath)
+		fmt.Printf("   Restart or reload nacho-flow to activate changes.\n\n")
+	}
+}
+
 func main() {
+	if len(os.Args) > 1 {
+		cmd := os.Args[1]
+		switch cmd {
+		case "tune":
+			handleTuneSubcommand(os.Args[2:])
+			return
+		}
+	}
+
 	flag.Parse()
 
 	svcConfig := &service.Config{

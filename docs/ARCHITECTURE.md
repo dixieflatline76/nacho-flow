@@ -143,3 +143,21 @@ type PricingProvider interface {
 | :--- | :--- | :--- | :--- |
 | **Interactive CLI** | Running directly in terminal | `os.Stdout` + `logs/router.log` | Structured text/JSON formatting with `lumberjack.Logger` (10MB max size, 5 rotating backups). |
 | **Service Daemon** | Windows Service / systemd / launchd | OS Native System Logger | Uses an `slog.Handler` adapter routing directly to `service.Logger` (systemd journal / Windows Event Log / launchd). |
+
+---
+
+## 5. Autonomous Rule Optimization Subsystem (`pkg/tuner`)
+
+The auto-tuning engine uses an **Advisory-First**, pure Go Recurrent Bandit architecture:
+
+1. **Passive Telemetry Collector (`pkg/telemetry/traffic_log.go`)**:  
+   An asynchronous `ObservationSink` capturing non-blocking metadata in `logs/traffic.jsonl` (zero code, zero prompt content).
+2. **Mathematical Optimizer (`pkg/tuner/optimizer.go`)**:  
+   - Computes keyword friction odds ratios to isolate high-risk domains for local models.
+   - Evaluates multi-objective continuous thresholds to maximize cost savings while penalizing prompt retries.
+3. **Symbolic Distiller (`pkg/tuner/distiller.go`)**:  
+   - Formulates and AST-compiles mathematically optimal `expr` expressions.
+4. **Advisory & Atomic Applier (`pkg/tuner/advisor.go`, `pkg/tuner/applier.go`)**:  
+   - Renders formatted terminal comparison reports (`nacho-flow tune`).
+   - Supports atomic config file replacement with automatic `.bak.<timestamp>` creation (`nacho-flow tune --apply`).
+

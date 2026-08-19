@@ -119,6 +119,8 @@ func runBenchStep(client *http.Client, ts *httptest.Server, tracker *telemetry.S
 }
 
 func main() {
+	quickFlag := flag.Bool("quick", true, "Run fast validation benchmark (50k requests total)")
+	fullFlag := flag.Bool("full", false, "Run full 350k breaking point stress test")
 	flag.Parse()
 
 	fmt.Printf("========================================================================================\n")
@@ -206,11 +208,23 @@ func main() {
 		concurrency int
 		requests    int
 	}{
-		{concurrency: 50, requests: 25000},
-		{concurrency: 100, requests: 50000},
-		{concurrency: 250, requests: 75000},
-		{concurrency: 500, requests: 100000},
-		{concurrency: 1000, requests: 100000},
+		{concurrency: 50, requests: 5000},
+		{concurrency: 100, requests: 10000},
+		{concurrency: 250, requests: 15000},
+		{concurrency: 500, requests: 20000},
+	}
+
+	if *fullFlag || !*quickFlag {
+		steps = []struct {
+			concurrency int
+			requests    int
+		}{
+			{concurrency: 50, requests: 25000},
+			{concurrency: 100, requests: 50000},
+			{concurrency: 250, requests: 75000},
+			{concurrency: 500, requests: 100000},
+			{concurrency: 1000, requests: 100000},
+		}
 	}
 
 	results := make([]StepResult, 0, len(steps))

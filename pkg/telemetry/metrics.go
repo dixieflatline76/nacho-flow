@@ -29,12 +29,20 @@ type StatsSnapshot struct {
 // Observation encapsulates metrics captured from a single completed proxy request.
 type Observation struct {
 	Tier               int
+	TierName           string
+	Model              string
+	Provider           string
 	Tokens             int
 	CostSaved          float64
 	IsLocal            bool
 	IsFallback         bool
 	IsExplicitOverride bool
 	LatencyMs          float64
+	Keywords           []string
+	HasImages          bool
+	HasTools           bool
+	StatusCode         int
+	IsRetry            bool
 }
 
 // StatsTracker processes proxy telemetry asynchronously via a dedicated background channel.
@@ -43,6 +51,7 @@ type StatsTracker struct {
 	doneChan chan struct{}
 	mu       sync.RWMutex
 	stats    StatsSnapshot
+	sinks    []ObservationSink
 	closed   bool
 }
 
@@ -72,6 +81,13 @@ func NewStatsTrackerWithInitialSnapshot(bufferSize int, initial StatsSnapshot) *
 	return tracker
 }
 
+// AddSink registers an ObservationSink to receive streaming observations.
+func (s *StatsTracker) AddSink(sink ObservationSink) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sinks = append(s.sinks, sink)
+}
+
 func (s *StatsTracker) worker() {
 	defer close(s.doneChan)
 
@@ -96,18 +112,42 @@ func (s *StatsTracker) worker() {
 			case 4:
 				s.stats.TierBreakdown.Tier4CloudVision++
 			default:
-				s.stats.TierBreakdown.ExplicitOverride++
+				s.stats.TierBreakdown.Tier2CloudCoder++
 			}
 		}
 
 		if obs.IsLocal {
 			s.stats.TotalTokensRoutedLocally += int64(obs.Tokens)
-		}
-
-		if obs.CostSaved > 0 {
 			s.stats.EstimatedCostSavedUSD += obs.CostSaved
 		}
+
+		// Snapshot sinks for fanout
+		sinks := make([]ObservationSink, len(s.sinks))
+		copy(sinks, s.sinks)
 		s.mu.Unlock()
+
+		// Fan out asynchronously to sinks
+		if len(sinks) > 0 {
+			record := TurnRecord{
+				Timestamp:    time.Now().UTC(),
+				Tokens:       obs.Tokens,
+				HasImages:    obs.HasImages,
+				HasTools:     obs.HasTools,
+				Keywords:     obs.Keywords,
+				SelectedTier: obs.TierName,
+				TargetModel:  obs.Model,
+				Provider:     obs.Provider,
+				IsLocal:      obs.IsLocal,
+				IsFallback:   obs.IsFallback,
+				LatencyMs:    obs.LatencyMs,
+				StatusCode:   obs.StatusCode,
+				IsRetry:      obs.IsRetry,
+				CostSavedUSD: obs.CostSaved,
+			}
+			for _, sink := range sinks {
+				sink.Emit(record)
+			}
+		}
 	}
 }
 

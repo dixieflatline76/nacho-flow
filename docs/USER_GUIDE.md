@@ -197,3 +197,25 @@ curl http://127.0.0.1:8000/v1/stats
   "estimated_cost_saved_usd": 65.2500
 }
 ```
+
+---
+
+## 7. Autonomous Rule Auto-Tuning (`nacho-flow tune`)
+
+Nacho Flow features a built-in, pure Go **Recurrent Bandit Optimizer** that analyzes your team's real-world traffic, identifies prompt failure bottlenecks, and generates human-readable rule recommendations.
+
+### Run Advisory Analysis (Dry-Run):
+```bash
+# Analyze historical traffic and generate recommendation diff
+nacho-flow tune
+
+# Analyze custom sample size from specific traffic log
+nacho-flow tune --sample 10000 --traffic-log logs/traffic.jsonl
+```
+
+### Apply Recommendations Automatically:
+```bash
+# Applies the synthesized rule to config.yaml and saves an automatic timestamped backup (config.yaml.bak.<timestamp>)
+nacho-flow tune --apply
+```
+

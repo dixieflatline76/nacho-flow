@@ -266,11 +266,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		s.tracker.Record(telemetry.Observation{
 			Tier:       tierNum,
+			TierName:   targetTier.Name,
+			Model:      targetTier.Model,
+			Provider:   targetTier.Provider,
 			Tokens:     reqCtx.Tokens,
 			CostSaved:  costSaved,
 			IsLocal:    isLocal,
 			IsFallback: false,
 			LatencyMs:  latency,
+			Keywords:   reqCtx.Keywords,
+			HasImages:  reqCtx.HasImages,
+			HasTools:   reqCtx.HasTools,
+			StatusCode: resp.StatusCode,
 		})
 
 		reqLogger.Info("Completed proxy request",
