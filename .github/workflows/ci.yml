@@ -177,3 +177,31 @@ jobs:
         env:
           NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
           SKIP_DISTRIBUTION: ${{ github.event.release.prerelease }}
+
+  distribute-release:
+    name: Distribute (Prerelease Promotion)
+    runs-on: windows-latest
+    if: github.event.action == 'released' && github.event.release.prerelease == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Download Release Assets
+        run: |
+          $tagName = '${{ github.event.release.tag_name }}'
+          New-Item -ItemType Directory -Force -Path dist
+          gh release download $tagName --pattern "nacho-flow-*" --dir dist
+        env:
+          GH_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
+        shell: pwsh
+
+      - name: Run Nacho Releaser (Distribute Winget)
+        run: go run cmd/util/nacho_releaser/main.go
+        env:
+          NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
