@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [published, released]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Lint & Test
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Run unit tests
+        run: go test -v ./...
+
+      - name: Dry Run Build
+        run: go build -o bin/nacho-flow ./cmd/nacho-flow
+
+  build-win:
+    name: Build Windows Binary
+    runs-on: windows-latest
+    if: github.event.action == 'published'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Build Windows Executable
+        run: |
+          $version = (Get-Content version.txt).Trim()
+          New-Item -ItemType Directory -Force -Path dist
+          $env:CGO_ENABLED="0"
+          $env:GOOS="windows"
+          $env:GOARCH="amd64"
+          go build -ldflags="-s -w -X main.version=$version" -o "dist/nacho-flow-${version}-windows-amd64.exe" ./cmd/nacho-flow
+
+      - name: Sign Executable (Azure Trusted Signing)
+        uses: azure/artifact-signing-action@v1.2.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://weu.codesigning.azure.net/
+          signing-account-name: SpiceOSS
+          certificate-profile-name: Spice
+          files: |
+            ${{ github.workspace }}\dist\*.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nacho-win-artifacts
+          path: dist/
+
+  build-mac:
+    name: Build macOS Binaries
+    runs-on: macos-latest
+    if: github.event.action == 'published'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Import Apple Certificates
+        run: |
+          if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
+            echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
+            security create-keychain -p "${{ runner.temp }}" build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p "${{ runner.temp }}" build.keychain
+            security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -k "${{ runner.temp }}" -s build.keychain
+            rm -f certificate.p12
+          fi
+
+      - name: Build & Sign macOS Binaries
+        env:
+          SIGNING_IDENTITY: "Developer ID Application: Karl Kwong (T96W95GY4U)"
+        run: |
+          VERSION=$(cat version.txt | tr -d '\r\n')
+          mkdir -p dist
+          
+          # ARM64 (Apple Silicon)
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X main.version=${VERSION}" -o "dist/nacho-flow-${VERSION}-darwin-arm64" ./cmd/nacho-flow
+          
+          # AMD64 (Intel)
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o "dist/nacho-flow-${VERSION}-darwin-amd64" ./cmd/nacho-flow
+
+          if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
+            codesign --force --options=runtime --sign "${SIGNING_IDENTITY}" --timestamp "dist/nacho-flow-${VERSION}-darwin-arm64"
+            codesign --force --options=runtime --sign "${SIGNING_IDENTITY}" --timestamp "dist/nacho-flow-${VERSION}-darwin-amd64"
+          fi
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nacho-mac-artifacts
+          path: dist/
+
+  publish-release:
+    name: Publish Release & Update Manifests
+    runs-on: windows-latest
+    needs: [build-win, build-mac]
+    if: github.event.action == 'published'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nacho-win-artifacts
+          path: dist
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nacho-mac-artifacts
+          path: dist
+
+      - name: Build Linux Binaries
+        run: |
+          $version = (Get-Content version.txt).Trim()
+          $env:CGO_ENABLED="0"
+          $env:GOOS="linux"
+          $env:GOARCH="amd64"
+          go build -ldflags="-s -w -X main.version=$version" -o "dist/nacho-flow-${version}-linux-amd64" ./cmd/nacho-flow
+          
+          $env:GOARCH="arm64"
+          go build -ldflags="-s -w -X main.version=$version" -o "dist/nacho-flow-${version}-linux-arm64" ./cmd/nacho-flow
+        shell: pwsh
+
+      - name: Run Nacho Releaser
+        run: go run cmd/util/nacho_releaser/main.go
+        env:
+          NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
+          SKIP_DISTRIBUTION: ${{ github.event.release.prerelease }}
