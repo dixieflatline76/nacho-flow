@@ -1,7 +1,10 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 
@@ -120,5 +123,73 @@ func TestRegistry_NewFromConfig(t *testing.T) {
 	or, ok := reg.Get("openrouter")
 	if !ok || or.BaseURL() != "https://openrouter.ai/api/v1" {
 		t.Fatalf("Failed to retrieve openrouter from config registry")
+	}
+}
+
+// Test 2.5: Provider Name resolution
+func TestGenericLLMProvider_Names(t *testing.T) {
+	cases := []struct {
+		id           string
+		expectedName string
+	}{
+		{"ollama_local", "Ollama Local GPU"},
+		{"openrouter_gateway", "OpenRouter AI Gateway"},
+		{"langdock_corp", "Langdock Enterprise"},
+		{"custom_llm", "custom_llm"},
+	}
+
+	for _, c := range cases {
+		p := NewGenericLLMProvider(c.id, contract.ProviderConfig{BaseURL: "http://localhost"})
+		if p.Name() != c.expectedName {
+			t.Errorf("For id '%s', expected Name '%s', got '%s'", c.id, c.expectedName, p.Name())
+		}
+	}
+}
+
+// Test 2.6: Ping health check
+func TestGenericLLMProvider_Ping(t *testing.T) {
+	// Success case
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer test-key" {
+			t.Errorf("Expected Authorization 'Bearer test-key', got '%s'", auth)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	p := NewGenericLLMProvider("test", contract.ProviderConfig{
+		BaseURL: ts.URL,
+		APIKey:  "test-key",
+	})
+
+	if err := p.Ping(context.Background()); err != nil {
+		t.Errorf("Expected ping to succeed, got: %v", err)
+	}
+
+	// Failure case: unreachable endpoint
+	pBroken := NewGenericLLMProvider("broken", contract.ProviderConfig{
+		BaseURL: "http://127.0.0.1:54321/unreachable",
+	})
+	if err := pBroken.Ping(context.Background()); err == nil {
+		t.Errorf("Expected ping to fail for unreachable URL, got nil")
+	}
+
+	// Failure case: invalid URL syntax
+	pInvalidURL := NewGenericLLMProvider("invalid", contract.ProviderConfig{
+		BaseURL: "http://\x7f",
+	})
+	if err := pInvalidURL.Ping(context.Background()); err == nil {
+		t.Errorf("Expected ping to fail for invalid URL, got nil")
+	}
+}
+
+// Test 2.7: Nil config returns empty registry
+func TestRegistry_NilConfig(t *testing.T) {
+	reg := NewRegistryFromConfig(nil)
+	if reg == nil {
+		t.Fatalf("Expected non-nil registry")
+	}
+	if len(reg.All()) != 0 {
+		t.Errorf("Expected 0 providers for nil config, got %d", len(reg.All()))
 	}
 }

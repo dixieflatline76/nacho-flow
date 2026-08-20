@@ -49,6 +49,40 @@ func TestSanitizer(t *testing.T) {
 	if firstPart["type"] != "text" {
 		t.Errorf("Expected remaining part to be text, got %v", firstPart["type"])
 	}
+
+	// Case 3: Invalid JSON input
+	out3, mod3 := sanitizer.SanitizePayload([]byte("invalid json"), false)
+	if mod3 || string(out3) != "invalid json" {
+		t.Errorf("Expected invalid JSON to pass through unmodified")
+	}
+
+	// Case 4: Non-array or empty messages
+	_, mod4 := sanitizer.SanitizePayload([]byte(`{"messages": []}`), false)
+	if mod4 {
+		t.Errorf("Expected empty messages to pass through unmodified")
+	}
+
+	// Case 5: Message with only image parts -> gets sanitized to empty string content
+	allImageJSON := `{"messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "http://example.com/img.png"}}]}]}`
+	out5, mod5 := sanitizer.SanitizePayload([]byte(allImageJSON), false)
+	if !mod5 {
+		t.Fatalf("Expected all-image content to be modified")
+	}
+	var parsed5 map[string]interface{}
+	json.Unmarshal(out5, &parsed5)
+	msgs5 := parsed5["messages"].([]interface{})
+	firstMsg5 := msgs5[0].(map[string]interface{})
+	if firstMsg5["content"] != "" {
+		t.Errorf("Expected empty string content when all images stripped, got %v", firstMsg5["content"])
+	}
+
+	// Case 6: Messages containing non-map items or parts containing raw strings
+	mixedJSON := `{"messages": ["non-map-msg", {"role": "user"}, {"role": "user", "content": ["raw-part-string"]}]}`
+	out6, mod6 := sanitizer.SanitizePayload([]byte(mixedJSON), false)
+	if mod6 {
+		t.Errorf("Expected mixed non-image payload to not be modified")
+	}
+	_ = out6
 }
 
 // BenchmarkSanitizer measures image payload stripping performance.

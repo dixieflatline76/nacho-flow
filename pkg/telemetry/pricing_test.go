@@ -146,3 +146,37 @@ func TestPricingOracle_AtomicSwap_Race(t *testing.T) {
 	close(stopChan)
 	wg.Wait()
 }
+
+// Test background sync ticker and context cancellation
+func TestPricingOracle_BackgroundSync(t *testing.T) {
+	oracle := NewPricingOracle()
+	provider := &mockPricingProvider{
+		name: "openrouter",
+		prices: map[string]ModelPricing{
+			"model-sync": {PromptCostPerMillion: 1.5, CompletionCostPerMillion: 3.0},
+		},
+	}
+	oracle.RegisterProvider(provider)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	oracle.StartBackgroundSync(ctx, 10*time.Millisecond)
+
+	// Allow ticker to fire at least once
+	time.Sleep(25 * time.Millisecond)
+	cancel()
+	time.Sleep(10 * time.Millisecond)
+
+	price, found := oracle.GetPrice("openrouter", "model-sync")
+	if !found || price.PromptCostPerMillion != 1.5 {
+		t.Errorf("Expected price to be synced in background, got found=%v, price=%+v", found, price)
+	}
+}
+
+// Test CalculateCost when price is not found returns 0.0
+func TestPricingOracle_CalculateCost_NotFound(t *testing.T) {
+	oracle := NewPricingOracle()
+	cost := oracle.CalculateCost("unknown", "unknown-model", 1000, 1000)
+	if cost != 0.0 {
+		t.Errorf("Expected 0.0 cost for unknown model, got %f", cost)
+	}
+}

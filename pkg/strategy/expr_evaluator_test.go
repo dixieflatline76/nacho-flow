@@ -77,6 +77,46 @@ func TestFullRooCodeAgentTurnSequence(t *testing.T) {
 	if r4.Name != "Local ROCm GPU" {
 		t.Errorf("Turn 4 expected 'Local ROCm GPU', got '%s'", r4.Name)
 	}
+
+	// Turn 5: Fallback when no tier matches
+	evalFallbackOnly, _ := NewExprEvaluator([]contract.Tier{
+		{Name: "Strict Tier", When: "Tokens == 999999"},
+	}, defaultTier)
+	r5, _ := evalFallbackOnly.SelectTier(contract.RequestContext{Tokens: 100})
+	if r5.Name != "Fallback" {
+		t.Errorf("Turn 5 expected 'Fallback', got '%s'", r5.Name)
+	}
+}
+
+// Test compile error with invalid expr syntax
+func TestExprEvaluator_InvalidExprSyntax_ReturnsError(t *testing.T) {
+	tiers := []contract.Tier{
+		{Name: "Bad Tier", When: "Tokens <<< 100"},
+	}
+	_, err := NewExprEvaluator(tiers, contract.Tier{Name: "Default"})
+	if err == nil {
+		t.Fatalf("Expected error for invalid expr syntax, got nil")
+	}
+}
+
+// Test tier with empty When and non-boolean expr result
+func TestExprEvaluator_EmptyWhenAndNonBoolResult(t *testing.T) {
+	tiers := []contract.Tier{
+		{Name: "Empty When", When: ""},
+		{Name: "String Result", When: "'not_a_boolean'"},
+	}
+	eval, err := NewExprEvaluator(tiers, contract.Tier{Name: "DefaultFallback"})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	result, err := eval.SelectTier(contract.RequestContext{Tokens: 100})
+	if err != nil {
+		t.Fatalf("Unexpected error during select: %v", err)
+	}
+	if result.Name != "DefaultFallback" {
+		t.Errorf("Expected fallback to DefaultFallback, got '%s'", result.Name)
+	}
 }
 
 // BenchmarkExprEvaluator measures nanosecond tier evaluation speed.

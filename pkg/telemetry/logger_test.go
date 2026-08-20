@@ -124,4 +124,56 @@ func TestLogger_ContextEnrichment(t *testing.T) {
 	if !strings.Contains(out, "model=qwen2.5-coder") {
 		t.Errorf("expected model=qwen2.5-coder in log line, got: %s", out)
 	}
+
+	// Test FromContext with nil logger and empty context
+	emptyLogger := FromContext(context.Background(), nil)
+	if emptyLogger == nil {
+		t.Errorf("expected non-nil default logger from empty context")
+	}
+}
+
+// Test InitLogger across interactive and background modes
+func TestInitLogger_AllModes(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 1. Interactive mode with custom dir
+	logger1, closer1 := InitLogger(true, tempDir, slog.LevelInfo, nil)
+	if logger1 == nil || closer1 == nil {
+		t.Fatalf("Expected non-nil logger and closer in interactive mode")
+	}
+	_ = closer1.Close()
+
+	// 2. Service mode with mock service logger
+	mockSvc := &mockServiceLogger{}
+	logger2, closer2 := InitLogger(false, "", slog.LevelWarn, mockSvc)
+	if logger2 == nil || closer2 == nil {
+		t.Fatalf("Expected non-nil logger and closer in service mode")
+	}
+	_ = closer2.Close()
+
+	// 3. Fallback stderr mode when service logger is nil
+	logger3, closer3 := InitLogger(false, "", slog.LevelError, nil)
+	if logger3 == nil || closer3 == nil {
+		t.Fatalf("Expected non-nil fallback logger")
+	}
+	_ = closer3.Close()
+}
+
+// Test serviceLoggerHandler WithAttrs and WithGroup
+func TestServiceLogger_WithAttrsAndWithGroup(t *testing.T) {
+	mockSvc := &mockServiceLogger{}
+	logger := NewServiceLogger(mockSvc, slog.LevelInfo)
+
+	loggerWithAttr := logger.With(slog.String("component", "gateway"))
+	loggerWithGroup := loggerWithAttr.WithGroup("subgroup")
+
+	loggerWithGroup.Info("testing nested group attributes", slog.Int("worker", 4))
+
+	if len(mockSvc.infos) != 1 {
+		t.Fatalf("Expected 1 info log in service logger, got %d", len(mockSvc.infos))
+	}
+	msg := mockSvc.infos[0]
+	if !strings.Contains(msg, "component=gateway") {
+		t.Errorf("Expected component=gateway in log output, got: %s", msg)
+	}
 }

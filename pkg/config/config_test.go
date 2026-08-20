@@ -243,3 +243,101 @@ providers:
 		t.Errorf("Expected AuthToken 'sk-fallback-env-token', got '%s'", cfg.AuthToken)
 	}
 }
+
+// Test 1.7: Non-existent config path returns error
+func TestConfig_NonExistentPath_ReturnsError(t *testing.T) {
+	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.yaml"))
+	if err == nil {
+		t.Fatalf("Expected error for non-existent config path, got nil")
+	}
+	if !strings.Contains(err.Error(), "could not find config.yaml") {
+		t.Errorf("Expected error to mention could not find config.yaml, got: %v", err)
+	}
+}
+
+// Test 1.8: Malformed YAML returns parse error
+func TestConfig_MalformedYAML_ReturnsError(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	if err := os.WriteFile(configPath, []byte("port: [invalid yaml syntax"), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatalf("Expected error for malformed YAML, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to parse YAML config") {
+		t.Errorf("Expected error to mention failed to parse YAML config, got: %v", err)
+	}
+}
+
+// Test 1.9: Empty providers map returns error
+func TestConfig_EmptyProviders_ReturnsError(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	if err := os.WriteFile(configPath, []byte("port: 8000\nproviders: {}\n"), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatalf("Expected error for empty providers, got nil")
+	}
+	if !strings.Contains(err.Error(), "at least one provider must be defined") {
+		t.Errorf("Expected error to mention at least one provider must be defined, got: %v", err)
+	}
+}
+
+// Test 1.10: Default tier referencing unknown provider returns error
+func TestConfig_DefaultTierUnknownProvider_ReturnsError(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 8000
+providers:
+  local:
+    base_url: "http://127.0.0.1:11434/v1"
+default_tier:
+  name: "Fallback"
+  model: "qwen2.5"
+  provider: "unknown_fallback_provider"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatalf("Expected error for default_tier unknown provider, got nil")
+	}
+	if !strings.Contains(err.Error(), "default_tier references unknown provider") {
+		t.Errorf("Expected error to mention default_tier references unknown provider, got: %v", err)
+	}
+}
+
+// Test 1.11: Default port 8000 assigned when port is omitted
+func TestConfig_DefaultPortAssignment(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+providers:
+  local:
+    base_url: "http://127.0.0.1:11434/v1"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Port != 8000 {
+		t.Errorf("Expected default port 8000, got %d", cfg.Port)
+	}
+}

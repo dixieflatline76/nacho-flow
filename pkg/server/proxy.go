@@ -17,6 +17,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
+	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
@@ -61,6 +62,18 @@ func NewServerWithTelemetryAndRegistry(
 	reg *provider.Registry,
 	logger *slog.Logger,
 ) *Server {
+	if cfg == nil {
+		cfg = &contract.Config{}
+	}
+	if class == nil {
+		class = router.NewClassifier()
+	}
+	if san == nil {
+		san = router.NewSanitizer()
+	}
+	if eval == nil {
+		eval, _ = strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	}
 	if oracle == nil {
 		oracle = telemetry.NewPricingOracle()
 	}
@@ -136,6 +149,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Only process chat completions / completions endpoints for routing
 	if !strings.HasSuffix(r.URL.Path, "/chat/completions") && !strings.HasSuffix(r.URL.Path, "/completions") {
 		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
