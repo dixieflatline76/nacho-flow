@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -84,6 +85,22 @@ func TestServer_Auth_ValidXAPIKeyHeader_Allowed(t *testing.T) {
 	}
 }
 
+func TestServer_Auth_ValidApiKeyLowerHeader_Allowed(t *testing.T) {
+	srv, upstream := createAuthTestServer("sk-my-secret-key")
+	defer upstream.Close()
+
+	payload := []byte(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"hello"}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(payload))
+	req.Header.Set("api-key", "sk-my-secret-key")
+
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 OK for valid api-key header, got %d", w.Code)
+	}
+}
+
 func TestServer_Auth_InvalidBearerToken_Unauthorized(t *testing.T) {
 	srv, upstream := createAuthTestServer("sk-my-secret-key")
 	defer upstream.Close()
@@ -104,18 +121,91 @@ func TestServer_Auth_InvalidBearerToken_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestServer_Auth_MissingAuthorization_Unauthorized(t *testing.T) {
-	srv, upstream := createAuthTestServer("sk-my-secret-key")
+func TestServer_Auth_CaseSensitivity_Unauthorized(t *testing.T) {
+	srv, upstream := createAuthTestServer("sk-MySecretKey")
 	defer upstream.Close()
 
 	payload := []byte(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"hello"}]}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer sk-mysecretkey") // wrong casing
 
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
 	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("Expected status 401 Unauthorized for missing token, got %d", w.Code)
+		t.Fatalf("Expected status 401 for case-mismatched token, got %d", w.Code)
+	}
+}
+
+func TestServer_Auth_MalformedAuthHeader_Unauthorized(t *testing.T) {
+	srv, upstream := createAuthTestServer("sk-my-secret-key")
+	defer upstream.Close()
+
+	testCases := []string{
+		"Bearer",
+		"Bearer ",
+		"Basic dXNlcjpwYXNz",
+		"Token sk-my-secret-key",
+		"",
+	}
+
+	for _, tc := range testCases {
+		payload := []byte(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"hello"}]}`)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(payload))
+		if tc != "" {
+			req.Header.Set("Authorization", tc)
+		}
+
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401 for auth header '%s', got %d", tc, w.Code)
+		}
+	}
+}
+
+func TestServer_Auth_StatsEndpoint_Protected(t *testing.T) {
+	srv, upstream := createAuthTestServer("sk-my-secret-key")
+	defer upstream.Close()
+
+	// 1. Without auth -> 401
+	req := httptest.NewRequest(http.MethodGet, "/v1/stats", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 Unauthorized for /v1/stats without auth, got %d", w.Code)
+	}
+
+	// 2. With valid auth -> 200
+	reqValid := httptest.NewRequest(http.MethodGet, "/v1/stats", nil)
+	reqValid.Header.Set("Authorization", "Bearer sk-my-secret-key")
+	wValid := httptest.NewRecorder()
+	srv.ServeHTTP(wValid, reqValid)
+	if wValid.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK for /v1/stats with valid auth, got %d", wValid.Code)
+	}
+}
+
+func TestServer_Auth_ModelsEndpoint_Protected(t *testing.T) {
+	srv, upstream := createAuthTestServer("sk-my-secret-key")
+	defer upstream.Close()
+
+	// 1. Without auth -> 401
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 Unauthorized for /v1/models without auth, got %d", w.Code)
+	}
+
+	// 2. With valid auth -> 200
+	reqValid := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	reqValid.Header.Set("Authorization", "Bearer sk-my-secret-key")
+	wValid := httptest.NewRecorder()
+	srv.ServeHTTP(wValid, reqValid)
+	if wValid.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK for /v1/models with valid auth, got %d", wValid.Code)
 	}
 }
 
@@ -146,4 +236,40 @@ func TestServer_HealthCheck_AlwaysPublic(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected /health to remain public (200 OK) even when AuthToken is set, got %d", w.Code)
 	}
+}
+
+func TestServer_Auth_HighConcurrency_Race(t *testing.T) {
+	srv, upstream := createAuthTestServer("sk-concurrent-key")
+	defer upstream.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+		// Worker 1: Valid auth
+		go func() {
+			defer wg.Done()
+			payload := []byte(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"ping"}]}`)
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(payload))
+			req.Header.Set("Authorization", "Bearer sk-concurrent-key")
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Errorf("Expected 200 OK under concurrency, got %d", w.Code)
+			}
+		}()
+
+		// Worker 2: Invalid auth
+		go func() {
+			defer wg.Done()
+			payload := []byte(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"ping"}]}`)
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(payload))
+			req.Header.Set("Authorization", "Bearer bad-key")
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+			if w.Code != http.StatusUnauthorized {
+				t.Errorf("Expected 401 Unauthorized under concurrency, got %d", w.Code)
+			}
+		}()
+	}
+	wg.Wait()
 }
