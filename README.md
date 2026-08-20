@@ -140,17 +140,16 @@ In VS Code / Antigravity **Roo Code Settings**:
 
 ---
 
-## 🗺️ Vision & Future Roadmap
+## 🗺️ Vision & Roadmap
 
-* **🤖 Autonomous "Agent-on-Agent" Auto-Tuning**: A built-in optimizer agent (`nacho-flow tune`) that analyzes live routing telemetry, detects prompt retry patterns, and synthesizes/tunes `expr` rules in a closed loop.
-* **🛡️ 100% Air-Gapped Enterprise Deployment**: Ultra-lightweight distroless Docker container (< 15MB) with zero vulnerabilities, deploying as a private Kubernetes pod / service mesh sidecar.
-* **🔍 Data Loss Prevention (DLP) Sanitizer**: Inline secret scrubbing (API keys, credentials, PII) in `pkg/router/sanitizer.go` before prompts leave the private perimeter.
+See our comprehensive **[Product & Commercial Roadmap (ROADMAP.md)](ROADMAP.md)** for detailed phase milestones spanning the open-source data plane, VS Code companion extension, remote fleet protocol, and commercial SaaS control plane.
 
 ---
 
 ## 📚 Documentation
 
 For in-depth guides, benchmark data, and architecture deep-dives:
+- **[Product & Commercial Roadmap](ROADMAP.md)**: Open-source data plane, IDE extension, fleet protocol, and SaaS control plane.
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
 - **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**32,254+ r/s up to 1,000 workers**) on AMD Ryzen hardware.
 - **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules.

@@ -27,9 +27,7 @@ config.tmp.*.yaml
 *.bak.*
 config.yaml.bak.*
 
-# Private Business Strategy & Roadmaps
-ROADMAP.md
-*roadmap*.md
+# Private Business Strategy
 docs/business/
 
 # IDEs & OS
