@@ -448,6 +448,7 @@ func TestProxy_DynamicPricingSavings_CalculatedFromOracle(t *testing.T) {
 		t.Fatalf("Expected 200 OK, got %d", rec.Code)
 	}
 
+	tracker.Flush()
 	stats := tracker.GetStats()
 	// 1000 tokens saved on local GPU @ $3.00/1M = $0.003
 	if stats.EstimatedCostSavedUSD <= 0 {
