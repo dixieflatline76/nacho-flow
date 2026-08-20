@@ -531,6 +531,236 @@ func TestProxy_AuthHeaders(t *testing.T) {
 	if srv.authenticateClient(req3) {
 		t.Errorf("Expected authenticateClient to fail with wrong-key")
 	}
+
+	// Case 4: Bearer token valid and invalid
+	req4 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
+	req4.Header.Set("Authorization", "Bearer sk-my-secret-key")
+	if !srv.authenticateClient(req4) {
+		t.Errorf("Expected valid bearer token to succeed")
+	}
+
+	req5 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
+	req5.Header.Set("Authorization", "Bearer wrong-token")
+	if srv.authenticateClient(req5) {
+		t.Errorf("Expected invalid bearer token to fail")
+	}
+}
+
+// Test Upstream Error Handler (502 Bad Gateway when upstream server down)
+func TestProxy_UpstreamErrorHandler(t *testing.T) {
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"dead_server": {
+				BaseURL: "http://127.0.0.1:54321/v1", // Dead port
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Dead Tier", Model: "test", Provider: "dead_server", When: "true"},
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hello"}]}`))
+
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("Expected 502 Bad Gateway for dead upstream, got %d", rec.Code)
+	}
+}
+
+// Test Reasoning Effort and Tier 3 / Tier 4 names
+func TestProxy_ReasoningEffortAndTierMetadata(t *testing.T) {
+	var capturedBody []byte
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"cmpl-reason","choices":[{"message":{"role":"assistant","content":"Done"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock_cloud": {
+				BaseURL: mockUpstream.URL,
+				Type:    "cloud",
+				APIKey:  "test-key",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:            "Tier 3 Reasoning",
+				Model:           "deepseek-r1",
+				Provider:        "mock_cloud",
+				ReasoningEffort: "high",
+				When:            "true",
+			},
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"analyze complex algorithm"}]}`))
+
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d", rec.Code)
+	}
+	if !strings.Contains(string(capturedBody), `"reasoning_effort":"high"`) {
+		t.Errorf("Expected reasoning_effort to be injected into payload, got: %s", string(capturedBody))
+	}
+}
+
+// Test Invalid Target URL returns 500
+func TestProxy_InvalidTargetURL_Returns500(t *testing.T) {
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"bad_url": {
+				BaseURL: "://invalid-url-syntax",
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Bad URL Tier", Model: "test", Provider: "bad_url", When: "true"},
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hello"}]}`))
+
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("Expected 500 Internal Server Error for invalid URL syntax, got %d", rec.Code)
+	}
+}
+
+type errReader struct{}
+
+func (errReader) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("simulated read error")
+}
+
+// Test request body read failure returns 400
+func TestProxy_RequestBodyReadError(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", errReader{})
+
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 Bad Request on read error, got %d", rec.Code)
+	}
+}
+
+type errEvaluator struct{}
+
+func (errEvaluator) SelectTier(reqCtx contract.RequestContext) (contract.Tier, error) {
+	return contract.Tier{}, fmt.Errorf("evaluator failed")
+}
+
+// Test evaluator error falls back to DefaultTier
+func TestProxy_EvaluatorError_FallbackToDefault(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"fallback ok"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock_p": {BaseURL: mockUpstream.URL, Type: "local"},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Fallback Tier",
+			Model:    "test-model",
+			Provider: "mock_p",
+		},
+	}
+
+	srv := NewServer(cfg, errEvaluator{}, nil, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hello"}]}`))
+
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected 200 OK from fallback tier, got %d", rec.Code)
+	}
+	if rec.Header().Get("x-nacho-router-tier") != "Default Fallback Tier" {
+		t.Errorf("Expected Default Fallback Tier in header, got '%s'", rec.Header().Get("x-nacho-router-tier"))
+	}
+}
+
+// Test differential cost savings on cloud tier
+func TestProxy_CloudPricingDifferential(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	mockORServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"data": [
+				{"id": "anthropic/claude-3.5-sonnet", "pricing": {"prompt": "0.000003", "completion": "0.000015"}},
+				{"id": "cheap-cloud", "pricing": {"prompt": "0.000001", "completion": "0.000002"}}
+			]
+		}`))
+	}))
+	defer mockORServer.Close()
+
+	oracle := telemetry.NewPricingOracle()
+	orProvider := telemetry.NewOpenRouterPricingProviderWithURL(mockORServer.URL, "test-key")
+	oracle.RegisterProvider(orProvider)
+	_ = oracle.Sync(context.Background())
+
+	tracker := telemetry.NewStatsTracker(100)
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"cloud_gw": {
+				BaseURL: mockUpstream.URL,
+				Type:    "cloud",
+				APIKey:  "cloud-key",
+			},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier 2 Coder", Model: "cheap-cloud", Provider: "cloud_gw", When: "true"},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	srv := NewServerWithTelemetry(cfg, evaluator, nil, nil, oracle, tracker, nil)
+
+	// Send 10,000 tokens prompt -> saved (3.00 - 1.00) * 10,000 / 1M = $0.02
+	rec := httptest.NewRecorder()
+	longPrompt := fmt.Sprintf(`{"model":"test","messages":[{"role":"user","content":"%s"}]}`, strings.Repeat("abcd ", 10000))
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(longPrompt))
+
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d", rec.Code)
+	}
+
+	tracker.Flush()
+	stats := tracker.GetStats()
+	if stats.EstimatedCostSavedUSD <= 0 {
+		t.Errorf("Expected differential cost savings > 0, got %f", stats.EstimatedCostSavedUSD)
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -103,6 +103,37 @@ func TestClassifier_ToolsDetection(t *testing.T) {
 	}
 }
 
+// Test message array edge cases (non-map messages, missing content, non-map parts)
+func TestClassifier_MessageStructureEdgeCases(t *testing.T) {
+	classifier := NewClassifier()
+	jsonBody := `{
+		"model": "gpt-4",
+		"messages": [
+			"invalid_string_message",
+			{"role": "system"},
+			{
+				"role": "user",
+				"content": [
+					"invalid_string_part",
+					{"type": "image_url"},
+					{"type": "text", "text": "hello world"}
+				]
+			}
+		]
+	}`
+
+	ctx, err := classifier.Classify([]byte(jsonBody))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !ctx.HasImages {
+		t.Errorf("Expected HasImages to be true")
+	}
+	if ctx.Prompt != "hello world" {
+		t.Errorf("Expected prompt 'hello world', got '%s'", ctx.Prompt)
+	}
+}
+
 // BenchmarkClassifier measures request parsing and keyword extraction speed per operation.
 func BenchmarkClassifier(b *testing.B) {
 	classifier := NewClassifier()

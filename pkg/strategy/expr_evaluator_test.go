@@ -119,6 +119,26 @@ func TestExprEvaluator_EmptyWhenAndNonBoolResult(t *testing.T) {
 	}
 }
 
+// Test tier where expr returns a runtime error (e.g. index out of range)
+func TestExprEvaluator_RuntimeEvaluationError(t *testing.T) {
+	tiers := []contract.Tier{
+		{Name: "IndexOutOfRange", When: "Keywords[99] == 'test'"},
+	}
+	eval, err := NewExprEvaluator(tiers, contract.Tier{Name: "DefaultFallback"})
+	if err != nil {
+		t.Fatalf("Unexpected compilation error: %v", err)
+	}
+
+	// Passing empty Keywords causes index out of range error during expr.Run
+	result, err := eval.SelectTier(contract.RequestContext{Keywords: []string{}})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Name != "DefaultFallback" {
+		t.Errorf("Expected fallback to DefaultFallback on runtime error, got '%s'", result.Name)
+	}
+}
+
 // BenchmarkExprEvaluator measures nanosecond tier evaluation speed.
 func BenchmarkExprEvaluator(b *testing.B) {
 	tiers := []contract.Tier{

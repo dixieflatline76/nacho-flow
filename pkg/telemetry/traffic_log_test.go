@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -143,5 +144,46 @@ func TestTrafficLogger_ReadRecordsAndClosedLogger(t *testing.T) {
 	}
 	if len(missingRecords) != 0 {
 		t.Errorf("Expected 0 records for missing file, got %d", len(missingRecords))
+	}
+}
+
+// Test 1.4: Constructor defaults and error cases
+func TestTrafficLogger_ConstructorAndReadRecordEdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Default path and buffer size
+	logger, err := NewTrafficLogger(filepath.Join(tempDir, "default_traffic.jsonl"), 0)
+	if err != nil {
+		t.Fatalf("Failed to create logger with default buffer size: %v", err)
+	}
+	_ = logger.Close()
+
+	// MkdirAll error: parent is a file
+	parentFile := filepath.Join(tempDir, "parent_file")
+	_ = os.WriteFile(parentFile, []byte("data"), 0600)
+	_, err = NewTrafficLogger(filepath.Join(parentFile, "sub", "log.jsonl"), 10)
+	if err == nil {
+		t.Errorf("Expected error creating logger under regular file parent")
+	}
+
+	// ReadRecords error when reading a directory
+	_, err = ReadRecords(tempDir, 10)
+	if err == nil {
+		t.Errorf("Expected error calling ReadRecords on a directory")
+	}
+
+	// ReadRecords with blank lines and corrupt lines
+	corruptLogPath := filepath.Join(tempDir, "corrupt_lines.jsonl")
+	corruptContent := "\n\n{\"tokens\": 500}\nnot_valid_json\n{\"tokens\": 600}\n\n"
+	if err := os.WriteFile(corruptLogPath, []byte(corruptContent), 0600); err != nil {
+		t.Fatalf("Failed to write corrupt log: %v", err)
+	}
+
+	records, err := ReadRecords(corruptLogPath, 0)
+	if err != nil {
+		t.Fatalf("Unexpected error reading corrupt lines: %v", err)
+	}
+	if len(records) != 2 {
+		t.Errorf("Expected 2 valid records parsed, got %d", len(records))
 	}
 }

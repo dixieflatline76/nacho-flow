@@ -83,6 +83,14 @@ func TestSanitizer(t *testing.T) {
 		t.Errorf("Expected mixed non-image payload to not be modified")
 	}
 	_ = out6
+
+	// Case 7: Message with missing content key alongside sanitized image
+	missingContentWithImage := `{"messages": [{"role": "system"}, {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "http://example.com/img.png"}}]}]}`
+	out7, mod7 := sanitizer.SanitizePayload([]byte(missingContentWithImage), false)
+	if !mod7 {
+		t.Errorf("Expected modification when image present")
+	}
+	_ = out7
 }
 
 // BenchmarkSanitizer measures image payload stripping performance.

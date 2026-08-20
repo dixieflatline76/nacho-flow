@@ -169,3 +169,34 @@ func TestDiskStore_MkdirError(t *testing.T) {
 		t.Fatalf("Expected error for mkdir under regular file, got nil")
 	}
 }
+
+// Test 4.8: Load returns read error when target is a directory
+func TestDiskStore_Load_DirectoryError(t *testing.T) {
+	tempDir := t.TempDir()
+	store := &DiskStore{
+		filePath: tempDir,
+	}
+
+	_, err := store.Load()
+	if err == nil {
+		t.Fatalf("Expected read error loading directory as file, got nil")
+	}
+}
+
+// Test 4.9: Save returns rename error when destination is a non-empty directory
+func TestDiskStore_Save_RenameToDirectoryError(t *testing.T) {
+	tempDir := t.TempDir()
+	targetDir := filepath.Join(tempDir, "existing_dir")
+	if err := os.MkdirAll(filepath.Join(targetDir, "nested"), 0750); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+
+	store := &DiskStore{
+		filePath: targetDir,
+	}
+
+	err := store.Save(telemetry.StatsSnapshot{})
+	if err == nil {
+		t.Fatalf("Expected error saving when destination is a non-empty directory, got nil")
+	}
+}
