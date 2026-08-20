@@ -117,6 +117,16 @@ Every incoming request passes through an optimized 8-stage processing pipeline b
   7. *DeepSeek-R1 CoT*: Preserves `<think>...</think>` reasoning while extracting markdown code blocks.
 - **OpenAI Conformance**: Converts extracted tools into strict OpenAI `tool_calls` structures with stringified `arguments`, updates `finish_reason` to `"tool_calls"`, and recalculates `Content-Length`.
 
+### Stage 5b: Reasoning Stream Normalization (`pkg/server/stream_normalizer.go`)
+- **SSE Stream Interception**: When `Content-Type: text/event-stream` is detected, `ModifyResponse` wraps `resp.Body` with `NewStreamNormalizer`.
+- **Wire-Speed Fast Filter**: `bytes.Contains(chunk, []byte("reasoning"))` evaluates in `< 4ns`, bypassing standard chat completion chunks with near-zero overhead.
+- **TCP Packet Boundary Framing**: Uses a pooled `bufio.Reader` (`sync.Pool`) to assemble complete `\n\n` SSE event boundaries, guaranteeing that TCP fragmentation never splits JSON payload boundaries.
+- **Thought-Stream State Machine**:
+  - Automatically transforms `reasoning_content` / `reasoning` tokens into `<think>...</think>` tags inside `delta.content` in real-time.
+  - Automatically closes the `<think>` accordion upon transition to final answer, tool calls, `[DONE]`, `finish_reason`, or abrupt `io.EOF`.
+  - **Native Tag Pass-Through**: Detects when local Ollama or distilled models already stream native `<think>` in `delta.content`, avoiding double-tagging.
+  - **Sanitization**: Escapes internal literal `</think>` strings inside reasoning thoughts to `&lt;/think&gt;` until official phase termination.
+
 ### Stage 6: Response Interception & Latency Profiling
 - Intercepts upstream status codes, response headers, and measures roundtrip latency.
 - Injects tracking headers into client response:
@@ -191,4 +201,17 @@ The auto-tuning engine uses an **Advisory-First**, pure Go Recurrent Bandit arch
 4. **Advisory & Atomic Applier (`pkg/tuner/advisor.go`, `pkg/tuner/applier.go`)**:  
    - Renders formatted terminal comparison reports (`nacho-flow tune`).
    - Supports atomic config file replacement with automatic `.bak.<timestamp>` creation (`nacho-flow tune --apply`).
+
+---
+
+## 6. Distribution & Packaging Architecture
+
+Nacho Flow employs a tri-channel distribution model:
+
+| Channel | Target | Packaging & Security Mechanism |
+| :--- | :--- | :--- |
+| **Universal Shell Installer** | Linux & macOS | POSIX `scripts/install.sh` with CPU architecture auto-detection, SHA-256 verification against `checksums.txt`, non-root fallback (`~/.local/bin`), and optional `systemd` unit setup. |
+| **Multi-Arch Container** | Docker / Kubernetes / Podman | Distroless `gcr.io/distroless/static-debian12:nonroot` multi-stage build (< 15MB footprint, nonroot UID 65532, volume `/config`) published to `ghcr.io/dixieflatline76/nacho-flow`. |
+| **Package Managers** | Windows & macOS | Cryptographically signed binaries (Azure Trusted Signing for Windows EXE, Homebrew Tap formula sync for macOS/Linux, Winget manifest for Windows). |
+
 

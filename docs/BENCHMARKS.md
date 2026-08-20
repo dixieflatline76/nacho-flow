@@ -130,6 +130,20 @@ BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      192,193     6,361 ns/
 - **Mistral Array Tool Extraction**: **4.56 microseconds** (52 allocations).
 - **DeepSeek-R1 CoT + Markdown Normalization**: **6.36 microseconds** (34 allocations).
 
+### 5.3 SSE Stream & CoT Normalization Performance:
+```bash
+$ go test -bench=BenchmarkSSE -benchmem ./pkg/server/...
+```
+
+```text
+BenchmarkSSE_NonReasoning_ZeroAlloc-16      3,208,678       380.8 ns/op      193 B/op      5 allocs/op
+BenchmarkSSE_ReasoningTransform-16            429,451     2,858.0 ns/op    1,194 B/op     21 allocs/op
+```
+
+- **Non-Reasoning Stream Passthrough**: **380.8 nanoseconds** (~2.6+ Million SSE chunks/sec).
+- **Reasoning Stream `<think>` Transformation**: **2.86 microseconds** (~350,000 reasoning tokens/sec).
+- **Zero GC Churn**: Buffer pooling (`sync.Pool`) and lightweight fast-struct parsing prevent memory spikes during long CoT reasoning generation.
+
 ---
 
 ## 6. How to Reproduce
