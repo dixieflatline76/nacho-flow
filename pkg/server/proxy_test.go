@@ -1,13 +1,17 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -382,5 +386,100 @@ func TestProxy_LocalModel_MarkdownToolCallNormalization(t *testing.T) {
 	fn := firstCall["function"].(map[string]interface{})
 	if fn["name"] != "read_file" {
 		t.Errorf("Expected function name 'read_file', got '%s'", fn["name"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// End-to-End Proxy Micro-Benchmarks (Testing Core HTTP Pipeline)
+// ---------------------------------------------------------------------------
+
+func BenchmarkProxy_ChatCompletions_RawPassThrough(b *testing.B) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"cmpl-123","choices":[{"message":{"role":"assistant","content":"Standard code refactoring response."}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"local_gpu": {BaseURL: mockUpstream.URL, Type: "local"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Local GPU", Model: "qwen2.5-coder:14b", Provider: "local_gpu", When: "Tokens < 16000"},
+		},
+		DefaultTier: contract.Tier{Name: "Default", Model: "qwen2.5-coder:14b", Provider: "local_gpu"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	oracle := telemetry.NewPricingOracle()
+	tracker := telemetry.NewStatsTracker(10000)
+	reg := provider.NewRegistryFromConfig(cfg)
+	nullLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, reg, nullLogger)
+
+	reqPayload := []byte(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"refactor main.go"}]}`)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(reqPayload))
+		srv.ServeHTTP(rec, req)
+	}
+}
+
+func BenchmarkProxy_ChatCompletions_ToolNormalization(b *testing.B) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "cmpl-tool",
+			"choices": [{
+				"finish_reason": "stop",
+				"message": {
+					"role": "assistant",
+					"content": "Searching codebase:\n` + "```json" + `\n{\"name\": \"search_code\", \"arguments\": {\"pattern\": \"atomic.Pointer\"}}\n` + "```" + `"
+				}
+			}]
+		}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"local_gpu": {BaseURL: mockUpstream.URL, Type: "local"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Local GPU", Model: "qwen2.5-coder:14b", Provider: "local_gpu", When: "Tokens < 16000"},
+		},
+		DefaultTier: contract.Tier{Name: "Default", Model: "qwen2.5-coder:14b", Provider: "local_gpu"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	oracle := telemetry.NewPricingOracle()
+	tracker := telemetry.NewStatsTracker(10000)
+	reg := provider.NewRegistryFromConfig(cfg)
+	nullLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, reg, nullLogger)
+
+	reqPayload := []byte(`{
+		"model": "nacho-hybrid",
+		"messages": [{"role": "user", "content": "find atomic pointer"}],
+		"tools": [{"type": "function", "function": {"name": "search_code"}}]
+	}`)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(reqPayload))
+		srv.ServeHTTP(rec, req)
 	}
 }

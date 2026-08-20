@@ -95,20 +95,40 @@ To measure the exact CPU cost of inbound authentication and on-the-fly multi-mod
 
 ---
 
-## 5. Go Micro-Benchmarks
+## 5. Go Micro-Benchmarks (Nanosecond & Allocation Precision)
 
-We ran micro-benchmarks targeting the core HTTP routing pipeline in isolation:
+We ran isolated Go micro-benchmarks targeting the core HTTP routing pipeline and the tool normalization engine using Go's standard `testing.B` harness:
 
+### 5.1 End-to-End Proxy Overhead:
 ```bash
-$ go test -bench=BenchmarkProxy_ChatCompletions_EndToEnd -benchmem ./pkg/server/...
+$ go test -bench=BenchmarkProxy_ChatCompletions -benchmem -run=^$ ./pkg/server/...
 ```
 
 ```text
-BenchmarkProxy_ChatCompletions_EndToEnd-16    6376    299,448 ns/op    90,368 B/op    306 allocs/op
+BenchmarkProxy_ChatCompletions_RawPassThrough-16       5955    186,649 ns/op    54,957 B/op    246 allocs/op
+BenchmarkProxy_ChatCompletions_ToolNormalization-16    5178    212,805 ns/op    62,357 B/op    359 allocs/op
 ```
 
-- **Per-request overhead**: ~299 µs ($0.29$ milliseconds).
-- **Allocations**: Clean struct reuse with zero GC stalls.
+- **Raw Pass-Through Latency**: **186.6 µs** (0.186 milliseconds).
+- **Tool Normalization Latency**: **212.8 µs** (0.212 milliseconds).
+- **Exact Compute Cost**: **+26.15 µs** (+14.0% overhead, +7.4 KB memory allocation per turn).
+
+### 5.2 Inner Tool Normalizer Performance by Model Format:
+```bash
+$ go test -bench=BenchmarkNormalize -benchmem ./pkg/router/...
+```
+
+```text
+BenchmarkNormalize_PureProse_FastBailout-16             49,999,582    23.55 ns/op       0 B/op     0 allocs/op
+BenchmarkNormalize_HermesXML_FullNormalization-16          481,904     2,436 ns/op    1,330 B/op    27 allocs/op
+BenchmarkNormalize_Mistral_ArrayCalls-16                   255,790     4,562 ns/op    2,574 B/op    52 allocs/op
+BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      192,193     6,361 ns/op    1,734 B/op    34 allocs/op
+```
+
+- **Non-Tool Fast Bailout**: **23.55 nanoseconds** (Zero heap allocations, 0 B/op).
+- **Hermes / Qwen XML Extraction**: **2.44 microseconds** (27 allocations).
+- **Mistral Array Tool Extraction**: **4.56 microseconds** (52 allocations).
+- **DeepSeek-R1 CoT + Markdown Normalization**: **6.36 microseconds** (34 allocations).
 
 ---
 
