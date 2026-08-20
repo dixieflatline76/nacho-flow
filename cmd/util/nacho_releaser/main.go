@@ -19,7 +19,7 @@ import (
 const (
 	repoOwner   = "dixieflatline76"
 	repoName    = "nacho-flow"
-	homebrewTap = "homebrew-spice"
+	homebrewTap = "homebrew-nacho-flow"
 	wingetRepo  = "winget-pkgs"
 )
 
@@ -127,7 +127,13 @@ func main() {
 	}
 	uploadAsset(ctx, client, release.GetID(), "checksums.txt")
 
-	// 4. Push Winget Manifests to fork
+	// 4. Push Homebrew Formula to dixieflatline76/homebrew-nacho-flow
+	if os.Getenv("NACHO_RELEASER_TOKEN") != "" || os.Getenv("GORELEASER_GITHUB_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "" {
+		log.Println("[nacho-releaser] Generating and pushing Homebrew formula...")
+		pushHomebrewFormula(ctx, client, version, hashes)
+	}
+
+	// 5. Push Winget Manifests to fork
 	if os.Getenv("WINGET_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "" {
 		log.Println("[nacho-releaser] Generating and pushing winget manifests...")
 		pushWingetManifests(ctx, client, version, winHash)
@@ -277,4 +283,124 @@ ManifestVersion: 1.5.0
 
 	// #nosec G706 - trusted calculated branch name
 	log.Printf("✅ Winget manifests pushed to branch '%s' for 1-click PR!", branchName)
+}
+
+func pushHomebrewFormula(ctx context.Context, client *github.Client, version string, hashes map[string]string) {
+	formulaPath := "Formula/nacho-flow.rb"
+	branch := "main"
+
+	darwinArm64Hash := hashes[fmt.Sprintf("nacho-flow-%s-darwin-arm64", version)]
+	darwinAmd64Hash := hashes[fmt.Sprintf("nacho-flow-%s-darwin-amd64", version)]
+	linuxAmd64Hash := hashes[fmt.Sprintf("nacho-flow-%s-linux-amd64", version)]
+	linuxArm64Hash := hashes[fmt.Sprintf("nacho-flow-%s-linux-arm64", version)]
+
+	if darwinArm64Hash == "" || darwinAmd64Hash == "" || linuxAmd64Hash == "" || linuxArm64Hash == "" {
+		log.Println("[nacho-releaser] Warning: Missing one or more binary hashes for Homebrew formula update")
+		return
+	}
+
+	formulaTmpl := `class NachoFlow < Formula
+  desc "High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs"
+  homepage "https://spicebox.dev"
+  version "{{.Version}}"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/dixieflatline76/nacho-flow/releases/download/v#{version}/nacho-flow-#{version}-darwin-arm64"
+      sha256 "{{.DarwinArm64}}"
+    end
+    on_intel do
+      url "https://github.com/dixieflatline76/nacho-flow/releases/download/v#{version}/nacho-flow-#{version}-darwin-amd64"
+      sha256 "{{.DarwinAmd64}}"
+    end
+  end
+
+  on_linux do
+    on_intel do
+      url "https://github.com/dixieflatline76/nacho-flow/releases/download/v#{version}/nacho-flow-#{version}-linux-amd64"
+      sha256 "{{.LinuxAmd64}}"
+    end
+    on_arm do
+      url "https://github.com/dixieflatline76/nacho-flow/releases/download/v#{version}/nacho-flow-#{version}-linux-arm64"
+      sha256 "{{.LinuxArm64}}"
+    end
+  end
+
+  def install
+    binary_name = "nacho-flow"
+    if OS.mac?
+      binary_name = Hardware::CPU.arm? ? "nacho-flow-#{version}-darwin-arm64" : "nacho-flow-#{version}-darwin-amd64"
+    elsif OS.linux?
+      binary_name = Hardware::CPU.arm? ? "nacho-flow-#{version}-linux-arm64" : "nacho-flow-#{version}-linux-amd64"
+    end
+
+    bin.install binary_name => "nacho-flow"
+  end
+
+  service do
+    run [opt_bin/"nacho-flow", "run"]
+    keep_alive true
+    log_path var/"log/nacho-flow.log"
+    error_log_path var/"log/nacho-flow.err.log"
+    working_dir var
+  end
+
+  test do
+    system "#{bin}/nacho-flow", "version"
+  end
+end
+`
+
+	data := struct {
+		Version     string
+		DarwinArm64 string
+		DarwinAmd64 string
+		LinuxAmd64  string
+		LinuxArm64  string
+	}{
+		Version:     version,
+		DarwinArm64: darwinArm64Hash,
+		DarwinAmd64: darwinAmd64Hash,
+		LinuxAmd64:  linuxAmd64Hash,
+		LinuxArm64:  linuxArm64Hash,
+	}
+
+	t, err := template.New("formula").Parse(formulaTmpl)
+	if err != nil {
+		log.Printf("[nacho-releaser] Failed to parse formula template: %v", err)
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		log.Printf("[nacho-releaser] Failed to execute formula template: %v", err)
+		return
+	}
+
+	fileContent, _, _, err := client.Repositories.GetContents(ctx, repoOwner, homebrewTap, formulaPath, &github.RepositoryContentGetOptions{Ref: branch})
+	commitMsg := fmt.Sprintf("chore: update Formula for v%s", version)
+
+	opts := &github.RepositoryContentFileOptions{
+		Message: github.String(commitMsg),
+		Content: buf.Bytes(),
+		Branch:  github.String(branch),
+	}
+	if err == nil && fileContent != nil {
+		opts.SHA = fileContent.SHA
+	}
+
+	if fileContent != nil {
+		_, _, err = client.Repositories.UpdateFile(ctx, repoOwner, homebrewTap, formulaPath, opts)
+	} else {
+		_, _, err = client.Repositories.CreateFile(ctx, repoOwner, homebrewTap, formulaPath, opts)
+	}
+
+	if err != nil {
+		log.Printf("[nacho-releaser] Failed to push Homebrew formula to %s/%s: %v", repoOwner, homebrewTap, err)
+		return
+	}
+
+	// #nosec G706 - trusted calculated repository name
+	log.Printf("✅ Homebrew formula updated successfully in %s/%s!", repoOwner, homebrewTap)
 }
