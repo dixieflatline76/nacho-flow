@@ -452,7 +452,84 @@ func TestProxy_DynamicPricingSavings_CalculatedFromOracle(t *testing.T) {
 	stats := tracker.GetStats()
 	// 1000 tokens saved on local GPU @ $3.00/1M = $0.003
 	if stats.EstimatedCostSavedUSD <= 0 {
-		t.Errorf("Expected positive USD cost savings calculated from oracle, got %f", stats.EstimatedCostSavedUSD)
+		t.Errorf("Expected positive EstimatedCostSavedUSD from real-time pricing oracle, got %f", stats.EstimatedCostSavedUSD)
+	}
+}
+
+// Test singleJoiningSlash all branches
+func TestProxy_SingleJoiningSlash(t *testing.T) {
+	cases := []struct {
+		a, b, expected string
+	}{
+		{"http://localhost:8000/", "/v1/chat", "http://localhost:8000/v1/chat"},
+		{"http://localhost:8000", "v1/chat", "http://localhost:8000/v1/chat"},
+		{"http://localhost:8000/", "v1/chat", "http://localhost:8000/v1/chat"},
+		{"http://localhost:8000", "/v1/chat", "http://localhost:8000/v1/chat"},
+	}
+
+	for _, c := range cases {
+		res := singleJoiningSlash(c.a, c.b)
+		if res != c.expected {
+			t.Errorf("singleJoiningSlash(%q, %q) = %q; want %q", c.a, c.b, res, c.expected)
+		}
+	}
+}
+
+// Test 405 Method Not Allowed on non-POST
+func TestProxy_MethodNotAllowed(t *testing.T) {
+	cfg := &contract.Config{Port: 8000}
+	srv := NewServer(cfg, nil, nil, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/v1/chat/completions", nil)
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("Expected 405 Method Not Allowed, got %d", rec.Code)
+	}
+}
+
+// Test 404 Not Found on unknown path
+func TestProxy_NotFound(t *testing.T) {
+	cfg := &contract.Config{Port: 8000}
+	srv := NewServer(cfg, nil, nil, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/unknown/route", nil)
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("Expected 404 Not Found, got %d", rec.Code)
+	}
+}
+
+// Test authenticateClient with api-key and X-API-Key headers
+func TestProxy_AuthHeaders(t *testing.T) {
+	cfg := &contract.Config{
+		Port:      8000,
+		AuthToken: "sk-my-secret-key",
+	}
+	srv := NewServer(cfg, nil, nil, nil)
+
+	// Case 1: api-key header
+	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
+	req1.Header.Set("api-key", "sk-my-secret-key")
+	if !srv.authenticateClient(req1) {
+		t.Errorf("Expected authenticateClient to succeed with api-key header")
+	}
+
+	// Case 2: X-API-Key header
+	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
+	req2.Header.Set("X-API-Key", "sk-my-secret-key")
+	if !srv.authenticateClient(req2) {
+		t.Errorf("Expected authenticateClient to succeed with X-API-Key header")
+	}
+
+	// Case 3: Invalid key
+	req3 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
+	req3.Header.Set("X-API-Key", "wrong-key")
+	if srv.authenticateClient(req3) {
+		t.Errorf("Expected authenticateClient to fail with wrong-key")
 	}
 }
 

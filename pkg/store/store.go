@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
@@ -23,7 +24,7 @@ func NewDiskStore(filePath string) (*DiskStore, error) {
 		if err != nil {
 			userConfigDir = "."
 		}
-		filePath = filepath.Join(userConfigDir, "nacho-flow", "stats.json")
+		filePath = filepath.Join(userConfigDir, contract.AppName, contract.DefaultStatsFileName)
 	}
 
 	filePath = filepath.Clean(filePath)

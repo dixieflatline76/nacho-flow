@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/kardianos/service"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -155,7 +156,7 @@ func InitLogger(isInteractive bool, logDir string, level slog.Level, svcLogger s
 		if logDir == "" {
 			logDir = "logs"
 		}
-		logFilePath := filepath.Join(logDir, "router.log")
+		logFilePath := filepath.Join(logDir, contract.DefaultRouterLogFileName)
 		return NewInteractiveLogger(os.Stdout, logFilePath, level)
 	}
 

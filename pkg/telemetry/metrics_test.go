@@ -179,4 +179,24 @@ func TestStatsTracker_HTTPHandler(t *testing.T) {
 	if parsed["total_tokens_routed_locally"] != float64(1000) {
 		t.Errorf("expected total_tokens_routed_locally 1000, got %v", parsed["total_tokens_routed_locally"])
 	}
+
+	// Test Handler() adapter
+	handler := tracker.Handler()
+	if handler == nil {
+		t.Fatalf("Expected non-nil http.HandlerFunc from tracker.Handler()")
+	}
+
+	// Test 405 on non-GET
+	postReq := httptest.NewRequest(http.MethodPost, "/v1/stats", nil)
+	postRec := httptest.NewRecorder()
+	tracker.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("Expected 405 Method Not Allowed for POST /v1/stats, got %d", postRec.Code)
+	}
+
+	// Test default buffer clamping (bufferSize <= 0)
+	clampedTracker := NewStatsTracker(0)
+	clampedTracker.Close()
+	// Double close should not panic
+	clampedTracker.Close()
 }

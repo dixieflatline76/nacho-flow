@@ -17,6 +17,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
+	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
@@ -61,6 +62,18 @@ func NewServerWithTelemetryAndRegistry(
 	reg *provider.Registry,
 	logger *slog.Logger,
 ) *Server {
+	if cfg == nil {
+		cfg = &contract.Config{}
+	}
+	if class == nil {
+		class = router.NewClassifier()
+	}
+	if san == nil {
+		san = router.NewSanitizer()
+	}
+	if eval == nil {
+		eval, _ = strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	}
 	if oracle == nil {
 		oracle = telemetry.NewPricingOracle()
 	}
@@ -104,8 +117,8 @@ func NewServerWithTelemetryAndRegistry(
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Health check endpoint (always public for load balancers & monitoring)
-	if r.URL.Path == "/health" || r.URL.Path == "/v1/health" {
-		w.Header().Set("Content-Type", "application/json")
+	if r.URL.Path == contract.PathHealth || r.URL.Path == contract.PathV1Health {
+		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok","service":"nacho-flow"}`))
 		return
@@ -113,29 +126,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// 0. Inbound Client Authentication (Dual-layer security for LAN / Tailscale)
 	if s.config.AuthToken != "" && !s.authenticateClient(r) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"Invalid or missing gateway API key","type":"auth_error","code":"invalid_api_key"}}`))
 		return
 	}
 
 	// Expose /v1/stats endpoint
-	if r.URL.Path == "/v1/stats" {
+	if r.URL.Path == contract.PathStats {
 		s.tracker.ServeHTTP(w, r)
 		return
 	}
 
 	// Models listing endpoint (OpenAI compatible)
-	if r.URL.Path == "/v1/models" {
-		w.Header().Set("Content-Type", "application/json")
+	if r.URL.Path == contract.PathModels {
+		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"nacho-hybrid","object":"model","owned_by":"spicebox.dev"}]}`))
 		return
 	}
 
 	// Only process chat completions / completions endpoints for routing
-	if !strings.HasSuffix(r.URL.Path, "/chat/completions") && !strings.HasSuffix(r.URL.Path, "/completions") {
+	if !strings.HasSuffix(r.URL.Path, contract.PathChatCompletions) && !strings.HasSuffix(r.URL.Path, contract.PathCompletions) {
 		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -219,8 +237,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var costSaved float64
 	if reqCtx.Tokens > 0 {
 		// Baseline reference: flagship cloud model (Claude 3.5 Sonnet / GPT-4o standard rate)
-		baselineRatePerM := 3.00
-		if baselinePricing, found := s.oracle.GetPrice("openrouter", "anthropic/claude-3.5-sonnet"); found && baselinePricing.PromptCostPerMillion > 0 {
+		baselineRatePerM := contract.DefaultBenchmarkPricePerMillion
+		if baselinePricing, found := s.oracle.GetPrice("openrouter", contract.DefaultBenchmarkModel); found && baselinePricing.PromptCostPerMillion > 0 {
 			baselineRatePerM = baselinePricing.PromptCostPerMillion
 		}
 
@@ -267,7 +285,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Capability: AuthProvider (Inject Bearer token)
 		if auth, ok := targetProvider.(provider.AuthProvider); ok {
 			if apiKey := auth.GetAPIKey(); apiKey != "" {
-				outReq.Header.Set("Authorization", "Bearer "+apiKey)
+				outReq.Header.Set(contract.HeaderAuthorization, "Bearer "+apiKey)
 			}
 		}
 
@@ -285,13 +303,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		latency := float64(time.Since(startTime).Milliseconds())
-		resp.Header.Set("x-nacho-router-tier", targetTier.Name)
-		resp.Header.Set("x-spice-router-tier", targetTier.Name)
-		resp.Header.Set("x-nacho-target-model", targetTier.Model)
-		resp.Header.Set("x-spice-target-model", targetTier.Model)
+		resp.Header.Set(contract.HeaderNachoRouterTier, targetTier.Name)
+		resp.Header.Set(contract.HeaderSpiceRouterTier, targetTier.Name)
+		resp.Header.Set(contract.HeaderNachoTargetModel, targetTier.Model)
+		resp.Header.Set(contract.HeaderSpiceTargetModel, targetTier.Model)
 
 		// Markdown Tool-Calling Normalization for local models (Zero-Alloc Fast Path)
-		if reqCtx.HasTools && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+		if reqCtx.HasTools && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeJSON) {
 			bodyBytes, err := io.ReadAll(resp.Body)
 			if err == nil {
 				_ = resp.Body.Close()
@@ -312,7 +330,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 								if newJSON, err := json.Marshal(completionResp); err == nil {
 									bodyBytes = newJSON
-									resp.Header.Set("Content-Length", strconv.Itoa(len(newJSON)))
+									resp.Header.Set(contract.HeaderContentLength, strconv.Itoa(len(newJSON)))
 								}
 							}
 						}
@@ -382,7 +400,7 @@ func (s *Server) authenticateClient(r *http.Request) bool {
 		return true
 	}
 
-	authHeader := r.Header.Get("Authorization")
+	authHeader := r.Header.Get(contract.HeaderAuthorization)
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		if token == expected {
@@ -391,7 +409,7 @@ func (s *Server) authenticateClient(r *http.Request) bool {
 	}
 
 	// Also check X-API-Key or api-key headers
-	if r.Header.Get("X-API-Key") == expected || r.Header.Get("api-key") == expected {
+	if r.Header.Get(contract.HeaderXAPIKey) == expected || r.Header.Get(contract.HeaderAPIKey) == expected {
 		return true
 	}
 

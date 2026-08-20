@@ -93,3 +93,42 @@ tiers:
 		t.Errorf("Expected updated config to contain new rule, got: %s", string(updatedBytes))
 	}
 }
+
+// Test 3.3: ParetoBanditOptimizer constructor, name, and empty records
+func TestOptimizer_ConstructorAndEmptyRecords(t *testing.T) {
+	opt := NewParetoBanditOptimizer()
+	if opt.Name() != "pareto_bandit" {
+		t.Errorf("Expected name 'pareto_bandit', got '%s'", opt.Name())
+	}
+
+	res, err := opt.Optimize(nil, nil)
+	if err != nil {
+		t.Fatalf("Unexpected error on empty records: %v", err)
+	}
+	if res.OptimalThreshold != 16000 {
+		t.Errorf("Expected default 16000 threshold on empty records, got %d", res.OptimalThreshold)
+	}
+}
+
+// Test 3.4: ApplyTuning error handling on missing file and malformed YAML
+func TestApplier_ErrorCases(t *testing.T) {
+	result := &TuningResult{SynthesizedRule: "Tokens < 10000"}
+
+	// Missing config file
+	_, err := ApplyTuning(filepath.Join(t.TempDir(), "missing.yaml"), result)
+	if err == nil {
+		t.Fatalf("Expected error for missing config file, got nil")
+	}
+
+	// Malformed YAML
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "invalid.yaml")
+	if err := os.WriteFile(configPath, []byte("port: [invalid"), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	_, err = ApplyTuning(configPath, result)
+	if err == nil {
+		t.Fatalf("Expected error for malformed YAML in ApplyTuning, got nil")
+	}
+}

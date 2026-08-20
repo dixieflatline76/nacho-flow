@@ -103,3 +103,45 @@ func TestStatsTracker_FanOutToMultipleSinks(t *testing.T) {
 		t.Errorf("Expected keywords [concurrency, mutex], got %v", records[0].Keywords)
 	}
 }
+
+// Test 1.3: ReadRecords non-existent file, limit capping, and closed logger handling
+func TestTrafficLogger_ReadRecordsAndClosedLogger(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "capped_traffic.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 50)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	for i := 0; i < 10; i++ {
+		logger.Emit(TurnRecord{Tokens: 100 * (i + 1)})
+	}
+	_ = logger.Close()
+
+	// Double close
+	if err := logger.Close(); err != nil {
+		t.Errorf("Expected double close to return nil error, got: %v", err)
+	}
+
+	// Emit on closed logger
+	logger.Emit(TurnRecord{Tokens: 9999})
+
+	// Read with limit 3
+	records, err := ReadRecords(logPath, 3)
+	if err != nil {
+		t.Fatalf("Failed to read records with limit: %v", err)
+	}
+	if len(records) != 3 {
+		t.Errorf("Expected 3 records capped, got %d", len(records))
+	}
+
+	// Read non-existent file
+	missingRecords, err := ReadRecords(filepath.Join(tempDir, "missing.jsonl"), 10)
+	if err != nil {
+		t.Fatalf("Expected nil error for missing file, got %v", err)
+	}
+	if len(missingRecords) != 0 {
+		t.Errorf("Expected 0 records for missing file, got %d", len(missingRecords))
+	}
+}

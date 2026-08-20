@@ -295,9 +295,10 @@ func extractBalancedJSON(s string, startIdx int) (string, int, int, bool) {
 			continue
 		}
 		if !inString {
-			if c == openChar {
+			switch c {
+			case openChar:
 				depth++
-			} else if c == closeChar {
+			case closeChar:
 				depth--
 				if depth == 0 {
 					return s[openIdx : i+1], openIdx, i + 1, true

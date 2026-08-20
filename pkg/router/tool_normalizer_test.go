@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -226,6 +227,52 @@ func TestNormalize_PureProse(t *testing.T) {
 	}
 	if cleaned != raw {
 		t.Errorf("Expected raw text untouched, got '%s'", cleaned)
+	}
+}
+
+// 13. Edge Formats: Parameters key & Nested tool_call key
+func TestNormalize_EdgeFormats(t *testing.T) {
+	// Parameters key instead of arguments
+	raw1 := "```json\n{\"name\": \"test_params\", \"parameters\": {\"param1\": 123}}\n```"
+	_, calls1, ok1 := NormalizeMarkdownToolCalls(raw1)
+	if !ok1 || len(calls1) != 1 || calls1[0].Function.Name != "test_params" {
+		t.Errorf("Failed to parse parameters key format: %+v", calls1)
+	}
+
+	// Nested tool_call key
+	raw2 := "```json\n{\"tool_call\": {\"name\": \"nested_func\", \"arguments\": {\"a\": true}}}\n```"
+	_, calls2, ok2 := NormalizeMarkdownToolCalls(raw2)
+	if !ok2 || len(calls2) != 1 || calls2[0].Function.Name != "nested_func" {
+		t.Errorf("Failed to parse nested tool_call key format: %+v", calls2)
+	}
+
+	// Tool call with function map but missing arguments
+	raw3 := "```json\n{\"function\": {\"name\": \"no_args_func\"}}\n```"
+	_, calls3, ok3 := NormalizeMarkdownToolCalls(raw3)
+	if !ok3 || len(calls3) != 1 || calls3[0].Function.Arguments != "{}" {
+		t.Errorf("Expected empty JSON object for missing arguments: %+v", calls3)
+	}
+}
+
+// 14. Python Args Parser Edge Cases
+func TestNormalize_PythonArgs_EdgeCases(t *testing.T) {
+	raw := `<|python_tag|>custom_tool.call(flag_true=true, flag_false=false, null_val=null, number=42.5, single_quote='hello')`
+	_, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok || len(calls) != 1 {
+		t.Fatalf("Expected 1 call from python tag, got: %+v", calls)
+	}
+	if calls[0].Function.Name != "custom_tool" {
+		t.Errorf("Expected name custom_tool, got %s", calls[0].Function.Name)
+	}
+	var parsedArgs map[string]interface{}
+	if err := json.Unmarshal([]byte(calls[0].Function.Arguments), &parsedArgs); err != nil {
+		t.Fatalf("Failed to parse converted python arguments: %v", err)
+	}
+	if parsedArgs["flag_true"] != true || parsedArgs["flag_false"] != false {
+		t.Errorf("Boolean parsing error in python args: %+v", parsedArgs)
+	}
+	if parsedArgs["single_quote"] != "hello" {
+		t.Errorf("Single quote string parsing error: %+v", parsedArgs)
 	}
 }
 

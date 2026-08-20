@@ -1,6 +1,7 @@
 package store
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -108,5 +109,63 @@ func TestDiskStore_AtomicWrite_CleansUpTemp(t *testing.T) {
 
 	if loaded.TotalRequests != 110 {
 		t.Errorf("Expected TotalRequests 110, got %d", loaded.TotalRequests)
+	}
+}
+
+// Test 4.4: Default path and FilePath getter
+func TestDiskStore_DefaultPathAndGetter(t *testing.T) {
+	store, err := NewDiskStore("")
+	if err != nil {
+		t.Fatalf("Failed to create default DiskStore: %v", err)
+	}
+	if store.FilePath() == "" {
+		t.Errorf("Expected non-empty FilePath")
+	}
+}
+
+// Test 4.5: Corrupt JSON file returns error
+func TestDiskStore_CorruptJSON_ReturnsError(t *testing.T) {
+	tempDir := t.TempDir()
+	statsPath := filepath.Join(tempDir, "corrupt_stats.json")
+
+	// Write invalid JSON
+	if err := os.WriteFile(statsPath, []byte("invalid-json{"), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	store, err := NewDiskStore(statsPath)
+	if err != nil {
+		t.Fatalf("Failed to create DiskStore: %v", err)
+	}
+
+	_, err = store.Load()
+	if err == nil {
+		t.Fatalf("Expected error loading corrupt JSON, got nil")
+	}
+}
+
+// Test 4.6: Save to invalid path returns write error
+func TestDiskStore_Save_WriteError(t *testing.T) {
+	store := &DiskStore{
+		filePath: filepath.Join(t.TempDir(), "nonexistent_subdir", "stats.json"),
+	}
+
+	err := store.Save(telemetry.StatsSnapshot{})
+	if err == nil {
+		t.Fatalf("Expected error saving to non-existent directory, got nil")
+	}
+}
+
+// Test 4.7: NewDiskStore with file as parent directory returns mkdir error
+func TestDiskStore_MkdirError(t *testing.T) {
+	tempFile := filepath.Join(t.TempDir(), "dummy_file")
+	if err := os.WriteFile(tempFile, []byte("data"), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Passing tempFile/sub/stats.json will cause MkdirAll on tempFile/sub to fail because tempFile is a regular file
+	_, err := NewDiskStore(filepath.Join(tempFile, "sub", "stats.json"))
+	if err == nil {
+		t.Fatalf("Expected error for mkdir under regular file, got nil")
 	}
 }

@@ -85,4 +85,10 @@ func TestOpenRouterPricingProvider_FetchPricing_ServerError(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error on 500 status code, got nil")
 	}
+
+	// Test default constructor and Name()
+	defaultProvider := NewOpenRouterPricingProvider("test-key")
+	if defaultProvider.Name() != "openrouter" {
+		t.Errorf("Expected Name 'openrouter', got '%s'", defaultProvider.Name())
+	}
 }

@@ -81,6 +81,28 @@ func stringsRepeat(s string, count int) string {
 	return string(b)
 }
 
+// Test Classify error on invalid JSON
+func TestClassifier_InvalidJSON_ReturnsError(t *testing.T) {
+	classifier := NewClassifier()
+	_, err := classifier.Classify([]byte("not-json"))
+	if err == nil {
+		t.Fatalf("Expected error for invalid JSON input, got nil")
+	}
+}
+
+// Test tools array detection
+func TestClassifier_ToolsDetection(t *testing.T) {
+	classifier := NewClassifier()
+	jsonBody := `{"model": "gpt-4", "tools": [{"type": "function", "function": {"name": "test_func"}}]}`
+	ctx, err := classifier.Classify([]byte(jsonBody))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !ctx.HasTools {
+		t.Errorf("Expected HasTools to be true for tools array")
+	}
+}
+
 // BenchmarkClassifier measures request parsing and keyword extraction speed per operation.
 func BenchmarkClassifier(b *testing.B) {
 	classifier := NewClassifier()
