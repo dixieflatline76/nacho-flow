@@ -36,6 +36,11 @@ func NormalizeMarkdownToolCalls(content string) (string, []RawToolCall, bool) {
 		return content, nil, false
 	}
 
+	// Fast pre-filter: if content has no candidate tokens, bail out in 1 CPU cycle without regex/parsing
+	if !strings.Contains(content, "<") && !strings.Contains(content, "[") && !strings.Contains(content, "`") && !strings.Contains(content, "Action:") {
+		return content, nil, false
+	}
+
 	var extracted []RawToolCall
 	remainingContent := content
 

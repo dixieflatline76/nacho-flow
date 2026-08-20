@@ -274,34 +274,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp.Header.Set("x-nacho-target-model", targetTier.Model)
 		resp.Header.Set("x-spice-target-model", targetTier.Model)
 
-		// Markdown Tool-Calling Normalization for local models
+		// Markdown Tool-Calling Normalization for local models (Zero-Alloc Fast Path)
 		if reqCtx.HasTools && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
 			bodyBytes, err := io.ReadAll(resp.Body)
 			if err == nil {
 				_ = resp.Body.Close()
-				var completionResp map[string]interface{}
-				if json.Unmarshal(bodyBytes, &completionResp) == nil {
-					if choices, ok := completionResp["choices"].([]interface{}); ok && len(choices) > 0 {
-						if firstChoice, ok := choices[0].(map[string]interface{}); ok {
-							if message, ok := firstChoice["message"].(map[string]interface{}); ok {
-								existingTools, hasTools := message["tool_calls"]
-								if !hasTools || existingTools == nil {
-									if contentStr, ok := message["content"].(string); ok {
-										cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(contentStr)
-										if parsed && len(extractedCalls) > 0 {
-											message["content"] = cleanedText
-											message["tool_calls"] = extractedCalls
-											firstChoice["finish_reason"] = "tool_calls"
-											firstChoice["message"] = message
-											choices[0] = firstChoice
-											completionResp["choices"] = choices
 
-											if newJSON, err := json.Marshal(completionResp); err == nil {
-												bodyBytes = newJSON
-												resp.Header.Set("Content-Length", strconv.Itoa(len(newJSON)))
-											}
-										}
-									}
+				// Fast pre-filter: Only decode JSON if the raw bytes contain candidate tool markers
+				if hasCandidateToolTokens(bodyBytes) {
+					var completionResp fastChatCompletionResponse
+					if json.Unmarshal(bodyBytes, &completionResp) == nil && len(completionResp.Choices) > 0 {
+						firstChoice := &completionResp.Choices[0]
+						// Only normalize if model did NOT provide native tool_calls
+						if len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" {
+							cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(firstChoice.Message.Content)
+							if parsed && len(extractedCalls) > 0 {
+								firstChoice.Message.Content = cleanedText
+								firstChoice.FinishReason = "tool_calls"
+								rawCallsJSON, _ := json.Marshal(extractedCalls)
+								firstChoice.Message.ToolCalls = rawCallsJSON
+
+								if newJSON, err := json.Marshal(completionResp); err == nil {
+									bodyBytes = newJSON
+									resp.Header.Set("Content-Length", strconv.Itoa(len(newJSON)))
 								}
 							}
 						}
@@ -385,4 +380,37 @@ func (s *Server) authenticateClient(r *http.Request) bool {
 	}
 
 	return false
+}
+
+type fastMessage struct {
+	Role      string          `json:"role"`
+	Content   string          `json:"content"`
+	ToolCalls json.RawMessage `json:"tool_calls,omitempty"`
+}
+
+type fastChoice struct {
+	Index        int             `json:"index"`
+	Message      fastMessage     `json:"message"`
+	FinishReason string          `json:"finish_reason"`
+	Logprobs     json.RawMessage `json:"logprobs,omitempty"`
+}
+
+type fastChatCompletionResponse struct {
+	ID                string          `json:"id"`
+	Object            string          `json:"object"`
+	Created           int64           `json:"created"`
+	Model             string          `json:"model"`
+	Choices           []fastChoice    `json:"choices"`
+	Usage             json.RawMessage `json:"usage,omitempty"`
+	SystemFingerprint string          `json:"system_fingerprint,omitempty"`
+}
+
+func hasCandidateToolTokens(b []byte) bool {
+	return bytes.Contains(b, []byte("<tool_call>")) ||
+		bytes.Contains(b, []byte("[TOOL_CALLS]")) ||
+		bytes.Contains(b, []byte("<function=")) ||
+		bytes.Contains(b, []byte("<|python_tag|>")) ||
+		bytes.Contains(b, []byte("<invoke")) ||
+		bytes.Contains(b, []byte("Action:")) ||
+		bytes.Contains(b, []byte("```"))
 }
