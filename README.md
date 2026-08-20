@@ -19,9 +19,11 @@ Autonomous coding agents (Roo Code, Cline, Aider, Cursor) dump full conversation
 
 ## ✨ Key Features
 
-* **⚡ Wire-Speed Throughput (32,250+ req/sec)**: Built with zero-lock concurrency (`atomic.Pointer` RCU) and pooled HTTP transports (< 0.29 ms routing overhead, < 96 MB RAM under 1,000 parallel workers).
+* **⚡ Wire-Speed Throughput (28,000+ req/sec)**: Built with zero-lock concurrency (`atomic.Pointer` RCU) and pooled HTTP transports (< 0.21 ms routing overhead, < 96 MB RAM under 1,000 parallel workers).
+* **🛠️ Universal Multi-Model Tool Normalizer**: Automatically intercepts and converts raw model outputs (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML, ReAct, and DeepSeek-R1 CoT `<think>`) into strict OpenAI `tool_calls` JSON structures—giving local open-source models 100% compatibility with agentic tools.
+* **🔒 Inbound Gateway Client Authentication**: Secure your gateway when exposed on local LAN (`0.0.0.0`) or remote devboxes via `auth_token` Bearer authentication, with OpenAI-compliant 401 error payloads and public `/health` bypass.
 * **🔌 Composable Capability Provider Subsystem**: Supports local GPUs (Ollama, vLLM, LM Studio) and cloud endpoints (OpenRouter, Langdock, DeepSeek, Azure, AWS) with dynamic header and bearer auth injection.
-* **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Configure unlimited custom routing rules in `config.yaml` based on context size, images, tool calling, and code keywords.
+* **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Configure unlimited custom routing rules in `config.yaml` evaluated in strict top-to-bottom order based on context size, images, tool calling, and code keywords.
 * **🖼️ History Image Sanitization**: Automatically strips raw base64 `image_url` payloads from older historical turns when routing to text-only models, eliminating `400 Bad Request` crashes.
 * **💾 Persistent Telemetry Store**: Automatically saves cumulative token savings and USD cost metrics to disk (`~/.config/nacho-flow/stats.json`) across daemon restarts.
 * **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI OR installs natively as a persistent background daemon on **Windows** (Windows Service), **Linux** (systemd), and **macOS** (launchd).
@@ -32,6 +34,11 @@ Autonomous coding agents (Roo Code, Cline, Aider, Cursor) dump full conversation
 ## 🛠️ Quickstart
 
 ### 1. Installation
+
+**Homebrew (macOS & Linux)**:
+```bash
+brew install dixieflatline76/nacho-flow/nacho-flow
+```
 
 **Download Pre-compiled Binary**:
 Download the latest release for Windows, Linux, or macOS from [GitHub Releases](https://github.com/dixieflatline76/nacho-flow/releases).
@@ -49,6 +56,8 @@ Create a `config.yaml` in your project folder or `~/.config/nacho-flow/config.ya
 
 ```yaml
 port: 8000
+# Inbound Client Auth (Optional: Secures gateway on LAN / 0.0.0.0)
+auth_token: "sk-nacho-secret-key"
 
 # Upstream Providers (Local GPUs, Cloud Gateways, Private Tenants)
 providers:
@@ -84,11 +93,11 @@ tiers:
     provider: "openrouter"
     when: "HasImages"
 
-  # Tier 3: Local ROCm GPU (100% Free, Routine tasks < 16k context without images or tools)
+  # Tier 3: Local ROCm GPU (100% Free, Routine tasks < 16k context without images)
   - name: "Local ROCm GPU"
     model: "qwen2.5-coder:14b"
     provider: "ollama"
-    when: "Tokens < 16000 && !HasImages && !HasTools"
+    when: "Tokens < 16000 && !HasImages"
     strip_images: true
 
   # Tier 4: Fast Agentic Cloud (Large context >= 16k or active tools)
@@ -120,14 +129,14 @@ nacho-flow service start
 
 ---
 
-### 4. Connect Your IDE (Roo Code / Cline / Aider / Cursor)
+### 4. Connect Your IDE (Roo Code / Cline / Aider / Cursor / Antigravity)
 
-In VS Code **Roo Code Settings**:
+In VS Code / Antigravity **Roo Code Settings**:
 * **Provider**: `OpenAI Compatible`
 * **Base URL**: `http://localhost:8000/v1`
-* **API Key**: `sk-dummy` *(Nacho Flow holds your real keys)*
+* **API Key**: `sk-nacho-secret-key` *(Matches `auth_token` if configured, or any dummy string)*
 * **Model ID**: `nacho-hybrid`
-* **Stream / Image Support**: `ON`
+* **Stream / Image / Tool Support**: `ON`
 
 ---
 

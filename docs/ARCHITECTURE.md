@@ -8,9 +8,10 @@ This document provides a comprehensive technical overview of **Nacho Flow**'s in
 
 ```mermaid
 flowchart TD
-    Client["Client (Roo Code / Cline / Aider / Cursor)"]
+    Client["Client (Roo Code / Cline / Aider / Cursor / Antigravity)"]
     
     subgraph NachoFlow ["Nacho Flow AI Gateway (Go Core)"]
+        AuthGateway["Inbound Auth Middleware (Bearer / X-API-Key / Public /health)"]
         HTTPRouter["HTTP Handler (ServeHTTP)"]
         Classifier["Context Classifier (Tokens, Tools, Images, Keywords)"]
         Evaluator["Expr Rule Evaluator (AST Bytecode Engine)"]
@@ -18,6 +19,13 @@ flowchart TD
         Director["Reverse Proxy Director (Dynamic Header & Auth Injection)"]
         PooledTransport["Pooled HTTP Transport (MaxIdle: 10,000)"]
         
+        subgraph ToolEngine ["Multi-Model Tool Normalizer (pkg/router)"]
+            FastFilter["Zero-Alloc Byte Pre-Filter (hasCandidateToolTokens)"]
+            JSONBalancer["Lexical Bracket Balancer (extractBalancedJSON)"]
+            ModelAdapters["7 Format Adapters (Hermes/Mistral/Llama3/Claude/ReAct/CoT)"]
+            FastFilter --> JSONBalancer --> ModelAdapters
+        end
+
         subgraph ProviderRegistry ["Provider Subsystem (pkg/provider)"]
             Registry["Provider Registry"]
             GenericLLM["GenericLLMProvider"]
@@ -42,7 +50,8 @@ flowchart TD
     LocalGPU["Local GPU Endpoint (Ollama / vLLM / ROCm) - $0.00"]
     CloudAPI["Cloud Endpoint (OpenRouter / Langdock / DeepSeek / Azure)"]
 
-    Client -->|POST /v1/chat/completions| HTTPRouter
+    Client -->|POST /v1/chat/completions| AuthGateway
+    AuthGateway -->|Valid Key or Open Mode| HTTPRouter
     HTTPRouter --> Classifier
     Classifier --> Evaluator
     Evaluator --> Sanitizer
@@ -52,6 +61,10 @@ flowchart TD
     PooledTransport -->|Local Tiers| LocalGPU
     PooledTransport -->|Cloud Tiers| CloudAPI
     
+    LocalGPU -.->|Response Stream| ToolEngine
+    CloudAPI -.->|Response Stream| ToolEngine
+    ToolEngine -.->|Normalized OpenAI Tool Calls| Client
+    
     HTTPRouter -.->|Asynchronous Observation| StatsTracker
     HTTPRouter -.->|Structured Logs| SmartLogger
 ```
@@ -60,7 +73,12 @@ flowchart TD
 
 ## 2. Request Lifecycle & Pipeline Stages
 
-Every incoming request passes through an optimized 7-stage processing pipeline before dispatch:
+Every incoming request passes through an optimized 8-stage processing pipeline before dispatch and return:
+
+### Stage 0: Inbound Perimeter Authentication (`pkg/server/proxy.go`)
+- If `auth_token` is configured in `config.yaml` or `ENV_NACHO_AUTH_TOKEN`, incoming requests must present a matching key via `Authorization: Bearer <token>`, `X-API-Key`, or `api-key`.
+- Requests with invalid or missing credentials receive an OpenAI-standard `401 Unauthorized` JSON payload (`invalid_api_key`).
+- Public health probes (`/health`) automatically bypass auth to facilitate orchestrator liveness checks.
 
 ### Stage 1: Context Classification (`pkg/router/classifier.go`)
 - **Token Estimation**: Fast heuristic character-to-token parsing across system, user, and assistant message contents.
@@ -68,8 +86,8 @@ Every incoming request passes through an optimized 7-stage processing pipeline b
 - **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`).
 - **Keyword Extraction**: Extracts high-intent programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) into a lookup slice (`Keywords`).
 
-### Stage 2: AST-Compiled Rule Evaluation (`pkg/strategy/expr.go`)
-- Uses `github.com/expr-lang/expr` compiled bytecode expressions to evaluate 1..N tiers sequentially (*First Match Wins*).
+### Stage 2: AST-Compiled Rule Evaluation (`pkg/strategy/expr_evaluator.go`)
+- Uses `github.com/expr-lang/expr` compiled bytecode expressions to evaluate 1..N tiers sequentially (*Top-to-Bottom: First Match Wins*).
 - Rules execute directly in memory with sub-microsecond latency.
 - Supported context variables: `Tokens`, `HasImages`, `HasTools`, `Keywords`, `Model`.
 
@@ -83,20 +101,33 @@ Every incoming request passes through an optimized 7-stage processing pipeline b
 - Using zero-allocation interface assertions:
   - If provider implements `AuthProvider`: Injects `Authorization: Bearer <API_KEY>`.
   - If provider implements `HeaderProvider`: Injects custom headers (`HTTP-Referer`, `X-Title`, `X-Custom-Org`).
+  - If provider is local (`Type: "local"`): Inbound client auth headers are stripped so local inference engines (Ollama, llama.cpp) do not reject requests.
 - Uses a shared `http.Transport` with connection pooling (`MaxIdleConns: 10000`, `MaxIdleConnsPerHost: 2000`) to guarantee zero OS socket exhaustion under massive concurrency.
 
-### Stage 5: Response Interception & Latency Profiling
+### Stage 5: Universal Multi-Model Tool Normalization (`pkg/router/tool_normalizer.go`)
+- **Zero-Alloc Fast Path**: If `reqCtx.HasTools` is false or the raw response bytes do not contain candidate tool markers, the parser bails out in **23.5 nanoseconds** with zero allocations.
+- **Lexical Bracket Balancing**: When a local model outputs embedded tool calls in markdown or XML, `extractBalancedJSON` scans byte tokens to detect the true balanced boundaries of `{}` and `[]` structures without regex truncation bugs.
+- **7 Model Format Families Supported**:
+  1. *Hermes / Nous / Qwen ChatML*: `<tool_call>...</tool_call>`
+  2. *Mistral / Mixtral*: `[TOOL_CALLS] [...]`
+  3. *Llama 3*: `<function=name>{...}</function>`
+  4. *Llama 3.1*: `<|python_tag|>name.call(k=v)`
+  5. *Claude XML*: `<function_calls><invoke name="...">`
+  6. *ReAct / LangChain*: `Action: ...\nAction Input: ...`
+  7. *DeepSeek-R1 CoT*: Preserves `<think>...</think>` reasoning while extracting markdown code blocks.
+- **OpenAI Conformance**: Converts extracted tools into strict OpenAI `tool_calls` structures with stringified `arguments`, updates `finish_reason` to `"tool_calls"`, and recalculates `Content-Length`.
+
+### Stage 6: Response Interception & Latency Profiling
 - Intercepts upstream status codes, response headers, and measures roundtrip latency.
 - Injects tracking headers into client response:
   - `x-nacho-router-tier`: Name of the matched tier.
   - `x-nacho-target-model`: Actual model executed upstream.
-  - `x-nacho-route-reason`: Rule reason triggering the match.
 
-### Stage 6: Lock-Free Pricing Calculation (`pkg/telemetry/pricing.go`)
+### Stage 7: Lock-Free Pricing Calculation (`pkg/telemetry/pricing.go`)
 - Queries the `PricingOracle` to compute exact prompt and completion costs.
 - Lookups use `atomic.Pointer[map[string]ModelPricing]` (RCU pattern), ensuring **zero mutex locks** on the hot proxy path.
 
-### Stage 7: Asynchronous Telemetry Ingestion & Persistence (`pkg/telemetry/metrics.go`, `pkg/store/store.go`)
+### Stage 8: Asynchronous Telemetry Ingestion & Persistence (`pkg/telemetry/metrics.go`, `pkg/store/store.go`)
 - The proxy dispatches an `Observation` struct to a buffered Go channel (`chan Observation`, capacity 5,000).
 - A single background event worker aggregates metrics, token counts, tier distributions, and USD savings.
 - The `DiskStore` periodically syncs snapshots to `~/.config/nacho-flow/stats.json` using atomic write-to-temp-then-rename mechanics to survive unexpected reboots.

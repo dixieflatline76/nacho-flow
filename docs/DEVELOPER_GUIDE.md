@@ -108,26 +108,47 @@ make tune
 
 ## 6. Benchmarking & Load Testing
 
-Nacho Flow includes both standard Go benchmarks and a dedicated high-throughput load test utility:
+Nacho Flow includes both standard Go micro-benchmarks (`testing.B`) and a dedicated high-throughput A/B load test CLI:
 
-### Standard Go Benchmark
+### 6.1 End-to-End Proxy Pipeline Benchmark
 ```bash
-go test -bench=BenchmarkProxy_ChatCompletions_EndToEnd -benchmem ./pkg/server/...
+# Benchmark core proxy HTTP pipeline with zero-alloc fast path:
+go test -bench=BenchmarkProxy_ChatCompletions -benchmem -run=^$ ./pkg/server/...
 ```
 
-### High-Concurrency Stress Benchmark
+### 6.2 Inner Tool Normalizer Micro-Benchmarks
 ```bash
-# Run multi-tier stress test up to 1,000 parallel workers:
+# Measure nanosecond parsing and allocation efficiency across all 7 model formats:
+go test -bench=BenchmarkNormalize -benchmem -run=^$ ./pkg/router/...
+```
+
+### 6.3 High-Concurrency A/B Stress Benchmark
+```bash
+# Run calibrated 250,000-request A/B stress test comparing raw pass-through vs full auth & normalization:
 make bench
 # or: go run ./cmd/util/nacho_bench
-
-# Or run custom load:
-go run ./cmd/util/nacho_bench -n 50000 -c 100
 ```
 
 ---
 
-## 7. Extending Nacho Flow: Adding a Custom Provider Plugin
+## 7. Extending the Multi-Model Tool Normalizer (`pkg/router/tool_normalizer.go`)
+
+When adding support for a new open-source LLM format family:
+
+1. **Add Token Signature to the Fast Pre-Filter**:
+   In `hasCandidateToolTokens`, add the unique opening marker bytes (e.g. `[CUSTOM_CALL]`). If none match, non-tool prompts bail out in 23.5ns with zero allocations.
+2. **Implement Lexical Extraction**:
+   Use `extractBalancedJSON` to balance opening and closing `{}` or `[]` brackets without regex truncation.
+3. **Add Comprehensive Test Case**:
+   Add a test case in `pkg/router/tool_normalizer_test.go` verifying:
+   - Tool name and arguments parsed correctly.
+   - Arguments formatted as stringified JSON.
+   - Cleaned text stripped of markers while preserving reasoning `<think>` tags.
+   - Add a corresponding `BenchmarkNormalize_<Format>` micro-benchmark.
+
+---
+
+## 8. Extending Nacho Flow: Adding a Custom Provider Plugin
 
 To add a specialized provider plugin:
 
@@ -159,7 +180,7 @@ To add a specialized provider plugin:
 
 ---
 
-## 7. Release & CI/CD Pipeline
+## 9. Release & CI/CD Pipeline
 
 Nacho Flow uses a multi-step GitHub Actions pipeline (`.github/workflows/ci.yml`):
 1. **Linux / macOS / Windows Matrix Builds**: Compiles statically (`CGO_ENABLED=0`).
