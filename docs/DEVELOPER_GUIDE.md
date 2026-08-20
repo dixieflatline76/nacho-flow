@@ -28,12 +28,15 @@ nacho-flow/
 │   ├── config/             # YAML configuration parser & validation
 │   ├── contract/           # Core interface definitions & shared types
 │   ├── provider/           # Capability interfaces (LLM, Auth, Header, Health, Registry)
-│   ├── router/             # Context classifier, token estimator, image sanitizer
-│   ├── server/             # HTTP reverse proxy & route handler
+│   ├── router/             # Context classifier, token estimator, image sanitizer, tool normalizer
+│   ├── server/             # HTTP reverse proxy, stream normalizer (reasoning -> think)
 │   ├── store/              # Atomic disk persistence for telemetry (stats.json)
 │   ├── strategy/           # Compiled expr-lang dynamic rule evaluator
 │   └── telemetry/          # Pricing oracle, OpenRouter plugin, StatsTracker, slog
-├── .github/workflows/      # CI/CD pipeline & Azure Trusted Signing
+├── scripts/                # Universal Linux/macOS shell installer & test harness
+├── .github/workflows/      # CI/CD pipeline, Docker GHCR publisher & Azure Trusted Signing
+├── Dockerfile              # Distroless multi-arch container image
+├── .dockerignore           # Container build exclusions
 ├── config.yaml             # Default configuration file
 └── go.mod / go.sum         # Go module definitions
 ```
