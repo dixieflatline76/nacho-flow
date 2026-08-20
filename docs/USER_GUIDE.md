@@ -16,7 +16,12 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 
 ## 1. Installation & Setup
 
-### Pre-compiled Binaries (Recommended)
+### Homebrew (macOS & Linux - Recommended)
+```bash
+brew install dixieflatline76/nacho-flow/nacho-flow
+```
+
+### Pre-compiled Binaries
 Download the latest binary for your operating system from [GitHub Releases](https://github.com/dixieflatline76/nacho-flow/releases):
 - **Windows (AMD64)**: `nacho-flow-windows-amd64.zip` (Cryptographically signed with Azure Trusted Signing)
 - **Linux (AMD64 / ARM64)**: `nacho-flow-linux-amd64.tar.gz` / `nacho-flow-linux-arm64.tar.gz`
@@ -36,6 +41,9 @@ Create a `config.yaml` in your project folder or `~/.config/nacho-flow/config.ya
 ```yaml
 # Port to listen on (Default: 8000)
 port: 8000
+
+# Inbound Gateway Authentication (Optional: Secures gateway on LAN / 0.0.0.0)
+auth_token: "sk-nacho-gateway-token"
 
 # Upstream model providers (Local GPUs, Cloud Gateways, Direct APIs)
 providers:
@@ -78,11 +86,11 @@ tiers:
     provider: "openrouter"
     when: "HasImages"
 
-  # Tier 3: Local GPU (100% Free, Routine tasks < 16k context without images or tools)
+  # Tier 3: Local GPU (100% Free, Routine tasks < 16k context without images)
   - name: "Local ROCm GPU"
     model: "qwen2.5-coder:14b"
     provider: "ollama"
-    when: "Tokens < 16000 && !HasImages && !HasTools"
+    when: "Tokens < 16000 && !HasImages"
     strip_images: true
 
   # Tier 4: Fast Agentic Cloud (Large context >= 16k or active tool calls)
@@ -113,6 +121,27 @@ For a complete guide with recipes on tuning token thresholds, keyword extraction
 | `HasTools` | `bool` | `true` if the request provides function/tool definitions | `HasTools == true` |
 | `Keywords` | `[]string` | Extracted code keywords (`mutex`, `sql`, `refactor`) | `any(Keywords, { # == 'sql' })` |
 | `Model` | `string` | The requested model ID sent by the client | `Model == 'nacho-hybrid'` |
+
+### ⚠️ Critical Rule: Top-to-Bottom Precedence (First Match Wins)
+Nacho Flow evaluates tiers sequentially from **top to bottom**. The **first tier whose `when` condition evaluates to `true` is selected**.
+
+* **Place Narrow & Specialized Tiers at the TOP:** High-complexity keyword matching (`Keywords`), multimodal vision (`HasImages`), and agent tool calls (`HasTools`) must be listed before broad catch-all rules.
+* **Place Broad & Free Local Tiers in the MIDDLE:** Rules like `Tokens < 16000 && !HasImages` should sit below specialized tiers to prevent shadowing reasoning prompts.
+* **Fallback Tier at the BOTTOM:** The `default_tier` acts as the safety net if none of the above match.
+
+### 🛠️ Universal Multi-Model Tool-Calling Normalizer
+Open-source models (e.g. Qwen 2.5, Mistral, Llama 3.1, Hermes) often return tool calls formatted inside markdown code fences or specialized XML tags rather than native OpenAI `tool_calls` structures.
+
+Nacho Flow includes a **zero-alloc lexical bracket balancer** that automatically detects and converts 7 format families on the fly:
+1. **Hermes / Nous / Qwen ChatML**: `<tool_call>{"name":"...","arguments":{...}}</tool_call>`
+2. **Mistral / Mixtral**: `[TOOL_CALLS] [{"name":"...","arguments":{...}}]`
+3. **Llama 3 Tags**: `<function=name>{"param":"value"}</function>`
+4. **Llama 3.1 Python Calls**: `<|python_tag|>tool_name.call(param="value")`
+5. **Claude XML Format**: `<function_calls><invoke name="..."><parameter name="...">...</parameter></invoke></function_calls>`
+6. **ReAct / LangChain**: `Action: tool_name\nAction Input: {...}`
+7. **DeepSeek-R1 CoT Reasoning**: Preserves `<think>...</think>` internal thinking while extracting the embedded tool call block.
+
+Nacho Flow converts all of these into standard OpenAI `tool_calls` arrays with stringified `function.arguments` JSON, enabling **flawless tool execution in Roo Code, Cline, Cursor, and Antigravity**.
 
 ---
 
@@ -221,24 +250,34 @@ Install Nacho Flow as a `systemd` service on Ubuntu, Debian, Arch, Fedora, or Ro
 
 ---
 
-## 5. IDE & Agent Integrations
+## 5. IDE & Agent Integrations (Local & Multi-Device LAN)
 
-Nacho Flow exposes a standard OpenAI-compatible API on `http://127.0.0.1:8000/v1`.
+Nacho Flow exposes a standard OpenAI-compatible API on `http://127.0.0.1:8000/v1` (or your host LAN / Tailscale IP, e.g. `http://192.168.1.100:8000/v1`).
 
 ### 1. Roo Code (VS Code Extension)
 In **Roo Code Settings**:
 - **API Provider**: `OpenAI Compatible`
-- **Base URL**: `http://localhost:8000/v1`
-- **API Key**: `sk-dummy` *(Nacho Flow injects your real keys)*
+- **Base URL**: `http://localhost:8000/v1` *(or `http://<lan-ip>:8000/v1`)*
+- **API Key**: `sk-dummy` *(or your `auth_token` if enabled in `config.yaml`)*
 - **Model ID**: `nacho-hybrid`
+- **Image Support**: `ON`
 - **Stream**: `ON`
 
 ### 2. Cline / Aider / Cursor / Continue
 Set the OpenAI Base URL in your client configuration:
 ```bash
+# Local Single-Machine Setup
 OPENAI_BASE_URL="http://127.0.0.1:8000/v1"
 OPENAI_API_KEY="sk-dummy"
+
+# Remote Multi-Device / LAN Setup (with auth_token configured)
+OPENAI_BASE_URL="http://192.168.1.100:8000/v1"
+OPENAI_API_KEY="sk-nacho-gateway-token"
 ```
+
+### 🔒 Dual-Layer Gateway Security (LAN / Tailscale)
+* **Inbound Protection:** When `auth_token` is set in `config.yaml`, the gateway blocks any unauthorized LAN/Tailnet clients with `401 Unauthorized`.
+* **Outbound Injection:** Once authenticated, the gateway attaches your upstream cloud credentials (`OpenRouter`, `Langdock`) or strips auth for `Ollama` automatically.
 
 ---
 

@@ -271,6 +271,7 @@ func main() {
 				subCmd := os.Args[2]
 				err := service.Control(s, subCmd)
 				if err != nil {
+					// #nosec G706 - subCmd is a direct CLI flag for service control
 					log.Fatalf("[nacho-flow] Service control error (%s): %v", subCmd, err)
 				}
 				fmt.Printf("[nacho-flow] Service %s executed successfully.\n", subCmd)

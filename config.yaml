@@ -1,5 +1,11 @@
 port: 8000
 
+# Optional Inbound Client Authentication (Dual-Layer Security)
+# When set, rejects unauthorized client requests on port 8000 with HTTP 401 Unauthorized.
+# Supports raw string or "ENV_NACHO_AUTH_TOKEN" for environment variable injection.
+# Leave commented or empty for zero-friction local development on 127.0.0.1.
+# auth_token: "ENV_NACHO_AUTH_TOKEN"
+
 providers:
   # Local GPU Provider (Ollama / vLLM / llama.cpp)
   ollama:

@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
+	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
@@ -101,17 +103,25 @@ func NewServerWithTelemetryAndRegistry(
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// 0. Expose /v1/stats endpoint
-	if r.URL.Path == "/v1/stats" {
-		s.tracker.ServeHTTP(w, r)
-		return
-	}
-
-	// Health check endpoint
+	// Health check endpoint (always public for load balancers & monitoring)
 	if r.URL.Path == "/health" || r.URL.Path == "/v1/health" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok","service":"nacho-flow"}`))
+		return
+	}
+
+	// 0. Inbound Client Authentication (Dual-layer security for LAN / Tailscale)
+	if s.config.AuthToken != "" && !s.authenticateClient(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"Invalid or missing gateway API key","type":"auth_error","code":"invalid_api_key"}}`))
+		return
+	}
+
+	// Expose /v1/stats endpoint
+	if r.URL.Path == "/v1/stats" {
+		s.tracker.ServeHTTP(w, r)
 		return
 	}
 
@@ -204,11 +214,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 7. Calculate tier classification & potential USD savings
+	// 7. Calculate tier classification & potential USD savings using PricingOracle
 	isLocal := targetProvider.IsLocal()
 	var costSaved float64
-	if isLocal && reqCtx.Tokens > 0 {
-		costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * 4.50
+	if reqCtx.Tokens > 0 {
+		// Baseline reference: flagship cloud model (Claude 3.5 Sonnet / GPT-4o standard rate)
+		baselineRatePerM := 3.00
+		if baselinePricing, found := s.oracle.GetPrice("openrouter", "anthropic/claude-3.5-sonnet"); found && baselinePricing.PromptCostPerMillion > 0 {
+			baselineRatePerM = baselinePricing.PromptCostPerMillion
+		}
+
+		if isLocal {
+			// Local inference saved 100% of the flagship cloud cost
+			costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * baselineRatePerM
+		} else {
+			// Cloud inference: calculate differential savings between flagship and cheaper cloud model
+			if tierPricing, found := s.oracle.GetPrice(targetTier.Provider, targetTier.Model); found {
+				if baselineRatePerM > tierPricing.PromptCostPerMillion {
+					costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * (baselineRatePerM - tierPricing.PromptCostPerMillion)
+				}
+			}
+		}
 	}
 
 	tierNum := 1
@@ -264,6 +290,39 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp.Header.Set("x-nacho-target-model", targetTier.Model)
 		resp.Header.Set("x-spice-target-model", targetTier.Model)
 
+		// Markdown Tool-Calling Normalization for local models (Zero-Alloc Fast Path)
+		if reqCtx.HasTools && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+			bodyBytes, err := io.ReadAll(resp.Body)
+			if err == nil {
+				_ = resp.Body.Close()
+
+				// Fast pre-filter: Only decode JSON if the raw bytes contain candidate tool markers
+				if hasCandidateToolTokens(bodyBytes) {
+					var completionResp fastChatCompletionResponse
+					if json.Unmarshal(bodyBytes, &completionResp) == nil && len(completionResp.Choices) > 0 {
+						firstChoice := &completionResp.Choices[0]
+						// Only normalize if model did NOT provide native tool_calls
+						if len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" {
+							cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(firstChoice.Message.Content)
+							if parsed && len(extractedCalls) > 0 {
+								firstChoice.Message.Content = cleanedText
+								firstChoice.FinishReason = "tool_calls"
+								rawCallsJSON, _ := json.Marshal(extractedCalls)
+								firstChoice.Message.ToolCalls = rawCallsJSON
+
+								if newJSON, err := json.Marshal(completionResp); err == nil {
+									bodyBytes = newJSON
+									resp.Header.Set("Content-Length", strconv.Itoa(len(newJSON)))
+								}
+							}
+						}
+					}
+				}
+				resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+				resp.ContentLength = int64(len(bodyBytes))
+			}
+		}
+
 		s.tracker.Record(telemetry.Observation{
 			Tier:       tierNum,
 			TierName:   targetTier.Name,
@@ -314,4 +373,60 @@ func singleJoiningSlash(a, b string) string {
 		return a + "/" + b
 	}
 	return a + b
+}
+
+// authenticateClient checks if the incoming request carries a valid Bearer token or API key.
+func (s *Server) authenticateClient(r *http.Request) bool {
+	expected := s.config.AuthToken
+	if expected == "" {
+		return true
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == expected {
+			return true
+		}
+	}
+
+	// Also check X-API-Key or api-key headers
+	if r.Header.Get("X-API-Key") == expected || r.Header.Get("api-key") == expected {
+		return true
+	}
+
+	return false
+}
+
+type fastMessage struct {
+	Role      string          `json:"role"`
+	Content   string          `json:"content"`
+	ToolCalls json.RawMessage `json:"tool_calls,omitempty"`
+}
+
+type fastChoice struct {
+	Index        int             `json:"index"`
+	Message      fastMessage     `json:"message"`
+	FinishReason string          `json:"finish_reason"`
+	Logprobs     json.RawMessage `json:"logprobs,omitempty"`
+}
+
+type fastChatCompletionResponse struct {
+	ID                string          `json:"id"`
+	Object            string          `json:"object"`
+	Created           int64           `json:"created"`
+	Model             string          `json:"model"`
+	Choices           []fastChoice    `json:"choices"`
+	Usage             json.RawMessage `json:"usage,omitempty"`
+	SystemFingerprint string          `json:"system_fingerprint,omitempty"`
+}
+
+func hasCandidateToolTokens(b []byte) bool {
+	return bytes.Contains(b, []byte("<tool_call>")) ||
+		bytes.Contains(b, []byte("[TOOL_CALLS]")) ||
+		bytes.Contains(b, []byte("<function=")) ||
+		bytes.Contains(b, []byte("<|python_tag|>")) ||
+		bytes.Contains(b, []byte("<invoke")) ||
+		bytes.Contains(b, []byte("Action:")) ||
+		bytes.Contains(b, []byte("```"))
 }
