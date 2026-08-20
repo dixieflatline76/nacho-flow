@@ -16,7 +16,43 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 
 ## 1. Installation & Setup
 
-### Homebrew (macOS & Linux - Recommended)
+### Universal Shell Installer (Linux & macOS - Recommended)
+```bash
+curl -fsSL https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/scripts/install.sh | bash
+```
+The installer automatically:
+- Detects your CPU architecture (`amd64` / `arm64`) and OS.
+- Verifies SHA-256 cryptographic checksums against `checksums.txt`.
+- Installs to `/usr/local/bin` (or falls back to `~/.local/bin` if non-root).
+- Offers to register and start a native `systemd` background service on Linux.
+
+### Docker / Podman (Multi-Arch Distroless Container)
+Run as a lightweight (< 15MB) container with nonroot security:
+```bash
+docker run -d --name nacho-flow \
+  -p 8000:8000 \
+  -v $(pwd)/config.yaml:/config/config.yaml \
+  ghcr.io/dixieflatline76/nacho-flow:latest
+```
+
+**Docker Compose Recipe (Ollama + Nacho Flow)**:
+```yaml
+version: '3.8'
+
+services:
+  nacho-flow:
+    image: ghcr.io/dixieflatline76/nacho-flow:latest
+    container_name: nacho-flow
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+### Homebrew (macOS & Linux)
 ```bash
 brew install dixieflatline76/nacho-flow/nacho-flow
 ```

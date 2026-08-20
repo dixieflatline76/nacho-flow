@@ -18,6 +18,7 @@ const (
 	HeaderContentType      = "Content-Type"
 	HeaderContentLength    = "Content-Length"
 	ContentTypeJSON        = "application/json"
+	ContentTypeEventStream = "text/event-stream"
 )
 
 // Standard API endpoint routes.

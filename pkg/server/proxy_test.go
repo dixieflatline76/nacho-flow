@@ -857,3 +857,167 @@ func BenchmarkProxy_ChatCompletions_ToolNormalization(b *testing.B) {
 		srv.ServeHTTP(rec, req)
 	}
 }
+
+func TestProxy_NonStreaming_ReasoningModelNormalization(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-reason-test",
+			"object": "chat.completion",
+			"created": 1787200000,
+			"model": "deepseek-r1",
+			"choices": [{
+				"index": 0,
+				"message": {
+					"role": "assistant",
+					"content": "Here is the final answer.",
+					"reasoning_content": "Detailed reasoning about goroutine race conditions."
+				},
+				"finish_reason": "stop"
+			}]
+		}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock_cloud": {BaseURL: mockUpstream.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier 3", Model: "deepseek-r1", Provider: "mock_cloud", When: "true"},
+		},
+		DefaultTier: contract.Tier{Name: "Default", Model: "deepseek-r1", Provider: "mock_cloud"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"help with concurrency"}]}`))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+
+	var res fastChatCompletionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode response JSON: %v", err)
+	}
+
+	expectedContent := "<think>\nDetailed reasoning about goroutine race conditions.\n</think>\n\nHere is the final answer."
+	if len(res.Choices) == 0 || res.Choices[0].Message.Content != expectedContent {
+		t.Errorf("expected normalized content %q, got %q", expectedContent, res.Choices[0].Message.Content)
+	}
+}
+
+func TestProxy_LiveSSE_ReasoningStreamNormalization(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		_, _ = w.Write([]byte("data: {\"id\":\"sse-1\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"Live thinking...\"}}]}\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("data: {\"id\":\"sse-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Live final answer.\"}}]}\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock_cloud": {BaseURL: mockUpstream.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier 3", Model: "deepseek-r1", Provider: "mock_cloud", When: "true"},
+		},
+		DefaultTier: contract.Tier{Name: "Default", Model: "deepseek-r1", Provider: "mock_cloud"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid","stream":true,"messages":[{"role":"user","content":"stream please"}]}`))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "<think>") || !strings.Contains(body, "</think>") {
+		t.Errorf("expected <think> and </think> in live SSE proxy output, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Live final answer.") {
+		t.Errorf("expected final answer in live SSE proxy output, got:\n%s", body)
+	}
+}
+
+func TestProxy_APIKeyHeaderAuth(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"ok"}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port:      8000,
+		AuthToken: "secret-test-token",
+		Providers: map[string]contract.ProviderConfig{
+			"p": {BaseURL: mockUpstream.URL, Type: "local"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "T", Model: "m", Provider: "p", When: "true"},
+		},
+		DefaultTier: contract.Tier{Name: "D", Model: "m", Provider: "p"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	// 1. api-key header
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid"}`))
+	req.Header.Set("api-key", "secret-test-token")
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 with api-key header, got %d", rec.Code)
+	}
+
+	// 2. wrong api-key header
+	recBad := httptest.NewRecorder()
+	reqBad := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid"}`))
+	reqBad.Header.Set("api-key", "wrong-token")
+	srv.ServeHTTP(recBad, reqBad)
+	if recBad.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with bad api-key header, got %d", recBad.Code)
+	}
+
+	// 3. wrong Bearer header
+	recBadBearer := httptest.NewRecorder()
+	reqBadBearer := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid"}`))
+	reqBadBearer.Header.Set("Authorization", "Bearer invalid-token")
+	srv.ServeHTTP(recBadBearer, reqBadBearer)
+	if recBadBearer.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with bad Bearer token, got %d", recBadBearer.Code)
+	}
+}
