@@ -190,3 +190,56 @@ default_tier:
 		t.Errorf("Expected error to mention non_existent_provider, got: %v", err)
 	}
 }
+
+// Test 1.5: AuthToken parsing and environment variable substitution
+func TestConfig_AuthTokenResolution(t *testing.T) {
+	t.Setenv("SECRET_GATEWAY_TOKEN", "sk-custom-secret-12345")
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 8080
+auth_token: "ENV_SECRET_GATEWAY_TOKEN"
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434/v1"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.AuthToken != "sk-custom-secret-12345" {
+		t.Errorf("Expected AuthToken 'sk-custom-secret-12345', got '%s'", cfg.AuthToken)
+	}
+}
+
+// Test 1.6: NACHO_AUTH_TOKEN global fallback when auth_token is unset
+func TestConfig_AuthTokenEnvFallback(t *testing.T) {
+	t.Setenv("NACHO_AUTH_TOKEN", "sk-fallback-env-token")
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 8080
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434/v1"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.AuthToken != "sk-fallback-env-token" {
+		t.Errorf("Expected AuthToken 'sk-fallback-env-token', got '%s'", cfg.AuthToken)
+	}
+}

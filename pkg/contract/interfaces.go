@@ -34,6 +34,7 @@ type ProviderConfig struct {
 // Config defines the top-level configuration loaded from config.yaml.
 type Config struct {
 	Port        int                       `yaml:"port" json:"port"`
+	AuthToken   string                    `yaml:"auth_token,omitempty" json:"auth_token,omitempty"`
 	Providers   map[string]ProviderConfig `yaml:"providers" json:"providers"`
 	Tiers       []Tier                    `yaml:"tiers" json:"tiers"`
 	DefaultTier Tier                      `yaml:"default_tier" json:"default_tier"`

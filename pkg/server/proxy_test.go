@@ -302,3 +302,85 @@ func TestProxy_UnknownProvider_Returns502WithoutPanic(t *testing.T) {
 		t.Errorf("Expected status 502 Bad Gateway for missing provider, got %d", rec.Code)
 	}
 }
+
+// Test 3.5: Local model emitting markdown tool-calling fence is normalized to OpenAI tool_calls
+func TestProxy_LocalModel_MarkdownToolCallNormalization(t *testing.T) {
+	mockOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// Model outputs JSON inside markdown fence instead of native tool_calls
+		responseJSON := `{
+			"id": "chatcmpl-local-123",
+			"choices": [{
+				"finish_reason": "stop",
+				"message": {
+					"role": "assistant",
+					"content": "I will read the file for you.\n` + "```json" + `\n{\"name\": \"read_file\", \"arguments\": {\"path\": \"main.go\"}}\n` + "```" + `"
+				}
+			}]
+		}`
+		_, _ = w.Write([]byte(responseJSON))
+	}))
+	defer mockOllama.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {
+				BaseURL: mockOllama.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Local Tier",
+				Model:    "qwen2.5-coder:14b",
+				Provider: "ollama",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	// Request with tools array
+	reqPayload := `{
+		"model": "nacho-hybrid",
+		"messages": [{"role": "user", "content": "read main.go"}],
+		"tools": [{"type": "function", "function": {"name": "read_file"}}]
+	}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d", rec.Code)
+	}
+
+	var parsedResp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsedResp); err != nil {
+		t.Fatalf("Failed to parse response JSON: %v", err)
+	}
+
+	choices := parsedResp["choices"].([]interface{})
+	firstChoice := choices[0].(map[string]interface{})
+	finishReason := firstChoice["finish_reason"].(string)
+	if finishReason != "tool_calls" {
+		t.Errorf("Expected finish_reason to be 'tool_calls', got '%s'", finishReason)
+	}
+
+	msg := firstChoice["message"].(map[string]interface{})
+	toolCalls, hasTools := msg["tool_calls"].([]interface{})
+	if !hasTools || len(toolCalls) == 0 {
+		t.Fatalf("Expected normalized tool_calls array, got none")
+	}
+
+	firstCall := toolCalls[0].(map[string]interface{})
+	fn := firstCall["function"].(map[string]interface{})
+	if fn["name"] != "read_file" {
+		t.Errorf("Expected function name 'read_file', got '%s'", fn["name"])
+	}
+}

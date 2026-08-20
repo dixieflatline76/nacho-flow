@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
+	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
@@ -101,17 +103,25 @@ func NewServerWithTelemetryAndRegistry(
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// 0. Expose /v1/stats endpoint
-	if r.URL.Path == "/v1/stats" {
-		s.tracker.ServeHTTP(w, r)
-		return
-	}
-
-	// Health check endpoint
+	// Health check endpoint (always public for load balancers & monitoring)
 	if r.URL.Path == "/health" || r.URL.Path == "/v1/health" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok","service":"nacho-flow"}`))
+		return
+	}
+
+	// 0. Inbound Client Authentication (Dual-layer security for LAN / Tailscale)
+	if s.config.AuthToken != "" && !s.authenticateClient(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"Invalid or missing gateway API key","type":"auth_error","code":"invalid_api_key"}}`))
+		return
+	}
+
+	// Expose /v1/stats endpoint
+	if r.URL.Path == "/v1/stats" {
+		s.tracker.ServeHTTP(w, r)
 		return
 	}
 
@@ -264,6 +274,44 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp.Header.Set("x-nacho-target-model", targetTier.Model)
 		resp.Header.Set("x-spice-target-model", targetTier.Model)
 
+		// Markdown Tool-Calling Normalization for local models
+		if reqCtx.HasTools && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+			bodyBytes, err := io.ReadAll(resp.Body)
+			if err == nil {
+				_ = resp.Body.Close()
+				var completionResp map[string]interface{}
+				if json.Unmarshal(bodyBytes, &completionResp) == nil {
+					if choices, ok := completionResp["choices"].([]interface{}); ok && len(choices) > 0 {
+						if firstChoice, ok := choices[0].(map[string]interface{}); ok {
+							if message, ok := firstChoice["message"].(map[string]interface{}); ok {
+								existingTools, hasTools := message["tool_calls"]
+								if !hasTools || existingTools == nil {
+									if contentStr, ok := message["content"].(string); ok {
+										cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(contentStr)
+										if parsed && len(extractedCalls) > 0 {
+											message["content"] = cleanedText
+											message["tool_calls"] = extractedCalls
+											firstChoice["finish_reason"] = "tool_calls"
+											firstChoice["message"] = message
+											choices[0] = firstChoice
+											completionResp["choices"] = choices
+
+											if newJSON, err := json.Marshal(completionResp); err == nil {
+												bodyBytes = newJSON
+												resp.Header.Set("Content-Length", strconv.Itoa(len(newJSON)))
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+				resp.ContentLength = int64(len(bodyBytes))
+			}
+		}
+
 		s.tracker.Record(telemetry.Observation{
 			Tier:       tierNum,
 			TierName:   targetTier.Name,
@@ -314,4 +362,27 @@ func singleJoiningSlash(a, b string) string {
 		return a + "/" + b
 	}
 	return a + b
+}
+
+// authenticateClient checks if the incoming request carries a valid Bearer token or API key.
+func (s *Server) authenticateClient(r *http.Request) bool {
+	expected := s.config.AuthToken
+	if expected == "" {
+		return true
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == expected {
+			return true
+		}
+	}
+
+	// Also check X-API-Key or api-key headers
+	if r.Header.Get("X-API-Key") == expected || r.Header.Get("api-key") == expected {
+		return true
+	}
+
+	return false
 }

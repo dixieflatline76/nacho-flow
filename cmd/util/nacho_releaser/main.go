@@ -45,10 +45,12 @@ func main() {
 		}
 	}
 	if !strings.HasPrefix(tag, "v") {
+		// #nosec G706 - trusted build tag from GITHUB_REF_NAME or version.txt
 		log.Fatalf("Tag %s does not start with 'v'", tag)
 	}
 
 	version := strings.TrimPrefix(tag, "v")
+	// #nosec G706 - trusted build version
 	log.Printf("[nacho-releaser] Starting release process for version: %s (tag: %s)", version, tag)
 
 	client := github.NewClient(nil).WithAuthToken(token)
@@ -110,10 +112,12 @@ func main() {
 		if createErr != nil {
 			log.Fatalf("Failed to create GitHub release: %v", createErr)
 		}
+		// #nosec G706 - trusted release tag
 		log.Printf("[nacho-releaser] Created release %s (ID: %d)", tag, release.GetID())
 	} else if err != nil {
 		log.Fatalf("Failed to check existing release: %v", err)
 	} else {
+		// #nosec G706 - trusted release tag
 		log.Printf("[nacho-releaser] Found existing release %s (ID: %d)", tag, release.GetID())
 	}
 
@@ -131,6 +135,7 @@ func main() {
 		log.Println("[nacho-releaser] Skipping winget manifest push (no token provided)")
 	}
 
+	// #nosec G706 - trusted release tag
 	log.Printf("🎉 Release %s completed successfully!", tag)
 }
 
@@ -270,5 +275,6 @@ ManifestVersion: 1.5.0
 	}
 	_, _, _ = client.Git.UpdateRef(ctx, repoOwner, wingetRepo, branchRef, true)
 
+	// #nosec G706 - trusted calculated branch name
 	log.Printf("✅ Winget manifests pushed to branch '%s' for 1-click PR!", branchName)
 }

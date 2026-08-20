@@ -52,6 +52,7 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 	}
 
 	// 3. Serialize updated config
+	// #nosec G117 - applier safely serializes existing config fields including auth_token
 	updatedData, err := yaml.Marshal(&cfg)
 	if err != nil {
 		return backupPath, fmt.Errorf("failed to marshal updated config YAML: %w", err)

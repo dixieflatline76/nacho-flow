@@ -54,6 +54,18 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 		cfg.Port = 8000
 	}
 
+	// Resolve ENV variables for auth_token
+	if strings.HasPrefix(cfg.AuthToken, "ENV_") {
+		envVarName := strings.TrimPrefix(cfg.AuthToken, "ENV_")
+		if envVal := os.Getenv(envVarName); envVal != "" {
+			cfg.AuthToken = envVal
+		}
+	} else if cfg.AuthToken == "" {
+		if envVal := os.Getenv("NACHO_AUTH_TOKEN"); envVal != "" {
+			cfg.AuthToken = envVal
+		}
+	}
+
 	// Validate providers and resolve ENV variables for API keys
 	if len(cfg.Providers) == 0 {
 		return nil, fmt.Errorf("config error: at least one provider must be defined in 'providers'")
