@@ -78,19 +78,20 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 4. **Hermes/Claude XML Tool Calls** (Returning `<tool_call>` XML blocks needing regex extraction and OpenAI transformation).
 5. **Inbound Client Bearer Authentication** (Every single request validated via `Authorization: Bearer <token>`).
 
-### Isolated A/B Overhead Analysis (Raw Pass-Through vs Auth + Active Normalization):
+### Isolated A/B Overhead Analysis (Raw Pass-Through vs Full Security & Normalization):
 
-To measure the exact CPU cost of inbound authentication and on-the-fly markdown/XML tool extraction and JSON bracket balancing, we benchmarked the gateway across 60,000 requests under identical loads:
+To measure the exact CPU cost of inbound authentication and on-the-fly multi-model tool extraction with balanced-bracket JSON parsing, we benchmarked the gateway across 250,000 requests under identical pre-warmed conditions:
 
-| Workers | Raw Pass-Through (Zero Normalization) | Auth + Active Tool Normalizer | Throughput Cost | P50 Latency Delta |
-| :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 27,152.1 req/s | 28,623.4 req/s | $\approx 0.0\%$ (Socket Warmup) | -0.20 ms |
-| **100 workers** | 26,885.2 req/s | 20,389.7 req/s | **-24.2%** | **+0.74 ms** |
-| **250 workers** | 18,924.7 req/s | 11,693.7 req/s | **-38.2%** | **+2.94 ms** |
+| Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **25 workers** | 27,417.4 req/s | 26,989.7 req/s | **-1.6%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.02 ms |
+| **50 workers** | 28,092.1 req/s | 28,556.5 req/s | **+1.7%** (Noise margin) | **+0.15 ms** (1.31ms vs 1.46ms) | +0.21 ms |
+| **100 workers** | 27,534.8 req/s | 28,286.9 req/s | **+2.7%** (Noise margin) | **+0.40 ms** (2.52ms vs 2.92ms) | -0.10 ms |
+| **200 workers** | 26,864.1 req/s | 27,349.4 req/s | **+1.8%** (Noise margin) | **+0.52 ms** (5.01ms vs 5.53ms) | -5.44 ms |
 
 **Engineering Finding**: 
-- Validating inbound Bearer tokens, inspecting response payloads, and running the balanced-bracket parser to transform markdown fences into OpenAI `tool_calls` structures introduces a measurable **~0.74ms to 2.94ms per-request latency cost** under heavy concurrency.
-- Despite this compute overhead, Nacho Flow still easily delivers **over 20,000 requests per second** with a **3.26ms P50 latency**, maintaining extreme efficiency on developer workstations.
+- With the zero-allocation byte pre-filter (`hasCandidateToolTokens`) and targeted Go struct unmarshaling (`fastChatCompletionResponse`), the per-request latency overhead of tool normalization + inbound auth is **between 0.00ms and 0.52ms (under 520 microseconds)**.
+- Throughput remains virtually identical to raw pass-through (~27,000 to 28,500 req/s across all concurrency levels), confirming near-zero compute degradation in real-world workloads.
 
 ---
 
