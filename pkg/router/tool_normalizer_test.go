@@ -237,7 +237,7 @@ func BenchmarkNormalize_PureProse_FastBailout(b *testing.B) {
 	raw := "This is a standard text response explaining concurrency patterns in Go with channels and mutexes."
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _ = NormalizeMarkdownToolCalls(raw)
 	}
 }
@@ -246,7 +246,7 @@ func BenchmarkNormalize_HermesXML_FullNormalization(b *testing.B) {
 	raw := "I will inspect the file:\n<tool_call>\n{\"name\": \"read_file\", \"arguments\": {\"path\": \"pkg/server/proxy.go\"}}\n</tool_call>"
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _ = NormalizeMarkdownToolCalls(raw)
 	}
 }
@@ -255,7 +255,7 @@ func BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall(b *testing.B) {
 	raw := "<think>\nAnalyzing the issue with proxy latency.\n</think>\n```json\n{\n  \"name\": \"search_code\",\n  \"arguments\": {\"pattern\": \"atomic.Pointer\"}\n}\n```"
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _ = NormalizeMarkdownToolCalls(raw)
 	}
 }
@@ -264,7 +264,7 @@ func BenchmarkNormalize_Mistral_ArrayCalls(b *testing.B) {
 	raw := "[TOOL_CALLS] [{\"name\": \"read_file\", \"arguments\": {\"path\": \"a.go\"}}, {\"name\": \"read_file\", \"arguments\": {\"path\": \"b.go\"}}]"
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _ = NormalizeMarkdownToolCalls(raw)
 	}
 }

@@ -492,7 +492,7 @@ func BenchmarkProxy_ChatCompletions_RawPassThrough(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(reqPayload))
 		srv.ServeHTTP(rec, req)
@@ -544,7 +544,7 @@ func BenchmarkProxy_ChatCompletions_ToolNormalization(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(reqPayload))
 		srv.ServeHTTP(rec, req)
