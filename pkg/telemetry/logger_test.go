@@ -177,3 +177,30 @@ func TestServiceLogger_WithAttrsAndWithGroup(t *testing.T) {
 		t.Errorf("Expected component=gateway in log output, got: %s", msg)
 	}
 }
+
+// Test NewInteractiveLogger with nil stdout and NewServiceLogger with nil service
+func TestLogger_NilWriterAndNilServiceLogger(t *testing.T) {
+	tempDir := t.TempDir()
+	logFile := filepath.Join(tempDir, "file_only.log")
+
+	// Nil stdout -> only rotator
+	logger, closer := NewInteractiveLogger(nil, logFile, slog.LevelInfo)
+	logger.Info("written only to file", slog.String("key", "val"))
+	_ = closer.Close()
+
+	data, err := os.ReadFile(logFile)
+	if err != nil || !strings.Contains(string(data), "written only to file") {
+		t.Errorf("Expected log written to file when stdout is nil")
+	}
+
+	// Nil service logger in NewServiceLogger
+	nilSvcLogger := NewServiceLogger(nil, slog.LevelInfo)
+	nilSvcLogger.Info("message to nil service logger") // should not panic and return nil
+
+	// InitLogger with empty logDir in interactive mode
+	loggerEmptyDir, closerEmptyDir := InitLogger(true, "", slog.LevelInfo, nil)
+	if loggerEmptyDir == nil || closerEmptyDir == nil {
+		t.Fatalf("Expected non-nil logger when logDir is empty")
+	}
+	_ = closerEmptyDir.Close()
+}

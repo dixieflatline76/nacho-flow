@@ -274,6 +274,93 @@ func TestNormalize_PythonArgs_EdgeCases(t *testing.T) {
 	if parsedArgs["single_quote"] != "hello" {
 		t.Errorf("Single quote string parsing error: %+v", parsedArgs)
 	}
+
+	// Python args with raw unstructured text
+	rawUnstructured := `<|python_tag|>unstructured_tool(just some raw query text without equals)`
+	_, calls2, ok2 := NormalizeMarkdownToolCalls(rawUnstructured)
+	if !ok2 || len(calls2) != 1 {
+		t.Fatalf("Expected fallback raw_args wrap for unstructured python args")
+	}
+	if !strings.Contains(calls2[0].Function.Arguments, "raw_args") {
+		t.Errorf("Expected raw_args in arguments: %s", calls2[0].Function.Arguments)
+	}
+}
+
+// 15. Unclosed and Malformed Tags Fallbacks
+func TestNormalize_UnclosedTagsAndEdgeExtractors(t *testing.T) {
+	// Unclosed <tool_call>
+	raw1 := "<tool_call>{\"name\": \"unclosed\"}"
+	_, _, ok1 := NormalizeMarkdownToolCalls(raw1)
+	if ok1 {
+		t.Errorf("Expected false for unclosed <tool_call>")
+	}
+
+	// Unclosed <function=name>
+	raw2 := "<function=unclosed>{\"a\": 1}"
+	_, _, ok2 := NormalizeMarkdownToolCalls(raw2)
+	if ok2 {
+		t.Errorf("Expected false for unclosed <function>")
+	}
+
+	// ReAct single-line action input without trailing newline
+	raw3 := "Action: single_line_tool\nAction Input: my_single_argument"
+	_, calls3, ok3 := NormalizeMarkdownToolCalls(raw3)
+	if !ok3 || len(calls3) != 1 || calls3[0].Function.Name != "single_line_tool" {
+		t.Errorf("Failed to parse single line ReAct input: %+v", calls3)
+	}
+
+	// Balanced JSON with escaped quotes inside string
+	raw4 := `{"name": "escaped_quotes", "arguments": "{\"query\": \"hello \\\"world\\\"\"}"}`
+	_, _, ok4 := NormalizeMarkdownToolCalls("<tool_call>" + raw4 + "</tool_call>")
+	if !ok4 {
+		t.Errorf("Failed to parse balanced JSON with escaped quotes")
+	}
+}
+
+// 16. Unit Tests for internal serialization & validation helpers
+func TestNormalize_InternalHelpers(t *testing.T) {
+	// serializeArgs with non-JSON string
+	res1 := serializeArgs("plain_string_value")
+	if res1 != `"plain_string_value"` {
+		t.Errorf("Expected quoted JSON string, got: %s", res1)
+	}
+
+	// serializeArgs with valid JSON string
+	res2 := serializeArgs(`{"valid":true}`)
+	if res2 != `{"valid":true}` {
+		t.Errorf("Expected unchanged JSON string, got: %s", res2)
+	}
+
+	// serializeArgs with map
+	res3 := serializeArgs(map[string]int{"count": 5})
+	if res3 != `{"count":5}` {
+		t.Errorf("Expected serialized map, got: %s", res3)
+	}
+
+	// isValidJSON with empty and whitespace
+	if isValidJSON("") || isValidJSON("   ") {
+		t.Errorf("Expected false for empty JSON strings")
+	}
+
+	// pythonArgsToJSON with empty string
+	if pythonArgsToJSON("") != "{}" || pythonArgsToJSON("   ") != "{}" {
+		t.Errorf("Expected empty JSON object for empty python args")
+	}
+
+	// pythonArgsToJSON with valid JSON
+	if pythonArgsToJSON(`{"already":"json"}`) != `{"already":"json"}` {
+		t.Errorf("Expected raw pass-through for already valid JSON")
+	}
+
+	// parseMapToToolCall with invalid/empty map
+	if _, ok := parseMapToToolCall(map[string]interface{}{"unknown_key": "val"}, 1); ok {
+		t.Errorf("Expected false for map with unknown keys")
+	}
+
+	// parseSingleToolCall with invalid JSON
+	if _, ok := parseSingleToolCall("not_json", 1); ok {
+		t.Errorf("Expected false for invalid JSON in parseSingleToolCall")
+	}
 }
 
 // ---------------------------------------------------------------------------

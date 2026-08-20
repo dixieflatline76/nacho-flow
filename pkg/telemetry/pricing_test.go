@@ -179,4 +179,20 @@ func TestPricingOracle_CalculateCost_NotFound(t *testing.T) {
 	if cost != 0.0 {
 		t.Errorf("Expected 0.0 cost for unknown model, got %f", cost)
 	}
+
+	// Test direct model fallback lookup
+	provider := &mockPricingProvider{
+		name: "openrouter",
+		prices: map[string]ModelPricing{
+			"claude-sonnet": {PromptCostPerMillion: 3.0, CompletionCostPerMillion: 15.0},
+		},
+	}
+	oracle.RegisterProvider(provider)
+	_ = oracle.Sync(context.Background())
+
+	// Lookup with different provider name should fallback to direct model key
+	price, found := oracle.GetPrice("some_other_provider", "claude-sonnet")
+	if !found || price.PromptCostPerMillion != 3.0 {
+		t.Errorf("Expected fallback direct model lookup to succeed, got found=%v, price=%+v", found, price)
+	}
 }

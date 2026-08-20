@@ -91,4 +91,24 @@ func TestOpenRouterPricingProvider_FetchPricing_ServerError(t *testing.T) {
 	if defaultProvider.Name() != "openrouter" {
 		t.Errorf("Expected Name 'openrouter', got '%s'", defaultProvider.Name())
 	}
+
+	// Case: Invalid JSON returned with 200 OK
+	badJSONServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("not_valid_json"))
+	}))
+	defer badJSONServer.Close()
+
+	badProvider := NewOpenRouterPricingProviderWithURL(badJSONServer.URL, "")
+	_, err = badProvider.FetchPricing(context.Background())
+	if err == nil {
+		t.Errorf("Expected error decoding invalid JSON")
+	}
+
+	// Case: Dead server connection failure
+	deadProvider := NewOpenRouterPricingProviderWithURL("http://127.0.0.1:54322", "")
+	_, err = deadProvider.FetchPricing(context.Background())
+	if err == nil {
+		t.Errorf("Expected connection error for unreachable host")
+	}
 }

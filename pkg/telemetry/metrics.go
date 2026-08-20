@@ -128,6 +128,8 @@ func (s *StatsTracker) worker() {
 
 		if obs.IsLocal {
 			s.stats.TotalTokensRoutedLocally += int64(obs.Tokens)
+		}
+		if obs.CostSaved > 0 {
 			s.stats.EstimatedCostSavedUSD += obs.CostSaved
 		}
 		s.mu.Unlock()
