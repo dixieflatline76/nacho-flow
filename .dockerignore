@@ -1,0 +1,11 @@
+.git
+.github
+.vscode
+bin
+dist
+logs
+coverage*.out
+*.exe
+*.log
+*.tmp
+tmp

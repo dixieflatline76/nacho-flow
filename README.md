@@ -20,6 +20,7 @@ Autonomous coding agents (Roo Code, Cline, Aider, Cursor) dump full conversation
 ## ✨ Key Features
 
 * **⚡ Wire-Speed Throughput (28,000+ req/sec)**: Built with zero-lock concurrency (`atomic.Pointer` RCU) and pooled HTTP transports (< 0.21 ms routing overhead, < 96 MB RAM under 1,000 parallel workers).
+* **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, and OpenRouter, automatically transforming non-standard `reasoning_content` tokens into `<think>...</think>` tags in real-time. Eliminates empty-message errors and powers live thinking accordions in Roo Code & Cline.
 * **🛠️ Universal Multi-Model Tool Normalizer**: Automatically intercepts and converts raw model outputs (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML, ReAct, and DeepSeek-R1 CoT `<think>`) into strict OpenAI `tool_calls` JSON structures—giving local open-source models 100% compatibility with agentic tools.
 * **🔒 Inbound Gateway Client Authentication**: Secure your gateway when exposed on local LAN (`0.0.0.0`) or remote devboxes via `auth_token` Bearer authentication, with OpenAI-compliant 401 error payloads and public `/health` bypass.
 * **🔌 Composable Capability Provider Subsystem**: Supports local GPUs (Ollama, vLLM, LM Studio) and cloud endpoints (OpenRouter, Langdock, DeepSeek, Azure, AWS) with dynamic header and bearer auth injection.
@@ -35,13 +36,25 @@ Autonomous coding agents (Roo Code, Cline, Aider, Cursor) dump full conversation
 
 ### 1. Installation
 
+**Universal Shell Installer (Linux & macOS)**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/scripts/install.sh | bash
+```
+
+**Docker / Podman (Multi-Arch Distroless Container)**:
+```bash
+docker run -d -p 8000:8000 \
+  -v $(pwd)/config.yaml:/config/config.yaml \
+  ghcr.io/dixieflatline76/nacho-flow:latest
+```
+
 **Homebrew (macOS & Linux)**:
 ```bash
 brew install dixieflatline76/nacho-flow/nacho-flow
 ```
 
-**Download Pre-compiled Binary**:
-Download the latest release for Windows, Linux, or macOS from [GitHub Releases](https://github.com/dixieflatline76/nacho-flow/releases).
+**Pre-compiled Binaries**:
+Download the latest signed release for Windows, Linux, or macOS from [GitHub Releases](https://github.com/dixieflatline76/nacho-flow/releases).
 
 **Or install via Go**:
 ```bash

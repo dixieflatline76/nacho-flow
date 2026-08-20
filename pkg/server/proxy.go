@@ -308,30 +308,56 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp.Header.Set(contract.HeaderNachoTargetModel, targetTier.Model)
 		resp.Header.Set(contract.HeaderSpiceTargetModel, targetTier.Model)
 
-		// Markdown Tool-Calling Normalization for local models (Zero-Alloc Fast Path)
-		if reqCtx.HasTools && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeJSON) {
+		// 1. SSE Stream Normalization (DeepSeek-R1 / OpenRouter reasoning token normalization)
+		if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeEventStream) {
+			resp.Body = NewStreamNormalizer(resp.Body)
+		}
+
+		// 2. Non-streaming JSON Normalization (Tools & Reasoning models)
+		if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeJSON) {
 			bodyBytes, err := io.ReadAll(resp.Body)
 			if err == nil {
 				_ = resp.Body.Close()
 
-				// Fast pre-filter: Only decode JSON if the raw bytes contain candidate tool markers
-				if hasCandidateToolTokens(bodyBytes) {
+				// Fast pre-filter: Only decode JSON if the raw bytes contain candidate markers
+				if hasCandidateToolTokens(bodyBytes) || bytes.Contains(bodyBytes, []byte("reasoning")) {
 					var completionResp fastChatCompletionResponse
 					if json.Unmarshal(bodyBytes, &completionResp) == nil && len(completionResp.Choices) > 0 {
 						firstChoice := &completionResp.Choices[0]
-						// Only normalize if model did NOT provide native tool_calls
-						if len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" {
+						modified := false
+
+						// Normalize reasoning tokens if present
+						reasoningText := firstChoice.Message.ReasoningContent
+						if reasoningText == "" {
+							reasoningText = firstChoice.Message.Reasoning
+						}
+						if reasoningText == "" {
+							reasoningText = firstChoice.Message.Reason
+						}
+						if reasoningText != "" && !strings.Contains(firstChoice.Message.Content, "<think>") {
+							firstChoice.Message.Content = "<think>\n" + reasoningText + "\n</think>\n\n" + firstChoice.Message.Content
+							firstChoice.Message.ReasoningContent = ""
+							firstChoice.Message.Reasoning = ""
+							firstChoice.Message.Reason = ""
+							modified = true
+						}
+
+						// Only normalize markdown tool calls if model did NOT provide native tool_calls
+						if reqCtx.HasTools && len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" {
 							cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(firstChoice.Message.Content)
 							if parsed && len(extractedCalls) > 0 {
 								firstChoice.Message.Content = cleanedText
 								firstChoice.FinishReason = "tool_calls"
 								rawCallsJSON, _ := json.Marshal(extractedCalls)
 								firstChoice.Message.ToolCalls = rawCallsJSON
+								modified = true
+							}
+						}
 
-								if newJSON, err := json.Marshal(completionResp); err == nil {
-									bodyBytes = newJSON
-									resp.Header.Set(contract.HeaderContentLength, strconv.Itoa(len(newJSON)))
-								}
+						if modified {
+							if newJSON, err := marshalNoEscapeHTML(completionResp); err == nil {
+								bodyBytes = newJSON
+								resp.Header.Set(contract.HeaderContentLength, strconv.Itoa(len(newJSON)))
 							}
 						}
 					}
@@ -417,9 +443,12 @@ func (s *Server) authenticateClient(r *http.Request) bool {
 }
 
 type fastMessage struct {
-	Role      string          `json:"role"`
-	Content   string          `json:"content"`
-	ToolCalls json.RawMessage `json:"tool_calls,omitempty"`
+	Role             string          `json:"role"`
+	Content          string          `json:"content"`
+	ReasoningContent string          `json:"reasoning_content,omitempty"`
+	Reasoning        string          `json:"reasoning,omitempty"`
+	Reason           string          `json:"reason,omitempty"`
+	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
 }
 
 type fastChoice struct {
