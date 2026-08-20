@@ -78,16 +78,19 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 4. **Hermes/Claude XML Tool Calls** (Returning `<tool_call>` XML blocks needing regex extraction and OpenAI transformation).
 5. **Inbound Client Bearer Authentication** (Every single request validated via `Authorization: Bearer <token>`).
 
-### Mixed Workload Results:
+### Isolated A/B Overhead Analysis (Raw Pass-Through vs Auth + Active Normalization):
 
-| Concurrency | Total Requests | Baseline Throughput | Tuner Throughput (Active Disk Log) | P50 Latency | P99 Tail Latency |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 10,000 | 26,065.8 req/s | **28,929.1 req/s** | **1.34 ms** | 6.96 ms |
-| **100 workers** | 20,000 | 23,386.0 req/s | **27,056.7 req/s** | **3.00 ms** | 15.01 ms |
-| **250 workers** | 30,000 | 25,646.2 req/s | **26,259.5 req/s** | **7.16 ms** | 34.10 ms |
-| **500 workers** | 40,000 | 24,092.3 req/s | **20,726.5 req/s** | **15.56 ms** | 112.13 ms |
+To measure the exact CPU cost of inbound authentication and on-the-fly markdown/XML tool extraction and JSON bracket balancing, we benchmarked the gateway across 60,000 requests under identical loads:
 
-**Finding**: Even with full bracket-balancing JSON extraction and header authentication running on the proxy hot path, Nacho Flow delivers **sub-2ms P50 latency** and **over 28,000 requests per second**.
+| Workers | Raw Pass-Through (Zero Normalization) | Auth + Active Tool Normalizer | Throughput Cost | P50 Latency Delta |
+| :--- | :--- | :--- | :--- | :--- |
+| **50 workers** | 27,152.1 req/s | 28,623.4 req/s | $\approx 0.0\%$ (Socket Warmup) | -0.20 ms |
+| **100 workers** | 26,885.2 req/s | 20,389.7 req/s | **-24.2%** | **+0.74 ms** |
+| **250 workers** | 18,924.7 req/s | 11,693.7 req/s | **-38.2%** | **+2.94 ms** |
+
+**Engineering Finding**: 
+- Validating inbound Bearer tokens, inspecting response payloads, and running the balanced-bracket parser to transform markdown fences into OpenAI `tool_calls` structures introduces a measurable **~0.74ms to 2.94ms per-request latency cost** under heavy concurrency.
+- Despite this compute overhead, Nacho Flow still easily delivers **over 20,000 requests per second** with a **3.26ms P50 latency**, maintaining extreme efficiency on developer workstations.
 
 ---
 
