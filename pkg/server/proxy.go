@@ -214,11 +214,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 7. Calculate tier classification & potential USD savings
+	// 7. Calculate tier classification & potential USD savings using PricingOracle
 	isLocal := targetProvider.IsLocal()
 	var costSaved float64
-	if isLocal && reqCtx.Tokens > 0 {
-		costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * 4.50
+	if reqCtx.Tokens > 0 {
+		// Baseline reference: flagship cloud model (Claude 3.5 Sonnet / GPT-4o standard rate)
+		baselineRatePerM := 3.00
+		if baselinePricing, found := s.oracle.GetPrice("openrouter", "anthropic/claude-3.5-sonnet"); found && baselinePricing.PromptCostPerMillion > 0 {
+			baselineRatePerM = baselinePricing.PromptCostPerMillion
+		}
+
+		if isLocal {
+			// Local inference saved 100% of the flagship cloud cost
+			costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * baselineRatePerM
+		} else {
+			// Cloud inference: calculate differential savings between flagship and cheaper cloud model
+			if tierPricing, found := s.oracle.GetPrice(targetTier.Provider, targetTier.Model); found {
+				if baselineRatePerM > tierPricing.PromptCostPerMillion {
+					costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * (baselineRatePerM - tierPricing.PromptCostPerMillion)
+				}
+			}
+		}
 	}
 
 	tierNum := 1

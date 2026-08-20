@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -386,6 +388,70 @@ func TestProxy_LocalModel_MarkdownToolCallNormalization(t *testing.T) {
 	fn := firstCall["function"].(map[string]interface{})
 	if fn["name"] != "read_file" {
 		t.Errorf("Expected function name 'read_file', got '%s'", fn["name"])
+	}
+}
+
+// Test 3.5: Dynamic Pricing Savings Calculation via PricingOracle
+func TestProxy_DynamicPricingSavings_CalculatedFromOracle(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"cmpl-price","choices":[{"message":{"role":"assistant","content":"hello"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Local GPU", Model: "qwen2.5-coder:14b", Provider: "mock_local", When: "Tokens < 16000"},
+		},
+		DefaultTier: contract.Tier{Name: "Default", Model: "qwen2.5-coder:14b", Provider: "mock_local"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+
+	oracle := telemetry.NewPricingOracle()
+	// Mock OpenRouter pricing server
+	mockORServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"data": [
+				{"id": "anthropic/claude-3.5-sonnet", "pricing": {"prompt": "0.000003", "completion": "0.000015"}},
+				{"id": "deepseek/deepseek-r1", "pricing": {"prompt": "0.00000055", "completion": "0.00000219"}}
+			]
+		}`))
+	}))
+	defer mockORServer.Close()
+
+	orProvider := telemetry.NewOpenRouterPricingProviderWithURL(mockORServer.URL, "test-key")
+	oracle.RegisterProvider(orProvider)
+	_ = oracle.Sync(context.Background())
+
+	tracker := telemetry.NewStatsTracker(100)
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, nil, slog.Default())
+
+	// Send 4000-character prompt (~1000 tokens)
+	longPrompt := strings.Repeat("abcd ", 1000)
+	reqPayload := fmt.Sprintf(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"%s"}]}`, longPrompt)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d", rec.Code)
+	}
+
+	stats := tracker.GetStats()
+	// 1000 tokens saved on local GPU @ $3.00/1M = $0.003
+	if stats.EstimatedCostSavedUSD <= 0 {
+		t.Errorf("Expected positive USD cost savings calculated from oracle, got %f", stats.EstimatedCostSavedUSD)
 	}
 }
 
