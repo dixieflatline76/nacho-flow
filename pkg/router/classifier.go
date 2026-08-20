@@ -68,9 +68,10 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 				}
 
 				partType, _ := partMap["type"].(string)
-				if partType == "image_url" {
+				switch partType {
+				case "image_url":
 					reqCtx.HasImages = true
-				} else if partType == "text" {
+				case "text":
 					textStr, _ := partMap["text"].(string)
 					fullText.WriteString(textStr)
 					fullText.WriteString(" ")

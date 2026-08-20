@@ -19,12 +19,12 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	}
 
 	// Local directory fallback
-	pathsToTry = append(pathsToTry, "config.yaml", "./config.yaml")
+	pathsToTry = append(pathsToTry, contract.DefaultConfigFileName, "./"+contract.DefaultConfigFileName)
 
 	// Cross-platform user config directory
 	userConfigDir, err := os.UserConfigDir()
 	if err == nil {
-		pathsToTry = append(pathsToTry, filepath.Join(userConfigDir, "nacho-flow", "config.yaml"))
+		pathsToTry = append(pathsToTry, filepath.Join(userConfigDir, contract.AppName, contract.DefaultConfigFileName))
 	}
 
 	var data []byte
@@ -42,7 +42,7 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	}
 
 	if data == nil {
-		return nil, fmt.Errorf("could not find config.yaml in any standard location: %v", pathsToTry)
+		return nil, fmt.Errorf("could not find %s in any standard location: %v", contract.DefaultConfigFileName, pathsToTry)
 	}
 
 	var cfg contract.Config
@@ -51,17 +51,17 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	}
 
 	if cfg.Port == 0 {
-		cfg.Port = 8000
+		cfg.Port = contract.DefaultServerPort
 	}
 
 	// Resolve ENV variables for auth_token
-	if strings.HasPrefix(cfg.AuthToken, "ENV_") {
-		envVarName := strings.TrimPrefix(cfg.AuthToken, "ENV_")
+	if strings.HasPrefix(cfg.AuthToken, contract.EnvVarPrefix) {
+		envVarName := strings.TrimPrefix(cfg.AuthToken, contract.EnvVarPrefix)
 		if envVal := os.Getenv(envVarName); envVal != "" {
 			cfg.AuthToken = envVal
 		}
 	} else if cfg.AuthToken == "" {
-		if envVal := os.Getenv("NACHO_AUTH_TOKEN"); envVal != "" {
+		if envVal := os.Getenv(contract.GlobalAuthTokenEnv); envVal != "" {
 			cfg.AuthToken = envVal
 		}
 	}
