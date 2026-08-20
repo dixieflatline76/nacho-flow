@@ -84,6 +84,7 @@ var workloadPayloads = [][]byte{
 	}`),
 }
 
+// #nosec G101 - mock bench token
 const benchAuthToken = "sk-nacho-bench-secret-token"
 
 func runBenchStep(client *http.Client, ts *httptest.Server, tracker *telemetry.StatsTracker, totalRequests, concurrency int, useAuth bool) StepResult {
