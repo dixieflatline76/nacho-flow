@@ -5,152 +5,226 @@ import (
 	"testing"
 )
 
-func TestNormalizeMarkdownToolCalls_SingleJSONFence(t *testing.T) {
-	raw := "I will inspect the files for you.\n```json\n{\n  \"name\": \"list_files\",\n  \"arguments\": {\n    \"path\": \"./cmd\"\n  }\n}\n```\nLet me know if you need more."
+// 1. Hermes / Nous / Qwen Format
+func TestNormalize_HermesXMLFormat(t *testing.T) {
+	raw := "I will check the status:\n<tool_call>\n{\"name\": \"get_status\", \"arguments\": {\"service\": \"nacho-flow\"}}\n</tool_call>"
 
-	cleanedText, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
 	if !ok {
 		t.Fatalf("Expected ok to be true, got false")
 	}
-	if len(toolCalls) != 1 {
-		t.Fatalf("Expected 1 tool call, got %d", len(toolCalls))
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
 	}
-	if toolCalls[0].Function.Name != "list_files" {
-		t.Errorf("Expected function name 'list_files', got '%s'", toolCalls[0].Function.Name)
+	if calls[0].Function.Name != "get_status" {
+		t.Errorf("Expected 'get_status', got '%s'", calls[0].Function.Name)
 	}
-	if !strings.Contains(toolCalls[0].Function.Arguments, "./cmd") {
-		t.Errorf("Expected arguments to contain './cmd', got '%s'", toolCalls[0].Function.Arguments)
+	if !strings.Contains(calls[0].Function.Arguments, "nacho-flow") {
+		t.Errorf("Expected arguments to contain 'nacho-flow', got '%s'", calls[0].Function.Arguments)
 	}
-	if strings.Contains(cleanedText, "```json") {
-		t.Errorf("Expected code block to be stripped from message text, got: %s", cleanedText)
+	if strings.Contains(cleaned, "<tool_call>") {
+		t.Errorf("Expected <tool_call> tags stripped from cleaned text")
 	}
 }
 
-func TestNormalizeMarkdownToolCalls_XMLToolCall(t *testing.T) {
-	raw := "Executing operation:\n<tool_call>\n{\"name\": \"run_command\", \"arguments\": {\"cmd\": \"go test ./...\"}}\n</tool_call>"
+// 2. Mistral [TOOL_CALLS] Array Format
+func TestNormalize_MistralToolCallsArray(t *testing.T) {
+	raw := "[TOOL_CALLS] [{\"name\": \"read_file\", \"arguments\": {\"path\": \"config.go\"}}, {\"name\": \"read_file\", \"arguments\": {\"path\": \"proxy.go\"}}]"
 
-	cleanedText, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
 	if !ok {
 		t.Fatalf("Expected ok to be true, got false")
 	}
-	if len(toolCalls) != 1 {
-		t.Fatalf("Expected 1 tool call, got %d", len(toolCalls))
+	if len(calls) != 2 {
+		t.Fatalf("Expected 2 calls, got %d", len(calls))
 	}
-	if toolCalls[0].Function.Name != "run_command" {
-		t.Errorf("Expected 'run_command', got '%s'", toolCalls[0].Function.Name)
+	if calls[0].Function.Name != "read_file" || calls[1].Function.Name != "read_file" {
+		t.Errorf("Expected both to be 'read_file'")
 	}
-	if strings.Contains(cleanedText, "<tool_call>") {
-		t.Errorf("Expected <tool_call> tag to be removed from cleaned text")
+	if strings.Contains(cleaned, "[TOOL_CALLS]") {
+		t.Errorf("Expected [TOOL_CALLS] token stripped")
 	}
 }
 
-func TestNormalizeMarkdownToolCalls_ArrayOfCalls(t *testing.T) {
-	raw := "```json\n[\n  {\"name\": \"read_file\", \"arguments\": {\"path\": \"a.go\"}},\n  {\"name\": \"read_file\", \"arguments\": {\"path\": \"b.go\"}}\n]\n```"
+// 3. Mistral [TOOL_CALLS] Single Object Format
+func TestNormalize_MistralToolCallsSingle(t *testing.T) {
+	raw := "Executing operation: [TOOL_CALLS] {\"name\": \"list_dir\", \"arguments\": {\"path\": \"./cmd\"}}"
 
-	_, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
+	_, calls, ok := NormalizeMarkdownToolCalls(raw)
 	if !ok {
 		t.Fatalf("Expected ok to be true, got false")
 	}
-	if len(toolCalls) != 2 {
-		t.Fatalf("Expected 2 tool calls, got %d", len(toolCalls))
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
 	}
-	if toolCalls[0].Function.Name != "read_file" || toolCalls[1].Function.Name != "read_file" {
-		t.Errorf("Expected both calls to be 'read_file'")
+	if calls[0].Function.Name != "list_dir" {
+		t.Errorf("Expected 'list_dir', got '%s'", calls[0].Function.Name)
 	}
 }
 
-func TestNormalizeMarkdownToolCalls_FunctionFormat(t *testing.T) {
-	raw := "```json\n{\n  \"function\": {\n    \"name\": \"search_code\",\n    \"arguments\": {\"pattern\": \"TODO\"}\n  }\n}\n```"
+// 4. Llama 3 <function=name>{...}</function> Format
+func TestNormalize_Llama3FunctionTag(t *testing.T) {
+	raw := "<function=write_file>{\"path\": \"test.txt\", \"content\": \"hello world\"}</function>"
 
-	_, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
+	_, calls, ok := NormalizeMarkdownToolCalls(raw)
 	if !ok {
 		t.Fatalf("Expected ok to be true, got false")
 	}
-	if len(toolCalls) != 1 {
-		t.Fatalf("Expected 1 tool call, got %d", len(toolCalls))
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
 	}
-	if toolCalls[0].Function.Name != "search_code" {
-		t.Errorf("Expected 'search_code', got '%s'", toolCalls[0].Function.Name)
+	if calls[0].Function.Name != "write_file" {
+		t.Errorf("Expected 'write_file', got '%s'", calls[0].Function.Name)
 	}
-	if !strings.Contains(toolCalls[0].Function.Arguments, "TODO") {
-		t.Errorf("Expected arguments to contain 'TODO', got '%s'", toolCalls[0].Function.Arguments)
+	if !strings.Contains(calls[0].Function.Arguments, "hello world") {
+		t.Errorf("Expected content in arguments, got '%s'", calls[0].Function.Arguments)
 	}
 }
 
-func TestNormalizeMarkdownToolCalls_ParametersFormat(t *testing.T) {
-	raw := "```json\n{\n  \"name\": \"fetch_url\",\n  \"parameters\": {\"url\": \"https://spicebox.dev\"}\n}\n```"
+// 5. Llama 3.1 Python Tag Format with keyword arguments
+func TestNormalize_Llama3PythonTag(t *testing.T) {
+	raw := "<|python_tag|>brave_search.call(query=\"Golang 1.25 release date\", limit=5)<|eom_id|>"
 
-	_, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
+	_, calls, ok := NormalizeMarkdownToolCalls(raw)
 	if !ok {
 		t.Fatalf("Expected ok to be true, got false")
 	}
-	if len(toolCalls) != 1 {
-		t.Fatalf("Expected 1 tool call, got %d", len(toolCalls))
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
 	}
-	if toolCalls[0].Function.Name != "fetch_url" {
-		t.Errorf("Expected 'fetch_url', got '%s'", toolCalls[0].Function.Name)
+	if calls[0].Function.Name != "brave_search" {
+		t.Errorf("Expected 'brave_search', got '%s'", calls[0].Function.Name)
 	}
-	if !strings.Contains(toolCalls[0].Function.Arguments, "spicebox.dev") {
-		t.Errorf("Expected parameters mapped to arguments containing 'spicebox.dev', got '%s'", toolCalls[0].Function.Arguments)
+	if !strings.Contains(calls[0].Function.Arguments, "Golang 1.25") {
+		t.Errorf("Expected arguments to contain query, got '%s'", calls[0].Function.Arguments)
 	}
 }
 
-func TestNormalizeMarkdownToolCalls_NestedComplexArgs(t *testing.T) {
-	raw := "```json\n{\n  \"name\": \"batch_edit\",\n  \"arguments\": {\n    \"files\": [\"a.go\", \"b.go\"],\n    \"options\": {\"dry_run\": true, \"flags\": [1, 2, 3]}\n  }\n}\n```"
+// 6. Claude XML Style <invoke name="...">
+func TestNormalize_ClaudeXMLInvoke(t *testing.T) {
+	raw := `<function_calls>
+<invoke name="search_code">
+<parameter name="query">func ServeHTTP</parameter>
+<parameter name="path">pkg/server</parameter>
+</invoke>
+</function_calls>`
 
-	_, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
+	_, calls, ok := NormalizeMarkdownToolCalls(raw)
 	if !ok {
 		t.Fatalf("Expected ok to be true, got false")
 	}
-	if len(toolCalls) != 1 {
-		t.Fatalf("Expected 1 tool call, got %d", len(toolCalls))
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
 	}
-	if !strings.Contains(toolCalls[0].Function.Arguments, "dry_run") || !strings.Contains(toolCalls[0].Function.Arguments, "a.go") {
-		t.Errorf("Expected nested arguments preserved, got '%s'", toolCalls[0].Function.Arguments)
+	if calls[0].Function.Name != "search_code" {
+		t.Errorf("Expected 'search_code', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(calls[0].Function.Arguments, "func ServeHTTP") {
+		t.Errorf("Expected arguments to contain 'func ServeHTTP', got '%s'", calls[0].Function.Arguments)
 	}
 }
 
-func TestNormalizeMarkdownToolCalls_MalformedJSON_GracefulFallback(t *testing.T) {
-	raw := "Here is some broken code:\n```json\n{ this is not valid json : 123 }\n```"
+// 7. ReAct Action / Action Input Format
+func TestNormalize_ReActFormat(t *testing.T) {
+	raw := "Thought: I need to run unit tests first.\nAction: execute_command\nAction Input: {\"cmd\": \"go test -race ./...\"}"
 
-	cleanedText, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "execute_command" {
+		t.Errorf("Expected 'execute_command', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(cleaned, "Thought: I need to run unit tests first.") {
+		t.Errorf("Expected thought preserved in cleaned text, got '%s'", cleaned)
+	}
+}
+
+// 8. DeepSeek-R1 CoT Reasoning + Markdown Tool Fence
+func TestNormalize_DeepSeekR1_ReasoningAndMarkdown(t *testing.T) {
+	raw := "<think>\nLet's check the proxy implementation to verify the auth logic.\n</think>\n```json\n{\n  \"name\": \"view_file\",\n  \"arguments\": {\"path\": \"pkg/server/proxy.go\"}\n}\n```"
+
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "view_file" {
+		t.Errorf("Expected 'view_file', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(cleaned, "<think>") || !strings.Contains(cleaned, "Let's check the proxy implementation") {
+		t.Errorf("Expected <think> reasoning block preserved, got: %s", cleaned)
+	}
+	if strings.Contains(cleaned, "```json") {
+		t.Errorf("Expected JSON code block removed from cleaned text")
+	}
+}
+
+// 9. 4-Backtick Markdown Fence
+func TestNormalize_FourBackticksMarkdown(t *testing.T) {
+	raw := "````tool\n{\n  \"name\": \"run_linter\",\n  \"arguments\": {\"fast\": true}\n}\n````"
+
+	_, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "run_linter" {
+		t.Errorf("Expected 'run_linter', got '%s'", calls[0].Function.Name)
+	}
+}
+
+// 10. Stringified JSON in Arguments
+func TestNormalize_StringifiedArguments(t *testing.T) {
+	raw := "```json\n{\n  \"name\": \"update_config\",\n  \"arguments\": \"{\\\"port\\\": 8000}\"\n}\n```"
+
+	_, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Arguments != "{\"port\": 8000}" {
+		t.Errorf("Expected stringified JSON preserved, got '%s'", calls[0].Function.Arguments)
+	}
+}
+
+// 11. Malformed JSON Fallback
+func TestNormalize_MalformedJSON_Fallback(t *testing.T) {
+	raw := "Some text with broken json:\n```json\n{ not valid json ::: }\n```"
+
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
 	if ok {
-		t.Errorf("Expected ok to be false for malformed JSON, got true")
+		t.Errorf("Expected ok to be false for broken json, got true")
 	}
-	if len(toolCalls) > 0 {
-		t.Errorf("Expected 0 tool calls, got %d", len(toolCalls))
+	if len(calls) > 0 {
+		t.Errorf("Expected 0 calls, got %d", len(calls))
 	}
-	if cleanedText != raw {
-		t.Errorf("Expected unmodified raw text, got '%s'", cleanedText)
-	}
-}
-
-func TestNormalizeMarkdownToolCalls_NonToolJSON_Ignored(t *testing.T) {
-	raw := "Here is a data payload example:\n```json\n{\n  \"status\": 200,\n  \"user_count\": 42,\n  \"active\": true\n}\n```"
-
-	cleanedText, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
-	if ok {
-		t.Errorf("Expected ok to be false for standard non-tool JSON data, got true")
-	}
-	if len(toolCalls) > 0 {
-		t.Errorf("Expected 0 tool calls, got %d", len(toolCalls))
-	}
-	if cleanedText != raw {
-		t.Errorf("Expected text to be unmodified, got: %s", cleanedText)
+	if cleaned != raw {
+		t.Errorf("Expected raw text untouched, got '%s'", cleaned)
 	}
 }
 
-func TestNormalizeMarkdownToolCalls_PureProse_ReturnsFalse(t *testing.T) {
-	raw := "This is a regular explanation of how Go channels work with mutexes."
+// 12. Pure Prose (Negative Test)
+func TestNormalize_PureProse(t *testing.T) {
+	raw := "Here is how to design a distributed lock in Go using etcd or Redis."
 
-	cleanedText, toolCalls, ok := NormalizeMarkdownToolCalls(raw)
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
 	if ok {
-		t.Errorf("Expected ok to be false for pure prose, got true")
+		t.Errorf("Expected ok to be false for pure text, got true")
 	}
-	if len(toolCalls) > 0 {
-		t.Errorf("Expected 0 tool calls, got %d", len(toolCalls))
+	if len(calls) > 0 {
+		t.Errorf("Expected 0 calls, got %d", len(calls))
 	}
-	if cleanedText != raw {
-		t.Errorf("Expected text to be unmodified, got: %s", cleanedText)
+	if cleaned != raw {
+		t.Errorf("Expected raw text untouched, got '%s'", cleaned)
 	}
 }
