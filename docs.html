@@ -156,24 +156,27 @@
                     return `<div class="alert-box alert-${alertType}"><strong>${p1}:</strong>\n\n${cleanText}</div>\n`;
                 });
 
-                const renderer = new marked.Renderer();
-                const defaultCode = renderer.code.bind(renderer);
-
-                renderer.code = function(code, lang, escaped) {
-                    if (lang === 'mermaid') {
-                        return `<div class="mermaid-diagram glass"><pre class="mermaid">${code}</pre></div>`;
-                    }
-                    return defaultCode(code, lang, escaped);
-                };
-
-                marked.setOptions({
+                marked.use({
                     gfm: true,
                     breaks: false,
-                    renderer: renderer,
-                    highlight: function(code, lang) {
-                        if (lang === 'mermaid') return code;
-                        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                        return hljs.highlight(code, { language }).value;
+                    renderer: {
+                        code(token) {
+                            let code = typeof token === 'object' && token !== null ? (token.text || '') : (token || '');
+                            let lang = typeof token === 'object' && token !== null ? (token.lang || '') : (arguments[1] || '');
+
+                            if (lang === 'mermaid') {
+                                return `<div class="mermaid-diagram"><div class="mermaid">${code}</div></div>`;
+                            }
+
+                            const language = (lang && hljs.getLanguage(lang)) ? lang : 'plaintext';
+                            let highlighted;
+                            try {
+                                highlighted = hljs.highlight(code, { language }).value;
+                            } catch (e) {
+                                highlighted = code;
+                            }
+                            return `<pre><code class="hljs language-${lang || 'plaintext'}">${highlighted}</code></pre>`;
+                        }
                     }
                 });
 
@@ -186,23 +189,23 @@
 
                 // Render Mermaid diagrams
                 if (window.mermaid) {
-                    mermaid.initialize({
-                        startOnLoad: false,
-                        theme: 'dark',
-                        themeVariables: {
-                            darkMode: true,
-                            background: '#090a0f',
-                            primaryColor: '#1e293b',
-                            primaryTextColor: '#f8fafc',
-                            primaryBorderColor: '#f59e0b',
-                            lineColor: '#38bdf8',
-                            secondaryColor: '#0f172a',
-                            tertiaryColor: '#1e1b4b',
-                            fontSize: '13px',
-                            fontFamily: 'Inter, sans-serif'
-                        }
-                    });
                     try {
+                        mermaid.initialize({
+                            startOnLoad: false,
+                            theme: 'dark',
+                            themeVariables: {
+                                darkMode: true,
+                                background: 'transparent',
+                                primaryColor: '#1e293b',
+                                primaryTextColor: '#f8fafc',
+                                primaryBorderColor: '#f59e0b',
+                                lineColor: '#38bdf8',
+                                secondaryColor: '#0f172a',
+                                tertiaryColor: '#1e1b4b',
+                                fontSize: '13px',
+                                fontFamily: 'Inter, sans-serif'
+                            }
+                        });
                         await mermaid.run({
                             nodes: contentDiv.querySelectorAll('.mermaid')
                         });
@@ -213,6 +216,7 @@
 
                 // Add Copy buttons to code snippets (skip mermaid)
                 contentDiv.querySelectorAll('pre:not(.mermaid)').forEach(pre => {
+                    if (pre.closest('.mermaid-diagram')) return;
                     const btn = document.createElement('button');
                     btn.className = 'btn-copy';
                     btn.style.position = 'absolute';
@@ -220,8 +224,9 @@
                     btn.style.right = '10px';
                     btn.innerText = 'Copy';
                     btn.onclick = () => {
-                        const code = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
-                        navigator.clipboard.writeText(code);
+                        const codeEl = pre.querySelector('code');
+                        const text = codeEl ? codeEl.innerText : pre.innerText;
+                        navigator.clipboard.writeText(text);
                         btn.innerText = 'Copied!';
                         setTimeout(() => btn.innerText = 'Copy', 1500);
                     };
