@@ -1,5 +1,9 @@
 # 🌮 Nacho Flow (`spicebox.dev/nacho-flow`)
 
+[![GitHub Release](https://img.shields.io/github/v/release/dixieflatline76/nacho-flow?color=green&label=version)](https://github.com/dixieflatline76/nacho-flow/releases/latest)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/dixieflatline76/nacho-flow)](https://golang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > **A fast, zero-dependency hybrid AI gateway that routes agent prompt turns between local GPUs and cloud APIs.**
 
 **Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Roo Code](https://github.com/RooVetGit/Roo-Code), [Cline](https://github.com/cline/cline), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)).

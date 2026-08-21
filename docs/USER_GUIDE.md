@@ -380,7 +380,7 @@ Nacho Flow includes built-in live analytics and model endpoints:
 curl http://127.0.0.1:8000/health
 ```
 ```json
-{"status":"ok","service":"nacho-flow","version":"0.5.0"}
+{"status":"ok","service":"nacho-flow","version":"0.5.x"}
 ```
 
 ### View Live Analytics & Cost Savings:
