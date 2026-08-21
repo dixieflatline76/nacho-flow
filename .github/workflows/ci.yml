@@ -232,6 +232,8 @@ jobs:
         run: go run cmd/util/nacho_releaser/main.go
         env:
           NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          WINGET_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
 
   publish-docker:
     name: Publish Multi-Arch Docker Image (GHCR)

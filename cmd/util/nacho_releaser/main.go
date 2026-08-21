@@ -128,17 +128,15 @@ func main() {
 	uploadAsset(ctx, client, release.GetID(), "checksums.txt")
 
 	// 4. Push Homebrew Formula to dixieflatline76/homebrew-nacho-flow
-	if os.Getenv("NACHO_RELEASER_TOKEN") != "" || os.Getenv("GORELEASER_GITHUB_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "" {
+	if token != "" {
 		log.Println("[nacho-releaser] Generating and pushing Homebrew formula...")
 		pushHomebrewFormula(ctx, client, version, hashes)
 	}
 
 	// 5. Push Winget Manifests to fork
-	if os.Getenv("WINGET_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "" {
+	if token != "" {
 		log.Println("[nacho-releaser] Generating and pushing winget manifests...")
 		pushWingetManifests(ctx, client, version, winHash)
-	} else {
-		log.Println("[nacho-releaser] Skipping winget manifest push (no token provided)")
 	}
 
 	// #nosec G706 - trusted release tag
