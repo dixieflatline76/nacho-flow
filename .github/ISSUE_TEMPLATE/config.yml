@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 Nacho Flow Documentation & Guides
+    url: https://spicebox.dev/nacho-flow/docs.html
+    about: Read our comprehensive User Guide, Architecture, and Rule Tuning docs before opening an issue.
+  - name: 💬 GitHub Discussions
+    url: https://github.com/dixieflatline76/nacho-flow/discussions
+    about: Join the community to discuss rule recipes, model configurations, and developer workflows.
