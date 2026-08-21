@@ -170,12 +170,23 @@ nav {
 }
 
 h1 {
-    font-size: clamp(2.4rem, 6vw, 4.2rem);
+    font-size: clamp(2.8rem, 7vw, 4.8rem);
     font-weight: 800;
     letter-spacing: -2px;
     line-height: 1.1;
-    margin-bottom: 1.2rem;
+    margin-bottom: 0.6rem;
     background: linear-gradient(180deg, #ffffff 40%, #cbd5e1 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero-gradient-subtitle {
+    display: block;
+    font-size: clamp(1.3rem, 3vw, 2rem);
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-top: 0.5rem;
+    background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
