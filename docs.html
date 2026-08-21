@@ -51,22 +51,22 @@
         <aside class="docs-sidebar glass">
             <div class="doc-switcher">
                 <h3>Developer Guides</h3>
-                <div class="doc-nav-item" id="nav-user_guide" onclick="loadDoc('user_guide')">
+                <div class="doc-nav-item" id="nav-user_guide" onclick="loadDoc('user_guide', true)">
                     <span>📖</span> User Guide & Config
                 </div>
-                <div class="doc-nav-item" id="nav-architecture" onclick="loadDoc('architecture')">
+                <div class="doc-nav-item" id="nav-architecture" onclick="loadDoc('architecture', true)">
                     <span>🏛️</span> Architecture & Design
                 </div>
-                <div class="doc-nav-item" id="nav-benchmarks" onclick="loadDoc('benchmarks')">
+                <div class="doc-nav-item" id="nav-benchmarks" onclick="loadDoc('benchmarks', true)">
                     <span>⚡</span> Benchmarks & Stress Tests
                 </div>
-                <div class="doc-nav-item" id="nav-tuning_guide" onclick="loadDoc('tuning_guide')">
+                <div class="doc-nav-item" id="nav-tuning_guide" onclick="loadDoc('tuning_guide', true)">
                     <span>🎛️</span> Rule Tuning & Auto-Tuner
                 </div>
-                <div class="doc-nav-item" id="nav-developer_guide" onclick="loadDoc('developer_guide')">
+                <div class="doc-nav-item" id="nav-developer_guide" onclick="loadDoc('developer_guide', true)">
                     <span>💻</span> Developer & TDD Guide
                 </div>
-                <div class="doc-nav-item" id="nav-roadmap" onclick="loadDoc('roadmap')">
+                <div class="doc-nav-item" id="nav-roadmap" onclick="loadDoc('roadmap', true)">
                     <span>🗺️</span> Product Roadmap
                 </div>
             </div>
@@ -120,7 +120,7 @@
             return urlParams.get(param);
         }
 
-        async function loadDoc(docKey) {
+        async function loadDoc(docKey, clearHash = false) {
             if (!docsMap[docKey]) docKey = 'user_guide';
             currentDocKey = docKey;
 
@@ -132,6 +132,9 @@
             // Update URL without full reload
             const url = new URL(window.location);
             url.searchParams.set('doc', docKey);
+            if (clearHash) {
+                url.hash = '';
+            }
             window.history.replaceState({}, '', url);
 
             document.getElementById('loading').style.display = 'block';
@@ -139,6 +142,13 @@
             document.getElementById('toc-container').style.display = 'none';
 
             document.title = docsMap[docKey].title;
+
+            // Reset scroll position to top when navigating
+            if (!window.location.hash) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                document.documentElement.scrollTop = 0;
+                document.body.scrollTop = 0;
+            }
 
             try {
                 let res = await fetch(docsMap[docKey].path);
@@ -236,13 +246,21 @@
                 // Generate TOC
                 buildTOC();
 
-                // Scroll to anchor if present in hash
+                // Scroll to anchor if present in hash, otherwise guarantee top position
                 if (window.location.hash) {
                     const id = window.location.hash.substring(1);
                     const target = document.getElementById(id);
                     if (target) {
                         target.scrollIntoView({ behavior: 'smooth' });
+                    } else {
+                        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                        document.documentElement.scrollTop = 0;
+                        document.body.scrollTop = 0;
                     }
+                } else {
+                    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                    document.documentElement.scrollTop = 0;
+                    document.body.scrollTop = 0;
                 }
 
             } catch (err) {
