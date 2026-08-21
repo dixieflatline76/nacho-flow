@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
@@ -54,18 +55,28 @@ func TestHealthEndpoint(t *testing.T) {
 	sanitizer := router.NewSanitizer()
 	srv := NewServer(cfg, evaluator, classifier, sanitizer)
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/health", nil)
-	srv.ServeHTTP(rec, req)
+	for _, endpoint := range []string{"/health", "/v1/health"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", endpoint, nil)
+		srv.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("Expected status 200, got %d", rec.Code)
-	}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Endpoint %s: Expected status 200, got %d", endpoint, rec.Code)
+		}
 
-	var resp map[string]interface{}
-	json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["status"] != "ok" {
-		t.Errorf("Expected status 'ok', got %v", resp["status"])
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("Endpoint %s: Failed to parse JSON: %v", endpoint, err)
+		}
+		if resp["status"] != "ok" {
+			t.Errorf("Endpoint %s: Expected status 'ok', got %v", endpoint, resp["status"])
+		}
+		if resp["service"] != "nacho-flow" {
+			t.Errorf("Endpoint %s: Expected service 'nacho-flow', got %v", endpoint, resp["service"])
+		}
+		if resp["version"] == nil || resp["version"] == "" {
+			t.Errorf("Endpoint %s: Expected non-empty version, got %v", endpoint, resp["version"])
+		}
 	}
 }
 
@@ -1019,5 +1030,415 @@ func TestProxy_APIKeyHeaderAuth(t *testing.T) {
 	srv.ServeHTTP(recBadBearer, reqBadBearer)
 	if recBadBearer.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401 with bad Bearer token, got %d", recBadBearer.Code)
+	}
+}
+
+func TestProxy_NonStreaming_EmptyContent_FallsBackToCloud(t *testing.T) {
+	// Mock local provider returning defective empty content
+	mockLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":""}}]}`))
+	}))
+	defer mockLocal.Close()
+
+	// Mock cloud fallback returning valid content
+	mockCloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Recovered from cloud fallback!"}}]}`))
+	}))
+	defer mockCloud.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"local_p": {BaseURL: mockLocal.URL, Type: "local"},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier Local", Model: "qwen-local", Provider: "local_p", When: "true"},
+		},
+		DefaultTier: contract.Tier{Name: "Tier Cloud", Model: "claude-cloud", Provider: "cloud_p"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid","messages":[{"role":"user","content":"test"}]}`))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK after fallback, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "Recovered from cloud fallback!") {
+		t.Errorf("Expected cloud fallback content, got: %s", body)
+	}
+	if rec.Header().Get(contract.HeaderNachoRouterTier) != "Tier Cloud" {
+		t.Errorf("Expected router tier header 'Tier Cloud', got %q", rec.Header().Get(contract.HeaderNachoRouterTier))
+	}
+}
+
+func TestProxy_Streaming_ImmediateDone_FallsBackToCloud(t *testing.T) {
+	// Mock local provider closing stream immediately with [DONE]
+	mockLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer mockLocal.Close()
+
+	// Mock cloud fallback streaming valid tokens
+	mockCloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"Cloud stream recovery\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer mockCloud.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"local_p": {BaseURL: mockLocal.URL, Type: "local"},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier Local", Model: "qwen-local", Provider: "local_p", When: "true"},
+		},
+		DefaultTier: contract.Tier{Name: "Tier Cloud", Model: "claude-cloud", Provider: "cloud_p"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid","stream":true,"messages":[{"role":"user","content":"test"}]}`))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK after streaming fallback, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "Cloud stream recovery") {
+		t.Errorf("Expected cloud streaming recovery tokens, got: %s", body)
+	}
+	if rec.Header().Get(contract.HeaderNachoRouterTier) != "Tier Cloud" {
+		t.Errorf("Expected router tier header 'Tier Cloud', got %q", rec.Header().Get(contract.HeaderNachoRouterTier))
+	}
+}
+
+func TestProxy_CircuitBreaker_BypassesDownProvider(t *testing.T) {
+	mockCloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Cloud ok"}}]}`))
+	}))
+	defer mockCloud.Close()
+
+	// Dead local URL
+	deadLocalURL := "http://127.0.0.1:59999"
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"dead_local": {BaseURL: deadLocalURL, Type: "local"},
+			"cloud_p":    {BaseURL: mockCloud.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier Local", Model: "qwen-local", Provider: "dead_local", When: "true"},
+		},
+		DefaultTier: contract.Tier{Name: "Tier Cloud", Model: "claude-cloud", Provider: "cloud_p"},
+	}
+
+	reg := provider.NewRegistryFromConfig(cfg)
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, router.NewClassifier(), router.NewSanitizer(), nil, nil, reg, nil)
+
+	// Turn 1: Dead local fails, trips circuit breaker, falls back to cloud
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid"}`))
+	srv.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("Turn 1 expected 200 via fallback, got %d", rec1.Code)
+	}
+
+	// Turn 2: Dead local fails second time, trips to StateOpen
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid"}`))
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("Turn 2 expected 200 via fallback, got %d", rec2.Code)
+	}
+
+	// Check provider circuit breaker is now OPEN
+	p, _ := reg.Get("dead_local")
+	cb := p.(provider.CircuitBreakerProvider).CircuitBreaker()
+	if cb.State() != provider.StateOpen {
+		t.Errorf("Expected circuit breaker to be StateOpen, got %v", cb.State())
+	}
+
+	// Turn 3: Request should immediately bypass dead local and route to Cloud without dial delay
+	start := time.Now()
+	rec3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"nacho-hybrid"}`))
+	srv.ServeHTTP(rec3, req3)
+	elapsed := time.Since(start)
+
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("Turn 3 expected 200 via fast-bypass, got %d", rec3.Code)
+	}
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("Turn 3 took %v; expected instantaneous (<100ms) circuit-breaker fast-fail bypass", elapsed)
+	}
+}
+
+func TestProxy_SessionRetry_AutoEscalatesToCloud(t *testing.T) {
+	mockLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Local response"}}]}`))
+	}))
+	defer mockLocal.Close()
+
+	mockCloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Cloud response"}}]}`))
+	}))
+	defer mockCloud.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"local_p": {BaseURL: mockLocal.URL, Type: "local"},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier Local", Model: "qwen-local", Provider: "local_p", When: "Retries < 2"},
+		},
+		DefaultTier: contract.Tier{Name: "Tier Cloud", Model: "claude-cloud", Provider: "cloud_p"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
+
+	sessionHeader := "roo-session-test-42"
+	promptBody := `{"model":"nacho-hybrid","messages":[{"role":"user","content":"Fix this bug in main.go"}]}`
+
+	// Turn 0: Fresh (Retries: 0) -> Local
+	rec0 := httptest.NewRecorder()
+	req0 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(promptBody))
+	req0.Header.Set("x-session-id", sessionHeader)
+	srv.ServeHTTP(rec0, req0)
+	if rec0.Header().Get(contract.HeaderNachoRouterTier) != "Tier Local" {
+		t.Errorf("Turn 0 expected 'Tier Local', got %q", rec0.Header().Get(contract.HeaderNachoRouterTier))
+	}
+
+	// Turn 1: First retry (Retries: 1) -> Local
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(promptBody))
+	req1.Header.Set("x-session-id", sessionHeader)
+	srv.ServeHTTP(rec1, req1)
+	if rec1.Header().Get(contract.HeaderNachoRouterTier) != "Tier Local" {
+		t.Errorf("Turn 1 expected 'Tier Local', got %q", rec1.Header().Get(contract.HeaderNachoRouterTier))
+	}
+
+	// Turn 2: Second retry (Retries: 2) -> Auto-escalates to Cloud
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(promptBody))
+	req2.Header.Set("x-session-id", sessionHeader)
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Header().Get(contract.HeaderNachoRouterTier) != "Tier Cloud" {
+		t.Errorf("Turn 2 expected 'Tier Cloud' (auto-escalated), got %q", rec2.Header().Get(contract.HeaderNachoRouterTier))
+	}
+}
+
+func TestProxy_IsDefectiveEmptyContent_Branches(t *testing.T) {
+	// Invalid JSON -> false
+	if isDefectiveEmptyContent([]byte("invalid json")) {
+		t.Errorf("Expected false for invalid json")
+	}
+
+	// No choices array -> true
+	if !isDefectiveEmptyContent([]byte(`{"id":"123"}`)) {
+		t.Errorf("Expected true for missing choices")
+	}
+
+	// Empty choices array -> true
+	if !isDefectiveEmptyContent([]byte(`{"choices":[]}`)) {
+		t.Errorf("Expected true for empty choices")
+	}
+
+	// Choice not a map -> true
+	if !isDefectiveEmptyContent([]byte(`{"choices":["not-a-map"]}`)) {
+		t.Errorf("Expected true for non-map choice")
+	}
+
+	// Message not a map -> true
+	if !isDefectiveEmptyContent([]byte(`{"choices":[{"message":"not-a-map"}]}`)) {
+		t.Errorf("Expected true for non-map message")
+	}
+
+	// Empty message -> true
+	if !isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":""}}]}`)) {
+		t.Errorf("Expected true for empty content without tools")
+	}
+
+	// Message with reasoning field (alternative reasoning tag) -> false
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"","reasoning":"thinking step"}}]}`)) {
+		t.Errorf("Expected false for message with reasoning")
+	}
+
+	// Message with tool_calls -> false
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"","tool_calls":[{"id":"1"}]}}]}`)) {
+		t.Errorf("Expected false for message with tool_calls")
+	}
+
+	// Message with valid content -> false
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"Hello world"}}]}`)) {
+		t.Errorf("Expected false for message with valid content")
+	}
+}
+
+type plainMockProvider struct {
+	id string
+}
+
+func (p *plainMockProvider) ID() string             { return p.id }
+func (p *plainMockProvider) Name() string           { return p.id }
+func (p *plainMockProvider) BaseURL() string        { return "http://localhost" }
+func (p *plainMockProvider) IsLocal() bool          { return false }
+func (p *plainMockProvider) Ping(ctx context.Context) error { return nil }
+
+func TestProxy_NonCircuitBreakerProvider_Fallbacks(t *testing.T) {
+	srv := NewServer(&contract.Config{}, nil, nil, nil)
+	plain := &plainMockProvider{id: "plain"}
+
+	if !srv.allowProvider(plain) {
+		t.Errorf("Expected allowProvider to return true for non-CB provider")
+	}
+
+	// These should not panic
+	srv.recordProviderFailure(plain)
+	srv.recordProviderSuccess(plain)
+}
+
+func TestProxy_HasCandidateToolTokens(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected bool
+	}{
+		{`<tool_call>`, true},
+		{`[TOOL_CALLS]`, true},
+		{`<function=`, true},
+		{`<invoke>`, true},
+		{`Action: `, true},
+		{`<|python_tag|>`, true},
+		{"```json\n{}", true},
+		{`Just normal text`, false},
+	}
+
+	for _, c := range cases {
+		got := hasCandidateToolTokens([]byte(c.input))
+		if got != c.expected {
+			t.Errorf("hasCandidateToolTokens(%q) = %v; want %v", c.input, got, c.expected)
+		}
+	}
+}
+
+func TestProxy_DispatchTier_MissingProviderFallbackTerminal(t *testing.T) {
+	cfg := &contract.Config{
+		Port: 8000,
+		Tiers: []contract.Tier{
+			{Name: "Nonexistent Tier", Model: "test", Provider: "ghost_provider", When: "true"},
+		},
+		// No default tier
+	}
+	srv := NewServer(cfg, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"hello"}]}`))
+
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("Expected 502 Bad Gateway when provider not found, got %d", rec.Code)
+	}
+}
+
+func TestProxy_ReasoningEffort_Injection(t *testing.T) {
+	var receivedBody []byte
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {BaseURL: mockUpstream.URL},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:            "Reasoning High",
+				Model:           "o1-preview",
+				Provider:        "mock",
+				ReasoningEffort: "high",
+				When:            "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"complex puzzle"}]}`))
+	srv.ServeHTTP(rec, req)
+
+	if !strings.Contains(string(receivedBody), `"reasoning_effort":"high"`) {
+		t.Errorf("Expected reasoning_effort:high injected into upstream payload, got: %s", string(receivedBody))
+	}
+}
+
+func TestProxy_NonStreaming_ReasonFieldAndEstimatorCalibration(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"content":"Answer","reason":"Step 1 reasoning"}}],
+			"usage":{"prompt_tokens":120}
+		}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {BaseURL: mockUpstream.URL},
+		},
+		Tiers: []contract.Tier{
+			{Name: "T1", Model: "m1", Provider: "mock", When: "true"},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	clf := router.NewClassifier()
+	srv := NewServer(cfg, evaluator, clf, router.NewSanitizer())
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"hello world"}]}`))
+	req.Header.Set("session-id", "test-session-fallback-header")
+	srv.ServeHTTP(rec, req)
+
+	respBody := rec.Body.String()
+	if !strings.Contains(respBody, "<think>") || !strings.Contains(respBody, "Step 1 reasoning") {
+		t.Errorf("Expected <think> wrapping reason field, got: %s", respBody)
 	}
 }

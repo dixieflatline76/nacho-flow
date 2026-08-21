@@ -5,6 +5,9 @@ const (
 	AppName = "nacho-flow"
 )
 
+// Version is the application version, optionally populated at build time via -ldflags.
+var Version = "0.5.0-dev"
+
 // Standard HTTP headers used across nacho-flow and legacy spice compatibility.
 // #nosec G101 - constants define HTTP header names, not hardcoded credentials
 const (

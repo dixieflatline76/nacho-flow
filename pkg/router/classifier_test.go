@@ -134,6 +134,77 @@ func TestClassifier_MessageStructureEdgeCases(t *testing.T) {
 	}
 }
 
+func TestClassifier_KeywordsScopedToLatestPrompt(t *testing.T) {
+	classifier := NewClassifier()
+	jsonBody := `{
+		"model": "gpt-4",
+		"messages": [
+			{"role": "system", "content": "You are an expert postgres database administrator."},
+			{"role": "user", "content": "Write a complex SQL migration for users table."},
+			{"role": "assistant", "content": "Here is the SQL migration schema."},
+			{"role": "user", "content": "Now fix the CSS flexbox styling for the button."}
+		]
+	}`
+
+	ctx, err := classifier.Classify([]byte(jsonBody))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if ctx.Prompt != "Now fix the CSS flexbox styling for the button." {
+		t.Errorf("Expected prompt to be latest user turn, got %q", ctx.Prompt)
+	}
+
+	hasCSS := false
+	hasFlexbox := false
+	hasSQL := false
+	hasPostgres := false
+
+	for _, k := range ctx.Keywords {
+		if k == "css" {
+			hasCSS = true
+		}
+		if k == "flexbox" {
+			hasFlexbox = true
+		}
+		if k == "sql" {
+			hasSQL = true
+		}
+		if k == "postgres" {
+			hasPostgres = true
+		}
+	}
+
+	if !hasCSS || !hasFlexbox {
+		t.Errorf("Expected keywords to contain 'css' and 'flexbox', got: %v", ctx.Keywords)
+	}
+	if hasSQL || hasPostgres {
+		t.Errorf("Keywords should NOT contain previous turn keywords ('sql', 'postgres'), got: %v", ctx.Keywords)
+	}
+}
+
+func TestClassifier_WithCustomEstimator(t *testing.T) {
+	estimator := NewTokenEstimator()
+	// Set ratio to 2.0 (2 chars per token)
+	estimator.Calibrate(500, 1000) // observed = 2.0 -> updated = 3.2*0.8 + 2.0*0.2 = 2.96
+	// Let's calibrate multiple times to converge to 2.0
+	for i := 0; i < 20; i++ {
+		estimator.Calibrate(500, 1000)
+	}
+
+	classifier := NewClassifierWithEstimator(estimator)
+	jsonBody := `{"messages": [{"role": "user", "content": "1234567890"}]}`
+	ctx, err := classifier.Classify([]byte(jsonBody))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// 10 chars + space = ~11 chars / 2.0 ~= 5 tokens
+	if ctx.Tokens < 4 || ctx.Tokens > 6 {
+		t.Errorf("Expected ~5 tokens with calibrated estimator, got %d", ctx.Tokens)
+	}
+}
+
 // BenchmarkClassifier measures request parsing and keyword extraction speed per operation.
 func BenchmarkClassifier(b *testing.B) {
 	classifier := NewClassifier()

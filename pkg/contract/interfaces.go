@@ -11,6 +11,8 @@ type RequestContext struct {
 	HasTools  bool     `json:"has_tools"`
 	Keywords  []string `json:"keywords"`
 	Prompt    string   `json:"prompt"`
+	Retries   int      `json:"retries,omitempty"`
+	IsRetry   bool     `json:"is_retry,omitempty"`
 }
 
 // Tier defines a single model routing rule in the 1..N evaluation pipeline.
@@ -21,6 +23,7 @@ type Tier struct {
 	When            string `yaml:"when" json:"when"`
 	StripImages     bool   `yaml:"strip_images" json:"strip_images"`
 	ReasoningEffort string `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
+	MaxContext      int    `yaml:"max_context,omitempty" json:"max_context,omitempty"`
 }
 
 // ProviderConfig defines a first-class LLM provider configuration.

@@ -12,10 +12,11 @@ import (
 
 // GenericLLMProvider adapts any contract.ProviderConfig into an LLMProvider.
 type GenericLLMProvider struct {
-	id     string
-	name   string
-	config contract.ProviderConfig
-	client *http.Client
+	id             string
+	name           string
+	config         contract.ProviderConfig
+	client         *http.Client
+	circuitBreaker *CircuitBreaker
 }
 
 // NewGenericLLMProvider creates a new generic provider instance.
@@ -30,11 +31,20 @@ func NewGenericLLMProvider(id string, cfg contract.ProviderConfig) *GenericLLMPr
 	}
 
 	return &GenericLLMProvider{
-		id:     id,
-		name:   name,
-		config: cfg,
-		client: &http.Client{Timeout: 3 * time.Second},
+		id:             id,
+		name:           name,
+		config:         cfg,
+		client:         &http.Client{Timeout: 3 * time.Second},
+		circuitBreaker: NewCircuitBreaker(DefaultFailureThreshold, DefaultCooldownDuration),
 	}
+}
+
+// CircuitBreaker returns the circuit breaker protecting this provider.
+func (p *GenericLLMProvider) CircuitBreaker() *CircuitBreaker {
+	if p.circuitBreaker == nil {
+		p.circuitBreaker = NewCircuitBreaker(DefaultFailureThreshold, DefaultCooldownDuration)
+	}
+	return p.circuitBreaker
 }
 
 func (p *GenericLLMProvider) ID() string {

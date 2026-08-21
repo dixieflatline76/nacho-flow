@@ -38,3 +38,9 @@ type PricingProvider interface {
 	Name() string
 	FetchPricing(ctx context.Context) (map[string]ModelPricing, error)
 }
+
+// CircuitBreakerProvider is an optional capability interface for providers with circuit breaking protection.
+type CircuitBreakerProvider interface {
+	CircuitBreaker() *CircuitBreaker
+}
+

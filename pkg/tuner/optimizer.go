@@ -7,17 +7,17 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
-// ParetoBanditOptimizer implements the multi-objective statistical bandit tuning strategy.
-type ParetoBanditOptimizer struct {
+// CostPenaltyOptimizer implements the cost-penalty heuristic tuning strategy.
+type CostPenaltyOptimizer struct {
 	MinOccurrences      int
 	OddsRatioThreshold  float64
 	CostPerMillionCloud float64
 	RetryPenaltyUSD     float64
 }
 
-// NewParetoBanditOptimizer creates a new initialized ParetoBanditOptimizer.
-func NewParetoBanditOptimizer() *ParetoBanditOptimizer {
-	return &ParetoBanditOptimizer{
+// NewCostPenaltyOptimizer creates a new initialized CostPenaltyOptimizer.
+func NewCostPenaltyOptimizer() *CostPenaltyOptimizer {
+	return &CostPenaltyOptimizer{
 		MinOccurrences:      10,
 		OddsRatioThreshold:  1.5,
 		CostPerMillionCloud: 2.50,
@@ -25,12 +25,12 @@ func NewParetoBanditOptimizer() *ParetoBanditOptimizer {
 	}
 }
 
-func (opt *ParetoBanditOptimizer) Name() string {
-	return "pareto_bandit"
+func (opt *CostPenaltyOptimizer) Name() string {
+	return "cost_penalty"
 }
 
-// Optimize executes the 3-step optimization: Keyword Risk, Continuous Pareto Sweep, and Rule Distillation.
-func (opt *ParetoBanditOptimizer) Optimize(records []telemetry.TurnRecord, currentConfig *contract.Config) (*TuningResult, error) {
+// Optimize executes the 3-step optimization: Keyword Friction Risk, Threshold Sweep, and Rule Distillation.
+func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, currentConfig *contract.Config) (*TuningResult, error) {
 	if len(records) == 0 {
 		return &TuningResult{
 			OptimalThreshold: 16000,

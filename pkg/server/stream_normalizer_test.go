@@ -347,7 +347,7 @@ func BenchmarkSSE_NonReasoning_ZeroAlloc(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		r := io.NopCloser(bytes.NewReader(rawSSE))
 		norm := NewStreamNormalizer(r)
 		_, _ = io.Copy(io.Discard, norm)
@@ -362,7 +362,7 @@ func BenchmarkSSE_ReasoningTransform(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		r := io.NopCloser(bytes.NewReader(rawSSE))
 		norm := NewStreamNormalizer(r)
 		_, _ = io.Copy(io.Discard, norm)
@@ -430,5 +430,81 @@ data: {"id":"gen-reason","choices":[{"index":0,"delta":{"content":"Final answer"
 	outStr := normWithTagged.outBuf.String()
 	if strings.Contains(outStr, "<think>") {
 		t.Errorf("should not inject <think> when alreadyTagged=true, got: %s", outStr)
+	}
+
+	// 7. payloadContent helper branches
+	if payloadContent([]byte("invalid json")) != "" {
+		t.Errorf("expected empty string for invalid json in payloadContent")
+	}
+	if payloadContent([]byte(`{"choices":[]}`)) != "" {
+		t.Errorf("expected empty string for 0 choices in payloadContent")
+	}
+
+	// 8. processLine with malformed JSON data line
+	normMalformed := NewStreamNormalizer(io.NopCloser(strings.NewReader("")))
+	normMalformed.processLine([]byte("data: {malformed json\n"))
+	if !strings.Contains(normMalformed.outBuf.String(), "data: {malformed json") {
+		t.Errorf("expected malformed line passed through directly")
+	}
+}
+
+func TestStreamNormalizer_QwenImStartThink(t *testing.T) {
+	rawSSE := `data: {"id":"qwen-1","choices":[{"index":0,"delta":{"content":"<|im_start|>think\nAnalyzing problem with Qwen"}}]}
+
+data: {"id":"qwen-1","choices":[{"index":0,"delta":{"content":"\n<|im_end|>\nHere is the answer"}}]}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if strings.Contains(result, "<|im_start|>think") {
+		t.Errorf("expected <|im_start|>think to be replaced with <think>, got:\n%s", result)
+	}
+	if !strings.Contains(result, "<think>") {
+		t.Errorf("expected <think> tag in normalized output, got:\n%s", result)
+	}
+	if !strings.Contains(result, "</think>") {
+		t.Errorf("expected </think> tag in normalized output, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Here is the answer") {
+		t.Errorf("expected final answer text, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_ThinkingTags(t *testing.T) {
+	rawSSE := `data: {"id":"claude-style-1","choices":[{"index":0,"delta":{"content":"<thinking>\nClaude-style reasoning step"}}]}
+
+data: {"id":"claude-style-1","choices":[{"index":0,"delta":{"content":"\n</thinking>\nFinal response text"}}]}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if strings.Contains(result, "<thinking>") || strings.Contains(result, "</thinking>") {
+		t.Errorf("expected <thinking> / </thinking> tags to be normalized, got:\n%s", result)
+	}
+	if !strings.Contains(result, "<think>") || !strings.Contains(result, "</think>") {
+		t.Errorf("expected standard <think>...</think> tags, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Final response text") {
+		t.Errorf("expected final response text, got:\n%s", result)
 	}
 }

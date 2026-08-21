@@ -94,11 +94,11 @@ tiers:
 	}
 }
 
-// Test 3.3: ParetoBanditOptimizer constructor, name, and empty records
+// Test 3.3: CostPenaltyOptimizer constructor, name, and empty records
 func TestOptimizer_ConstructorAndEmptyRecords(t *testing.T) {
-	opt := NewParetoBanditOptimizer()
-	if opt.Name() != "pareto_bandit" {
-		t.Errorf("Expected name 'pareto_bandit', got '%s'", opt.Name())
+	opt := NewCostPenaltyOptimizer()
+	if opt.Name() != "cost_penalty" {
+		t.Errorf("Expected name 'cost_penalty', got '%s'", opt.Name())
 	}
 
 	res, err := opt.Optimize(nil, nil)

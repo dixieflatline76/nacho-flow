@@ -17,7 +17,7 @@ This guide is intended for engineers contributing to, extending, or maintaining 
 ```text
 nacho-flow/
 ├── cmd/
-│   ├── nacho-flow/         # Production binary entrypoint
+│   ├── nacho-flow/         # Production binary entrypoint (CLI, service manager, tuner, version)
 │   └── util/
 │       ├── nacho_bench/    # In-memory load testing & stress benchmark CLI
 │       ├── nacho_releaser/ # Automated multi-platform GitHub release tool
@@ -27,12 +27,13 @@ nacho-flow/
 ├── pkg/
 │   ├── config/             # YAML configuration parser & validation
 │   ├── contract/           # Core interface definitions & shared types
-│   ├── provider/           # Capability interfaces (LLM, Auth, Header, Health, Registry)
-│   ├── router/             # Context classifier, token estimator, image sanitizer, tool normalizer
-│   ├── server/             # HTTP reverse proxy, stream normalizer (reasoning -> think)
+│   ├── provider/           # Capability interfaces (LLM, Auth, Header, Health, CircuitBreaker, Registry)
+│   ├── router/             # Context classifier, adaptive estimator, session tracker, image sanitizer, tool normalizer
+│   ├── server/             # HTTP reverse proxy, delayed header validator, stream normalizer (reasoning -> think)
 │   ├── store/              # Atomic disk persistence for telemetry (stats.json)
-│   ├── strategy/           # Compiled expr-lang dynamic rule evaluator
-│   └── telemetry/          # Pricing oracle, OpenRouter plugin, StatsTracker, slog
+│   ├── strategy/           # Compiled expr-lang dynamic rule evaluator with MaxContext guards
+│   ├── telemetry/          # Pricing oracle, OpenRouter plugin, StatsTracker, slog
+│   └── tuner/              # Cost-penalty rule synthesizer & advisory engine
 ├── scripts/                # Universal Linux/macOS shell installer & test harness
 ├── .github/workflows/      # CI/CD pipeline, Docker GHCR publisher & Azure Trusted Signing
 ├── Dockerfile              # Distroless multi-arch container image
@@ -84,7 +85,10 @@ make build
 
 ## 5. Quality Assurance, Security & Testing
 
-All contributions must pass code quality formatting, static analysis, AST security scans (`gosec`), and the entire test suite with race detection enabled:
+Nacho Flow follows strict **Test-Driven Development (TDD)** and quality standards:
+- **TDD Workflow**: Write failing tests first (`Red`), implement minimal clean code (`Green`), and refactor.
+- **Coverage Gate**: Every individual package must maintain $\ge 90\%$ statement coverage (repository target $\ge 96\%$).
+- **Zero Anti-Patterns**: Lock-free atomic synchronization on hot paths (`sync/atomic.Pointer`), zero detached background goroutine leaks (lazy TTL eviction), and zero external dependencies.
 
 ```bash
 # Run all-in-one quality gate (fmt, vet, gosec, race tests)
@@ -102,6 +106,9 @@ make test-race
 
 # Generate HTML code coverage report
 make test-cover
+
+# Check per-package test coverage
+go test -cover ./pkg/...
 
 # Run advisory route tuner
 make tune

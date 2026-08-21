@@ -196,3 +196,24 @@ func TestPricingOracle_CalculateCost_NotFound(t *testing.T) {
 		t.Errorf("Expected fallback direct model lookup to succeed, got found=%v, price=%+v", found, price)
 	}
 }
+
+func TestPricingOracle_SyncErrorAndNilMap(t *testing.T) {
+	oracle := NewPricingOracle()
+	errProvider := &mockPricingProvider{
+		name: "failing_provider",
+		err:  fmt.Errorf("simulated API outage"),
+	}
+	oracle.RegisterProvider(errProvider)
+
+	err := oracle.Sync(context.Background())
+	if err == nil {
+		t.Errorf("Expected error from sync with failing provider, got nil")
+	}
+
+	// Nil map pointer edge case
+	rawOracle := &PricingOracle{}
+	_, found := rawOracle.GetPrice("any", "model")
+	if found {
+		t.Errorf("Expected false for uninitialized oracle pricingMap")
+	}
+}

@@ -7,7 +7,7 @@ This document outlines the evolutionary roadmap for **Nacho Flow**, spanning its
 ## 🏛️ Strategic Architecture: Control Plane vs. Data Plane
 
 Nacho Flow adheres strictly to the **Tailscale / Grafana Open-Core Architecture**:
-1. **The Data Plane (100% Free & Open Source)**: The local, high-performance Go binary deployed on developer machines and edge infrastructure. It executes wire-speed routing, tool call normalization, Pareto bandit auto-tuning, and local telemetry.
+1. **The Data Plane (100% Free & Open Source)**: The local, high-performance Go binary deployed on developer machines and edge infrastructure. It executes wire-speed routing, tool call normalization, empirical cost-penalty auto-tuning, and local telemetry.
 2. **The IDE Layer (Free Distribution Engine)**: A native VS Code / Cursor companion extension that eliminates configuration friction, manages daemon lifecycles, and visualizes real-time savings.
 3. **The Control Plane (Commercial SaaS & Enterprise)**: A centralized web dashboard and management API that solves organizational governance: credential vaulting (BYOK), per-developer spend caps, global rule synchronization, and fleet-wide cost controls.
 
@@ -59,7 +59,7 @@ The core technical routing engine is fully operational, thoroughly tested, and d
 - [x] **Wire-Speed RCU Routing Engine**: Sub-millisecond routing overhead utilizing pre-compiled AST expressions (`expr-lang/expr`).
 - [x] **Universal Tool Normalizer**: Real-time conversion across 7 open-source tool call formats (Hermes XML, Mistral bracketed JSON, Llama 3 functions, Llama 3.1 Python tags, Claude XML invoke, ReAct single/multi-line, DeepSeek-R1 markdown blocks).
 - [x] **Lock-Free Pricing Oracle**: Atomic thread-safe pricing sync from OpenRouter API calculating real-time USD cost differentials.
-- [x] **Pareto Bandit Auto-Tuner (`pkg/tuner`)**: Empirical turn-record replay analyzing context thresholds and domain friction keywords with automated backup creation.
+- [x] **Cost-Penalty Auto-Tuner (`pkg/tuner`)**: Empirical turn-record replay analyzing context thresholds and domain friction keywords with automated backup creation.
 - [x] **Comprehensive Test Suite & CI Matrix**: 96.1% global statement coverage with zero race conditions (`-race`), zero security alerts (`gosec`), and multi-platform CI verification (macOS, Ubuntu, Windows).
 - [x] **Dedicated Homebrew Distribution**: Published Formula in [`dixieflatline76/homebrew-nacho-flow`](https://github.com/dixieflatline76/homebrew-nacho-flow) with automated background service blocks.
 
@@ -79,7 +79,7 @@ Bring the power of Nacho Flow directly inside the developer's primary workspace 
   - Live inspector displaying arriving prompts, calculated token counts, and matched routing rules.
   - Side-by-side visual diff showing raw local markdown output converted into clean OpenAI `tool_calls` JSON.
 - [ ] **Interactive Visual Tuner Webview**:
-  - GUI for `nacho-flow tune` rendering the Pareto tradeoff curve.
+  - GUI for `nacho-flow tune` rendering cost-vs-retries trade-offs.
   - One-click **"Apply Recommendation"** button updating `config.yaml` with backup creation.
 - [ ] **Daemon Lifecycle Automation**:
   - Auto-spawn daemon on VS Code startup and graceful shutdown on IDE exit.
@@ -144,7 +144,7 @@ To maintain open-source community trust and viral developer adoption, technical 
 | :--- | :---: | :---: | :---: |
 | **Wire-Speed Routing (`expr` AST)** | 🟢 Included | 🟢 Included | 🟢 Included |
 | **Universal Tool Call Normalization** | 🟢 Included | 🟢 Included | 🟢 Included |
-| **Pareto Bandit Auto-Tuner** | 🟢 Included | 🟢 Included | 🟢 Included |
+| **Cost-Penalty Auto-Tuner** | 🟢 Included | 🟢 Included | 🟢 Included |
 | **Local Metrics & Logging HUD** | 🟢 Included | 🟢 Included | 🟢 Included |
 | **VS Code / Cursor Extension** | 🟢 Included | 🟢 Included | 🟢 Included |
 | **Centralized API Key Vault (BYOK)** | ❌ | 🟢 Included | 🟢 Included |

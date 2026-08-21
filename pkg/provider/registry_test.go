@@ -47,6 +47,25 @@ func TestGenericLLMProvider_Capabilities(t *testing.T) {
 	} else if hdr.GetHeaders()["X-Langdock-Org"] != "engineering" {
 		t.Errorf("Expected header 'X-Langdock-Org: engineering', got '%v'", hdr.GetHeaders())
 	}
+
+	// Capability check: CircuitBreakerProvider
+	if cbProv, ok := interface{}(p).(CircuitBreakerProvider); !ok {
+		t.Fatalf("Expected p to implement CircuitBreakerProvider")
+	} else {
+		cb := cbProv.CircuitBreaker()
+		if cb == nil {
+			t.Fatalf("Expected non-nil CircuitBreaker")
+		}
+		if cb.State() != StateClosed {
+			t.Errorf("Expected StateClosed, got %v", cb.State())
+		}
+	}
+
+	// Lazy init of circuit breaker if nil
+	pNilCB := &GenericLLMProvider{}
+	if cb := pNilCB.CircuitBreaker(); cb == nil {
+		t.Errorf("Expected lazy initialization of circuit breaker, got nil")
+	}
 }
 
 // Test 2.2: Local provider characteristics

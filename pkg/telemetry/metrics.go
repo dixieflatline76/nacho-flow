@@ -178,6 +178,10 @@ func (s *StatsTracker) GetStats() StatsSnapshot {
 
 // Flush drains pending observations before shutdown or snapshot export.
 func (s *StatsTracker) Flush() {
+	deadline := time.Now().Add(1 * time.Second)
+	for len(s.obsChan) > 0 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
 	time.Sleep(10 * time.Millisecond)
 }
 

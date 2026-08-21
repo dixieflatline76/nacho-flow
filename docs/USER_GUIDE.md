@@ -122,23 +122,24 @@ tiers:
     provider: "openrouter"
     when: "HasImages"
 
-  # Tier 3: Local GPU (100% Free, Routine tasks < 16k context without images)
+  # Tier 3: Local GPU (100% Free, Routine tasks < 16k context, auto-escalates after 2 retries)
   - name: "Local ROCm GPU"
     model: "qwen2.5-coder:14b"
     provider: "ollama"
-    when: "Tokens < 16000 && !HasImages"
+    max_context: 16384
+    when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
     strip_images: true
 
-  # Tier 4: Fast Agentic Cloud (Large context >= 16k or active tool calls)
+  # Tier 4: Fast Agentic Cloud (Large context >= 16k, active tool calls, or retry recovery)
   - name: "Cloud Agentic Fast"
     model: "qwen/qwen3-coder-30b-a3b-instruct"
     provider: "openrouter"
-    when: "Tokens >= 16000 || HasTools"
+    when: "Tokens >= 16000 || HasTools || Retries >= 2"
 
-# Fallback Tier if no expr rules match
+# Fallback Tier if no expr rules match or if primary tier trips circuit breaker
 default_tier:
   name: "Cloud Fallback"
-  model: "~deepseek/deepseek-v4-flash-latest"
+  model: "deepseek/deepseek-v4-flash-latest"
   provider: "openrouter"
   when: "true"
 ```
@@ -152,18 +153,44 @@ For a complete guide with recipes on tuning token thresholds, keyword extraction
 ### Available Variables in `when` Expressions:
 | Variable | Type | Description | Example |
 | :--- | :--- | :--- | :--- |
-| `Tokens` | `int` | Estimated token count of the entire prompt history | `Tokens < 16000` |
+| `Tokens` | `int` | Real-time adaptive estimated token count of entire prompt history | `Tokens < 16000` |
 | `HasImages` | `bool` | `true` if the request includes screenshots or image URLs | `HasImages == true` |
 | `HasTools` | `bool` | `true` if the request provides function/tool definitions | `HasTools == true` |
-| `Keywords` | `[]string` | Extracted code keywords (`mutex`, `sql`, `refactor`) | `any(Keywords, { # == 'sql' })` |
+| `Keywords` | `[]string` | Extracted code keywords scoped to the **latest user prompt** (`mutex`, `sql`, `refactor`) | `any(Keywords, { # in ['deadlock', 'mutex'] })` |
+| `Retries` | `int` | Number of consecutive prompt retries recorded in the current session (sliding 5m TTL) | `Retries < 2` |
+| `IsRetry` | `bool` | `true` if the current request is a retry of a previous failure | `!IsRetry` |
 | `Model` | `string` | The requested model ID sent by the client | `Model == 'nacho-hybrid'` |
+
+### Tier Configuration Options:
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `string` | Human-readable label for logs and `x-nacho-router-tier` header. |
+| `model` | `string` | Upstream model identifier to rewrite in the payload. |
+| `provider` | `string` | Target provider key configured in `providers`. |
+| `when` | `string` | `expr` boolean expression. |
+| `max_context` | `int` | *(Optional)* Model context window size limit. Automatically skips this tier if `Tokens > max_context`. |
+| `strip_images`| `bool` | *(Optional)* If `true`, strips base64 images from conversation history. |
+| `reasoning_effort` | `string` | *(Optional)* Passes `reasoning_effort` (`"low"`, `"medium"`, `"high"`) to supported reasoning endpoints. |
 
 ### ⚠️ Critical Rule: Top-to-Bottom Precedence (First Match Wins)
 Nacho Flow evaluates tiers sequentially from **top to bottom**. The **first tier whose `when` condition evaluates to `true` is selected**.
 
 * **Place Narrow & Specialized Tiers at the TOP:** High-complexity keyword matching (`Keywords`), multimodal vision (`HasImages`), and agent tool calls (`HasTools`) must be listed before broad catch-all rules.
-* **Place Broad & Free Local Tiers in the MIDDLE:** Rules like `Tokens < 16000 && !HasImages` should sit below specialized tiers to prevent shadowing reasoning prompts.
-* **Fallback Tier at the BOTTOM:** The `default_tier` acts as the safety net if none of the above match.
+* **Place Broad & Free Local Tiers in the MIDDLE:** Rules like `Tokens < 16000 && !HasImages && Retries < 2` should sit below specialized tiers to prevent shadowing reasoning prompts.
+* **Fallback Tier at the BOTTOM:** The `default_tier` acts as the safety net if none of the above match, or if an upstream local provider is unavailable.
+
+### 🛡️ Autonomous Self-Healing & Fallback Patterns
+
+1. **Adaptive Token Estimator**:  
+   Code and JSON payloads have a significantly higher token density (~3.0–3.2 chars/token) than standard English prose (~4.0 chars/token). Nacho Flow uses a self-calibrating Exponential Moving Average ($\alpha = 0.2$) estimator seeded at 3.2 chars/token with lock-free atomic updates from upstream `usage.prompt_tokens` feedback.
+2. **Keyword Signal Scoping**:  
+   Keyword extraction is strictly scoped to the **latest user prompt**. This prevents past turns in a 20-turn session from permanently locking routing into expensive reasoning models when the user transitions to routine edits.
+3. **Retry-Based Auto-Escalation**:  
+   If a local model generates malformed code or hallucinates, coding agents retry. Nacho Flow tracks session retry counts (keyed by prompt prefix hash with sliding 5-min TTL) so routing expressions like `Retries < 2` automatically escalate the turn to cloud models, breaking failure loops.
+4. **Local Provider Circuit Breaker**:  
+   Monitors local provider errors (connection refused, timeouts, 5xx). After consecutive failures, the circuit breaker opens for 20 seconds, fast-failing local attempts in 0ms and routing directly to cloud fallback without client-visible errors.
+5. **Delayed Header / Quality Fallback**:  
+   For streaming SSE requests, Nacho Flow delays sending `200 OK` until peeking the first data chunk. If the local model returns empty choices or immediate `data: [DONE]`, Nacho Flow transparently cancels the local attempt and streams from the default fallback tier.
 
 ### 🛠️ Universal Multi-Model Tool-Calling Normalizer
 Open-source models (e.g. Qwen 2.5, Mistral, Llama 3.1, Hermes) often return tool calls formatted inside markdown code fences or specialized XML tags rather than native OpenAI `tool_calls` structures.
@@ -175,9 +202,9 @@ Nacho Flow includes a **zero-alloc lexical bracket balancer** that automatically
 4. **Llama 3.1 Python Calls**: `<|python_tag|>tool_name.call(param="value")`
 5. **Claude XML Format**: `<function_calls><invoke name="..."><parameter name="...">...</parameter></invoke></function_calls>`
 6. **ReAct / LangChain**: `Action: tool_name\nAction Input: {...}`
-7. **DeepSeek-R1 CoT Reasoning**: Preserves `<think>...</think>` internal thinking while extracting the embedded tool call block.
+7. **DeepSeek-R1 & Qwen Reasoning**: Preserves `<think>...</think>`, `<|im_start|>think`, and `<thinking>` internal thoughts while extracting the embedded tool call block.
 
-Nacho Flow converts all of these into standard OpenAI `tool_calls` arrays with stringified `function.arguments` JSON, enabling **flawless tool execution in Roo Code, Cline, Cursor, and Antigravity**.
+Nacho Flow converts all of these into standard OpenAI `tool_calls` arrays with stringified `function.arguments` JSON, enabling **flawless tool execution in Roo Code, Cline, Cursor, and Continue**.
 
 ---
 
@@ -192,6 +219,7 @@ Ideal for testing configurations, viewing live colorized terminal logs, and tuni
 ```bash
 nacho-flow -config config.yaml -log-level info
 ```
+* **Version Check**: `nacho-flow version`, `nacho-flow -v`, or `nacho-flow --version`.
 * Logs stream to **both standard output and `logs/router.log`** with automatic 10MB rotation.
 * Telemetry records are written to `logs/traffic.jsonl`.
 * Press `Ctrl+C` to cleanly shut down.
@@ -288,27 +316,53 @@ Install Nacho Flow as a `systemd` service on Ubuntu, Debian, Arch, Fedora, or Ro
 
 ## 5. IDE & Agent Integrations (Local & Multi-Device LAN)
 
-Nacho Flow exposes a standard OpenAI-compatible API on `http://127.0.0.1:8000/v1` (or your host LAN / Tailscale IP, e.g. `http://192.168.1.100:8000/v1`).
+Nacho Flow exposes a standard OpenAI-compatible API on `http://127.0.0.1:8000/v1` (or your host LAN / Tailscale IP, e.g. `http://192.168.1.100:8000/v1`). Because Nacho Flow intercepts requests and dynamically rewrites models according to your tier rules, you can use `nacho-hybrid` (or any string) as your Model ID.
 
-### 1. Roo Code (VS Code Extension)
-In **Roo Code Settings**:
+### 1. Roo Code & Cline (VS Code)
+In **Settings** (Gear Icon $\rightarrow$ API Configuration):
 - **API Provider**: `OpenAI Compatible`
 - **Base URL**: `http://localhost:8000/v1` *(or `http://<lan-ip>:8000/v1`)*
-- **API Key**: `sk-dummy` *(or your `auth_token` if enabled in `config.yaml`)*
+- **API Key**: `sk-nacho-secret-key` *(Matches `auth_token` if configured; otherwise use any string like `sk-local`)*
 - **Model ID**: `nacho-hybrid`
-- **Image Support**: `ON`
-- **Stream**: `ON`
+- Under **Custom Model Info**:
+  - **Supports Images / Vision**: `Enabled`
+  - **Supports Computer Use / Tools**: `Enabled`
+  - **Context Window**: `128,000` tokens
+  * **Max Output**: `8,192` tokens
 
-### 2. Cline / Aider / Cursor / Continue
-Set the OpenAI Base URL in your client configuration:
+### 2. Cursor
+In **Cursor Settings** $\rightarrow$ **Models**:
+- **OpenAI API Base URL**: `http://localhost:8000/v1`
+- **OpenAI API Key**: `sk-nacho-secret-key` *(or any dummy string)*
+- Add custom model: `nacho-hybrid`
+
+### 3. Aider
 ```bash
 # Local Single-Machine Setup
-OPENAI_BASE_URL="http://127.0.0.1:8000/v1"
-OPENAI_API_KEY="sk-dummy"
+export OPENAI_API_BASE="http://127.0.0.1:8000/v1"
+export OPENAI_API_KEY="sk-nacho-secret-key"
+aider --model openai/nacho-hybrid
 
 # Remote Multi-Device / LAN Setup (with auth_token configured)
-OPENAI_BASE_URL="http://192.168.1.100:8000/v1"
-OPENAI_API_KEY="sk-nacho-gateway-token"
+export OPENAI_API_BASE="http://192.168.1.100:8000/v1"
+export OPENAI_API_KEY="sk-nacho-gateway-token"
+aider --model openai/nacho-hybrid
+```
+
+### 4. Continue.dev
+In `~/.continue/config.json`:
+```json
+{
+  "models": [
+    {
+      "title": "Nacho Flow (Hybrid Local + Cloud)",
+      "provider": "openai",
+      "model": "nacho-hybrid",
+      "apiBase": "http://127.0.0.1:8000/v1",
+      "apiKey": "sk-nacho-secret-key"
+    }
+  ]
+}
 ```
 
 ### 🔒 Dual-Layer Gateway Security (LAN / Tailscale)
@@ -326,7 +380,7 @@ Nacho Flow includes built-in live analytics and model endpoints:
 curl http://127.0.0.1:8000/health
 ```
 ```json
-{"status":"ok","service":"nacho-flow"}
+{"status":"ok","service":"nacho-flow","version":"0.5.0-dev"}
 ```
 
 ### View Live Analytics & Cost Savings:
@@ -354,7 +408,7 @@ curl http://127.0.0.1:8000/v1/stats
 
 ## 7. Autonomous Rule Auto-Tuning (`nacho-flow tune`)
 
-Nacho Flow features a built-in, pure Go **Recurrent Bandit Optimizer** that analyzes your team's real-world traffic, identifies prompt failure bottlenecks, and generates human-readable rule recommendations.
+Nacho Flow features a built-in, pure Go **Cost-Penalty Auto-Tuner** that analyzes your team's real-world traffic, identifies prompt failure bottlenecks, and generates human-readable rule recommendations.
 
 ### Run Advisory Analysis (Dry-Run):
 ```bash

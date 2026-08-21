@@ -139,6 +139,79 @@ func TestExprEvaluator_RuntimeEvaluationError(t *testing.T) {
 	}
 }
 
+func TestEvaluator_RetryAutoEscalation(t *testing.T) {
+	tiers := []contract.Tier{
+		{
+			Name:     "Local Tier",
+			Model:    "qwen2.5-coder:14b",
+			Provider: "ollama",
+			When:     "Tokens < 16000 && !HasImages && !HasTools && Retries < 2",
+		},
+	}
+	defaultTier := contract.Tier{
+		Name:     "Cloud Fallback",
+		Model:    "anthropic/claude-3.5-sonnet",
+		Provider: "openrouter",
+	}
+
+	eval, err := NewExprEvaluator(tiers, defaultTier)
+	if err != nil {
+		t.Fatalf("Failed to compile evaluator: %v", err)
+	}
+
+	// Turn 0: Fresh request (Retries: 0) -> routes to Local Tier
+	t0, _ := eval.SelectTier(contract.RequestContext{Tokens: 4000, Retries: 0, IsRetry: false})
+	if t0.Name != "Local Tier" {
+		t.Errorf("Expected Turn 0 to route to 'Local Tier', got %q", t0.Name)
+	}
+
+	// Turn 1: First retry (Retries: 1) -> still routes to Local Tier
+	t1, _ := eval.SelectTier(contract.RequestContext{Tokens: 4000, Retries: 1, IsRetry: true})
+	if t1.Name != "Local Tier" {
+		t.Errorf("Expected Turn 1 to route to 'Local Tier', got %q", t1.Name)
+	}
+
+	// Turn 2: Second consecutive retry (Retries: 2) -> auto-escalates to Cloud Fallback
+	t2, _ := eval.SelectTier(contract.RequestContext{Tokens: 4000, Retries: 2, IsRetry: true})
+	if t2.Name != "Cloud Fallback" {
+		t.Errorf("Expected Turn 2 to auto-escalate to 'Cloud Fallback', got %q", t2.Name)
+	}
+}
+
+func TestEvaluator_MaxContext_SkipsTier(t *testing.T) {
+	tiers := []contract.Tier{
+		{
+			Name:       "Local 8k GPU",
+			Model:      "qwen2.5-coder:7b",
+			Provider:   "ollama",
+			When:       "Tokens < 16000",
+			MaxContext: 8192,
+		},
+	}
+	defaultTier := contract.Tier{
+		Name:     "Cloud 128k Fallback",
+		Model:    "anthropic/claude-3.5-sonnet",
+		Provider: "openrouter",
+	}
+
+	eval, err := NewExprEvaluator(tiers, defaultTier)
+	if err != nil {
+		t.Fatalf("Failed to compile evaluator: %v", err)
+	}
+
+	// 1. Tokens = 6000 <= MaxContext (8192) and Tokens < 16000 -> routes to Local 8k GPU
+	r1, _ := eval.SelectTier(contract.RequestContext{Tokens: 6000})
+	if r1.Name != "Local 8k GPU" {
+		t.Errorf("Expected 'Local 8k GPU', got %q", r1.Name)
+	}
+
+	// 2. Tokens = 10000 > MaxContext (8192) even though Tokens < 16000 -> must skip Local 8k GPU and route to Cloud Fallback
+	r2, _ := eval.SelectTier(contract.RequestContext{Tokens: 10000})
+	if r2.Name != "Cloud 128k Fallback" {
+		t.Errorf("Expected 'Cloud 128k Fallback' when exceeding MaxContext, got %q", r2.Name)
+	}
+}
+
 // BenchmarkExprEvaluator measures nanosecond tier evaluation speed.
 func BenchmarkExprEvaluator(b *testing.B) {
 	tiers := []contract.Tier{
