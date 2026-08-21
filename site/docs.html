@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation Hub - Nacho Flow 🌮</title>
+    <meta name="description" content="Comprehensive developer documentation for Nacho Flow: User Guide, Architecture, High-Concurrency Benchmarks, Cost-Penalty Auto-Tuner, and Roadmap.">
+
+    <link rel="canonical" href="https://spicebox.dev/nacho-flow/docs.html">
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="images/favicon.png">
+
+    <!-- Marked.js & Highlight.js for Dynamic Markdown and Syntax Coloring -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/go.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/yaml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/json.min.js"></script>
+</head>
+<body>
+
+    <!-- Sticky Glass Navigation -->
+    <nav class="glass">
+        <div class="nav-content">
+            <a href="index.html" class="logo">
+                <span>🌮</span> Nacho Flow
+                <span class="logo-badge">Docs Hub</span>
+            </a>
+            <div class="links">
+                <a href="index.html">Home</a>
+                <a href="docs.html?doc=user_guide" class="active">Documentation</a>
+                <a href="docs.html?doc=roadmap">Roadmap</a>
+                <a href="support.html">Support</a>
+                <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-github-nav">
+                    <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Docs Layout -->
+    <main class="docs-layout">
+        <!-- Dual Sidebar -->
+        <aside class="docs-sidebar glass">
+            <div class="doc-switcher">
+                <h3>Developer Guides</h3>
+                <div class="doc-nav-item" id="nav-user_guide" onclick="loadDoc('user_guide')">
+                    <span>📖</span> User Guide & Config
+                </div>
+                <div class="doc-nav-item" id="nav-architecture" onclick="loadDoc('architecture')">
+                    <span>🏛️</span> Architecture & Design
+                </div>
+                <div class="doc-nav-item" id="nav-benchmarks" onclick="loadDoc('benchmarks')">
+                    <span>⚡</span> Benchmarks & Stress Tests
+                </div>
+                <div class="doc-nav-item" id="nav-tuning_guide" onclick="loadDoc('tuning_guide')">
+                    <span>🎛️</span> Rule Tuning & Auto-Tuner
+                </div>
+                <div class="doc-nav-item" id="nav-developer_guide" onclick="loadDoc('developer_guide')">
+                    <span>💻</span> Developer & TDD Guide
+                </div>
+                <div class="doc-nav-item" id="nav-roadmap" onclick="loadDoc('roadmap')">
+                    <span>🗺️</span> Product Roadmap
+                </div>
+            </div>
+
+            <div class="toc-section" id="toc-container" style="display:none;">
+                <h3>On This Page</h3>
+                <div id="toc-links"></div>
+            </div>
+        </aside>
+
+        <!-- Markdown Content Card -->
+        <article class="docs-content glass">
+            <div id="loading" style="text-align:center; padding: 4rem; color:var(--text-secondary);">
+                <div style="font-size:2rem; margin-bottom:1rem;">🌮</div>
+                Fetching documentation...
+            </div>
+            <div id="markdown-content" class="markdown-body" style="display:none;"></div>
+        </article>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div style="font-weight: 700;">
+                🌮 Nacho Flow Documentation · <a href="https://spicebox.dev" style="color:var(--accent-color);">spicebox.dev</a>
+            </div>
+            <div class="footer-links">
+                <a href="index.html">Home</a>
+                <a href="support.html">Support</a>
+                <a href="privacy.html">Privacy</a>
+                <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank">GitHub</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Dynamic Doc Loader Script -->
+    <script>
+        const docsMap = {
+            'user_guide': { path: '../docs/USER_GUIDE.md', fallback: 'docs/USER_GUIDE.md', title: 'User Guide - Nacho Flow' },
+            'architecture': { path: '../docs/ARCHITECTURE.md', fallback: 'docs/ARCHITECTURE.md', title: 'Architecture - Nacho Flow' },
+            'benchmarks': { path: '../docs/BENCHMARKS.md', fallback: 'docs/BENCHMARKS.md', title: 'Benchmarks - Nacho Flow' },
+            'tuning_guide': { path: '../docs/TUNING_GUIDE.md', fallback: 'docs/TUNING_GUIDE.md', title: 'Rule Tuning - Nacho Flow' },
+            'developer_guide': { path: '../docs/DEVELOPER_GUIDE.md', fallback: 'docs/DEVELOPER_GUIDE.md', title: 'Developer Guide - Nacho Flow' },
+            'roadmap': { path: '../ROADMAP.md', fallback: 'ROADMAP.md', title: 'Roadmap - Nacho Flow' }
+        };
+
+        let currentDocKey = 'user_guide';
+
+        function getParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+
+        async function loadDoc(docKey) {
+            if (!docsMap[docKey]) docKey = 'user_guide';
+            currentDocKey = docKey;
+
+            // Update active sidebar nav
+            document.querySelectorAll('.doc-nav-item').forEach(el => el.classList.remove('active'));
+            const activeNav = document.getElementById('nav-' + docKey);
+            if (activeNav) activeNav.classList.add('active');
+
+            // Update URL without full reload
+            const url = new URL(window.location);
+            url.searchParams.set('doc', docKey);
+            window.history.replaceState({}, '', url);
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('markdown-content').style.display = 'none';
+            document.getElementById('toc-container').style.display = 'none';
+
+            document.title = docsMap[docKey].title;
+
+            try {
+                let res = await fetch(docsMap[docKey].path);
+                if (!res.ok) {
+                    res = await fetch(docsMap[docKey].fallback);
+                }
+                if (!res.ok) throw new Error('Could not load markdown file');
+
+                let markdown = await res.text();
+
+                // Custom transformer for GitHub Alerts (> [!NOTE], > [!TIP], etc.)
+                markdown = markdown.replace(/>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n((?:>.*\n?)*)/gi, function(match, p1, p2) {
+                    const alertType = p1.toLowerCase();
+                    const cleanText = p2.replace(/^>\s?/gm, '');
+                    return `<div class="alert-box alert-${alertType}"><strong>${p1}:</strong>\n\n${cleanText}</div>\n`;
+                });
+
+                marked.setOptions({
+                    gfm: true,
+                    breaks: false,
+                    highlight: function(code, lang) {
+                        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                        return hljs.highlight(code, { language }).value;
+                    }
+                });
+
+                const html = marked.parse(markdown);
+                const contentDiv = document.getElementById('markdown-content');
+                contentDiv.innerHTML = html;
+
+                document.getElementById('loading').style.display = 'none';
+                contentDiv.style.display = 'block';
+
+                // Add Copy buttons to code snippets
+                contentDiv.querySelectorAll('pre').forEach(pre => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn-copy';
+                    btn.style.position = 'absolute';
+                    btn.style.top = '10px';
+                    btn.style.right = '10px';
+                    btn.innerText = 'Copy';
+                    btn.onclick = () => {
+                        const code = pre.querySelector('code').innerText;
+                        navigator.clipboard.writeText(code);
+                        btn.innerText = 'Copied!';
+                        setTimeout(() => btn.innerText = 'Copy', 1500);
+                    };
+                    pre.appendChild(btn);
+                });
+
+                // Generate TOC
+                buildTOC();
+
+                // Scroll to anchor if present in hash
+                if (window.location.hash) {
+                    const id = window.location.hash.substring(1);
+                    const target = document.getElementById(id);
+                    if (target) {
+                        target.scrollIntoView({ behavior: 'smooth' });
+                    }
+                }
+
+            } catch (err) {
+                document.getElementById('loading').innerHTML = `
+                    <div style="color:#ef4444; font-weight:600; margin-bottom:1rem;">⚠️ Unable to dynamically fetch ${docKey}.md</div>
+                    <p style="color:var(--text-secondary); font-size:0.9rem;">
+                        If running locally via <code>file:///</code>, browsers block local fetch calls due to CORS.<br>
+                        Please run via a local server (e.g. <code>npx serve site</code> or <code>python -m http.server</code>).
+                    </p>
+                    <a href="https://github.com/dixieflatline76/nacho-flow/blob/main/${docsMap[docKey].fallback}" target="_blank" class="btn-primary" style="margin-top:1.5rem; display:inline-block;">
+                        View ${docKey} on GitHub ➔
+                    </a>
+                `;
+            }
+        }
+
+        function buildTOC() {
+            const content = document.getElementById('markdown-content');
+            const headings = content.querySelectorAll('h2, h3');
+            const tocLinks = document.getElementById('toc-links');
+            tocLinks.innerHTML = '';
+
+            if (headings.length === 0) {
+                document.getElementById('toc-container').style.display = 'none';
+                return;
+            }
+
+            headings.forEach(h => {
+                let id = h.id || h.innerText.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                h.id = id;
+
+                const a = document.createElement('a');
+                a.href = '#' + id;
+                a.className = 'toc-link ' + (h.tagName === 'H3' ? 'toc-h3' : '');
+                a.innerText = h.innerText.replace(/^[#\s]+/, '');
+                a.onclick = (e) => {
+                    e.preventDefault();
+                    document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+                    window.history.replaceState(null, null, '#' + id);
+                };
+                tocLinks.appendChild(a);
+            });
+
+            document.getElementById('toc-container').style.display = 'block';
+        }
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            const doc = getParam('doc') || 'user_guide';
+            loadDoc(doc);
+        });
+    </script>
+</body>
+</html>
