@@ -140,7 +140,12 @@ func (s *StreamNormalizer) processLine(line []byte) {
 	// Fast path: if chunk has no reasoning markers and no think tag, check if transition needed
 	hasReasoningMarker := bytes.Contains(payload, []byte("reasoning_content")) ||
 		bytes.Contains(payload, []byte("\"reasoning\"")) ||
-		bytes.Contains(payload, []byte("\"reason\""))
+		bytes.Contains(payload, []byte("\"reason\"")) ||
+		bytes.Contains(payload, []byte("<|im_start|>think")) ||
+		bytes.Contains(payload, []byte("<|im_start|>thought")) ||
+		bytes.Contains(payload, []byte("<thinking>")) ||
+		bytes.Contains(payload, []byte("</thinking>")) ||
+		bytes.Contains(payload, []byte("<|im_end|>"))
 
 	if !hasReasoningMarker && !s.inThinking && !bytes.Contains(payload, []byte("<think>")) {
 		s.outBuf.Write(line)
@@ -184,7 +189,28 @@ func (s *StreamNormalizer) processLine(line []byte) {
 			return
 		}
 	} else {
-		// Non-reasoning chunk
+		// Normalize text-embedded reasoning tags (Qwen, Claude-style thinking tags)
+		content := choice.Delta.Content
+		if strings.Contains(content, "<|im_start|>think") {
+			content = strings.ReplaceAll(content, "<|im_start|>think", "<think>")
+			s.alreadyTagged = true
+		}
+		if strings.Contains(content, "<|im_start|>thought") {
+			content = strings.ReplaceAll(content, "<|im_start|>thought", "<think>")
+			s.alreadyTagged = true
+		}
+		if strings.Contains(content, "<thinking>") {
+			content = strings.ReplaceAll(content, "<thinking>", "<think>")
+			s.alreadyTagged = true
+		}
+		if strings.Contains(content, "</thinking>") {
+			content = strings.ReplaceAll(content, "</thinking>", "</think>")
+		}
+		if strings.Contains(content, "<|im_end|>") {
+			content = strings.ReplaceAll(content, "<|im_end|>", "</think>")
+		}
+		choice.Delta.Content = content
+
 		if strings.Contains(choice.Delta.Content, "<think>") {
 			s.alreadyTagged = true
 		}
@@ -201,9 +227,26 @@ func (s *StreamNormalizer) processLine(line []byte) {
 				return
 			}
 		}
+
+		if choice.Delta.Content != payloadContent(payload) {
+			if newPayload, err := marshalNoEscapeHTML(chunk); err == nil {
+				s.outBuf.WriteString("data: ")
+				s.outBuf.Write(newPayload)
+				s.outBuf.WriteString("\n\n")
+				return
+			}
+		}
 	}
 
 	s.outBuf.Write(line)
+}
+
+func payloadContent(payload []byte) string {
+	var c fastStreamChunk
+	if err := json.Unmarshal(payload, &c); err == nil && len(c.Choices) > 0 {
+		return c.Choices[0].Delta.Content
+	}
+	return ""
 }
 
 // Close closes the underlying stream and returns buffers to the pools.

@@ -8,10 +8,31 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
-type RequestClassifier struct{}
+type RequestClassifier struct {
+	estimator *TokenEstimator
+}
 
+// NewClassifier initializes a default RequestClassifier with an adaptive TokenEstimator.
 func NewClassifier() contract.Classifier {
-	return &RequestClassifier{}
+	return NewClassifierWithEstimator(NewTokenEstimator())
+}
+
+// NewClassifierWithEstimator initializes a RequestClassifier with a specific TokenEstimator.
+func NewClassifierWithEstimator(e *TokenEstimator) contract.Classifier {
+	if e == nil {
+		e = NewTokenEstimator()
+	}
+	return &RequestClassifier{
+		estimator: e,
+	}
+}
+
+// GetEstimator returns the active TokenEstimator instance for dynamic calibration.
+func (c *RequestClassifier) GetEstimator() *TokenEstimator {
+	if c.estimator == nil {
+		c.estimator = NewTokenEstimator()
+	}
+	return c.estimator
 }
 
 // Classify extracts token count, tools presence, image presence, and prompt keywords from request JSON.
@@ -83,13 +104,18 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 		}
 	}
 
-	// 3. Approximate token count (1 token ≈ 4 characters)
+	// 3. Approximate token count using adaptive TokenEstimator
 	allText := fullText.String()
-	reqCtx.Tokens = len(allText) / 4
+	estimator := c.GetEstimator()
+	reqCtx.Tokens = estimator.Estimate(len(allText))
 	reqCtx.Prompt = latestUserPrompt
 
-	// 4. Extract clean lowercased keywords from latest user prompt
-	reqCtx.Keywords = extractKeywords(allText)
+	// 4. Extract clean lowercased keywords strictly from latest user prompt (fallback to allText if no user prompt)
+	keywordSource := latestUserPrompt
+	if keywordSource == "" {
+		keywordSource = allText
+	}
+	reqCtx.Keywords = extractKeywords(keywordSource)
 
 	return reqCtx, nil
 }

@@ -182,8 +182,45 @@ func TestDistiller_ASTValidation(t *testing.T) {
 	}
 }
 
-func NewOptimizerForTest() *ParetoBanditOptimizer {
-	return &ParetoBanditOptimizer{
+func TestOptimizer_ZeroRecords(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+	if optimizer.Name() != "cost_penalty" {
+		t.Errorf("Expected name 'cost_penalty', got %q", optimizer.Name())
+	}
+
+	result, err := optimizer.Optimize(nil, &contract.Config{})
+	if err != nil {
+		t.Fatalf("Optimize failed on nil records: %v", err)
+	}
+	if result.OptimalThreshold != 16000 {
+		t.Errorf("Expected default 16000 threshold, got %d", result.OptimalThreshold)
+	}
+}
+
+func TestOptimizer_RetriesAvoidanceClamping(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+	// Records with 0 retries initially
+	records := []telemetry.TurnRecord{
+		{Tokens: 500, IsLocal: true, IsRetry: false},
+	}
+	result, err := optimizer.Optimize(records, &contract.Config{})
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+	if result.RetriesEliminated < 0 {
+		t.Errorf("Expected RetriesEliminated >= 0, got %d", result.RetriesEliminated)
+	}
+}
+
+func TestDistiller_InvalidThreshold(t *testing.T) {
+	_, err := DistillRule(0, nil)
+	if err == nil {
+		t.Errorf("Expected error for threshold 0, got nil")
+	}
+}
+
+func NewOptimizerForTest() *CostPenaltyOptimizer {
+	return &CostPenaltyOptimizer{
 		MinOccurrences:      10,
 		OddsRatioThreshold:  1.5,
 		CostPerMillionCloud: 2.50,

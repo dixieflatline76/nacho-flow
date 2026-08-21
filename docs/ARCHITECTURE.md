@@ -8,21 +8,25 @@ This document provides a comprehensive technical overview of **Nacho Flow**'s in
 
 ```mermaid
 flowchart TD
-    Client["Client (Roo Code / Cline / Aider / Cursor / Antigravity)"]
+    Client["Client (Roo Code / Cline / Aider / Cursor / Continue)"]
     
     subgraph NachoFlow ["Nacho Flow AI Gateway (Go Core)"]
         AuthGateway["Inbound Auth Middleware (Bearer / X-API-Key / Public /health)"]
         HTTPRouter["HTTP Handler (ServeHTTP)"]
-        Classifier["Context Classifier (Tokens, Tools, Images, Keywords)"]
-        Evaluator["Expr Rule Evaluator (AST Bytecode Engine)"]
+        SessionTracker["Session Tracker (Prompt Hash + 5m Sliding TTL)"]
+        Classifier["Context Classifier (Scoped Keywords, Adaptive Token Estimator)"]
+        Evaluator["Expr Rule Evaluator (AST Bytecode Engine + MaxContext Guards)"]
         Sanitizer["Payload Sanitizer (Image Stripper)"]
         Director["Reverse Proxy Director (Dynamic Header & Auth Injection)"]
+        CircuitBreaker["Provider Circuit Breaker (Closed / Open / Half-Open)"]
         PooledTransport["Pooled HTTP Transport (MaxIdle: 10,000)"]
+        DelayedHeader["Delayed Header & Response Quality Validator (SSE Chunk Peeker)"]
         
-        subgraph ToolEngine ["Multi-Model Tool Normalizer (pkg/router)"]
+        subgraph ToolEngine ["Multi-Model Tool & Reasoning Normalizer (pkg/router & pkg/server)"]
             FastFilter["Zero-Alloc Byte Pre-Filter (hasCandidateToolTokens)"]
             JSONBalancer["Lexical Bracket Balancer (extractBalancedJSON)"]
             ModelAdapters["7 Format Adapters (Hermes/Mistral/Llama3/Claude/ReAct/CoT)"]
+            StreamNormalizer["Extended SSE Stream Normalizer (DeepSeek/Qwen/Claude -> think)"]
             FastFilter --> JSONBalancer --> ModelAdapters
         end
 
@@ -34,9 +38,11 @@ flowchart TD
             GenericLLM -.->|Implements| IAuth["AuthProvider"]
             GenericLLM -.->|Implements| IHead["HeaderProvider"]
             GenericLLM -.->|Implements| IHealth["HealthCheckProvider"]
+            GenericLLM -.->|Implements| ICB["CircuitBreakerProvider"]
         end
 
         subgraph TelemetryStack ["Telemetry & Persistence"]
+            TokenEstimator["Adaptive Token Estimator (Lock-Free EMA)"]
             PricingOracle["Pricing Oracle (Lock-Free atomic.Pointer)"]
             StatsTracker["Stats Tracker (Buffered Event Loop)"]
             DiskStore["Persistent Disk Store (stats.json)"]
@@ -44,6 +50,7 @@ flowchart TD
             
             StatsTracker -.->|Periodic Atomic Sync| DiskStore
             PricingOracle -.->|Lock-Free Price Lookup| HTTPRouter
+            HTTPRouter -.->|Calibrate Ratio| TokenEstimator
         end
     end
     
@@ -52,18 +59,23 @@ flowchart TD
 
     Client -->|POST /v1/chat/completions| AuthGateway
     AuthGateway -->|Valid Key or Open Mode| HTTPRouter
-    HTTPRouter --> Classifier
+    HTTPRouter --> SessionTracker
+    SessionTracker --> Classifier
     Classifier --> Evaluator
     Evaluator --> Sanitizer
     Sanitizer --> Director
-    Director --> PooledTransport
+    Director --> CircuitBreaker
+    CircuitBreaker -->|Closed / Half-Open| PooledTransport
+    CircuitBreaker -.->|Open -> 0ms Bypass| CloudAPI
     
     PooledTransport -->|Local Tiers| LocalGPU
     PooledTransport -->|Cloud Tiers| CloudAPI
     
-    LocalGPU -.->|Response Stream| ToolEngine
-    CloudAPI -.->|Response Stream| ToolEngine
-    ToolEngine -.->|Normalized OpenAI Tool Calls| Client
+    LocalGPU -.->|Response Stream / Buffers| DelayedHeader
+    CloudAPI -.->|Response Stream / Buffers| DelayedHeader
+    DelayedHeader -.->|Empty / Instant DONE -> Fallback Tier| CloudAPI
+    DelayedHeader --> ToolEngine
+    ToolEngine -.->|Normalized Tool Calls & think Accordions| Client
     
     HTTPRouter -.->|Asynchronous Observation| StatsTracker
     HTTPRouter -.->|Structured Logs| SmartLogger
@@ -73,38 +85,52 @@ flowchart TD
 
 ## 2. Request Lifecycle & Pipeline Stages
 
-Every incoming request passes through an optimized 8-stage processing pipeline before dispatch and return:
+Every incoming request passes through an optimized multi-stage processing pipeline before dispatch and return:
 
 ### Stage 0: Inbound Perimeter Authentication (`pkg/server/proxy.go`)
 - If `auth_token` is configured in `config.yaml` or `ENV_NACHO_AUTH_TOKEN`, incoming requests must present a matching key via `Authorization: Bearer <token>`, `X-API-Key`, or `api-key`.
 - Requests with invalid or missing credentials receive an OpenAI-standard `401 Unauthorized` JSON payload (`invalid_api_key`).
-- Public health probes (`/health`) automatically bypass auth to facilitate orchestrator liveness checks.
+- Public health probes (`/health`, `/v1/health`) automatically bypass auth and return service status and version information.
 
-### Stage 1: Context Classification (`pkg/router/classifier.go`)
-- **Token Estimation**: Fast heuristic character-to-token parsing across system, user, and assistant message contents.
+### Stage 1: Session Tracking & Context Classification (`pkg/router/session.go`, `pkg/router/classifier.go`)
+- **Session Retry Tracking**: Computes an FNV-1a hash of the initial conversation prompt prefix to correlate prompt turns within a sliding 5-minute window. Increments a turn retry counter on consecutive turns with identical prefixes without detached goroutines (lazy TTL eviction).
+- **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities without underestimating payloads.
 - **Multimodal Detection**: Scans message blocks for `image_url` payloads and base64 strings (`HasImages`).
 - **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`).
-- **Keyword Extraction**: Extracts high-intent programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) into a lookup slice (`Keywords`).
+- **Scoped Keyword Extraction**: Extracts programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) **strictly from the latest user prompt** (`latestUserPrompt`), preventing historical multi-turn token pollution.
 
-### Stage 2: AST-Compiled Rule Evaluation (`pkg/strategy/expr_evaluator.go`)
-- Uses `github.com/expr-lang/expr` compiled bytecode expressions to evaluate 1..N tiers sequentially (*Top-to-Bottom: First Match Wins*).
-- Rules execute directly in memory with sub-microsecond latency.
-- Supported context variables: `Tokens`, `HasImages`, `HasTools`, `Keywords`, `Model`.
+### Stage 2: AST-Compiled Rule Evaluation & Context Window Guards (`pkg/strategy/expr_evaluator.go`)
+- **$\mathcal{O}(1)$ Context Boundary Guard**: If a tier defines `max_context` and `Tokens > max_context`, the tier is skipped immediately without expression evaluation overhead.
+- **Bytecode Expression Engine**: Uses `github.com/expr-lang/expr` compiled bytecode expressions to evaluate 1..N tiers sequentially (*Top-to-Bottom: First Match Wins* in $< 0.6 \mu\text{s}$).
+- Supported context variables: `Tokens`, `HasImages`, `HasTools`, `Keywords`, `Retries`, `IsRetry`, `Model`.
 
 ### Stage 3: Payload Sanitization & Model Rewriting (`pkg/router/sanitizer.go`)
 - If the selected tier model is text-only (or `strip_images: true`), all historical images in past conversation turns are sanitized into `[Image Attached]` text placeholders.
 - This prevents `400 Bad Request` crashes on cheaper cloud models or local models that lack vision encoders.
 - The top-level `"model"` field in the JSON payload is rewritten to the target tier's upstream model ID.
 
-### Stage 4: Dynamic Provider Resolution & Reverse Proxy Dispatch (`pkg/server/proxy.go`)
+### Stage 4: Circuit-Breaker-Aware Dispatch & Reverse Proxying (`pkg/server/proxy.go`, `pkg/provider/circuit_breaker.go`)
 - Resolves the target provider from the `provider.Registry`.
+- **Circuit Breaker Check**: Checks `cb.AllowRequest()`. If the provider is in an `Open` state (tripped by consecutive connection refusals, dial errors, or 5xx errors), the proxy bypasses the primary provider with 0ms dial delay and immediately dispatches to the default fallback tier.
 - Using zero-allocation interface assertions:
   - If provider implements `AuthProvider`: Injects `Authorization: Bearer <API_KEY>`.
   - If provider implements `HeaderProvider`: Injects custom headers (`HTTP-Referer`, `X-Title`, `X-Custom-Org`).
   - If provider is local (`Type: "local"`): Inbound client auth headers are stripped so local inference engines (Ollama, llama.cpp) do not reject requests.
 - Uses a shared `http.Transport` with connection pooling (`MaxIdleConns: 10000`, `MaxIdleConnsPerHost: 2000`) to guarantee zero OS socket exhaustion under massive concurrency.
 
-### Stage 5: Universal Multi-Model Tool Normalization (`pkg/router/tool_normalizer.go`)
+### Stage 5: Response Quality Validation & Delayed Header Fallback (`pkg/server/proxy.go`)
+- **Delayed Header Pattern (Streaming)**: For SSE streams, the proxy holds off on writing `w.WriteHeader(200)` until peeking the first 4KB chunk via `NewStreamNormalizer`. If a local provider emits an immediate `data: [DONE]` stream with zero content, the stream is cleanly closed and transparently re-dispatched to the cloud fallback tier.
+- **Empty Content Fallback (Non-Streaming)**: If a local model returns a 200 OK with empty choices (`""`), the defective response is caught and the request is transparently re-routed to the fallback tier.
+
+### Stage 5b: Extended Reasoning Stream Normalization (`pkg/server/stream_normalizer.go`)
+- **SSE Stream Interception**: When `Content-Type: text/event-stream` is detected, `resp.Body` is wrapped with `NewStreamNormalizer`.
+- **Wire-Speed Fast Filter**: `bytes.Contains(chunk, []byte("reasoning"))` evaluates in `< 4ns`, bypassing standard chat completion chunks with near-zero overhead.
+- **TCP Packet Boundary Framing**: Uses a pooled `bufio.Reader` (`sync.Pool`) to assemble complete `\n\n` SSE event boundaries, guaranteeing that TCP fragmentation never splits JSON payload boundaries.
+- **Thought-Stream State Machine**:
+  - Automatically transforms `reasoning_content` / `reasoning` tokens, Qwen `<|im_start|>think` / `<|im_start|>thought`, and Claude `<thinking>...</thinking>` tags into standard `<think>...</think>` tags inside `delta.content` in real-time.
+  - Automatically closes the `<think>` accordion upon transition to final answer, tool calls, `[DONE]`, `finish_reason`, or abrupt `io.EOF`.
+
+### Stage 5c: Universal Multi-Model Tool Normalization (`pkg/router/tool_normalizer.go`)
 - **Zero-Alloc Fast Path**: If `reqCtx.HasTools` is false or the raw response bytes do not contain candidate tool markers, the parser bails out in **23.5 nanoseconds** with zero allocations.
 - **Lexical Bracket Balancing**: When a local model outputs embedded tool calls in markdown or XML, `extractBalancedJSON` scans byte tokens to detect the true balanced boundaries of `{}` and `[]` structures without regex truncation bugs.
 - **7 Model Format Families Supported**:
@@ -117,27 +143,11 @@ Every incoming request passes through an optimized 8-stage processing pipeline b
   7. *DeepSeek-R1 CoT*: Preserves `<think>...</think>` reasoning while extracting markdown code blocks.
 - **OpenAI Conformance**: Converts extracted tools into strict OpenAI `tool_calls` structures with stringified `arguments`, updates `finish_reason` to `"tool_calls"`, and recalculates `Content-Length`.
 
-### Stage 5b: Reasoning Stream Normalization (`pkg/server/stream_normalizer.go`)
-- **SSE Stream Interception**: When `Content-Type: text/event-stream` is detected, `ModifyResponse` wraps `resp.Body` with `NewStreamNormalizer`.
-- **Wire-Speed Fast Filter**: `bytes.Contains(chunk, []byte("reasoning"))` evaluates in `< 4ns`, bypassing standard chat completion chunks with near-zero overhead.
-- **TCP Packet Boundary Framing**: Uses a pooled `bufio.Reader` (`sync.Pool`) to assemble complete `\n\n` SSE event boundaries, guaranteeing that TCP fragmentation never splits JSON payload boundaries.
-- **Thought-Stream State Machine**:
-  - Automatically transforms `reasoning_content` / `reasoning` tokens into `<think>...</think>` tags inside `delta.content` in real-time.
-  - Automatically closes the `<think>` accordion upon transition to final answer, tool calls, `[DONE]`, `finish_reason`, or abrupt `io.EOF`.
-  - **Native Tag Pass-Through**: Detects when local Ollama or distilled models already stream native `<think>` in `delta.content`, avoiding double-tagging.
-  - **Sanitization**: Escapes internal literal `</think>` strings inside reasoning thoughts to `&lt;/think&gt;` until official phase termination.
+### Stage 6: Telemetry Calibration & Lock-Free Pricing (`pkg/router/estimator.go`, `pkg/telemetry/pricing.go`)
+- **Estimator Dynamic Calibration**: If upstream returns `usage.prompt_tokens`, calibrates the local `TokenEstimator` ratio in real time using lock-free atomic pointer swaps.
+- **Pricing Calculation**: Queries the `PricingOracle` using `atomic.Pointer[map[string]ModelPricing]` (RCU pattern) for 0-mutex lock lookups.
 
-### Stage 6: Response Interception & Latency Profiling
-- Intercepts upstream status codes, response headers, and measures roundtrip latency.
-- Injects tracking headers into client response:
-  - `x-nacho-router-tier`: Name of the matched tier.
-  - `x-nacho-target-model`: Actual model executed upstream.
-
-### Stage 7: Lock-Free Pricing Calculation (`pkg/telemetry/pricing.go`)
-- Queries the `PricingOracle` to compute exact prompt and completion costs.
-- Lookups use `atomic.Pointer[map[string]ModelPricing]` (RCU pattern), ensuring **zero mutex locks** on the hot proxy path.
-
-### Stage 8: Asynchronous Telemetry Ingestion & Persistence (`pkg/telemetry/metrics.go`, `pkg/store/store.go`)
+### Stage 7: Asynchronous Telemetry Ingestion & Persistence (`pkg/telemetry/metrics.go`, `pkg/store/store.go`)
 - The proxy dispatches an `Observation` struct to a buffered Go channel (`chan Observation`, capacity 5,000).
 - A single background event worker aggregates metrics, token counts, tier distributions, and USD savings.
 - The `DiskStore` periodically syncs snapshots to `~/.config/nacho-flow/stats.json` using atomic write-to-temp-then-rename mechanics to survive unexpected reboots.
@@ -168,6 +178,13 @@ type HealthCheckProvider interface {
     Ping(ctx context.Context) error
 }
 
+type CircuitBreakerProvider interface {
+    AllowRequest() bool
+    RecordSuccess()
+    RecordFailure()
+    State() string
+}
+
 type PricingProvider interface {
     Name() string
     FetchPricing(ctx context.Context) (map[string]ModelPricing, error)
@@ -189,13 +206,13 @@ type PricingProvider interface {
 
 ## 5. Autonomous Rule Optimization Subsystem (`pkg/tuner`)
 
-The auto-tuning engine uses an **Advisory-First**, pure Go Recurrent Bandit architecture:
+The auto-tuning engine uses an **Advisory-First**, pure Go empirical cost-penalty tuning architecture:
 
 1. **Passive Telemetry Collector (`pkg/telemetry/traffic_log.go`)**:  
    An asynchronous `ObservationSink` capturing non-blocking metadata in `logs/traffic.jsonl` (zero code, zero prompt content).
 2. **Mathematical Optimizer (`pkg/tuner/optimizer.go`)**:  
    - Computes keyword friction odds ratios to isolate high-risk domains for local models.
-   - Evaluates multi-objective continuous thresholds to maximize cost savings while penalizing prompt retries.
+   - Evaluates a weighted cost-penalty sweep across candidate thresholds to maximize local GPU utilization while penalizing prompt retries.
 3. **Symbolic Distiller (`pkg/tuner/distiller.go`)**:  
    - Formulates and AST-compiles mathematically optimal `expr` expressions.
 4. **Advisory & Atomic Applier (`pkg/tuner/advisor.go`, `pkg/tuner/applier.go`)**:  

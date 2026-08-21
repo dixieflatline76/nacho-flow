@@ -47,6 +47,11 @@ func NewExprEvaluator(tiers []contract.Tier, defaultTier contract.Tier) (*ExprEv
 // SelectTier runs the bytecode program against reqCtx and returns the first matching tier.
 func (e *ExprEvaluator) SelectTier(reqCtx contract.RequestContext) (contract.Tier, error) {
 	for _, ct := range e.compiled {
+		// Guard: If model has a physical context window limit and prompt exceeds it, skip tier
+		if ct.tier.MaxContext > 0 && reqCtx.Tokens > ct.tier.MaxContext {
+			continue
+		}
+
 		output, err := expr.Run(ct.program, reqCtx)
 		if err != nil {
 			// Log error or continue to next tier

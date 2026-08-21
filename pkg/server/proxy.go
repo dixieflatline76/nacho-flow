@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"strings"
@@ -22,15 +21,16 @@ import (
 )
 
 type Server struct {
-	config     *contract.Config
-	evaluator  contract.Evaluator
-	classifier contract.Classifier
-	sanitizer  contract.Sanitizer
-	oracle     *telemetry.PricingOracle
-	tracker    *telemetry.StatsTracker
-	registry   *provider.Registry
-	logger     *slog.Logger
-	transport  *http.Transport
+	config         *contract.Config
+	evaluator      contract.Evaluator
+	classifier     contract.Classifier
+	sanitizer      contract.Sanitizer
+	oracle         *telemetry.PricingOracle
+	tracker        *telemetry.StatsTracker
+	registry       *provider.Registry
+	sessionTracker *router.SessionTracker
+	logger         *slog.Logger
+	transport      *http.Transport
 }
 
 // NewServer creates a Server with default telemetry, registry, and logging components.
@@ -103,15 +103,16 @@ func NewServerWithTelemetryAndRegistry(
 	}
 
 	return &Server{
-		config:     cfg,
-		evaluator:  eval,
-		classifier: class,
-		sanitizer:  san,
-		oracle:     oracle,
-		tracker:    tracker,
-		registry:   reg,
-		logger:     logger,
-		transport:  transport,
+		config:         cfg,
+		evaluator:      eval,
+		classifier:     class,
+		sanitizer:      san,
+		oracle:         oracle,
+		tracker:        tracker,
+		registry:       reg,
+		sessionTracker: router.NewSessionTracker(5 * time.Minute),
+		logger:         logger,
+		transport:      transport,
 	}
 }
 
@@ -120,7 +121,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == contract.PathHealth || r.URL.Path == contract.PathV1Health {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok","service":"nacho-flow"}`))
+		resp := fmt.Sprintf(`{"status":"ok","service":"%s","version":"%s"}`, contract.AppName, contract.Version)
+		_, _ = w.Write([]byte(resp))
 		return
 	}
 
@@ -178,7 +180,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reqLogger.Warn("Failed to classify payload", slog.Any("error", err))
 	}
 
-	// 2. Evaluate 1..N tiers using expr engine
+	// 2. Track session retries for auto-escalation
+	sessionKey := r.Header.Get("x-session-id")
+	if sessionKey == "" {
+		sessionKey = r.Header.Get("session-id")
+	}
+	if sessionKey == "" {
+		sessionKey = r.RemoteAddr
+	}
+	promptHash := router.HashPrompt(reqCtx.Prompt)
+	if s.sessionTracker == nil {
+		s.sessionTracker = router.NewSessionTracker(5 * time.Minute)
+	}
+	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash)
+	reqCtx.Retries = retries
+	reqCtx.IsRetry = isRetry
+
+	// 3. Evaluate 1..N tiers using expr engine
 	targetTier, err := s.evaluator.SelectTier(reqCtx)
 	if err != nil {
 		reqLogger.Error("Error evaluating tier, falling back to default", slog.Any("error", err))
@@ -192,39 +210,77 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Int("tokens", reqCtx.Tokens),
 		slog.Bool("has_images", reqCtx.HasImages),
 		slog.Bool("has_tools", reqCtx.HasTools),
+		slog.Int("retries", reqCtx.Retries),
 	)
 
-	// 3. Rewrite model ID in payload
-	var rawPayload map[string]interface{}
-	if err := json.Unmarshal(body, &rawPayload); err == nil {
-		rawPayload["model"] = targetTier.Model
+	s.forwardWithFallback(w, r, reqCtx, targetTier, body, startTime, reqLogger)
+}
 
-		// Inject reasoning effort if specified
-		if targetTier.ReasoningEffort != "" {
-			rawPayload["reasoning_effort"] = targetTier.ReasoningEffort
-		}
+func (s *Server) forwardWithFallback(
+	w http.ResponseWriter,
+	r *http.Request,
+	reqCtx contract.RequestContext,
+	targetTier contract.Tier,
+	body []byte,
+	startTime time.Time,
+	reqLogger *slog.Logger,
+) {
+	isFallback := false
+	s.dispatchTier(w, r, reqCtx, targetTier, body, startTime, reqLogger, isFallback)
+}
 
-		if reencoded, err := json.Marshal(rawPayload); err == nil {
-			body = reencoded
+func (s *Server) dispatchTier(
+	w http.ResponseWriter,
+	r *http.Request,
+	reqCtx contract.RequestContext,
+	targetTier contract.Tier,
+	body []byte,
+	startTime time.Time,
+	reqLogger *slog.Logger,
+	isFallback bool,
+) {
+	// Check Circuit Breaker before connecting
+	targetProvider, exists := s.registry.Get(targetTier.Provider)
+	if exists && !s.allowProvider(targetProvider) {
+		reqLogger.Warn("Target provider circuit breaker OPEN, bypassing to default tier",
+			slog.String("provider", targetTier.Provider),
+			slog.String("tier", targetTier.Name),
+		)
+		if !isFallback && s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
+			s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+			return
 		}
 	}
 
-	// 4. Resolve target provider from Registry
-	targetProvider, exists := s.registry.Get(targetTier.Provider)
 	if !exists {
 		reqLogger.Error("Target provider not found in registry", slog.String("provider", targetTier.Provider))
+		if !isFallback && s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
+			s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+			return
+		}
 		http.Error(w, fmt.Sprintf("Provider not found: %s", targetTier.Provider), http.StatusBadGateway)
 		return
 	}
 
-	// 5. Sanitize history images if target model lacks vision or strip_images is enabled
+	// Prepare payload for target model
+	preparedBody := body
+	var rawPayload map[string]interface{}
+	if err := json.Unmarshal(body, &rawPayload); err == nil {
+		rawPayload["model"] = targetTier.Model
+		if targetTier.ReasoningEffort != "" {
+			rawPayload["reasoning_effort"] = targetTier.ReasoningEffort
+		}
+		if reencoded, err := json.Marshal(rawPayload); err == nil {
+			preparedBody = reencoded
+		}
+	}
+
 	hasVision := strings.Contains(strings.ToLower(targetTier.Model), "vision") || strings.Contains(strings.ToLower(targetTier.Model), "flash") || targetTier.Provider == "openrouter"
 	if targetTier.StripImages {
 		hasVision = false
 	}
-	body, _ = s.sanitizer.SanitizePayload(body, hasVision)
+	preparedBody, _ = s.sanitizer.SanitizePayload(preparedBody, hasVision)
 
-	// 6. Parse target provider URL
 	targetURL, err := url.Parse(targetProvider.BaseURL())
 	if err != nil {
 		reqLogger.Error("Invalid target URL for provider", slog.String("provider", targetTier.Provider), slog.Any("error", err))
@@ -232,21 +288,264 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 7. Calculate tier classification & potential USD savings using PricingOracle
+	fullTargetURL := singleJoiningSlash(targetURL.String(), r.URL.Path)
+	// #nosec G704 - upstream proxy URL is constructed from validated registered provider base URL
+	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, fullTargetURL, bytes.NewReader(preparedBody))
+	if err != nil {
+		reqLogger.Error("Failed to build upstream request", slog.Any("error", err))
+		http.Error(w, "Internal proxy error", http.StatusInternalServerError)
+		return
+	}
+
+	// Copy headers
+	for k, vv := range r.Header {
+		for _, v := range vv {
+			outReq.Header.Add(k, v)
+		}
+	}
+	outReq.Host = targetURL.Host
+
+	// Provider Capability: AuthProvider
+	if auth, ok := targetProvider.(provider.AuthProvider); ok {
+		if apiKey := auth.GetAPIKey(); apiKey != "" {
+			outReq.Header.Set(contract.HeaderAuthorization, "Bearer "+apiKey)
+		}
+	}
+	// Provider Capability: HeaderProvider
+	if hdr, ok := targetProvider.(provider.HeaderProvider); ok {
+		for k, v := range hdr.GetHeaders() {
+			outReq.Header.Set(k, v)
+		}
+	}
+	outReq.Header.Set(contract.HeaderContentLength, strconv.Itoa(len(preparedBody)))
+
+	resp, err := s.transport.RoundTrip(outReq)
+	if err != nil || (resp != nil && resp.StatusCode >= 500) {
+		s.recordProviderFailure(targetProvider)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		reqLogger.Warn("Upstream provider failure",
+			slog.String("tier", targetTier.Name),
+			slog.String("provider", targetTier.Provider),
+			slog.Any("error", err),
+		)
+		if !isFallback && s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
+			reqLogger.Info("Retrying with default fallback tier", slog.String("fallback_tier", s.config.DefaultTier.Name))
+			s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Proxy error: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	isStreaming := strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeEventStream)
+
+	if isStreaming {
+		normalizer := NewStreamNormalizer(resp.Body)
+		peekBuf := make([]byte, 4096)
+		n, readErr := normalizer.Read(peekBuf)
+
+		// Check quality defect on stream: immediate [DONE] on local provider
+		trimmedPeek := strings.TrimSpace(string(peekBuf[:n]))
+		if targetProvider.IsLocal() && !isFallback && (trimmedPeek == "data: [DONE]" || (n == 0 && readErr == io.EOF)) {
+			_ = normalizer.Close()
+			reqLogger.Warn("Local provider returned empty stream, failing over to cloud fallback tier",
+				slog.String("tier", targetTier.Name),
+			)
+			if s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
+				s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+				return
+			}
+		}
+
+		s.recordProviderSuccess(targetProvider)
+
+		// Copy headers to client
+		for k, vv := range resp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.Header().Set(contract.HeaderNachoRouterTier, targetTier.Name)
+		w.Header().Set(contract.HeaderSpiceRouterTier, targetTier.Name)
+		w.Header().Set(contract.HeaderNachoTargetModel, targetTier.Model)
+		w.Header().Set(contract.HeaderSpiceTargetModel, targetTier.Model)
+		w.WriteHeader(resp.StatusCode)
+
+		if n > 0 {
+			_, _ = w.Write(peekBuf[:n])
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+		if readErr == nil {
+			_, _ = io.Copy(w, normalizer)
+		}
+		_ = normalizer.Close()
+
+		s.recordTelemetry(targetTier, targetProvider, reqCtx, resp.StatusCode, startTime, isFallback, reqLogger)
+		return
+	}
+
+	// Non-streaming response
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if readErr != nil {
+		http.Error(w, "Failed to read upstream response", http.StatusBadGateway)
+		return
+	}
+
+	// Quality Validation: Empty content from local provider -> Transparent Fallback
+	if targetProvider.IsLocal() && !isFallback && isDefectiveEmptyContent(bodyBytes) {
+		reqLogger.Warn("Local provider returned defective empty content, failing over to cloud fallback tier",
+			slog.String("tier", targetTier.Name),
+		)
+		if s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
+			s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+			return
+		}
+	}
+
+	s.recordProviderSuccess(targetProvider)
+
+	// Normalize non-streaming tools & reasoning
+	if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeJSON) {
+		if hasCandidateToolTokens(bodyBytes) || bytes.Contains(bodyBytes, []byte("reasoning")) {
+			var completionResp fastChatCompletionResponse
+			if json.Unmarshal(bodyBytes, &completionResp) == nil && len(completionResp.Choices) > 0 {
+				firstChoice := &completionResp.Choices[0]
+				modified := false
+
+				reasoningText := firstChoice.Message.ReasoningContent
+				if reasoningText == "" {
+					reasoningText = firstChoice.Message.Reasoning
+				}
+				if reasoningText == "" {
+					reasoningText = firstChoice.Message.Reason
+				}
+				if reasoningText != "" && !strings.Contains(firstChoice.Message.Content, "<think>") {
+					firstChoice.Message.Content = "<think>\n" + reasoningText + "\n</think>\n\n" + firstChoice.Message.Content
+					firstChoice.Message.ReasoningContent = ""
+					firstChoice.Message.Reasoning = ""
+					firstChoice.Message.Reason = ""
+					modified = true
+				}
+
+				if reqCtx.HasTools && len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" {
+					cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(firstChoice.Message.Content)
+					if parsed && len(extractedCalls) > 0 {
+						firstChoice.Message.Content = cleanedText
+						firstChoice.FinishReason = "tool_calls"
+						rawCallsJSON, _ := json.Marshal(extractedCalls)
+						firstChoice.Message.ToolCalls = rawCallsJSON
+						modified = true
+					}
+				}
+
+				if modified {
+					if newJSON, err := marshalNoEscapeHTML(completionResp); err == nil {
+						bodyBytes = newJSON
+					}
+				}
+
+				// Calibrate Adaptive Token Estimator if usage prompt tokens reported
+				if len(completionResp.Usage) > 0 {
+					var usageData struct {
+						PromptTokens int `json:"prompt_tokens"`
+					}
+					if json.Unmarshal(completionResp.Usage, &usageData) == nil && usageData.PromptTokens > 0 {
+						if calibrator, ok := s.classifier.(interface{ GetEstimator() *router.TokenEstimator }); ok {
+							calibrator.GetEstimator().Calibrate(usageData.PromptTokens, len(body))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+	w.Header().Set(contract.HeaderNachoRouterTier, targetTier.Name)
+	w.Header().Set(contract.HeaderSpiceRouterTier, targetTier.Name)
+	w.Header().Set(contract.HeaderNachoTargetModel, targetTier.Model)
+	w.Header().Set(contract.HeaderSpiceTargetModel, targetTier.Model)
+	w.Header().Set(contract.HeaderContentLength, strconv.Itoa(len(bodyBytes)))
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(bodyBytes)
+
+	s.recordTelemetry(targetTier, targetProvider, reqCtx, resp.StatusCode, startTime, isFallback, reqLogger)
+}
+
+func (s *Server) allowProvider(p provider.LLMProvider) bool {
+	if cbProvider, ok := p.(provider.CircuitBreakerProvider); ok {
+		return cbProvider.CircuitBreaker().AllowRequest()
+	}
+	return true
+}
+
+func (s *Server) recordProviderFailure(p provider.LLMProvider) {
+	if cbProvider, ok := p.(provider.CircuitBreakerProvider); ok {
+		cbProvider.CircuitBreaker().RecordFailure()
+	}
+}
+
+func (s *Server) recordProviderSuccess(p provider.LLMProvider) {
+	if cbProvider, ok := p.(provider.CircuitBreakerProvider); ok {
+		cbProvider.CircuitBreaker().RecordSuccess()
+	}
+}
+
+func isDefectiveEmptyContent(bodyBytes []byte) bool {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+		return false
+	}
+	choices, ok := raw["choices"].([]interface{})
+	if !ok || len(choices) == 0 {
+		return true
+	}
+	firstChoice, ok := choices[0].(map[string]interface{})
+	if !ok {
+		return true
+	}
+	msg, ok := firstChoice["message"].(map[string]interface{})
+	if !ok {
+		return true
+	}
+	content, _ := msg["content"].(string)
+	tools, hasTools := msg["tool_calls"].([]interface{})
+	reasoning, _ := msg["reasoning_content"].(string)
+	if reasoning == "" {
+		reasoning, _ = msg["reasoning"].(string)
+	}
+	return strings.TrimSpace(content) == "" && (!hasTools || len(tools) == 0) && strings.TrimSpace(reasoning) == ""
+}
+
+func (s *Server) recordTelemetry(
+	targetTier contract.Tier,
+	targetProvider provider.LLMProvider,
+	reqCtx contract.RequestContext,
+	statusCode int,
+	startTime time.Time,
+	isFallback bool,
+	reqLogger *slog.Logger,
+) {
+	latency := float64(time.Since(startTime).Milliseconds())
 	isLocal := targetProvider.IsLocal()
 	var costSaved float64
+
 	if reqCtx.Tokens > 0 {
-		// Baseline reference: flagship cloud model (Claude 3.5 Sonnet / GPT-4o standard rate)
 		baselineRatePerM := contract.DefaultBenchmarkPricePerMillion
 		if baselinePricing, found := s.oracle.GetPrice("openrouter", contract.DefaultBenchmarkModel); found && baselinePricing.PromptCostPerMillion > 0 {
 			baselineRatePerM = baselinePricing.PromptCostPerMillion
 		}
-
 		if isLocal {
-			// Local inference saved 100% of the flagship cloud cost
 			costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * baselineRatePerM
 		} else {
-			// Cloud inference: calculate differential savings between flagship and cheaper cloud model
 			if tierPricing, found := s.oracle.GetPrice(targetTier.Provider, targetTier.Model); found {
 				if baselineRatePerM > tierPricing.PromptCostPerMillion {
 					costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * (baselineRatePerM - tierPricing.PromptCostPerMillion)
@@ -269,142 +568,32 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tierNum = 2
 	}
 
-	// 8. Reverse Proxy Setup with shared high-concurrency Transport
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-	proxy.Transport = s.transport
+	s.tracker.Record(telemetry.Observation{
+		Tier:       tierNum,
+		TierName:   targetTier.Name,
+		Model:      targetTier.Model,
+		Provider:   targetTier.Provider,
+		Tokens:     reqCtx.Tokens,
+		CostSaved:  costSaved,
+		IsLocal:    isLocal,
+		IsFallback: isFallback,
+		LatencyMs:  latency,
+		Keywords:   reqCtx.Keywords,
+		HasImages:  reqCtx.HasImages,
+		HasTools:   reqCtx.HasTools,
+		StatusCode: statusCode,
+		IsRetry:    reqCtx.IsRetry,
+	})
 
-	// Custom Director using dynamic capability assertions (Zero hardcoded providers!)
-	originalDirector := proxy.Director
-	proxy.Director = func(outReq *http.Request) {
-		originalDirector(outReq)
-		outReq.Host = targetURL.Host
-		outReq.URL.Scheme = targetURL.Scheme
-		outReq.URL.Host = targetURL.Host
-		outReq.URL.Path = singleJoiningSlash(targetURL.Path, r.URL.Path)
-
-		// Capability: AuthProvider (Inject Bearer token)
-		if auth, ok := targetProvider.(provider.AuthProvider); ok {
-			if apiKey := auth.GetAPIKey(); apiKey != "" {
-				outReq.Header.Set(contract.HeaderAuthorization, "Bearer "+apiKey)
-			}
-		}
-
-		// Capability: HeaderProvider (Inject custom headers e.g. Referrers, Org IDs)
-		if hdr, ok := targetProvider.(provider.HeaderProvider); ok {
-			for k, v := range hdr.GetHeaders() {
-				outReq.Header.Set(k, v)
-			}
-		}
-
-		// Re-assign body
-		outReq.Body = io.NopCloser(bytes.NewReader(body))
-		outReq.ContentLength = int64(len(body))
-	}
-
-	proxy.ModifyResponse = func(resp *http.Response) error {
-		latency := float64(time.Since(startTime).Milliseconds())
-		resp.Header.Set(contract.HeaderNachoRouterTier, targetTier.Name)
-		resp.Header.Set(contract.HeaderSpiceRouterTier, targetTier.Name)
-		resp.Header.Set(contract.HeaderNachoTargetModel, targetTier.Model)
-		resp.Header.Set(contract.HeaderSpiceTargetModel, targetTier.Model)
-
-		// 1. SSE Stream Normalization (DeepSeek-R1 / OpenRouter reasoning token normalization)
-		if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeEventStream) {
-			resp.Body = NewStreamNormalizer(resp.Body)
-		}
-
-		// 2. Non-streaming JSON Normalization (Tools & Reasoning models)
-		if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeJSON) {
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err == nil {
-				_ = resp.Body.Close()
-
-				// Fast pre-filter: Only decode JSON if the raw bytes contain candidate markers
-				if hasCandidateToolTokens(bodyBytes) || bytes.Contains(bodyBytes, []byte("reasoning")) {
-					var completionResp fastChatCompletionResponse
-					if json.Unmarshal(bodyBytes, &completionResp) == nil && len(completionResp.Choices) > 0 {
-						firstChoice := &completionResp.Choices[0]
-						modified := false
-
-						// Normalize reasoning tokens if present
-						reasoningText := firstChoice.Message.ReasoningContent
-						if reasoningText == "" {
-							reasoningText = firstChoice.Message.Reasoning
-						}
-						if reasoningText == "" {
-							reasoningText = firstChoice.Message.Reason
-						}
-						if reasoningText != "" && !strings.Contains(firstChoice.Message.Content, "<think>") {
-							firstChoice.Message.Content = "<think>\n" + reasoningText + "\n</think>\n\n" + firstChoice.Message.Content
-							firstChoice.Message.ReasoningContent = ""
-							firstChoice.Message.Reasoning = ""
-							firstChoice.Message.Reason = ""
-							modified = true
-						}
-
-						// Only normalize markdown tool calls if model did NOT provide native tool_calls
-						if reqCtx.HasTools && len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" {
-							cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(firstChoice.Message.Content)
-							if parsed && len(extractedCalls) > 0 {
-								firstChoice.Message.Content = cleanedText
-								firstChoice.FinishReason = "tool_calls"
-								rawCallsJSON, _ := json.Marshal(extractedCalls)
-								firstChoice.Message.ToolCalls = rawCallsJSON
-								modified = true
-							}
-						}
-
-						if modified {
-							if newJSON, err := marshalNoEscapeHTML(completionResp); err == nil {
-								bodyBytes = newJSON
-								resp.Header.Set(contract.HeaderContentLength, strconv.Itoa(len(newJSON)))
-							}
-						}
-					}
-				}
-				resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-				resp.ContentLength = int64(len(bodyBytes))
-			}
-		}
-
-		s.tracker.Record(telemetry.Observation{
-			Tier:       tierNum,
-			TierName:   targetTier.Name,
-			Model:      targetTier.Model,
-			Provider:   targetTier.Provider,
-			Tokens:     reqCtx.Tokens,
-			CostSaved:  costSaved,
-			IsLocal:    isLocal,
-			IsFallback: false,
-			LatencyMs:  latency,
-			Keywords:   reqCtx.Keywords,
-			HasImages:  reqCtx.HasImages,
-			HasTools:   reqCtx.HasTools,
-			StatusCode: resp.StatusCode,
-		})
-
-		reqLogger.Info("Completed proxy request",
-			slog.String("tier", targetTier.Name),
-			slog.String("model", targetTier.Model),
-			slog.Int("tokens", reqCtx.Tokens),
-			slog.Float64("latency_ms", latency),
-			slog.Int("status", resp.StatusCode),
-		)
-		return nil
-	}
-
-	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, proxyErr error) {
-		latency := float64(time.Since(startTime).Milliseconds())
-		reqLogger.Error("Proxy upstream error",
-			slog.String("tier", targetTier.Name),
-			slog.String("target_url", targetURL.String()),
-			slog.Any("error", proxyErr),
-			slog.Float64("latency_ms", latency),
-		)
-		http.Error(rw, fmt.Sprintf("Proxy error: %v", proxyErr), http.StatusBadGateway)
-	}
-
-	proxy.ServeHTTP(w, r)
+	reqLogger.Info("Completed proxy request",
+		slog.String("tier", targetTier.Name),
+		slog.String("model", targetTier.Model),
+		slog.Int("tokens", reqCtx.Tokens),
+		slog.Float64("latency_ms", latency),
+		slog.Int("status", statusCode),
+		slog.Bool("is_fallback", isFallback),
+		slog.Bool("is_retry", reqCtx.IsRetry),
+	)
 }
 
 func singleJoiningSlash(a, b string) string {

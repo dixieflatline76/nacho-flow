@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/config"
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/server"
@@ -28,6 +29,8 @@ var (
 	configPathFlag = flag.String("config", "", "Path to config.yaml file")
 	portFlag       = flag.Int("port", 0, "Port to listen on (overrides config.yaml)")
 	logLevelFlag   = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	versionFlag    = flag.Bool("version", false, "Print version and exit")
+	vFlag          = flag.Bool("v", false, "Print version and exit")
 )
 
 type program struct {
@@ -217,7 +220,7 @@ func handleTuneSubcommand(args []string) {
 		return
 	}
 
-	optimizer := tuner.NewParetoBanditOptimizer()
+	optimizer := tuner.NewCostPenaltyOptimizer()
 	result, err := optimizer.Optimize(records, cfg)
 	if err != nil {
 		log.Fatalf("Optimization analysis failed: %v", err)
@@ -242,6 +245,9 @@ func main() {
 	if len(os.Args) > 1 {
 		cmd := os.Args[1]
 		switch cmd {
+		case "version", "-v", "--version":
+			fmt.Printf("nacho-flow %s (spicebox.dev)\n", contract.Version)
+			return
 		case "tune":
 			handleTuneSubcommand(os.Args[2:])
 			return
@@ -249,6 +255,11 @@ func main() {
 	}
 
 	flag.Parse()
+
+	if *versionFlag || *vFlag {
+		fmt.Printf("nacho-flow %s (spicebox.dev)\n", contract.Version)
+		return
+	}
 
 	svcConfig := &service.Config{
 		Name:        "nacho-flow",

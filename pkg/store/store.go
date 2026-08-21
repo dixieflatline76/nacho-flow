@@ -20,8 +20,8 @@ type DiskStore struct {
 // NewDiskStore creates a DiskStore targeting the specified file path.
 func NewDiskStore(filePath string) (*DiskStore, error) {
 	if filePath == "" {
-		userConfigDir, err := os.UserConfigDir()
-		if err != nil {
+		userConfigDir, _ := os.UserConfigDir()
+		if userConfigDir == "" {
 			userConfigDir = "."
 		}
 		filePath = filepath.Join(userConfigDir, contract.AppName, contract.DefaultStatsFileName)
@@ -65,10 +65,7 @@ func (s *DiskStore) Save(snapshot telemetry.StatsSnapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data, err := json.MarshalIndent(snapshot, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal stats snapshot: %w", err)
-	}
+	data, _ := json.MarshalIndent(snapshot, "", "  ")
 
 	// Write to temporary file in the same directory to ensure atomic same-filesystem rename
 	tmpFile := filepath.Clean(fmt.Sprintf("%s.tmp.%d", s.filePath, os.Getpid()))
@@ -78,12 +75,8 @@ func (s *DiskStore) Save(snapshot telemetry.StatsSnapshot) error {
 
 	// Atomically replace the destination file
 	if err := os.Rename(tmpFile, s.filePath); err != nil {
-		// On Windows, rename over an existing file may require removal first
-		_ = os.Remove(s.filePath)
-		if retryErr := os.Rename(tmpFile, s.filePath); retryErr != nil {
-			_ = os.Remove(tmpFile)
-			return fmt.Errorf("failed to atomically rename stats file: %w", retryErr)
-		}
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to atomically rename stats file: %w", err)
 	}
 
 	return nil

@@ -11,6 +11,10 @@ import (
 // DistillRule synthesizes a clean expr rule from optimal threshold and friction keywords,
 // and validates that it compiles cleanly with expr.Compile.
 func DistillRule(optimalThreshold int, highFrictionKws []string) (string, error) {
+	if optimalThreshold <= 0 {
+		return "", fmt.Errorf("optimalThreshold must be positive, got %d", optimalThreshold)
+	}
+
 	var rule string
 	if len(highFrictionKws) == 0 {
 		rule = fmt.Sprintf("Tokens < %d && !HasImages && !HasTools", optimalThreshold)

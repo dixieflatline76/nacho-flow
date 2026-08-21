@@ -1,8 +1,8 @@
 # 🌮 Nacho Flow (`spicebox.dev/nacho-flow`)
 
-> **Slash your monthly AI coding bills by 90–95% without sacrificing model intelligence.**
+> **A fast, zero-dependency hybrid AI gateway that routes agent prompt turns between local GPUs and cloud APIs.**
 
-**Nacho Flow** is an ultra-high-performance, zero-dependency OpenAI-compatible hybrid AI gateway built in pure Go. It automatically routes agent prompt turns between your **local GPU** (Ollama / vLLM / ROCm for $0.00) and **cheap cloud APIs** (OpenRouter / Langdock / DeepSeek / Azure) with **< 0.29 ms overhead** and **32,250+ requests/sec throughput**.
+**Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Roo Code](https://github.com/RooVetGit/Roo-Code), [Cline](https://github.com/cline/cline), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)).
 
 Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
 
@@ -10,24 +10,51 @@ Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@d
 
 ## 🌟 Why Nacho Flow?
 
-Autonomous coding agents (Roo Code, Cline, Aider, Cursor) dump full conversation histories into every prompt turn. After 10 turns, context hits 100k+ tokens—costing **$2.00 to $5.00 per prompt** on flagship models like Claude 3.5 Sonnet.
+### 💡 The Origin Story
+I built Nacho Flow after hitting a very familiar wall: I ran out of free Antigravity IDE daily tokens mid-session, topped up an OpenRouter account with €10, and watched €2.50 disappear on a single prompt turn just asking the agent to analyze the `docs/` folder in the Spice project for context.
 
-* **Local GPUs choke on huge history**: Local GPUs (RX 6900 XT / RTX 3090 / Mac Studio) run blindingly fast on small contexts (< 16k tokens), but run out of VRAM as history accumulates.
-* **Nacho Flow solves the Agentic Context Trap**: It evaluates incoming prompts turn-by-turn. Turn 1 (small context) runs on your local GPU for **$0.00**. When history grows past 16k tokens or requests tool calls, it seamlessly hands off to cloud endpoints.
+Autonomous coding agents (Roo Code, Cline, Aider, Cursor) operate in multi-turn feedback loops. As conversations progress, agent harnesses re-send the full transcript, file contents, and execution logs with every prompt turn. When paying cloud rates per million tokens, large prompt dumps quickly drain credits—even for trivial queries, inspections, or routine 1-line edits.
+
+* **Local GPUs excel at small contexts**: A modern workstation GPU ([AMD Radeon RX 7900 XTX](https://www.amd.com/en/products/graphics/desktops/radeon.html), [NVIDIA RTX 4090](https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4090/), [Apple Mac Studio M-Series](https://www.apple.com/mac-studio/)) can run 14B–32B parameter coding models locally at high speeds and zero marginal cost for small-to-medium contexts (< 16k tokens).
+* **Context growth strains local VRAM**: As conversations expand beyond 16k–32k tokens, local memory bandwidth and context limits become bottlenecks.
+* **Turn-by-turn hybrid routing**: Nacho Flow solves this by evaluating prompt metadata turn-by-turn. Early iterative turns (routine edits, tests, inspections) stay on local hardware for free. When context expands or complex multi-file reasoning is required, requests automatically hand off to cloud APIs.
+
+---
+
+## 🥊 Nacho Flow vs. Cloud-Only Routers (e.g. OpenRouter Auto, LiteLLM)
+
+| Dimension | Cloud Routers (e.g. `openrouter/auto`) | Nacho Flow (Hybrid Edge Gateway) |
+| :--- | :--- | :--- |
+| **Routing Domain** | **Cloud-to-Cloud only** (100% paid). | **Hybrid Edge Gateway** (Local GPU $\leftrightarrow$ Cloud APIs). |
+| **Cost Floor** | **$0.00 is impossible**. Every prompt incurs cloud fees. | **$0.00 for routine turns** on local hardware. |
+| **Hardware Utilization** | Completely ignores your local GPU / NPU. | Maximizes local VRAM on early turns before context limits are reached. |
+| **Routing Logic** | Black-box trailing 7-day community spend. | **Deterministic AST Bytecode Rules** (`Tokens`, `Retries`, `Keywords`). |
+| **Target Providers** | Single cloud aggregator lock-in. | **Any Provider**: [Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Langdock](https://www.langdock.com), [Azure](https://azure.microsoft.com), [DeepSeek](https://www.deepseek.com), [OpenRouter](https://openrouter.ai). |
+| **Open-Source Tool Fixing** | None for local models. | **Normalizes 7 tool-calling format families & thinking tags on the fly**. |
+| **Local Self-Healing** | None. | **Circuit Breakers & Delayed Header streaming failovers**. |
+
+> [!TIP]
+> **They are complementary!** You can configure `openrouter/auto` as your cloud fallback tier inside Nacho Flow: run routine prompt turns on your local GPU for **$0.00**, and let OpenRouter Auto Router pick the best cloud model whenever prompts exceed local limits.
 
 ---
 
 ## ✨ Key Features
 
-* **⚡ Wire-Speed Throughput (28,000+ req/sec)**: Built with zero-lock concurrency (`atomic.Pointer` RCU) and pooled HTTP transports (< 0.21 ms routing overhead, < 96 MB RAM under 1,000 parallel workers).
-* **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, and OpenRouter, automatically transforming non-standard `reasoning_content` tokens into `<think>...</think>` tags in real-time. Eliminates empty-message errors and powers live thinking accordions in Roo Code & Cline.
-* **🛠️ Universal Multi-Model Tool Normalizer**: Automatically intercepts and converts raw model outputs (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML, ReAct, and DeepSeek-R1 CoT `<think>`) into strict OpenAI `tool_calls` JSON structures—giving local open-source models 100% compatibility with agentic tools.
-* **🔒 Inbound Gateway Client Authentication**: Secure your gateway when exposed on local LAN (`0.0.0.0`) or remote devboxes via `auth_token` Bearer authentication, with OpenAI-compliant 401 error payloads and public `/health` bypass.
-* **🔌 Composable Capability Provider Subsystem**: Supports local GPUs (Ollama, vLLM, LM Studio) and cloud endpoints (OpenRouter, Langdock, DeepSeek, Azure, AWS) with dynamic header and bearer auth injection.
-* **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Configure unlimited custom routing rules in `config.yaml` evaluated in strict top-to-bottom order based on context size, images, tool calling, and code keywords.
-* **🖼️ History Image Sanitization**: Automatically strips raw base64 `image_url` payloads from older historical turns when routing to text-only models, eliminating `400 Bad Request` crashes.
-* **💾 Persistent Telemetry Store**: Automatically saves cumulative token savings and USD cost metrics to disk (`~/.config/nacho-flow/stats.json`) across daemon restarts.
-* **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI OR installs natively as a persistent background daemon on **Windows** (Windows Service), **Linux** (systemd), and **macOS** (launchd).
+* **⚡ High-Throughput Core**: Adds < 0.36 ms routing overhead and handles 30,000+ req/s using lock-free atomic RCU state and pooled HTTP transports.
+* **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
+* **🚦 Local Provider Circuit Breaker**: Detects consecutive local connection or 5xx failures and fast-fails directly to cloud fallback tiers with 0ms dial delay.
+* **🔄 Retry-Based Auto-Escalation**: Tracks session turn retries with a sliding 5-minute TTL, allowing routing rules to automatically escalate to cloud models when local attempts fail (`Retries < 2`).
+* **📏 Adaptive Token Estimator**: Continuously calibrates character-to-token ratios using an Exponential Moving Average (EMA) to prevent context undercounting on code and structured JSON.
+* **🛡️ Response Quality Validation & Delayed Headers**: Peeks initial SSE stream chunks before committing `HTTP 200` headers to enable transparent cloud failover if a local model returns an empty payload or unexpected termination.
+* **📐 Model Context Window Guard (`max_context`)**: Evaluates model physical context limits with O(1) pre-guards to prevent 400 Context Length Exceeded errors.
+* **🛠️ Universal Multi-Model Tool Normalizer**: Converts raw tool-call formats (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML, ReAct, DeepSeek-R1) into standard OpenAI `tool_calls` JSON structures.
+* **🔒 Inbound Gateway Client Authentication**: Secures LAN and remote endpoints with optional Bearer token authentication while preserving a public `/health` endpoint.
+* **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Evaluates custom tier rules in `config.yaml` based on token estimates, tool calls, images, retries, and prompt keywords.
+* **🖼️ Historical Image Sanitization**: Automatically strips base64 `image_url` payloads from older turns when routing to text-only models.
+* **🏷️ Dynamic Version Reporting**: Exposes build version across `/health`, `/v1/health`, and CLI (`nacho-flow version`, `-v`).
+* **💾 Persistent Telemetry Store**: Saves cumulative token counts and estimated cost metrics to disk (`~/.config/nacho-flow/stats.json`).
+* **🧪 Engineered for Reliability**: 96.1% overall statement test coverage (minimum 95.1% across every single package, 100% on core strategy & config), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 * **📦 Zero Dependencies**: Single static binary with zero CGO or Python requirements (`CGO_ENABLED=0`).
 
 ---
@@ -106,22 +133,23 @@ tiers:
     provider: "openrouter"
     when: "HasImages"
 
-  # Tier 3: Local ROCm GPU (100% Free, Routine tasks < 16k context without images)
+  # Tier 3: Local ROCm GPU (100% Free, Routine tasks < 16k context, auto-escalates after 2 retries)
   - name: "Local ROCm GPU"
     model: "qwen2.5-coder:14b"
     provider: "ollama"
-    when: "Tokens < 16000 && !HasImages"
+    max_context: 16384
+    when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
     strip_images: true
 
-  # Tier 4: Fast Agentic Cloud (Large context >= 16k or active tools)
+  # Tier 4: Fast Agentic Cloud (Large context >= 16k, active tools, or retry recovery)
   - name: "Cloud Agentic Fast"
     model: "qwen/qwen3-coder-30b-a3b-instruct"
     provider: "openrouter"
-    when: "Tokens >= 16000 || HasTools"
+    when: "Tokens >= 16000 || HasTools || Retries >= 2"
 
 default_tier:
   name: "Cloud Fallback"
-  model: "~deepseek/deepseek-v4-flash-latest"
+  model: "deepseek/deepseek-v4-flash-latest"
   provider: "openrouter"
   when: "true"
 ```
@@ -142,18 +170,54 @@ nacho-flow service start
 
 ---
 
-### 4. Connect Your IDE (Roo Code / Cline / Aider / Cursor / Antigravity)
+### 4. Connect Your IDE & Coding Agents
 
-In VS Code / Antigravity **Roo Code Settings**:
-* **Provider**: `OpenAI Compatible`
-* **Base URL**: `http://localhost:8000/v1`
-* **API Key**: `sk-nacho-secret-key` *(Matches `auth_token` if configured, or any dummy string)*
+Nacho Flow exposes a standard OpenAI-compatible proxy endpoint on `http://localhost:8000/v1`. Since Nacho Flow dynamically routes and rewrites model IDs turn-by-turn based on your `config.yaml` tier rules, you can use `nacho-hybrid` (or any string) as your Model ID.
+
+#### 🦘 Roo Code & Cline (VS Code)
+In **Settings** (Gear Icon $\rightarrow$ API Configuration):
+* **API Provider**: `OpenAI Compatible`
+* **Base URL**: `http://localhost:8000/v1` *(or `http://127.0.0.1:8000/v1`)*
+* **API Key**: `sk-nacho-secret-key` *(Matches `auth_token` if configured; otherwise use any string like `sk-local`)*
 * **Model ID**: `nacho-hybrid`
-* **Stream / Image / Tool Support**: `ON`
+* Under **Custom Model Info**:
+  * **Supports Images / Vision**: `Enabled`
+  * **Supports Computer Use / Tools**: `Enabled`
+  * **Context Window**: `128,000` tokens
+  * **Max Output**: `8,192` tokens
+
+#### 🖱️ Cursor
+In **Cursor Settings** $\rightarrow$ **Models**:
+* **OpenAI API Base URL**: `http://localhost:8000/v1`
+* **OpenAI API Key**: `sk-nacho-secret-key` *(or any dummy string)*
+* Add custom model: `nacho-hybrid`
+
+#### 🤖 Aider
+```bash
+export OPENAI_API_BASE="http://127.0.0.1:8000/v1"
+export OPENAI_API_KEY="sk-nacho-secret-key"
+aider --model openai/nacho-hybrid
+```
+
+#### ⏩ Continue.dev
+In `~/.continue/config.json`:
+```json
+{
+  "models": [
+    {
+      "title": "Nacho Flow (Hybrid Local + Cloud)",
+      "provider": "openai",
+      "model": "nacho-hybrid",
+      "apiBase": "http://127.0.0.1:8000/v1",
+      "apiKey": "sk-nacho-secret-key"
+    }
+  ]
+}
+```
 
 ---
 
-## 🗺️ Vision & Roadmap
+## 🗺️ Product Roadmap
 
 See our comprehensive **[Product & Commercial Roadmap (ROADMAP.md)](ROADMAP.md)** for detailed phase milestones spanning the open-source data plane, VS Code companion extension, remote fleet protocol, and commercial SaaS control plane.
 
@@ -164,7 +228,7 @@ See our comprehensive **[Product & Commercial Roadmap (ROADMAP.md)](ROADMAP.md)*
 For in-depth guides, benchmark data, and architecture deep-dives:
 - **[Product & Commercial Roadmap](ROADMAP.md)**: Open-source data plane, IDE extension, fleet protocol, and SaaS control plane.
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
-- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**32,254+ r/s up to 1,000 workers**) on AMD Ryzen hardware.
+- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**30,800+ req/s, 350k requests up to 1,000 workers**) on AMD Ryzen hardware.
 - **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules.
 - **[User Guide](docs/USER_GUIDE.md)**: Full configuration reference, custom `expr` tier rules, OS service setup, and IDE walkthroughs.
 - **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Development prerequisites, TDD workflow, plugin extension guide, and benchmarking.

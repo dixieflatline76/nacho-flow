@@ -22,17 +22,23 @@ flowchart TD
 
 ---
 
-## 2. Available Context Variables
+## 2. Available Context Variables & Tier Properties
 
-Every `when` rule has access to real-time prompt context attributes:
-
+### Variables in `when` Expressions:
 | Variable | Type | Description | Example Condition |
 | :--- | :--- | :--- | :--- |
-| `Tokens` | `int` | Estimated total token count across all messages in history | `Tokens < 16000` |
+| `Tokens` | `int` | Real-time adaptive estimated token count across all prompt messages | `Tokens < 16000` |
 | `HasImages` | `bool` | `true` if any message contains screenshots or image URLs | `HasImages == true` |
 | `HasTools` | `bool` | `true` if function/tool definitions or active tool calls are present | `HasTools == true` |
-| `Keywords` | `[]string` | Code keywords detected in recent turns (`deadlock`, `sql`, `refactor`, etc.) | `any(Keywords, { # in ['deadlock', 'mutex'] })` |
+| `Keywords` | `[]string` | Code keywords detected **strictly in the latest user prompt** | `any(Keywords, { # in ['deadlock', 'mutex'] })` |
+| `Retries` | `int` | Number of consecutive prompt retries in current session (sliding 5m TTL) | `Retries < 2` |
+| `IsRetry` | `bool` | `true` if this prompt is a retry of a previous failure | `!IsRetry` |
 | `Model` | `string` | The requested model ID sent by the client (e.g. `nacho-hybrid`) | `Model == 'nacho-coder'` |
+
+### Tier Properties:
+- `max_context` (`int`): Optional. Upper bound of the model's context window (e.g. `16384`, `32768`). If `Tokens > max_context`, Nacho Flow immediately skips this tier with zero expression overhead.
+- `strip_images` (`bool`): If `true`, strips raw base64 image strings from older conversation turns to prevent 400 errors on text-only models.
+- `reasoning_effort` (`string`): Passes `"low"`, `"medium"`, or `"high"` to supported reasoning providers.
 
 ---
 
@@ -45,7 +51,8 @@ To maximize cost savings without degrading agent intelligence, follow the **Hier
 [2. Multimodal Vision (Images)]    --> Route to Gemini Flash / Claude 3.5 Sonnet (Vision Encoders)
 [3. Active Tool Calls]             --> Route to Cloud Fast Coder (High Tool Adherence)
 [4. Routine Local Coding (< 16k)]  --> Route to Local GPU (Ollama/vLLM) ($0.00 / 100% Free)
-[5. Large Context Overflow (>= 16k)]-> Route to Cheap Cloud Fast (e.g. Qwen 3 Coder / DeepSeek)
+[5. Retry Escalation (Retries>=2)] --> Route to Cloud Provider (Breaks Local Failure Loops)
+[6. Large Context Overflow (>= 16k)]-> Route to Cheap Cloud Fast (e.g. Qwen 3 Coder / DeepSeek)
 [Default Fallback]                 --> Reliable Cloud Fallback
 ```
 
@@ -53,8 +60,8 @@ To maximize cost savings without degrading agent intelligence, follow the **Hier
 
 ## 4. Real-World Rule Recipes
 
-### Recipe 1: The Local-First Cost Slasher (90% Savings)
-Routes small, single-file edits and routine coding tasks to your local GPU, escalating to cloud only when history accumulates or images are attached:
+### Recipe 1: Local-First GPU Routing with Auto-Escalation
+Routes small, single-file edits and routine coding tasks to your local GPU, escalating to cloud when history accumulates, images are attached, or if the local model fails 2 consecutive times:
 
 ```yaml
 tiers:
@@ -66,17 +73,18 @@ tiers:
   - name: "Local ROCm / CUDA GPU"
     model: "qwen2.5-coder:14b"
     provider: "local_gpu"
-    when: "Tokens < 16000 && !HasImages && !HasTools"
+    max_context: 16384
+    when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
     strip_images: true
 
   - name: "Cloud Agentic Fast"
     model: "qwen/qwen3-coder-30b-a3b-instruct"
     provider: "openrouter"
-    when: "Tokens >= 16000 || HasTools"
+    when: "Tokens >= 16000 || HasTools || Retries >= 2"
 
 default_tier:
   name: "Cloud Fallback"
-  model: "~deepseek/deepseek-v4-flash-latest"
+  model: "deepseek/deepseek-v4-flash-latest"
   provider: "openrouter"
   when: "true"
 ```
@@ -84,7 +92,7 @@ default_tier:
 ---
 
 ### Recipe 2: Domain-Specific Routing (SQL, Concurrency & Security)
-Automatically detects deep architectural concepts and delegates them to specialized reasoning models:
+Automatically detects deep architectural concepts and delegates them to specialized reasoning models (evaluated strictly on the latest user prompt):
 
 ```yaml
 tiers:
@@ -100,11 +108,12 @@ tiers:
     provider: "deepseek"
     when: "any(Keywords, { # in ['sql', 'postgres', 'migration', 'index', 'query', 'schema'] })"
 
-  # Everything else < 12k context -> Local GPU
+  # Everything else < 12k context without prior retries -> Local GPU
   - name: "Local Fast"
     model: "qwen2.5-coder:14b"
     provider: "local_gpu"
-    when: "Tokens < 12000 && !HasImages"
+    max_context: 16384
+    when: "Tokens < 12000 && !HasImages && Retries < 2"
 ```
 
 ---
@@ -149,9 +158,9 @@ x-nacho-target-model: qwen2.5-coder:14b
 
 ---
 
-## 6. Future: Autonomous "Agent-on-Agent" Auto-Tuning
+## 6. Autonomous "Agent-on-Agent" Auto-Tuning (`nacho-flow tune`)
 
-In upcoming releases, Nacho Flow will include an autonomous optimization agent (`nacho-flow tune`):
-1. **Telemetry Analysis:** Analyzes historical request retry rates and user prompt patterns.
-2. **Rule Synthesis:** Automatically adjusts token thresholds (`Tokens < 14000` $\rightarrow$ `Tokens < 18000`) as local GPU models improve.
-3. **Closed-Loop A/B Testing:** Validates mutated rules against past logs before hot-reloading `config.yaml`.
+Nacho Flow includes a built-in Cost-Penalty Auto-Tuner:
+1. **Telemetry Analysis:** Analyzes historical request retry rates and keyword friction patterns from `logs/traffic.jsonl`.
+2. **Rule Synthesis:** Automatically recommends optimal token thresholds (`nacho-flow tune`).
+3. **Atomic Application:** Safely applies synthesized rules to `config.yaml` with automatic `.bak.<timestamp>` creation (`nacho-flow tune --apply`).

@@ -200,3 +200,16 @@ func TestDiskStore_Save_RenameToDirectoryError(t *testing.T) {
 		t.Fatalf("Expected error saving when destination is a non-empty directory, got nil")
 	}
 }
+
+// Test 4.10: Direct Save validation
+func TestDiskStore_Save_Direct(t *testing.T) {
+	tempDir := t.TempDir()
+	target := filepath.Join(tempDir, "stats.json")
+	store, err := NewDiskStore(target)
+	if err != nil {
+		t.Fatalf("NewDiskStore failed: %v", err)
+	}
+	if err := store.Save(telemetry.StatsSnapshot{TotalRequests: 5}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+}

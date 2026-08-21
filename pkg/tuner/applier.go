@@ -66,11 +66,8 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 	}
 
 	if err := os.Rename(tmpFile, configPath); err != nil {
-		_ = os.Remove(configPath)
-		if retryErr := os.Rename(tmpFile, configPath); retryErr != nil {
-			_ = os.Remove(tmpFile)
-			return backupPath, fmt.Errorf("failed to atomically replace config file: %w", retryErr)
-		}
+		_ = os.Remove(tmpFile)
+		return backupPath, fmt.Errorf("failed to atomically replace config file: %w", err)
 	}
 
 	return backupPath, nil

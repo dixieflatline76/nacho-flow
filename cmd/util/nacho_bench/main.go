@@ -306,7 +306,13 @@ func setupTestServer(enableAuth bool, simulateMarkdownTools bool, enableTrafficL
 }
 
 func main() {
+	fullFlag := flag.Bool("full", false, "Run 350,000-request high concurrency stress test (up to 1,000 workers)")
 	flag.Parse()
+
+	if *fullFlag {
+		runFullStressTest()
+		return
+	}
 
 	fmt.Printf("========================================================================================\n")
 	fmt.Printf("🌮 NACHO FLOW ISOLATED A/B BENCHMARK: RAW PROXY vs AUTH + TOOL NORMALIZATION\n")
@@ -397,4 +403,68 @@ func main() {
 	fmt.Printf("✓ Summary: Fast zero-alloc pre-filters and struct unmarshaling keep overhead minimal (~5-10%%),\n")
 	fmt.Printf("  delivering ~25,000+ req/s with sub-2ms P50 latency under full authentication & normalization load.\n")
 	fmt.Printf("=======================================================================================================\n\n")
+}
+
+func runFullStressTest() {
+	fmt.Printf("========================================================================================\n")
+	fmt.Printf("🌮 NACHO FLOW STRESS TEST & BREAKING POINT ANALYSIS\n")
+	fmt.Printf("========================================================================================\n")
+	fmt.Printf("CPUs Available: %d | OS: %s | Arch: %s\n", runtime.NumCPU(), runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel workers\n")
+	fmt.Printf("========================================================================================\n\n")
+
+	ts, tracker, cleanup := setupTestServer(true, true, true)
+	defer cleanup()
+
+	clientTransport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 90 * time.Second,
+		}).DialContext,
+		MaxIdleConns:        50000,
+		MaxIdleConnsPerHost: 25000,
+		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false,
+	}
+	client := &http.Client{
+		Transport: clientTransport,
+		Timeout:   10 * time.Second,
+	}
+
+	stages := []struct {
+		stage       int
+		workers     int
+		requests    int
+	}{
+		{stage: 1, workers: 50, requests: 25000},
+		{stage: 2, workers: 100, requests: 50000},
+		{stage: 3, workers: 250, requests: 75000},
+		{stage: 4, workers: 500, requests: 100000},
+		{stage: 5, workers: 1000, requests: 100000},
+	}
+
+	var results []StepResult
+	for _, s := range stages {
+		fmt.Printf("▶ [STAGE %d/5] Running %d requests across %d concurrent workers...\n", s.stage, s.requests, s.workers)
+		res := runBenchStep(client, ts, tracker, s.requests, s.workers, true)
+		results = append(results, res)
+		fmt.Printf("   ✓ Done in %.2fs | RPS: %.1f | P50: %.2fms | P99: %.2fms | Heap: %.1f MB | Success: %d/%d (Fail: %d)\n\n",
+			res.Duration.Seconds(), res.RPS, float64(res.P50.Microseconds())/1000.0, float64(res.P99.Microseconds())/1000.0,
+			res.HeapAllocMB, res.Completed, s.requests, res.Failed)
+	}
+
+	fmt.Printf("========================================================================================\n")
+	fmt.Printf("📊 COMPREHENSIVE STRESS TEST BREAKDOWN (350,000 REQUESTS TOTAL)\n")
+	fmt.Printf("========================================================================================\n")
+	fmt.Printf("%-14s | %-14s | %-12s | %-16s | %-12s | %-12s | %-12s\n",
+		"Concurrency", "Total Requests", "Success Rate", "Throughput (RPS)", "P50 Latency", "P99 Latency", "Heap Memory")
+	fmt.Printf("----------------------------------------------------------------------------------------\n")
+	for _, r := range results {
+		successRate := float64(r.Completed) / float64(r.TotalReqs) * 100.0
+		fmt.Printf("%-14s | %-14d | %-11.1f%% | %-14.1f req/s | %-10.2f ms | %-10.2f ms | %-10.1f MB\n",
+			fmt.Sprintf("%d workers", r.Concurrency), r.TotalReqs, successRate, r.RPS,
+			float64(r.P50.Microseconds())/1000.0, float64(r.P99.Microseconds())/1000.0, r.HeapAllocMB)
+	}
+	fmt.Printf("========================================================================================\n\n")
 }
