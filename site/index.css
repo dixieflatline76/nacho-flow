@@ -316,6 +316,169 @@ h1 {
 .term-msg { color: #e2e8f0; }
 .term-highlight { color: var(--accent-color); font-weight: 600; }
 
+/* Story & Problem Section */
+.story-section {
+    max-width: 1160px;
+    margin: 0 auto 6rem;
+    padding: 0 1.5rem;
+    text-align: center;
+}
+
+.story-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 2rem;
+    margin-top: 3rem;
+    text-align: left;
+}
+
+.story-card {
+    padding: 2.2rem;
+    border-radius: 20px;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.story-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5), 0 0 25px rgba(245, 158, 11, 0.08);
+}
+
+.story-icon {
+    font-size: 2.2rem;
+    margin-bottom: 1.2rem;
+}
+
+.story-card h3 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 0.8rem;
+    color: #fff;
+}
+
+.story-card p {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.7;
+}
+
+/* Before vs After Comparison */
+.comparison-section {
+    max-width: 1160px;
+    margin: 0 auto 6rem;
+    padding: 0 1.5rem;
+    text-align: center;
+}
+
+.comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 2rem;
+    margin-top: 3rem;
+    text-align: left;
+}
+
+.comparison-card {
+    padding: 2.4rem;
+    border-radius: 22px;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.comparison-card.cloud {
+    border-color: rgba(239, 68, 68, 0.3);
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.04) 0%, rgba(15, 17, 24, 0.75) 100%);
+}
+
+.comparison-card.hybrid {
+    border-color: rgba(16, 185, 129, 0.4);
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, rgba(15, 17, 24, 0.75) 100%);
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6), 0 0 35px rgba(16, 185, 129, 0.1);
+}
+
+.comparison-card.hybrid:hover {
+    transform: translateY(-4px);
+    border-color: rgba(16, 185, 129, 0.7);
+}
+
+.comparison-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1rem;
+}
+
+.comparison-title {
+    font-size: 1.35rem;
+    font-weight: 800;
+}
+
+.comparison-badge-red {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.comparison-badge-green {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.comparison-price {
+    font-size: 2.8rem;
+    font-weight: 800;
+    margin-bottom: 1rem;
+    line-height: 1;
+}
+
+.comparison-stats-list {
+    list-style: none;
+    padding: 0;
+    margin: 1.5rem 0 0;
+}
+
+.comparison-stats-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+}
+
+.comparison-stats-list li span.stat-num {
+    font-weight: 700;
+    color: #fff;
+}
+
+.savings-banner {
+    max-width: 900px;
+    margin: 2.5rem auto 0;
+    padding: 1.2rem 2rem;
+    border-radius: 16px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: var(--accent-hover);
+    font-size: 1.05rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+}
+
 /* 1-Click Install Section */
 .install-section {
     max-width: 860px;
