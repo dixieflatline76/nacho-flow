@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support & Issues - Nacho Flow 🌮</title>
+    <meta name="description" content="Get support, report bugs, ask configuration questions, or propose features for Nacho Flow.">
+
+    <link rel="canonical" href="https://spicebox.dev/nacho-flow/support.html">
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="images/favicon.png">
+    <style>
+        .content-page { padding-top: 130px; max-width: 860px; margin: 0 auto 100px; padding-left: 1.5rem; padding-right: 1.5rem; }
+        .content-card { padding: 3.5rem; border-radius: 24px; text-align: center; }
+        .support-btn { 
+            display: inline-flex; 
+            align-items: center;
+            gap: 0.6rem;
+            background: linear-gradient(135deg, #f59e0b, #d97706); 
+            color: #000; 
+            padding: 1rem 2.2rem; 
+            border-radius: 12px; 
+            font-weight: 700; 
+            font-size: 1.05rem;
+            box-shadow: 0 10px 25px rgba(245, 158, 11, 0.3);
+            margin-bottom: 2rem;
+        }
+        .support-btn:hover { transform: translateY(-2px); box-shadow: 0 15px 35px rgba(245, 158, 11, 0.4); background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-top: 3rem; text-align: left; }
+        .info-box { padding: 1.5rem; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 16px; }
+        .info-box h3 { margin-bottom: 0.5rem; color: var(--text-primary); font-size: 1.1rem; }
+        .info-box p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; }
+    </style>
+</head>
+<body>
+
+    <!-- Sticky Glass Navigation -->
+    <nav class="glass">
+        <div class="nav-content">
+            <a href="index.html" class="logo">
+                <span>🌮</span> Nacho Flow
+            </a>
+            <div class="links">
+                <a href="index.html">Home</a>
+                <a href="docs.html?doc=user_guide">User Guide</a>
+                <a href="docs.html?doc=architecture">Architecture</a>
+                <a href="support.html" class="active">Support</a>
+                <a href="privacy.html">Privacy</a>
+                <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-github-nav">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="content-page">
+        <div class="content-card glass">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🌮</div>
+            <h1 style="font-size: 2.6rem;">Get Help & Support</h1>
+            <p style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 2rem; max-width: 620px; margin-left: auto; margin-right: auto;">
+                Have a question, hit an edge case with an autonomous agent, or want to request a new model normalizer? We're here to help.
+            </p>
+            
+            <p style="font-size: 0.95rem; color: var(--text-muted); margin-bottom: 2rem;">
+                Before opening a ticket, check the <a href="docs.html?doc=user_guide" style="color: var(--accent-color); font-weight: 600;">User Guide</a> and <a href="docs.html?doc=tuning_guide" style="color: var(--accent-color); font-weight: 600;">Rule Tuning Guide</a>.
+            </p>
+
+            <a href="https://github.com/dixieflatline76/nacho-flow/issues/new/choose" target="_blank" rel="noopener noreferrer" class="support-btn">
+                <span>🎫 Open a GitHub Ticket</span>
+            </a>
+
+            <div class="info-grid">
+                <div class="info-box">
+                    <h3>🐛 Bug Reports</h3>
+                    <p>Report router faults, agent streaming crashes, or circuit-breaker edge cases directly on GitHub.</p>
+                </div>
+                <div class="info-box">
+                    <h3>💬 Discussions</h3>
+                    <p>Share AST rule recipes, benchmark results, or ask tuning questions in <a href="https://github.com/dixieflatline76/nacho-flow/discussions" target="_blank" style="color:var(--accent-color);">GitHub Discussions</a>.</p>
+                </div>
+                <div class="info-box">
+                    <h3>📬 Direct Contact</h3>
+                    <p>For security advisories, enterprise fleet setups, or partnership inquiries, reach out at <code style="color:#fff;">karl.kwong@gmail.com</code>.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div style="font-weight: 700;">
+                🌮 Nacho Flow · Part of <a href="https://spicebox.dev" style="color:var(--accent-color);">spicebox.dev</a>
+            </div>
+            <div class="footer-links">
+                <a href="index.html">Home</a>
+                <a href="docs.html?doc=user_guide">Documentation</a>
+                <a href="privacy.html">Privacy</a>
+                <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank">GitHub</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

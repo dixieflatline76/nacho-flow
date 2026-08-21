@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Nacho Flow 🌮</title>
+    <meta name="description" content="Local-first privacy and security principles for Nacho Flow hybrid AI gateway.">
+
+    <link rel="canonical" href="https://spicebox.dev/nacho-flow/privacy.html">
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="images/favicon.png">
+    <style>
+        .content-page { padding-top: 130px; max-width: 860px; margin: 0 auto 100px; padding-left: 1.5rem; padding-right: 1.5rem; }
+        .content-card { padding: 3.5rem; border-radius: 24px; text-align: left; line-height: 1.8; }
+        .content-card h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .content-card h2 { font-size: 1.4rem; color: var(--accent-color); margin: 2rem 0 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.4rem; }
+        .content-card p { color: var(--text-secondary); margin-bottom: 1.2rem; }
+        .content-card ul { margin-bottom: 1.5rem; padding-left: 1.8rem; color: var(--text-secondary); }
+        .content-card li { margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+
+    <!-- Sticky Glass Navigation -->
+    <nav class="glass">
+        <div class="nav-content">
+            <a href="index.html" class="logo">
+                <span>🌮</span> Nacho Flow
+            </a>
+            <div class="links">
+                <a href="index.html">Home</a>
+                <a href="docs.html?doc=user_guide">User Guide</a>
+                <a href="docs.html?doc=architecture">Architecture</a>
+                <a href="support.html">Support</a>
+                <a href="privacy.html" class="active">Privacy</a>
+                <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-github-nav">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="content-page">
+        <div class="content-card glass">
+            <h1>Privacy Policy & Security Model</h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 2rem;">Last Updated: August 21, 2026</p>
+
+            <p>
+                <strong>Nacho Flow</strong> is built from the ground up on the principle of <strong>Local-First Sovereignty</strong>. It is designed to empower developers with complete control over their agent workflows, prompts, and credentials without third-party surveillance.
+            </p>
+
+            <h2>1. Zero Third-Party Telemetry</h2>
+            <p>
+                Nacho Flow does not contain analytics SDKs, user tracking trackers, or "phone home" telemetry. No usage data, prompt text, or execution logs are ever transmitted to the creators of Nacho Flow or external telemetry collectors.
+            </p>
+
+            <h2>2. Local API Key Storage</h2>
+            <p>
+                All provider API keys (OpenRouter, DeepSeek, Langdock, Azure OpenAI) remain strictly on your local machine. They are loaded at runtime from environment variables or your local <code>config.yaml</code> file and are only transmitted directly over TLS to the specific upstream providers you configure.
+            </p>
+
+            <h2>3. Direct Upstream Communication</h2>
+            <p>
+                When a request is evaluated by Nacho Flow:
+            </p>
+            <ul>
+                <li><strong>Local Turns</strong>: Sent directly to your local daemon (e.g. Ollama or vLLM on <code>127.0.0.1</code>). Traffic never leaves your local network.</li>
+                <li><strong>Cloud Turns</strong>: Dispatched via standard encrypted HTTPS directly to the configured endpoint (e.g. <code>https://openrouter.ai/api</code>). No intermediary proxies or cloud relay servers are used.</li>
+            </ul>
+
+            <h2>4. Local Diagnostics & Logs</h2>
+            <p>
+                Session stats, token counts, and routing traffic logs (<code>traffic.jsonl</code>, <code>stats.json</code>) are stored strictly on your local disk in your user config directory. You can inspect, wipe, or disable traffic logging at any time.
+            </p>
+
+            <h2>5. Open Source Auditing</h2>
+            <p>
+                The entire source code of Nacho Flow is open source under the <strong>MIT License</strong> and subject to continuous automated static security analysis (<a href="https://github.com/securego/gosec" target="_blank">gosec</a>). You can inspect and verify every network request in the codebase on <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank">GitHub</a>.
+            </p>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div style="font-weight: 700;">
+                🌮 Nacho Flow · Part of <a href="https://spicebox.dev" style="color:var(--accent-color);">spicebox.dev</a>
+            </div>
+            <div class="footer-links">
+                <a href="index.html">Home</a>
+                <a href="docs.html?doc=user_guide">Documentation</a>
+                <a href="support.html">Support</a>
+                <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank">GitHub</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

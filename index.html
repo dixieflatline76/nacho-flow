@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌮 Nacho Flow - Smart Hybrid AI Gateway for Autonomous Coding Agents</title>
+    <meta name="description" content="High-performance, zero-dependency OpenAI-compatible proxy gateway in Go. Routes agent prompt turns between local GPUs ($0.00) and cloud APIs (96.5% cost savings).">
+    
+    <!-- Open Graph / Social Meta Tags -->
+    <meta property="og:title" content="Nacho Flow - Smart Hybrid AI Gateway for Autonomous Agents">
+    <meta property="og:description" content="Dynamically route prompt turns between local GPUs and cloud APIs. Up to 96.5% token cost reduction with 100% reasoning fidelity.">
+    <meta property="og:image" content="https://spicebox.dev/nacho-flow/images/hero-mascot.png">
+    <meta property="og:url" content="https://spicebox.dev/nacho-flow/">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="canonical" href="https://spicebox.dev/nacho-flow/">
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="images/favicon.png">
+</head>
+<body>
+
+    <!-- Sticky Glass Navigation -->
+    <nav class="glass">
+        <div class="nav-content">
+            <a href="index.html" class="logo">
+                <span>🌮</span> Nacho Flow
+                <span class="logo-badge">v0.5.1</span>
+            </a>
+            <div class="links">
+                <a href="index.html" class="active">Home</a>
+                <a href="docs.html?doc=user_guide">User Guide</a>
+                <a href="docs.html?doc=architecture">Architecture</a>
+                <a href="docs.html?doc=benchmarks">Benchmarks</a>
+                <a href="docs.html?doc=roadmap">Roadmap</a>
+                <a href="support.html">Support</a>
+                <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-github-nav">
+                    <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero">
+        <div class="hero-badge">
+            ⚡ Zero-Dependency Hybrid Gateway in Pure Go
+        </div>
+        <div>
+            <img src="images/hero-mascot.png" alt="Nacho Flow Mascot" class="hero-banner">
+        </div>
+        <h1>Smart Local Routing for Autonomous Coding Agents</h1>
+        <p class="subtitle">Turn-by-turn routing between Local Workstation GPUs and Cloud APIs.</p>
+        <p class="explainer">
+            Nacho Flow sits transparently between autonomous agent harnesses (<strong>Roo Code</strong>, <strong>Cline</strong>, <strong>Aider</strong>, <strong>Cursor</strong>) and LLM endpoints. Routine prompt turns stay on your local GPU for <strong>$0.00</strong>, while complex multi-file reasoning automatically hands off to cloud frontier models.
+        </p>
+
+        <div class="cta-group">
+            <a href="#quickstart" class="btn-primary">
+                <span>🚀 Quick Install</span>
+            </a>
+            <a href="docs.html?doc=user_guide" class="btn-secondary">
+                <span>📖 Documentation Hub</span>
+            </a>
+            <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-secondary">
+                <span>⭐ Star on GitHub</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Live Terminal Simulation Showcase -->
+    <section class="showcase">
+        <div class="terminal-window">
+            <div class="terminal-header">
+                <div class="terminal-dots">
+                    <span class="dot-red"></span>
+                    <span class="dot-yellow"></span>
+                    <span class="dot-green"></span>
+                </div>
+                <div class="terminal-title">nacho-flow proxy daemon (localhost:8000)</div>
+                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● LIVE 30,800 req/s</div>
+            </div>
+            <div class="terminal-body">
+                <div class="term-line">
+                    <span class="term-time">19:41:12</span>
+                    <span class="term-tag tag-local">LOCAL GPU</span>
+                    <span class="term-msg">Turn 1 (Tokens: 450, Tools: false) ➔ <span class="term-highlight">ollama/qwen2.5-coder:14b</span> (570ms | <strong style="color:#10b981;">$0.0000</strong>)</span>
+                </div>
+                <div class="term-line">
+                    <span class="term-time">19:41:27</span>
+                    <span class="term-tag tag-reason">CLOUD REASON</span>
+                    <span class="term-msg">Turn 2 (Keywords: ['deadlock', 'mutex']) ➔ <span class="term-highlight">openrouter/deepseek-r1</span> (12k think tokens isolated)</span>
+                </div>
+                <div class="term-line">
+                    <span class="term-time">19:42:14</span>
+                    <span class="term-tag tag-coder">CLOUD WORKHORSE</span>
+                    <span class="term-msg">Turn 3 (Tokens: 24,100, Tools: ['edit_file']) ➔ <span class="term-highlight">openrouter/qwen3-coder-480b</span> (<span class="tag-cache">89.4% KV CACHE HIT</span>)</span>
+                </div>
+                <div class="term-line">
+                    <span class="term-time">19:43:01</span>
+                    <span class="term-tag tag-local">CIRCUIT HEAL</span>
+                    <span class="term-msg">Ollama 0ms failover armed | Telemetry: <strong style="color:var(--accent-color);">96.5% net spend reduction vs Claude direct</strong></span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 1-Click Install Section -->
+    <section class="install-section" id="quickstart">
+        <h2 class="section-title">Get Started in 10 Seconds</h2>
+        <p class="section-subtitle">Zero dependencies. Single self-contained static binary.</p>
+
+        <div class="install-box glass">
+            <div class="install-tabs">
+                <button class="tab-btn active" onclick="switchInstallTab('winget', this)">Windows (Winget)</button>
+                <button class="tab-btn" onclick="switchInstallTab('brew', this)">macOS / Linux (Homebrew)</button>
+                <button class="tab-btn" onclick="switchInstallTab('curl', this)">Universal Shell</button>
+                <button class="tab-btn" onclick="switchInstallTab('docker', this)">Docker (GHCR)</button>
+            </div>
+
+            <div class="code-container">
+                <code class="code-text" id="install-command">winget install dixieflatline76.NachoFlow</code>
+                <button class="btn-copy" onclick="copyInstallCommand()">Copy</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3-Step Narrative -->
+    <section class="how-it-works">
+        <h2 class="section-title">How Nacho Flow Works</h2>
+        <p class="section-subtitle">Deterministic control over every prompt turn.</p>
+
+        <div class="steps-grid">
+            <div class="step-card glass">
+                <div class="step-num">1</div>
+                <h3>Point Your Agent Harness</h3>
+                <p>Change your API Base URL to <code>http://localhost:8000/v1</code> in Cursor, Roo Code, Cline, or Aider. Nacho Flow speaks standard OpenAI API wire format.</p>
+            </div>
+
+            <div class="step-card glass">
+                <div class="step-num">2</div>
+                <h3>Write Fast AST Rules</h3>
+                <p>Define deterministic rules in <code>config.yaml</code> using token bounds (<code>Tokens < 8000</code>), turn retries (<code>Retries < 2</code>), or domain keywords (<code>deadlock</code>, <code>architecture</code>).</p>
+            </div>
+
+            <div class="step-card glass">
+                <div class="step-num">3</div>
+                <h3>Slash Cloud Costs by 96%</h3>
+                <p>Enjoy instant, free prompt turns on your local GPU workstation with automatic seamless fallback to flagship cloud models when context expands.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3x3 Feature Matrix -->
+    <section class="features-section">
+        <h2 class="section-title">Engineered for Autonomous Coding</h2>
+        <p class="section-subtitle">Production-hardened resilience tested across 350,000+ requests.</p>
+
+        <div class="features-grid">
+            <div class="feature-card glass">
+                <div class="feature-icon">⚡</div>
+                <h3>&lt; 0.36ms Low Latency Core</h3>
+                <p>Handles 30,800+ req/s with lock-free atomic RCU router state and pre-pooled HTTP transports.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🧠</div>
+                <h3>Reasoning Stream Normalizer</h3>
+                <p>Intercepts thinking tokens from DeepSeek-R1, QwQ, Qwen 2.5, and Claude, converting them into standard <code>&lt;think&gt;</code> tags on the fly.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🚦</div>
+                <h3>Local Circuit Breaker & 0ms Failover</h3>
+                <p>Detects when local Ollama/vLLM hangs or runs out of VRAM, immediately diverting turns to cloud with zero dial delay.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🔄</div>
+                <h3>Retry-Based Auto-Escalation</h3>
+                <p>Tracks session retries in a sliding 5-min TTL. If an agent loops on a local model, Nacho Flow escalates to Claude on Turn Retry 2.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">📏</div>
+                <h3>Adaptive Token EMA Calibrator</h3>
+                <p>Dynamically recalibrates character-to-token ratios using Exponential Moving Average to prevent context undercounting on code.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🛡️</div>
+                <h3>Delayed SSE Header Quality Guard</h3>
+                <p>Holds back <code>HTTP 200</code> headers on streams until peeking valid data, enabling cloud failover on empty or broken local payloads.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🛠️</div>
+                <h3>Universal Tool Calling Normalizer</h3>
+                <p>Converts 7 tool-calling format families (Hermes, Mistral, Llama 3, Claude XML, ReAct) into standard OpenAI <code>tool_calls</code> JSON.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">📐</div>
+                <h3>Context Window Boundary Guard</h3>
+                <p>O(1) pre-guard checks model physical context limits, preventing 400 Context Length Exceeded errors before they happen.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🎛️</div>
+                <h3>Cost-Penalty Auto-Tuner CLI</h3>
+                <p>Run <code>nacho-flow tune</code> to perform statistical odds-ratio grid search on your historical logs and generate optimal rules.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- IDE Quickstart Matrix -->
+    <section class="ide-section">
+        <h2 class="section-title">Plug & Play Agent Integrations</h2>
+        <p class="section-subtitle">Works out of the box with your favorite tools.</p>
+
+        <div class="ide-card glass">
+            <div class="install-tabs">
+                <button class="tab-btn active" onclick="switchIdeTab('cursor', this)">Cursor</button>
+                <button class="tab-btn" onclick="switchIdeTab('roocode', this)">Roo Code / Cline</button>
+                <button class="tab-btn" onclick="switchIdeTab('aider', this)">Aider</button>
+                <button class="tab-btn" onclick="switchIdeTab('continue', this)">Continue.dev</button>
+            </div>
+
+            <div class="code-container" style="background:#0a0c13;">
+                <pre style="width:100%;"><code class="code-text" id="ide-config" style="white-space: pre;"># In Cursor Settings -> Models:
+OpenAI API Base: http://localhost:8000/v1
+OpenAI API Key:  sk-nacho-secret-key
+Custom Model:    nacho-hybrid</code></pre>
+                <button class="btn-copy" onclick="copyIdeConfig()">Copy</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div style="font-weight: 700;">
+                🌮 Nacho Flow · Part of <a href="https://spicebox.dev" style="color:var(--accent-color);">spicebox.dev</a>
+            </div>
+            <div class="footer-links">
+                <a href="docs.html?doc=user_guide">User Guide</a>
+                <a href="docs.html?doc=architecture">Architecture</a>
+                <a href="docs.html?doc=benchmarks">Benchmarks</a>
+                <a href="docs.html?doc=roadmap">Roadmap</a>
+                <a href="support.html">Support</a>
+                <a href="privacy.html">Privacy</a>
+                <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank">GitHub</a>
+            </div>
+            <div style="color:var(--text-muted); font-size:0.85rem;">
+                MIT License © 2026 dixieflatline76
+            </div>
+        </div>
+    </footer>
+
+    <!-- Interactive Scripts -->
+    <script>
+        const installCommands = {
+            winget: 'winget install dixieflatline76.NachoFlow',
+            brew: 'brew tap dixieflatline76/nacho-flow && brew install nacho-flow',
+            curl: 'curl -fsSL https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/scripts/install.sh | bash',
+            docker: 'docker run -d -p 8000:8000 -v $(pwd)/config.yaml:/app/config.yaml ghcr.io/dixieflatline76/nacho-flow:latest'
+        };
+
+        const ideConfigs = {
+            cursor: `# In Cursor Settings -> Models:\nOpenAI API Base: http://localhost:8000/v1\nOpenAI API Key:  sk-nacho-secret-key\nCustom Model:    nacho-hybrid`,
+            roocode: `# In Roo Code / Cline Provider Settings:\nProvider: OpenAI Compatible\nBase URL: http://127.0.0.1:8000/v1\nAPI Key:  sk-nacho-secret-key\nModel ID: nacho-hybrid`,
+            aider: `# Run Aider in terminal:\nexport OPENAI_API_BASE="http://127.0.0.1:8000/v1"\nexport OPENAI_API_KEY="sk-nacho-secret-key"\naider --model openai/nacho-hybrid`,
+            continue: `// In ~/.continue/config.json:\n{\n  "models": [{\n    "title": "Nacho Flow Hybrid",\n    "provider": "openai",\n    "model": "nacho-hybrid",\n    "apiBase": "http://127.0.0.1:8000/v1",\n    "apiKey": "sk-nacho-secret-key"\n  }]\n}`
+        };
+
+        function switchInstallTab(type, btn) {
+            document.querySelectorAll('.install-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('install-command').innerText = installCommands[type];
+        }
+
+        function copyInstallCommand() {
+            const text = document.getElementById('install-command').innerText;
+            navigator.clipboard.writeText(text);
+            const btn = event.target;
+            btn.innerText = 'Copied!';
+            setTimeout(() => btn.innerText = 'Copy', 1500);
+        }
+
+        function switchIdeTab(type, btn) {
+            btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('ide-config').innerText = ideConfigs[type];
+        }
+
+        function copyIdeConfig() {
+            const text = document.getElementById('ide-config').innerText;
+            navigator.clipboard.writeText(text);
+            const btn = event.target;
+            btn.innerText = 'Copied!';
+            setTimeout(() => btn.innerText = 'Copy', 1500);
+        }
+    </script>
+</body>
+</html>
