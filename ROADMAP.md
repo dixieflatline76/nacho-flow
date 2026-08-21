@@ -95,6 +95,8 @@ Extend the open-source binary with non-intrusive hooks for optional remote manag
   - Add `--control-plane <url>` flag and `nacho-flow login --team <team-slug>` command.
 - [ ] **Remote Telemetry Observation Sink**:
   - Implement a non-blocking `telemetry.ObservationSink` that buffers `TurnRecord` payloads and ships compressed batches via HTTPS to the control plane.
+- [ ] **Community Savings Counter (RFC-001)**:
+  - Anonymous, zero-PII opt-in weekly savings reporter ([RFC-001](docs/RFC-001-ANONYMOUS-SAVINGS-TELEMETRY.md)) feeding the live website impact ticker once user threshold is reached.
 - [ ] **Dynamic Remote Rule Fetching & Hot Reloading**:
   - Background polling / WebSocket worker to receive team configuration updates and atomically swap routing tiers via RCU without dropping active requests.
 - [ ] **Local Offline Fallback**:
