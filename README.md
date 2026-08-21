@@ -4,9 +4,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/dixieflatline76/nacho-flow)](https://golang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **You just paid $2.00 to ask your AI agent to check a log file. There's a better way.**
->
-> A fast, zero-dependency hybrid AI gateway that routes agent prompt turns between **local GPUs ($0.00)** and **cloud APIs (up to 94.7% cost reduction)** with 100% reasoning fidelity.
+> **A fast, zero-dependency hybrid AI gateway that routes agent prompt turns between local GPUs and cloud APIs.**
 
 **Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Roo Code](https://github.com/RooVetGit/Roo-Code), [Cline](https://github.com/cline/cline), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)).
 
@@ -14,28 +12,16 @@ Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@d
 
 ---
 
-## 🌟 The Problem: The Token Snowball Trap
+## 🌟 Why Nacho Flow?
 
 ### 💡 The Origin Story
 I built Nacho Flow after hitting a very familiar wall: I ran out of free Antigravity IDE daily tokens mid-session, topped up an OpenRouter account with €10, and watched €2.50 disappear on a single prompt turn just asking the agent to analyze the `docs/` folder in the Spice project for context.
 
-Autonomous coding agents operate in multi-turn feedback loops. As conversations progress, agent harnesses re-send the full transcript, file contents, and execution logs with every prompt turn:
-1. **The Context Snowball**: An agent session starts at 2,000 tokens. By Turn 15, it is re-transmitting 45,000+ tokens with *every single prompt*.
-2. **The $2.50 Trivial Turn**: When paying cloud rates per million tokens, asking the agent to check a 1-line typo, run a linter, or execute `git status` burns $1.50–$3.00 just to process the background context.
-3. **The Local Dilemma**: Running 100% locally on Ollama/vLLM is free, but smaller models hit context/reasoning ceilings on complex architectural tasks.
-4. **The Hybrid Solution**: Nacho Flow evaluates prompt metadata in sub-millisecond Go. Routine turns (inspections, syntax fixes, unit tests) stay on your local GPU for **$0.00**. Complex multi-file reasoning automatically escalates to Claude or DeepSeek-R1.
+Autonomous coding agents (Roo Code, Cline, Aider, Cursor) operate in multi-turn feedback loops. As conversations progress, agent harnesses re-send the full transcript, file contents, and execution logs with every prompt turn. When paying cloud rates per million tokens, large prompt dumps quickly drain credits—even for trivial queries, inspections, or routine 1-line edits.
 
----
-
-## 📊 Real-World Session Economics (65-Turn Agent Task)
-
-| Metric | Pure Cloud (Claude 3.5 Sonnet direct) | Nacho Flow Hybrid (Local GPU + Cloud Escalation) | Savings / Impact |
-| :--- | :--- | :--- | :--- |
-| **Total Session Cost** | **$14.80** | **$0.78** | **94.7% Spend Reduction** |
-| **Local GPU Turns ($0.00)** | 0 turns (0% hardware ROI) | **48 turns** (Ollama / vLLM) | Max workstation GPU utilization |
-| **Cloud Escalation Turns** | 65 turns (100% paid) | **17 turns** (DeepSeek-R1 / Claude) | 100% reasoning fidelity preserved |
-| **Total Tokens Billed** | 2,180,000 tokens | 410,000 tokens | **81.2% fewer tokens sent to cloud** |
-| **Failover Protection** | 0ms / None (Fails on API errors) | **Automatic Circuit Breaker & 0ms failover** | Zero broken agent loops |
+* **Local GPUs excel at small contexts**: A modern workstation GPU ([AMD Radeon RX 7900 XTX](https://www.amd.com/en/products/graphics/desktops/radeon.html), [NVIDIA RTX 4090](https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4090/), [Apple Mac Studio M-Series](https://www.apple.com/mac-studio/)) can run 14B–32B parameter coding models locally at high speeds and zero marginal cost for small-to-medium contexts (< 16k tokens).
+* **Context growth strains local VRAM**: As conversations expand beyond 16k–32k tokens, local memory bandwidth and context limits become bottlenecks.
+* **Turn-by-turn hybrid routing**: Nacho Flow solves this by evaluating prompt metadata turn-by-turn. Early iterative turns (routine edits, tests, inspections) stay on local hardware for free. When context expands or complex multi-file reasoning is required, requests automatically hand off to cloud APIs.
 
 ---
 

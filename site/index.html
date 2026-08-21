@@ -48,18 +48,15 @@
     <!-- Hero Section -->
     <header class="hero">
         <div class="hero-badge">
-            💸 Stop paying $2.00 to ask your agent to check a log file
+            ⚡ Zero-Dependency Hybrid Gateway in Pure Go
         </div>
         <div>
             <img src="images/hero-mascot.png" alt="Nacho Flow Mascot" class="hero-banner">
         </div>
-        <h1>
-            🌮 Nacho Flow
-            <span class="hero-gradient-subtitle">Smart Hybrid AI Gateway for Autonomous Coding</span>
-        </h1>
-        <p class="subtitle">Turn-by-turn routing between Local Workstation GPUs ($0.00) and Cloud APIs.</p>
+        <h1>Smart Local Routing for Autonomous Coding Agents</h1>
+        <p class="subtitle">Turn-by-turn routing between Local Workstation GPUs and Cloud APIs.</p>
         <p class="explainer">
-            Autonomous agent harnesses (<strong>Roo Code</strong>, <strong>Cline</strong>, <strong>Aider</strong>, <strong>Cursor</strong>) re-send your entire project transcript, file maps, and terminal outputs with every prompt. <strong>Nacho Flow</strong> keeps routine inspections, syntax edits, and unit tests on your local GPU for <strong>$0.00</strong>, automatically escalating to Claude or DeepSeek only when reasoning context demands it.
+            Nacho Flow sits transparently between autonomous agent harnesses (<strong>Roo Code</strong>, <strong>Cline</strong>, <strong>Aider</strong>, <strong>Cursor</strong>) and LLM endpoints. Routine prompt turns stay on your local GPU for <strong>$0.00</strong>, while complex multi-file reasoning automatically hands off to cloud frontier models.
         </p>
 
         <div class="cta-group">
@@ -74,74 +71,6 @@
             </a>
         </div>
     </header>
-
-    <!-- The Problem / Origin Story -->
-    <section class="story-section">
-        <h2 class="section-title">The Token Snowball Trap</h2>
-        <p class="section-subtitle">Why autonomous coding agents drain API balances so fast.</p>
-
-        <div class="story-grid">
-            <div class="story-card glass">
-                <div class="story-icon">❄️</div>
-                <h3>The Growing Context Snowball</h3>
-                <p>An agent session starts at 2,000 tokens. By Turn 15, it re-transmits 45,000 tokens of file contents, tool outputs, and history with every single prompt—growing heavier with each turn.</p>
-            </div>
-
-            <div class="story-card glass">
-                <div class="story-icon">💸</div>
-                <h3>The $2.50 Trivial Turn</h3>
-                <p>When paying cloud rates per million tokens, asking your agent to check a 1-line typo, run a linter, or execute <code>git status</code> costs $1.50–$3.00 just to process the accumulated background context.</p>
-            </div>
-
-            <div class="story-card glass">
-                <div class="story-icon">🌮</div>
-                <h3>The Hybrid Edge Solution</h3>
-                <p>Nacho Flow evaluates prompt metadata in sub-millisecond Go. Routine turns stay local on your GPU for $0.00. Deep reasoning and large architectural changes automatically hand off to the cloud.</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- Real-World Session Economics (Before vs After) -->
-    <section class="comparison-section">
-        <h2 class="section-title">Real-World Session Economics</h2>
-        <p class="section-subtitle">Side-by-side benchmark of a typical 65-turn refactoring task in Roo Code / Cline.</p>
-
-        <div class="comparison-grid">
-            <div class="comparison-card glass cloud">
-                <div class="comparison-header">
-                    <span class="comparison-title">Direct Cloud (Claude 3.5 Sonnet)</span>
-                    <span class="comparison-badge-red">100% PAID CLOUD</span>
-                </div>
-                <div class="comparison-price" style="color:#f87171;">$14.80</div>
-                <p style="color:var(--text-secondary); font-size:0.9rem;">65 turns sent directly to cloud API</p>
-                <ul class="comparison-stats-list">
-                    <li>❌ <span class="stat-num">2,180,000</span> total tokens billed at frontier rates</li>
-                    <li>❌ <span class="stat-num">$0.00</span> workstation GPU utilization ($0 ROI)</li>
-                    <li>❌ <span class="stat-num">65</span> cloud round-trips for routine inspections</li>
-                    <li>❌ <span class="stat-num">0ms</span> failover protection if API drops or throttles</li>
-                </ul>
-            </div>
-
-            <div class="comparison-card glass hybrid">
-                <div class="comparison-header">
-                    <span class="comparison-title">Nacho Flow (Hybrid Routing)</span>
-                    <span class="comparison-badge-green">94.7% SAVED</span>
-                </div>
-                <div class="comparison-price" style="color:#34d399;">$0.78</div>
-                <p style="color:var(--text-secondary); font-size:0.9rem;">48 local GPU turns + 17 cloud escalation turns</p>
-                <ul class="comparison-stats-list">
-                    <li>✅ <span class="stat-num">48 turns</span> executed locally on Ollama/vLLM (<strong style="color:#10b981;">$0.00</strong>)</li>
-                    <li>✅ <span class="stat-num">17 turns</span> escalated to DeepSeek-R1 / Claude</li>
-                    <li>✅ <span class="stat-num">100%</span> code quality and reasoning fidelity maintained</li>
-                    <li>✅ <span class="stat-num">0ms</span> circuit-breaker failover if local GPU runs out of VRAM</li>
-                </ul>
-            </div>
-        </div>
-
-        <div class="savings-banner">
-            ⚡ Measured in production: 94.7% cost reduction with identical code output quality.
-        </div>
-    </section>
 
     <!-- Live Terminal Simulation Showcase -->
     <section class="showcase">
@@ -174,8 +103,28 @@
                 <div class="term-line">
                     <span class="term-time">19:43:01</span>
                     <span class="term-tag tag-local">CIRCUIT HEAL</span>
-                    <span class="term-msg">Ollama 0ms failover armed | Telemetry: <strong style="color:var(--accent-color);">94.7% net spend reduction vs Claude direct</strong></span>
+                    <span class="term-msg">Ollama 0ms failover armed | Telemetry: <strong style="color:var(--accent-color);">96.5% net spend reduction vs Claude direct</strong></span>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 1-Click Install Section -->
+    <section class="install-section" id="quickstart">
+        <h2 class="section-title">Get Started in 10 Seconds</h2>
+        <p class="section-subtitle">Zero dependencies. Single self-contained static binary.</p>
+
+        <div class="install-box glass">
+            <div class="install-tabs">
+                <button class="tab-btn active" onclick="switchInstallTab('winget', this)">Windows (Winget)</button>
+                <button class="tab-btn" onclick="switchInstallTab('brew', this)">macOS / Linux (Homebrew)</button>
+                <button class="tab-btn" onclick="switchInstallTab('curl', this)">Universal Shell</button>
+                <button class="tab-btn" onclick="switchInstallTab('docker', this)">Docker (GHCR)</button>
+            </div>
+
+            <div class="code-container">
+                <code class="code-text" id="install-command">winget install dixieflatline76.NachoFlow</code>
+                <button class="btn-copy" onclick="copyInstallCommand()">Copy</button>
             </div>
         </div>
     </section>
@@ -183,7 +132,7 @@
     <!-- 3-Step Narrative -->
     <section class="how-it-works">
         <h2 class="section-title">How Nacho Flow Works</h2>
-        <p class="section-subtitle">Deterministic control over every prompt turn in 3 simple steps.</p>
+        <p class="section-subtitle">Deterministic control over every prompt turn.</p>
 
         <div class="steps-grid">
             <div class="step-card glass">
@@ -194,14 +143,14 @@
 
             <div class="step-card glass">
                 <div class="step-num">2</div>
-                <h3>Set Policy in 10 Lines of YAML</h3>
-                <p>Define simple routing rules in <code>config.yaml</code> using token bounds (<code>Tokens < 8000</code>), turn retries (<code>Retries < 2</code>), or domain keywords (<code>deadlock</code>, <code>architecture</code>).</p>
+                <h3>Write Fast AST Rules</h3>
+                <p>Define deterministic rules in <code>config.yaml</code> using token bounds (<code>Tokens < 8000</code>), turn retries (<code>Retries < 2</code>), or domain keywords (<code>deadlock</code>, <code>architecture</code>).</p>
             </div>
 
             <div class="step-card glass">
                 <div class="step-num">3</div>
-                <h3>Enjoy $0.00 Local Turns</h3>
-                <p>Routine iterative turns stay on your workstation GPU for free, with automatic seamless escalation to flagship cloud models when reasoning demands it.</p>
+                <h3>Slash Cloud Costs by 96%</h3>
+                <p>Enjoy instant, free prompt turns on your local GPU workstation with automatic seamless fallback to flagship cloud models when context expands.</p>
             </div>
         </div>
     </section>
@@ -264,26 +213,6 @@
                 <div class="feature-icon">🎛️</div>
                 <h3>Cost-Penalty Auto-Tuner CLI</h3>
                 <p>Run <code>nacho-flow tune</code> to perform statistical odds-ratio grid search on your historical logs and generate optimal rules.</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- 1-Click Install Section -->
-    <section class="install-section" id="quickstart">
-        <h2 class="section-title">Get Started in 10 Seconds</h2>
-        <p class="section-subtitle">Zero dependencies. Single self-contained static binary.</p>
-
-        <div class="install-box glass">
-            <div class="install-tabs">
-                <button class="tab-btn active" onclick="switchInstallTab('winget', this)">Windows (Winget)</button>
-                <button class="tab-btn" onclick="switchInstallTab('brew', this)">macOS / Linux (Homebrew)</button>
-                <button class="tab-btn" onclick="switchInstallTab('curl', this)">Universal Shell</button>
-                <button class="tab-btn" onclick="switchInstallTab('docker', this)">Docker (GHCR)</button>
-            </div>
-
-            <div class="code-container">
-                <code class="code-text" id="install-command">winget install dixieflatline76.NachoFlow</code>
-                <button class="btn-copy" onclick="copyInstallCommand()">Copy</button>
             </div>
         </div>
     </section>
