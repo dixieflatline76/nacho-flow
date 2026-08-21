@@ -8,77 +8,48 @@ This document provides a comprehensive technical overview of **Nacho Flow**'s in
 
 ```mermaid
 flowchart TD
-    Client["Client (Roo Code / Cline / Aider / Cursor / Continue)"]
-    
-    subgraph NachoFlow ["Nacho Flow AI Gateway (Go Core)"]
-        AuthGateway["Inbound Auth Middleware (Bearer / X-API-Key / Public /health)"]
-        HTTPRouter["HTTP Handler (ServeHTTP)"]
-        SessionTracker["Session Tracker (Prompt Hash + 5m Sliding TTL)"]
-        Classifier["Context Classifier (Scoped Keywords, Adaptive Token Estimator)"]
-        Evaluator["Expr Rule Evaluator (AST Bytecode Engine + MaxContext Guards)"]
-        Sanitizer["Payload Sanitizer (Image Stripper)"]
-        Director["Reverse Proxy Director (Dynamic Header & Auth Injection)"]
-        CircuitBreaker["Provider Circuit Breaker (Closed / Open / Half-Open)"]
-        PooledTransport["Pooled HTTP Transport (MaxIdle: 10,000)"]
-        DelayedHeader["Delayed Header & Response Quality Validator (SSE Chunk Peeker)"]
+    classDef client fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff;
+    classDef core fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff;
+    classDef local fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff;
+    classDef cloud fill:#3b0764,stroke:#a855f7,stroke-width:2px,color:#fff;
+    classDef tool fill:#172554,stroke:#60a5fa,stroke-width:2px,color:#fff;
+
+    Client["💻 Autonomous Coding Agent<br/>(Cursor · Roo Code · Cline · Aider · Continue)"]:::client
+
+    subgraph NachoGateway ["🌮 Nacho Flow Edge Gateway (Pure Go Core)"]
+        direction TB
+        Auth["1. Inbound Auth & Session Tracker (5m Sliding TTL)"]:::core
+        Classifier["2. Scoped Classifier & Adaptive Token EMA Estimator"]:::core
+        Evaluator["3. AST Bytecode Rule Engine & Context Window Guards"]:::core
+        CircuitBreaker["4. Local Circuit Breaker & 0ms Failover Dispatcher"]:::core
         
-        subgraph ToolEngine ["Multi-Model Tool & Reasoning Normalizer (pkg/router & pkg/server)"]
-            FastFilter["Zero-Alloc Byte Pre-Filter (hasCandidateToolTokens)"]
-            JSONBalancer["Lexical Bracket Balancer (extractBalancedJSON)"]
-            ModelAdapters["7 Format Adapters (Hermes/Mistral/Llama3/Claude/ReAct/CoT)"]
-            StreamNormalizer["Extended SSE Stream Normalizer (DeepSeek/Qwen/Claude -> think)"]
-            FastFilter --> JSONBalancer --> ModelAdapters
-        end
-
-        subgraph ProviderRegistry ["Provider Subsystem (pkg/provider)"]
-            Registry["Provider Registry"]
-            GenericLLM["GenericLLMProvider"]
-            Registry --> GenericLLM
-            GenericLLM -.->|Implements| ILLM["LLMProvider"]
-            GenericLLM -.->|Implements| IAuth["AuthProvider"]
-            GenericLLM -.->|Implements| IHead["HeaderProvider"]
-            GenericLLM -.->|Implements| IHealth["HealthCheckProvider"]
-            GenericLLM -.->|Implements| ICB["CircuitBreakerProvider"]
-        end
-
-        subgraph TelemetryStack ["Telemetry & Persistence"]
-            TokenEstimator["Adaptive Token Estimator (Lock-Free EMA)"]
-            PricingOracle["Pricing Oracle (Lock-Free atomic.Pointer)"]
-            StatsTracker["Stats Tracker (Buffered Event Loop)"]
-            DiskStore["Persistent Disk Store (stats.json)"]
-            SmartLogger["Smart Logger (slog + Multi-Mode Adapter)"]
-            
-            StatsTracker -.->|Periodic Atomic Sync| DiskStore
-            PricingOracle -.->|Lock-Free Price Lookup| HTTPRouter
-            HTTPRouter -.->|Calibrate Ratio| TokenEstimator
-        end
+        Auth --> Classifier --> Evaluator --> CircuitBreaker
     end
-    
-    LocalGPU["Local GPU Endpoint (Ollama / vLLM / ROCm) - $0.00"]
-    CloudAPI["Cloud Endpoint (OpenRouter / Langdock / DeepSeek / Azure)"]
 
-    Client -->|POST /v1/chat/completions| AuthGateway
-    AuthGateway -->|Valid Key or Open Mode| HTTPRouter
-    HTTPRouter --> SessionTracker
-    SessionTracker --> Classifier
-    Classifier --> Evaluator
-    Evaluator --> Sanitizer
-    Sanitizer --> Director
-    Director --> CircuitBreaker
-    CircuitBreaker -->|Closed / Half-Open| PooledTransport
-    CircuitBreaker -.->|Open -> 0ms Bypass| CloudAPI
-    
-    PooledTransport -->|Local Tiers| LocalGPU
-    PooledTransport -->|Cloud Tiers| CloudAPI
-    
-    LocalGPU -.->|Response Stream / Buffers| DelayedHeader
-    CloudAPI -.->|Response Stream / Buffers| DelayedHeader
-    DelayedHeader -.->|Empty / Instant DONE -> Fallback Tier| CloudAPI
-    DelayedHeader --> ToolEngine
-    ToolEngine -.->|Normalized Tool Calls & think Accordions| Client
-    
-    HTTPRouter -.->|Asynchronous Observation| StatsTracker
-    HTTPRouter -.->|Structured Logs| SmartLogger
+    subgraph Endpoints ["Execution Backends"]
+        direction LR
+        LocalGPU["🖥️ Local Workstation GPU<br/>(Ollama / vLLM / llama.cpp)<br/><b>$0.00 / Free Iterative Turns</b>"]:::local
+        CloudAPI["☁️ Flagship Cloud Models<br/>(OpenRouter / DeepSeek / Claude / Azure)<br/><b>Paid Frontier Reasoning</b>"]:::cloud
+    end
+
+    subgraph ProcessingStack ["Response Validation & Stream Normalization"]
+        direction TB
+        DelayedHeader["5. Delayed SSE Header & Quality Validator (Empty Chunk Peeker)"]:::tool
+        ToolNormalizer["6. Universal Tool Calling & &lt;think&gt; Stream Normalizer"]:::tool
+        Telemetry["7. Lock-Free Persistence & Cost-Reduction Tracker"]:::core
+
+        DelayedHeader --> ToolNormalizer --> Telemetry
+    end
+
+    Client -->|POST /v1/chat/completions| Auth
+    CircuitBreaker -->|Routine Turns: Tokens < 8k| LocalGPU
+    CircuitBreaker -->|Complex Reasoning / High Context / Escalation| CloudAPI
+
+    LocalGPU -->|Raw Stream / Buffer| DelayedHeader
+    CloudAPI -->|Raw Stream / Buffer| DelayedHeader
+
+    DelayedHeader -.->|Empty / Hanging Local Payload| CloudAPI
+    Telemetry -->|Normalized OpenAI Wire Format| Client
 ```
 
 ---

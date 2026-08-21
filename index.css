@@ -739,27 +739,27 @@ footer {
 
 /* Mermaid SVG Diagrams */
 .mermaid-diagram {
-    padding: 2.2rem;
-    margin: 2.2rem 0;
+    padding: 2.5rem 1.5rem;
+    margin: 2.5rem 0;
     border-radius: 18px;
-    background: #080a10;
+    background: #06080d;
     border: 1px solid rgba(245, 158, 11, 0.3);
-    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6), 0 0 30px rgba(245, 158, 11, 0.08);
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 35px rgba(245, 158, 11, 0.08);
     overflow-x: auto;
+    text-align: center;
     transition: all 0.3s ease;
 }
 
 .mermaid-diagram:hover {
-    border-color: rgba(245, 158, 11, 0.6);
-    box-shadow: 0 25px 55px rgba(0, 0, 0, 0.7), 0 0 35px rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.55);
 }
 
 .mermaid-diagram svg {
-    max-width: 100% !important;
+    min-width: 750px;
+    width: 100% !important;
+    max-width: 950px !important;
     height: auto !important;
+    margin: 0 auto;
 }
 
 .mermaid-diagram pre.mermaid {
