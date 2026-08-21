@@ -25,6 +25,14 @@ import (
 	"github.com/kardianos/service"
 )
 
+var version = "0.0.0"
+
+func init() {
+	if version != "" {
+		contract.Version = version
+	}
+}
+
 var (
 	configPathFlag = flag.String("config", "", "Path to config.yaml file")
 	portFlag       = flag.Int("port", 0, "Port to listen on (overrides config.yaml)")
