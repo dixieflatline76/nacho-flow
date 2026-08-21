@@ -646,41 +646,46 @@ footer {
 
 /* Markdown Rendering Elements in docs.html */
 .markdown-body h1 {
-    font-size: 2.5rem;
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -1px;
     margin-bottom: 1.5rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-color);
-    background: none;
-    -webkit-text-fill-color: initial;
+    padding-bottom: 0.8rem;
+    border-bottom: 2px solid transparent;
+    border-image: linear-gradient(90deg, #f59e0b, rgba(245, 158, 11, 0.2), transparent) 1;
     color: #fff;
 }
 
 .markdown-body h2 {
-    font-size: 1.7rem;
-    color: var(--accent-color);
-    margin: 2.5rem 0 1rem;
-    padding-bottom: 0.4rem;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #fbbf24;
+    margin: 2.8rem 0 1.2rem;
+    padding-bottom: 0.5rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     scroll-margin-top: 100px;
 }
 
 .markdown-body h3 {
     font-size: 1.25rem;
-    color: #fff;
-    margin: 1.8rem 0 0.8rem;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin: 2rem 0 0.8rem;
     scroll-margin-top: 100px;
 }
 
 .markdown-body p {
-    color: var(--text-secondary);
+    color: #cbd5e1;
     margin-bottom: 1.2rem;
     font-size: 1rem;
+    line-height: 1.75;
 }
 
 .markdown-body ul, .markdown-body ol {
     margin-bottom: 1.5rem;
     padding-left: 1.8rem;
-    color: var(--text-secondary);
+    color: #cbd5e1;
 }
 
 .markdown-body li {
@@ -688,13 +693,15 @@ footer {
 }
 
 .markdown-body strong {
-    color: #fff;
+    color: #ffffff;
+    font-weight: 700;
 }
 
 .markdown-body a {
     color: var(--accent-color);
     text-decoration: underline;
     text-underline-offset: 3px;
+    font-weight: 500;
 }
 
 .markdown-body a:hover {
@@ -702,53 +709,102 @@ footer {
 }
 
 .markdown-body code {
-    background: rgba(255, 255, 255, 0.08);
-    padding: 0.2rem 0.4rem;
+    background: rgba(245, 158, 11, 0.1);
+    color: #fbbf24;
+    padding: 0.2rem 0.45rem;
     border-radius: 6px;
-    font-size: 0.9em;
-    color: #f1f5f9;
+    font-size: 0.88em;
+    border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
 .markdown-body pre {
-    background: #07080c !important;
+    background: #06070a !important;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 1.2rem;
-    margin: 1.5rem 0;
+    border-radius: 14px;
+    padding: 1.3rem;
+    margin: 1.8rem 0;
     overflow-x: auto;
     position: relative;
+    box-shadow: 0 15px 30px rgba(0,0,0,0.5);
 }
 
 .markdown-body pre code {
     background: none;
     padding: 0;
     font-size: 0.88rem;
-    line-height: 1.6;
+    line-height: 1.65;
+    color: #e2e8f0;
+    border: none;
 }
 
+/* Mermaid SVG Diagrams */
+.mermaid-diagram {
+    padding: 2.2rem;
+    margin: 2.2rem 0;
+    border-radius: 18px;
+    background: #080a10;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6), 0 0 30px rgba(245, 158, 11, 0.08);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-x: auto;
+    transition: all 0.3s ease;
+}
+
+.mermaid-diagram:hover {
+    border-color: rgba(245, 158, 11, 0.6);
+    box-shadow: 0 25px 55px rgba(0, 0, 0, 0.7), 0 0 35px rgba(245, 158, 11, 0.15);
+}
+
+.mermaid-diagram svg {
+    max-width: 100% !important;
+    height: auto !important;
+}
+
+.mermaid-diagram pre.mermaid {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Tables */
 .markdown-body table {
     width: 100%;
-    border-collapse: collapse;
-    margin: 2rem 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 2.2rem 0;
     overflow-x: auto;
     display: block;
-}
-
-.markdown-body th, .markdown-body td {
+    border-radius: 14px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 0.8rem 1rem;
-    text-align: left;
-    font-size: 0.92rem;
+    background: rgba(15, 17, 24, 0.6);
 }
 
 .markdown-body th {
-    background: rgba(255, 255, 255, 0.05);
-    color: #fff;
+    background: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
     font-weight: 700;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 0.9rem 1.2rem;
+    font-size: 0.92rem;
 }
 
 .markdown-body td {
-    color: var(--text-secondary);
+    padding: 0.85rem 1.2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: #cbd5e1;
+    font-size: 0.9rem;
+}
+
+.markdown-body tr:last-child td {
+    border-bottom: none;
+}
+
+.markdown-body tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
 }
 
 .markdown-body blockquote {

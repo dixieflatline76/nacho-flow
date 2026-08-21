@@ -13,8 +13,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="images/favicon.png">
 
-    <!-- Marked.js & Highlight.js for Dynamic Markdown and Syntax Coloring -->
+    <!-- Marked.js, Mermaid.js & Highlight.js -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/go.min.js"></script>
@@ -155,10 +156,22 @@
                     return `<div class="alert-box alert-${alertType}"><strong>${p1}:</strong>\n\n${cleanText}</div>\n`;
                 });
 
+                const renderer = new marked.Renderer();
+                const defaultCode = renderer.code.bind(renderer);
+
+                renderer.code = function(code, lang, escaped) {
+                    if (lang === 'mermaid') {
+                        return `<div class="mermaid-diagram glass"><pre class="mermaid">${code}</pre></div>`;
+                    }
+                    return defaultCode(code, lang, escaped);
+                };
+
                 marked.setOptions({
                     gfm: true,
                     breaks: false,
+                    renderer: renderer,
                     highlight: function(code, lang) {
+                        if (lang === 'mermaid') return code;
                         const language = hljs.getLanguage(lang) ? lang : 'plaintext';
                         return hljs.highlight(code, { language }).value;
                     }
@@ -171,8 +184,35 @@
                 document.getElementById('loading').style.display = 'none';
                 contentDiv.style.display = 'block';
 
-                // Add Copy buttons to code snippets
-                contentDiv.querySelectorAll('pre').forEach(pre => {
+                // Render Mermaid diagrams
+                if (window.mermaid) {
+                    mermaid.initialize({
+                        startOnLoad: false,
+                        theme: 'dark',
+                        themeVariables: {
+                            darkMode: true,
+                            background: '#090a0f',
+                            primaryColor: '#1e293b',
+                            primaryTextColor: '#f8fafc',
+                            primaryBorderColor: '#f59e0b',
+                            lineColor: '#38bdf8',
+                            secondaryColor: '#0f172a',
+                            tertiaryColor: '#1e1b4b',
+                            fontSize: '13px',
+                            fontFamily: 'Inter, sans-serif'
+                        }
+                    });
+                    try {
+                        await mermaid.run({
+                            nodes: contentDiv.querySelectorAll('.mermaid')
+                        });
+                    } catch (e) {
+                        console.error('Mermaid render error:', e);
+                    }
+                }
+
+                // Add Copy buttons to code snippets (skip mermaid)
+                contentDiv.querySelectorAll('pre:not(.mermaid)').forEach(pre => {
                     const btn = document.createElement('button');
                     btn.className = 'btn-copy';
                     btn.style.position = 'absolute';
@@ -180,7 +220,7 @@
                     btn.style.right = '10px';
                     btn.innerText = 'Copy';
                     btn.onclick = () => {
-                        const code = pre.querySelector('code').innerText;
+                        const code = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
                         navigator.clipboard.writeText(code);
                         btn.innerText = 'Copied!';
                         setTimeout(() => btn.innerText = 'Copy', 1500);
