@@ -219,6 +219,24 @@ func uploadAsset(ctx context.Context, client *github.Client, releaseID int64, pa
 	_, _, _ = client.Repositories.UploadReleaseAsset(ctx, repoOwner, repoName, releaseID, opts, file)
 }
 
+func renderTemplate(tmplPath string, data any) ([]byte, error) {
+	tmplContent, err := templateFS.ReadFile(tmplPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read embedded template %s: %w", tmplPath, err)
+	}
+
+	t, err := template.New(filepath.Base(tmplPath)).Parse(string(tmplContent))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse template %s: %w", tmplPath, err)
+	}
+
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("failed to execute template %s: %w", tmplPath, err)
+	}
+	return buf.Bytes(), nil
+}
+
 func pushWingetManifests(ctx context.Context, client *github.Client, version, winHash string) {
 	baseBranch := "master"
 	branchName := fmt.Sprintf("nacho-flow-v%s", version)
@@ -255,26 +273,16 @@ func pushWingetManifests(ctx context.Context, client *github.Client, version, wi
 
 	var treeEntries []*github.TreeEntry
 	for _, f := range files {
-		tmplContent, err := templateFS.ReadFile(f.TemplateName)
+		rendered, err := renderTemplate(f.TemplateName, data)
 		if err != nil {
-			log.Printf("[nacho-releaser] Failed to read embedded template %s: %v", f.TemplateName, err)
-			return
-		}
-		t, err := template.New(f.TemplateName).Parse(string(tmplContent))
-		if err != nil {
-			log.Printf("[nacho-releaser] Failed to parse template %s: %v", f.TemplateName, err)
-			return
-		}
-		var buf bytes.Buffer
-		if err := t.Execute(&buf, data); err != nil {
-			log.Printf("[nacho-releaser] Failed to execute template %s: %v", f.TemplateName, err)
+			log.Printf("[nacho-releaser] %v", err)
 			return
 		}
 		treeEntries = append(treeEntries, &github.TreeEntry{
 			Path:    github.String(f.Path),
 			Mode:    github.String("100644"),
 			Type:    github.String("blob"),
-			Content: github.String(buf.String()),
+			Content: github.String(string(rendered)),
 		})
 	}
 
@@ -335,21 +343,9 @@ func pushHomebrewFormula(ctx context.Context, client *github.Client, version str
 		LinuxArm64:  linuxArm64Hash,
 	}
 
-	tmplContent, err := templateFS.ReadFile("templates/homebrew_formula.rb.tmpl")
+	rendered, err := renderTemplate("templates/homebrew_formula.rb.tmpl", data)
 	if err != nil {
-		log.Printf("[nacho-releaser] Failed to read homebrew template: %v", err)
-		return
-	}
-
-	t, err := template.New("formula").Parse(string(tmplContent))
-	if err != nil {
-		log.Printf("[nacho-releaser] Failed to parse formula template: %v", err)
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, data); err != nil {
-		log.Printf("[nacho-releaser] Failed to execute formula template: %v", err)
+		log.Printf("[nacho-releaser] %v", err)
 		return
 	}
 
@@ -358,7 +354,7 @@ func pushHomebrewFormula(ctx context.Context, client *github.Client, version str
 
 	opts := &github.RepositoryContentFileOptions{
 		Message: github.String(commitMsg),
-		Content: buf.Bytes(),
+		Content: rendered,
 		Branch:  github.String(branch),
 	}
 	if err == nil && fileContent != nil {
