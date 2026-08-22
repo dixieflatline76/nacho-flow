@@ -146,13 +146,17 @@ func run(ctx context.Context, client *github.Client, token, tag, version, distDi
 		// Stage 2: Push Homebrew Formula to dixieflatline76/homebrew-nacho-flow
 		if token != "" {
 			log.Println("[nacho-releaser] (Stage 2: Latest) Generating and pushing Homebrew formula...")
-			pushHomebrewFormula(ctx, client, version, hashes)
+			if err := pushHomebrewFormula(ctx, client, version, hashes); err != nil {
+				return fmt.Errorf("homebrew formula update failed: %w", err)
+			}
 		}
 
 		// Stage 2: Push Winget Manifests to dixieflatline76/winget-pkgs
 		if token != "" {
 			log.Println("[nacho-releaser] (Stage 2: Latest) Generating and pushing winget manifests...")
-			pushWingetManifests(ctx, client, version, winHash)
+			if err := pushWingetManifests(ctx, client, version, winHash); err != nil {
+				return fmt.Errorf("winget manifest update failed: %w", err)
+			}
 		}
 	}
 
@@ -283,7 +287,7 @@ func renderTemplate(tmplPath string, data any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func pushWingetManifests(ctx context.Context, client *github.Client, version, winHash string) {
+func pushWingetManifests(ctx context.Context, client *github.Client, version, winHash string) error {
 	baseBranch := "master"
 	branchName := fmt.Sprintf("nacho-flow-v%s", version)
 	commitMsg := fmt.Sprintf("New version: dixieflatline76.NachoFlow version %s", version)
@@ -305,8 +309,7 @@ func pushWingetManifests(ctx context.Context, client *github.Client, version, wi
 
 	baseRef, _, err := client.Git.GetRef(ctx, repoOwner, wingetRepo, "refs/heads/"+baseBranch)
 	if err != nil {
-		log.Printf("[nacho-releaser] Could not fetch winget branch: %v", err)
-		return
+		return fmt.Errorf("could not fetch winget branch %s: %w", baseBranch, err)
 	}
 	baseSHA := baseRef.Object.GetSHA()
 
@@ -321,8 +324,7 @@ func pushWingetManifests(ctx context.Context, client *github.Client, version, wi
 	for _, f := range files {
 		rendered, err := renderTemplate(f.TemplateName, data)
 		if err != nil {
-			log.Printf("[nacho-releaser] %v", err)
-			return
+			return fmt.Errorf("failed to render %s: %w", f.TemplateName, err)
 		}
 		treeEntries = append(treeEntries, &github.TreeEntry{
 			Path:    github.String(f.Path),
@@ -334,8 +336,7 @@ func pushWingetManifests(ctx context.Context, client *github.Client, version, wi
 
 	tree, _, err := client.Git.CreateTree(ctx, repoOwner, wingetRepo, baseSHA, treeEntries)
 	if err != nil || tree == nil {
-		log.Printf("[nacho-releaser] Failed to create git tree for winget: %v", err)
-		return
+		return fmt.Errorf("failed to create git tree for winget: %w", err)
 	}
 	commit := &github.Commit{
 		Message: github.String(commitMsg),
@@ -344,8 +345,7 @@ func pushWingetManifests(ctx context.Context, client *github.Client, version, wi
 	}
 	newCommit, _, err := client.Git.CreateCommit(ctx, repoOwner, wingetRepo, commit, nil)
 	if err != nil || newCommit == nil {
-		log.Printf("[nacho-releaser] Failed to create git commit for winget: %v", err)
-		return
+		return fmt.Errorf("failed to create git commit for winget: %w", err)
 	}
 	branchRef := &github.Reference{
 		Ref:    github.String("refs/heads/" + branchName),
@@ -353,15 +353,15 @@ func pushWingetManifests(ctx context.Context, client *github.Client, version, wi
 	}
 	_, _, err = client.Git.UpdateRef(ctx, repoOwner, wingetRepo, branchRef, true)
 	if err != nil {
-		log.Printf("[nacho-releaser] Failed to update branch ref for winget: %v", err)
-		return
+		return fmt.Errorf("failed to update branch ref for winget: %w", err)
 	}
 
 	// #nosec G706 - trusted calculated branch name
 	log.Printf("✅ Winget manifests pushed to branch '%s' for 1-click PR!", branchName)
+	return nil
 }
 
-func pushHomebrewFormula(ctx context.Context, client *github.Client, version string, hashes map[string]string) {
+func pushHomebrewFormula(ctx context.Context, client *github.Client, version string, hashes map[string]string) error {
 	formulaPath := "Formula/nacho-flow.rb"
 	branch := "main"
 
@@ -371,8 +371,7 @@ func pushHomebrewFormula(ctx context.Context, client *github.Client, version str
 	linuxArm64Hash := hashes[fmt.Sprintf("nacho-flow-%s-linux-arm64", version)]
 
 	if darwinArm64Hash == "" || darwinAmd64Hash == "" || linuxAmd64Hash == "" || linuxArm64Hash == "" {
-		log.Println("[nacho-releaser] Warning: Missing one or more binary hashes for Homebrew formula update")
-		return
+		return errors.New("missing one or more binary hashes for Homebrew formula update")
 	}
 
 	data := struct {
@@ -391,8 +390,7 @@ func pushHomebrewFormula(ctx context.Context, client *github.Client, version str
 
 	rendered, err := renderTemplate("templates/homebrew_formula.rb.tmpl", data)
 	if err != nil {
-		log.Printf("[nacho-releaser] %v", err)
-		return
+		return fmt.Errorf("failed to render homebrew template: %w", err)
 	}
 
 	fileContent, _, _, err := client.Repositories.GetContents(ctx, repoOwner, homebrewTap, formulaPath, &github.RepositoryContentGetOptions{Ref: branch})
@@ -414,10 +412,10 @@ func pushHomebrewFormula(ctx context.Context, client *github.Client, version str
 	}
 
 	if err != nil {
-		log.Printf("[nacho-releaser] Failed to push Homebrew formula to %s/%s: %v", repoOwner, homebrewTap, err)
-		return
+		return fmt.Errorf("failed to push Homebrew formula to %s/%s: %w", repoOwner, homebrewTap, err)
 	}
 
 	// #nosec G706 - trusted calculated repository name
 	log.Printf("✅ Homebrew formula updated successfully in %s/%s!", repoOwner, homebrewTap)
+	return nil
 }
