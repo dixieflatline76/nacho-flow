@@ -155,18 +155,39 @@ nav {
     box-shadow: 0 0 20px rgba(245, 158, 11, 0.1);
 }
 
-.hero-banner {
+.hero-mascot-container {
+    position: relative;
+    display: block;
+    margin: 0 auto 1.8rem auto;
     max-width: 520px;
     width: 100%;
-    margin-bottom: 1.8rem;
+    cursor: pointer;
+}
+
+.hero-banner {
+    width: 100%;
+    display: block;
     border-radius: 20px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 35px rgba(245, 158, 11, 0.15);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    transition: transform 0.3s ease;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
 }
 
-.hero-banner:hover {
-    transform: translateY(-4px) scale(1.01);
+.hero-mascot-container:hover .hero-banner {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.8), 0 0 45px rgba(245, 158, 11, 0.3);
+}
+
+.hero-video {
+    display: none;
+}
+
+.hero-mascot-container.playing #hero-img {
+    display: none;
+}
+
+.hero-mascot-container.playing .hero-video {
+    display: block;
 }
 
 h1 {
@@ -215,8 +236,11 @@ h1 {
     border-radius: 12px;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-width: 220px;
     gap: 0.6rem;
     box-shadow: 0 10px 25px rgba(245, 158, 11, 0.3);
+    transition: all 0.25s ease;
 }
 
 .btn-primary:hover {
@@ -234,7 +258,10 @@ h1 {
     border-radius: 12px;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-width: 220px;
     gap: 0.6rem;
+    transition: all 0.25s ease;
 }
 
 .btn-secondary:hover {
@@ -245,9 +272,9 @@ h1 {
 
 /* Terminal Mockup Showcase */
 .showcase {
-    max-width: 960px;
+    max-width: 1160px;
     margin: 0 auto 5rem;
-    padding: 0 1rem;
+    padding: 0 1.5rem;
 }
 
 .terminal-window {
@@ -299,8 +326,9 @@ h1 {
 .term-line {
     margin-bottom: 0.6rem;
     display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 0.75rem;
+    white-space: nowrap;
 }
 
 .term-tag {
@@ -309,6 +337,7 @@ h1 {
     padding: 0.1rem 0.45rem;
     border-radius: 4px;
     text-transform: uppercase;
+    white-space: nowrap;
 }
 
 .tag-local { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
@@ -428,6 +457,7 @@ h1 {
     background: rgba(239, 68, 68, 0.15);
     color: #f87171;
     border: 1px solid rgba(239, 68, 68, 0.3);
+    white-space: nowrap;
 }
 
 .comparison-badge-green {
@@ -438,6 +468,7 @@ h1 {
     background: rgba(16, 185, 129, 0.15);
     color: #34d399;
     border: 1px solid rgba(16, 185, 129, 0.4);
+    white-space: nowrap;
 }
 
 .comparison-price {

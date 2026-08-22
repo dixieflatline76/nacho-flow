@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🌮 Nacho Flow - Smart Hybrid AI Gateway for Autonomous Coding Agents</title>
-    <meta name="description" content="High-performance, zero-dependency OpenAI-compatible proxy gateway in Go. Routes agent prompt turns between local GPUs ($0.00) and cloud APIs (96.5% cost savings).">
+    <meta name="description" content="High-performance, zero-dependency OpenAI-compatible proxy gateway in Go. Routes agent prompt turns between local GPUs ($0.00) and cloud APIs. Measured 94.7% cost reduction with 100% reasoning fidelity.">
     
     <!-- Open Graph / Social Meta Tags -->
     <meta property="og:title" content="Nacho Flow - Smart Hybrid AI Gateway for Autonomous Agents">
-    <meta property="og:description" content="Dynamically route prompt turns between local GPUs and cloud APIs. Up to 96.5% token cost reduction with 100% reasoning fidelity.">
+    <meta property="og:description" content="Dynamically route prompt turns between local GPUs and cloud APIs. Measured 94.7% cost reduction with 100% reasoning fidelity.">
     <meta property="og:image" content="https://spicebox.dev/nacho-flow/images/hero-mascot.png">
     <meta property="og:url" content="https://spicebox.dev/nacho-flow/">
     <meta property="og:type" content="website">
@@ -28,7 +28,7 @@
         <div class="nav-content">
             <a href="index.html" class="logo">
                 <span>🌮</span> Nacho Flow
-                <span class="logo-badge">v0.5.1</span>
+                <span class="logo-badge logo-badge-version" id="version-badge">v0.5.2</span>
             </a>
             <div class="links">
                 <a href="index.html" class="active">Home</a>
@@ -37,6 +37,7 @@
                 <a href="docs.html?doc=benchmarks">Benchmarks</a>
                 <a href="docs.html?doc=roadmap">Roadmap</a>
                 <a href="support.html">Support</a>
+                <a href="privacy.html">Privacy</a>
                 <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-github-nav">
                     <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
                     GitHub
@@ -50,8 +51,11 @@
         <div class="hero-badge">
             Open Source &nbsp;·&nbsp; Zero Dependencies &nbsp;·&nbsp; Written in Go
         </div>
-        <div>
-            <img src="images/hero-mascot.png" alt="Nacho Flow Mascot" class="hero-banner">
+        <div class="hero-mascot-container" onclick="toggleMascotAnimation()">
+            <img id="hero-img" src="images/hero-mascot.png" alt="Nacho Flow Mascot" class="hero-banner">
+            <video id="hero-video" class="hero-banner hero-video" playsinline preload="auto">
+                <source src="images/hero-animated.mp4" type="video/mp4">
+            </video>
         </div>
         <h1>You just paid $2.00 to ask your AI agent to check a log file.</h1>
         <p class="subtitle">Route simple turns to your GPU ($0). Route hard turns to cloud. Stop the bleeding.</p>
@@ -80,14 +84,14 @@
         <div class="story-grid">
             <div class="story-card glass">
                 <div class="story-icon">❄️</div>
-                <h3>The Growing Context Snowball</h3>
+                <h3>The Context Snowball</h3>
                 <p>An agent session starts at 2,000 tokens. By Turn 15, it re-transmits 45,000 tokens of file contents, tool outputs, and history with every single prompt—growing heavier with each turn.</p>
             </div>
 
             <div class="story-card glass">
                 <div class="story-icon">💸</div>
-                <h3>The $2.50 Trivial Turn</h3>
-                <p>When paying cloud rates per million tokens, asking your agent to check a 1-line typo, run a linter, or execute <code>git status</code> costs $1.50–$3.00 just to process the accumulated background context.</p>
+                <h3>The $2.00 Trivial Turn</h3>
+                <p>A single routine turn—checking a typo, running a linter, or executing <code>git status</code>—costs $1.50–$3.00 at cloud rates because you're paying to process 45,000 tokens of accumulated context.</p>
             </div>
 
             <div class="story-card glass">
@@ -106,7 +110,7 @@
         <div class="comparison-grid">
             <div class="comparison-card glass cloud">
                 <div class="comparison-header">
-                    <span class="comparison-title">Direct Cloud (Claude 3.5 Sonnet)</span>
+                    <span class="comparison-title">Direct Cloud<br>(Claude Sonnet 5)</span>
                     <span class="comparison-badge-red">100% PAID CLOUD</span>
                 </div>
                 <div class="comparison-price" style="color:#f87171;">$14.80</div>
@@ -121,7 +125,7 @@
 
             <div class="comparison-card glass hybrid">
                 <div class="comparison-header">
-                    <span class="comparison-title">Nacho Flow (Hybrid Routing)</span>
+                    <span class="comparison-title">Nacho Flow<br>(Hybrid Routing)</span>
                     <span class="comparison-badge-green">94.7% SAVED</span>
                 </div>
                 <div class="comparison-price" style="color:#34d399;">$0.78</div>
@@ -160,18 +164,18 @@
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:41:27</span>
-                    <span class="term-tag tag-reason">CLOUD REASON</span>
+                    <span class="term-tag tag-reason">CLOUD REASONING</span>
                     <span class="term-msg">Turn 2 (Keywords: ['deadlock', 'mutex']) ➔ <span class="term-highlight">openrouter/deepseek-r1</span> (12k think tokens isolated)</span>
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:42:14</span>
                     <span class="term-tag tag-coder">CLOUD WORKHORSE</span>
-                    <span class="term-msg">Turn 3 (Tokens: 24,100, Tools: ['edit_file']) ➔ <span class="term-highlight">openrouter/qwen3-coder-480b</span> (<span class="tag-cache">89.4% KV CACHE HIT</span>)</span>
+                    <span class="term-msg">Turn 3 (Tokens: 24,100, Tools: ['edit_file']) ➔ <span class="term-highlight">openrouter/qwen3-coder-480b</span> <span class="tag-cache">89.4% KV CACHE HIT</span></span>
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:43:01</span>
                     <span class="term-tag tag-local">CIRCUIT HEAL</span>
-                    <span class="term-msg">Ollama 0ms failover armed | Telemetry: <strong style="color:var(--accent-color);">94.7% net spend reduction vs Claude direct</strong></span>
+                    <span class="term-msg">Ollama 0ms failover armed | Telemetry: <strong style="color:var(--accent-color);">94.7% net spend reduction vs Claude Sonnet 5 direct</strong></span>
                 </div>
             </div>
         </div>
@@ -372,6 +376,53 @@ Custom Model:    nacho-hybrid</code></pre>
             btn.innerText = 'Copied!';
             setTimeout(() => btn.innerText = 'Copy', 1500);
         }
+
+        // Dynamically fetch and display latest release version
+        (async function fetchLatestVersion() {
+            try {
+                const res = await fetch('https://api.github.com/repos/dixieflatline76/nacho-flow/releases/latest');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.tag_name) {
+                        document.querySelectorAll('.logo-badge-version').forEach(el => {
+                            el.textContent = data.tag_name;
+                        });
+                    }
+                }
+            } catch (e) {
+                // Fallback silently to static build version
+            }
+        })();
+
+        function toggleMascotAnimation() {
+            const container = document.querySelector('.hero-mascot-container');
+            const video = document.getElementById('hero-video');
+            if (!container || !video) return;
+
+            if (container.classList.contains('playing')) {
+                video.pause();
+                video.currentTime = 0;
+                container.classList.remove('playing');
+            } else {
+                container.classList.add('playing');
+                video.currentTime = 0;
+                video.play().catch(() => {
+                    video.muted = true;
+                    video.play();
+                });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const video = document.getElementById('hero-video');
+            const container = document.querySelector('.hero-mascot-container');
+            if (video && container) {
+                video.addEventListener('ended', () => {
+                    container.classList.remove('playing');
+                    video.currentTime = 0;
+                });
+            }
+        });
     </script>
 </body>
 </html>

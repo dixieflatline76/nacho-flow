@@ -156,3 +156,9 @@ To maintain open-source community trust and viral developer adoption, technical 
 | **Inline Secret Scrubbing (DLP)** | ❌ | ❌ | 🟢 Included |
 | **SSO / SAML / RBAC** | ❌ | ❌ | 🟢 Included |
 | **Air-Gapped Self-Hosted Control Plane** | ❌ | ❌ | 🟢 Included |
+
+---
+
+## 📬 Enterprise Inquiries & Early Access
+
+For custom enterprise integrations, fleet licensing, or early access to the team control plane, contact us at **[info@spicebox.dev](mailto:info@spicebox.dev)**.

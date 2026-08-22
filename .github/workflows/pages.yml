@@ -35,6 +35,8 @@ jobs:
           mkdir -p site/docs
           cp docs/*.md site/docs/
           cp ROADMAP.md site/ROADMAP.md
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          sed -i "s/class=\"logo-badge logo-badge-version\" id=\"version-badge\">[^<]*/class=\"logo-badge logo-badge-version\" id=\"version-badge\">v$VERSION/g" site/index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

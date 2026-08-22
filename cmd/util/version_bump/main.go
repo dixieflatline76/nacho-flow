@@ -19,82 +19,113 @@ type Version struct {
 	Prefix string // "v" or ""
 }
 
+// GitRunner executes git commands.
+type GitRunner func(args ...string) error
+
+// OutputRunner executes git commands and captures stdout.
+type OutputRunner func(args ...string) (string, error)
+
+func defaultGitRunner(args ...string) error {
+	// #nosec G204 - version_bump executes trusted git commands
+	cmd := exec.Command("git", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func defaultOutputRunner(args ...string) (string, error) {
+	// #nosec G204 - version_bump executes trusted git commands
+	cmd := exec.Command("git", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+var exitFunc = os.Exit
+
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run cmd/util/version_bump/main.go <bump-type>")
-		fmt.Println("Where <bump-type> is one of: patch, minor, major (or -type=patch, etc.)")
-		os.Exit(1)
+	if err := runCLI(os.Args); err != nil {
+		fmt.Println("Error:", err)
+		exitFunc(1)
+	}
+}
+
+func runCLI(args []string) error {
+	return runWithRunners(args, "version.txt", "site/index.html", defaultGitRunner, defaultOutputRunner)
+}
+
+func runWithRunners(args []string, versionFile, siteFile string, git GitRunner, outRunner OutputRunner) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: go run cmd/util/version_bump/main.go <bump-type>\nWhere <bump-type> is one of: patch, minor, major (or -type=patch, etc.)")
 	}
 
-	bumpType := os.Args[1]
+	bumpType := args[1]
 	bumpType = strings.TrimPrefix(bumpType, "-type=")
 	bumpType = strings.TrimPrefix(bumpType, "--type=")
 
 	// 1. Ensure we are on 'main', switching if necessary
-	currentBranch, err := getCurrentBranch()
+	currentBranch, err := outRunner("branch", "--show-current")
 	if err != nil {
-		fmt.Println("Error determining current branch:", err)
-		os.Exit(1)
+		return fmt.Errorf("error determining current branch: %w", err)
 	}
 	if currentBranch != "main" {
 		fmt.Printf("Currently on '%s', switching to 'main'...\n", currentBranch)
-		if err := runGit("checkout", "main"); err != nil {
-			fmt.Println("Error checking out main:", err)
-			os.Exit(1)
+		if err := git("checkout", "main"); err != nil {
+			return fmt.Errorf("error checking out main: %w", err)
 		}
 	}
 
 	// 2. Always pull latest from origin
 	fmt.Println("Pulling latest from origin/main...")
-	if err := runGit("pull", "origin", "main"); err != nil {
-		fmt.Println("Error pulling from origin:", err)
-		os.Exit(1)
+	if err := git("pull", "origin", "main"); err != nil {
+		return fmt.Errorf("error pulling from origin: %w", err)
 	}
 
 	// 3. Read and parse version.txt
-	version, err := readVersionFromFile("version.txt")
+	version, err := readVersionFromFile(versionFile)
 	if err != nil {
-		fmt.Println("Error reading version from file:", err)
-		os.Exit(1)
+		return fmt.Errorf("error reading version from file: %w", err)
 	}
 
 	// 4. Bump version
 	newVersion, err := bumpVersion(version, bumpType)
 	if err != nil {
-		fmt.Println("Error incrementing version:", err)
-		os.Exit(1)
+		return fmt.Errorf("error incrementing version: %w", err)
 	}
 
-	// 5. Write new version to version.txt
-	err = writeVersionToFile("version.txt", newVersion)
+	// 5. Write new version to version.txt and site/index.html
+	err = writeVersionToFile(versionFile, newVersion)
 	if err != nil {
-		fmt.Println("Error writing new version to file:", err)
-		os.Exit(1)
+		return fmt.Errorf("error writing new version to file: %w", err)
 	}
 
-	// 6. Commit version.txt
-	filesToCommit := []string{"version.txt"}
-	err = commitVersionFiles(filesToCommit, newVersion.String())
+	filesToCommit := []string{versionFile}
+	if err := updateSiteVersion(siteFile, newVersion); err == nil {
+		filesToCommit = append(filesToCommit, siteFile)
+	}
+
+	// 6. Commit version files
+	err = commitVersionFiles(filesToCommit, newVersion.String(), git)
 	if err != nil {
-		fmt.Println("Error committing version file:", err)
-		os.Exit(1)
+		return fmt.Errorf("error committing version file: %w", err)
 	}
 
 	// 7. Create Git tag
-	err = createGitTag(newVersion.String())
+	err = createGitTag(newVersion.String(), git)
 	if err != nil {
-		fmt.Println("Error creating Git tag:", err)
-		os.Exit(1)
+		return fmt.Errorf("error creating Git tag: %w", err)
 	}
 
 	// 8. Push commit to main
 	fmt.Println("Pushing commit to origin/main...")
-	if err := runGit("push", "origin", "main"); err != nil {
-		fmt.Println("Error pushing to origin:", err)
-		os.Exit(1)
+	if err := git("push", "origin", "main"); err != nil {
+		return fmt.Errorf("error pushing to origin: %w", err)
 	}
 
 	fmt.Printf("Successfully bumped to %s, tagged, and pushed to origin.\n", newVersion.String())
+	return nil
 }
 
 // readVersionFromFile reads the version string from the specified file.
@@ -163,56 +194,33 @@ func (v Version) String() string {
 }
 
 // createGitTag creates a Git tag with the given version string and pushes it.
-func createGitTag(versionString string) error {
-	// #nosec G204 - version_bump executes trusted git commands
-	cmd := exec.Command("git", "tag", "-a", versionString, "-m", fmt.Sprintf("Release %s", versionString))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+func createGitTag(versionString string, git GitRunner) error {
+	if err := git("tag", "-a", versionString, "-m", fmt.Sprintf("Release %s", versionString)); err != nil {
 		return err
 	}
-
-	// #nosec G204 - version_bump executes trusted git commands
-	cmd = exec.Command("git", "push", "origin", versionString)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return git("push", "origin", versionString)
 }
 
 // commitVersionFiles commits the version files to git.
-func commitVersionFiles(filenames []string, version string) error {
+func commitVersionFiles(filenames []string, version string, git GitRunner) error {
 	args := append([]string{"add"}, filenames...)
-	// #nosec G204 - version_bump executes trusted git commands
-	cmd := exec.Command("git", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := git(args...); err != nil {
 		return fmt.Errorf("git add failed: %w", err)
 	}
 
 	commitMsg := fmt.Sprintf("Bump version to %s", version)
-	// #nosec G204 - version_bump executes trusted git commands
-	cmd = exec.Command("git", "commit", "-m", commitMsg)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return git("commit", "-m", commitMsg)
 }
 
-// getCurrentBranch returns the name of the current git branch.
-func getCurrentBranch() (string, error) {
-	cmd := exec.Command("git", "branch", "--show-current")
-	output, err := cmd.Output()
+// updateSiteVersion updates the logo badge in site/index.html with the new version.
+func updateSiteVersion(filename string, v Version) error {
+	data, err := os.ReadFile(filepath.Clean(filename))
 	if err != nil {
-		return "", fmt.Errorf("git branch failed: %w", err)
+		return err
 	}
-	return strings.TrimSpace(string(output)), nil
-}
 
-// runGit executes a git command with the given arguments.
-func runGit(args ...string) error {
-	// #nosec G204 - version_bump executes trusted git commands
-	cmd := exec.Command("git", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	re := regexp.MustCompile(`(class="logo-badge[^"]*" id="version-badge">)[^<]*(</span>)`)
+	updated := re.ReplaceAll(data, fmt.Appendf(nil, "${1}%s${2}", v.String()))
+
+	return os.WriteFile(filepath.Clean(filename), updated, 0600)
 }
