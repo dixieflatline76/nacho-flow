@@ -192,7 +192,16 @@ To add a specialized provider plugin:
 
 ## 9. Release & CI/CD Pipeline
 
-Nacho Flow uses a multi-step GitHub Actions pipeline (`.github/workflows/ci.yml`):
-1. **Linux / macOS / Windows Matrix Builds**: Compiles statically (`CGO_ENABLED=0`).
-2. **Azure Trusted Signing**: Cryptographically signs the Windows AMD64 binary with Authenticode certificates during the release workflow.
-3. **Artifact Deployment**: Automated release creation via `cmd/util/nacho_releaser`.
+Nacho Flow uses a 2-stage release lifecycle in GitHub Actions (`.github/workflows/ci.yml`):
+
+1. **Stage 1: Prerelease Build & Artifact Upload (`publish-release`)**:
+   - Triggered when a Release is **published as a Pre-release** (or Draft published as Pre-release).
+   - Cross-compiles Linux (`amd64`, `arm64`), macOS (`amd64`, `arm64`), and Windows (`amd64`).
+   - Azure Trusted Signing signs the Windows AMD64 executable.
+   - Uploads all compiled binaries and `checksums.txt` to the release assets.
+
+2. **Stage 2: Verification & Promotion to Latest (`distribute-release`)**:
+   - Test the pre-release binaries.
+   - Once verified, edit the release on GitHub and **uncheck "Set as a pre-release"** (promoting to Latest Release).
+   - The `distribute-release` job triggers, updating the Homebrew Tap formula and pushing WinGet package manifests to the `winget-pkgs` fork.
+   - Multi-arch Docker images are built and pushed to GitHub Container Registry (`ghcr.io`).
