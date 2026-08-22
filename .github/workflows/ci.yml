@@ -39,6 +39,10 @@ jobs:
       - name: Dry Run Build
         run: go build -o bin/nacho-flow ./cmd/nacho-flow
 
+      - name: Test Universal Installer Script
+        if: runner.os != 'Windows'
+        run: bash scripts/install_test.sh
+
   build-linux:
     name: Build Linux Binaries
     runs-on: ubuntu-latest
