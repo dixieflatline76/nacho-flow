@@ -196,6 +196,8 @@ ManifestVersion: 1.5.0
 
 	wingetInstallerTmpl := `PackageIdentifier: dixieflatline76.NachoFlow
 PackageVersion: {{.Version}}
+Commands:
+  - nacho-flow
 Installers:
   - Architecture: x64
     InstallerType: portable
@@ -209,9 +211,15 @@ ManifestVersion: 1.5.0
 PackageVersion: {{.Version}}
 PackageLocale: en-US
 Publisher: dixieflatline76
+PublisherUrl: https://spicebox.dev
+PublisherSupportUrl: https://github.com/dixieflatline76/nacho-flow/issues
 PackageName: Nacho Flow
+PackageUrl: https://spicebox.dev/nacho-flow/
 License: MIT
-ShortDescription: High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs (spicebox.dev).
+LicenseUrl: https://github.com/dixieflatline76/nacho-flow/blob/main/LICENSE
+Copyright: Copyright (c) 2026 dixieflatline76
+ShortDescription: High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs (spicebox.dev/nacho-flow).
+Description: High-performance, zero-dependency OpenAI-compatible proxy gateway in Go. Sits locally between autonomous coding agents (Roo Code, Cline, Aider, Cursor) and LLMs to route routine turns to local GPUs for $0.00 and escalate complex turns to cloud APIs.
 Moniker: nacho-flow
 Tags:
   - ai
@@ -220,6 +228,8 @@ Tags:
   - gateway
   - ollama
   - openrouter
+  - agents
+  - local-llm
 ManifestType: defaultLocale
 ManifestVersion: 1.5.0
 `
@@ -299,7 +309,7 @@ func pushHomebrewFormula(ctx context.Context, client *github.Client, version str
 
 	formulaTmpl := `class NachoFlow < Formula
   desc "High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs"
-  homepage "https://spicebox.dev"
+  homepage "https://spicebox.dev/nacho-flow/"
   version "{{.Version}}"
   license "MIT"
 

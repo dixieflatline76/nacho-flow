@@ -82,6 +82,14 @@ func (p *program) run(s service.Service) {
 
 	cfg, err := config.LoadConfig(*configPathFlag)
 	if err != nil {
+		if service.Interactive() {
+			fmt.Printf("\n🌮 Nacho Flow %s (https://spicebox.dev/nacho-flow/)\n\n", contract.Version)
+			fmt.Println("No configuration file found. To get started:")
+			fmt.Println("  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml")
+			fmt.Println("  2. Run 'nacho-flow -help' for available options.")
+			fmt.Println("  3. View documentation at https://spicebox.dev/nacho-flow/docs.html")
+			os.Exit(0)
+		}
 		appLogger.Error("Config load error", slog.Any("error", err))
 		os.Exit(1)
 	}
@@ -254,7 +262,7 @@ func main() {
 		cmd := os.Args[1]
 		switch cmd {
 		case "version", "-v", "--version":
-			fmt.Printf("nacho-flow %s (spicebox.dev)\n", contract.Version)
+			fmt.Printf("nacho-flow %s (spicebox.dev/nacho-flow)\n", contract.Version)
 			return
 		case "tune":
 			handleTuneSubcommand(os.Args[2:])
@@ -265,14 +273,14 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag || *vFlag {
-		fmt.Printf("nacho-flow %s (spicebox.dev)\n", contract.Version)
+		fmt.Printf("nacho-flow %s (spicebox.dev/nacho-flow)\n", contract.Version)
 		return
 	}
 
 	svcConfig := &service.Config{
 		Name:        "nacho-flow",
 		DisplayName: "Nacho Flow AI Gateway",
-		Description: "Ultra-fast hybrid LLM proxy for local GPUs and cloud APIs (spicebox.dev)",
+		Description: "Ultra-fast hybrid LLM proxy for local GPUs and cloud APIs (spicebox.dev/nacho-flow)",
 	}
 
 	prg := &program{}

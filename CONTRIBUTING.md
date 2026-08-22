@@ -49,6 +49,6 @@ Thank you for your interest in contributing to **Nacho Flow**! We welcome bug re
 
 ## 💬 Community & Support
 
-- **Website**: [spicebox.dev](https://spicebox.dev)
+- **Website**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)
 - **Issues**: [GitHub Issues](https://github.com/dixieflatline76/nacho-flow/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/dixieflatline76/nacho-flow/discussions)

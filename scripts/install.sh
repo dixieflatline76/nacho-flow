@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Nacho Flow Universal Installer (Linux & macOS)
-# https://spicebox.dev | https://github.com/dixieflatline76/nacho-flow
+# https://spicebox.dev/nacho-flow/ | https://github.com/dixieflatline76/nacho-flow
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/scripts/install.sh | bash
