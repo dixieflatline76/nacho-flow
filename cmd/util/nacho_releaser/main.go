@@ -1,5 +1,24 @@
 package main
 
+// Nacho Releaser is the automated release and distribution utility for Nacho Flow.
+//
+// ⚠️ CI/CD ARCHITECTURAL LIFECYCLE (2-Stage Release Workflow):
+//
+// 1. Stage 1: Pre-Release Asset Upload (publish-release in .github/workflows/ci.yml)
+//    - Trigger: Release is published as a Pre-release (or draft published).
+//    - Auth: Runs with standard repository GITHUB_TOKEN (scoped ONLY to dixieflatline76/nacho-flow).
+//    - Action: Verifies local build artifacts, calculates SHA-256 hashes, generates checksums.txt,
+//      and attaches all binaries to the GitHub Release.
+//    - Invariant: MUST have SKIP_DISTRIBUTION=true. It MUST NOT attempt cross-repo pushes to
+//      Homebrew or WinGet, because GITHUB_TOKEN does not have write permissions to external repos.
+//
+// 2. Stage 2: Public Distribution & Manifest Sync (distribute-release in .github/workflows/ci.yml)
+//    - Trigger: Release is promoted to Latest (pre-release checkbox unchecked).
+//    - Auth: Runs with GORELEASER_GITHUB_TOKEN / NACHO_RELEASER_TOKEN (elevated cross-repo PAT).
+//    - Action: Pushes updated Formula to dixieflatline76/homebrew-nacho-flow and manifest branch
+//      to dixieflatline76/winget-pkgs for the 1-click Microsoft winget-pkgs PR.
+//    - Invariant: Runs with SKIP_DISTRIBUTION=false.
+
 import (
 	"bytes"
 	"context"
@@ -26,6 +45,9 @@ const (
 func main() {
 	log.SetFlags(log.Lshortfile | log.Ltime)
 
+	// Resolve GitHub authentication token.
+	// - For Stage 1 (Assets only): GITHUB_TOKEN is sufficient.
+	// - For Stage 2 (Distribution): NACHO_RELEASER_TOKEN / GORELEASER_GITHUB_TOKEN with cross-repo write access is required.
 	token := os.Getenv("NACHO_RELEASER_TOKEN")
 	if token == "" {
 		token = os.Getenv("GORELEASER_GITHUB_TOKEN")
@@ -121,25 +143,31 @@ func main() {
 		log.Printf("[nacho-releaser] Found existing release %s (ID: %d)", tag, release.GetID())
 	}
 
-	// 3. Upload Artifacts to Release
+	// 3. Upload Artifacts to Release (Always executed in Stage 1 & Stage 2)
 	for _, a := range artifacts {
 		uploadAsset(ctx, client, release.GetID(), a.Path)
 	}
 	uploadAsset(ctx, client, release.GetID(), "checksums.txt")
 
+	// ⚠️ CRITICAL STAGE GATE:
+	// If SKIP_DISTRIBUTION=true (set during publish-release on pre-releases), stop here.
+	// We MUST NOT attempt cross-repo pushes (Homebrew/WinGet) during pre-releases because:
+	//   1. Pre-releases are meant for local/manual testing before public distribution.
+	//   2. The GITHUB_TOKEN present during publish-release lacks write access to external repositories.
+	// Cross-repo distribution only occurs in Stage 2 (distribute-release) when promoted to Latest.
 	skipDistribution := os.Getenv("SKIP_DISTRIBUTION") == "true"
 	if skipDistribution {
-		log.Println("[nacho-releaser] SKIP_DISTRIBUTION=true (prerelease mode). Skipping Homebrew and WinGet distribution.")
+		log.Println("[nacho-releaser] SKIP_DISTRIBUTION=true (Stage 1: Pre-release). Asset upload complete. Skipping Homebrew/WinGet distribution.")
 	} else {
-		// 4. Push Homebrew Formula to dixieflatline76/homebrew-nacho-flow
+		// Stage 2: Push Homebrew Formula to dixieflatline76/homebrew-nacho-flow
 		if token != "" {
-			log.Println("[nacho-releaser] Generating and pushing Homebrew formula...")
+			log.Println("[nacho-releaser] (Stage 2: Latest) Generating and pushing Homebrew formula...")
 			pushHomebrewFormula(ctx, client, version, hashes)
 		}
 
-		// 5. Push Winget Manifests to fork
+		// Stage 2: Push Winget Manifests to dixieflatline76/winget-pkgs
 		if token != "" {
-			log.Println("[nacho-releaser] Generating and pushing winget manifests...")
+			log.Println("[nacho-releaser] (Stage 2: Latest) Generating and pushing winget manifests...")
 			pushWingetManifests(ctx, client, version, winHash)
 		}
 	}
