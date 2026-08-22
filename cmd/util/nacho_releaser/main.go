@@ -121,7 +121,7 @@ func run(ctx context.Context, client *github.Client, token, tag, version, distDi
 	winHash := hashes[fmt.Sprintf("nacho-flow-%s-windows-amd64.exe", version)]
 
 	// 2. GitHub Release Management
-	release, err := ensureRelease(ctx, client, repoOwner, repoName, tag, version)
+	release, err := ensureRelease(ctx, client, repoOwner, repoName, tag)
 	if err != nil {
 		return fmt.Errorf("failed to ensure release: %w", err)
 	}
@@ -199,7 +199,7 @@ func main() {
 	}
 }
 
-func ensureRelease(ctx context.Context, client *github.Client, owner, repo, tag, version string) (*github.RepositoryRelease, error) {
+func ensureRelease(ctx context.Context, client *github.Client, owner, repo, tag string) (*github.RepositoryRelease, error) {
 	release, resp, err := client.Repositories.GetReleaseByTag(ctx, owner, repo, tag)
 	if err != nil && resp != nil && resp.StatusCode == 404 {
 		log.Println("[nacho-releaser] Release not found, creating new release...")

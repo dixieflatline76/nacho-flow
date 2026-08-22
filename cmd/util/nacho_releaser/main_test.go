@@ -399,7 +399,7 @@ func TestEnsureRelease_FoundExisting(t *testing.T) {
 	serverURL, _ := url.Parse(ts.URL + "/")
 	client.BaseURL = serverURL
 
-	rel, err := ensureRelease(context.Background(), client, "owner", "repo", "v0.5.2", "0.5.2")
+	rel, err := ensureRelease(context.Background(), client, "owner", "repo", "v0.5.2")
 	if err != nil {
 		t.Fatalf("ensureRelease failed: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestEnsureRelease_CreateWhenNotFound(t *testing.T) {
 	serverURL, _ := url.Parse(ts.URL + "/")
 	client.BaseURL = serverURL
 
-	rel, err := ensureRelease(context.Background(), client, "owner", "repo", "v0.5.2", "0.5.2")
+	rel, err := ensureRelease(context.Background(), client, "owner", "repo", "v0.5.2")
 	if err != nil {
 		t.Fatalf("ensureRelease failed: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestEnsureRelease_ErrorPaths(t *testing.T) {
 	u, _ := url.Parse(ts.URL + "/")
 	client.BaseURL = u
 
-	_, err := ensureRelease(context.Background(), client, "owner", "repo", "v0.5.2", "0.5.2")
+	_, err := ensureRelease(context.Background(), client, "owner", "repo", "v0.5.2")
 	if err == nil {
 		t.Errorf("expected error on 500 response, got nil")
 	}
@@ -765,7 +765,7 @@ func TestEnsureRelease_CreateFails(t *testing.T) {
 	u, _ := url.Parse(ts.URL + "/")
 	client.BaseURL = u
 
-	_, err := ensureRelease(context.Background(), client, "owner", "repo", "v0.5.2", "0.5.2")
+	_, err := ensureRelease(context.Background(), client, "owner", "repo", "v0.5.2")
 	if err == nil {
 		t.Errorf("expected error when creation fails, got nil")
 	}
@@ -870,7 +870,7 @@ func TestEnsureRelease_ContextCanceled(t *testing.T) {
 	cancel()
 
 	client := github.NewClient(nil)
-	_, err := ensureRelease(ctx, client, "owner", "repo", "v0.5.2", "0.5.2")
+	_, err := ensureRelease(ctx, client, "owner", "repo", "v0.5.2")
 	if err == nil {
 		t.Errorf("expected error on canceled context, got nil")
 	}
