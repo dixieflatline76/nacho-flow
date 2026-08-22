@@ -1,8 +1,19 @@
-# 🌮 Nacho Flow (`spicebox.dev/nacho-flow`)
+<!-- markdownlint-disable MD033 MD041 -->
+<p align="center">
+  <img src="images/nacho-flow-banner.png" alt="Nacho Flow" width="800" />
+</p>
 
-[![GitHub Release](https://img.shields.io/github/v/release/dixieflatline76/nacho-flow?color=green&label=version)](https://github.com/dixieflatline76/nacho-flow/releases/latest)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/dixieflatline76/nacho-flow)](https://golang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+# 🌮 Nacho Flow
+
+<p align="center">
+  <a href="https://github.com/dixieflatline76/nacho-flow/actions/workflows/ci.yml"><img src="https://github.com/dixieflatline76/nacho-flow/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
+  <a href="https://pkg.go.dev/github.com/dixieflatline76/nacho-flow"><img src="https://pkg.go.dev/badge/github.com/dixieflatline76/nacho-flow.svg" alt="Go Reference"></a>
+  <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/dixieflatline76/nacho-flow?logo=go&logoColor=white" alt="Go Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/dixieflatline76/nacho-flow/releases/latest"><img src="https://img.shields.io/github/v/release/dixieflatline76/nacho-flow?color=blue&label=release" alt="Latest Release"></a>
+  <a href="https://github.com/dixieflatline76/homebrew-nacho-flow"><img src="https://img.shields.io/badge/Homebrew-nacho--flow-FBB040?logo=homebrew&logoColor=white" alt="Homebrew"></a>
+  <a href="https://github.com/dixieflatline76/nacho-flow/pkgs/container/nacho-flow"><img src="https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white" alt="Docker GHCR"></a>
+</p>
 
 > **You just paid $2.00 to ask your AI agent to check a log file. There's a better way.**
 >
@@ -10,6 +21,7 @@
 
 **Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Roo Code](https://github.com/RooVetGit/Roo-Code), [Cline](https://github.com/cline/cline), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)).
 
+🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)  
 Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
 
 ---
@@ -17,19 +29,19 @@ Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@d
 ## 🌟 The Problem: The Token Snowball Trap
 
 ### 💡 The Origin Story
-I built Nacho Flow after hitting a very familiar wall: I ran out of free Antigravity IDE daily tokens mid-session, topped up an OpenRouter account with €10, and watched €2.50 disappear on a single prompt turn just asking the agent to analyze the `docs/` folder in the Spice project for context.
+I built Nacho Flow after hitting a very familiar wall: I ran out of free AI coding assistant daily tokens mid-session, topped up an OpenRouter account with €10, and watched €2.50 disappear on a single prompt turn just asking the agent to analyze the `docs/` folder in the Spice project for context.
 
 Autonomous coding agents operate in multi-turn feedback loops. As conversations progress, agent harnesses re-send the full transcript, file contents, and execution logs with every prompt turn:
 1. **The Context Snowball**: An agent session starts at 2,000 tokens. By Turn 15, it is re-transmitting 45,000+ tokens with *every single prompt*.
 2. **The $2.50 Trivial Turn**: When paying cloud rates per million tokens, asking the agent to check a 1-line typo, run a linter, or execute `git status` burns $1.50–$3.00 just to process the background context.
 3. **The Local Dilemma**: Running 100% locally on Ollama/vLLM is free, but smaller models hit context/reasoning ceilings on complex architectural tasks.
-4. **The Hybrid Solution**: Nacho Flow evaluates prompt metadata in sub-millisecond Go. Routine turns (inspections, syntax fixes, unit tests) stay on your local GPU for **$0.00**. Complex multi-file reasoning automatically escalates to Claude or DeepSeek-R1.
+4. **The Hybrid Edge Solution**: Nacho Flow evaluates prompt metadata in sub-millisecond Go. Routine turns (inspections, syntax fixes, unit tests) stay on your local GPU for **$0.00**. Complex multi-file reasoning automatically escalates to Claude or DeepSeek-R1.
 
 ---
 
 ## 📊 Real-World Session Economics (65-Turn Agent Task)
 
-| Metric | Pure Cloud (Claude 3.5 Sonnet direct) | Nacho Flow Hybrid (Local GPU + Cloud Escalation) | Savings / Impact |
+| Metric | Pure Cloud (Claude Sonnet 5 direct) | Nacho Flow Hybrid (Local GPU + Cloud Escalation) | Savings / Impact |
 | :--- | :--- | :--- | :--- |
 | **Total Session Cost** | **$14.80** | **$0.78** | **94.7% Spend Reduction** |
 | **Local GPU Turns ($0.00)** | 0 turns (0% hardware ROI) | **48 turns** (Ollama / vLLM) | Max workstation GPU utilization |
@@ -243,7 +255,10 @@ See our comprehensive **[Product & Commercial Roadmap (ROADMAP.md)](ROADMAP.md)*
 
 ## 📚 Documentation
 
+Visit the official website and interactive documentation portal at **[spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)**.
+
 For in-depth guides, benchmark data, and architecture deep-dives:
+- **[Interactive Docs Hub](https://spicebox.dev/nacho-flow/docs.html)**: Live web documentation with interactive diagrams and search.
 - **[Product & Commercial Roadmap](ROADMAP.md)**: Open-source data plane, IDE extension, fleet protocol, and SaaS control plane.
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
 - **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**30,800+ req/s, 350k requests up to 1,000 workers**) on AMD Ryzen hardware.
@@ -256,4 +271,4 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 
 ## 📜 License
 
-MIT License © 2026 [dixieflatline76](https://github.com/dixieflatline76) | [spicebox.dev](https://spicebox.dev)
+MIT License © 2026 [dixieflatline76](https://github.com/dixieflatline76) | [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)
