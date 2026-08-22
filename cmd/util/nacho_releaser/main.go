@@ -127,16 +127,21 @@ func main() {
 	}
 	uploadAsset(ctx, client, release.GetID(), "checksums.txt")
 
-	// 4. Push Homebrew Formula to dixieflatline76/homebrew-nacho-flow
-	if token != "" {
-		log.Println("[nacho-releaser] Generating and pushing Homebrew formula...")
-		pushHomebrewFormula(ctx, client, version, hashes)
-	}
+	skipDistribution := os.Getenv("SKIP_DISTRIBUTION") == "true"
+	if skipDistribution {
+		log.Println("[nacho-releaser] SKIP_DISTRIBUTION=true (prerelease mode). Skipping Homebrew and WinGet distribution.")
+	} else {
+		// 4. Push Homebrew Formula to dixieflatline76/homebrew-nacho-flow
+		if token != "" {
+			log.Println("[nacho-releaser] Generating and pushing Homebrew formula...")
+			pushHomebrewFormula(ctx, client, version, hashes)
+		}
 
-	// 5. Push Winget Manifests to fork
-	if token != "" {
-		log.Println("[nacho-releaser] Generating and pushing winget manifests...")
-		pushWingetManifests(ctx, client, version, winHash)
+		// 5. Push Winget Manifests to fork
+		if token != "" {
+			log.Println("[nacho-releaser] Generating and pushing winget manifests...")
+			pushWingetManifests(ctx, client, version, winHash)
+		}
 	}
 
 	// #nosec G706 - trusted release tag
@@ -276,18 +281,30 @@ ManifestVersion: 1.5.0
 		})
 	}
 
-	tree, _, _ := client.Git.CreateTree(ctx, repoOwner, wingetRepo, baseSHA, treeEntries)
+	tree, _, err := client.Git.CreateTree(ctx, repoOwner, wingetRepo, baseSHA, treeEntries)
+	if err != nil || tree == nil {
+		log.Printf("[nacho-releaser] Failed to create git tree for winget: %v", err)
+		return
+	}
 	commit := &github.Commit{
 		Message: github.String(commitMsg),
 		Tree:    tree,
 		Parents: []*github.Commit{{SHA: github.String(baseSHA)}},
 	}
-	newCommit, _, _ := client.Git.CreateCommit(ctx, repoOwner, wingetRepo, commit, nil)
+	newCommit, _, err := client.Git.CreateCommit(ctx, repoOwner, wingetRepo, commit, nil)
+	if err != nil || newCommit == nil {
+		log.Printf("[nacho-releaser] Failed to create git commit for winget: %v", err)
+		return
+	}
 	branchRef := &github.Reference{
 		Ref:    github.String("refs/heads/" + branchName),
 		Object: &github.GitObject{SHA: newCommit.SHA},
 	}
-	_, _, _ = client.Git.UpdateRef(ctx, repoOwner, wingetRepo, branchRef, true)
+	_, _, err = client.Git.UpdateRef(ctx, repoOwner, wingetRepo, branchRef, true)
+	if err != nil {
+		log.Printf("[nacho-releaser] Failed to update branch ref for winget: %v", err)
+		return
+	}
 
 	// #nosec G706 - trusted calculated branch name
 	log.Printf("✅ Winget manifests pushed to branch '%s' for 1-click PR!", branchName)
