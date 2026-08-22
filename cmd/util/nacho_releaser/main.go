@@ -25,6 +25,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -46,112 +47,92 @@ const (
 	wingetRepo  = "winget-pkgs"
 )
 
-func main() {
-	log.SetFlags(log.Lshortfile | log.Ltime)
-
-	// Resolve GitHub authentication token.
-	// - For Stage 1 (Assets only): GITHUB_TOKEN is sufficient.
-	// - For Stage 2 (Distribution): NACHO_RELEASER_TOKEN / GORELEASER_GITHUB_TOKEN with cross-repo write access is required.
-	token := os.Getenv("NACHO_RELEASER_TOKEN")
-	if token == "" {
-		token = os.Getenv("GORELEASER_GITHUB_TOKEN")
-	}
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
-	}
-	if token == "" {
-		log.Fatal("No GitHub token found in NACHO_RELEASER_TOKEN, GORELEASER_GITHUB_TOKEN, or GITHUB_TOKEN")
-	}
-
-	tag := os.Getenv("GITHUB_REF_NAME")
-	if tag == "" {
-		data, err := os.ReadFile("version.txt")
-		if err == nil {
-			tag = "v" + strings.TrimSpace(string(data))
+func resolveToken(getEnv func(string) string) (string, error) {
+	for _, k := range []string{"NACHO_RELEASER_TOKEN", "GORELEASER_GITHUB_TOKEN", "GITHUB_TOKEN"} {
+		if val := getEnv(k); val != "" {
+			return val, nil
 		}
 	}
+	return "", errors.New("no GitHub token found in NACHO_RELEASER_TOKEN, GORELEASER_GITHUB_TOKEN, or GITHUB_TOKEN")
+}
+
+func resolveTag(getEnv func(string) string, readFile func(string) ([]byte, error)) (string, string, error) {
+	tag := getEnv("GITHUB_REF_NAME")
+	if tag == "" {
+		data, err := readFile("version.txt")
+		if err != nil {
+			return "", "", fmt.Errorf("failed to read version.txt: %w", err)
+		}
+		tag = "v" + strings.TrimSpace(string(data))
+	}
 	if !strings.HasPrefix(tag, "v") {
-		// #nosec G706 - trusted build tag from GITHUB_REF_NAME or version.txt
-		log.Fatalf("Tag %s does not start with 'v'", tag)
+		return "", "", fmt.Errorf("tag %s does not start with 'v'", tag)
 	}
-
 	version := strings.TrimPrefix(tag, "v")
-	// #nosec G706 - trusted build version
-	log.Printf("[nacho-releaser] Starting release process for version: %s (tag: %s)", version, tag)
+	return tag, version, nil
+}
 
-	client := github.NewClient(nil).WithAuthToken(token)
-	ctx := context.Background()
-
-	// 1. Artifact Verification & Hashing
-	artifacts := []struct {
-		Path     string
-		BaseName string
-	}{
-		{Path: fmt.Sprintf("dist/nacho-flow-%s-windows-amd64.exe", version)},
-		{Path: fmt.Sprintf("dist/nacho-flow-%s-linux-amd64", version)},
-		{Path: fmt.Sprintf("dist/nacho-flow-%s-linux-arm64", version)},
-		{Path: fmt.Sprintf("dist/nacho-flow-%s-darwin-amd64", version)},
-		{Path: fmt.Sprintf("dist/nacho-flow-%s-darwin-arm64", version)},
+func collectArtifactPaths(distDir, version string) []string {
+	return []string{
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-windows-amd64.exe", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-linux-amd64", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-linux-arm64", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-darwin-amd64", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-darwin-arm64", version)),
 	}
+}
 
+func generateChecksums(artifactPaths []string) (map[string]string, []byte, error) {
 	hashes := make(map[string]string)
-	var checksumData bytes.Buffer
+	var buf bytes.Buffer
 
-	for i, a := range artifacts {
-		artifacts[i].BaseName = filepath.Base(a.Path)
-		if _, err := os.Stat(a.Path); os.IsNotExist(err) {
-			log.Printf("[nacho-releaser] Warning: Artifact missing (skipping): %s", a.Path)
+	for _, p := range artifactPaths {
+		baseName := filepath.Base(p)
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			log.Printf("[nacho-releaser] Warning: Artifact missing (skipping): %s", p)
 			continue
 		}
 
-		hash, err := hashFile(a.Path)
+		hash, err := hashFile(p)
 		if err != nil {
-			log.Fatalf("Failed to hash %s: %v", a.Path, err)
+			return nil, nil, fmt.Errorf("failed to hash %s: %w", p, err)
 		}
-		hashes[artifacts[i].BaseName] = hash
-		checksumData.WriteString(fmt.Sprintf("%s  %s\n", hash, artifacts[i].BaseName))
-		log.Printf("[nacho-releaser] Hashed %s -> %s", artifacts[i].BaseName, hash)
+		hashes[baseName] = hash
+		buf.WriteString(fmt.Sprintf("%s  %s\n", hash, baseName))
+		log.Printf("[nacho-releaser] Hashed %s -> %s", baseName, hash)
 	}
 
-	checksumBytes := checksumData.Bytes()
+	return hashes, buf.Bytes(), nil
+}
+
+func run(ctx context.Context, client *github.Client, token, tag, version, distDir string, skipDistribution bool) error {
+	// 1. Artifact Verification & Hashing
+	artifactPaths := collectArtifactPaths(distDir, version)
+	hashes, checksumBytes, err := generateChecksums(artifactPaths)
+	if err != nil {
+		return fmt.Errorf("checksum generation failed: %w", err)
+	}
+
 	if err := os.WriteFile("checksums.txt", checksumBytes, 0600); err != nil {
-		log.Fatalf("Failed to write checksums.txt: %v", err)
+		return fmt.Errorf("failed to write checksums.txt: %w", err)
 	}
 	log.Println("[nacho-releaser] Successfully generated checksums.txt")
 
 	winHash := hashes[fmt.Sprintf("nacho-flow-%s-windows-amd64.exe", version)]
 
 	// 2. GitHub Release Management
-	release, resp, err := client.Repositories.GetReleaseByTag(ctx, repoOwner, repoName, tag)
-	if err != nil && resp != nil && resp.StatusCode == 404 {
-		log.Println("[nacho-releaser] Release not found, creating new release...")
-		newRelease := &github.RepositoryRelease{
-			TagName:         github.String(tag),
-			TargetCommitish: github.String("main"),
-			Name:            github.String(fmt.Sprintf("Nacho Flow %s", tag)),
-			Body:            github.String(fmt.Sprintf("Automated release for version %s", tag)),
-			Draft:           github.Bool(false),
-			Prerelease:      github.Bool(false),
-		}
-		var createErr error
-		release, _, createErr = client.Repositories.CreateRelease(ctx, repoOwner, repoName, newRelease)
-		if createErr != nil {
-			log.Fatalf("Failed to create GitHub release: %v", createErr)
-		}
-		// #nosec G706 - trusted release tag
-		log.Printf("[nacho-releaser] Created release %s (ID: %d)", tag, release.GetID())
-	} else if err != nil {
-		log.Fatalf("Failed to check existing release: %v", err)
-	} else {
-		// #nosec G706 - trusted release tag
-		log.Printf("[nacho-releaser] Found existing release %s (ID: %d)", tag, release.GetID())
+	release, err := ensureRelease(ctx, client, repoOwner, repoName, tag, version)
+	if err != nil {
+		return fmt.Errorf("failed to ensure release: %w", err)
 	}
 
 	// 3. Upload Artifacts to Release (Always executed in Stage 1 & Stage 2)
-	for _, a := range artifacts {
-		uploadAsset(ctx, client, release.GetID(), a.Path)
+	for _, p := range artifactPaths {
+		if _, err := os.Stat(p); err == nil {
+			uploadAsset(ctx, client, repoOwner, repoName, release.GetID(), p)
+		}
 	}
-	uploadAsset(ctx, client, release.GetID(), "checksums.txt")
+	uploadAsset(ctx, client, repoOwner, repoName, release.GetID(), "checksums.txt")
 
 	// ⚠️ CRITICAL STAGE GATE:
 	// If SKIP_DISTRIBUTION=true (set during publish-release on pre-releases), stop here.
@@ -159,7 +140,6 @@ func main() {
 	//   1. Pre-releases are meant for local/manual testing before public distribution.
 	//   2. The GITHUB_TOKEN present during publish-release lacks write access to external repositories.
 	// Cross-repo distribution only occurs in Stage 2 (distribute-release) when promoted to Latest.
-	skipDistribution := os.Getenv("SKIP_DISTRIBUTION") == "true"
 	if skipDistribution {
 		log.Println("[nacho-releaser] SKIP_DISTRIBUTION=true (Stage 1: Pre-release). Asset upload complete. Skipping Homebrew/WinGet distribution.")
 	} else {
@@ -178,6 +158,72 @@ func main() {
 
 	// #nosec G706 - trusted release tag
 	log.Printf("🎉 Release %s completed successfully!", tag)
+	return nil
+}
+
+func runCLI(getEnv func(string) string, readFile func(string) ([]byte, error)) error {
+	token, err := resolveToken(getEnv)
+	if err != nil {
+		return err
+	}
+	client := github.NewClient(nil).WithAuthToken(token)
+	return runCLIWithClient(client, token, getEnv, readFile)
+}
+
+func runCLIWithClient(client *github.Client, token string, getEnv func(string) string, readFile func(string) ([]byte, error)) error {
+	tag, version, err := resolveTag(getEnv, readFile)
+	if err != nil {
+		return fmt.Errorf("invalid release tag: %w", err)
+	}
+
+	// #nosec G706 - trusted build version
+	log.Printf("[nacho-releaser] Starting release process for version: %s (tag: %s)", version, tag)
+
+	ctx := context.Background()
+	skipDistribution := getEnv("SKIP_DISTRIBUTION") == "true"
+	distDir := getEnv("NACHO_DIST_DIR")
+	if distDir == "" {
+		distDir = "dist"
+	}
+
+	return run(ctx, client, token, tag, version, distDir, skipDistribution)
+}
+
+var exitFunc = log.Fatal
+
+func main() {
+	log.SetFlags(log.Lshortfile | log.Ltime)
+
+	if err := runCLI(os.Getenv, os.ReadFile); err != nil {
+		exitFunc(err)
+	}
+}
+
+func ensureRelease(ctx context.Context, client *github.Client, owner, repo, tag, version string) (*github.RepositoryRelease, error) {
+	release, resp, err := client.Repositories.GetReleaseByTag(ctx, owner, repo, tag)
+	if err != nil && resp != nil && resp.StatusCode == 404 {
+		log.Println("[nacho-releaser] Release not found, creating new release...")
+		newRelease := &github.RepositoryRelease{
+			TagName:         github.String(tag),
+			TargetCommitish: github.String("main"),
+			Name:            github.String(fmt.Sprintf("Nacho Flow %s", tag)),
+			Body:            github.String(fmt.Sprintf("Automated release for version %s", tag)),
+			Draft:           github.Bool(false),
+			Prerelease:      github.Bool(false),
+		}
+		rel, _, createErr := client.Repositories.CreateRelease(ctx, owner, repo, newRelease)
+		if createErr != nil {
+			return nil, fmt.Errorf("failed to create release %s: %w", tag, createErr)
+		}
+		// #nosec G706 - trusted release tag
+		log.Printf("[nacho-releaser] Created release %s (ID: %d)", tag, rel.GetID())
+		return rel, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to check existing release %s: %w", tag, err)
+	}
+	// #nosec G706 - trusted release tag
+	log.Printf("[nacho-releaser] Found existing release %s (ID: %d)", tag, release.GetID())
+	return release, nil
 }
 
 func hashFile(path string) (string, error) {
@@ -196,7 +242,7 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
-func uploadAsset(ctx context.Context, client *github.Client, releaseID int64, path string) {
+func uploadAsset(ctx context.Context, client *github.Client, owner, repo string, releaseID int64, path string) {
 	path = filepath.Clean(path)
 	// #nosec G304 - path is from vetted local release artifacts
 	file, err := os.Open(path)
@@ -207,16 +253,16 @@ func uploadAsset(ctx context.Context, client *github.Client, releaseID int64, pa
 	defer func() { _ = file.Close() }()
 
 	baseName := filepath.Base(path)
-	assets, _, _ := client.Repositories.ListReleaseAssets(ctx, repoOwner, repoName, releaseID, nil)
+	assets, _, _ := client.Repositories.ListReleaseAssets(ctx, owner, repo, releaseID, nil)
 	for _, a := range assets {
 		if a.GetName() == baseName {
-			_, _ = client.Repositories.DeleteReleaseAsset(ctx, repoOwner, repoName, a.GetID())
+			_, _ = client.Repositories.DeleteReleaseAsset(ctx, owner, repo, a.GetID())
 		}
 	}
 
 	opts := &github.UploadOptions{Name: baseName}
 	log.Printf("[nacho-releaser] Uploading asset: %s", baseName)
-	_, _, _ = client.Repositories.UploadReleaseAsset(ctx, repoOwner, repoName, releaseID, opts, file)
+	_, _, _ = client.Repositories.UploadReleaseAsset(ctx, owner, repo, releaseID, opts, file)
 }
 
 func renderTemplate(tmplPath string, data any) ([]byte, error) {
