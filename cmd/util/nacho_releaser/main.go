@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"embed"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -34,6 +35,9 @@ import (
 
 	"github.com/google/go-github/v63/github"
 )
+
+//go:embed templates/*.tmpl
+var templateFS embed.FS
 
 const (
 	repoOwner   = "dixieflatline76"
@@ -220,53 +224,6 @@ func pushWingetManifests(ctx context.Context, client *github.Client, version, wi
 	branchName := fmt.Sprintf("nacho-flow-v%s", version)
 	commitMsg := fmt.Sprintf("New version: dixieflatline76.NachoFlow version %s", version)
 
-	wingetVersionTmpl := `PackageIdentifier: dixieflatline76.NachoFlow
-PackageVersion: {{.Version}}
-DefaultLocale: en-US
-ManifestType: version
-ManifestVersion: 1.5.0
-`
-
-	wingetInstallerTmpl := `PackageIdentifier: dixieflatline76.NachoFlow
-PackageVersion: {{.Version}}
-Commands:
-  - nacho-flow
-Installers:
-  - Architecture: x64
-    InstallerType: portable
-    InstallerUrl: https://github.com/dixieflatline76/nacho-flow/releases/download/v{{.Version}}/nacho-flow-{{.Version}}-windows-amd64.exe
-    InstallerSha256: {{.WinHash}}
-ManifestType: installer
-ManifestVersion: 1.5.0
-`
-
-	wingetLocaleTmpl := `PackageIdentifier: dixieflatline76.NachoFlow
-PackageVersion: {{.Version}}
-PackageLocale: en-US
-Publisher: dixieflatline76
-PublisherUrl: https://spicebox.dev
-PublisherSupportUrl: https://github.com/dixieflatline76/nacho-flow/issues
-PackageName: Nacho Flow
-PackageUrl: https://spicebox.dev/nacho-flow/
-License: MIT
-LicenseUrl: https://github.com/dixieflatline76/nacho-flow/blob/main/LICENSE
-Copyright: Copyright (c) 2026 dixieflatline76
-ShortDescription: High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs (spicebox.dev/nacho-flow).
-Description: High-performance, zero-dependency OpenAI-compatible proxy gateway in Go. Sits locally between autonomous coding agents (Roo Code, Cline, Aider, Cursor) and LLMs to route routine turns to local GPUs for $0.00 and escalate complex turns to cloud APIs.
-Moniker: nacho-flow
-Tags:
-  - ai
-  - llm
-  - proxy
-  - gateway
-  - ollama
-  - openrouter
-  - agents
-  - local-llm
-ManifestType: defaultLocale
-ManifestVersion: 1.5.0
-`
-
 	data := struct {
 		Version string
 		WinHash string
@@ -274,12 +231,12 @@ ManifestVersion: 1.5.0
 
 	baseManifestPath := fmt.Sprintf("manifests/d/dixieflatline76/NachoFlow/%s", version)
 	files := []struct {
-		Path     string
-		Template string
+		Path         string
+		TemplateName string
 	}{
-		{fmt.Sprintf("%s/dixieflatline76.NachoFlow.yaml", baseManifestPath), wingetVersionTmpl},
-		{fmt.Sprintf("%s/dixieflatline76.NachoFlow.installer.yaml", baseManifestPath), wingetInstallerTmpl},
-		{fmt.Sprintf("%s/dixieflatline76.NachoFlow.locale.en-US.yaml", baseManifestPath), wingetLocaleTmpl},
+		{fmt.Sprintf("%s/dixieflatline76.NachoFlow.yaml", baseManifestPath), "templates/winget_version.yaml.tmpl"},
+		{fmt.Sprintf("%s/dixieflatline76.NachoFlow.installer.yaml", baseManifestPath), "templates/winget_installer.yaml.tmpl"},
+		{fmt.Sprintf("%s/dixieflatline76.NachoFlow.locale.en-US.yaml", baseManifestPath), "templates/winget_locale.yaml.tmpl"},
 	}
 
 	baseRef, _, err := client.Git.GetRef(ctx, repoOwner, wingetRepo, "refs/heads/"+baseBranch)
@@ -298,9 +255,21 @@ ManifestVersion: 1.5.0
 
 	var treeEntries []*github.TreeEntry
 	for _, f := range files {
-		t, _ := template.New("t").Parse(f.Template)
+		tmplContent, err := templateFS.ReadFile(f.TemplateName)
+		if err != nil {
+			log.Printf("[nacho-releaser] Failed to read embedded template %s: %v", f.TemplateName, err)
+			return
+		}
+		t, err := template.New(f.TemplateName).Parse(string(tmplContent))
+		if err != nil {
+			log.Printf("[nacho-releaser] Failed to parse template %s: %v", f.TemplateName, err)
+			return
+		}
 		var buf bytes.Buffer
-		_ = t.Execute(&buf, data)
+		if err := t.Execute(&buf, data); err != nil {
+			log.Printf("[nacho-releaser] Failed to execute template %s: %v", f.TemplateName, err)
+			return
+		}
 		treeEntries = append(treeEntries, &github.TreeEntry{
 			Path:    github.String(f.Path),
 			Mode:    github.String("100644"),
@@ -352,59 +321,6 @@ func pushHomebrewFormula(ctx context.Context, client *github.Client, version str
 		return
 	}
 
-	formulaTmpl := `class NachoFlow < Formula
-  desc "High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs"
-  homepage "https://spicebox.dev/nacho-flow/"
-  version "{{.Version}}"
-  license "MIT"
-
-  on_macos do
-    on_arm do
-      url "https://github.com/dixieflatline76/nacho-flow/releases/download/v#{version}/nacho-flow-#{version}-darwin-arm64"
-      sha256 "{{.DarwinArm64}}"
-    end
-    on_intel do
-      url "https://github.com/dixieflatline76/nacho-flow/releases/download/v#{version}/nacho-flow-#{version}-darwin-amd64"
-      sha256 "{{.DarwinAmd64}}"
-    end
-  end
-
-  on_linux do
-    on_intel do
-      url "https://github.com/dixieflatline76/nacho-flow/releases/download/v#{version}/nacho-flow-#{version}-linux-amd64"
-      sha256 "{{.LinuxAmd64}}"
-    end
-    on_arm do
-      url "https://github.com/dixieflatline76/nacho-flow/releases/download/v#{version}/nacho-flow-#{version}-linux-arm64"
-      sha256 "{{.LinuxArm64}}"
-    end
-  end
-
-  def install
-    binary_name = "nacho-flow"
-    if OS.mac?
-      binary_name = Hardware::CPU.arm? ? "nacho-flow-#{version}-darwin-arm64" : "nacho-flow-#{version}-darwin-amd64"
-    elsif OS.linux?
-      binary_name = Hardware::CPU.arm? ? "nacho-flow-#{version}-linux-arm64" : "nacho-flow-#{version}-linux-amd64"
-    end
-
-    bin.install binary_name => "nacho-flow"
-  end
-
-  service do
-    run [opt_bin/"nacho-flow", "run"]
-    keep_alive true
-    log_path var/"log/nacho-flow.log"
-    error_log_path var/"log/nacho-flow.err.log"
-    working_dir var
-  end
-
-  test do
-    system "#{bin}/nacho-flow", "version"
-  end
-end
-`
-
 	data := struct {
 		Version     string
 		DarwinArm64 string
@@ -419,7 +335,13 @@ end
 		LinuxArm64:  linuxArm64Hash,
 	}
 
-	t, err := template.New("formula").Parse(formulaTmpl)
+	tmplContent, err := templateFS.ReadFile("templates/homebrew_formula.rb.tmpl")
+	if err != nil {
+		log.Printf("[nacho-releaser] Failed to read homebrew template: %v", err)
+		return
+	}
+
+	t, err := template.New("formula").Parse(string(tmplContent))
 	if err != nil {
 		log.Printf("[nacho-releaser] Failed to parse formula template: %v", err)
 		return
