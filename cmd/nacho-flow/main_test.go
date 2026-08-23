@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+	"github.com/dixieflatline76/nacho-flow/pkg/tuner"
 	"github.com/kardianos/service"
 )
 
@@ -32,7 +34,11 @@ func captureStdout(f func()) string {
 
 func TestVersionOutput(t *testing.T) {
 	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
+	defer func() {
+		os.Args = oldArgs
+		*versionFlag = false
+		*vFlag = false
+	}()
 
 	for _, flagArg := range []string{"version", "-v", "--version"} {
 		os.Args = []string{"nacho-flow", flagArg}
@@ -170,6 +176,41 @@ tiers:
 	}
 }
 
+func TestRunTune_ApplyError(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfgContent := `
+port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+`
+	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
+
+	trafficLogPath := filepath.Join(tmpDir, "traffic.jsonl")
+	tl, err := telemetry.NewTrafficLogger(trafficLogPath, 100)
+	if err != nil {
+		t.Fatalf("NewTrafficLogger failed: %v", err)
+	}
+	tl.Emit(telemetry.TurnRecord{
+		Timestamp: time.Now(),
+		Tokens:    1000,
+		IsLocal:   true,
+	})
+	_ = tl.Close()
+
+	origApply := applyTuningFunc
+	applyTuningFunc = func(configPath string, result *tuner.TuningResult) (string, error) {
+		return "", fmt.Errorf("simulated apply error")
+	}
+	defer func() { applyTuningFunc = origApply }()
+
+	err = runTune([]string{"-config", cfgPath, "-traffic-log", trafficLogPath, "-apply"})
+	if err == nil {
+		t.Errorf("expected error when applyTuningFunc fails, got nil")
+	}
+}
+
 type mockService struct{}
 
 func (m *mockService) Start() error                                           { return nil }
@@ -241,7 +282,7 @@ func TestProgram_FullLifecycle_WithOpenRouter(t *testing.T) {
 port: 59997
 providers:
   openrouter:
-    base_url: "https://openrouter.ai/api/v1"
+    base_url: "http://127.0.0.1:11434"
     api_key: "sk-or-test"
 tiers:
   - name: "Cloud"
@@ -454,6 +495,303 @@ tiers:
 		t.Errorf("expected error for bad tier expression, got nil")
 	}
 }
+
+func TestProgram_Start_GoroutineErrorLogging(t *testing.T) {
+	mock := &mockService{}
+	tmpDir := t.TempDir()
+	badCfgPath := filepath.Join(tmpDir, "bad.yaml")
+	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: ''\ntiers:\n  - name: 'Bad'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
+	*configPathFlag = badCfgPath
+
+	// Test Start method
+	p := &program{
+		slog: slog.Default(),
+	}
+	if err := p.Start(mock); err != nil {
+		t.Errorf("expected nil error from Start, got: %v", err)
+	}
+
+	// Test asyncRun with slog present
+	p.asyncRun(mock)
+
+	// Test asyncRun with slog nil
+	pNoLog := &program{}
+	pNoLog.asyncRun(mock)
+	*configPathFlag = ""
+}
+
+func TestProgram_Run_InvalidPort(t *testing.T) {
+	mock := &mockService{}
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfgContent := `
+port: -1
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+`
+	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
+	*configPathFlag = cfgPath
+
+	p := &program{}
+	err := p.run(mock)
+	if err == nil {
+		t.Errorf("expected error for invalid port -1, got nil")
+	}
+	*configPathFlag = ""
+}
+
+func TestSetupShutdownSignal(t *testing.T) {
+	mock := &mockService{}
+	sigChan := setupShutdownSignal(mock)
+	sigChan <- os.Interrupt
+	time.Sleep(50 * time.Millisecond)
+	close(sigChan)
+}
+
+func TestProgram_Run_PortOverrideAndConfigFallback(t *testing.T) {
+	mock := &mockService{}
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfgContent := `
+port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+`
+	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
+
+	*configPathFlag = cfgPath
+	*portFlag = 59996 // Override port
+	*logLevelFlag = "warn"
+
+	p := &program{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = p.run(mock)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	_ = p.Stop(mock)
+	<-done
+
+	*portFlag = 0
+	*configPathFlag = ""
+}
+
+func TestRunMain_AllBranches(t *testing.T) {
+	*versionFlag = false
+	*vFlag = false
+	defer func() {
+		*versionFlag = false
+		*vFlag = false
+	}()
+
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	validCfg := `
+port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+`
+	_ = os.WriteFile(cfgPath, []byte(validCfg), 0600)
+	trafficLogPath := filepath.Join(tmpDir, "traffic.jsonl")
+	_ = os.WriteFile(trafficLogPath, []byte(""), 0600)
+
+	// 1. Version commands
+	out := captureStdout(func() {
+		_ = runMain([]string{"nacho-flow", "version"}, nil)
+		_ = runMain([]string{"nacho-flow", "-v"}, nil)
+		_ = runMain([]string{"nacho-flow", "--version"}, nil)
+	})
+	if !bytes.Contains([]byte(out), []byte("nacho-flow")) {
+		t.Errorf("expected version output, got: %s", out)
+	}
+
+	// 2. Version flag
+	*versionFlag = true
+	out = captureStdout(func() {
+		_ = runMain([]string{"nacho-flow"}, nil)
+	})
+	*versionFlag = false
+	if !bytes.Contains([]byte(out), []byte("nacho-flow")) {
+		t.Errorf("expected version flag output, got: %s", out)
+	}
+
+	// 3. Tune subcommand
+	out = captureStdout(func() {
+		_ = runMain([]string{"nacho-flow", "tune", "-config", cfgPath, "-traffic-log", trafficLogPath}, nil)
+	})
+	if !bytes.Contains([]byte(out), []byte("No historical traffic records found")) {
+		t.Errorf("expected tune output, got: %s", out)
+	}
+
+	// 4. Custom serviceRunner execution
+	runnerCalled := false
+	err := runMain([]string{"nacho-flow"}, func(s service.Service) error {
+		runnerCalled = true
+		return nil
+	})
+	if err != nil || !runnerCalled {
+		t.Errorf("expected serviceRunner to be called with nil error, got err=%v, called=%v", err, runnerCalled)
+	}
+
+	// 5. Service control command with valid start
+	origServiceControl := serviceControlRunner
+	serviceControlCalled := false
+	serviceControlRunner = func(s service.Service, args []string) (bool, error) {
+		serviceControlCalled = true
+		return true, nil
+	}
+	_ = runMain([]string{"nacho-flow", "service", "start"}, nil)
+	serviceControlRunner = origServiceControl
+	if !serviceControlCalled {
+		t.Errorf("expected serviceControlRunner to be called")
+	}
+
+	// 6. Tune subcommand with error
+	err = runMain([]string{"nacho-flow", "tune", "-invalid-flag-for-tune"}, nil)
+	if err == nil {
+		t.Errorf("expected error from invalid tune flag, got nil")
+	}
+
+	// 7. Default runMain with serviceRunner nil
+	origDefaultRunner := defaultServiceRunner
+	defaultRunnerCalled := false
+	defaultServiceRunner = func(s service.Service) error {
+		defaultRunnerCalled = true
+		return nil
+	}
+	defer func() { defaultServiceRunner = origDefaultRunner }()
+
+	_ = runMain([]string{"nacho-flow"}, nil)
+	if !defaultRunnerCalled {
+		t.Errorf("expected defaultServiceRunner to be called")
+	}
+}
+
+func TestProgram_Start_NormalExecution(t *testing.T) {
+	mock := &mockService{}
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	validCfg := `
+port: 59995
+providers:
+  mock_provider:
+    api_key: "sk-test-key"
+    base_url: "http://127.0.0.1:11434"
+`
+	_ = os.WriteFile(cfgPath, []byte(validCfg), 0600)
+	*configPathFlag = cfgPath
+
+	p := &program{}
+	if err := p.Start(mock); err != nil {
+		t.Errorf("expected nil error from Start, got: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	_ = p.Stop(mock)
+	*configPathFlag = ""
+}
+
+func TestProgram_Run_OpenRouterAndStatsDiskStore(t *testing.T) {
+	mock := &mockService{}
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfgContent := `
+port: 59994
+providers:
+  openrouter:
+    api_key: "sk-or-live-key"
+    base_url: "http://127.0.0.1:59993/v1"
+`
+	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
+	*configPathFlag = cfgPath
+	p := &program{
+		statsSyncInterval: 10 * time.Millisecond,
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = p.run(mock)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	_ = p.Stop(mock)
+	<-done
+	*configPathFlag = ""
+}
+
+func TestHandleTuneSubcommand_ErrorPath(t *testing.T) {
+	origLogFatal := logFatal
+	fatalCalled := false
+	logFatal = func(v ...any) {
+		fatalCalled = true
+	}
+	defer func() { logFatal = origLogFatal }()
+
+	// Trigger error path by passing invalid flag
+	handleTuneSubcommand([]string{"-invalid-tune-flag"})
+	if !fatalCalled {
+		t.Errorf("expected logFatal to be called on invalid tune flag")
+	}
+}
+
+func TestMain_ErrorPath(t *testing.T) {
+	origLogFatal := logFatal
+	fatalCalled := false
+	logFatal = func(v ...any) {
+		fatalCalled = true
+	}
+	defer func() { logFatal = origLogFatal }()
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	// Trigger main() error by passing invalid tune flag (fails immediately with 0 network/SCM)
+	os.Args = []string{"nacho-flow", "tune", "-invalid-flag-for-main"}
+	main()
+	if !fatalCalled {
+		t.Errorf("expected logFatal to be called on invalid tune flag in main")
+	}
+}
+
+func TestRunMain_ServiceNewError(t *testing.T) {
+	origServiceNew := serviceNewFunc
+	serviceNewFunc = func(i service.Interface, c *service.Config) (service.Service, error) {
+		return nil, fmt.Errorf("simulated service.New error")
+	}
+	defer func() { serviceNewFunc = origServiceNew }()
+
+	err := runMain([]string{"nacho-flow"}, nil)
+	if err == nil {
+		t.Errorf("expected error from failed service.New, got nil")
+	}
+}
+
+func TestProgram_Run_DaemonModeConfigError(t *testing.T) {
+	origInteractive := serviceInteractiveFunc
+	serviceInteractiveFunc = func() bool { return false }
+	defer func() { serviceInteractiveFunc = origInteractive }()
+
+	mock := &mockService{}
+	*configPathFlag = "non_existent_config_file_12345.yaml"
+	defer func() { *configPathFlag = "" }()
+
+	p := &program{}
+	err := p.run(mock)
+	if err == nil {
+		t.Errorf("expected error in daemon mode when config file does not exist, got nil")
+	}
+}
+
+
+
+
+
+
 
 
 
