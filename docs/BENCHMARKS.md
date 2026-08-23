@@ -6,12 +6,12 @@ This document details the performance characteristics, load-testing methodology,
 
 ## 1. Executive Summary
 
-- **Peak Throughput**: **32,254 requests/second** (~1.93 million requests/minute).
-- **Pipeline Latency**: **~0.29 ms** (299 microseconds) end-to-end overhead per request.
+- **Peak Throughput**: **32,472 requests/second** (~1.95 million requests/minute).
+- **Pipeline Latency**: **~0.18 ms** (183 microseconds) end-to-end overhead per request.
 - **Extreme Concurrency**: Handled **1,000 parallel workers** with **100.0% success rate** (0 dropped connections, 0 errors).
-- **Memory Footprint**: Peak heap memory remained under **96 MB** while sustaining 1,000 concurrent client streams.
+- **Memory Footprint**: Peak heap memory remained under **108 MB** while sustaining 1,000 concurrent client streams.
 - **Telemetry Integrity**: Aggregated **350,000 live proxy events** with **zero race conditions** and **zero data drops**.
-- **Real-World Complex Workloads**: Maintains **~28,900 req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek bracket balancing).
+- **Real-World Complex Workloads**: Maintains **~30,600 req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek/Bare-JSON Strategy Pipeline).
 
 ---
 
@@ -42,30 +42,30 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 ========================================================================================
 
 ▶ [STAGE 1/5] Running 25,000 requests across 50 concurrent workers...
-   ✓ Done in 0.90s | RPS: 27,903.5 | P50: 1.06ms | P99: 6.88ms  | Heap: 48.2 MB | Success: 25,000/25,000 (Fail: 0)
+   ✓ Done in 0.92s | RPS: 27,186.4 | P50: 1.14ms | P99: 8.71ms  | Heap: 64.6 MB | Success: 25,000/25,000 (Fail: 0)
 
 ▶ [STAGE 2/5] Running 50,000 requests across 100 concurrent workers...
-   ✓ Done in 1.64s | RPS: 30,410.8 | P50: 2.71ms | P99: 14.04ms | Heap: 61.1 MB | Success: 50,000/50,000 (Fail: 0)
+   ✓ Done in 1.72s | RPS: 29,111.5 | P50: 3.00ms | P99: 14.02ms | Heap: 59.3 MB | Success: 50,000/50,000 (Fail: 0)
 
 ▶ [STAGE 3/5] Running 75,000 requests across 250 concurrent workers...
-   ✓ Done in 2.55s | RPS: 29,448.6 | P50: 7.00ms | P99: 31.01ms | Heap: 85.0 MB | Success: 75,000/75,000 (Fail: 0)
+   ✓ Done in 2.73s | RPS: 27,499.4 | P50: 7.01ms | P99: 39.83ms | Heap: 72.9 MB | Success: 75,000/75,000 (Fail: 0)
 
 ▶ [STAGE 4/5] Running 100,000 requests across 500 concurrent workers...
-   ✓ Done in 3.49s | RPS: 28,622.2 | P50: 14.88ms| P99: 53.58ms | Heap: 73.7 MB | Success: 100,000/100,000 (Fail: 0)
+   ✓ Done in 3.81s | RPS: 26,224.0 | P50: 14.65ms| P99: 58.73ms | Heap: 76.5 MB | Success: 100,000/100,000 (Fail: 0)
 
 ▶ [STAGE 5/5] Running 100,000 requests across 1,000 concurrent workers...
-   ✓ Done in 4.08s | RPS: 24,509.0 | P50: 28.82ms| P99: 246.91ms| Heap: 134.8 MB| Success: 100,000/100,000 (Fail: 0)
+   ✓ Done in 4.02s | RPS: 24,881.2 | P50: 30.73ms| P99: 98.30ms | Heap: 108.7 MB| Success: 100,000/100,000 (Fail: 0)
 ```
 
 ### Comprehensive Results Breakdown:
 
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **27,903.5 req/s** | 1.06 ms | 6.88 ms | 48.2 MB |
-| **100 workers** | 50,000 | **100.0%** | **30,410.8 req/s** | 2.71 ms | 14.04 ms | 61.1 MB |
-| **250 workers** | 75,000 | **100.0%** | **29,448.6 req/s** | 7.00 ms | 31.01 ms | 85.0 MB |
-| **500 workers** | 100,000 | **100.0%** | **28,622.2 req/s** | 14.88 ms | 53.58 ms | 73.7 MB |
-| **1,000 workers** | 100,000 | **100.0%** | **24,509.0 req/s** | 28.82 ms | 246.91 ms | 134.8 MB |
+| **50 workers** | 25,000 | **100.0%** | **27,186.4 req/s** | 1.14 ms | 8.71 ms | 64.6 MB |
+| **100 workers** | 50,000 | **100.0%** | **29,111.5 req/s** | 3.00 ms | 14.02 ms | 59.3 MB |
+| **250 workers** | 75,000 | **100.0%** | **27,499.4 req/s** | 7.01 ms | 39.83 ms | 72.9 MB |
+| **500 workers** | 100,000 | **100.0%** | **26,224.0 req/s** | 14.65 ms | 58.73 ms | 76.5 MB |
+| **1,000 workers** | 100,000 | **100.0%** | **24,881.2 req/s** | 30.73 ms | 98.30 ms | 108.7 MB |
 
 ---
 
