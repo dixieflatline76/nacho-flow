@@ -311,7 +311,7 @@ data: {"timestamp":"2026-08-22T18:05:00Z","version":"0.6.0","applied_rule_change
 {
   "error": {
     "type": "invalid_config",
-    "message": "failed to compile expr for tier 'Tier 1' (tokens < 8000 && invalid_token): unknown name invalid_token"
+    "message": "failed to compile expr for tier 'Tier 1' (Tokens < 8000 && invalid_token): unknown name invalid_token"
   }
 }
 ```
@@ -327,7 +327,7 @@ data: {"timestamp":"2026-08-22T18:05:00Z","version":"0.6.0","applied_rule_change
 ```json
 {
   "recommended_threshold": 6500,
-  "synthesized_rule": "tokens < 6500 && !has_images && !has_tools && !contains_any(keywords, ['refactor', 'architect'])",
+  "synthesized_rule": "Tokens < 6500 && !HasImages && !HasTools && !contains_any(Keywords, ['refactor', 'architect'])",
   "estimated_monthly_savings_usd": 42.50,
   "local_offload_percentage": 68.4,
   "confidence_score": 0.94
