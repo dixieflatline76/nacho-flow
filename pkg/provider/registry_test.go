@@ -212,3 +212,54 @@ func TestRegistry_NilConfig(t *testing.T) {
 		t.Errorf("Expected 0 providers for nil config, got %d", len(reg.All()))
 	}
 }
+
+func TestRegistry_CircuitsStatusAndReset(t *testing.T) {
+	p1 := NewGenericLLMProvider("p1", contract.ProviderConfig{BaseURL: "http://localhost:8001"})
+	p2 := NewGenericLLMProvider("p2", contract.ProviderConfig{BaseURL: "http://localhost:8002"})
+
+	reg := NewRegistry()
+	reg.Register(p1)
+	reg.Register(p2)
+
+	// Trip p1
+	cb1 := p1.CircuitBreaker()
+	cb1.RecordFailure()
+	cb1.RecordFailure()
+
+	status := reg.GetCircuitsStatus()
+	if len(status) != 2 {
+		t.Fatalf("expected 2 circuits in status, got %d", len(status))
+	}
+
+	// Reset single provider
+	if !reg.ResetCircuit("p1") {
+		t.Errorf("expected ResetCircuit('p1') to succeed")
+	}
+	if cb1.State() != StateClosed {
+		t.Errorf("expected p1 state closed, got %s", cb1.State())
+	}
+
+	// Reset unknown provider
+	if reg.ResetCircuit("unknown") {
+		t.Errorf("expected ResetCircuit('unknown') to return false")
+	}
+
+	// Trip both and reset all
+	cb1.RecordFailure()
+	cb1.RecordFailure()
+	cb2 := p2.CircuitBreaker()
+	cb2.RecordFailure()
+	cb2.RecordFailure()
+
+	if !reg.ResetCircuit("all") {
+		t.Errorf("expected ResetCircuit('all') to succeed")
+	}
+	if cb1.State() != StateClosed || cb2.State() != StateClosed {
+		t.Errorf("expected both closed after reset all")
+	}
+
+	// Reset with empty string
+	if !reg.ResetCircuit("") {
+		t.Errorf("expected ResetCircuit('') to succeed")
+	}
+}

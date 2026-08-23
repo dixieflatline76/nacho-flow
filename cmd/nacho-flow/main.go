@@ -140,7 +140,14 @@ func (p *program) run(s service.Service) {
 	tracker := telemetry.NewStatsTrackerWithInitialSnapshot(5000, initialSnapshot)
 	p.tracker = tracker
 
-	// 4. Attach Streaming TrafficLogger sink for Auto-Tuner
+	// 4. Attach RingBuffer and EventBroker sinks for Management API (v0.6.0+)
+	ringBuffer := telemetry.NewRingBufferSink(500)
+	tracker.AddSink(ringBuffer)
+
+	eventBroker := telemetry.NewEventBroker()
+	tracker.AddSink(eventBroker)
+
+	// 5. Attach Streaming TrafficLogger sink for Auto-Tuner
 	trafficLogger, err := telemetry.NewTrafficLogger("", 5000)
 	if err == nil {
 		p.trafficLog = trafficLogger
@@ -168,6 +175,13 @@ func (p *program) run(s service.Service) {
 	classifier := router.NewClassifier()
 	sanitizer := router.NewSanitizer()
 	srvHandler := server.NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, reg, appLogger)
+	srvHandler.SetRingBuffer(ringBuffer)
+	srvHandler.SetEventBroker(eventBroker)
+	if *configPathFlag != "" {
+		srvHandler.SetConfigPath(*configPathFlag)
+	} else {
+		srvHandler.SetConfigPath(contract.DefaultConfigFileName)
+	}
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 	p.server = &http.Server{

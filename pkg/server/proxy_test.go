@@ -1442,3 +1442,124 @@ func TestProxy_NonStreaming_ReasonFieldAndEstimatorCalibration(t *testing.T) {
 		t.Errorf("Expected <think> wrapping reason field, got: %s", respBody)
 	}
 }
+
+func TestProxy_MissingProvider_FallbackToDefaultTier(t *testing.T) {
+	mockDefaultUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"fallback response"}}]}`))
+	}))
+	defer mockDefaultUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"default_prov": {BaseURL: mockDefaultUpstream.URL},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Missing Tier", Model: "m1", Provider: "non_existent_prov", When: "true"},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Fallback Tier",
+			Model:    "m_default",
+			Provider: "default_prov",
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"hello"}]}`))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 via fallback default tier, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "fallback response") {
+		t.Errorf("Expected fallback response body, got: %s", rec.Body.String())
+	}
+}
+
+func TestProxy_RecordTelemetry_VisionTier4(t *testing.T) {
+	tracker := telemetry.NewStatsTracker(100)
+	srv := &Server{
+		tracker: tracker,
+		oracle:  telemetry.NewPricingOracle(),
+	}
+
+	tier := contract.Tier{
+		Name:     "Vision High",
+		Model:    "gemini-vision",
+		Provider: "google",
+	}
+	p := provider.NewGenericLLMProvider("google", contract.ProviderConfig{Type: "cloud"})
+	reqCtx := contract.RequestContext{Tokens: 1000}
+
+	srv.recordTelemetry(tier, p, reqCtx, 200, time.Now(), false, slog.Default())
+
+	// Also local tier 1
+	pLocal := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{Type: "local"})
+	tierLocal := contract.Tier{Name: "Local Default", Model: "qwen", Provider: "ollama"}
+	srv.recordTelemetry(tierLocal, pLocal, reqCtx, 200, time.Now(), false, slog.Default())
+}
+
+func TestProxy_IsDefectiveEmptyContent_DeepBranches(t *testing.T) {
+	cases := [][]byte{
+		[]byte(`invalid json`),
+		[]byte(`{"choices":[]}`),
+		[]byte(`{"choices":["not-a-map"]}`),
+		[]byte(`{"choices":[{"message":"not-a-map"}]}`),
+		[]byte(`{"choices":[{"message":{"content":"","tool_calls":[],"reasoning":""}}]}`),
+	}
+
+	for _, c := range cases {
+		if !isDefectiveEmptyContent(c) && string(c) != "invalid json" {
+			t.Errorf("Expected defective true for %s", string(c))
+		}
+	}
+}
+
+func TestStreamNormalizer_Read_WhenClosed(t *testing.T) {
+	sn := NewStreamNormalizer(io.NopCloser(strings.NewReader("data: test\n\n")))
+	_ = sn.Close()
+
+	buf := make([]byte, 100)
+	n, err := sn.Read(buf)
+	if n != 0 || err != io.EOF {
+		t.Errorf("Expected 0, EOF when reading closed normalizer, got n=%d, err=%v", n, err)
+	}
+}
+
+func TestProxy_ServeHTTP_RoutingEdgeCases(t *testing.T) {
+	cfg := &contract.Config{Port: 8000}
+	evaluator, _ := strategy.NewExprEvaluator(nil, contract.Tier{Model: "default"})
+	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
+
+	// 1. Unknown /api/v1/ route -> 404
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/unknown-endpoint", nil)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for unknown api route, got %d", rec.Code)
+	}
+
+	// 2. Unknown general path -> 404
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/audio/transcriptions", strings.NewReader(`{}`))
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for unsupported non-chat route, got %d", rec.Code)
+	}
+
+	// 3. Method Not Allowed on chat completions -> 405
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/chat/completions", nil)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET /v1/chat/completions, got %d", rec.Code)
+	}
+}
+
+
+

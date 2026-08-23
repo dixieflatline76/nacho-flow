@@ -176,6 +176,14 @@ func TestApplyTuning_RenameDirectoryFailure(t *testing.T) {
 	}
 }
 
+func TestApplyTuning_EmptyConfigPath(t *testing.T) {
+	_, err := ApplyTuning("", &TuningResult{})
+	if err == nil {
+		t.Fatalf("Expected error when default config.yaml is missing, got nil")
+	}
+}
+
+
 func containsStr(s, substr string) bool {
 	return filepath.Base(s) != "" && len(s) >= len(substr) && (s == substr || (len(s) > 0 && len(substr) > 0 && searchSubstr(s, substr)))
 }
