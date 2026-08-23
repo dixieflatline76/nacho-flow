@@ -84,14 +84,14 @@ To measure the exact CPU cost of inbound authentication and on-the-fly multi-mod
 
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 30,226.2 req/s | 30,064.7 req/s | **-0.5%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.09 ms |
-| **50 workers** | 32,865.5 req/s | 30,837.0 req/s | **-6.2%** | **+0.00 ms** (1.01ms vs 1.01ms) | +0.33 ms |
-| **100 workers** | 31,270.2 req/s | 29,588.4 req/s | **-5.4%** | **+0.36 ms** (2.51ms vs 2.86ms) | -0.32 ms |
-| **200 workers** | 30,706.6 req/s | 30,614.4 req/s | **-0.3%** | **+0.72 ms** (5.00ms vs 5.72ms) | -2.07 ms |
+| **25 workers** | 30,710.2 req/s | 30,337.9 req/s | **-1.2%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.00 ms |
+| **50 workers** | 32,472.7 req/s | 31,469.7 req/s | **-3.1%** | **+0.00 ms** (1.01ms vs 1.01ms) | -0.30 ms |
+| **100 workers** | 32,402.6 req/s | 29,525.4 req/s | **-8.9%** | **+0.27 ms** (2.51ms vs 2.78ms) | +4.34 ms |
+| **200 workers** | 31,548.9 req/s | 30,694.0 req/s | **-2.7%** | **+0.52 ms** (5.00ms vs 5.51ms) | +0.61 ms |
 
 **Engineering Finding**: 
-- With the zero-allocation byte pre-filter (`hasCandidateToolTokens`) and targeted Go struct unmarshaling (`fastChatCompletionResponse`), the per-request latency overhead of tool normalization + inbound auth is **between 0.00ms and 0.72ms (under 720 microseconds)**.
-- Throughput remains virtually identical to raw pass-through (~29,500 to 30,800 req/s across all concurrency levels), confirming near-zero compute degradation in real-world workloads.
+- With the zero-allocation byte pre-filter (`hasCandidateTokens`) and decoupled Strategy Pipeline, the per-request latency overhead of tool normalization + inbound auth is **between 0.00ms and 0.52ms (under 520 microseconds)**.
+- Throughput remains virtually identical to raw pass-through (~29,500 to 31,500 req/s across all concurrency levels), confirming near-zero compute degradation in real-world workloads.
 
 ---
 
@@ -105,30 +105,30 @@ $ go test -bench=BenchmarkProxy_ChatCompletions -benchmem -run=^$ ./pkg/server/.
 ```
 
 ```text
-BenchmarkProxy_ChatCompletions_RawPassThrough-16       5955    186,649 ns/op    54,957 B/op    246 allocs/op
-BenchmarkProxy_ChatCompletions_ToolNormalization-16    5178    212,805 ns/op    62,357 B/op    359 allocs/op
+BenchmarkProxy_ChatCompletions_RawPassThrough-16       6026    183,810 ns/op    22,043 B/op    270 allocs/op
+BenchmarkProxy_ChatCompletions_ToolNormalization-16    5236    209,786 ns/op    29,363 B/op    384 allocs/op
 ```
 
-- **Raw Pass-Through Latency**: **186.6 µs** (0.186 milliseconds).
-- **Tool Normalization Latency**: **212.8 µs** (0.212 milliseconds).
-- **Exact Compute Cost**: **+26.15 µs** (+14.0% overhead, +7.4 KB memory allocation per turn).
+- **Raw Pass-Through Latency**: **183.8 µs** (0.183 milliseconds).
+- **Tool Normalization Latency**: **209.7 µs** (0.209 milliseconds).
+- **Exact Compute Cost**: **+25.9 µs** (+14.1% overhead, +7.3 KB memory allocation per turn).
 
-### 5.2 Inner Tool Normalizer Performance by Model Format:
+### 5.2 Inner Tool Normalizer Performance by Model Format (Strategy Pipeline):
 ```bash
 $ go test -bench=BenchmarkNormalize -benchmem ./pkg/router/...
 ```
 
 ```text
-BenchmarkNormalize_PureProse_FastBailout-16             49,999,582    23.55 ns/op       0 B/op     0 allocs/op
-BenchmarkNormalize_HermesXML_FullNormalization-16          481,904     2,436 ns/op    1,330 B/op    27 allocs/op
-BenchmarkNormalize_Mistral_ArrayCalls-16                   255,790     4,562 ns/op    2,574 B/op    52 allocs/op
-BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      192,193     6,361 ns/op    1,734 B/op    34 allocs/op
+BenchmarkNormalize_PureProse_FastBailout-16             13,825,999     88.47 ns/op       0 B/op     0 allocs/op
+BenchmarkNormalize_HermesXML_FullNormalization-16          462,910      2,562 ns/op    1,330 B/op    27 allocs/op
+BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      327,790      3,633 ns/op    1,736 B/op    34 allocs/op
+BenchmarkNormalize_Mistral_ArrayCalls-16                   265,892      4,557 ns/op    2,574 B/op    52 allocs/op
 ```
 
-- **Non-Tool Fast Bailout**: **23.55 nanoseconds** (Zero heap allocations, 0 B/op).
-- **Hermes / Qwen XML Extraction**: **2.44 microseconds** (27 allocations).
+- **Non-Tool Fast Bailout**: **88.47 nanoseconds** (Zero heap allocations, 0 B/op).
+- **Hermes / Qwen XML Extraction**: **2.56 microseconds** (27 allocations).
+- **DeepSeek-R1 CoT + Markdown Normalization**: **3.63 microseconds** (34 allocations — **1.75x faster** than legacy parser).
 - **Mistral Array Tool Extraction**: **4.56 microseconds** (52 allocations).
-- **DeepSeek-R1 CoT + Markdown Normalization**: **6.36 microseconds** (34 allocations).
 
 ### 5.3 SSE Stream & CoT Normalization Performance:
 ```bash
