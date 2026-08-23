@@ -363,6 +363,86 @@ func TestNormalize_InternalHelpers(t *testing.T) {
 	}
 }
 
+// 12. Bare JSON Output (Direct Ollama / Qwen response without code fences)
+func TestNormalize_BareJSON_OllamaOutput(t *testing.T) {
+	raw := "{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"docs/VSCODE_EXTENSION_SPEC.md\"\n  }\n}"
+
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true for bare JSON output, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "read_file" {
+		t.Errorf("Expected 'read_file', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(calls[0].Function.Arguments, "VSCODE_EXTENSION_SPEC.md") {
+		t.Errorf("Expected arguments to contain 'VSCODE_EXTENSION_SPEC.md', got '%s'", calls[0].Function.Arguments)
+	}
+	if strings.TrimSpace(cleaned) != "" {
+		t.Errorf("Expected empty cleaned content for pure tool JSON, got '%s'", cleaned)
+	}
+}
+
+// 13. Conversational Prefix + Bare JSON Output (Qwen conversational response)
+func TestNormalize_ConversationalPrefix_BareJSON(t *testing.T) {
+	raw := "Sure, I will read the file located at docs/VSCODE_EXTENSION_SPEC.md. Here is how I will call the function:\n\n{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"docs/VSCODE_EXTENSION_SPEC.md\"\n  }\n}"
+
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true for conversational bare JSON output, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "read_file" {
+		t.Errorf("Expected 'read_file', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(cleaned, "Sure, I will read the file") {
+		t.Errorf("Expected conversational text preserved in cleaned output, got '%s'", cleaned)
+	}
+}
+
+// 14. Bare JSON with parameters, nested function, and array format
+func TestNormalize_BareJSON_Variations(t *testing.T) {
+	// Format with parameters
+	rawParams := "{\"name\": \"search\", \"parameters\": {\"q\": \"golang\"}}"
+	_, calls1, ok1 := NormalizeMarkdownToolCalls(rawParams)
+	if !ok1 || len(calls1) != 1 || calls1[0].Function.Name != "search" {
+		t.Errorf("Failed to parse bare JSON with parameters: %+v", calls1)
+	}
+
+	// Format with nested function object
+	rawFn := "{\"function\": {\"name\": \"exec_cmd\", \"arguments\": {\"cmd\": \"ls\"}}}"
+	_, calls2, ok2 := NormalizeMarkdownToolCalls(rawFn)
+	if !ok2 || len(calls2) != 1 || calls2[0].Function.Name != "exec_cmd" {
+		t.Errorf("Failed to parse bare JSON with nested function: %+v", calls2)
+	}
+
+	// Format with array of tool calls
+	rawArr := "[{\"name\": \"t1\", \"arguments\": {\"a\": 1}}, {\"name\": \"t2\", \"arguments\": {\"b\": 2}}]"
+	_, calls3, ok3 := NormalizeMarkdownToolCalls(rawArr)
+	if !ok3 || len(calls3) != 2 {
+		t.Errorf("Failed to parse bare JSON array: %+v", calls3)
+	}
+
+	// Format with array using parameters and nested function
+	rawArrParams := "[{\"name\": \"t1\", \"parameters\": {\"a\": 1}}]"
+	_, calls4, ok4 := NormalizeMarkdownToolCalls(rawArrParams)
+	if !ok4 || len(calls4) != 1 {
+		t.Errorf("Failed to parse bare JSON array with parameters: %+v", calls4)
+	}
+
+	rawArrFn := "[{\"function\": {\"name\": \"t1\", \"arguments\": {\"a\": 1}}}]"
+	_, calls5, ok5 := NormalizeMarkdownToolCalls(rawArrFn)
+	if !ok5 || len(calls5) != 1 {
+		t.Errorf("Failed to parse bare JSON array with nested function: %+v", calls5)
+	}
+}
+
+
+
 // ---------------------------------------------------------------------------
 // Go Micro-Benchmarks (Nanosecond & Allocation Accuracy)
 // ---------------------------------------------------------------------------

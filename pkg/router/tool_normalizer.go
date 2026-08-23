@@ -37,7 +37,7 @@ func NormalizeMarkdownToolCalls(content string) (string, []RawToolCall, bool) {
 	}
 
 	// Fast pre-filter: if content has no candidate tokens, bail out in 1 CPU cycle without regex/parsing
-	if !strings.Contains(content, "<") && !strings.Contains(content, "[") && !strings.Contains(content, "`") && !strings.Contains(content, "Action:") {
+	if !strings.Contains(content, "<") && !strings.Contains(content, "[") && !strings.Contains(content, "`") && !strings.Contains(content, "Action:") && !strings.Contains(content, "{") {
 		return content, nil, false
 	}
 
@@ -240,6 +240,25 @@ func NormalizeMarkdownToolCalls(content string) (string, []RawToolCall, bool) {
 		}
 	}
 
+	// --- Parser 8: Bare JSON Object or Array (e.g. Qwen / Ollama direct output) ---
+	if len(extracted) == 0 {
+		if !strings.Contains(remainingContent, "<tool_call>") && !strings.Contains(remainingContent, "<function=") {
+			for i := 0; i < len(remainingContent); i++ {
+				if remainingContent[i] == '{' || remainingContent[i] == '[' {
+					rawJSON, startPos, endPos, ok := extractBalancedJSON(remainingContent, i)
+					if ok {
+						if tcs, parsed := parseBareJSONToolCall(rawJSON, len(extracted)+1); parsed {
+							extracted = append(extracted, tcs...)
+							remainingContent = remainingContent[:startPos] + remainingContent[endPos:]
+							i = startPos - 1
+							continue
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if len(extracted) == 0 {
 		return content, nil, false
 	}
@@ -307,6 +326,37 @@ func extractBalancedJSON(s string, startIdx int) (string, int, int, bool) {
 		}
 	}
 	return "", 0, 0, false
+}
+
+func parseBareJSONToolCall(rawJSON string, index int) ([]RawToolCall, bool) {
+	// For bare JSON in content, require that it explicitly contains "arguments" or "parameters" or nested "function"
+	// to avoid false-matching regular prose JSON dictionaries
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(rawJSON), &obj); err == nil {
+		if _, hasArgs := obj["arguments"]; hasArgs {
+			return parseToolCallsOrArray(rawJSON, index)
+		}
+		if _, hasParams := obj["parameters"]; hasParams {
+			return parseToolCallsOrArray(rawJSON, index)
+		}
+		if _, hasFn := obj["function"]; hasFn {
+			return parseToolCallsOrArray(rawJSON, index)
+		}
+	}
+	var arr []map[string]interface{}
+	if err := json.Unmarshal([]byte(rawJSON), &arr); err == nil && len(arr) > 0 {
+		first := arr[0]
+		if _, hasArgs := first["arguments"]; hasArgs {
+			return parseToolCallsOrArray(rawJSON, index)
+		}
+		if _, hasParams := first["parameters"]; hasParams {
+			return parseToolCallsOrArray(rawJSON, index)
+		}
+		if _, hasFn := first["function"]; hasFn {
+			return parseToolCallsOrArray(rawJSON, index)
+		}
+	}
+	return nil, false
 }
 
 func parseToolCallsOrArray(rawJSON string, baseIndex int) ([]RawToolCall, bool) {
