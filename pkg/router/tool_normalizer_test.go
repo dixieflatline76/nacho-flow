@@ -441,6 +441,66 @@ func TestNormalize_BareJSON_Variations(t *testing.T) {
 	}
 }
 
+// 15. Strategy Names & Direct Parser Invocation
+func TestStrategyNamesAndDirectExecution(t *testing.T) {
+	pipeline := NewDefaultPipeline()
+	if len(pipeline.parsers) != 8 {
+		t.Fatalf("Expected 8 registered parsers in default pipeline, got %d", len(pipeline.parsers))
+	}
+
+	for _, parser := range pipeline.parsers {
+		name := parser.Name()
+		if name == "" {
+			t.Errorf("Expected non-empty name for parser %T", parser)
+		}
+
+		// Verify try-and-fail-fast behavior with unmatched content
+		rem, calls, matched := parser.Parse("Non-matching plain prose text without tags.", 1)
+		if matched || len(calls) > 0 || rem != "Non-matching plain prose text without tags." {
+			t.Errorf("Parser %s failed to gracefully reject unmatched text", name)
+		}
+	}
+}
+
+// 16. Edge Cases for Balanced JSON Extractor
+func TestExtractBalancedJSON_EdgeCases(t *testing.T) {
+	// StartIdx beyond string length
+	if _, _, _, ok := extractBalancedJSON("{}", 10); ok {
+		t.Errorf("Expected false for startIdx beyond length")
+	}
+
+	// Leading non-JSON tokens
+	if _, _, _, ok := extractBalancedJSON("xyz", 0); ok {
+		t.Errorf("Expected false for non-JSON tokens")
+	}
+
+	// Whitespace only
+	if _, _, _, ok := extractBalancedJSON("   ", 0); ok {
+		t.Errorf("Expected false for whitespace only")
+	}
+
+	// Unclosed brackets
+	if _, _, _, ok := extractBalancedJSON("{ unclosed", 0); ok {
+		t.Errorf("Expected false for unclosed bracket")
+	}
+}
+
+// 17. Pipeline edge cases
+func TestNormalizerPipeline_EmptyAndNoMatch(t *testing.T) {
+	pipeline := NewDefaultPipeline()
+
+	// Empty string
+	if _, _, ok := pipeline.Normalize(""); ok {
+		t.Errorf("Expected false for empty content")
+	}
+
+	// Content with candidate token '<' but no matching parser
+	if _, _, ok := pipeline.Normalize("This is <not a tool tag> at all."); ok {
+		t.Errorf("Expected false for unmatched candidate token")
+	}
+}
+
+
 
 
 // ---------------------------------------------------------------------------

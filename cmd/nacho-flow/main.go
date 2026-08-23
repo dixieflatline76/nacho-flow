@@ -226,6 +226,7 @@ func (p *program) run(s service.Service) error {
 	)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		appLogger.Error("HTTP server error", slog.Any("error", err))
+		_ = p.Stop(s)
 		return err
 	}
 	return nil

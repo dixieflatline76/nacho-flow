@@ -322,6 +322,8 @@ default_tier:
 	if err := p.Stop(mock); err != nil {
 		t.Fatalf("Stop failed: %v", err)
 	}
+	*portFlag = 0
+	*configPathFlag = ""
 }
 
 func TestMain_Flags(t *testing.T) {
