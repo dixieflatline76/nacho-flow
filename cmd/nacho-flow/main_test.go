@@ -279,7 +279,7 @@ func TestProgram_FullLifecycle_WithOpenRouter(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "config.yaml")
 	cfgContent := `
-port: 59997
+port: 59981
 providers:
   openrouter:
     base_url: "http://127.0.0.1:11434"
@@ -297,7 +297,7 @@ default_tier:
 	}
 
 	*configPathFlag = cfgPath
-	*portFlag = 59997
+	*portFlag = 59981
 	p := &program{}
 
 	mock := &mockService{}
@@ -308,7 +308,7 @@ default_tier:
 	ready := false
 	for i := 0; i < 20; i++ {
 		time.Sleep(50 * time.Millisecond)
-		resp, err := http.Get("http://127.0.0.1:59997/api/v1/info")
+		resp, err := http.Get("http://127.0.0.1:59981/api/v1/info")
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			ready = true
@@ -427,6 +427,13 @@ tiers:
 	if err := runTune([]string{"-config", badCfgPath, "-traffic-log", trafficLogPath}); err == nil {
 		t.Errorf("expected error for bad tier expression in tune, got nil")
 	}
+
+	// Error path 4: unreadable traffic log (is a directory)
+	dirLogPath := filepath.Join(tmpDir, "dir_as_log")
+	_ = os.Mkdir(dirLogPath, 0755)
+	if err := runTune([]string{"-config", cfgPath, "-traffic-log", dirLogPath}); err == nil {
+		t.Errorf("expected error when traffic log is a directory, got nil")
+	}
 }
 
 func TestHandleServiceControl(t *testing.T) {
@@ -502,23 +509,33 @@ func TestProgram_Start_GoroutineErrorLogging(t *testing.T) {
 	mock := &mockService{}
 	tmpDir := t.TempDir()
 	badCfgPath := filepath.Join(tmpDir, "bad.yaml")
-	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: ''\ntiers:\n  - name: 'Bad'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
+	cfgContent := `
+port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+tiers:
+  - name: "Bad Tier"
+    provider: "ollama"
+    when: "invalid tier expression syntax !!!"
+`
+	_ = os.WriteFile(badCfgPath, []byte(cfgContent), 0600)
 	*configPathFlag = badCfgPath
 
-	// Test Start method
+	// 1. Test asyncRun with slog present
 	p := &program{
 		slog: slog.Default(),
 	}
+	p.asyncRun(mock)
+
+	// 2. Test asyncRun with slog nil
+	pNoLog := &program{}
+	pNoLog.asyncRun(mock)
+
+	// 3. Test Start method
 	if err := p.Start(mock); err != nil {
 		t.Errorf("expected nil error from Start, got: %v", err)
 	}
-
-	// Test asyncRun with slog present
-	p.asyncRun(mock)
-
-	// Test asyncRun with slog nil
-	pNoLog := &program{}
-	pNoLog.asyncRun(mock)
 	*configPathFlag = ""
 }
 
