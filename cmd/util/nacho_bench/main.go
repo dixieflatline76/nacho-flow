@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -306,6 +307,7 @@ func setupTestServer(enableAuth bool, simulateMarkdownTools bool, enableTrafficL
 }
 
 func main() {
+	debug.SetMaxThreads(50000)
 	fullFlag := flag.Bool("full", false, "Run 350,000-request high concurrency stress test (up to 1,000 workers)")
 	flag.Parse()
 

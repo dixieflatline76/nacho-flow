@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -34,26 +35,44 @@ func init() {
 }
 
 var (
-	configPathFlag = flag.String("config", "", "Path to config.yaml file")
-	portFlag       = flag.Int("port", 0, "Port to listen on (overrides config.yaml)")
-	logLevelFlag   = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
-	versionFlag    = flag.Bool("version", false, "Print version and exit")
-	vFlag          = flag.Bool("v", false, "Print version and exit")
+	configPathFlag    = flag.String("config", "", "Path to config.yaml file")
+	portFlag          = flag.Int("port", 0, "Port to listen on (overrides config.yaml)")
+	logLevelFlag      = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	versionFlag       = flag.Bool("version", false, "Print version and exit")
+	vFlag             = flag.Bool("v", false, "Print version and exit")
+	logFatal               = log.Fatal
+	applyTuningFunc        = tuner.ApplyTuning
+	serviceNewFunc         = service.New
+	serviceInteractiveFunc = service.Interactive
 )
 
 type program struct {
-	server     *http.Server
-	tracker    *telemetry.StatsTracker
-	store      *store.DiskStore
-	trafficLog *telemetry.TrafficLogger
-	logCloser  io.Closer
-	slog       *slog.Logger
-	cancelBg   context.CancelFunc
+	mu                sync.Mutex
+	server            *http.Server
+	tracker           *telemetry.StatsTracker
+	store             *store.DiskStore
+	trafficLog        *telemetry.TrafficLogger
+	logCloser         io.Closer
+	slog              *slog.Logger
+	cancelBg          context.CancelFunc
+	statsSyncInterval time.Duration
 }
 
 func (p *program) Start(s service.Service) error {
-	go p.run(s)
+	go p.asyncRun(s)
 	return nil
+}
+
+func (p *program) asyncRun(s service.Service) {
+	if err := p.run(s); err != nil {
+		p.mu.Lock()
+		sl := p.slog
+		p.mu.Unlock()
+		if sl == nil {
+			sl = slog.Default()
+		}
+		sl.Error("Fatal runtime error", slog.Any("error", err))
+	}
 }
 
 func parseLogLevel(lvl string) slog.Level {
@@ -69,29 +88,31 @@ func parseLogLevel(lvl string) slog.Level {
 	}
 }
 
-func (p *program) run(s service.Service) {
+func (p *program) run(s service.Service) error {
 	// Initialize Smart Logger based on Interactive vs Daemon mode
 	svcLogger, err := s.Logger(nil)
 	if err != nil {
 		log.Printf("Service Logger warning: %v", err)
 	}
 
-	appLogger, logCloser := telemetry.InitLogger(service.Interactive(), "logs", parseLogLevel(*logLevelFlag), svcLogger)
+	appLogger, logCloser := telemetry.InitLogger(serviceInteractiveFunc(), "logs", parseLogLevel(*logLevelFlag), svcLogger)
+	p.mu.Lock()
 	p.logCloser = logCloser
 	p.slog = appLogger
+	p.mu.Unlock()
 
 	cfg, err := config.LoadConfig(*configPathFlag)
 	if err != nil {
-		if service.Interactive() {
+		if serviceInteractiveFunc() {
 			fmt.Printf("\n🌮 Nacho Flow %s (https://spicebox.dev/nacho-flow/)\n\n", contract.Version)
 			fmt.Println("No configuration file found. To get started:")
 			fmt.Println("  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml")
 			fmt.Println("  2. Run 'nacho-flow -help' for available options.")
 			fmt.Println("  3. View documentation at https://spicebox.dev/nacho-flow/docs.html")
-			os.Exit(0)
+			return nil
 		}
 		appLogger.Error("Config load error", slog.Any("error", err))
-		os.Exit(1)
+		return err
 	}
 
 	if *portFlag != 0 {
@@ -101,7 +122,7 @@ func (p *program) run(s service.Service) {
 	evaluator, err := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
 	if err != nil {
 		appLogger.Error("Evaluator compile error", slog.Any("error", err))
-		os.Exit(1)
+		return err
 	}
 
 	// 1. Initialize Provider Registry from config
@@ -110,11 +131,10 @@ func (p *program) run(s service.Service) {
 	// 2. Setup Pricing Oracle with OpenRouter Plugin if configured
 	oracle := telemetry.NewPricingOracle()
 	if orProvider, ok := cfg.Providers["openrouter"]; ok {
-		oracle.RegisterProvider(telemetry.NewOpenRouterPricingProvider(orProvider.APIKey))
+		oracle.RegisterProvider(telemetry.NewOpenRouterPricingProviderWithURL(orProvider.BaseURL, orProvider.APIKey))
 	}
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
-	p.cancelBg = bgCancel
 	oracle.StartBackgroundSync(bgCtx, 24*time.Hour)
 
 	// 3. Setup Persistent Disk Store & Async Stats Tracker
@@ -122,7 +142,6 @@ func (p *program) run(s service.Service) {
 	if err != nil {
 		appLogger.Warn("Failed to initialize stats disk store, running with in-memory stats only", slog.Any("error", err))
 	}
-	p.store = diskStore
 
 	var initialSnapshot telemetry.StatsSnapshot
 	if diskStore != nil {
@@ -138,12 +157,18 @@ func (p *program) run(s service.Service) {
 	}
 
 	tracker := telemetry.NewStatsTrackerWithInitialSnapshot(5000, initialSnapshot)
-	p.tracker = tracker
 
-	// 4. Attach Streaming TrafficLogger sink for Auto-Tuner
-	trafficLogger, err := telemetry.NewTrafficLogger("", 5000)
+	// 4. Attach RingBuffer and EventBroker sinks for Management API (v0.6.0+)
+	ringBuffer := telemetry.NewRingBufferSink(500)
+	tracker.AddSink(ringBuffer)
+
+	eventBroker := telemetry.NewEventBroker()
+	tracker.AddSink(eventBroker)
+
+	// 5. Attach Streaming TrafficLogger sink for Auto-Tuner
+	var trafficLogger *telemetry.TrafficLogger
+	trafficLogger, err = telemetry.NewTrafficLogger("", 5000)
 	if err == nil {
-		p.trafficLog = trafficLogger
 		tracker.AddSink(trafficLogger)
 	} else {
 		appLogger.Warn("Failed to initialize traffic logger", slog.Any("error", err))
@@ -152,7 +177,11 @@ func (p *program) run(s service.Service) {
 	// Periodic stats sync to disk (every 1 minute)
 	if diskStore != nil {
 		go func() {
-			ticker := time.NewTicker(1 * time.Minute)
+			interval := p.statsSyncInterval
+			if interval == 0 {
+				interval = 1 * time.Minute
+			}
+			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for {
 				select {
@@ -168,78 +197,113 @@ func (p *program) run(s service.Service) {
 	classifier := router.NewClassifier()
 	sanitizer := router.NewSanitizer()
 	srvHandler := server.NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, reg, appLogger)
+	srvHandler.SetRingBuffer(ringBuffer)
+	srvHandler.SetEventBroker(eventBroker)
+	if *configPathFlag != "" {
+		srvHandler.SetConfigPath(*configPathFlag)
+	} else {
+		srvHandler.SetConfigPath(contract.DefaultConfigFileName)
+	}
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
-	p.server = &http.Server{
+	srv := &http.Server{
 		Addr:              addr,
 		Handler:           srvHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	p.mu.Lock()
+	p.cancelBg = bgCancel
+	p.store = diskStore
+	p.tracker = tracker
+	p.trafficLog = trafficLogger
+	p.server = srv
+	p.mu.Unlock()
 
 	appLogger.Info("🌮 Nacho Flow starting",
 		slog.String("address", fmt.Sprintf("http://%s", addr)),
 		slog.Int("providers_count", len(reg.All())),
 		slog.String("brand", "spicebox.dev"),
 	)
-	if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		appLogger.Error("HTTP server error", slog.Any("error", err))
+		_ = p.Stop(s)
+		return err
 	}
+	return nil
 }
 
 func (p *program) Stop(s service.Service) error {
-	if p.cancelBg != nil {
-		p.cancelBg()
+	p.mu.Lock()
+	cancelBg := p.cancelBg
+	srv := p.server
+	tracker := p.tracker
+	diskStore := p.store
+	trafficLog := p.trafficLog
+	logCloser := p.logCloser
+	p.mu.Unlock()
+
+	if cancelBg != nil {
+		cancelBg()
 	}
-	if p.server != nil {
+	if srv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = p.server.Shutdown(ctx)
+		_ = srv.Shutdown(ctx)
 	}
-	if p.tracker != nil {
-		p.tracker.Flush()
-		if p.store != nil {
-			_ = p.store.Save(p.tracker.GetStats())
+	if tracker != nil {
+		tracker.Flush()
+		if diskStore != nil {
+			_ = diskStore.Save(tracker.GetStats())
 		}
-		p.tracker.Close()
+		tracker.Close()
 	}
-	if p.trafficLog != nil {
-		_ = p.trafficLog.Close()
+	if trafficLog != nil {
+		_ = trafficLog.Close()
 	}
-	if p.logCloser != nil {
-		_ = p.logCloser.Close()
+	if logCloser != nil {
+		_ = logCloser.Close()
 	}
 	return nil
 }
 
 func handleTuneSubcommand(args []string) {
-	tuneFlags := flag.NewFlagSet("tune", flag.ExitOnError)
+	if err := runTune(args); err != nil {
+		logFatal(err)
+	}
+}
+
+func runTune(args []string) error {
+	tuneFlags := flag.NewFlagSet("tune", flag.ContinueOnError)
 	configPath := tuneFlags.String("config", "config.yaml", "Path to config.yaml file")
 	trafficLogPath := tuneFlags.String("traffic-log", "logs/traffic.jsonl", "Path to traffic log JSONL")
 	sampleLimit := tuneFlags.Int("sample", 5000, "Maximum historical prompt turns to analyze")
 	apply := tuneFlags.Bool("apply", false, "Apply recommended rule optimizations to config.yaml")
 
-	_ = tuneFlags.Parse(args)
+	if err := tuneFlags.Parse(args); err != nil {
+		return err
+	}
 
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config at %s: %v", *configPath, err)
+		return fmt.Errorf("failed to load config at %s: %w", *configPath, err)
 	}
 
 	records, err := telemetry.ReadRecords(*trafficLogPath, *sampleLimit)
 	if err != nil {
-		log.Fatalf("Failed to read traffic log at %s: %v", *trafficLogPath, err)
+		return fmt.Errorf("failed to read traffic log at %s: %w", *trafficLogPath, err)
 	}
 
 	if len(records) == 0 {
 		fmt.Printf("ℹ️  No historical traffic records found in %s.\n", *trafficLogPath)
 		fmt.Printf("   Run Nacho Flow under normal traffic to accumulate telemetry before tuning.\n")
-		return
+		return nil
 	}
 
 	optimizer := tuner.NewCostPenaltyOptimizer()
 	result, err := optimizer.Optimize(records, cfg)
 	if err != nil {
-		log.Fatalf("Optimization analysis failed: %v", err)
+		return fmt.Errorf("optimization analysis failed: %w", err)
 	}
 
 	// Generate and print human-readable report
@@ -247,34 +311,57 @@ func handleTuneSubcommand(args []string) {
 	fmt.Print(report)
 
 	if *apply {
-		backupPath, err := tuner.ApplyTuning(*configPath, result)
+		backupPath, err := applyTuningFunc(*configPath, result)
 		if err != nil {
-			log.Fatalf("Failed to apply tuning: %v", err)
+			return fmt.Errorf("failed to apply tuning: %w", err)
 		}
 		fmt.Printf("✅ SUCCESS: Successfully updated %s with optimal rules!\n", *configPath)
 		fmt.Printf("   Backup saved at: %s\n", backupPath)
 		fmt.Printf("   Restart or reload nacho-flow to activate changes.\n\n")
 	}
+	return nil
 }
 
-func main() {
-	if len(os.Args) > 1 {
-		cmd := os.Args[1]
+func handleServiceControl(s service.Service, args []string) (bool, error) {
+	if len(args) > 1 {
+		cmd := args[1]
+		if cmd == "service" || cmd == "svc" {
+			if len(args) > 2 {
+				subCmd := args[2]
+				if err := service.Control(s, subCmd); err != nil {
+					return true, fmt.Errorf("service control error (%s): %w", subCmd, err)
+				}
+				fmt.Printf("[nacho-flow] Service %s executed successfully.\n", subCmd)
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+var (
+	serviceControlRunner = handleServiceControl
+	defaultServiceRunner = func(s service.Service) error {
+		setupShutdownSignal(s)
+		return s.Run()
+	}
+)
+
+func runMain(args []string, serviceRunner func(service.Service) error) error {
+	if len(args) > 1 {
+		cmd := args[1]
 		switch cmd {
 		case "version", "-v", "--version":
 			fmt.Printf("nacho-flow %s (spicebox.dev/nacho-flow)\n", contract.Version)
-			return
+			return nil
 		case "tune":
-			handleTuneSubcommand(os.Args[2:])
-			return
+			return runTune(args[2:])
 		}
 	}
 
-	flag.Parse()
-
 	if *versionFlag || *vFlag {
 		fmt.Printf("nacho-flow %s (spicebox.dev/nacho-flow)\n", contract.Version)
-		return
+		return nil
 	}
 
 	svcConfig := &service.Config{
@@ -284,41 +371,38 @@ func main() {
 	}
 
 	prg := &program{}
-	s, err := service.New(prg, svcConfig)
+	s, err := serviceNewFunc(prg, svcConfig)
 	if err != nil {
-		log.Fatalf("[nacho-flow] Service initialization error: %v", err)
+		return fmt.Errorf("service initialization error: %w", err)
 	}
 
 	// Handle service commands (install, uninstall, start, stop)
-	if len(os.Args) > 1 {
-		cmd := os.Args[1]
-		switch cmd {
-		case "service", "svc":
-			if len(os.Args) > 2 {
-				subCmd := os.Args[2]
-				err := service.Control(s, subCmd)
-				if err != nil {
-					// #nosec G706 - subCmd is a direct CLI flag for service control
-					log.Fatalf("[nacho-flow] Service control error (%s): %v", subCmd, err)
-				}
-				fmt.Printf("[nacho-flow] Service %s executed successfully.\n", subCmd)
-				return
-			}
-		}
+	if handled, err := serviceControlRunner(s, args); handled {
+		return err
 	}
 
-	// Handle graceful shutdown signals
+	if serviceRunner != nil {
+		return serviceRunner(s)
+	}
+
+	return defaultServiceRunner(s)
+}
+
+func setupShutdownSignal(s service.Service) chan os.Signal {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-sigChan
-		log.Println("[nacho-flow] Received shutdown signal, stopping...")
-		_ = s.Stop()
-		os.Exit(0)
+		if _, ok := <-sigChan; ok {
+			log.Println("[nacho-flow] Received shutdown signal, stopping...")
+			_ = s.Stop()
+		}
 	}()
+	return sigChan
+}
 
-	err = s.Run()
-	if err != nil {
-		log.Fatal(err)
+func main() {
+	flag.Parse()
+	if err := runMain(os.Args, nil); err != nil {
+		logFatal(err)
 	}
 }

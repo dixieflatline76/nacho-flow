@@ -182,6 +182,28 @@ func TestNormalize_FourBackticksMarkdown(t *testing.T) {
 	}
 }
 
+// 9b. Multiple Fences: Code example followed by valid tool call fence
+func TestNormalize_MultipleFences_CodeExampleFollowedByToolCall(t *testing.T) {
+	raw := "Here is the python script to run:\n```python\ndef test():\n    print(\"hello\")\n```\nNow I will invoke the command tool:\n```json\n{\n  \"name\": \"run_command\",\n  \"arguments\": {\"command\": \"python main.py\"}\n}\n```\nPlease approve."
+
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "run_command" {
+		t.Errorf("Expected 'run_command', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(cleaned, "def test():") || !strings.Contains(cleaned, "print(\"hello\")") {
+		t.Errorf("Expected python code example preserved in cleaned text, got: %s", cleaned)
+	}
+	if strings.Contains(cleaned, "\"run_command\"") {
+		t.Errorf("Expected tool call fence stripped from cleaned text")
+	}
+}
+
 // 10. Stringified JSON in Arguments
 func TestNormalize_StringifiedArguments(t *testing.T) {
 	raw := "```json\n{\n  \"name\": \"update_config\",\n  \"arguments\": \"{\\\"port\\\": 8000}\"\n}\n```"
@@ -362,6 +384,146 @@ func TestNormalize_InternalHelpers(t *testing.T) {
 		t.Errorf("Expected false for invalid JSON in parseSingleToolCall")
 	}
 }
+
+// 12. Bare JSON Output (Direct Ollama / Qwen response without code fences)
+func TestNormalize_BareJSON_OllamaOutput(t *testing.T) {
+	raw := "{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"docs/VSCODE_EXTENSION_SPEC.md\"\n  }\n}"
+
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true for bare JSON output, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "read_file" {
+		t.Errorf("Expected 'read_file', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(calls[0].Function.Arguments, "VSCODE_EXTENSION_SPEC.md") {
+		t.Errorf("Expected arguments to contain 'VSCODE_EXTENSION_SPEC.md', got '%s'", calls[0].Function.Arguments)
+	}
+	if strings.TrimSpace(cleaned) != "" {
+		t.Errorf("Expected empty cleaned content for pure tool JSON, got '%s'", cleaned)
+	}
+}
+
+// 13. Conversational Prefix + Bare JSON Output (Qwen conversational response)
+func TestNormalize_ConversationalPrefix_BareJSON(t *testing.T) {
+	raw := "Sure, I will read the file located at docs/VSCODE_EXTENSION_SPEC.md. Here is how I will call the function:\n\n{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"docs/VSCODE_EXTENSION_SPEC.md\"\n  }\n}"
+
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true for conversational bare JSON output, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "read_file" {
+		t.Errorf("Expected 'read_file', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(cleaned, "Sure, I will read the file") {
+		t.Errorf("Expected conversational text preserved in cleaned output, got '%s'", cleaned)
+	}
+}
+
+// 14. Bare JSON with parameters, nested function, and array format
+func TestNormalize_BareJSON_Variations(t *testing.T) {
+	// Format with parameters
+	rawParams := "{\"name\": \"search\", \"parameters\": {\"q\": \"golang\"}}"
+	_, calls1, ok1 := NormalizeMarkdownToolCalls(rawParams)
+	if !ok1 || len(calls1) != 1 || calls1[0].Function.Name != "search" {
+		t.Errorf("Failed to parse bare JSON with parameters: %+v", calls1)
+	}
+
+	// Format with nested function object
+	rawFn := "{\"function\": {\"name\": \"exec_cmd\", \"arguments\": {\"cmd\": \"ls\"}}}"
+	_, calls2, ok2 := NormalizeMarkdownToolCalls(rawFn)
+	if !ok2 || len(calls2) != 1 || calls2[0].Function.Name != "exec_cmd" {
+		t.Errorf("Failed to parse bare JSON with nested function: %+v", calls2)
+	}
+
+	// Format with array of tool calls
+	rawArr := "[{\"name\": \"t1\", \"arguments\": {\"a\": 1}}, {\"name\": \"t2\", \"arguments\": {\"b\": 2}}]"
+	_, calls3, ok3 := NormalizeMarkdownToolCalls(rawArr)
+	if !ok3 || len(calls3) != 2 {
+		t.Errorf("Failed to parse bare JSON array: %+v", calls3)
+	}
+
+	// Format with array using parameters and nested function
+	rawArrParams := "[{\"name\": \"t1\", \"parameters\": {\"a\": 1}}]"
+	_, calls4, ok4 := NormalizeMarkdownToolCalls(rawArrParams)
+	if !ok4 || len(calls4) != 1 {
+		t.Errorf("Failed to parse bare JSON array with parameters: %+v", calls4)
+	}
+
+	rawArrFn := "[{\"function\": {\"name\": \"t1\", \"arguments\": {\"a\": 1}}}]"
+	_, calls5, ok5 := NormalizeMarkdownToolCalls(rawArrFn)
+	if !ok5 || len(calls5) != 1 {
+		t.Errorf("Failed to parse bare JSON array with nested function: %+v", calls5)
+	}
+}
+
+// 15. Strategy Names & Direct Parser Invocation
+func TestStrategyNamesAndDirectExecution(t *testing.T) {
+	pipeline := NewDefaultPipeline()
+	if len(pipeline.parsers) != 8 {
+		t.Fatalf("Expected 8 registered parsers in default pipeline, got %d", len(pipeline.parsers))
+	}
+
+	for _, parser := range pipeline.parsers {
+		name := parser.Name()
+		if name == "" {
+			t.Errorf("Expected non-empty name for parser %T", parser)
+		}
+
+		// Verify try-and-fail-fast behavior with unmatched content
+		rem, calls, matched := parser.Parse("Non-matching plain prose text without tags.", 1)
+		if matched || len(calls) > 0 || rem != "Non-matching plain prose text without tags." {
+			t.Errorf("Parser %s failed to gracefully reject unmatched text", name)
+		}
+	}
+}
+
+// 16. Edge Cases for Balanced JSON Extractor
+func TestExtractBalancedJSON_EdgeCases(t *testing.T) {
+	// StartIdx beyond string length
+	if _, _, _, ok := extractBalancedJSON("{}", 10); ok {
+		t.Errorf("Expected false for startIdx beyond length")
+	}
+
+	// Leading non-JSON tokens
+	if _, _, _, ok := extractBalancedJSON("xyz", 0); ok {
+		t.Errorf("Expected false for non-JSON tokens")
+	}
+
+	// Whitespace only
+	if _, _, _, ok := extractBalancedJSON("   ", 0); ok {
+		t.Errorf("Expected false for whitespace only")
+	}
+
+	// Unclosed brackets
+	if _, _, _, ok := extractBalancedJSON("{ unclosed", 0); ok {
+		t.Errorf("Expected false for unclosed bracket")
+	}
+}
+
+// 17. Pipeline edge cases
+func TestNormalizerPipeline_EmptyAndNoMatch(t *testing.T) {
+	pipeline := NewDefaultPipeline()
+
+	// Empty string
+	if _, _, ok := pipeline.Normalize(""); ok {
+		t.Errorf("Expected false for empty content")
+	}
+
+	// Content with candidate token '<' but no matching parser
+	if _, _, ok := pipeline.Normalize("This is <not a tool tag> at all."); ok {
+		t.Errorf("Expected false for unmatched candidate token")
+	}
+}
+
+
+
 
 // ---------------------------------------------------------------------------
 // Go Micro-Benchmarks (Nanosecond & Allocation Accuracy)

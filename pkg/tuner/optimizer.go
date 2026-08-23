@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"context"
 	"sort"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -150,4 +151,25 @@ func containsAny(slice []string, targets ...string) bool {
 		}
 	}
 	return false
+}
+
+// OptimizeWithContext executes the optimization algorithm respecting context cancellation/timeout.
+func (opt *CostPenaltyOptimizer) OptimizeWithContext(ctx context.Context, records []telemetry.TurnRecord, currentConfig *contract.Config) (*TuningResult, error) {
+	type resultPair struct {
+		res *TuningResult
+		err error
+	}
+	done := make(chan resultPair, 1)
+
+	go func() {
+		res, err := opt.Optimize(records, currentConfig)
+		done <- resultPair{res: res, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-done:
+		return r.res, r.err
+	}
 }

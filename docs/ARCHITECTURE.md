@@ -101,17 +101,19 @@ Every incoming request passes through an optimized multi-stage processing pipeli
   - Automatically transforms `reasoning_content` / `reasoning` tokens, Qwen `<|im_start|>think` / `<|im_start|>thought`, and Claude `<thinking>...</thinking>` tags into standard `<think>...</think>` tags inside `delta.content` in real-time.
   - Automatically closes the `<think>` accordion upon transition to final answer, tool calls, `[DONE]`, `finish_reason`, or abrupt `io.EOF`.
 
-### Stage 5c: Universal Multi-Model Tool Normalization (`pkg/router/tool_normalizer.go`)
-- **Zero-Alloc Fast Path**: If `reqCtx.HasTools` is false or the raw response bytes do not contain candidate tool markers, the parser bails out in **23.5 nanoseconds** with zero allocations.
-- **Lexical Bracket Balancing**: When a local model outputs embedded tool calls in markdown or XML, `extractBalancedJSON` scans byte tokens to detect the true balanced boundaries of `{}` and `[]` structures without regex truncation bugs.
-- **7 Model Format Families Supported**:
-  1. *Hermes / Nous / Qwen ChatML*: `<tool_call>...</tool_call>`
-  2. *Mistral / Mixtral*: `[TOOL_CALLS] [...]`
-  3. *Llama 3*: `<function=name>{...}</function>`
-  4. *Llama 3.1*: `<|python_tag|>name.call(k=v)`
-  5. *Claude XML*: `<function_calls><invoke name="...">`
+### Stage 5c: Universal Strategy-Pipeline Tool Normalization (`pkg/router/tool_normalizer.go`)
+- **Zero-Alloc Fast Path**: If `reqCtx.HasTools` is false or the raw response bytes do not contain candidate syntax anchors (`<[{` or `Action:`), `hasCandidateTokens` exits in **< 30 nanoseconds** with 0 heap allocations (`0 B/op, 0 allocs/op`).
+- **Modular Strategy Pattern**: Decoupled into `ToolParser` strategy implementations evaluated in a prioritized fail-fast pipeline (`NormalizerPipeline`).
+- **Lexical Bracket Balancing**: When a local model outputs embedded tool calls in markdown, XML, or bare JSON, `extractBalancedJSON` scans byte tokens to detect the true balanced boundaries of `{}` and `[]` structures without regex truncation bugs.
+- **8 Model Format Families Supported**:
+  1. *Hermes / Nous / Qwen XML*: `<tool_call>{"name": "...", "arguments": {...}}</tool_call>`
+  2. *Mistral / Mixtral*: `[TOOL_CALLS] [{"name": "...", "arguments": {...}}]`
+  3. *Llama 3*: `<function=name>{"path": "..."}</function>`
+  4. *Llama 3.1 Python*: `<|python_tag|>name.call(k=v)`
+  5. *Claude XML*: `<function_calls><invoke name="...">...<parameter name="...">`
   6. *ReAct / LangChain*: `Action: ...\nAction Input: ...`
-  7. *DeepSeek-R1 CoT*: Preserves `<think>...</think>` reasoning while extracting markdown code blocks.
+  7. *Markdown Code Fences*: ` ```json\n{"name": "..."}\n``` ` (with 3 or 4 backticks, preserving `<think>` CoT blocks)
+  8. *Bare JSON Object/Array*: Direct Ollama/Qwen JSON completions with conversational preambles (`{"name": "...", "arguments": {...}}`).
 - **OpenAI Conformance**: Converts extracted tools into strict OpenAI `tool_calls` structures with stringified `arguments`, updates `finish_reason` to `"tool_calls"`, and recalculates `Content-Length`.
 
 ### Stage 6: Telemetry Calibration & Lock-Free Pricing (`pkg/router/estimator.go`, `pkg/telemetry/pricing.go`)

@@ -87,7 +87,7 @@ make build
 
 Nacho Flow follows strict **Test-Driven Development (TDD)** and quality standards:
 - **TDD Workflow**: Write failing tests first (`Red`), implement minimal clean code (`Green`), and refactor.
-- **Coverage Gate**: Every individual package must maintain $\ge 90\%$ statement coverage (repository target $\ge 96\%$).
+- **Coverage Gate**: Every individual package must maintain $\ge 95\%$ statement coverage (repository target $\ge 96\%$).
 - **Zero Anti-Patterns**: Lock-free atomic synchronization on hot paths (`sync/atomic.Pointer`), zero detached background goroutine leaks (lazy TTL eviction), and zero external dependencies.
 
 ```bash

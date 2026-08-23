@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -18,19 +20,114 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+	"github.com/dixieflatline76/nacho-flow/pkg/tuner"
 )
 
+type runtimeState struct {
+	config    *contract.Config
+	evaluator contract.Evaluator
+	registry  *provider.Registry
+}
+
 type Server struct {
-	config         *contract.Config
-	evaluator      contract.Evaluator
+	state          atomic.Pointer[runtimeState]
 	classifier     contract.Classifier
 	sanitizer      contract.Sanitizer
 	oracle         *telemetry.PricingOracle
 	tracker        *telemetry.StatsTracker
-	registry       *provider.Registry
 	sessionTracker *router.SessionTracker
 	logger         *slog.Logger
 	transport      *http.Transport
+	ringBuffer     *telemetry.RingBufferSink
+	eventBroker    *telemetry.EventBroker
+	tuner          *tuner.CostPenaltyOptimizer
+	configPath     string
+	startTime      time.Time
+	mementoState   *runtimeState
+	watchdogMu     sync.Mutex
+	watchdogActive bool
+	watchdogErrors atomic.Int32
+}
+
+// GetConfig returns the current active configuration atomically.
+func (s *Server) GetConfig() *contract.Config {
+	if st := s.state.Load(); st != nil && st.config != nil {
+		return st.config
+	}
+	return &contract.Config{}
+}
+
+// GetEvaluator returns the current active tier evaluator atomically.
+func (s *Server) GetEvaluator() contract.Evaluator {
+	if st := s.state.Load(); st != nil && st.evaluator != nil {
+		return st.evaluator
+	}
+	return nil
+}
+
+// GetRegistry returns the current active provider registry atomically.
+func (s *Server) GetRegistry() *provider.Registry {
+	if st := s.state.Load(); st != nil && st.registry != nil {
+		return st.registry
+	}
+	return nil
+}
+
+// SetRingBuffer attaches a ring buffer sink for /api/v1/routes.
+func (s *Server) SetRingBuffer(rb *telemetry.RingBufferSink) {
+	s.ringBuffer = rb
+}
+
+// SetEventBroker attaches an SSE event broker for /api/v1/events.
+func (s *Server) SetEventBroker(eb *telemetry.EventBroker) {
+	s.eventBroker = eb
+}
+
+// SetConfigPath sets the path to config.yaml on disk.
+func (s *Server) SetConfigPath(path string) {
+	s.configPath = path
+}
+
+// SetTuner sets the optimizer for /api/v1/tune.
+func (s *Server) SetTuner(t *tuner.CostPenaltyOptimizer) {
+	s.tuner = t
+}
+
+func (s *Server) armWatchdog(memento *runtimeState, duration time.Duration) {
+	if memento == nil {
+		return
+	}
+	s.watchdogMu.Lock()
+	s.mementoState = memento
+	s.watchdogActive = true
+	s.watchdogErrors.Store(0)
+	s.watchdogMu.Unlock()
+
+	go func() {
+		time.Sleep(duration)
+		s.watchdogMu.Lock()
+		defer s.watchdogMu.Unlock()
+		s.watchdogActive = false
+		s.mementoState = nil
+	}()
+}
+
+func (s *Server) recordProxyError() {
+	s.watchdogMu.Lock()
+	defer s.watchdogMu.Unlock()
+	if !s.watchdogActive || s.mementoState == nil {
+		return
+	}
+	if s.watchdogErrors.Add(1) >= 3 {
+		s.logger.Warn("Watchdog triggered: 3 consecutive upstream failures after config reload. Rolling back to previous configuration snapshot.")
+		s.state.Store(s.mementoState)
+		s.watchdogActive = false
+		s.mementoState = nil
+	}
+}
+
+func (s *Server) recordProxySuccess() {
+	s.watchdogErrors.Store(0)
 }
 
 // NewServer creates a Server with default telemetry, registry, and logging components.
@@ -102,18 +199,25 @@ func NewServerWithTelemetryAndRegistry(
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
-	return &Server{
-		config:         cfg,
-		evaluator:      eval,
+	srv := &Server{
 		classifier:     class,
 		sanitizer:      san,
 		oracle:         oracle,
 		tracker:        tracker,
-		registry:       reg,
 		sessionTracker: router.NewSessionTracker(5 * time.Minute),
 		logger:         logger,
 		transport:      transport,
+		tuner:          tuner.NewCostPenaltyOptimizer(),
+		startTime:      time.Now(),
 	}
+
+	srv.state.Store(&runtimeState{
+		config:    cfg,
+		evaluator: eval,
+		registry:  reg,
+	})
+
+	return srv
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -126,12 +230,55 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Discovery endpoint (public)
+	if r.URL.Path == contract.PathAPIInfo {
+		s.handleAPIInfo(w, r)
+		return
+	}
+
+	// CORS Preflight for any management route
+	if strings.HasPrefix(r.URL.Path, "/api/v1/") && r.Method == http.MethodOptions {
+		if s.setCORS(w, r) {
+			return
+		}
+	}
+
 	// 0. Inbound Client Authentication (Dual-layer security for LAN / Tailscale)
-	if s.config.AuthToken != "" && !s.authenticateClient(r) {
+	if s.GetConfig().AuthToken != "" && !s.authenticateClient(r) {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"Invalid or missing gateway API key","type":"auth_error","code":"invalid_api_key"}}`))
 		return
+	}
+
+	// Management REST API Endpoints (v0.6.0+)
+	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+		switch r.URL.Path {
+		case contract.PathAPIEvents:
+			s.handleAPIEvents(w, r)
+			return
+		case contract.PathAPIRoutes:
+			s.handleAPIRoutes(w, r)
+			return
+		case contract.PathAPICircuits:
+			s.handleAPICircuits(w, r)
+			return
+		case contract.PathAPICircuitsReset:
+			s.handleAPICircuitsReset(w, r)
+			return
+		case contract.PathAPIPricing:
+			s.handleAPIPricing(w, r)
+			return
+		case contract.PathAPIConfig:
+			s.handleAPIConfig(w, r)
+			return
+		case contract.PathAPITune:
+			s.handleAPITune(w, r)
+			return
+		default:
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
 	}
 
 	// Expose /v1/stats endpoint
@@ -197,10 +344,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqCtx.IsRetry = isRetry
 
 	// 3. Evaluate 1..N tiers using expr engine
-	targetTier, err := s.evaluator.SelectTier(reqCtx)
+	targetTier, err := s.GetEvaluator().SelectTier(reqCtx)
 	if err != nil {
 		reqLogger.Error("Error evaluating tier, falling back to default", slog.Any("error", err))
-		targetTier = s.config.DefaultTier
+		targetTier = s.GetConfig().DefaultTier
 	}
 
 	reqLogger.Info("Routing request",
@@ -240,22 +387,29 @@ func (s *Server) dispatchTier(
 	isFallback bool,
 ) {
 	// Check Circuit Breaker before connecting
-	targetProvider, exists := s.registry.Get(targetTier.Provider)
+	reg := s.GetRegistry()
+	var targetProvider provider.LLMProvider
+	var exists bool
+	if reg != nil {
+		targetProvider, exists = reg.Get(targetTier.Provider)
+	}
+
+	defaultTier := s.GetConfig().DefaultTier
 	if exists && !s.allowProvider(targetProvider) {
 		reqLogger.Warn("Target provider circuit breaker OPEN, bypassing to default tier",
 			slog.String("provider", targetTier.Provider),
 			slog.String("tier", targetTier.Name),
 		)
-		if !isFallback && s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
-			s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+		if !isFallback && defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+			s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
 			return
 		}
 	}
 
 	if !exists {
 		reqLogger.Error("Target provider not found in registry", slog.String("provider", targetTier.Provider))
-		if !isFallback && s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
-			s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+		if !isFallback && defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+			s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
 			return
 		}
 		http.Error(w, fmt.Sprintf("Provider not found: %s", targetTier.Provider), http.StatusBadGateway)
@@ -322,6 +476,7 @@ func (s *Server) dispatchTier(
 	resp, err := s.transport.RoundTrip(outReq)
 	if err != nil || (resp != nil && resp.StatusCode >= 500) {
 		s.recordProviderFailure(targetProvider)
+		s.recordProxyError()
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
@@ -330,9 +485,9 @@ func (s *Server) dispatchTier(
 			slog.String("provider", targetTier.Provider),
 			slog.Any("error", err),
 		)
-		if !isFallback && s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
-			reqLogger.Info("Retrying with default fallback tier", slog.String("fallback_tier", s.config.DefaultTier.Name))
-			s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+		if !isFallback && defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+			reqLogger.Info("Retrying with default fallback tier", slog.String("fallback_tier", defaultTier.Name))
+			s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
 			return
 		}
 		http.Error(w, fmt.Sprintf("Proxy error: %v", err), http.StatusBadGateway)
@@ -353,13 +508,14 @@ func (s *Server) dispatchTier(
 			reqLogger.Warn("Local provider returned empty stream, failing over to cloud fallback tier",
 				slog.String("tier", targetTier.Name),
 			)
-			if s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
-				s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+			if defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+				s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
 				return
 			}
 		}
 
 		s.recordProviderSuccess(targetProvider)
+		s.recordProxySuccess()
 
 		// Copy headers to client
 		for k, vv := range resp.Header {
@@ -392,6 +548,7 @@ func (s *Server) dispatchTier(
 	bodyBytes, readErr := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if readErr != nil {
+		s.recordProxyError()
 		http.Error(w, "Failed to read upstream response", http.StatusBadGateway)
 		return
 	}
@@ -401,13 +558,14 @@ func (s *Server) dispatchTier(
 		reqLogger.Warn("Local provider returned defective empty content, failing over to cloud fallback tier",
 			slog.String("tier", targetTier.Name),
 		)
-		if s.config.DefaultTier.Provider != "" && targetTier.Name != s.config.DefaultTier.Name {
-			s.dispatchTier(w, r, reqCtx, s.config.DefaultTier, body, startTime, reqLogger, true)
+		if defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+			s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
 			return
 		}
 	}
 
 	s.recordProviderSuccess(targetProvider)
+	s.recordProxySuccess()
 
 	// Normalize non-streaming tools & reasoning
 	if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeJSON) {
@@ -610,7 +768,7 @@ func singleJoiningSlash(a, b string) string {
 
 // authenticateClient checks if the incoming request carries a valid Bearer token or API key.
 func (s *Server) authenticateClient(r *http.Request) bool {
-	expected := s.config.AuthToken
+	expected := s.GetConfig().AuthToken
 	if expected == "" {
 		return true
 	}

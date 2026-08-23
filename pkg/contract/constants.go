@@ -32,6 +32,16 @@ const (
 	PathModels          = "/v1/models"
 	PathChatCompletions = "/v1/chat/completions"
 	PathCompletions     = "/v1/completions"
+
+	// Management REST API endpoint routes (v0.6.0+).
+	PathAPIInfo          = "/api/v1/info"
+	PathAPIEvents        = "/api/v1/events"
+	PathAPIRoutes        = "/api/v1/routes"
+	PathAPICircuits      = "/api/v1/circuits"
+	PathAPICircuitsReset = "/api/v1/circuits/reset"
+	PathAPIPricing       = "/api/v1/pricing"
+	PathAPIConfig        = "/api/v1/config"
+	PathAPITune          = "/api/v1/tune"
 )
 
 // File system and environment variable defaults.

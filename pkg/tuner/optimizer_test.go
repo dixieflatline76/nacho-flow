@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -219,6 +220,25 @@ func TestDistiller_InvalidThreshold(t *testing.T) {
 	}
 }
 
+func TestOptimizer_OptimizeWithContext(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+
+	// 1. Success case
+	ctx := context.Background()
+	res, err := optimizer.OptimizeWithContext(ctx, nil, &contract.Config{})
+	if err != nil || res == nil {
+		t.Fatalf("expected success on background context, got err: %v", err)
+	}
+
+	// 2. Already cancelled context
+	cancCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = optimizer.OptimizeWithContext(cancCtx, nil, &contract.Config{})
+	if err == nil {
+		t.Fatalf("expected error on cancelled context, got nil")
+	}
+}
+
 func NewOptimizerForTest() *CostPenaltyOptimizer {
 	return &CostPenaltyOptimizer{
 		MinOccurrences:      10,
@@ -227,3 +247,4 @@ func NewOptimizerForTest() *CostPenaltyOptimizer {
 		RetryPenaltyUSD:     2.00,
 	}
 }
+

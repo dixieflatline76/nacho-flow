@@ -6,12 +6,12 @@ This document details the performance characteristics, load-testing methodology,
 
 ## 1. Executive Summary
 
-- **Peak Throughput**: **32,254 requests/second** (~1.93 million requests/minute).
-- **Pipeline Latency**: **~0.29 ms** (299 microseconds) end-to-end overhead per request.
+- **Peak Throughput**: **32,472 requests/second** (~1.95 million requests/minute).
+- **Pipeline Latency**: **~0.18 ms** (183 microseconds) end-to-end overhead per request.
 - **Extreme Concurrency**: Handled **1,000 parallel workers** with **100.0% success rate** (0 dropped connections, 0 errors).
-- **Memory Footprint**: Peak heap memory remained under **96 MB** while sustaining 1,000 concurrent client streams.
+- **Memory Footprint**: Peak heap memory remained under **105 MB** sustaining up to 500 concurrent client streams.
 - **Telemetry Integrity**: Aggregated **350,000 live proxy events** with **zero race conditions** and **zero data drops**.
-- **Real-World Complex Workloads**: Maintains **~28,900 req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek bracket balancing).
+- **Real-World Complex Workloads**: Maintains **~30,600 req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek/Bare-JSON Strategy Pipeline).
 
 ---
 
@@ -42,30 +42,30 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 ========================================================================================
 
 ▶ [STAGE 1/5] Running 25,000 requests across 50 concurrent workers...
-   ✓ Done in 0.90s | RPS: 27,903.5 | P50: 1.06ms | P99: 6.88ms  | Heap: 48.2 MB | Success: 25,000/25,000 (Fail: 0)
+   ✓ Done in 0.89s | RPS: 28,008.2 | P50: 1.01ms | P99: 8.24ms  | Heap: 41.4 MB | Success: 25,000/25,000 (Fail: 0)
 
 ▶ [STAGE 2/5] Running 50,000 requests across 100 concurrent workers...
-   ✓ Done in 1.64s | RPS: 30,410.8 | P50: 2.71ms | P99: 14.04ms | Heap: 61.1 MB | Success: 50,000/50,000 (Fail: 0)
+   ✓ Done in 1.66s | RPS: 30,050.8 | P50: 3.00ms | P99: 12.80ms | Heap: 52.6 MB | Success: 50,000/50,000 (Fail: 0)
 
 ▶ [STAGE 3/5] Running 75,000 requests across 250 concurrent workers...
-   ✓ Done in 2.55s | RPS: 29,448.6 | P50: 7.00ms | P99: 31.01ms | Heap: 85.0 MB | Success: 75,000/75,000 (Fail: 0)
+   ✓ Done in 2.65s | RPS: 28,250.3 | P50: 7.00ms | P99: 33.16ms | Heap: 61.7 MB | Success: 75,000/75,000 (Fail: 0)
 
 ▶ [STAGE 4/5] Running 100,000 requests across 500 concurrent workers...
-   ✓ Done in 3.49s | RPS: 28,622.2 | P50: 14.88ms| P99: 53.58ms | Heap: 73.7 MB | Success: 100,000/100,000 (Fail: 0)
+   ✓ Done in 3.52s | RPS: 28,441.6 | P50: 15.53ms| P99: 45.33ms | Heap: 103.1 MB| Success: 100,000/100,000 (Fail: 0)
 
 ▶ [STAGE 5/5] Running 100,000 requests across 1,000 concurrent workers...
-   ✓ Done in 4.08s | RPS: 24,509.0 | P50: 28.82ms| P99: 246.91ms| Heap: 134.8 MB| Success: 100,000/100,000 (Fail: 0)
+   ✓ Done in 7.66s | RPS: 13,056.1 | P50: 40.76ms| P99: 216.97ms| Heap: 476.2 MB| Success: 100,000/100,000 (Fail: 0)
 ```
 
 ### Comprehensive Results Breakdown:
 
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **27,903.5 req/s** | 1.06 ms | 6.88 ms | 48.2 MB |
-| **100 workers** | 50,000 | **100.0%** | **30,410.8 req/s** | 2.71 ms | 14.04 ms | 61.1 MB |
-| **250 workers** | 75,000 | **100.0%** | **29,448.6 req/s** | 7.00 ms | 31.01 ms | 85.0 MB |
-| **500 workers** | 100,000 | **100.0%** | **28,622.2 req/s** | 14.88 ms | 53.58 ms | 73.7 MB |
-| **1,000 workers** | 100,000 | **100.0%** | **24,509.0 req/s** | 28.82 ms | 246.91 ms | 134.8 MB |
+| **50 workers** | 25,000 | **100.0%** | **28,008.2 req/s** | 1.01 ms | 8.24 ms | 41.4 MB |
+| **100 workers** | 50,000 | **100.0%** | **30,050.8 req/s** | 3.00 ms | 12.80 ms | 52.6 MB |
+| **250 workers** | 75,000 | **100.0%** | **28,250.3 req/s** | 7.00 ms | 33.16 ms | 61.7 MB |
+| **500 workers** | 100,000 | **100.0%** | **28,441.6 req/s** | 15.53 ms | 45.33 ms | 103.1 MB |
+| **1,000 workers** | 100,000 | **100.0%** | **13,056.1 req/s** | 40.76 ms | 216.97 ms | 476.2 MB |
 
 ---
 
@@ -84,14 +84,14 @@ To measure the exact CPU cost of inbound authentication and on-the-fly multi-mod
 
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 30,226.2 req/s | 30,064.7 req/s | **-0.5%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.09 ms |
-| **50 workers** | 32,865.5 req/s | 30,837.0 req/s | **-6.2%** | **+0.00 ms** (1.01ms vs 1.01ms) | +0.33 ms |
-| **100 workers** | 31,270.2 req/s | 29,588.4 req/s | **-5.4%** | **+0.36 ms** (2.51ms vs 2.86ms) | -0.32 ms |
-| **200 workers** | 30,706.6 req/s | 30,614.4 req/s | **-0.3%** | **+0.72 ms** (5.00ms vs 5.72ms) | -2.07 ms |
+| **25 workers** | 30,710.2 req/s | 30,337.9 req/s | **-1.2%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.00 ms |
+| **50 workers** | 32,472.7 req/s | 31,469.7 req/s | **-3.1%** | **+0.00 ms** (1.01ms vs 1.01ms) | -0.30 ms |
+| **100 workers** | 32,402.6 req/s | 29,525.4 req/s | **-8.9%** | **+0.27 ms** (2.51ms vs 2.78ms) | +4.34 ms |
+| **200 workers** | 31,548.9 req/s | 30,694.0 req/s | **-2.7%** | **+0.52 ms** (5.00ms vs 5.51ms) | +0.61 ms |
 
 **Engineering Finding**: 
-- With the zero-allocation byte pre-filter (`hasCandidateToolTokens`) and targeted Go struct unmarshaling (`fastChatCompletionResponse`), the per-request latency overhead of tool normalization + inbound auth is **between 0.00ms and 0.72ms (under 720 microseconds)**.
-- Throughput remains virtually identical to raw pass-through (~29,500 to 30,800 req/s across all concurrency levels), confirming near-zero compute degradation in real-world workloads.
+- With the zero-allocation byte pre-filter (`hasCandidateTokens`) and decoupled Strategy Pipeline, the per-request latency overhead of tool normalization + inbound auth is **between 0.00ms and 0.52ms (under 520 microseconds)**.
+- Throughput remains virtually identical to raw pass-through (~29,500 to 31,500 req/s across all concurrency levels), confirming near-zero compute degradation in real-world workloads.
 
 ---
 
@@ -105,30 +105,30 @@ $ go test -bench=BenchmarkProxy_ChatCompletions -benchmem -run=^$ ./pkg/server/.
 ```
 
 ```text
-BenchmarkProxy_ChatCompletions_RawPassThrough-16       5955    186,649 ns/op    54,957 B/op    246 allocs/op
-BenchmarkProxy_ChatCompletions_ToolNormalization-16    5178    212,805 ns/op    62,357 B/op    359 allocs/op
+BenchmarkProxy_ChatCompletions_RawPassThrough-16       6026    183,810 ns/op    22,043 B/op    270 allocs/op
+BenchmarkProxy_ChatCompletions_ToolNormalization-16    5236    209,786 ns/op    29,363 B/op    384 allocs/op
 ```
 
-- **Raw Pass-Through Latency**: **186.6 µs** (0.186 milliseconds).
-- **Tool Normalization Latency**: **212.8 µs** (0.212 milliseconds).
-- **Exact Compute Cost**: **+26.15 µs** (+14.0% overhead, +7.4 KB memory allocation per turn).
+- **Raw Pass-Through Latency**: **183.8 µs** (0.183 milliseconds).
+- **Tool Normalization Latency**: **209.7 µs** (0.209 milliseconds).
+- **Exact Compute Cost**: **+25.9 µs** (+14.1% overhead, +7.3 KB memory allocation per turn).
 
-### 5.2 Inner Tool Normalizer Performance by Model Format:
+### 5.2 Inner Tool Normalizer Performance by Model Format (Strategy Pipeline):
 ```bash
 $ go test -bench=BenchmarkNormalize -benchmem ./pkg/router/...
 ```
 
 ```text
-BenchmarkNormalize_PureProse_FastBailout-16             49,999,582    23.55 ns/op       0 B/op     0 allocs/op
-BenchmarkNormalize_HermesXML_FullNormalization-16          481,904     2,436 ns/op    1,330 B/op    27 allocs/op
-BenchmarkNormalize_Mistral_ArrayCalls-16                   255,790     4,562 ns/op    2,574 B/op    52 allocs/op
-BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      192,193     6,361 ns/op    1,734 B/op    34 allocs/op
+BenchmarkNormalize_PureProse_FastBailout-16             13,825,999     88.47 ns/op       0 B/op     0 allocs/op
+BenchmarkNormalize_HermesXML_FullNormalization-16          462,910      2,562 ns/op    1,330 B/op    27 allocs/op
+BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      327,790      3,633 ns/op    1,736 B/op    34 allocs/op
+BenchmarkNormalize_Mistral_ArrayCalls-16                   265,892      4,557 ns/op    2,574 B/op    52 allocs/op
 ```
 
-- **Non-Tool Fast Bailout**: **23.55 nanoseconds** (Zero heap allocations, 0 B/op).
-- **Hermes / Qwen XML Extraction**: **2.44 microseconds** (27 allocations).
+- **Non-Tool Fast Bailout**: **88.47 nanoseconds** (Zero heap allocations, 0 B/op).
+- **Hermes / Qwen XML Extraction**: **2.56 microseconds** (27 allocations).
+- **DeepSeek-R1 CoT + Markdown Normalization**: **3.63 microseconds** (34 allocations — **1.75x faster** than legacy parser).
 - **Mistral Array Tool Extraction**: **4.56 microseconds** (52 allocations).
-- **DeepSeek-R1 CoT + Markdown Normalization**: **6.36 microseconds** (34 allocations).
 
 ### 5.3 SSE Stream & CoT Normalization Performance:
 ```bash

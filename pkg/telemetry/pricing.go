@@ -102,6 +102,20 @@ func (o *PricingOracle) GetPrice(provider, model string) (ModelPricing, bool) {
 	return ModelPricing{}, false
 }
 
+// GetAllPricing returns a shallow copy of the active pricing map. Lock-free.
+func (o *PricingOracle) GetAllPricing() map[string]ModelPricing {
+	mPtr := o.pricingMap.Load()
+	if mPtr == nil {
+		return make(map[string]ModelPricing)
+	}
+	m := *mPtr
+	copyMap := make(map[string]ModelPricing, len(m))
+	for k, v := range m {
+		copyMap[k] = v
+	}
+	return copyMap
+}
+
 // CalculateCost calculates the total estimated USD cost for a given request. Lock-free.
 func (o *PricingOracle) CalculateCost(provider, model string, promptTokens, completionTokens int) float64 {
 	pricing, found := o.GetPrice(provider, model)

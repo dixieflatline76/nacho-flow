@@ -216,4 +216,28 @@ func TestPricingOracle_SyncErrorAndNilMap(t *testing.T) {
 	if found {
 		t.Errorf("Expected false for uninitialized oracle pricingMap")
 	}
+	if all := rawOracle.GetAllPricing(); len(all) != 0 {
+		t.Errorf("Expected empty map from uninitialized oracle, got %v", all)
+	}
 }
+
+func TestPricingOracle_GetAllPricing(t *testing.T) {
+	oracle := NewPricingOracle()
+	provider := &mockPricingProvider{
+		name: "openrouter",
+		prices: map[string]ModelPricing{
+			"qwen": {PromptCostPerMillion: 0.2, CompletionCostPerMillion: 0.6},
+		},
+	}
+	oracle.RegisterProvider(provider)
+	_ = oracle.Sync(context.Background())
+
+	all := oracle.GetAllPricing()
+	if len(all) == 0 {
+		t.Fatalf("expected non-empty pricing map")
+	}
+	if all["openrouter:qwen"].PromptCostPerMillion != 0.2 {
+		t.Errorf("expected price 0.2, got %f", all["openrouter:qwen"].PromptCostPerMillion)
+	}
+}
+
