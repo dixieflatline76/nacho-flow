@@ -44,13 +44,13 @@ func (p *NormalizerPipeline) Normalize(content string) (string, []RawToolCall, b
 		return content, nil, false
 	}
 
-	// Hardware-accelerated SIMD pre-filter: scans at ~32 bytes/cycle using runtime intrinsics
+	// Fast bailout pre-filter: return immediately if no candidate tool tokens are present
 	if strings.IndexByte(content, '<') == -1 &&
 		strings.IndexByte(content, '[') == -1 &&
 		strings.IndexByte(content, '{') == -1 &&
 		strings.IndexByte(content, '`') == -1 &&
-		(strings.IndexByte(content, 'A') == -1 || !strings.Contains(content, "Action:")) &&
-		(strings.IndexByte(content, 'a') == -1 || !strings.Contains(content, "action:")) {
+		!strings.Contains(content, "Action:") &&
+		!strings.Contains(content, "action:") {
 		return content, nil, false
 	}
 

@@ -294,39 +294,48 @@ func (p *MarkdownFenceParser) Parse(content string, nextID int) (string, []RawTo
 	}
 
 	var extracted []RawToolCall
-	remainingContent := content
+	var finalContent strings.Builder
+	cursor := 0
 
-	for {
-		m := markdownFenceStartRegex.FindStringIndex(remainingContent)
-		if m == nil {
+	for cursor < len(content) {
+		loc := markdownFenceStartRegex.FindStringIndex(content[cursor:])
+		if loc == nil {
+			finalContent.WriteString(content[cursor:])
 			break
 		}
-		rawJSON, _, jsonEnd, ok := extractBalancedJSON(remainingContent, m[1])
-		if ok {
-			// Find trailing backticks
-			rest := remainingContent[jsonEnd:]
-			trimmedRest := strings.TrimLeft(rest, " \t\r\n")
-			if strings.HasPrefix(trimmedRest, "```") {
-				closingFenceLen := 3
-				if strings.HasPrefix(trimmedRest, "````") {
-					closingFenceLen = 4
-				}
-				fenceEnd := jsonEnd + (len(rest) - len(trimmedRest)) + closingFenceLen
 
+		startFence := cursor + loc[0]
+		afterFenceTag := cursor + loc[1]
+
+		rawJSON, _, jsonEnd, ok := extractBalancedJSON(content, afterFenceTag)
+		if ok {
+			rest := content[jsonEnd:]
+			trimmedRest := strings.TrimLeft(rest, " \t\r\n")
+			closingFenceLen := 0
+			if strings.HasPrefix(trimmedRest, "````") {
+				closingFenceLen = 4
+			} else if strings.HasPrefix(trimmedRest, "```") {
+				closingFenceLen = 3
+			}
+
+			if closingFenceLen > 0 {
+				fenceEnd := jsonEnd + (len(rest) - len(trimmedRest)) + closingFenceLen
 				if tcs, parsed := parseToolCallsOrArray(rawJSON, nextID+len(extracted)); parsed {
+					finalContent.WriteString(content[cursor:startFence])
 					extracted = append(extracted, tcs...)
-					remainingContent = remainingContent[:m[0]] + remainingContent[fenceEnd:]
+					cursor = fenceEnd
 					continue
 				}
 			}
 		}
-		// Skip this fence if not tool calls
-		remainingContent = remainingContent[:m[0]] + remainingContent[m[1]:]
-		break
+
+		// Not a tool call fence: preserve up through opening fence tag and continue scanning
+		finalContent.WriteString(content[cursor:afterFenceTag])
+		cursor = afterFenceTag
 	}
 
 	if len(extracted) > 0 {
-		return remainingContent, extracted, true
+		return finalContent.String(), extracted, true
 	}
 	return content, nil, false
 }

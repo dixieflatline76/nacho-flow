@@ -182,6 +182,28 @@ func TestNormalize_FourBackticksMarkdown(t *testing.T) {
 	}
 }
 
+// 9b. Multiple Fences: Code example followed by valid tool call fence
+func TestNormalize_MultipleFences_CodeExampleFollowedByToolCall(t *testing.T) {
+	raw := "Here is the python script to run:\n```python\ndef test():\n    print(\"hello\")\n```\nNow I will invoke the command tool:\n```json\n{\n  \"name\": \"run_command\",\n  \"arguments\": {\"command\": \"python main.py\"}\n}\n```\nPlease approve."
+
+	cleaned, calls, ok := NormalizeMarkdownToolCalls(raw)
+	if !ok {
+		t.Fatalf("Expected ok to be true, got false")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Function.Name != "run_command" {
+		t.Errorf("Expected 'run_command', got '%s'", calls[0].Function.Name)
+	}
+	if !strings.Contains(cleaned, "def test():") || !strings.Contains(cleaned, "print(\"hello\")") {
+		t.Errorf("Expected python code example preserved in cleaned text, got: %s", cleaned)
+	}
+	if strings.Contains(cleaned, "\"run_command\"") {
+		t.Errorf("Expected tool call fence stripped from cleaned text")
+	}
+}
+
 // 10. Stringified JSON in Arguments
 func TestNormalize_StringifiedArguments(t *testing.T) {
 	raw := "```json\n{\n  \"name\": \"update_config\",\n  \"arguments\": \"{\\\"port\\\": 8000}\"\n}\n```"

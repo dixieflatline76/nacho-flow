@@ -59,11 +59,6 @@ type program struct {
 }
 
 func (p *program) Start(s service.Service) error {
-	p.mu.Lock()
-	if p.slog == nil {
-		p.slog = slog.Default()
-	}
-	p.mu.Unlock()
 	go p.asyncRun(s)
 	return nil
 }
@@ -73,11 +68,10 @@ func (p *program) asyncRun(s service.Service) {
 		p.mu.Lock()
 		sl := p.slog
 		p.mu.Unlock()
-		if sl != nil {
-			sl.Error("Fatal runtime error", slog.Any("error", err))
-		} else {
-			slog.Default().Error("Fatal runtime error", slog.Any("error", err))
+		if sl == nil {
+			sl = slog.Default()
 		}
+		sl.Error("Fatal runtime error", slog.Any("error", err))
 	}
 }
 
