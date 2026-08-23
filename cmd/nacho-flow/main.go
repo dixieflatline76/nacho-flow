@@ -52,7 +52,13 @@ type program struct {
 }
 
 func (p *program) Start(s service.Service) error {
-	go p.run(s)
+	go func() {
+		if err := p.run(s); err != nil {
+			if p.slog != nil {
+				p.slog.Error("Fatal runtime error", slog.Any("error", err))
+			}
+		}
+	}()
 	return nil
 }
 
@@ -69,7 +75,7 @@ func parseLogLevel(lvl string) slog.Level {
 	}
 }
 
-func (p *program) run(s service.Service) {
+func (p *program) run(s service.Service) error {
 	// Initialize Smart Logger based on Interactive vs Daemon mode
 	svcLogger, err := s.Logger(nil)
 	if err != nil {
@@ -88,10 +94,10 @@ func (p *program) run(s service.Service) {
 			fmt.Println("  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml")
 			fmt.Println("  2. Run 'nacho-flow -help' for available options.")
 			fmt.Println("  3. View documentation at https://spicebox.dev/nacho-flow/docs.html")
-			os.Exit(0)
+			return nil
 		}
 		appLogger.Error("Config load error", slog.Any("error", err))
-		os.Exit(1)
+		return err
 	}
 
 	if *portFlag != 0 {
@@ -101,7 +107,7 @@ func (p *program) run(s service.Service) {
 	evaluator, err := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
 	if err != nil {
 		appLogger.Error("Evaluator compile error", slog.Any("error", err))
-		os.Exit(1)
+		return err
 	}
 
 	// 1. Initialize Provider Registry from config
@@ -197,7 +203,9 @@ func (p *program) run(s service.Service) {
 	)
 	if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		appLogger.Error("HTTP server error", slog.Any("error", err))
+		return err
 	}
+	return nil
 }
 
 func (p *program) Stop(s service.Service) error {
@@ -226,34 +234,42 @@ func (p *program) Stop(s service.Service) error {
 }
 
 func handleTuneSubcommand(args []string) {
-	tuneFlags := flag.NewFlagSet("tune", flag.ExitOnError)
+	if err := runTune(args); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runTune(args []string) error {
+	tuneFlags := flag.NewFlagSet("tune", flag.ContinueOnError)
 	configPath := tuneFlags.String("config", "config.yaml", "Path to config.yaml file")
 	trafficLogPath := tuneFlags.String("traffic-log", "logs/traffic.jsonl", "Path to traffic log JSONL")
 	sampleLimit := tuneFlags.Int("sample", 5000, "Maximum historical prompt turns to analyze")
 	apply := tuneFlags.Bool("apply", false, "Apply recommended rule optimizations to config.yaml")
 
-	_ = tuneFlags.Parse(args)
+	if err := tuneFlags.Parse(args); err != nil {
+		return err
+	}
 
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config at %s: %v", *configPath, err)
+		return fmt.Errorf("failed to load config at %s: %w", *configPath, err)
 	}
 
 	records, err := telemetry.ReadRecords(*trafficLogPath, *sampleLimit)
 	if err != nil {
-		log.Fatalf("Failed to read traffic log at %s: %v", *trafficLogPath, err)
+		return fmt.Errorf("failed to read traffic log at %s: %w", *trafficLogPath, err)
 	}
 
 	if len(records) == 0 {
 		fmt.Printf("ℹ️  No historical traffic records found in %s.\n", *trafficLogPath)
 		fmt.Printf("   Run Nacho Flow under normal traffic to accumulate telemetry before tuning.\n")
-		return
+		return nil
 	}
 
 	optimizer := tuner.NewCostPenaltyOptimizer()
 	result, err := optimizer.Optimize(records, cfg)
 	if err != nil {
-		log.Fatalf("Optimization analysis failed: %v", err)
+		return fmt.Errorf("optimization analysis failed: %w", err)
 	}
 
 	// Generate and print human-readable report
@@ -263,12 +279,30 @@ func handleTuneSubcommand(args []string) {
 	if *apply {
 		backupPath, err := tuner.ApplyTuning(*configPath, result)
 		if err != nil {
-			log.Fatalf("Failed to apply tuning: %v", err)
+			return fmt.Errorf("failed to apply tuning: %w", err)
 		}
 		fmt.Printf("✅ SUCCESS: Successfully updated %s with optimal rules!\n", *configPath)
 		fmt.Printf("   Backup saved at: %s\n", backupPath)
 		fmt.Printf("   Restart or reload nacho-flow to activate changes.\n\n")
 	}
+	return nil
+}
+
+func handleServiceControl(s service.Service, args []string) (bool, error) {
+	if len(args) > 1 {
+		cmd := args[1]
+		if cmd == "service" || cmd == "svc" {
+			if len(args) > 2 {
+				subCmd := args[2]
+				if err := service.Control(s, subCmd); err != nil {
+					return true, fmt.Errorf("service control error (%s): %w", subCmd, err)
+				}
+				fmt.Printf("[nacho-flow] Service %s executed successfully.\n", subCmd)
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func main() {
@@ -304,21 +338,11 @@ func main() {
 	}
 
 	// Handle service commands (install, uninstall, start, stop)
-	if len(os.Args) > 1 {
-		cmd := os.Args[1]
-		switch cmd {
-		case "service", "svc":
-			if len(os.Args) > 2 {
-				subCmd := os.Args[2]
-				err := service.Control(s, subCmd)
-				if err != nil {
-					// #nosec G706 - subCmd is a direct CLI flag for service control
-					log.Fatalf("[nacho-flow] Service control error (%s): %v", subCmd, err)
-				}
-				fmt.Printf("[nacho-flow] Service %s executed successfully.\n", subCmd)
-				return
-			}
+	if handled, err := handleServiceControl(s, os.Args); handled {
+		if err != nil {
+			log.Fatalf("[nacho-flow] %v", err)
 		}
+		return
 	}
 
 	// Handle graceful shutdown signals

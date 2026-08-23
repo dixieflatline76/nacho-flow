@@ -356,7 +356,107 @@ tiers:
 	if !bytes.Contains([]byte(out), []byte("NACHO FLOW ADVISORY TUNING REPORT")) {
 		t.Errorf("expected advisory report, got: %s", out)
 	}
+
+	// Test with apply
+	out = captureStdout(func() {
+		err := runTune([]string{"-config", cfgPath, "-traffic-log", trafficLogPath, "-apply"})
+		if err != nil {
+			t.Errorf("expected nil error on apply, got: %v", err)
+		}
+	})
+	if !bytes.Contains([]byte(out), []byte("SUCCESS")) {
+		t.Errorf("expected success message on apply, got: %s", out)
+	}
+
+	// Error path 1: invalid flag
+	if err := runTune([]string{"-invalid-flag"}); err == nil {
+		t.Errorf("expected error for invalid flag, got nil")
+	}
+
+	// Error path 2: missing config
+	if err := runTune([]string{"-config", filepath.Join(tmpDir, "nonexistent.yaml")}); err == nil {
+		t.Errorf("expected error for missing config, got nil")
+	}
+
+	// Error path 3: bad optimizer analysis or config
+	badCfgPath := filepath.Join(tmpDir, "bad_cfg_for_tune.yaml")
+	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: ''\ntiers:\n  - name: 'T1'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
+	if err := runTune([]string{"-config", badCfgPath, "-traffic-log", trafficLogPath}); err == nil {
+		t.Errorf("expected error for bad tier expression in tune, got nil")
+	}
 }
+
+func TestHandleServiceControl(t *testing.T) {
+	mock := &mockService{}
+
+	// 1. Not a service command
+	handled, err := handleServiceControl(mock, []string{"nacho-flow", "run"})
+	if handled || err != nil {
+		t.Errorf("expected false/nil for non-service command, got handled=%v, err=%v", handled, err)
+	}
+
+	// 2. Service command without subcommand
+	handled, err = handleServiceControl(mock, []string{"nacho-flow", "service"})
+	if handled || err != nil {
+		t.Errorf("expected false/nil for incomplete service command, got handled=%v, err=%v", handled, err)
+	}
+
+	// 3. Service command with valid mock subcommand
+	handled, err = handleServiceControl(mock, []string{"nacho-flow", "service", "start"})
+	if !handled || err != nil {
+		t.Errorf("expected true/nil for service start, got handled=%v, err=%v", handled, err)
+	}
+
+	// 4. Svc command alias with valid stop
+	handled, err = handleServiceControl(mock, []string{"nacho-flow", "svc", "stop"})
+	if !handled || err != nil {
+		t.Errorf("expected true/nil for svc stop, got handled=%v, err=%v", handled, err)
+	}
+
+	// 5. Invalid action returns handled=true with error
+	handled, err = handleServiceControl(mock, []string{"nacho-flow", "service", "invalid_action"})
+	if !handled || err == nil {
+		t.Errorf("expected true/error for invalid action, got handled=%v, err=%v", handled, err)
+	}
+}
+
+func TestProgram_Run_ErrorPaths(t *testing.T) {
+	mock := &mockService{}
+
+	// 1. Missing config path in interactive mode prints help and returns nil
+	*configPathFlag = filepath.Join(t.TempDir(), "nonexistent.yaml")
+	p := &program{}
+	out := captureStdout(func() {
+		_ = p.run(mock)
+	})
+	if !bytes.Contains([]byte(out), []byte("No configuration file found")) {
+		t.Errorf("expected interactive help message, got: %s", out)
+	}
+
+	// 2. Invalid tier expr returns compile error
+	tmpDir := t.TempDir()
+	badCfgPath := filepath.Join(tmpDir, "bad_cfg.yaml")
+	badCfg := `
+port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+tiers:
+  - name: "Bad Tier"
+    provider: "ollama"
+    when: "invalid expression syntax !!!"
+`
+	_ = os.WriteFile(badCfgPath, []byte(badCfg), 0600)
+	*configPathFlag = badCfgPath
+	p2 := &program{}
+	err := p2.run(mock)
+	if err == nil {
+		t.Errorf("expected error for bad tier expression, got nil")
+	}
+}
+
+
+
 
 
 
