@@ -1,0 +1,467 @@
+(function () {
+	const vscode = acquireVsCodeApi();
+
+	// State management
+	let currentState = vscode.getState() || { routes: [], circuits: [], stats: null, deals: null, optimization: null };
+
+	// Handle messages from the extension
+	window.addEventListener('message', event => {
+		const message = event.data;
+		switch (message.command) {
+			case 'updateStats':
+				updateStats(message.data);
+				break;
+			case 'updateDeals':
+				updateDeals(message.data);
+				break;
+			case 'updateRoutes':
+				updateRoutes(message.data);
+				break;
+			case 'updateCircuits':
+				updateCircuits(message.data);
+				break;
+			case 'updateConfig':
+				updateConfig(message.data);
+				break;
+			case 'updateOptimization':
+				updateOptimization(message.data);
+				break;
+			case 'setTimeWindow':
+				if (message.data && message.data.timeWindow) {
+					window.setTimeWindow(message.data.timeWindow, false);
+				}
+				break;
+		}
+	});
+
+	let activeTimeWindow = (currentState && currentState.timeWindow) || (function() {
+		try { return localStorage.getItem('nacho_flow_time_window'); } catch(_) { return null; }
+	})() || 'all_time';
+
+	window.setTimeWindow = function(windowKey, notifyExtension = true) {
+		activeTimeWindow = windowKey;
+		currentState.timeWindow = windowKey;
+		vscode.setState(currentState);
+		try { localStorage.setItem('nacho_flow_time_window', windowKey); } catch (_) {}
+
+		['all_time', 'today', 'this_week', 'this_month'].forEach(k => {
+			const btn = document.getElementById(`tab-${k}`);
+			if (btn) {
+				if (k === windowKey) btn.classList.add('active');
+				else btn.classList.remove('active');
+			}
+		});
+
+		if (currentState.stats) {
+			renderStats(currentState.stats);
+		}
+
+		if (notifyExtension) {
+			vscode.postMessage({ command: 'setTimeWindow', timeWindow: windowKey });
+		}
+	};
+
+	function updateStats(stats) {
+		currentState.stats = stats;
+		vscode.setState(currentState);
+		renderStats(stats);
+	}
+
+	function renderStats(stats) {
+		const statsContent = document.getElementById('stats-content');
+		const timeframeInfo = document.getElementById('stats-timeframe-info');
+		if (!stats) {
+			if (statsContent) statsContent.innerHTML = '<div class="loading">Connecting to Nacho Flow daemon...</div>';
+			return;
+		}
+
+		let totalReqs = 0;
+		let localReqs = 0;
+		let totalTokens = 0;
+		let localTokens = 0;
+		let spentUSD = 0;
+		let savedUSD = 0;
+		let reductionPct = 0;
+		let timeframeLabel = '';
+
+		const startedDate = stats.started_at ? new Date(stats.started_at).toLocaleString() : 'Engine startup';
+
+		if (activeTimeWindow === 'today') {
+			const w = stats.windows?.today;
+			totalReqs = w?.requests || 0;
+			totalTokens = w?.tokens_total || 0;
+			localTokens = w?.tokens_local || 0;
+			spentUSD = w?.cost_spent_usd || 0;
+			savedUSD = w?.cost_saved_usd || 0;
+			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
+			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			timeframeLabel = `📅 Today's Telemetry (Active 24h rolling UTC window)`;
+		} else if (activeTimeWindow === 'this_week') {
+			const w = stats.windows?.this_week;
+			totalReqs = w?.requests || 0;
+			totalTokens = w?.tokens_total || 0;
+			localTokens = w?.tokens_local || 0;
+			spentUSD = w?.cost_spent_usd || 0;
+			savedUSD = w?.cost_saved_usd || 0;
+			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
+			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			timeframeLabel = `📆 This Week's Telemetry (Current ISO week)`;
+		} else if (activeTimeWindow === 'this_month') {
+			const w = stats.windows?.this_month;
+			totalReqs = w?.requests || 0;
+			totalTokens = w?.tokens_total || 0;
+			localTokens = w?.tokens_local || 0;
+			spentUSD = w?.cost_spent_usd || 0;
+			savedUSD = w?.cost_saved_usd || 0;
+			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
+			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			timeframeLabel = `🗓️ This Month's Telemetry (Current calendar month)`;
+		} else {
+			// All Time
+			const w = stats.windows?.all_time;
+			totalReqs = w?.requests || stats.total_requests || 0;
+			totalTokens = w?.tokens_total || stats.total_tokens || stats.all_time_tokens || 0;
+			localTokens = w?.tokens_local || stats.total_tokens_routed_locally || 0;
+			spentUSD = w?.cost_spent_usd || stats.total_cost_spent_usd || 0;
+			savedUSD = w?.cost_saved_usd || stats.estimated_cost_saved_usd || 0;
+			reductionPct = w?.cost_reduction_pct || stats.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
+			localReqs = stats.tier_breakdown?.tier1_local_free || (totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0);
+			timeframeLabel = `⚡ All-Time Cumulative Telemetry since engine started (${startedDate})`;
+		}
+
+		if (timeframeInfo) {
+			timeframeInfo.textContent = timeframeLabel;
+		}
+
+		const localPct = totalTokens > 0 ? Math.round((localTokens / totalTokens) * 100) : (totalReqs > 0 ? Math.round((localReqs / totalReqs) * 100) : 0);
+		const localTokenStr = localTokens >= 1000000 ? (localTokens / 1000000).toFixed(1) + 'M' : (localTokens >= 1000 ? (localTokens / 1000).toFixed(0) + 'k' : localTokens.toString());
+
+		if (statsContent) {
+			statsContent.innerHTML = `
+				<div class="stat-grid">
+					<div class="stat-item highlight">
+						<div class="stat-value">+$${savedUSD.toFixed(2)}</div>
+						<div class="stat-label">💵 Est. Cost Saved</div>
+						<div class="stat-sub">${Math.round(reductionPct)}% saved vs. direct cloud</div>
+					</div>
+					<div class="stat-item spent-chip">
+						<div class="stat-value">$${spentUSD.toFixed(2)}</div>
+						<div class="stat-label">📉 Cloud API Spend</div>
+						<div class="stat-sub">Billed for escalated reasoning turns</div>
+					</div>
+					<div class="stat-item local-chip">
+						<div class="stat-value">${localReqs} <span class="stat-unit">turns (${localPct}%)</span></div>
+						<div class="stat-label">⚡ Local GPU ($0.00)</div>
+						<div class="stat-sub">${localTokens > 0 ? localTokenStr + ' tokens routed locally for free' : 'Zero cloud cost'}</div>
+					</div>
+					<div class="stat-item volume-chip">
+						<div class="stat-value">${totalReqs} <span class="stat-unit">turns</span></div>
+						<div class="stat-label">🪙 Prompt Turns & Volume</div>
+						<div class="stat-sub">${totalTokens.toLocaleString()} tokens processed across all tiers</div>
+					</div>
+				</div>
+			`;
+		}
+	}
+
+	function updateDeals(dealsData) {
+		currentState.deals = dealsData;
+		vscode.setState(currentState);
+
+		const dealsContent = document.getElementById('deals-content');
+		if (!dealsData) {
+			dealsContent.innerHTML = '<div class="loading">Loading live deals from OpenRouter...</div>';
+			return;
+		}
+
+		const deals = dealsData.deals || [];
+		if (deals.length === 0) {
+			dealsContent.innerHTML = '<div class="loading">No active deals found matching alert thresholds. Benchmark: $' + (dealsData.benchmark_cost_per_m || 3.00).toFixed(2) + '/1M</div>';
+			return;
+		}
+
+		const benchmark = dealsData.benchmark_cost_per_m || 3.00;
+		const dealCards = deals.map(deal => {
+			const modelName = deal.model_id || deal.name || deal.model || 'Unknown Model';
+			const isFree = deal.is_free || (deal.prompt_cost_per_m === 0 && deal.completion_cost_per_m === 0);
+			let discountText = '0% OFF';
+			if (isFree) {
+				discountText = '100% FREE';
+			} else if (deal.discount_pct && deal.discount_pct > 0) {
+				discountText = `${Math.min(99, Math.round(deal.discount_pct))}% OFF`;
+			}
+			const promptCost = isFree ? '$0.00' : (deal.prompt_cost_per_m !== undefined && deal.prompt_cost_per_m >= 0 ? `$${deal.prompt_cost_per_m.toFixed(2)}` : '$0.00');
+			const compCost = isFree ? '$0.00' : (deal.completion_cost_per_m !== undefined && deal.completion_cost_per_m >= 0 ? `$${deal.completion_cost_per_m.toFixed(2)}` : '$0.00');
+			const toolsBadge = deal.supports_tools ? '<span class="badge badge-tools">🔧 Tools</span>' : '';
+			const scoreBadge = deal.coding_index ? `<span class="badge badge-score">🧠 Index ${deal.coding_index.toFixed(1)}</span>` : '';
+			const provider = deal.provider || 'openrouter';
+			const recTiers = deal.recommended_tiers || deal.recommended_tier ? (Array.isArray(deal.recommended_tiers) ? deal.recommended_tiers : [deal.recommended_tier]) : [];
+			const escapedModel = modelName.replace(/'/g, "\\'");
+			const escapedProvider = provider.replace(/'/g, "\\'");
+			const recTiersJson = JSON.stringify(recTiers).replace(/'/g, "\\'");
+
+			return `
+				<div class="deal-card">
+					<div class="deal-card-header">
+						<span class="deal-model">${modelName}</span>
+						<span class="badge badge-deal">${discountText}</span>
+					</div>
+					<div class="deal-pricing">
+						<div>Input: <strong>${promptCost}/1M</strong></div>
+						<div>Output: <strong>${compCost}/1M</strong></div>
+					</div>
+					<div class="deal-badges">
+						${toolsBadge}
+						${scoreBadge}
+						<span class="badge badge-provider">${provider}</span>
+					</div>
+					<div class="deal-actions">
+						<button class="btn btn-deal-copy" onclick="copyModelId('${escapedModel}')" title="Copy model ID to clipboard">📋 Copy</button>
+						<button class="btn btn-deal-adopt" onclick="adoptDeal('${escapedModel}', '${escapedProvider}', ${recTiersJson})" title="Adopt into Nacho Flow routing tier">⚡ Adopt</button>
+					</div>
+				</div>
+			`;
+		}).join('');
+
+		dealsContent.innerHTML = `
+			<div class="deals-summary-bar">
+				<span>Frontier Benchmark: <strong>$${benchmark.toFixed(2)}/1M</strong></span>
+				<span><strong>${deals.length}</strong> discount models discovered (replaces expensive cloud tiers)</span>
+			</div>
+			<div class="deals-grid">
+				${dealCards}
+			</div>
+		`;
+	}
+
+	function updateOptimization(optData) {
+		currentState.optimization = optData;
+		vscode.setState(currentState);
+
+		const banner = document.getElementById('tuner-banner');
+		if (!optData) {
+			banner.style.display = 'none';
+			return;
+		}
+
+		const savingsVal = optData.projected_savings_usd !== undefined ? optData.projected_savings_usd : (optData.projected_savings || 0);
+		const savingsFormatted = typeof savingsVal === 'number' ? `+$${savingsVal.toFixed(2)}` : savingsVal;
+		const rule = optData.synthesized_rule || optData.rule || 'Tokens < 64000 && Retries == 0';
+		const tierName = optData.target_tier_name || 'Tier 1 (Local GPU)';
+		const sampleSize = optData.total_sample_turns || optData.sample_size || 0;
+
+		banner.style.display = 'block';
+		banner.innerHTML = `
+			<div class="tuner-result">
+				<div class="tuner-header">
+					<div class="tuner-title-group">
+						<h3>⚡ Auto-Tuner Policy Recommendation</h3>
+						<span class="badge badge-deal">Optimal Policy Ready</span>
+					</div>
+					${savingsVal > 0 ? `<div class="tuner-savings-badge">Projected Savings: <strong>${savingsFormatted}</strong></div>` : ''}
+				</div>
+				<div class="tuner-details-grid">
+					<div class="tuner-detail-item">
+						<span class="tuner-detail-label">🎯 Target Tier:</span>
+						<strong class="tuner-detail-val">${tierName}</strong>
+					</div>
+					<div class="tuner-detail-item">
+						<span class="tuner-detail-label">📊 Sample Size:</span>
+						<span class="tuner-detail-val">${sampleSize} real turns analyzed</span>
+					</div>
+					<div class="tuner-detail-item full-width">
+						<span class="tuner-detail-label">✨ Synthesized AST Rule:</span>
+						<code class="tuner-rule-code">${rule}</code>
+					</div>
+				</div>
+				<div class="tuner-actions">
+					<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Policy to config.yaml</button>
+					<button class="btn btn-secondary" onclick="dismissTuner()">Dismiss</button>
+				</div>
+			</div>
+		`;
+	}
+
+	function updateRoutes(routesData) {
+		const routesContent = document.getElementById('routes-content');
+		if (!routesData || !routesData.routes) {
+			routesContent.innerHTML = '<div class="loading">Loading route history...</div>';
+			return;
+		}
+
+		const routes = routesData.routes.slice(0, 10);
+		if (routes.length === 0) {
+			routesContent.innerHTML = '<div class="loading">No route history recorded yet. Route requests from Roo Code, Cline, or Cursor to begin logging!</div>';
+			return;
+		}
+
+		const tableRows = routes.map(route => {
+			const isLocal = route.is_local ? 'badge-local' : 'badge-cloud';
+			const badgeText = route.is_local ? 'Local' : 'Cloud';
+			const fallbackBadge = route.is_fallback ? '<span class="badge badge-fallback">Fallback</span>' : '';
+			
+			return `
+				<tr>
+					<td>${new Date(route.timestamp).toLocaleTimeString()}</td>
+					<td><strong>${route.selected_tier}</strong></td>
+					<td><span class="badge ${isLocal}">${badgeText}</span> ${fallbackBadge}</td>
+					<td>${(route.tokens || 0).toLocaleString()}</td>
+					<td>${(route.latency_ms || 0).toFixed(0)}ms</td>
+					<td class="saved-val">+$${(route.cost_saved_usd || 0).toFixed(4)}</td>
+				</tr>
+			`;
+		}).join('');
+
+		routesContent.innerHTML = `
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Time</th>
+						<th>Tier</th>
+						<th>Type</th>
+						<th>Tokens</th>
+						<th>Latency</th>
+						<th>Saved</th>
+					</tr>
+				</thead>
+				<tbody>
+					${tableRows}
+				</tbody>
+			</table>
+		`;
+	}
+
+	function updateCircuits(circuitsData) {
+		const circuitsContent = document.getElementById('circuits-content');
+		if (!circuitsData || !circuitsData.circuits) {
+			circuitsContent.innerHTML = '<div class="loading">Loading circuit status...</div>';
+			return;
+		}
+
+		const circuits = circuitsData.circuits;
+		if (circuits.length === 0) {
+			circuitsContent.innerHTML = '<div class="loading">No circuits configured.</div>';
+			return;
+		}
+
+		const circuitCards = circuits.map(circuit => {
+			const isAvailable = circuit.is_available ? 'badge-closed' : 'badge-open';
+			const statusText = circuit.is_available ? 'Healthy (Closed)' : 'Tripped (Open)';
+			
+			return `
+				<div class="circuit-card">
+					<div class="circuit-header">
+						<h3>${circuit.provider}</h3>
+						<span class="badge ${isAvailable}">${statusText}</span>
+					</div>
+					<p>Failures: <strong>${circuit.failures || 0} / ${circuit.failure_threshold || 5}</strong></p>
+					<button class="btn btn-secondary" onclick="resetCircuit('${circuit.provider}')">🔄 Reset Circuit</button>
+				</div>
+			`;
+		}).join('');
+
+		circuitsContent.innerHTML = `<div class="circuits-grid">${circuitCards}</div>`;
+	}
+
+	function updateConfig(config) {
+		const configContent = document.getElementById('config-content');
+		if (!config) {
+			configContent.innerHTML = '<div class="loading">Loading configuration...</div>';
+			return;
+		}
+
+		const conditionalTiers = config.tiers || [];
+		const allTiers = [...conditionalTiers];
+		if (config.default_tier) {
+			allTiers.push({ ...config.default_tier, isDefault: true });
+		}
+
+		const tierList = allTiers.map((t, idx) => {
+			const displayName = t.name.startsWith(`Tier ${idx + 1}`) ? t.name : `Tier ${idx + 1}: ${t.name}`;
+			const badge = t.isDefault ? '<span class="badge badge-fallback" style="margin-left: 6px;">Default Rescue</span>' : '';
+			return `
+			<div class="tier-item">
+				<div style="display: flex; align-items: center; justify-content: space-between;">
+					<strong>${displayName}</strong>
+					${badge}
+				</div>
+				<div class="tier-meta">Model: <code>${t.model}</code> | Provider: <code>${t.provider}</code></div>
+				<div class="tier-condition">When: <code>${t.when || 'true'}</code></div>
+			</div>
+			`;
+		}).join('');
+
+		configContent.innerHTML = `
+			<div class="config-summary">
+				<div class="config-meta-row">
+					<span>Listening Port: <strong>${config.port || 8000}</strong></span>
+					<span>Active Tiers: <strong>${allTiers.length}</strong></span>
+				</div>
+				<div class="tiers-list">${tierList}</div>
+				<button class="btn btn-primary" onclick="editConfig()" style="margin-top: 12px;">⚙️ Edit config.yaml</button>
+			</div>
+		`;
+	}
+
+	// Exposed global functions
+	window.copyModelId = function(modelId) {
+		vscode.postMessage({ command: 'copyToClipboard', data: { text: modelId } });
+	};
+
+	window.adoptDeal = function(modelId, provider, recTiers) {
+		const recommendedTiers = Array.isArray(recTiers) ? recTiers : (recTiers ? [recTiers] : []);
+		vscode.postMessage({
+			command: 'adoptDeal',
+			data: {
+				modelId: modelId,
+				provider: provider,
+				recommendedTiers: recommendedTiers
+			}
+		});
+	};
+
+	window.runOptimizer = function() {
+		const banner = document.getElementById('tuner-banner');
+		if (banner) {
+			banner.style.display = 'block';
+			banner.innerHTML = '<div class="loading">⚡ Running autonomous optimizer on telemetry observations...</div>';
+		}
+		vscode.postMessage({ command: 'runOptimizer' });
+	};
+
+	window.refreshDeals = function() {
+		vscode.postMessage({ command: 'refreshDeals' });
+	};
+
+	window.refreshAll = function() {
+		vscode.postMessage({ command: 'refreshAll' });
+	};
+
+	window.editConfig = function() {
+		vscode.postMessage({ command: 'editConfig' });
+	};
+
+	window.resetCircuit = function(provider) {
+		vscode.postMessage({ command: 'resetCircuit', provider: provider });
+	};
+
+	window.applyOptimization = function() {
+		vscode.postMessage({
+			command: 'applyOptimization',
+			data: currentState.optimization || undefined
+		});
+	};
+
+	window.dismissTuner = function() {
+		currentState.optimization = null;
+		vscode.setState(currentState);
+		const banner = document.getElementById('tuner-banner');
+		if (banner) banner.style.display = 'none';
+	};
+
+	// Initialize
+	document.addEventListener('DOMContentLoaded', () => {
+		window.setTimeWindow(activeTimeWindow);
+		vscode.postMessage({ command: 'initialize' });
+	});
+})();
