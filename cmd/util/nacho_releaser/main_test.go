@@ -100,12 +100,16 @@ func TestResolveTag(t *testing.T) {
 
 func TestCollectArtifactPaths(t *testing.T) {
 	paths := collectArtifactPaths("dist", "0.5.2")
-	if len(paths) != 5 {
-		t.Fatalf("expected 5 artifact paths, got %d", len(paths))
+	if len(paths) != 11 {
+		t.Fatalf("expected 11 artifact paths, got %d", len(paths))
 	}
 	expectedWindows := filepath.Join("dist", "nacho-flow-0.5.2-windows-amd64.exe")
 	if paths[0] != expectedWindows {
 		t.Errorf("expected %s, got %s", expectedWindows, paths[0])
+	}
+	expectedVsix := filepath.Join("dist", "nacho-flow-0.5.2-win32-x64.vsix")
+	if paths[5] != expectedVsix {
+		t.Errorf("expected %s, got %s", expectedVsix, paths[5])
 	}
 }
 

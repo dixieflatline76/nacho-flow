@@ -79,6 +79,13 @@ func collectArtifactPaths(distDir, version string) []string {
 		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-linux-arm64", version)),
 		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-darwin-amd64", version)),
 		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-darwin-arm64", version)),
+		// VS Code Extension VSIX Packages
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-win32-x64.vsix", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-linux-x64.vsix", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-linux-arm64.vsix", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-darwin-x64.vsix", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s-darwin-arm64.vsix", version)),
+		filepath.Join(distDir, fmt.Sprintf("nacho-flow-%s.vsix", version)),
 	}
 }
 
