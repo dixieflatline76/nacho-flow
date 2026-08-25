@@ -11,6 +11,9 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 4. [Running Modes (Interactive vs. OS Service)](#4-running-modes-interactive-vs-os-service)
 5. [IDE & Agent Integrations](#5-ide--agent-integrations)
 6. [Monitoring, Telemetry & Stats API](#6-monitoring-telemetry--stats-api)
+7. [Autonomous Rule Auto-Tuning (`nacho-flow tune`)](#7-autonomous-rule-auto-tuning-nacho-flow-tune)
+8. [🔥 Heat Seeker: Spot Market Arbitrage & Deal Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-spot-market-arbitrage--deal-scout-nacho-flow-deals--nacho-flow-heat-seek)
+9. [🌶️ HotSauce Directives (In-Prompt Routing & Meta Commands)](#9-hotsauce-directives-in-prompt-routing--meta-commands)
 
 ---
 
@@ -408,9 +411,14 @@ curl http://127.0.0.1:8000/v1/stats
 
 ## 7. Autonomous Rule Auto-Tuning (`nacho-flow tune`)
 
-Nacho Flow features a built-in, pure Go **Cost-Penalty Auto-Tuner** that analyzes your team's real-world traffic, identifies prompt failure bottlenecks, and generates human-readable rule recommendations.
+Human developers shouldn't have to manually guess where their local GPU model starts struggling. Nacho Flow features a built-in, pure Go **Cost-Penalty Auto-Tuner** that analyzes your team's real-world traffic, identifies prompt failure bottlenecks, and generates human-readable rule recommendations.
 
-### Run Advisory Analysis (Dry-Run):
+### 7.1 How Auto-Tuning Works
+1. **Traffic Accumulation**: As you code, Nacho Flow automatically records turn metrics (tokens, retries, domain keywords, latency) to `logs/traffic.jsonl`.
+2. **Context Cliff Detection**: Smaller local models (e.g. 14B Qwen) perform great under 12k tokens, but degrade on long multi-file prompts. The auto-tuner finds the exact mathematical sweet spot between saving cloud costs ($0.00 local turns) and avoiding developer retry frustration.
+3. **Friction Keyword Discovery**: Automatically flags domain keywords (e.g. `deadlock`, `kubernetes`, `migration`) that cause disproportionate local retries, routing them directly to cloud reasoning.
+
+### 7.2 Run Advisory Analysis (Dry-Run):
 ```bash
 # Analyze historical traffic and generate recommendation diff
 nacho-flow tune
@@ -419,9 +427,195 @@ nacho-flow tune
 nacho-flow tune --sample 10000 --traffic-log logs/traffic.jsonl
 ```
 
-### Apply Recommendations Automatically:
+**Example Advisory Output**:
+```text
+========================================================================================
+🌮 NACHO FLOW ADVISORY TUNING REPORT
+========================================================================================
+
+📊 Sample Size: 240 historical prompt turns evaluated
+
+🔍 FRICTION & BOTTLENECK SIGNALS DETECTED:
+  • Optimal Local Context Threshold: 12,000 tokens
+  • High-Friction Domain Keywords:  [deadlock, kubernetes, migration] (Spikes local retry probability)
+
+📈 PROJECTED MONTHLY IMPACT:
+  • Developer Retries Avoided: ~18 retries eliminated
+  • Net Monthly Cost Optimization: +$36.00 USD saved
+
+🛠️ RECOMMENDED CONFIGURATION DIFF:
+----------------------------------------------------------------------------------------
+  Tier: "Local ROCm GPU"
+  - when: "Tokens < 16000 && !HasImages && !HasTools"
+  + when: "Tokens < 12000 && !HasImages && !HasTools && !any(Keywords, { # in ['deadlock', 'kubernetes', 'migration'] })"
+----------------------------------------------------------------------------------------
+
+To apply this recommendation with automatic backup:
+  $ nacho-flow tune --apply
+========================================================================================
+```
+
+### 7.3 Apply Recommendations Automatically:
 ```bash
 # Applies the synthesized rule to config.yaml and saves an automatic timestamped backup (config.yaml.bak.<timestamp>)
 nacho-flow tune --apply
 ```
+```text
+✅ SUCCESS: Successfully updated config.yaml with optimal rules!
+   Backup saved at: config.yaml.bak.20260824-164500
+   Restart or reload nacho-flow to activate changes.
+```
+
+For comprehensive rule syntax, context variables, and recipes, see the full [Rule & Tier Tuning Guide](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/TUNING_GUIDE.md).
+
+---
+
+## 8. 🔥 Heat Seeker (`nacho-flow deals` / `nacho-flow heat-seek`)
+
+Heat Seeker continuously scans the LLM market for models that can replace your active routing tiers at a fraction of the cost. Every recommendation is validated for tool-calling support, coding capability, and compatibility with your configured tier roles — then mapped to the specific tier it can substitute.
+
+No browsing. No coupon pages. Just drop-in replacements for your current tiers, surfaced as one-click substitutions.
+
+### 8.1 Discover Tier Replacements (CLI)
+
+Run Heat Seeker directly from your terminal:
+```bash
+# View active tier replacements in aligned table format
+nacho-flow deals
+# (or alias)
+nacho-flow heat-seek
+
+# Output structured JSON for automation or scripting
+nacho-flow deals -json
+
+# Target remote or authenticated gateway
+nacho-flow deals -host 127.0.0.1 -port 8000 -auth my-secret-token
+```
+
+**Example Output**:
+```text
+🔥  HEAT SEEKER
+Benchmark: anthropic/claude-3.5-sonnet ($3.00/1M tokens)
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+MODEL                            ROLE             CONTEXT    PROMPT/1M    COMP/1M      CODING   DISCOUNT  
+google/gemini-2.5-flash-lite     vision_workhorse 1.0M       $0.10        $0.40        68.1     96.7% 🔥  
+   ↳ Recommended for tier_1_vision (Replaces benchmark at 96.7% discount)
+dots-studio/dots-3-note:free     coding_workhorse 512k       $0.00        $0.00        --       100.0% 🆓 
+   ↳ Discovery scouted high value model at 100.0% discount
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+💡 Tip: Use the VS Code extension dashboard to adopt any deal into your active routing tiers with 1-click.
+```
+
+### 8.2 Configuring Deals Filter in `config.yaml`
+
+Fine-tune your deal scout thresholds:
+
+```yaml
+deals:
+  enabled: true                  # Enable background spot market tracking
+  alert_threshold_pct: 50.0      # Minimum discount % required to surface deal (Default: 30.0%)
+  min_coding_index: 60.0         # Minimum SWE-bench/coding score required (Default: 40.0)
+  require_tools: true            # Only show models supporting tool/function calling (Default: true)
+```
+
+### 8.3 REST Management API (`GET /api/v1/deals`)
+
+Query deals programmatically from custom dashboards, IDEs, or automated pipelines:
+
+```bash
+curl -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8000/api/v1/deals
+```
+
+```json
+{
+  "benchmark_model": "anthropic/claude-3.5-sonnet",
+  "benchmark_cost_per_m": 3.00,
+  "deals_count": 2,
+  "deals": [
+    {
+      "provider": "openrouter",
+      "model_id": "google/gemini-2.5-flash-lite",
+      "name": "Google: Gemini 2.5 Flash Lite",
+      "context_length": 1048576,
+      "prompt_cost_per_m": 0.10,
+      "completion_cost_per_m": 0.40,
+      "discount_pct": 96.67,
+      "is_free": false,
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": false,
+      "tier_role": "vision_workhorse",
+      "coding_index": 68.1,
+      "recommended_tiers": ["tier_1_vision"]
+    }
+  ],
+  "last_synced": "2026-08-24T12:00:00Z"
+}
+```
+
+---
+
+## 9. 🌶️ HotSauce Directives (In-Prompt Routing & Meta Commands)
+
+### 🔥 Heat Seeker & 🌶️ HotSauce Directives
+
+Two ways to optimize your routing costs:
+
+- **Heat Seeker** runs autonomously in the background, continuously scanning 300+ models for underpriced capacity. When it finds a deal meeting your thresholds, it surfaces it as a one-click tier substitution.
+- **HotSauce Directives** let you manually override routing on any turn by adding `@nacho:local`, `@nacho:cloud`, or `@nacho:reasoning` to your prompt.
+
+> **Together: Heat Seeker finds the fire. HotSauce lets you pour it on.**
+
+---
+
+**HotSauce Directives** allow developers and autonomous coding agents (Claude Code, Cursor, Cline, Roo Code, Aider, OpenCode) to manually spice up prompt turns with instant routing overrides or inspect daemon metadata dynamically directly from conversational prompts using zero-cost `@nacho:` tags.
+
+### 🔥 Heat Levels (Routing Overrides)
+
+Splash any HotSauce directive into your prompt to override automatic rule evaluation for a single turn:
+
+| Directive | Heat Level | Behavior | Example |
+| :--- | :--- | :--- | :--- |
+| `@nacho:local` | 🟢 **Mild** | Forces routing to your local GPU tier ($0.00 / Ollama / ROCm / CUDA). | `@nacho:local write a unit test for this function` |
+| `@nacho:cloud` | 🟡 **Medium** | Forces routing to your cloud workhorse / fallback tier. | `@nacho:cloud analyze this multi-file architecture` |
+| `@nacho:frontier` | 🟠 **Extra Hot** | Forces routing to your frontier cloud tier (Claude Sonnet 5 / GPT-4o). | `@nacho:frontier refactor this complex state machine` |
+| `@nacho:reasoning` | 🔥 **Inferno** | Forces routing to your deep reasoning tier (DeepSeek-R1 / o1). | `@nacho:reasoning prove why this algorithm is O(N log N)` |
+| `@nacho:tier="<Name>"` | 🌶️ **Custom** | Forces routing to a specific named tier from `config.yaml`. | `@nacho:tier="Tier 1: Local ROCm" quick fix` |
+| `@nacho:model="<ID>"` | 🌶️ **Chef's Special** | Directs request straight to a specific model ID across any configured provider. | `@nacho:model="deepseek/deepseek-r1" solve this concurrency race` |
+
+#### Architectural Guarantees:
+1. **Clean Upstream Forwarding**: All `@nacho:` tags are automatically stripped and whitespace is collapsed before the prompt reaches upstream LLMs. The model never sees the directive.
+2. **Zero Proxy Regression**: Detection uses SIMD fast bailout (`strings.Contains`), taking `< 7 ns` and `0 bytes` heap allocation for standard prompts.
+3. **Strict Circuit Alert (Fallback Bypass)**: If you force `@nacho:local` and your local GPU/Ollama instance is offline (Circuit Breaker: OPEN), Nacho Flow does **not** silently fall through to an expensive cloud model. Instead, it instantly returns an OpenAI wire-compliant zero-cost chat alert explaining that the local provider is down and how to resolve it.
+
+---
+
+### Zero-Cost Meta Commands
+
+Meta directives are executed entirely in-process by the daemon and return instantly with **$0.00** LLM cost and **0 upstream tokens consumed**:
+
+| Directive | Output | Description |
+| :--- | :--- | :--- |
+| `@nacho:help` | Markdown Quick-Start Guide | Displays all available HotSauce directives, heat levels, and active daemon version. |
+| `@nacho:tiers` | Active Tier Catalog | Lists all configured routing tiers, models, and providers currently loaded from `config.yaml`. |
+| `@nacho:status` | Daemon Telemetry & Health | Live uptime, circuit breaker states, token volume, and total dollars saved vs spent. |
+| `@nacho:deals` | Heat Seeker Spot Deals | Real-time spot market flash discounts and promotional pricing from pricing oracles. |
+
+#### Client Compatibility & Anti-Abuse:
+- **Universal Wire Format**: Works seamlessly with streaming (`stream: true` SSE chunks) and non-streaming (`chat.completion` JSON) clients.
+- **Levenshtein Typo Matcher**: Unrecognized tags like `@nacho:helpp` or `@nacho:statuss` return an instant helper message: *"Did you mean `@nacho:help`?"*.
+- **Anti-Abuse Debounce**: Rapid repeated meta queries within 2 seconds receive a lightweight cached acknowledgment to prevent agent loops.
+
+---
+
+### Configuration Toggle
+
+In-prompt directives are enabled by default. To disable them for strict enterprise compliance, add to `config.yaml`:
+
+```yaml
+router:
+  enable_in_prompt_directives: false
+```
+
+
 

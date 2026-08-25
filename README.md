@@ -70,8 +70,10 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 
 ## ✨ Key Features
 
-* **⚡ High-Throughput Core**: Adds < 0.36 ms routing overhead and handles 30,000+ req/s using lock-free atomic RCU state and pooled HTTP transports.
-* **🌐 Management REST API & Live SSE Telemetry Stream**: Exposes `/api/v1/info`, `/api/v1/events` (real-time SSE metrics), `/api/v1/routes` (circular buffer), `/api/v1/circuits`, `/api/v1/pricing`, `/api/v1/config` (with 30s Memento rollback watchdog), and `/api/v1/tune` for programmatic management and VS Code extensions.
+* **⚡ High-Throughput Core**: Adds < 0.18 ms (180.8 µs) routing overhead and sustains 32,000+ req/s using lock-free atomic RCU state and pooled HTTP transports.
+* **🔥 "Heat Seeker" Spot Market Arbitrage & Curated Gallery**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
+* **🏛️ 3-Tier Curated Intelligence & OTA Sync**: Pre-packages verified SWE-bench & tool reliability scores (`//go:embed models.json`) with automatic Over-The-Air GitHub semver updates.
+* **🌐 Management REST API & Live SSE Telemetry Stream**: Exposes `/api/v1/info`, `/api/v1/events` (real-time SSE metrics), `/api/v1/routes` (circular buffer), `/api/v1/circuits`, `/api/v1/pricing`, `/api/v1/deals`, `/api/v1/config` (with 30s Memento rollback watchdog), and `/api/v1/tune` for programmatic management and VS Code extensions.
 * **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
 * **🚦 Local Provider Circuit Breaker**: Detects consecutive local connection or 5xx failures and fast-fails directly to cloud fallback tiers with 0ms dial delay.
 * **🔄 Retry-Based Auto-Escalation**: Tracks session turn retries with a sliding 5-minute TTL, allowing routing rules to automatically escalate to cloud models when local attempts fail (`Retries < 2`).
@@ -80,11 +82,12 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **📐 Model Context Window Guard (`max_context`)**: Evaluates model physical context limits with O(1) pre-guards to prevent 400 Context Length Exceeded errors.
 * **🛠️ Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Llama Python `<|python_tag|>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown code fences, and Ollama/Qwen Bare JSON) into standard OpenAI `tool_calls` JSON structures via a modular Strategy Pipeline.
 * **🔒 Inbound Gateway Client Authentication**: Secures LAN and remote endpoints with optional Bearer token authentication while preserving a public `/health` endpoint.
+* **🌶️ HotSauce Directives (In-Prompt Routing)**: Splash heat onto any prompt turn to override routing (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) or query daemon metadata (`@nacho:help`, `@nacho:tiers`, `@nacho:status`, `@nacho:deals`) with < 7ns zero-alloc bailout, $0.00 cost, and strict fallback bypass.
 * **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Evaluates custom tier rules in `config.yaml` based on token estimates, tool calls, images, retries, and prompt keywords.
 * **🖼️ Historical Image Sanitization**: Automatically strips base64 `image_url` payloads from older turns when routing to text-only models.
 * **🏷️ Dynamic Version Reporting**: Exposes build version across `/health`, `/v1/health`, and CLI (`nacho-flow version`, `-v`).
 * **💾 Persistent Telemetry Store**: Saves cumulative token counts and estimated cost metrics to disk (`~/.config/nacho-flow/stats.json`).
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.3\%\text{--}100\%$ statement test coverage across all packages (100% on strategy & config, 97.2% on router, 95.9% on daemon binary), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (100% on strategy & config, 97.1% on router, 95.4% on daemon binary), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 * **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 * **📦 Zero Dependencies**: Single static binary with zero CGO or Python requirements (`CGO_ENABLED=0`).
 

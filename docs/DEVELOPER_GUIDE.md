@@ -17,11 +17,14 @@ This guide is intended for engineers contributing to, extending, or maintaining 
 ```text
 nacho-flow/
 ├── cmd/
-│   ├── nacho-flow/         # Production binary entrypoint (CLI, service manager, tuner, version)
+│   ├── nacho-flow/         # Production binary entrypoint (CLI, deals reporter, service manager, tuner)
 │   └── util/
+│       ├── gen_catalog/    # Curated model catalog generator & OTA sync updater
 │       ├── nacho_bench/    # In-memory load testing & stress benchmark CLI
 │       ├── nacho_releaser/ # Automated multi-platform GitHub release tool
 │       └── version_bump/   # Semantic version bumping utility
+├── data/
+│   └── models.json         # Canonical remote model catalog for GitHub OTA serving
 ├── docs/                   # Architecture, Benchmarks, Tuning Guide, User & Dev Guides
 ├── logs/                   # Default directory for interactive log files
 ├── pkg/
@@ -29,10 +32,11 @@ nacho-flow/
 │   ├── contract/           # Core interface definitions & shared types
 │   ├── provider/           # Capability interfaces (LLM, Auth, Header, Health, CircuitBreaker, Registry)
 │   ├── router/             # Context classifier, adaptive estimator, session tracker, image sanitizer, tool normalizer
-│   ├── server/             # HTTP reverse proxy, delayed header validator, stream normalizer (reasoning -> think)
+│   ├── server/             # HTTP reverse proxy, delayed header validator, stream normalizer (reasoning -> think), deals API
 │   ├── store/              # Atomic disk persistence for telemetry (stats.json)
 │   ├── strategy/           # Compiled expr-lang dynamic rule evaluator with MaxContext guards
-│   ├── telemetry/          # Pricing oracle, OpenRouter plugin, StatsTracker, slog
+│   ├── telemetry/          # Pricing oracle, OpenRouter plugin, StatsTracker, 3-tier classifier
+│   │   └── curation/       # Embedded baseline + OTA GitHub semver catalog manager
 │   └── tuner/              # Cost-penalty rule synthesizer & advisory engine
 ├── scripts/                # Universal Linux/macOS shell installer & test harness
 ├── .github/workflows/      # CI/CD pipeline, Docker GHCR publisher & Azure Trusted Signing
@@ -204,4 +208,27 @@ Nacho Flow uses a 2-stage release lifecycle in GitHub Actions (`.github/workflow
    - Test the pre-release binaries.
    - Once verified, edit the release on GitHub and **uncheck "Set as a pre-release"** (promoting to Latest Release).
    - The `distribute-release` job triggers, updating the Homebrew Tap formula and pushing WinGet package manifests to the `winget-pkgs` fork.
+
+---
+
+## 10. Curated Catalog Generator & Quality Standards
+
+### 10.1 Generating Canonical Catalog (`cmd/util/gen_catalog`)
+
+Nacho Flow includes a dedicated Go utility to fetch live models from upstream registries, classify their SWE-bench and tool reliability capabilities, and generate both the canonical repository file (`data/models.json`) and the embedded binary catalog (`pkg/telemetry/curation/models.json`):
+
+```bash
+# Generate catalog for upcoming release
+go run ./cmd/util/gen_catalog -version v1.1.0
+
+# Custom paths or flags
+go run ./cmd/util/gen_catalog -version v1.1.0 -out data/models.json -embed-out pkg/telemetry/curation/models.json
+```
+
+### 10.2 Quality & Coverage Mandate: Strict TDD
+* **Project Coverage Target**: **100.0% Statement Coverage**.
+* **Hard Minimum**: **$\ge 95.0\%$ Statement Coverage** enforced across every package with application logic.
+* **Concurrency Guarantee**: **0 data races** under `go test -race ./...`.
+* **Zero Allocations on Proxy Hot-Path**: Zero heap allocations in stream parsing fast bailout paths (`BenchmarkNormalize_PureProse_FastBailout`).
+
    - Multi-arch Docker images are built and pushed to GitHub Container Registry (`ghcr.io`).
