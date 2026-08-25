@@ -242,6 +242,9 @@ nacho-flow tune --apply
    Restart or reload nacho-flow to activate changes.
 ```
 
+> [!TIP]
+> **1-Click Auto-Tuning in VS Code**: You can also trigger the empirical optimizer, review recommended rule diffs, and hot-reload `config.yaml` with one click directly from the **Nacho Flow Analytics Dashboard** webview inside the [VS Code Companion Extension](file:///docs/EXTENSION_USER_GUIDE.md).
+
 ---
 
 ### 6.3 Advanced Tuning CLI Options

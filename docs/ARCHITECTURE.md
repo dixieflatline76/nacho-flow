@@ -264,5 +264,48 @@ Nacho Flow employs a tri-channel distribution model:
 | **Universal Shell Installer** | Linux & macOS | POSIX `scripts/install.sh` with CPU architecture auto-detection, SHA-256 verification against `checksums.txt`, non-root fallback (`~/.local/bin`), and optional `systemd` unit setup. |
 | **Multi-Arch Container** | Docker / Kubernetes / Podman | Distroless `gcr.io/distroless/static-debian12:nonroot` multi-stage build (< 15MB footprint, nonroot UID 65532, volume `/config`) published to `ghcr.io/dixieflatline76/nacho-flow`. |
 | **Package Managers** | Windows & macOS | Cryptographically signed binaries (Azure Trusted Signing for Windows EXE, Homebrew Tap formula sync for macOS/Linux, Winget manifest for Windows). |
+| **VS Code Extension** | VS Code / Cursor / VSCodium | Bundled `.vsix` companion package with native 3-tier process manager and full-page analytics webview. |
+
+---
+
+## 9. VS Code Companion Extension & Management Control Plane Architecture
+
+Nacho Flow v0.6.0 introduces an integrated VS Code companion extension designed under the **Thin-Client Doctrine**:
+
+```mermaid
+flowchart TD
+    classDef vscode fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#fff;
+    classDef daemon fill:#181825,stroke:#fab387,stroke-width:2px,color:#fff;
+    classDef ui fill:#313244,stroke:#a6e3a1,stroke-width:2px,color:#fff;
+
+    subgraph VSCodeClient ["🧩 VS Code Companion Extension (TypeScript Thin Client)"]
+        Sidebar["Sidebar Control Hub<br/>(Process Manager, Inference Discovery, Agent Setup)"]:::ui
+        StatusBar["Status Bar Widget<br/>(Live Cost Hover Card)"]:::ui
+        WebviewDashboard["Analytics Webview Dashboard<br/>(Route Inspector, Circuit Manager, Config Editor)"]:::ui
+        AuthMgr["AuthManager<br/>(Isolated Local vs Remote SecretStorage)"]:::vscode
+    end
+
+    subgraph GoDaemon ["🌮 Nacho Flow Go Daemon Core"]
+        direction TB
+        MgmtAPI["Management REST API (/v1/mgmt/*)"]:::daemon
+        EventBroker["SSE Real-Time Pub/Sub Event Broker (/v1/events)"]:::daemon
+        RingBuffer["In-Memory Ring Buffer Sink (Last 500 Turns, 0ms Disk IO)"]:::daemon
+        ProxyEngine["Proxy Director & 8-Format Tool Normalizer"]:::daemon
+    end
+
+    Sidebar -->|Start / Stop / Restart & Stream Logs| GoDaemon
+    AuthMgr -->|Bearer Token & Endpoint Config| MgmtAPI
+    MgmtAPI -->|POST /v1/mgmt/stats/reset<br/>POST /v1/mgmt/circuits/reset| GoDaemon
+    EventBroker -->|SSE Event Stream: stats_update, route_record| WebviewDashboard
+    EventBroker -->|SSE Event Stream: stats_update| StatusBar
+    RingBuffer -->|GET /v1/stats, Live Route Stream| WebviewDashboard
+```
+
+### 9.1 Thin-Client Separation of Concerns
+1. **Zero Route Duplication**: All token calculation, `expr` rule evaluation, circuit trips, and pricing logic execute in Go. The extension never duplicates token math or routing rules.
+2. **Real-Time Push Updates**: Rather than polling, the extension subscribes to the daemon's Server-Sent Events broker (`GET /v1/events`). Metrics update in real-time across the Status Bar and Analytics Webview with zero CPU spin.
+3. **Isolated Credential State**: `AuthManager` isolates Local mode (`127.0.0.1:8000`) and Remote mode (`http://<ip>:8000`), storing tokens securely in `vscode.SecretStorage` and guaranteeing that toggling modes never overwrites remote server credentials.
+4. **Markdown Diff Sanitizer (`pkg/router/diff_sanitizer.go`)**: Validates diff block syntax on responses, sanitizing malformed hunk prefixes before delivery to coding agents (Roo Code, Cline, Cursor).
+
 
 

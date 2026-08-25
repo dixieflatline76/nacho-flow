@@ -14,6 +14,7 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 7. [Autonomous Rule Auto-Tuning (`nacho-flow tune`)](#7-autonomous-rule-auto-tuning-nacho-flow-tune)
 8. [🔥 Heat Seeker: Spot Market Arbitrage & Deal Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-spot-market-arbitrage--deal-scout-nacho-flow-deals--nacho-flow-heat-seek)
 9. [🌶️ HotSauce Directives (In-Prompt Routing & Meta Commands)](#9-hotsauce-directives-in-prompt-routing--meta-commands)
+10. [🧩 VS Code Companion Extension & Management REST API](#10-vs-code-companion-extension--management-rest-api)
 
 ---
 
@@ -616,6 +617,79 @@ In-prompt directives are enabled by default. To disable them for strict enterpri
 router:
   enable_in_prompt_directives: false
 ```
+
+---
+
+## 10. 🧩 VS Code Companion Extension & Management REST API
+
+The **Nacho Flow VS Code Extension** delivers full lifecycle management, visual routing telemetry, and agent configuration directly inside VS Code.
+
+### 10.1 Key Capabilities
+
+1. **Sidebar Control Hub**:
+   - **Local Daemon Lifecycle**: 1-click Start, Stop, and Restart with real-time log output streaming to the `🌮 Nacho Flow Engine` output channel.
+   - **Engine Mode Toggle**: Seamlessly switch between **This Machine** (`127.0.0.1:8000`) and **Remote Server** (`http://<ip>:8000` with Bearer auth). Credentials and endpoint preferences are persisted separately.
+   - **Upstream Engine Discovery**: Live discovery and status chips for Ollama, OpenRouter, vLLM, SGLang, and llama.cpp.
+   - **1-Click Agent Setup**: Instant copy helpers for Base URL, API Key, and Model ID (`nacho-hybrid`) for Roo Code, Cline, and Cursor.
+   - **Direct Help & Support**: 1-click buttons linking directly to the User Guide and Support Desk.
+
+2. **Status Bar & Hover Telemetry**:
+   - Live status bar widget (`🌮 $X.XX svd`) updating continuously via Server-Sent Events (SSE).
+   - Rich Markdown hover card displaying daemon health, uptime, total savings, and provider circuit states.
+
+3. **Analytics Dashboard Webview**:
+   - **Financial KPI Cards**: Cumulative spend, savings, savings percentage, and total turns.
+   - **O(1) Rolling Time Windows**: Filter metrics by Today, This Week, This Month, or All-Time.
+   - **Live Route Inspector**: Inspect the last 500 LLM requests in memory with zero disk overhead.
+   - **Interactive Circuit Breaker Control**: Live status cards with individual reset buttons.
+   - **Configuration Editor**: Hot-reload `config.yaml` with syntax validation.
+   - **Autonomous Auto-Tuning Trigger**: Run `nacho-flow tune` empirical optimization directly from the webview.
+
+For complete extension setup and features, see the [VS Code Companion Extension Guide](file:///docs/EXTENSION_USER_GUIDE.md).
+
+---
+
+### 10.2 Management REST API Reference
+
+Nacho Flow includes management endpoints protected by Bearer authentication (`/v1/mgmt/*`):
+
+#### 1. Recalculate Statistics from Logs
+```http
+POST /v1/mgmt/stats/recalculate
+Authorization: Bearer <auth-token>
+```
+Re-reads historical traffic logs (`traffic.jsonl`) and recomputes cumulative savings and metrics.
+
+#### 2. Reset Statistics Counters
+```http
+POST /v1/mgmt/stats/reset
+Authorization: Bearer <auth-token>
+```
+Atomically resets all runtime financial and request counters to $0.00.
+
+#### 3. Inspect Circuit Breakers
+```http
+GET /v1/mgmt/circuits
+Authorization: Bearer <auth-token>
+```
+Returns live health and trip states for all upstream provider circuit breakers.
+
+#### 4. Reset a Tripped Circuit Breaker
+```http
+POST /v1/mgmt/circuits/reset
+Authorization: Bearer <auth-token>
+Content-Type: application/json
+
+{"provider": "openrouter"}
+```
+Closes a tripped circuit breaker to immediately resume traffic to that upstream provider.
+
+---
+
+### 10.3 Markdown Diff Sanitizer
+
+Local models occasionally emit malformed markdown diff blocks (e.g. invalid hunk prefixes or corrupt headers). Nacho Flow's internal **Diff Sanitizer** automatically cleans and standardizes diff blocks before returning responses to coding agents (Roo Code, Cline, Cursor), preventing agent file-patching crashes.
+
 
 
 

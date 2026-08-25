@@ -231,4 +231,46 @@ go run ./cmd/util/gen_catalog -version v1.1.0 -out data/models.json -embed-out p
 * **Concurrency Guarantee**: **0 data races** under `go test -race ./...`.
 * **Zero Allocations on Proxy Hot-Path**: Zero heap allocations in stream parsing fast bailout paths (`BenchmarkNormalize_PureProse_FastBailout`).
 
-   - Multi-arch Docker images are built and pushed to GitHub Container Registry (`ghcr.io`).
+---
+
+## 11. VS Code Extension Development Workflow
+
+The TypeScript companion extension source code is located in the `extension/` directory.
+
+### 11.1 Project Structure
+```text
+extension/
+├── package.json               # Extension manifest, commands, views & settings
+├── esbuild.config.js          # Fast JS/CSS bundler configuration
+├── jest.config.js             # Test runner configuration
+├── src/
+│   ├── core/                  # ProcessManager, AuthManager, API Client, SSE Client, Controller
+│   ├── ui/                    # Sidebar Provider, Status Bar Widget, Webview Dashboard Panels
+│   ├── utils/                 # Money and token formatters
+│   └── extension.ts           # Extension entrypoint (activate / deactivate)
+└── resources/                 # Icons (SVGs), Sidebar HTML/CSS/JS, Webview HTML/CSS/JS
+```
+
+### 11.2 Development Commands
+```bash
+# 1. Install dependencies
+cd extension && npm install
+
+# 2. Compile TypeScript & bundle assets
+npm run compile
+node esbuild.config.js
+
+# 3. Run Jest Unit & Integration Test Suite
+npm test
+
+# 4. Package VSIX bundle
+npx vsce package --no-dependencies --out "../dist/nacho-flow-0.6.0.vsix"
+
+# 5. Local Install into VS Code
+code --install-extension "../dist/nacho-flow-0.6.0.vsix" --force
+```
+
+### 11.3 Debugging in VS Code
+- Open the root workspace in VS Code.
+- Press `F5` or select **Run Extension** in the Debug menu to launch an isolated **Extension Development Host** window.
+
