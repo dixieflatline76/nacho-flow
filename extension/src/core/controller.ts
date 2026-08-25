@@ -6,6 +6,7 @@ import { SSEClient } from './sse/client';
 import { StatusBarManager } from '../ui/status-bar/item';
 import { DashboardPanel } from '../ui/webview/dashboard';
 import { SidebarViewProvider } from '../ui/sidebar/sidebar-view-provider';
+import { ProcessManager } from './process-manager';
 
 export class ExtensionController {
 	private context: vscode.ExtensionContext;
@@ -16,6 +17,7 @@ export class ExtensionController {
 	private dashboardPanel: DashboardPanel | null = null;
 	private sidebarProvider: SidebarViewProvider | null = null;
 	private outputChannel: vscode.OutputChannel | null = null;
+	private processManager!: ProcessManager;
 	private updateInterval: NodeJS.Timeout | null = null;
 	private activeTimeWindow: string = 'all_time';
 
@@ -23,6 +25,7 @@ export class ExtensionController {
 		this.context = context;
 		this.authManager = new AuthManager(context);
 		this.statusBar = new StatusBarManager();
+		this.processManager = new ProcessManager(context.extensionUri, (this.outputChannel as any) || { append: () => {}, appendLine: () => {} });
 	}
 
 	public async initialize(): Promise<void> {
@@ -33,6 +36,7 @@ export class ExtensionController {
 		// Create Output Channel for live engine logs
 		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Routing Engine');
 		this.context.subscriptions.push(this.outputChannel);
+		this.processManager = new ProcessManager(this.context.extensionUri, this.outputChannel);
 
 		// Register commands
 		this.registerCommands();
@@ -157,22 +161,49 @@ export class ExtensionController {
 							this.showTransientToast('🌮 Nacho Flow: Switched to Local Engine');
 						}
 						break;
-					case 'startEngine':
+					case 'startEngine': {
+						const daemonUrl = await this.authManager.getBaseUrl();
+						if (!this.processManager.isLocalUrl(daemonUrl)) {
+							vscode.window.showWarningMessage('Nacho Flow: Cannot start remote engine. Please ensure the daemon is running on its host server.');
+							break;
+						}
 						this.showTransientToast('▶️ Nacho Flow: Starting Routing Engine...');
+						const result = await this.processManager.start(daemonUrl);
+						if (!result.success && result.error) {
+							vscode.window.showErrorMessage(result.error);
+						}
 						await this.initializeClients();
 						await this.syncSidebarState();
 						break;
-					case 'restartEngine':
+					}
+					case 'restartEngine': {
+						const daemonUrl = await this.authManager.getBaseUrl();
+						if (!this.processManager.isLocalUrl(daemonUrl)) {
+							vscode.window.showWarningMessage('Nacho Flow: Cannot restart remote engine.');
+							break;
+						}
 						this.showTransientToast('🔄 Nacho Flow: Restarting Routing Engine...');
+						const result = await this.processManager.restart(daemonUrl);
+						if (!result.success && result.error) {
+							vscode.window.showErrorMessage(result.error);
+						}
 						await this.initializeClients();
 						await this.syncSidebarState();
 						break;
-					case 'stopEngine':
+					}
+					case 'stopEngine': {
+						const daemonUrl = await this.authManager.getBaseUrl();
+						if (!this.processManager.isLocalUrl(daemonUrl)) {
+							vscode.window.showWarningMessage('Nacho Flow: Cannot stop remote engine.');
+							break;
+						}
+						await this.processManager.stop();
 						this.showTransientToast('⏹️ Nacho Flow: Routing Engine stopped');
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ connected: false, error: 'Stopped by user' });
 						}
 						break;
+					}
 					case 'openLogs':
 						if (this.outputChannel) {
 							this.outputChannel.show();
@@ -962,6 +993,9 @@ export class ExtensionController {
 		this.statusBar.dispose();
 		if (this.sseClient) {
 			this.sseClient.disconnect();
+		}
+		if (this.processManager) {
+			this.processManager.dispose();
 		}
 	}
 }

@@ -1064,18 +1064,58 @@ default_tier:
       await sidebarMsgHandler({ command: 'setEngineMode', mode: 'local' });
       expect(vscode.workspace.getConfiguration().update).toHaveBeenCalledWith('daemonUrl', 'http://127.0.0.1:8000', 1);
 
+      // Mock processManager
+      const mockProcMgr = {
+        isLocalUrl: jest.fn().mockReturnValue(true),
+        start: jest.fn().mockResolvedValue({ success: true }),
+        restart: jest.fn().mockResolvedValue({ success: true }),
+        stop: jest.fn().mockResolvedValue(true),
+        dispose: jest.fn()
+      };
+      (extensionController as any).processManager = mockProcMgr;
+
       // Test startEngine
       await sidebarMsgHandler({ command: 'startEngine' });
+      expect(mockProcMgr.start).toHaveBeenCalled();
+
+      // Test startEngine with error
+      mockProcMgr.start.mockResolvedValueOnce({ success: false, error: 'Failed' });
+      await sidebarMsgHandler({ command: 'startEngine' });
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Failed');
+
+      // Test startEngine remote warning
+      mockProcMgr.isLocalUrl.mockReturnValueOnce(false);
+      await sidebarMsgHandler({ command: 'startEngine' });
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('Cannot start remote engine'));
 
       // Test restartEngine
+      mockProcMgr.isLocalUrl.mockReturnValue(true);
       await sidebarMsgHandler({ command: 'restartEngine' });
+      expect(mockProcMgr.restart).toHaveBeenCalled();
+
+      // Test restartEngine with error
+      mockProcMgr.restart.mockResolvedValueOnce({ success: false, error: 'Restart failed' });
+      await sidebarMsgHandler({ command: 'restartEngine' });
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Restart failed');
+
+      // Test restartEngine remote warning
+      mockProcMgr.isLocalUrl.mockReturnValueOnce(false);
+      await sidebarMsgHandler({ command: 'restartEngine' });
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('Cannot restart remote engine'));
 
       // Test stopEngine
+      mockProcMgr.isLocalUrl.mockReturnValue(true);
       await sidebarMsgHandler({ command: 'stopEngine' });
+      expect(mockProcMgr.stop).toHaveBeenCalled();
       expect((extensionController as any).sidebarProvider.updateEngineStatus).toHaveBeenCalledWith({
         connected: false,
         error: 'Stopped by user'
       });
+
+      // Test stopEngine remote warning
+      mockProcMgr.isLocalUrl.mockReturnValueOnce(false);
+      await sidebarMsgHandler({ command: 'stopEngine' });
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('Cannot stop remote engine'));
 
       // Test editConfig
       const editConfigSpy = jest.spyOn(extensionController as any, 'showConfigEditor').mockResolvedValue(undefined);
