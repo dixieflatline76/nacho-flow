@@ -91,6 +91,26 @@ func TestSanitizer(t *testing.T) {
 		t.Errorf("Expected modification when image present")
 	}
 	_ = out7
+
+	// Case 8: String content with directive tag
+	strDirectiveJSON := `{"messages": [{"role": "user", "content": "@nacho:local please refactor"}]}`
+	out8, mod8 := sanitizer.SanitizePayload([]byte(strDirectiveJSON), true)
+	if !mod8 {
+		t.Errorf("Expected string directive to be stripped")
+	}
+	var parsed8 map[string]interface{}
+	json.Unmarshal(out8, &parsed8)
+	if parsed8["messages"].([]interface{})[0].(map[string]interface{})["content"] != "please refactor" {
+		t.Errorf("Expected stripped prompt, got %v", parsed8["messages"])
+	}
+
+	// Case 9: Text part with directive tag
+	partDirectiveJSON := `{"messages": [{"role": "user", "content": [{"type": "text", "text": "@nacho:cloud analyze this"}]}]}`
+	out9, mod9 := sanitizer.SanitizePayload([]byte(partDirectiveJSON), true)
+	if !mod9 {
+		t.Errorf("Expected part directive to be stripped")
+	}
+	_ = out9
 }
 
 // BenchmarkSanitizer measures image payload stripping performance.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -329,6 +330,10 @@ default_tier:
 func TestMain_Flags(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
+
+	if flag.Usage != nil {
+		flag.Usage()
+	}
 
 	// 1. Version flag
 	*versionFlag = true

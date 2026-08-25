@@ -54,6 +54,11 @@ func NewTrafficLogger(filePath string, bufferSize int) (*TrafficLogger, error) {
 	return tl, nil
 }
 
+// FilePath returns the underlying destination file path.
+func (tl *TrafficLogger) FilePath() string {
+	return tl.filePath
+}
+
 func (tl *TrafficLogger) worker() {
 	defer close(tl.done)
 

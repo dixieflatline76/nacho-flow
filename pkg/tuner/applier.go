@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -40,15 +39,15 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 	// 2. Mutate Local Tier rule
 	updated := false
 	for i, tier := range cfg.Tiers {
-		if tier.Provider == "ollama" || strings.Contains(strings.ToLower(tier.Name), "local") {
+		if IsLocalTier(tier) {
 			cfg.Tiers[i].When = result.SynthesizedRule
 			updated = true
 			break
 		}
 	}
 
-	if !updated && len(cfg.Tiers) > 0 {
-		cfg.Tiers[0].When = result.SynthesizedRule
+	if !updated {
+		return backupPath, fmt.Errorf("no tunable local tier found in config (tiers must specify a local provider like 'ollama'/'vllm'/'lmstudio' or include 'local'/'gpu' in name)")
 	}
 
 	// 3. Serialize updated config

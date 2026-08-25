@@ -13,9 +13,11 @@ const (
 
 // SessionState tracks the retry count, prompt hash, and last activity timestamp of a session.
 type SessionState struct {
-	RetriesCount int
-	LastTurnTime time.Time
-	PromptHash   uint64
+	RetriesCount      int
+	LastTurnTime      time.Time
+	PromptHash        uint64
+	LastMetaDirective string
+	LastMetaTime      time.Time
 }
 
 // SessionTracker tracks consecutive turn retries per session without leaking background goroutines.
@@ -85,19 +87,7 @@ func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64) (retr
 	}
 
 	// Enforce capacity bounds with lazy cleanup
-	if len(st.sessions) >= st.maxSessions {
-		for k, v := range st.sessions {
-			if now.Sub(v.LastTurnTime) > st.ttl {
-				delete(st.sessions, k)
-			}
-		}
-		if len(st.sessions) >= st.maxSessions {
-			for k := range st.sessions {
-				delete(st.sessions, k)
-				break
-			}
-		}
-	}
+	st.evictExpiredOrOldest(now)
 
 	st.sessions[sessionKey] = &SessionState{
 		RetriesCount: 0,
@@ -105,6 +95,23 @@ func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64) (retr
 		PromptHash:   promptHash,
 	}
 	return 0, false
+}
+
+func (st *SessionTracker) evictExpiredOrOldest(now time.Time) {
+	if len(st.sessions) < st.maxSessions {
+		return
+	}
+	for k, v := range st.sessions {
+		if now.Sub(v.LastTurnTime) > st.ttl {
+			delete(st.sessions, k)
+		}
+	}
+	if len(st.sessions) >= st.maxSessions {
+		for k := range st.sessions {
+			delete(st.sessions, k)
+			break
+		}
+	}
 }
 
 // Reset clears session state for the given session key.
@@ -130,4 +137,37 @@ func (st *SessionTracker) GetRetries(sessionKey string) int {
 		return 0
 	}
 	return state.RetriesCount
+}
+
+// ShouldDebounceMeta checks if an identical meta directive was executed within window for sessionKey.
+// If true, returns true indicating the call should be debounced.
+// If false, records current timestamp/directive and returns false.
+func (st *SessionTracker) ShouldDebounceMeta(sessionKey, directive string, window time.Duration) bool {
+	if sessionKey == "" || directive == "" || window <= 0 {
+		return false
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	now := time.Now()
+	state, exists := st.sessions[sessionKey]
+	if !exists {
+		st.evictExpiredOrOldest(now)
+		st.sessions[sessionKey] = &SessionState{
+			LastTurnTime:      now,
+			LastMetaDirective: directive,
+			LastMetaTime:      now,
+		}
+		return false
+	}
+
+	state.LastTurnTime = now
+	if state.LastMetaDirective == directive && now.Sub(state.LastMetaTime) < window {
+		return true
+	}
+
+	state.LastMetaDirective = directive
+	state.LastMetaTime = now
+	return false
 }

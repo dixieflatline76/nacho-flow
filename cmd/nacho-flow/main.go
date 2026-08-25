@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -22,6 +24,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/store"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 	"github.com/dixieflatline76/nacho-flow/pkg/tuner"
 	"github.com/kardianos/service"
 )
@@ -31,6 +34,17 @@ var version = "0.0.0"
 func init() {
 	if version != "" {
 		contract.Version = version
+	}
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of nacho-flow:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "\nSubcommands:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  deals         Find drop-in model replacements for your tiers (Heat Seeker)\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  heat-seek     Alias for 'deals'\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  tune          Analyze traffic logs and synthesize optimal routing rules\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  service       Manage background OS daemon (install, uninstall, start, stop)\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  version       Print version information and exit\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "\nFlags:\n")
+		flag.PrintDefaults()
 	}
 }
 
@@ -128,14 +142,31 @@ func (p *program) run(s service.Service) error {
 	// 1. Initialize Provider Registry from config
 	reg := provider.NewRegistryFromConfig(cfg)
 
-	// 2. Setup Pricing Oracle with OpenRouter Plugin if configured
-	oracle := telemetry.NewPricingOracle()
-	if orProvider, ok := cfg.Providers["openrouter"]; ok {
-		oracle.RegisterProvider(telemetry.NewOpenRouterPricingProviderWithURL(orProvider.BaseURL, orProvider.APIKey))
+	// 2. Setup Curated Gallery, Classifier, and Pricing Oracle with OpenRouter Plugin
+	curationMgr := curation.NewManager("", "")
+	modelClassifier := telemetry.NewClassifier(curationMgr)
+	oracle := telemetry.NewPricingOracleWithClassifier(modelClassifier)
+	for id, p := range cfg.Providers {
+		idLower := strings.ToLower(id)
+		if idLower == contract.ProviderOpenRouter || strings.Contains(strings.ToLower(p.BaseURL), contract.ProviderOpenRouter) {
+			var syncInterval time.Duration
+			if p.PricingSyncInterval != "" {
+				syncInterval, _ = time.ParseDuration(p.PricingSyncInterval)
+			}
+			oracle.RegisterProvider(
+				telemetry.NewOpenRouterPricingProviderWithURL(p.BaseURL, p.APIKey),
+				syncInterval,
+			)
+		}
 	}
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	oracle.StartBackgroundSync(bgCtx, 24*time.Hour)
+
+	// Trigger async OTA catalog refresh
+	go func() {
+		_, _ = curationMgr.SyncOTA(bgCtx)
+	}()
 
 	// 3. Setup Persistent Disk Store & Async Stats Tracker
 	diskStore, err := store.NewDiskStore("")
@@ -170,6 +201,12 @@ func (p *program) run(s service.Service) error {
 	trafficLogger, err = telemetry.NewTrafficLogger("", 5000)
 	if err == nil {
 		tracker.AddSink(trafficLogger)
+		if histRecords, rErr := telemetry.ReadRecords(trafficLogger.FilePath(), 50); rErr == nil && len(histRecords) > 0 {
+			for _, rec := range histRecords {
+				ringBuffer.Emit(rec)
+			}
+			appLogger.Info("Hydrated recent routes ring buffer from disk", slog.Int("count", len(histRecords)))
+		}
 	} else {
 		appLogger.Warn("Failed to initialize traffic logger", slog.Any("error", err))
 	}
@@ -199,11 +236,43 @@ func (p *program) run(s service.Service) error {
 	srvHandler := server.NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, reg, appLogger)
 	srvHandler.SetRingBuffer(ringBuffer)
 	srvHandler.SetEventBroker(eventBroker)
+	activeConfigPath := contract.DefaultConfigFileName
 	if *configPathFlag != "" {
-		srvHandler.SetConfigPath(*configPathFlag)
-	} else {
-		srvHandler.SetConfigPath(contract.DefaultConfigFileName)
+		activeConfigPath = *configPathFlag
 	}
+	srvHandler.SetConfigPath(activeConfigPath)
+
+	// Automatic zero-downtime background file watcher for config.yaml changes
+	go func(cfgFile string) {
+		var lastMod time.Time
+		if stat, err := os.Stat(cfgFile); err == nil {
+			lastMod = stat.ModTime()
+		}
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-bgCtx.Done():
+				return
+			case <-ticker.C:
+				stat, err := os.Stat(cfgFile)
+				if err == nil {
+					if !lastMod.IsZero() && stat.ModTime().After(lastMod) {
+						lastMod = stat.ModTime()
+						appLogger.Info("🌮 Detected disk modification to config.yaml, hot-reloading...", slog.String("path", cfgFile))
+						if reloadErr := srvHandler.ReloadConfigFromDisk(); reloadErr != nil {
+							appLogger.Error("Failed to hot-reload config from disk", slog.Any("error", reloadErr))
+						} else {
+							appLogger.Info("✅ Configuration successfully hot-reloaded from disk", slog.String("path", cfgFile))
+						}
+					} else if lastMod.IsZero() {
+						lastMod = stat.ModTime()
+					}
+				}
+			}
+		}
+	}(activeConfigPath)
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 	srv := &http.Server{
@@ -356,6 +425,8 @@ func runMain(args []string, serviceRunner func(service.Service) error) error {
 			return nil
 		case "tune":
 			return runTune(args[2:])
+		case "deals", "deal", "hunt", "heat-seek", "heatseek":
+			return runDeals(args[2:])
 		}
 	}
 
@@ -398,6 +469,60 @@ func setupShutdownSignal(s service.Service) chan os.Signal {
 		}
 	}()
 	return sigChan
+}
+
+func runDeals(args []string) error {
+	fs := flag.NewFlagSet("deals", flag.ContinueOnError)
+	port := fs.Int("port", contract.DefaultServerPort, "Nacho Flow daemon port")
+	host := fs.String("host", contract.DefaultDaemonHost, "Nacho Flow daemon host")
+	asJSON := fs.Bool("json", false, "Output deals as raw JSON")
+	apiKey := fs.String("auth", "", "Gateway auth token (if required)")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	daemonURL := fmt.Sprintf("%s://%s:%d", contract.HTTPProtocol, *host, *port)
+	return runDealsCommand(daemonURL, *apiKey, *asJSON, os.Stdout)
+}
+
+func fetchDeals(daemonURL, apiKey string) (*server.DealsResponse, error) {
+	reqURL := fmt.Sprintf("%s%s", strings.TrimRight(daemonURL, "/"), contract.PathAPIDeals)
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create deals request: %w", err)
+	}
+
+	if apiKey != "" {
+		req.Header.Set(contract.HeaderAuthorization, contract.AuthSchemeBearer+apiKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to nacho-flow daemon at %s: %w", daemonURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("daemon returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var dealsResp server.DealsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&dealsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode deals response: %w", err)
+	}
+	return &dealsResp, nil
+}
+
+func runDealsCommand(daemonURL, apiKey string, asJSON bool, out io.Writer) error {
+	dealsResp, err := fetchDeals(daemonURL, apiKey)
+	if err != nil {
+		return err
+	}
+
+	reporter := NewDealsReporter(asJSON)
+	return reporter.Render(out, *dealsResp)
 }
 
 func main() {

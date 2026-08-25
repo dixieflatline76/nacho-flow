@@ -18,6 +18,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
+	"github.com/dixieflatline76/nacho-flow/pkg/store"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/dixieflatline76/nacho-flow/pkg/tuner"
@@ -36,11 +37,14 @@ type Server struct {
 	oracle         *telemetry.PricingOracle
 	tracker        *telemetry.StatsTracker
 	sessionTracker *router.SessionTracker
+	metaRegistry   *MetaRegistry
 	logger         *slog.Logger
 	transport      *http.Transport
 	ringBuffer     *telemetry.RingBufferSink
 	eventBroker    *telemetry.EventBroker
 	tuner          *tuner.CostPenaltyOptimizer
+	diskStore      *store.DiskStore
+	trafficLogPath string
 	configPath     string
 	startTime      time.Time
 	mementoState   *runtimeState
@@ -91,6 +95,16 @@ func (s *Server) SetConfigPath(path string) {
 // SetTuner sets the optimizer for /api/v1/tune.
 func (s *Server) SetTuner(t *tuner.CostPenaltyOptimizer) {
 	s.tuner = t
+}
+
+// SetDiskStore sets the persistence disk store for stats snapshots.
+func (s *Server) SetDiskStore(ds *store.DiskStore) {
+	s.diskStore = ds
+}
+
+// SetTrafficLogPath sets the path to the traffic.jsonl log.
+func (s *Server) SetTrafficLogPath(path string) {
+	s.trafficLogPath = path
 }
 
 func (s *Server) armWatchdog(memento *runtimeState, duration time.Duration) {
@@ -205,6 +219,7 @@ func NewServerWithTelemetryAndRegistry(
 		oracle:         oracle,
 		tracker:        tracker,
 		sessionTracker: router.NewSessionTracker(5 * time.Minute),
+		metaRegistry:   NewMetaRegistry(),
 		logger:         logger,
 		transport:      transport,
 		tuner:          tuner.NewCostPenaltyOptimizer(),
@@ -275,6 +290,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case contract.PathAPITune:
 			s.handleAPITune(w, r)
 			return
+		case contract.PathAPIDeals:
+			s.handleAPIDeals(w, r)
+			return
+		case contract.PathAPIStatsReset:
+			s.handleAPIStatsReset(w, r)
+			return
+		case contract.PathAPIStatsRecalculate:
+			s.handleAPIStatsRecalculate(w, r)
+			return
 		default:
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
@@ -327,7 +351,35 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reqLogger.Warn("Failed to classify payload", slog.Any("error", err))
 	}
 
-	// 2. Track session retries for auto-escalation
+	// Honor config toggle to disable in-prompt directives
+	if s.GetConfig().Router.EnableInPromptDirectives != nil && !*s.GetConfig().Router.EnableInPromptDirectives {
+		reqCtx.IsMetaDirective = false
+		reqCtx.ForcedTier = ""
+		reqCtx.ForcedModel = ""
+		reqCtx.MetaDirective = ""
+		reqCtx.MetaDirectiveRaw = ""
+		reqCtx.CleanPrompt = reqCtx.Prompt
+	}
+
+	// 2. Intercept local meta directives (@nacho:help, @nacho:tiers, @nacho:status, @nacho:deals, @nacho:<typo>)
+	if reqCtx.IsMetaDirective {
+		isStream := strings.Contains(string(body), `"stream":true`) || strings.Contains(string(body), `"stream": true`)
+		env := MetaEnv{
+			Config:        s.GetConfig(),
+			Stats:         s.tracker,
+			Oracle:        s.oracle,
+			Providers:     s.GetRegistry(),
+			StartTime:     s.startTime,
+			DaemonVersion: contract.Version,
+		}
+		if s.metaRegistry == nil {
+			s.metaRegistry = NewMetaRegistry()
+		}
+		s.metaRegistry.Dispatch(w, r, reqCtx, env, s.sessionTracker, isStream)
+		return
+	}
+
+	// 3. Track session retries for auto-escalation
 	sessionKey := r.Header.Get("x-session-id")
 	if sessionKey == "" {
 		sessionKey = r.Header.Get("session-id")
@@ -343,11 +395,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqCtx.Retries = retries
 	reqCtx.IsRetry = isRetry
 
-	// 3. Evaluate 1..N tiers using expr engine
+	// 4. Evaluate 1..N tiers using expr engine
 	targetTier, err := s.GetEvaluator().SelectTier(reqCtx)
 	if err != nil {
 		reqLogger.Error("Error evaluating tier, falling back to default", slog.Any("error", err))
 		targetTier = s.GetConfig().DefaultTier
+	}
+
+	// 5. If forced directive is used, check provider circuit breaker (Strict Fallback Bypass)
+	if reqCtx.ForcedTier != "" || reqCtx.ForcedModel != "" {
+		targetProvider, found := s.GetRegistry().Get(targetTier.Provider)
+		if found && !s.allowProvider(targetProvider) {
+			reqLogger.Warn("Forced tier provider circuit is OPEN, blocking request without fallback",
+				slog.String("tier", targetTier.Name),
+				slog.String("provider", targetTier.Provider))
+			alertMsg := RenderCircuitBlocked(targetTier.Name, targetTier.Provider)
+			isStream := strings.Contains(string(body), `"stream":true`) || strings.Contains(string(body), `"stream": true`)
+			if isStream {
+				sse := &SSEMetaPresenter{}
+				_ = sse.WriteResponse(w, alertMsg, fmt.Sprintf("circuit-blocked-%d", time.Now().UnixNano()))
+			} else {
+				jsonP := &JSONMetaPresenter{}
+				_ = jsonP.WriteResponse(w, alertMsg, fmt.Sprintf("circuit-blocked-%d", time.Now().UnixNano()))
+			}
+			return
+		}
 	}
 
 	reqLogger.Info("Routing request",
@@ -442,7 +514,12 @@ func (s *Server) dispatchTier(
 		return
 	}
 
-	fullTargetURL := singleJoiningSlash(targetURL.String(), r.URL.Path)
+	reqPath := r.URL.Path
+	targetBasePath := strings.TrimRight(targetURL.Path, "/")
+	if strings.HasSuffix(targetBasePath, "/v1") && strings.HasPrefix(reqPath, "/v1/") {
+		reqPath = strings.TrimPrefix(reqPath, "/v1")
+	}
+	fullTargetURL := singleJoiningSlash(targetURL.String(), reqPath)
 	// #nosec G704 - upstream proxy URL is constructed from validated registered provider base URL
 	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, fullTargetURL, bytes.NewReader(preparedBody))
 	if err != nil {
@@ -538,9 +615,10 @@ func (s *Server) dispatchTier(
 		if readErr == nil {
 			_, _ = io.Copy(w, normalizer)
 		}
+		usage, _ := normalizer.GetUsage()
 		_ = normalizer.Close()
 
-		s.recordTelemetry(targetTier, targetProvider, reqCtx, resp.StatusCode, startTime, isFallback, reqLogger)
+		s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger)
 		return
 	}
 
@@ -567,11 +645,16 @@ func (s *Server) dispatchTier(
 	s.recordProviderSuccess(targetProvider)
 	s.recordProxySuccess()
 
+	var nonStreamUsage StreamUsage
+
 	// Normalize non-streaming tools & reasoning
 	if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeJSON) {
-		if hasCandidateToolTokens(bodyBytes) || bytes.Contains(bodyBytes, []byte("reasoning")) {
-			var completionResp fastChatCompletionResponse
-			if json.Unmarshal(bodyBytes, &completionResp) == nil && len(completionResp.Choices) > 0 {
+		var completionResp fastChatCompletionResponse
+		if json.Unmarshal(bodyBytes, &completionResp) == nil {
+			if len(completionResp.Usage) > 0 {
+				_ = json.Unmarshal(completionResp.Usage, &nonStreamUsage)
+			}
+			if len(completionResp.Choices) > 0 {
 				firstChoice := &completionResp.Choices[0]
 				modified := false
 
@@ -608,14 +691,9 @@ func (s *Server) dispatchTier(
 				}
 
 				// Calibrate Adaptive Token Estimator if usage prompt tokens reported
-				if len(completionResp.Usage) > 0 {
-					var usageData struct {
-						PromptTokens int `json:"prompt_tokens"`
-					}
-					if json.Unmarshal(completionResp.Usage, &usageData) == nil && usageData.PromptTokens > 0 {
-						if calibrator, ok := s.classifier.(interface{ GetEstimator() *router.TokenEstimator }); ok {
-							calibrator.GetEstimator().Calibrate(usageData.PromptTokens, len(body))
-						}
+				if nonStreamUsage.PromptTokens > 0 {
+					if calibrator, ok := s.classifier.(interface{ GetEstimator() *router.TokenEstimator }); ok {
+						calibrator.GetEstimator().Calibrate(nonStreamUsage.PromptTokens, len(body))
 					}
 				}
 			}
@@ -635,7 +713,7 @@ func (s *Server) dispatchTier(
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(bodyBytes)
 
-	s.recordTelemetry(targetTier, targetProvider, reqCtx, resp.StatusCode, startTime, isFallback, reqLogger)
+	s.recordTelemetry(targetTier, targetProvider, reqCtx, nonStreamUsage, resp.StatusCode, startTime, isFallback, reqLogger)
 }
 
 func (s *Server) allowProvider(p provider.LLMProvider) bool {
@@ -687,6 +765,7 @@ func (s *Server) recordTelemetry(
 	targetTier contract.Tier,
 	targetProvider provider.LLMProvider,
 	reqCtx contract.RequestContext,
+	usage StreamUsage,
 	statusCode int,
 	startTime time.Time,
 	isFallback bool,
@@ -694,36 +773,36 @@ func (s *Server) recordTelemetry(
 ) {
 	latency := float64(time.Since(startTime).Milliseconds())
 	isLocal := targetProvider.IsLocal()
-	var costSaved float64
 
-	if reqCtx.Tokens > 0 {
-		baselineRatePerM := contract.DefaultBenchmarkPricePerMillion
-		if baselinePricing, found := s.oracle.GetPrice("openrouter", contract.DefaultBenchmarkModel); found && baselinePricing.PromptCostPerMillion > 0 {
-			baselineRatePerM = baselinePricing.PromptCostPerMillion
-		}
-		if isLocal {
-			costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * baselineRatePerM
-		} else {
-			if tierPricing, found := s.oracle.GetPrice(targetTier.Provider, targetTier.Model); found {
-				if baselineRatePerM > tierPricing.PromptCostPerMillion {
-					costSaved = (float64(reqCtx.Tokens) / 1_000_000.0) * (baselineRatePerM - tierPricing.PromptCostPerMillion)
-				}
-			}
-		}
+	promptTokens := reqCtx.Tokens
+	if usage.PromptTokens > 0 {
+		promptTokens = usage.PromptTokens
+	}
+	completionTokens := usage.CompletionTokens
+	totalTokens := usage.TotalTokens
+	if totalTokens == 0 {
+		totalTokens = promptTokens + completionTokens
 	}
 
-	tierNum := 1
-	switch {
-	case strings.Contains(strings.ToLower(targetTier.Name), "tier 2") || strings.Contains(strings.ToLower(targetTier.Name), "coder"):
-		tierNum = 2
-	case strings.Contains(strings.ToLower(targetTier.Name), "tier 3") || strings.Contains(strings.ToLower(targetTier.Name), "reasoning"):
-		tierNum = 3
-	case strings.Contains(strings.ToLower(targetTier.Name), "tier 4") || strings.Contains(strings.ToLower(targetTier.Model), "vision"):
-		tierNum = 4
-	case isLocal:
+	baselineRatePerM := contract.DefaultBenchmarkPricePerMillion
+	if baselinePricing, found := s.oracle.GetPrice("openrouter", contract.DefaultBenchmarkModel); found && baselinePricing.PromptCostPerMillion > 0 {
+		baselineRatePerM = baselinePricing.PromptCostPerMillion
+	}
+
+	costSpent, costSaved := s.oracle.CalculateFinancials(targetTier.Provider, targetTier.Model, isLocal, promptTokens, completionTokens, baselineRatePerM)
+
+	tierNum := 2
+	if isLocal {
 		tierNum = 1
-	default:
-		tierNum = 2
+	} else {
+		switch {
+		case strings.Contains(strings.ToLower(targetTier.Name), "tier 3") || strings.Contains(strings.ToLower(targetTier.Name), "reasoning") || strings.Contains(strings.ToLower(targetTier.Name), "rescue") || strings.Contains(strings.ToLower(targetTier.Name), "sonnet"):
+			tierNum = 3
+		case strings.Contains(strings.ToLower(targetTier.Name), "tier 4") || strings.Contains(strings.ToLower(targetTier.Name), "vision") || strings.Contains(strings.ToLower(targetTier.Model), "vision"):
+			tierNum = 4
+		default:
+			tierNum = 2
+		}
 	}
 
 	s.tracker.Record(telemetry.Observation{
@@ -731,7 +810,8 @@ func (s *Server) recordTelemetry(
 		TierName:   targetTier.Name,
 		Model:      targetTier.Model,
 		Provider:   targetTier.Provider,
-		Tokens:     reqCtx.Tokens,
+		Tokens:     totalTokens,
+		CostSpent:  costSpent,
 		CostSaved:  costSaved,
 		IsLocal:    isLocal,
 		IsFallback: isFallback,
@@ -739,14 +819,17 @@ func (s *Server) recordTelemetry(
 		Keywords:   reqCtx.Keywords,
 		HasImages:  reqCtx.HasImages,
 		HasTools:   reqCtx.HasTools,
-		StatusCode: statusCode,
-		IsRetry:    reqCtx.IsRetry,
+		StatusCode:    statusCode,
+		IsRetry:       reqCtx.IsRetry,
+		ForcedTier:    reqCtx.ForcedTier,
+		ForcedModel:   reqCtx.ForcedModel,
+		DirectiveUsed: reqCtx.MetaDirectiveRaw,
 	})
 
 	reqLogger.Info("Completed proxy request",
 		slog.String("tier", targetTier.Name),
 		slog.String("model", targetTier.Model),
-		slog.Int("tokens", reqCtx.Tokens),
+		slog.Int("tokens", totalTokens),
 		slog.Float64("latency_ms", latency),
 		slog.Int("status", statusCode),
 		slog.Bool("is_fallback", isFallback),

@@ -2,11 +2,28 @@ package telemetry
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
+
+type mockSink struct {
+	mu      sync.Mutex
+	records []TurnRecord
+}
+
+func (m *mockSink) Emit(record TurnRecord) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.records = append(m.records, record)
+}
+
+func (m *mockSink) Close() error {
+	return nil
+}
 
 func TestStatsTracker_ObservationAggregation(t *testing.T) {
 	tracker := NewStatsTracker(100)
@@ -16,6 +33,7 @@ func TestStatsTracker_ObservationAggregation(t *testing.T) {
 	tracker.Record(Observation{
 		Tier:       1,
 		Tokens:     10000,
+		CostSpent:  0.0,
 		CostSaved:  0.045, // $4.50/1M
 		IsLocal:    true,
 		IsFallback: false,
@@ -24,6 +42,7 @@ func TestStatsTracker_ObservationAggregation(t *testing.T) {
 	tracker.Record(Observation{
 		Tier:       1,
 		Tokens:     5000,
+		CostSpent:  0.0,
 		CostSaved:  0.0225,
 		IsLocal:    true,
 		IsFallback: false,
@@ -34,7 +53,8 @@ func TestStatsTracker_ObservationAggregation(t *testing.T) {
 	tracker.Record(Observation{
 		Tier:      2,
 		Tokens:    2000,
-		CostSaved: 0.0,
+		CostSpent: 0.004,
+		CostSaved: 0.002,
 		IsLocal:   false,
 	})
 
@@ -42,6 +62,7 @@ func TestStatsTracker_ObservationAggregation(t *testing.T) {
 	tracker.Record(Observation{
 		Tier:      3,
 		Tokens:    4000,
+		CostSpent: 0.012,
 		CostSaved: 0.0,
 		IsLocal:   false,
 	})
@@ -50,6 +71,7 @@ func TestStatsTracker_ObservationAggregation(t *testing.T) {
 	tracker.Record(Observation{
 		Tier:      4,
 		Tokens:    1500,
+		CostSpent: 0.003,
 		CostSaved: 0.0,
 		IsLocal:   false,
 	})
@@ -59,6 +81,7 @@ func TestStatsTracker_ObservationAggregation(t *testing.T) {
 		Tier:               99,
 		IsExplicitOverride: true,
 		Tokens:             500,
+		CostSpent:          0.001,
 	})
 
 	// Fallback
@@ -66,6 +89,7 @@ func TestStatsTracker_ObservationAggregation(t *testing.T) {
 		Tier:       2,
 		IsFallback: true,
 		Tokens:     3000,
+		CostSpent:  0.006,
 	})
 
 	// Allow worker to drain observations
@@ -97,8 +121,282 @@ func TestStatsTracker_ObservationAggregation(t *testing.T) {
 	if stats.TotalTokensRoutedLocally != 15000 {
 		t.Errorf("expected 15000 tokens routed locally, got %d", stats.TotalTokensRoutedLocally)
 	}
-	if stats.EstimatedCostSavedUSD < 0.0674 || stats.EstimatedCostSavedUSD > 0.0676 {
-		t.Errorf("expected ~0.0675 cost saved, got %f", stats.EstimatedCostSavedUSD)
+	if math.Abs(stats.EstimatedCostSavedUSD-0.0695) > 0.0001 {
+		t.Errorf("expected ~0.0695 cost saved, got %f", stats.EstimatedCostSavedUSD)
+	}
+	if math.Abs(stats.TotalCostSpentUSD-0.026) > 0.0001 {
+		t.Errorf("expected ~0.026 cost spent, got %f", stats.TotalCostSpentUSD)
+	}
+	// Reduction Pct: 0.0695 / (0.0695 + 0.0260) = 0.0695 / 0.0955 ~= 72.77%
+	if stats.CostReductionPct < 72.0 || stats.CostReductionPct > 73.5 {
+		t.Errorf("expected ~72.77%% cost reduction, got %f%%", stats.CostReductionPct)
+	}
+}
+
+func TestStatsTracker_DualFinancialMetrics(t *testing.T) {
+	tracker := NewStatsTracker(100)
+	defer tracker.Close()
+
+	// 1. Zero state test (no requests) -> 0.0% reduction, no NaN
+	zeroStats := tracker.GetStats()
+	if math.IsNaN(zeroStats.CostReductionPct) || math.IsInf(zeroStats.CostReductionPct, 0) {
+		t.Fatalf("CostReductionPct must not be NaN or Inf on zero stats")
+	}
+	if zeroStats.CostReductionPct != 0.0 {
+		t.Errorf("expected 0.0 reduction pct on empty tracker, got %f", zeroStats.CostReductionPct)
+	}
+
+	// 2. 100% Free / Saved ($10 saved, $0 spent) -> 100.0% reduction
+	tracker.Record(Observation{
+		Tokens:    100000,
+		CostSaved: 10.0,
+		CostSpent: 0.0,
+		IsLocal:   true,
+	})
+	tracker.Flush()
+
+	stats := tracker.GetStats()
+	if stats.CostReductionPct != 100.0 {
+		t.Errorf("expected 100.0%% cost reduction, got %f%%", stats.CostReductionPct)
+	}
+
+	// 3. 50% Reduction ($10 saved, $10 spent) -> 50.0% reduction
+	tracker.Record(Observation{
+		Tokens:    100000,
+		CostSaved: 0.0,
+		CostSpent: 10.0,
+		IsLocal:   false,
+	})
+	tracker.Flush()
+
+	stats = tracker.GetStats()
+	if stats.EstimatedCostSavedUSD != 10.0 || stats.TotalCostSpentUSD != 10.0 {
+		t.Errorf("expected $10 saved and $10 spent, got saved=%f, spent=%f", stats.EstimatedCostSavedUSD, stats.TotalCostSpentUSD)
+	}
+	if stats.CostReductionPct != 50.0 {
+		t.Errorf("expected 50.0%% cost reduction, got %f%%", stats.CostReductionPct)
+	}
+}
+
+func TestStatsTracker_PreAggregatedTimeWindows(t *testing.T) {
+	tracker := NewStatsTracker(100)
+	defer tracker.Close()
+
+	// Use fixed reference date: Wednesday 2026-08-19
+	dayMonday := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
+	dayTuesday := time.Date(2026, 8, 18, 14, 0, 0, 0, time.UTC)
+	dayWednesday := time.Date(2026, 8, 19, 16, 0, 0, 0, time.UTC)
+	dayPrevMonth := time.Date(2026, 7, 30, 9, 0, 0, 0, time.UTC)
+
+	// Previous month
+	tracker.Record(Observation{
+		Tokens:     5000,
+		CostSpent:  1.0,
+		CostSaved:  2.0,
+		ObservedAt: dayPrevMonth,
+	})
+
+	// Monday this week
+	tracker.Record(Observation{
+		Tokens:     10000,
+		CostSpent:  1.0,
+		CostSaved:  9.0, // 90% reduction
+		IsLocal:    true,
+		ObservedAt: dayMonday,
+	})
+
+	// Tuesday this week
+	tracker.Record(Observation{
+		Tokens:     20000,
+		CostSpent:  2.0,
+		CostSaved:  8.0, // 80% reduction
+		IsLocal:    false,
+		ObservedAt: dayTuesday,
+	})
+
+	// Wednesday (Today)
+	tracker.Record(Observation{
+		Tokens:     10000,
+		CostSpent:  1.0,
+		CostSaved:  4.0, // 80% reduction
+		IsLocal:    true,
+		ObservedAt: dayWednesday,
+	})
+
+	tracker.Flush()
+	stats := tracker.GetStats()
+
+	// Verify Today (Wednesday 2026-08-19)
+	today := stats.Windows.Today
+	if today.Requests != 1 {
+		t.Errorf("expected 1 request today, got %d", today.Requests)
+	}
+	if today.TokensTotal != 10000 || today.TokensLocal != 10000 {
+		t.Errorf("expected 10000 total/local tokens today, got total=%d, local=%d", today.TokensTotal, today.TokensLocal)
+	}
+	if today.CostSpentUSD != 1.0 || today.CostSavedUSD != 4.0 {
+		t.Errorf("expected $1 spent, $4 saved today, got spent=%f, saved=%f", today.CostSpentUSD, today.CostSavedUSD)
+	}
+	if today.CostReductionPct != 80.0 {
+		t.Errorf("expected 80.0%% today reduction, got %f%%", today.CostReductionPct)
+	}
+
+	// Verify ThisWeek (Mon-Wed: 3 requests, 40000 tokens, $4 spent, $21 saved)
+	week := stats.Windows.ThisWeek
+	if week.Requests != 3 {
+		t.Errorf("expected 3 requests this week, got %d", week.Requests)
+	}
+	if week.TokensTotal != 40000 || week.TokensLocal != 20000 {
+		t.Errorf("expected 40000 total / 20000 local tokens this week, got total=%d, local=%d", week.TokensTotal, week.TokensLocal)
+	}
+	if week.CostSpentUSD != 4.0 || week.CostSavedUSD != 21.0 {
+		t.Errorf("expected $4 spent, $21 saved this week, got spent=%f, saved=%f", week.CostSpentUSD, week.CostSavedUSD)
+	}
+	// 21 / (21 + 4) = 21 / 25 = 84%
+	if week.CostReductionPct != 84.0 {
+		t.Errorf("expected 84.0%% week reduction, got %f%%", week.CostReductionPct)
+	}
+
+	// Verify ThisMonth (August 2026: 3 requests, $4 spent, $21 saved)
+	month := stats.Windows.ThisMonth
+	if month.Requests != 3 {
+		t.Errorf("expected 3 requests this month, got %d", month.Requests)
+	}
+	if month.CostSpentUSD != 4.0 || month.CostSavedUSD != 21.0 {
+		t.Errorf("expected $4 spent, $21 saved this month, got spent=%f, saved=%f", month.CostSpentUSD, month.CostSavedUSD)
+	}
+
+	// Verify AllTime (4 requests: $5 spent, $23 saved)
+	allTime := stats.Windows.AllTime
+	if allTime.Requests != 4 {
+		t.Errorf("expected 4 requests all time, got %d", allTime.Requests)
+	}
+	if allTime.CostSpentUSD != 5.0 || allTime.CostSavedUSD != 23.0 {
+		t.Errorf("expected $5 spent, $23 saved all time, got spent=%f, saved=%f", allTime.CostSpentUSD, allTime.CostSavedUSD)
+	}
+}
+
+func TestStatsTracker_SinkEmissionWithCostSpent(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	sink := &mockSink{}
+	tracker.AddSink(sink)
+
+	tracker.Record(Observation{
+		Tier:       2,
+		TierName:   "Tier 2: Cloud Coder",
+		Model:      "qwen/qwen-2.5-coder-32b",
+		Provider:   "openrouter",
+		Tokens:     3500,
+		CostSpent:  0.007,
+		CostSaved:  0.0035,
+		IsLocal:    false,
+		LatencyMs:  450.2,
+		StatusCode: 200,
+	})
+	tracker.Flush()
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+
+	if len(sink.records) != 1 {
+		t.Fatalf("expected 1 emitted turn record, got %d", len(sink.records))
+	}
+	rec := sink.records[0]
+	if rec.CostSpentUSD != 0.007 {
+		t.Errorf("expected CostSpentUSD 0.007, got %f", rec.CostSpentUSD)
+	}
+	if rec.CostSavedUSD != 0.0035 {
+		t.Errorf("expected CostSavedUSD 0.0035, got %f", rec.CostSavedUSD)
+	}
+}
+
+func TestStatsTracker_RollingBucketPruning(t *testing.T) {
+	tracker := NewStatsTracker(100)
+	defer tracker.Close()
+
+	now := time.Now().UTC()
+	oldDate := now.AddDate(0, 0, -45) // 45 days ago
+
+	tracker.Record(Observation{
+		Tokens:     1000,
+		CostSpent:  1.0,
+		ObservedAt: oldDate,
+	})
+	tracker.Record(Observation{
+		Tokens:     1000,
+		CostSpent:  1.0,
+		ObservedAt: now,
+	})
+	tracker.Flush()
+
+	stats := tracker.GetStats()
+	if stats.DailyBuckets == nil {
+		t.Fatalf("expected DailyBuckets map to be initialized")
+	}
+
+	oldKey := oldDate.Format("2006-01-02")
+	if _, exists := stats.DailyBuckets[oldKey]; exists {
+		t.Errorf("expected bucket older than 31 days to be pruned, but found %s", oldKey)
+	}
+
+	todayKey := now.Format("2006-01-02")
+	if _, exists := stats.DailyBuckets[todayKey]; !exists {
+		t.Errorf("expected current day bucket %s to exist", todayKey)
+	}
+}
+
+func TestStatsTracker_JSONPersistenceAndRestoration(t *testing.T) {
+	now := time.Now().UTC()
+	initial := StatsSnapshot{
+		StartedAt:                now.Format(time.RFC3339),
+		TotalRequests:            10,
+		TotalTokensRoutedLocally: 50000,
+		TotalCostSpentUSD:        2.50,
+		EstimatedCostSavedUSD:    15.00,
+		CostReductionPct:         85.71,
+		TierBreakdown: TierMetrics{
+			Tier1LocalFree:  8,
+			Tier2CloudCoder: 2,
+		},
+		DailyBuckets: map[string]TimeWindowMetrics{
+			now.Format("2006-01-02"): {
+				Requests:         10,
+				TokensTotal:      60000,
+				TokensLocal:      50000,
+				CostSpentUSD:     2.50,
+				CostSavedUSD:     15.00,
+				CostReductionPct: 85.71,
+			},
+		},
+	}
+
+	data, err := json.Marshal(initial)
+	if err != nil {
+		t.Fatalf("failed to marshal initial snapshot: %v", err)
+	}
+
+	var unmarshaled StatsSnapshot
+	if err := json.Unmarshal(data, &unmarshaled); err != nil {
+		t.Fatalf("failed to unmarshal snapshot: %v", err)
+	}
+
+	tracker := NewStatsTrackerWithInitialSnapshot(100, unmarshaled)
+	defer tracker.Close()
+
+	stats := tracker.GetStats()
+	if stats.TotalRequests != 10 {
+		t.Errorf("expected 10 total requests, got %d", stats.TotalRequests)
+	}
+	if stats.TotalCostSpentUSD != 2.50 {
+		t.Errorf("expected $2.50 spent, got %f", stats.TotalCostSpentUSD)
+	}
+	if stats.EstimatedCostSavedUSD != 15.00 {
+		t.Errorf("expected $15.00 saved, got %f", stats.EstimatedCostSavedUSD)
+	}
+	if stats.Windows.Today.Requests != 10 {
+		t.Errorf("expected 10 requests in Today window, got %d", stats.Windows.Today.Requests)
 	}
 }
 
@@ -118,6 +416,7 @@ func TestStatsTracker_HighConcurrency_Race(t *testing.T) {
 				tracker.Record(Observation{
 					Tier:      (j % 4) + 1,
 					Tokens:    100,
+					CostSpent: 0.0001,
 					CostSaved: 0.00045,
 					IsLocal:   (j%4)+1 == 1,
 				})
@@ -137,6 +436,15 @@ func TestStatsTracker_HighConcurrency_Race(t *testing.T) {
 	if stats.TotalRequests != int64(expectedRequests) {
 		t.Errorf("expected %d requests, got %d", expectedRequests, stats.TotalRequests)
 	}
+	if stats.TotalCostSpentUSD <= 0 {
+		t.Errorf("expected positive TotalCostSpentUSD under concurrency")
+	}
+	if stats.EstimatedCostSavedUSD <= 0 {
+		t.Errorf("expected positive EstimatedCostSavedUSD under concurrency")
+	}
+	if stats.Windows.Today.Requests != int64(expectedRequests) {
+		t.Errorf("expected %d requests in Today window, got %d", expectedRequests, stats.Windows.Today.Requests)
+	}
 }
 
 func TestStatsTracker_HTTPHandler(t *testing.T) {
@@ -146,6 +454,7 @@ func TestStatsTracker_HTTPHandler(t *testing.T) {
 	tracker.Record(Observation{
 		Tier:      1,
 		Tokens:    1000,
+		CostSpent: 0.0,
 		CostSaved: 0.0045,
 		IsLocal:   true,
 	})
@@ -178,6 +487,12 @@ func TestStatsTracker_HTTPHandler(t *testing.T) {
 	}
 	if parsed["total_tokens_routed_locally"] != float64(1000) {
 		t.Errorf("expected total_tokens_routed_locally 1000, got %v", parsed["total_tokens_routed_locally"])
+	}
+	if _, ok := parsed["windows"]; !ok {
+		t.Errorf("expected windows field in json response")
+	}
+	if _, ok := parsed["cost_reduction_pct"]; !ok {
+		t.Errorf("expected cost_reduction_pct field in json response")
 	}
 
 	// Test Handler() adapter

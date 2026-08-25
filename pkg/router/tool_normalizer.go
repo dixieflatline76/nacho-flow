@@ -56,6 +56,9 @@ func (p *NormalizerPipeline) Normalize(content string) (string, []RawToolCall, b
 
 	for _, parser := range p.parsers {
 		if remaining, calls, matched := parser.Parse(content, 1); matched && len(calls) > 0 {
+			for i := range calls {
+				calls[i].Function.Arguments = SanitizeToolCallArguments(calls[i].Function.Name, calls[i].Function.Arguments)
+			}
 			return strings.TrimSpace(remaining), calls, true
 		}
 	}

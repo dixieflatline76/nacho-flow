@@ -13,6 +13,9 @@ const (
 	EventRouteCompleted      EventType = "route_completed"
 	EventCircuitStateChanged EventType = "circuit_state_changed"
 	EventConfigUpdated       EventType = "config_updated"
+	EventDealAlert           EventType = "deal_alert"
+	EventStats               EventType = "stats"
+	EventStatsUpdated        EventType = "stats_updated"
 )
 
 // Event represents an individual SSE event broadcast to connected clients.

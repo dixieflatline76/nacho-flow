@@ -59,10 +59,20 @@ func (r *RingBufferSink) GetRecent(limit int) []TurnRecord {
 	result := make([]TurnRecord, count)
 	// head points to the next write slot, so the most recent item is at (head - 1)
 	for i := 0; i < count; i++ {
-		idx := (r.head - 1 - i + r.capacity*2) % r.capacity
+		idx := (r.head - 1 - i + r.capacity) % r.capacity
 		result[i] = r.records[idx]
 	}
 	return result
+}
+
+// Reset clears all records and resets head and totalTracked to zero.
+func (r *RingBufferSink) Reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.records = make([]TurnRecord, r.capacity)
+	r.head = 0
+	r.totalTracked.Store(0)
 }
 
 // TotalTracked returns the cumulative number of records processed over the lifecycle.

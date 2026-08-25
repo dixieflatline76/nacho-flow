@@ -1,0 +1,53 @@
+{
+  "version": "v1.0.0",
+  "updated_at": "2026-08-25T07:32:30.9237538Z",
+  "description": "Canonical benchmark and capability intelligence catalog for Nacho Flow",
+  "models": {
+    "anthropic/claude-3.5-sonnet": {
+      "name": "Anthropic: Claude 3.5 Sonnet",
+      "tier_role": "coding_workhorse",
+      "coding_index": 92,
+      "tool_reliability": 99,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "deepseek/deepseek-r1": {
+      "name": "DeepSeek: R1 (Reasoning)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 75,
+      "tool_reliability": 88,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "google/gemini-2.5-flash": {
+      "name": "Google: Gemini 2.5 Flash",
+      "tier_role": "coding_workhorse",
+      "coding_index": 78.4,
+      "tool_reliability": 95,
+      "recommended_tiers": [
+        "tier_1_vision",
+        "tier_3_workhorse"
+      ]
+    },
+    "google/gemini-2.5-flash-lite": {
+      "name": "Google: Gemini 2.5 Flash Lite",
+      "tier_role": "vision_workhorse",
+      "coding_index": 68.1,
+      "tool_reliability": 90,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "qwen/qwen3-coder-480b": {
+      "name": "Qwen: Qwen 3 Coder 480B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 82,
+      "tool_reliability": 96,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    }
+  }
+}

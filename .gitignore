@@ -34,3 +34,10 @@ docs/business/
 .DS_Store
 .vscode/
 .idea/
+
+# Extension Build Artifacts
+extension/out/
+extension/dist/
+extension/node_modules/
+extension/coverage/
+*.vsix
