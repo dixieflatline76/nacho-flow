@@ -188,6 +188,23 @@ describe('ExtensionController', () => {
       refreshDealsCmd();
       expect(refreshDealsSpy).toHaveBeenCalled();
 
+      // Test remaining commands
+      const openDocsCmd = calls.find(c => c[0] === 'nacho-flow.openDocs')[1];
+      const openSupportCmd = calls.find(c => c[0] === 'nacho-flow.openSupport')[1];
+      const openSettingsCmd = calls.find(c => c[0] === 'nacho-flow.openSettings')[1];
+      const setTimeTodayCmd = calls.find(c => c[0] === 'nacho-flow.setTimeWindowToday')[1];
+      const setTimeWeekCmd = calls.find(c => c[0] === 'nacho-flow.setTimeWindowWeek')[1];
+      const setTimeMonthCmd = calls.find(c => c[0] === 'nacho-flow.setTimeWindowMonth')[1];
+      const setTimeAllTimeCmd = calls.find(c => c[0] === 'nacho-flow.setTimeWindowAllTime')[1];
+
+      openDocsCmd();
+      openSupportCmd();
+      openSettingsCmd();
+      setTimeTodayCmd();
+      setTimeWeekCmd();
+      setTimeMonthCmd();
+      setTimeAllTimeCmd();
+
       // Test setAuthToken with new token
       (vscode.window.showInputBox as jest.Mock) = jest.fn().mockResolvedValue('new-secret-token');
       const setTokenSpy = jest.spyOn(AuthManager.prototype, 'setAuthToken').mockResolvedValue();
@@ -1186,9 +1203,11 @@ default_tier:
       await sidebarMsgHandler({ command: 'openDashboard' });
       expect(showDashboardSpy).toHaveBeenCalled();
 
-      // Test openSupport
+      // Test openSupport and openDocs
       await sidebarMsgHandler({ command: 'openSupport' });
-      expect(vscode.env.openExternal).toHaveBeenCalled();
+      expect(vscode.env.openExternal).toHaveBeenCalledWith(expect.objectContaining({ path: expect.stringContaining('support.html') }));
+      await sidebarMsgHandler({ command: 'openDocs' });
+      expect(vscode.env.openExternal).toHaveBeenCalledWith(expect.objectContaining({ path: expect.stringContaining('docs.html') }));
     });
 
     it('should sync sidebar state correctly', async () => {

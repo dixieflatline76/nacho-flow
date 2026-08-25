@@ -138,6 +138,10 @@ export class ExtensionController {
 				this.setTimeWindow('all_time');
 			}),
 
+			vscode.commands.registerCommand('nacho-flow.openDocs', () => {
+				vscode.env.openExternal(vscode.Uri.parse('https://spicebox.dev/nacho-flow/docs.html?doc=user_guide'));
+			}),
+
 			vscode.commands.registerCommand('nacho-flow.openSupport', () => {
 				vscode.env.openExternal(vscode.Uri.parse('https://spicebox.dev/nacho-flow/support.html'));
 			})
@@ -263,6 +267,9 @@ export class ExtensionController {
 						if (message.url) {
 							await vscode.env.openExternal(vscode.Uri.parse(message.url));
 						}
+						break;
+					case 'openDocs':
+						await vscode.env.openExternal(vscode.Uri.parse('https://spicebox.dev/nacho-flow/docs.html?doc=user_guide'));
 						break;
 					case 'openSupport':
 						await vscode.env.openExternal(vscode.Uri.parse('https://spicebox.dev/nacho-flow/support.html'));

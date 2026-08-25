@@ -71,8 +71,12 @@
         "title": "Nacho Flow: Set Timeframe to All Time"
       },
       {
+        "command": "nacho-flow.openDocs",
+        "title": "Nacho Flow: Open User Guide & Documentation"
+      },
+      {
         "command": "nacho-flow.openSupport",
-        "title": "Nacho Flow: Help & Support"
+        "title": "Nacho Flow: Open Support & Community"
       }
     ],
     "viewsContainers": {

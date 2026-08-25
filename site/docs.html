@@ -54,6 +54,9 @@
                 <div class="doc-nav-item" id="nav-user_guide" onclick="loadDoc('user_guide', true)">
                     <span>📖</span> User Guide & Config
                 </div>
+                <div class="doc-nav-item" id="nav-extension_guide" onclick="loadDoc('extension_guide', true)">
+                    <span>🧩</span> VS Code Companion Extension
+                </div>
                 <div class="doc-nav-item" id="nav-architecture" onclick="loadDoc('architecture', true)">
                     <span>🏛️</span> Architecture & Design
                 </div>
@@ -106,6 +109,7 @@
     <script>
         const docsMap = {
             'user_guide': { path: 'docs/USER_GUIDE.md', fallback: '../docs/USER_GUIDE.md', title: 'User Guide - Nacho Flow' },
+            'extension_guide': { path: 'docs/EXTENSION_USER_GUIDE.md', fallback: '../docs/EXTENSION_USER_GUIDE.md', title: 'VS Code Extension Guide - Nacho Flow' },
             'architecture': { path: 'docs/ARCHITECTURE.md', fallback: '../docs/ARCHITECTURE.md', title: 'Architecture - Nacho Flow' },
             'benchmarks': { path: 'docs/BENCHMARKS.md', fallback: '../docs/BENCHMARKS.md', title: 'Benchmarks - Nacho Flow' },
             'tuning_guide': { path: 'docs/TUNING_GUIDE.md', fallback: '../docs/TUNING_GUIDE.md', title: 'Rule Tuning - Nacho Flow' },

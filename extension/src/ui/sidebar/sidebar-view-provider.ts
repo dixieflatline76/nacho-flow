@@ -67,7 +67,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<div class="sidebar-header">
 		<div class="brand-row" style="display: flex; justify-content: space-between; align-items: center;">
 			<div class="brand-title">🌮 Nacho Flow</div>
-			<button class="btn-icon-subtle" onclick="openSupportUrl()" title="Help & Support (https://spicebox.dev/nacho-flow/support.html)" style="background: none; border: 1px solid rgba(255,255,255,0.08); color: var(--vscode-descriptionForeground); cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 7px; border-radius: 4px;">
+			<button class="btn-icon-subtle" onclick="openDocsUrl()" title="User Guide & Documentation (https://spicebox.dev/nacho-flow/docs.html?doc=user_guide)" style="background: none; border: 1px solid rgba(255,255,255,0.08); color: var(--vscode-descriptionForeground); cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 7px; border-radius: 4px;">
 				<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.74z"/></svg></span>
 				Help
 			</button>
@@ -227,11 +227,17 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		Open Full Analytics Dashboard
 	</button>
 
-	<!-- Help & Support -->
-	<button class="btn btn-secondary" onclick="openSupportUrl()" style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
-		<span class="brand-logo-svg" style="width: 14px; height: 14px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.74z"/></svg></span>
-		Help & Support
-	</button>
+	<!-- Documentation & Community Support Actions -->
+	<div class="btn-row" style="margin-top: 8px;">
+		<button class="btn btn-secondary btn-compact" onclick="openDocsUrl()" title="Open User Guide & Documentation (https://spicebox.dev/nacho-flow/docs.html?doc=user_guide)">
+			<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.74z"/></svg></span>
+			Help
+		</button>
+		<button class="btn btn-secondary btn-compact" onclick="openSupportUrl()" title="Open Support Portal (https://spicebox.dev/nacho-flow/support.html)">
+			<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 12h-2v-2h2v2zm0-4h-2V6h2v4z"/></svg></span>
+			Support
+		</button>
+	</div>
 
 	<!-- Hardware Specs Guide Modal -->
 	<div id="specs-modal" class="modal-overlay" style="display: none;">
