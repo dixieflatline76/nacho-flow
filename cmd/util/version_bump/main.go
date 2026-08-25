@@ -244,7 +244,7 @@ func updatePackageJSON(filename string, v Version) error {
 
 	versionStr := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
 	re := regexp.MustCompile(`("version"\s*:\s*)"[^"]+"`)
-	updated := re.ReplaceAll(data, []byte(fmt.Sprintf(`${1}"%s"`, versionStr)))
+	updated := re.ReplaceAll(data, fmt.Appendf(nil, `${1}"%s"`, versionStr))
 
 	return os.WriteFile(filepath.Clean(filename), updated, 0600)
 }

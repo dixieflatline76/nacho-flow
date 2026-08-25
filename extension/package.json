@@ -93,7 +93,8 @@
         {
           "type": "webview",
           "id": "nacho-flow.sidebarView",
-          "name": "Nacho Flow"
+          "name": "Nacho Flow",
+          "icon": "resources/icons/nacho.svg"
         }
       ]
     },
