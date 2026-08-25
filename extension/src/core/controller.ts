@@ -136,6 +136,10 @@ export class ExtensionController {
 
 			vscode.commands.registerCommand('nacho-flow.setTimeWindowAllTime', () => {
 				this.setTimeWindow('all_time');
+			}),
+
+			vscode.commands.registerCommand('nacho-flow.openSupport', () => {
+				vscode.env.openExternal(vscode.Uri.parse('https://spicebox.dev/nacho-flow/support.html'));
 			})
 		);
 	}
@@ -259,6 +263,9 @@ export class ExtensionController {
 						if (message.url) {
 							await vscode.env.openExternal(vscode.Uri.parse(message.url));
 						}
+						break;
+					case 'openSupport':
+						await vscode.env.openExternal(vscode.Uri.parse('https://spicebox.dev/nacho-flow/support.html'));
 						break;
 					case 'openMarketplace':
 						if (message.extensionId) {

@@ -69,6 +69,10 @@
       {
         "command": "nacho-flow.setTimeWindowAllTime",
         "title": "Nacho Flow: Set Timeframe to All Time"
+      },
+      {
+        "command": "nacho-flow.openSupport",
+        "title": "Nacho Flow: Help & Support"
       }
     ],
     "viewsContainers": {

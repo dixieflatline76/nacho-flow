@@ -368,6 +368,10 @@
 		vscode.postMessage({ command: 'openDashboard' });
 	};
 
+	window.openSupportUrl = function() {
+		vscode.postMessage({ command: 'openSupport' });
+	};
+
 	window.refreshAll = function() {
 		vscode.postMessage({ command: 'refreshAll' });
 	};

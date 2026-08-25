@@ -1185,6 +1185,10 @@ default_tier:
       const showDashboardSpy = jest.spyOn(extensionController as any, 'showDashboard').mockImplementation(() => {});
       await sidebarMsgHandler({ command: 'openDashboard' });
       expect(showDashboardSpy).toHaveBeenCalled();
+
+      // Test openSupport
+      await sidebarMsgHandler({ command: 'openSupport' });
+      expect(vscode.env.openExternal).toHaveBeenCalled();
     });
 
     it('should sync sidebar state correctly', async () => {
