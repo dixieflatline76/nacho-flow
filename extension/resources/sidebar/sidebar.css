@@ -340,22 +340,24 @@ input[type="password"]:focus {
 .brand-logo-svg svg {
 	width: 100%;
 	height: 100%;
-	fill: currentColor;
 }
 
 .brand-logo-svg.openrouter {
-	color: #00e599;
-	filter: drop-shadow(0 0 4px rgba(0, 229, 153, 0.25));
+	color: #6366f1;
+	width: 18px;
+	height: 18px;
 }
 
 .brand-logo-svg.ollama {
 	color: #ffffff;
-	filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.2));
+	width: 18px;
+	height: 18px;
 }
 
 .brand-logo-svg.vllm {
-	color: #fdb515;
-	filter: drop-shadow(0 0 3px rgba(253, 181, 21, 0.2));
+	color: #f59e0b;
+	width: 18px;
+	height: 18px;
 }
 
 .brand-logo-svg.roo {
@@ -371,23 +373,46 @@ input[type="password"]:focus {
 }
 
 .specs-icon {
-	background: rgba(59, 130, 246, 0.15);
-	color: #60a5fa;
-	border: 1px solid rgba(59, 130, 246, 0.3);
-	border-radius: 3px;
-	padding: 2px 6px;
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--vscode-descriptionForeground);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 4px;
+	padding: 2px 7px;
 	font-size: 10px;
 	cursor: pointer;
-	font-weight: 600;
+	font-weight: 500;
 	text-decoration: none;
 	display: inline-flex;
 	align-items: center;
-	gap: 3px;
+	gap: 4px;
+	transition: all 0.15s ease;
 }
 
 .specs-icon:hover {
-	background: rgba(59, 130, 246, 0.3);
-	color: #93c5fd;
+	background: rgba(255, 255, 255, 0.14);
+	color: #ffffff;
+	border-color: rgba(255, 255, 255, 0.25);
+}
+
+.status-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	display: inline-block;
+}
+
+.chip-green .status-dot {
+	background: #10b981;
+	box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+}
+
+.chip-red .status-dot {
+	background: #ef4444;
+	box-shadow: 0 0 6px rgba(239, 68, 68, 0.7);
+}
+
+.chip-gray .status-dot {
+	background: #888888;
 }
 
 .partner-desc {

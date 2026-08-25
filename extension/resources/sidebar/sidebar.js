@@ -140,17 +140,26 @@
 
 		container.innerHTML = providers.map(p => {
 			const badgeClass = p.active ? 'chip-green' : (p.circuitState === 'open' ? 'chip-red' : 'chip-gray');
-			const badgeText = p.active ? '🟢 Active' : (p.circuitState === 'open' ? '🔴 Circuit Tripped' : '⚪ Inactive');
+			const badgeLabel = p.active ? 'Active' : (p.circuitState === 'open' ? 'Circuit Tripped' : 'Inactive');
 
 			let headerLinks = '';
 			if (p.id === 'ollama') {
 				headerLinks = `
-					<span class="specs-icon" onclick="openSpecsModal()" title="View GPU & RAM hardware requirements">ℹ️ Specs</span>
-					<a href="#" class="specs-icon" onclick="openExternal('https://ollama.com/download')" title="Download Ollama">📥 Download</a>
+					<span class="specs-icon" onclick="openSpecsModal()" title="View GPU & RAM hardware requirements">
+						<span class="brand-logo-svg" style="width: 10px; height: 10px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></span>
+						Specs
+					</span>
+					<a href="#" class="specs-icon" onclick="openExternal('https://ollama.com/download')" title="Download Ollama">
+						<span class="brand-logo-svg" style="width: 10px; height: 10px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></span>
+						Download
+					</a>
 				`;
 			} else if (p.id === 'openrouter') {
 				headerLinks = `
-					<a href="#" class="specs-icon" onclick="openExternal('https://openrouter.ai/keys')" title="Get API Key on OpenRouter">🔗 Get Key</a>
+					<a href="#" class="specs-icon" onclick="openExternal('https://openrouter.ai/keys')" title="Get API Key on OpenRouter">
+						<span class="brand-logo-svg" style="width: 10px; height: 10px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 19H6c-.55 0-1-.45-1-1V6c0-.55.45-1 1-1h5c.55 0 1-.45 1-1s-.45-1-1-1H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-6c0-.55-.45-1-1-1s-1 .45-1 1v5c0 .55-.45 1-1 1zM14 4c0 .55.45 1 1 1h2.59l-9.13 9.13c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L19 6.41V9c0 .55.45 1 1 1s1-.45 1-1V3h-6c-.55 0-1 .45-1 1z"/></svg></span>
+						Get Key
+					</a>
 				`;
 			}
 
@@ -164,7 +173,12 @@
 			let copyAction = '';
 			if (p.id === 'ollama' && p.models && p.models.length > 0) {
 				const m = p.models[0];
-				copyAction = `<button class="btn btn-secondary btn-compact" onclick="copyOllamaCommand('${escapeHtml(m)}')">📋 Copy: ollama run ${escapeHtml(m)}</button>`;
+				copyAction = `
+					<button class="btn btn-secondary btn-compact" onclick="copyOllamaCommand('${escapeHtml(m)}')">
+						<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></span>
+						<span>Copy: ollama run ${escapeHtml(m)}</span>
+					</button>
+				`;
 			}
 
 			let metaText = '';
@@ -184,7 +198,10 @@
 							<span>${escapeHtml(p.name || p.id)}</span>
 							${headerLinks}
 						</div>
-						<div class="status-chip ${badgeClass}">${badgeText}</div>
+						<div class="status-chip ${badgeClass}">
+							<span class="status-dot"></span>
+							<span>${badgeLabel}</span>
+						</div>
 					</div>
 					${modelInfo}
 					${metaText}
@@ -196,10 +213,10 @@
 
 	function getProviderLogoSvg(id, fallbackIcon) {
 		if (id === 'ollama') {
-			return `<span class="brand-logo-svg ollama" title="Ollama"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.361 10.26a.894.894 0 0 0-.558.47l-.072.148.001.207c0 .193.004.217.059.353.076.193.152.312.291.448.24.238.51.3.872.205a.86.86 0 0 0 .517-.436.752.752 0 0 0 .08-.498c-.064-.453-.33-.782-.724-.897a1.06 1.06 0 0 0-.466 0zm-9.203.005c-.305.096-.533.32-.65.639a1.187 1.187 0 0 0-.06.52c.057.309.31.59.598.667.362.095.632.033.872-.205.14-.136.215-.255.291-.448.055-.136.059-.16.059-.353l.001-.207-.072-.148a.894.894 0 0 0-.565-.472 1.02 1.02 0 0 0-.474.007Zm4.184 2c-.131.071-.223.25-.195.383.031.143.157.288.353.407.105.063.112.072.117.136.004.038-.01.146-.029.243-.02.094-.036.194-.036.222.002.074.07.195.143.253.064.052.076.054.255.059.164.005.198.001.264-.03.169-.082.212-.234.15-.525-.052-.243-.042-.28.087-.355.137-.08.281-.219.324-.314a.365.365 0 0 0-.175-.48.394.394 0 0 0-.181-.033c-.126 0-.207.03-.355.124l-.085.053-.053-.032c-.219-.13-.259-.145-.391-.143a.396.396 0 0 0-.193.032zm.39-2.195c-.373.036-.475.05-.654.086-.291.06-.68.195-.951.328-.94.46-1.589 1.226-1.787 2.114-.04.176-.045.234-.045.53 0 .294.005.357.043.524.264 1.16 1.332 2.017 2.714 2.173.3.033 1.596.033 1.896 0 1.11-.125 2.064-.727 2.493-1.571.114-.226.169-.372.22-.602.039-.167.044-.23.044-.523 0-.297-.005-.355-.045-.531-.288-1.29-1.539-2.304-3.072-2.497a6.873 6.873 0 0 0-.855-.031zm.645.937a3.283 3.283 0 0 1 1.44.514c.223.148.537.458.671.662.166.251.26.508.303.82.02.143.01.251-.043.482-.08.345-.332.705-.672.957a3.115 3.115 0 0 1-.689.348c-.382.122-.632.144-1.525.138-.582-.006-.686-.01-.853-.042-.57-.107-1.022-.334-1.35-.68-.264-.28-.385-.535-.45-.946-.03-.192.025-.509.137-.776.136-.326.488-.73.836-.963.403-.269.934-.46 1.422-.512.187-.02.586-.02.773-.002zm-5.503-11a1.653 1.653 0 0 0-.683.298C5.617.74 5.173 1.666 4.985 2.819c-.07.436-.119 1.04-.119 1.503 0 .544.064 1.24.155 1.721.02.107.031.202.023.208a8.12 8.12 0 0 1-.187.152 5.324 5.324 0 0 0-.949 1.02 5.49 5.49 0 0 0-.94 2.339 6.625 6.625 0 0 0-.023 1.357c.091.78.325 1.438.727 2.04l.13.195-.037.064c-.269.452-.498 1.105-.605 1.732-.084.496-.095.629-.095 1.294 0 .67.009.803.088 1.266.095.555.288 1.143.503 1.534.071.128.243.393.264.407.007.003-.014.067-.046.141a7.405 7.405 0 0 0-.548 1.873c-.062.417-.071.552-.071.991 0 .56.031.832.148 1.279L3.42 24h1.478l.056-.51c.074-.668.271-1.332.583-1.956.126-.251.341-.572.483-.715.111-.112.18-.14.475-.19.336-.057.48-.052.793.029.28.072.58.21.84.385.297.2.627.535.811.825.267.42.441.884.542 1.455.034.195.056.407.075.677H10.45l.05-.444c.08-.722.28-1.424.604-2.072.138-.276.388-.636.568-.82.164-.167.3-.23.633-.292.428-.08.665-.037 1.05.195.344.207.69.57.854.896.257.513.407 1.084.484 1.848l.044.689h1.493l.035-.386c.071-.786.275-1.528.618-2.22.14-.282.404-.66.593-.852.164-.166.304-.23.637-.291.432-.08.665-.037 1.053.197.34.205.69.569.851.892.257.514.407 1.087.485 1.854l.044.806h1.488l.071-.444a6.685 6.685 0 0 0 .15-.99c0-.439-.009-.574-.071-.991a7.405 7.405 0 0 0-.548-1.873c-.032-.074-.053-.138-.046-.141.021-.014.193-.279.264-.407.215-.391.408-.979.503-1.534.079-.463.088-.596.088-1.266 0-.665-.011-.798-.095-1.294a6.993 6.993 0 0 0-.605-1.732l-.037-.064.13-.195a5.556 5.556 0 0 0 .727-2.04 6.625 6.625 0 0 0-.023-1.357 5.49 5.49 0 0 0-.94-2.339 5.324 5.324 0 0 0-.949-1.02 8.12 8.12 0 0 1-.187-.152c-.008-.006.003-.101.023-.208.091-.481.155-1.177.155-1.721 0-.463-.049-1.067-.119-1.503C18.827 1.666 18.383.74 17.702.298a1.653 1.653 0 0 0-.683-.298c-.282-.047-.732.053-1.088.243-.377.202-.75.568-.978.96-.22.378-.396.903-.497 1.488-.043.25-.062.457-.065.708l-.004.306-.217-.065a7.195 7.195 0 0 0-2.172-.34c-.753 0-1.52.12-2.172.34l-.217.065-.004-.306c-.003-.251-.022-.458-.065-.708-.101-.585-.277-1.11-.497-1.488-.228-.392-.601-.758-.978-.96-.356-.19-.806-.29-1.088-.243z"/></svg></span>`;
+			return `<span class="brand-logo-svg ollama" title="Ollama"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 2.5C9.45 2.5 9 2.95 9 3.5V6.1C8.2 6.4 7.5 6.9 7 7.5 6.3 8.3 6 9.3 6 10.5V14c0 .8.6 1.5 1.4 1.5H8v4.5c0 .6.4 1 1 1h2c.6 0 1-.4 1-1v-4h2v4c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V15.5h.6c.8 0 1.4-.7 1.4-1.5v-3.5c0-1.2-.3-2.2-1-3-.5-.6-1.2-1.1-2-1.4V3.5c0-.55-.45-1-1-1s-1 .45-1 1v1.1c-.6-.1-1.3-.1-2-.1s-1.4 0-2 .1V3.5c0-.55-.45-1-1-1z" fill="currentColor"/><circle cx="9.5" cy="10.5" r="1.25" fill="#18181b"/><circle cx="14.5" cy="10.5" r="1.25" fill="#18181b"/><ellipse cx="12" cy="12.75" rx="1.5" ry="1" fill="#18181b"/></svg></span>`;
 		}
 		if (id === 'openrouter') {
-			return `<span class="brand-logo-svg openrouter" title="OpenRouter"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.174zM8.48 7.262a5.087 5.087 0 100 10.175h11.23l-3.393-3.394a5.087 5.087 0 01-7.837-6.781z"/></svg></span>`;
+			return `<span class="brand-logo-svg openrouter" title="OpenRouter"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.654 3.87a5.087 5.087 0 1 1 0 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 0 1 0-16.958h10.174zM8.48 7.262a5.087 5.087 0 1 0 0 10.175h11.23l-3.393-3.394a5.087 5.087 0 0 1-7.837-6.781z"/></svg></span>`;
 		}
 		if (id === 'vllm') {
 			return `<span class="brand-logo-svg vllm" title="vLLM"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 4.973h9.324V23L0 4.973z"/><path d="M13.986 4.351L22.378 0l-8.392 18.027 8.392 5.973H13.986L5.595 18.027 13.986 4.351z"/></svg></span>`;
