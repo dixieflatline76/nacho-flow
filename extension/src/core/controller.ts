@@ -158,6 +158,8 @@ export class ExtensionController {
 						await this.authManager.setEngineMode(mode);
 						await this.initializeClients();
 						await this.syncSidebarState();
+						await this.updateStats();
+						await this.loadDashboardData();
 						this.showTransientToast(`🌮 Nacho Flow: Switched to ${mode === 'local' ? 'Local Engine' : 'Remote Server'}`);
 						break;
 					}
@@ -177,6 +179,8 @@ export class ExtensionController {
 						}
 						await this.initializeClients();
 						await this.syncSidebarState();
+						await this.updateStats();
+						await this.loadDashboardData();
 						break;
 					}
 					case 'restartEngine': {
@@ -195,6 +199,8 @@ export class ExtensionController {
 						}
 						await this.initializeClients();
 						await this.syncSidebarState();
+						await this.updateStats();
+						await this.loadDashboardData();
 						break;
 					}
 					case 'stopEngine': {
@@ -208,6 +214,7 @@ export class ExtensionController {
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ connected: false, error: 'Stopped by user' });
 						}
+						this.statusBar.updateStats(null);
 						break;
 					}
 					case 'openLogs':
