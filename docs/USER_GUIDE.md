@@ -18,6 +18,44 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 
 ---
 
+## ⚡ 60-Second Quickstart (Fastest Path to $0.00)
+
+If you just want to stop wasting cloud money and start saving in under 2 minutes:
+
+```
+┌─────────────────────────┐      ┌──────────────────────────┐      ┌─────────────────────────┐
+│ 1. Start Ollama Locally │ ───> │ 2. Run Nacho Flow Gateway │ ───> │ 3. Point Roo/Cursor to  │
+│ ollama run qwen2.5-coder│      │ nacho-flow               │      │ http://127.0.0.1:8000/v1│
+└─────────────────────────┘      └──────────────────────────┘      └─────────────────────────┘
+```
+
+1. **Pull a local coding model** (if you haven't already):
+   ```bash
+   ollama pull qwen2.5-coder:14b   # or qwen2.5-coder:7b for 8GB VRAM
+   ```
+2. **Install Nacho Flow & Create `config.yaml`**:
+   ```bash
+   # Linux / macOS
+   curl -fsSL https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/scripts/install.sh | bash
+   
+   # Windows (PowerShell)
+   winget install dixieflatline76.NachoFlow
+   ```
+3. **Launch Nacho Flow**:
+   ```bash
+   nacho-flow
+   ```
+   *(Or if using VS Code, install the companion extension and click **▶ Start** in the sidebar!)*
+4. **Point Your Coding Agent** (Roo Code, Cline, Cursor, Aider):
+   * **API Provider**: `OpenAI Compatible`
+   * **Base URL**: `http://127.0.0.1:8000/v1`
+   * **API Key**: `sk-nacho-secret-key` (or any string)
+   * **Model ID**: `nacho-hybrid`
+
+That's it! Routine prompt turns (inspections, syntax edits, test runs) now run on your GPU for **$0.00**, while complex multi-file reasoning automatically escalates to Claude or DeepSeek-R1.
+
+---
+
 ## 1. Installation & Setup
 
 ### Universal Shell Installer (Linux & macOS - Recommended)
@@ -29,6 +67,11 @@ The installer automatically:
 - Verifies SHA-256 cryptographic checksums against `checksums.txt`.
 - Installs to `/usr/local/bin` (or falls back to `~/.local/bin` if non-root).
 - Offers to register and start a native `systemd` background service on Linux.
+
+### Windows (Winget & Signed Installer)
+```powershell
+winget install dixieflatline76.NachoFlow
+```
 
 ### Docker / Podman (Multi-Arch Distroless Container)
 Run as a lightweight (< 15MB) container with nonroot security:
@@ -76,7 +119,44 @@ go install github.com/dixieflatline76/nacho-flow/cmd/nacho-flow@latest
 
 ## 2. Configuration Reference (`config.yaml`)
 
-Create a `config.yaml` in your project folder or `~/.config/nacho-flow/config.yaml`:
+### 2.1 Minimal Starter Config (Ollama + OpenRouter Fallback)
+
+Copy and save this as `config.yaml` to get started immediately:
+
+```yaml
+port: 8000
+
+providers:
+  # Local GPU (Free turns)
+  ollama:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+
+  # Cloud Fallback (When reasoning context exceeds local limits)
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: "ENV_OPENROUTER_API_KEY"
+
+tiers:
+  # Routine turns < 16k context stay on your GPU for $0.00
+  - name: "Local GPU"
+    model: "qwen2.5-coder:14b"
+    provider: "ollama"
+    max_context: 16384
+    when: "Tokens < 16000 && !HasImages && Retries < 2"
+
+# Flagship cloud model for deep reasoning or heavy context
+default_tier:
+  name: "Cloud Fallback"
+  model: "anthropic/claude-3.5-sonnet"
+  provider: "openrouter"
+```
+
+---
+
+### 2.2 Full Production Reference Config
+
+For advanced setups featuring multiple cloud providers, reasoning keyword rules, and private enterprise endpoints:
 
 ```yaml
 # Port to listen on (Default: 8000)
@@ -368,6 +448,31 @@ In `~/.continue/config.json`:
   ]
 }
 ```
+
+---
+
+### 5.5 ✅ 3 Ways to Verify It's Working
+
+Once you have pointed Roo Code, Cline, or Cursor to Nacho Flow, test your setup by asking your agent a routine question (e.g. `"explain this file"`). Here is how to immediately verify that the turn ran on your local GPU for **$0.00**:
+
+1. **Check Live Terminal Logs (or VS Code Output Channel `🌮 Nacho Flow Engine`)**:
+   You will see an instant routing log line:
+   ```text
+   INFO Routing request tier="Local GPU" model=qwen2.5-coder:14b provider=ollama tokens=4,120 is_fallback=false
+   ```
+2. **Type `@nacho:status` Directly in Agent Chat**:
+   Ask your agent: `@nacho:status`. Nacho Flow intercepts the query in $< 7\text{ ns}$ ($0.00 cost, 0 upstream tokens) and replies instantly with live stats:
+   ```text
+   🌮 Nacho Flow Gateway Status:
+   • Total Requests: 18
+   • Local GPU Turns: 14 (77.8%) — $0.00 Spent
+   • Cloud Escalation Turns: 4
+   • Total Estimated Dollars Saved: $0.42 USD
+   ```
+3. **Inspect HTTP Response Headers**:
+   Nacho Flow attaches metadata headers to every completion:
+   * `x-nacho-router-tier`: Name of the matched tier (e.g. `Local GPU` or `Cloud Reasoning`).
+   * `x-nacho-target-model`: The actual model that processed the turn.
 
 ### 🔒 Dual-Layer Gateway Security (LAN / Tailscale)
 * **Inbound Protection:** When `auth_token` is set in `config.yaml`, the gateway blocks any unauthorized LAN/Tailnet clients with `401 Unauthorized`.
