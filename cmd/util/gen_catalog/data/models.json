@@ -1,6 +1,6 @@
 {
   "version": "v1.0.0",
-  "updated_at": "2026-08-25T07:32:30.9237538Z",
+  "updated_at": "2026-08-25T23:23:21.5208156Z",
   "description": "Canonical benchmark and capability intelligence catalog for Nacho Flow",
   "models": {
     "anthropic/claude-3.5-sonnet": {

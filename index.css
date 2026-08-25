@@ -514,6 +514,88 @@ h1 {
     gap: 0.8rem;
 }
 
+/* VS Code Companion Extension Showcase */
+.extension-section {
+    max-width: 1100px;
+    margin: 4rem auto 6rem;
+    padding: 0 1.5rem;
+    text-align: center;
+}
+
+.extension-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-top: 2rem;
+    text-align: left;
+}
+
+@media (max-width: 768px) {
+    .extension-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.extension-card {
+    border-radius: 16px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    position: relative;
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    background: linear-gradient(145deg, rgba(99, 102, 241, 0.08) 0%, rgba(15, 17, 24, 0.85) 100%);
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.extension-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(99, 102, 241, 0.5);
+    box-shadow: 0 8px 30px rgba(99, 102, 241, 0.18);
+}
+
+.extension-badge {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    width: fit-content;
+}
+
+.extension-card h3 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.extension-card p {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+.extension-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 0.5rem;
+}
+
+.ext-tag {
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #cbd5e1;
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+}
+
 /* 1-Click Install Section */
 .install-section {
     max-width: 860px;
