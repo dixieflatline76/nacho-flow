@@ -68,7 +68,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		<div class="brand-row">
 			<div class="brand-title">🌮 Nacho Flow</div>
 		</div>
-		<div id="engine-status-chip" class="status-chip chip-gray">⚡ Checking Engine...</div>
+		<div id="engine-status-chip" class="status-chip chip-gray">⚪ Engine Offline (Click ▶️ Start)</div>
 	</div>
 
 	<!-- 1. Routing Engine Host -->
@@ -89,8 +89,8 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 			<!-- Local Engine Controls -->
 			<div id="local-engine-controls" class="form-group">
 				<div class="btn-row">
-					<button id="btn-engine-start" class="btn btn-secondary btn-compact" onclick="startEngine()" style="display: none;">▶️ Start</button>
-					<button id="btn-engine-stop" class="btn btn-secondary btn-compact" onclick="stopEngine()">⏹️ Stop</button>
+					<button id="btn-engine-start" class="btn btn-secondary btn-compact" onclick="startEngine()">▶️ Start</button>
+					<button id="btn-engine-stop" class="btn btn-secondary btn-compact" onclick="stopEngine()" style="display: none;">⏹️ Stop</button>
 					<button id="btn-engine-restart" class="btn btn-secondary btn-compact" onclick="restartEngine()">🔄 Restart</button>
 					<button class="btn btn-secondary btn-compact" onclick="openEngineLogs()">📜 Logs</button>
 				</div>

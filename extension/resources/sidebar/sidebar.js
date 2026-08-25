@@ -91,12 +91,25 @@
 			engineStatusChip.textContent = `🟢 Engine Active (${status.version || 'Online'})`;
 			if (btnEngineStart) btnEngineStart.style.display = 'none';
 			if (btnEngineStop) btnEngineStop.style.display = 'inline-flex';
+		} else if (status.starting) {
+			engineStatusChip.classList.add('chip-gray');
+			engineStatusChip.textContent = '⚡ Starting Routing Engine...';
+			if (btnEngineStart) btnEngineStart.style.display = 'none';
+			if (btnEngineStop) btnEngineStop.style.display = 'none';
 		} else if (status.testing) {
 			engineStatusChip.classList.add('chip-gray');
-			engineStatusChip.textContent = '⚡ Checking Engine...';
+			engineStatusChip.textContent = '⚡ Checking Connection...';
 		} else {
-			engineStatusChip.classList.add('chip-red');
-			engineStatusChip.textContent = `🔴 Offline (${status.error || 'Connection refused'})`;
+			const isLocal = state.engineMode === 'local';
+			const isConnRefused = status.error && (status.error.includes('ECONNREFUSED') || status.error.includes('Connection refused') || status.error.includes('fetch failed'));
+			
+			if (isLocal && (isConnRefused || !status.error || status.error === 'Offline' || status.error === 'Stopped by user')) {
+				engineStatusChip.classList.add('chip-gray');
+				engineStatusChip.textContent = status.error === 'Stopped by user' ? '⚪ Engine Stopped' : '⚪ Engine Offline (Click ▶️ Start)';
+			} else {
+				engineStatusChip.classList.add('chip-red');
+				engineStatusChip.textContent = `🔴 Offline (${status.error || 'Connection refused'})`;
+			}
 			if (btnEngineStart) btnEngineStart.style.display = 'inline-flex';
 			if (btnEngineStop) btnEngineStop.style.display = 'none';
 		}
@@ -107,11 +120,20 @@
 		if (!container) return;
 
 		if (!providers || providers.length === 0) {
-			container.innerHTML = `
-				<div class="partner-desc" style="text-align: center; padding: 12px 0;">
-					No upstream providers configured in active config.<br>
-					<button class="btn btn-secondary btn-compact" onclick="openConfigFile()" style="margin-top: 8px;">📝 Edit config.yaml</button>
-				</div>`;
+			const isEngineConnected = state.engineStatus && state.engineStatus.connected;
+			if (!isEngineConnected) {
+				container.innerHTML = `
+					<div class="partner-desc" style="text-align: center; padding: 12px 0;">
+						⚪ Engine is offline.<br>
+						Click <strong style="color: #60a5fa;">▶️ Start</strong> to load active model tiers and circuits.
+					</div>`;
+			} else {
+				container.innerHTML = `
+					<div class="partner-desc" style="text-align: center; padding: 12px 0;">
+						No upstream providers configured in active config.<br>
+						<button class="btn btn-secondary btn-compact" onclick="openConfigFile()" style="margin-top: 8px;">📝 Edit config.yaml</button>
+					</div>`;
+			}
 			return;
 		}
 

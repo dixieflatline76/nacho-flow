@@ -167,6 +167,9 @@ export class ExtensionController {
 							vscode.window.showWarningMessage('Nacho Flow: Cannot start remote engine. Please ensure the daemon is running on its host server.');
 							break;
 						}
+						if (this.sidebarProvider) {
+							this.sidebarProvider.updateEngineStatus({ starting: true });
+						}
 						this.showTransientToast('▶️ Nacho Flow: Starting Routing Engine...');
 						const result = await this.processManager.start(daemonUrl);
 						if (!result.success && result.error) {
@@ -181,6 +184,9 @@ export class ExtensionController {
 						if (!this.processManager.isLocalUrl(daemonUrl)) {
 							vscode.window.showWarningMessage('Nacho Flow: Cannot restart remote engine.');
 							break;
+						}
+						if (this.sidebarProvider) {
+							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
 						this.showTransientToast('🔄 Nacho Flow: Restarting Routing Engine...');
 						const result = await this.processManager.restart(daemonUrl);
