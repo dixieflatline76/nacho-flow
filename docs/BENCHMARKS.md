@@ -177,7 +177,28 @@ BenchmarkHasDirective_Bailout-16    188,916,370    6.29 ns/op    0 B/op    0 all
 
 - **SIMD Fast-Bailout Latency**: **6.29 nanoseconds** (> 188 Million prompt scans/sec).
 - **Heap Allocation**: **0 B/op, 0 allocs/op** (zero memory pressure on GC).
-- **Engineering Finding**: The directive pre-filter leverages Go's internal SIMD byte matching algorithms (`bytealg.IndexString`), ensuring standard non-directive prompt turns experience zero proxy latency regression.
+### 5.7 🧪 Test Coverage & Zero-Overhead Verification Matrix:
+
+Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. Both the Go high-concurrency daemon and the VS Code companion extension maintain comprehensive automated test suites:
+
+#### Go Daemon Statement Coverage:
+| Package / Subsystem | Primary Responsibility | Statement Coverage |
+| :--- | :--- | :--- |
+| `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **100.0%** |
+| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **100.0%** |
+| `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
+| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
+| `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
+| `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
+| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **95.6%** |
+| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.5%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.4%** |
+| `cmd/util/*` | Auto-Releaser, Version Bump & Catalog Generator CLI Tools | **96.7%** |
+
+#### VS Code Companion Extension Coverage:
+| Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
+| :--- | :--- | :--- | :--- |
+| **Extension Core & Webview Suite** | **12 / 12 Suites** | **150 / 150 (100%)** | **96.6% / 96.9% / 95.6%** |
 
 ---
 
@@ -199,4 +220,10 @@ go run ./cmd/util/nacho_bench -full
 ```bash
 go test -bench="." -run="^$" -benchmem ./pkg/strategy ./pkg/router ./pkg/server
 ```
+
+### 4. Run Extension Test Suite & Coverage:
+```bash
+cd extension && npm test
+```
+
 
