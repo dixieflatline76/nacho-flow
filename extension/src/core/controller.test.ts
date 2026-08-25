@@ -964,8 +964,12 @@ default_tier:
       };
 
       // Test save settings with token
+      const setRemoteUrlSpy = jest.spyOn((extensionController as any).authManager, 'setRemoteUrl').mockResolvedValue(undefined);
+      const setRemoteTokenSpy = jest.spyOn((extensionController as any).authManager, 'setRemoteToken').mockResolvedValue(undefined);
+
       await (extensionController as any).handleSaveSettings('http://192.168.0.205:8000', 'my-token');
-      expect(mockConfigUpdate).toHaveBeenCalledWith('daemonUrl', 'http://192.168.0.205:8000', 1);
+      expect(setRemoteUrlSpy).toHaveBeenCalledWith('http://192.168.0.205:8000');
+      expect(setRemoteTokenSpy).toHaveBeenCalledWith('my-token');
 
       // Test save settings clearing token
       await (extensionController as any).handleSaveSettings(undefined, '');
@@ -1016,9 +1020,7 @@ default_tier:
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Nacho Flow: Failed to reset stats: Reset stats failure');
 
       // Test handleSaveSettings error
-      (vscode.workspace.getConfiguration as jest.Mock).mockReturnValueOnce({
-        update: jest.fn().mockRejectedValueOnce(new Error('Config write failure'))
-      });
+      jest.spyOn((extensionController as any).authManager, 'setRemoteUrl').mockRejectedValueOnce(new Error('Config write failure'));
       await (extensionController as any).handleSaveSettings('http://invalid:8000');
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining('Failed to save settings'));
 
@@ -1060,9 +1062,12 @@ default_tier:
       await sidebarMsgHandler({ command: 'refreshAll' });
       expect(syncSpy).toHaveBeenCalledTimes(2);
 
-      // Test setEngineMode local
+      // Test setEngineMode local and remote
+      const setModeSpy = jest.spyOn((extensionController as any).authManager, 'setEngineMode').mockResolvedValue(undefined);
       await sidebarMsgHandler({ command: 'setEngineMode', mode: 'local' });
-      expect(vscode.workspace.getConfiguration().update).toHaveBeenCalledWith('daemonUrl', 'http://127.0.0.1:8000', 1);
+      expect(setModeSpy).toHaveBeenCalledWith('local');
+      await sidebarMsgHandler({ command: 'setEngineMode', mode: 'remote' });
+      expect(setModeSpy).toHaveBeenCalledWith('remote');
 
       // Mock processManager
       const mockProcMgr = {
@@ -1186,6 +1191,9 @@ default_tier:
       const mockSidebar = { updateState: jest.fn() };
       (extensionController as any).sidebarProvider = mockSidebar;
       (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('remote'),
+        getRemoteUrl: jest.fn().mockReturnValue('http://192.168.0.205:8000'),
+        getRemoteToken: jest.fn().mockResolvedValue('token-123'),
         getBaseUrl: jest.fn().mockResolvedValue('http://192.168.0.205:8000'),
         getAuthToken: jest.fn().mockResolvedValue('token-123')
       };
@@ -1243,6 +1251,9 @@ default_tier:
       const mockSidebar = { updateState: jest.fn(), updateEngineStatus: jest.fn() };
       (extensionController as any).sidebarProvider = mockSidebar;
       (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        getRemoteUrl: jest.fn().mockReturnValue('http://192.168.0.205:8000'),
+        getRemoteToken: jest.fn().mockResolvedValue(null),
         getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
         getAuthToken: jest.fn().mockResolvedValue(null)
       };

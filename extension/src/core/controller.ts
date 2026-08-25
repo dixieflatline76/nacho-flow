@@ -153,14 +153,14 @@ export class ExtensionController {
 					case 'refreshAll':
 						await this.syncSidebarState();
 						break;
-					case 'setEngineMode':
-						if (message.mode === 'local') {
-							await vscode.workspace.getConfiguration('nachoFlow').update('daemonUrl', 'http://127.0.0.1:8000', vscode.ConfigurationTarget.Global);
-							await this.initializeClients();
-							await this.syncSidebarState();
-							this.showTransientToast('🌮 Nacho Flow: Switched to Local Engine');
-						}
+					case 'setEngineMode': {
+						const mode = message.mode === 'remote' ? 'remote' : 'local';
+						await this.authManager.setEngineMode(mode);
+						await this.initializeClients();
+						await this.syncSidebarState();
+						this.showTransientToast(`🌮 Nacho Flow: Switched to ${mode === 'local' ? 'Local Engine' : 'Remote Server'}`);
 						break;
+					}
 					case 'startEngine': {
 						const daemonUrl = await this.authManager.getBaseUrl();
 						if (!this.processManager.isLocalUrl(daemonUrl)) {
@@ -377,10 +377,14 @@ export class ExtensionController {
 			} catch (_) {}
 		}
 
+		const engineMode = this.authManager.getEngineMode();
+		const remoteUrl = this.authManager.getRemoteUrl();
+		const remoteToken = await this.authManager.getRemoteToken();
+
 		this.sidebarProvider.updateState({
-			engineMode: isRemote ? 'remote' : 'local',
-			remoteUrl: baseUrl,
-			token: token || '',
+			engineMode,
+			remoteUrl,
+			token: remoteToken || '',
 			hasToken: !!token,
 			engineStatus,
 			providers
@@ -872,18 +876,15 @@ export class ExtensionController {
 
 	private async handleSaveSettings(url?: string, token?: string): Promise<void> {
 		try {
-			if (url) {
-				await vscode.workspace.getConfiguration('nachoFlow').update('daemonUrl', url.trim(), vscode.ConfigurationTarget.Global);
+			if (url && url.trim() !== '') {
+				await this.authManager.setRemoteUrl(url.trim());
 			}
 			if (token !== undefined) {
-				if (token.trim() === '') {
-					await this.authManager.deleteAuthToken();
-				} else {
-					await this.authManager.setAuthToken(token.trim());
-				}
+				await this.authManager.setRemoteToken(token.trim());
 			}
+			await this.authManager.setEngineMode('remote');
 			await this.initializeClients();
-			this.showTransientToast('🌮 Nacho Flow: Connection settings saved!');
+			this.showTransientToast('🌮 Nacho Flow: Remote server settings saved!');
 			await this.handleTestConnection(url, token);
 			await this.loadDashboardData();
 			await this.updateStats();
