@@ -89,10 +89,22 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 			<!-- Local Engine Controls -->
 			<div id="local-engine-controls" class="form-group">
 				<div class="btn-row">
-					<button id="btn-engine-start" class="btn btn-secondary btn-compact" onclick="startEngine()">▶️ Start</button>
-					<button id="btn-engine-stop" class="btn btn-secondary btn-compact" onclick="stopEngine()" style="display: none;">⏹️ Stop</button>
-					<button id="btn-engine-restart" class="btn btn-secondary btn-compact" onclick="restartEngine()">🔄 Restart</button>
-					<button class="btn btn-secondary btn-compact" onclick="openEngineLogs()">📜 Logs</button>
+					<button id="btn-engine-start" class="btn btn-start btn-compact" onclick="startEngine()">
+						<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+						Start
+					</button>
+					<button id="btn-engine-stop" class="btn btn-stop btn-compact" onclick="stopEngine()" style="display: none;">
+						<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg></span>
+						Stop
+					</button>
+					<button id="btn-engine-restart" class="btn btn-secondary btn-compact" onclick="restartEngine()">
+						<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></span>
+						Restart
+					</button>
+					<button class="btn btn-secondary btn-compact" onclick="openEngineLogs()">
+						<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg></span>
+						Logs
+					</button>
 				</div>
 			</div>
 
@@ -102,17 +114,25 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 					<label for="remote-engine-url">Server Endpoint URL</label>
 					<div class="input-row">
 						<input type="text" id="remote-engine-url" placeholder="http://192.168.0.205:8000" />
-						<button class="btn btn-secondary btn-compact" onclick="testRemoteConnection()">⚡ Test</button>
+						<button class="btn btn-secondary btn-compact" onclick="testRemoteConnection()">
+							<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></span>
+							Test
+						</button>
 					</div>
 				</div>
 				<div class="form-group">
 					<label for="remote-engine-token">Bearer Auth Token</label>
 					<div class="input-row">
 						<input type="password" id="remote-engine-token" placeholder="Optional bearer auth token" />
-						<button class="btn btn-secondary btn-compact" id="btn-token-eye" onclick="togglePasswordVisibility('remote-engine-token', 'btn-token-eye')">👁️</button>
+						<button class="btn btn-secondary btn-compact" id="btn-token-eye" onclick="togglePasswordVisibility('remote-engine-token', 'btn-token-eye')">
+							<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></span>
+						</button>
 					</div>
 				</div>
-				<button class="btn btn-primary btn-compact" onclick="saveRemoteSettings()">💾 Save Remote Server</button>
+				<button class="btn btn-primary btn-compact" onclick="saveRemoteSettings()">
+					<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg></span>
+					Save Remote Server
+				</button>
 			</div>
 		</div>
 	</div>
@@ -138,21 +158,30 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 					<span class="agent-config-label">Base URL</span>
 					<div class="agent-config-val">
 						<span id="proxy-endpoint-text" class="agent-config-code">http://127.0.0.1:8000/v1</span>
-						<button class="btn-icon-copy" onclick="copyRooEndpoint()" title="Copy Base URL">📋 Copy</button>
+						<button class="btn-icon-copy" onclick="copyRooEndpoint()" title="Copy Base URL">
+							<span class="brand-logo-svg" style="width: 10px; height: 10px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></span>
+							Copy
+						</button>
 					</div>
 				</div>
 				<div class="agent-config-row">
 					<span class="agent-config-label">API Key</span>
 					<div class="agent-config-val">
 						<span id="agent-token-text" class="agent-config-code">•••••••• (Auth Token)</span>
-						<button class="btn-icon-copy" onclick="copyActiveToken()" title="Copy Active Token">📋 Copy</button>
+						<button class="btn-icon-copy" onclick="copyActiveToken()" title="Copy Active Token">
+							<span class="brand-logo-svg" style="width: 10px; height: 10px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></span>
+							Copy
+						</button>
 					</div>
 				</div>
 				<div class="agent-config-row">
 					<span class="agent-config-label">Model ID</span>
 					<div class="agent-config-val">
 						<span class="agent-config-code">nacho-hybrid</span>
-						<button class="btn-icon-copy" onclick="copyModelId()" title="Copy Model ID (nacho-hybrid)">📋 Copy</button>
+						<button class="btn-icon-copy" onclick="copyModelId()" title="Copy Model ID (nacho-hybrid)">
+							<span class="brand-logo-svg" style="width: 10px; height: 10px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></span>
+							Copy
+						</button>
 					</div>
 				</div>
 			</div>
@@ -189,8 +218,8 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	</div>
 
 	<!-- Dashboard Launcher -->
-	<button class="btn btn-primary" onclick="openDashboard()" style="margin-top: 4px; padding: 10px; font-weight: 600;">
-		<span class="brand-logo-svg" style="width: 15px; height: 15px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg></span>
+	<button class="btn btn-dashboard" onclick="openDashboard()" style="margin-top: 6px; padding: 11px; font-size: 13px;">
+		<span class="brand-logo-svg" style="width: 16px; height: 16px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg></span>
 		Open Full Analytics Dashboard
 	</button>
 
