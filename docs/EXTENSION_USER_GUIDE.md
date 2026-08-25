@@ -27,9 +27,9 @@ The **Nacho Flow VS Code Extension** provides real-time cost visibility, visual 
 ## 🚀 Installation & Quick Start
 
 ### 1. Install Extension
-Download the `.vsix` package from GitHub Releases or build from source:
+Download the latest `.vsix` package from GitHub Releases or build from source:
 ```bash
-code --install-extension nacho-flow-0.6.0.vsix
+code --install-extension nacho-flow-*.vsix
 ```
 
 ### 2. Launch Local Engine or Connect Remote

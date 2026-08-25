@@ -163,6 +163,18 @@
 
                 let markdown = await res.text();
 
+                if (!window.cachedVersion) {
+                    try {
+                        const vRes = await fetch('version.txt');
+                        if (vRes.ok) {
+                            window.cachedVersion = (await vRes.text()).trim();
+                        }
+                    } catch (_) {}
+                }
+                if (window.cachedVersion) {
+                    markdown = markdown.replace(/\{\{VERSION\}\}/g, window.cachedVersion);
+                }
+
                 // Custom transformer for GitHub Alerts (> [!NOTE], > [!TIP], etc.)
                 markdown = markdown.replace(/>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n((?:>.*\n?)*)/gi, function(match, p1, p2) {
                     const alertType = p1.toLowerCase();
