@@ -66,9 +66,32 @@ To maximize cost savings without degrading agent intelligence, follow the **Hier
 [Default Fallback]                 --> Reliable Cloud Fallback
 ```
 
+### 🎯 GPU Hardware & Token Sizing Cheat Sheet
+
+Not sure what token limits to set for your local workstation? Use this reference table based on your available VRAM:
+
+| Workstation Hardware | VRAM | Recommended Local Model | Suggested `Tokens` Bound |
+| :--- | :--- | :--- | :--- |
+| **8 GB VRAM** (RTX 3060/4060, Apple M1/M2 8GB) | 8 GB | `qwen2.5-coder:7b` | `Tokens < 8000` |
+| **16 GB VRAM** (RTX 4080, RX 7800/9070 XT, Apple 16-24GB) | 16 GB | `qwen2.5-coder:14b` | `Tokens < 16000` |
+| **24 GB VRAM** (RTX 3090/4090, Apple M-Max 32GB) | 24 GB | `qwen2.5-coder:32b` (Q4) | `Tokens < 24000` |
+| **32 GB+ VRAM / Mac Studio** | 32 GB+ | `qwen2.5-coder:32b` (Q8) / `deepseek-r1:32b` | `Tokens < 32000` |
+
 ---
 
 ## 4. Real-World Rule Recipes
+
+### 🔥 Top 5 Copy-Paste Rule Patterns
+
+| Pattern | `when` Condition | Purpose |
+| :--- | :--- | :--- |
+| **1. Standard Local Workhorse** | `Tokens < 16000 && !HasImages && Retries < 2` | Routes routine iterative turns to GPU for $0.00, breaking on failures. |
+| **2. Concurrency / Math Escapement** | `any(Keywords, { # in ['deadlock', 'mutex', 'concurrency', 'race'] })` | Instantly flags deep reasoning keywords to DeepSeek-R1 / o1. |
+| **3. Vision Escapement** | `HasImages` | Routes screenshot turns to vision models (Gemini Flash / Claude Sonnet). |
+| **4. Tool-Safety Boundary** | `!HasTools && Tokens < 12000` | Restricts local models to pure code generation without calling external tools. |
+| **5. Cloud Recovery Overflow** | `Tokens >= 16000 || HasTools || Retries >= 2` | Catch-all for large context overflow, tool execution, or retry recovery. |
+
+---
 
 ### Recipe 1: Local-First GPU Routing with Auto-Escalation
 Routes small, single-file edits and routine coding tasks to your local GPU, escalating to cloud when history accumulates, images are attached, or if the local model fails 2 consecutive times:
@@ -158,13 +181,23 @@ $ nacho-flow -config config.yaml
 # Evaluator compile error: unknown name "TokenCount" (did you mean "Tokens"?)
 ```
 
-### Live Route Inspection via Headers
-When your agent sends a request, Nacho Flow injects response headers showing exactly which rule matched:
-```http
-HTTP/1.1 200 OK
-x-nacho-router-tier: Local ROCm GPU
-x-nacho-target-model: qwen2.5-coder:14b
+### ⚡ Test Rules On-The-Fly with HotSauce Directives
+You don't need to restart the server or edit `config.yaml` to test how a model behaves on a specific turn. Simply splash a **HotSauce directive** right into your agent chat prompt:
+
+```text
+@nacho:tier="Deep Reasoning" please analyze the lock contention in this channel fan-out
+@nacho:local write a unit test for this handler
+@nacho:reasoning prove why this algorithm is O(N log N)
 ```
+Nacho Flow strips the directive and routes the turn directly to the requested tier, allowing you to test candidate rules in real time.
+
+### 🔍 Live Route Inspector (VS Code Webview)
+If you use the [VS Code Companion Extension](file:///docs/EXTENSION_USER_GUIDE.md), open the **Nacho Flow Dashboard** (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`). The **Live Route Inspector** displays a real-time table of your last 500 LLM requests with:
+* Exact prompt token count
+* Matched routing tier and rule reason
+* Turn latency (ms)
+* Estimated dollars saved ($0.00 vs Cloud)
+* Upstream target provider
 
 ---
 
