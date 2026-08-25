@@ -63,10 +63,11 @@
 			remoteUrlInput.value = state.remoteUrl;
 		}
 		if (remoteTokenInput) {
+			remoteTokenInput.value = state.token || '';
 			if (state.token) {
-				remoteTokenInput.value = state.token;
-			} else if (state.hasToken) {
-				remoteTokenInput.placeholder = '•••••••• (Token saved)';
+				remoteTokenInput.placeholder = 'Optional bearer auth token';
+			} else {
+				remoteTokenInput.placeholder = 'Optional bearer auth token';
 			}
 		}
 

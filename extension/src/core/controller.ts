@@ -895,7 +895,12 @@ export class ExtensionController {
 
 	private async handleTestConnection(url?: string, token?: string): Promise<void> {
 		const targetUrl = url && url.trim() !== '' ? url.trim() : await this.authManager.getBaseUrl();
-		const targetToken = token !== undefined && token.trim() !== '' ? token.trim() : await this.authManager.getAuthToken();
+		let targetToken = token !== undefined && token.trim() !== '' ? token.trim() : undefined;
+		if (targetToken === undefined) {
+			targetToken = this.processManager.isLocalUrl(targetUrl)
+				? await this.authManager.getAuthToken()
+				: await this.authManager.getRemoteToken();
+		}
 		
 		if (this.sidebarProvider) {
 			this.sidebarProvider.updateEngineStatus({ testing: true });
