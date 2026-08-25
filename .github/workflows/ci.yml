@@ -202,13 +202,16 @@ jobs:
           cache-dependency-path: 'extension/package-lock.json'
 
       - name: Import Apple Certificates
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
-          if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
-            echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
+          if [ -n "$MACOS_CERTIFICATE" ]; then
+            echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
             security create-keychain -p "${{ runner.temp }}" build.keychain
             security default-keychain -s build.keychain
             security unlock-keychain -p "${{ runner.temp }}" build.keychain
-            security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+            security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
             security set-key-partition-list -S apple-tool:,apple:,codesign: -k "${{ runner.temp }}" -s build.keychain
             rm -f certificate.p12
           fi
@@ -216,6 +219,7 @@ jobs:
       - name: Build & Sign macOS Binaries
         env:
           SIGNING_IDENTITY: "Developer ID Application: Karl Kwong (T96W95GY4U)"
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
         run: |
           VERSION=$(cat version.txt | tr -d '\r\n')
           mkdir -p dist
@@ -226,7 +230,7 @@ jobs:
           # AMD64 (Intel)
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o "dist/nacho-flow-${VERSION}-darwin-amd64" ./cmd/nacho-flow
 
-          if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
+          if [ -n "$MACOS_CERTIFICATE" ]; then
             codesign --force --options=runtime --sign "${SIGNING_IDENTITY}" --timestamp "dist/nacho-flow-${VERSION}-darwin-arm64"
             codesign --force --options=runtime --sign "${SIGNING_IDENTITY}" --timestamp "dist/nacho-flow-${VERSION}-darwin-amd64"
           fi
