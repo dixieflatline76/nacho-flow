@@ -31,8 +31,9 @@ Nacho Flow **v0.6.0** is a major platform milestone delivering the official VS C
 
 ---
 
-### ⚡ Real-Time IDE Control Plane & Live Telemetry Stream
+### ⚡ Real-Time IDE Control Plane & Core Engine
 * **High-Throughput IPC Backbone**: Zero-polling Server-Sent Events (`/api/v1/events`) stream live cost metrics, route transitions, and error states directly to the official VS Code extension.
+* **Code-Aware Adaptive Token Estimator**: Continuously calibrates character-to-token ratios for dense code diffs and markdown, eliminating premature tier escalations and unexpected context length overflow errors.
 * **Historical Financial Recalculation**: Background audit capability recalculating historical `traffic.jsonl` logs to guarantee accurate financial totals.
 
 ---
