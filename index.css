@@ -1016,6 +1016,30 @@ footer {
     overflow-x: auto;
     position: relative;
     box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(245, 158, 11, 0.3) transparent;
+}
+
+.markdown-body pre::-webkit-scrollbar,
+.markdown-body table::-webkit-scrollbar {
+    height: 5px;
+    width: 5px;
+}
+
+.markdown-body pre::-webkit-scrollbar-track,
+.markdown-body table::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.markdown-body pre::-webkit-scrollbar-thumb,
+.markdown-body table::-webkit-scrollbar-thumb {
+    background: rgba(245, 158, 11, 0.3);
+    border-radius: 4px;
+}
+
+.markdown-body pre::-webkit-scrollbar-thumb:hover,
+.markdown-body table::-webkit-scrollbar-thumb:hover {
+    background: rgba(245, 158, 11, 0.6);
 }
 
 .markdown-body pre code {

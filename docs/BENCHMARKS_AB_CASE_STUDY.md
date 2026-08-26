@@ -103,29 +103,22 @@ Unlike conventional AI coding benchmarks (such as HumanEval or synthetic single-
 
 ### 3.1 Global Performance & Financial Comparison
 
-```text
-=======================================================================================================
-📊 EMPIRICAL A/B BENCHMARK: HYBRID MULTI-TIER ROUTING PERFORMANCE
-=======================================================================================================
-Metric                         | Run A (Local + Qwen 3 Coder)  | Run B (Local + Gemini 3.7 Flash)
--------------------------------------------------------------------------------------------------------
-Total Prompt Turns             | 35 turns                      | 31 turns (-11.4% faster)
-Local GPU Turns ($0.00)        | 15 turns (42.9% of session)   | 5 turns (16.1% of session)
-Cloud Escalation Turns         | 20 turns (57.1% of session)   | 26 turns (83.9% of session)
-Total Tokens Processed         | 1,008,039 tokens              | 1,939,474 tokens
-Tokens Offloaded to GPU ($0)   | 216,874 tokens (21.5%)        | 90,036 tokens (4.6%)
-Total Billed Cloud Spend       | $0.2473 (~24.7¢)              | $0.7604 (~76.0¢)
-Claude 3.5 Sonnet Baseline     | $3.0242                       | $5.8185
-Total Financial Savings (USD)  | +$2.7769 Saved                | +$5.0581 Saved
-Effective Cost Reduction (%)   | 91.82% SAVINGS                | 86.93% SAVINGS
--------------------------------------------------------------------------------------------------------
-YAML Parser Implementation     | ❌ FAILED (Naive prefix match)| 🏆 PERFECT (Regex State Machine)
-QuickPick UX Labels            | ❌ POOR (Internal enum slugs) | 🏆 EXCELLENT (Live Tier Names + Recs)
-Unit Test Rigor & Integrity    | ❌ POOR (Circular fake mocks) | 🏆 RIGOROUS (Real YAML Mutation Tests)
-Human Debugging Required       | ~15 min ($15.00 recovery)     | 0 minutes (Zero rework)
-Total Cost of Ownership (TCO)  | $15.2473 (with failure cost)  | $0.7604 (Autonomous first-pass pass)
-=======================================================================================================
-```
+| Metric | Run A (Local + Qwen 3 Coder) | Run B (Local + Gemini 3.7 Flash) |
+| :--- | :--- | :--- |
+| **Total Prompt Turns** | 35 turns | **31 turns (-11.4% faster)** |
+| **Local GPU Turns ($0.00)** | 15 turns (42.9% of session) | 5 turns (16.1% of session) |
+| **Cloud Escalation Turns** | 20 turns (57.1% of session) | 26 turns (83.9% of session) |
+| **Total Tokens Processed** | 1,008,039 tokens | 1,939,474 tokens |
+| **Tokens Offloaded to GPU ($0)** | **216,874 tokens (21.5%)** | 90,036 tokens (4.6%) |
+| **Total Billed Cloud Spend** | **$0.2473** (~24.7¢) | **$0.7604** (~76.0¢) |
+| **Claude 3.5 Sonnet Baseline** | $3.0242 | $5.8185 |
+| **Total Financial Savings (USD)** | **+$2.7769 Saved** | **+$5.0581 Saved** |
+| **Effective Cost Reduction (%)** | **91.82% SAVINGS** | **86.93% SAVINGS** |
+| **YAML Parser Implementation** | ❌ **FAILED** (Naive prefix match) | 🏆 **PERFECT** (Regex State Machine) |
+| **QuickPick UX Labels** | ❌ **POOR** (Internal enum slugs) | 🏆 **EXCELLENT** (Live Tier Names + Recs) |
+| **Unit Test Rigor & Integrity** | ❌ **POOR** (Circular fake mocks) | 🏆 **RIGOROUS** (Real YAML Mutation Tests) |
+| **Human Debugging Required** | ~15 min ($15.00 recovery) | **0 minutes (Zero rework)** |
+| **Total Cost of Ownership (TCO)** | **$15.2473** (with failure cost) | **$0.7604 (Autonomous pass)** |
 
 <p align="center">
   <img src="benchmarks/charts/chart2_cost_savings_baseline.png" alt="Cloud Spend vs Unrouted Frontier Baseline" width="800" />
@@ -143,48 +136,44 @@ Total Cost of Ownership (TCO)  | $15.2473 (with failure cost)  | $0.7604 (Autono
 * **Session Date**: August 25, 2026
 * **Execution Time**: ~62 minutes
 
-```text
-Turn  | Tier / Model Target                 | Tokens  | Latency   | Spend     | Savings
-----------------------------------------------------------------------------------------
-1     | Local GPU (gemma4:12b-it-qat)       | 11,609  | 35,228ms  | $0.0000   | +$0.0348
-2     | Local GPU (gemma4:12b-it-qat)       | 11,805  | 13,082ms  | $0.0000   | +$0.0354
-3     | Local GPU (gemma4:12b-it-qat)       | 18,923  | 19,373ms  | $0.0000   | +$0.0568
-4     | Cloud Fast (qwen/qwen3-coder)       | 18,065  | 337ms     | $0.0054   | +$0.0488
-5     | Cloud Fast (qwen/qwen3-coder)       | 18,065  | 199ms     | $0.0054   | +$0.0488
-...   | ...                                 | ...     | ...       | ...       | ...
-18    | Local GPU (gemma4:12b-it-qat)       | 26,951  | 46,328ms  | $0.0000   | +$0.0809
-19    | Local GPU (gemma4:12b-it-qat)       | 28,300  | 20,492ms  | $0.0000   | +$0.0849
-20    | Local GPU (gemma4:12b-it-qat)       | 29,090  | 14,339ms  | $0.0000   | +$0.0873
-21    | Cloud Fast (qwen/qwen3-coder)       | 27,107  | 3,969ms   | $0.0082   | +$0.0731
-...   | ...                                 | ...     | ...       | ...       | ...
-34    | Cloud Fast (qwen/qwen3-coder)       | 60,840  | 18,999ms  | $0.0184   | +$0.1642
-35    | Cloud Fast (qwen/qwen3-coder)       | 61,773  | 8,524ms   | $0.0188   | +$0.1665
-----------------------------------------------------------------------------------------
-TOTALS: 35 Turns | 1,008,039 Tokens | Spend: $0.2473 | Net Saved: +$2.7769 (91.82%)
-```
+| Turn | Tier / Model Target | Tokens | Latency | Spend | Savings |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | Local GPU (gemma4:12b-it-qat) | 11,609 | 35,228ms | $0.0000 | +$0.0348 |
+| 2 | Local GPU (gemma4:12b-it-qat) | 11,805 | 13,082ms | $0.0000 | +$0.0354 |
+| 3 | Local GPU (gemma4:12b-it-qat) | 18,923 | 19,373ms | $0.0000 | +$0.0568 |
+| 4 | Cloud Fast (qwen/qwen3-coder) | 18,065 | 337ms | $0.0054 | +$0.0488 |
+| 5 | Cloud Fast (qwen/qwen3-coder) | 18,065 | 199ms | $0.0054 | +$0.0488 |
+| ... | ... | ... | ... | ... | ... |
+| 18 | Local GPU (gemma4:12b-it-qat) | 26,951 | 46,328ms | $0.0000 | +$0.0809 |
+| 19 | Local GPU (gemma4:12b-it-qat) | 28,300 | 20,492ms | $0.0000 | +$0.0849 |
+| 20 | Local GPU (gemma4:12b-it-qat) | 29,090 | 14,339ms | $0.0000 | +$0.0873 |
+| 21 | Cloud Fast (qwen/qwen3-coder) | 27,107 | 3,969ms | $0.0082 | +$0.0731 |
+| ... | ... | ... | ... | ... | ... |
+| 34 | Cloud Fast (qwen/qwen3-coder) | 60,840 | 18,999ms | $0.0184 | +$0.1642 |
+| 35 | Cloud Fast (qwen/qwen3-coder) | 61,773 | 8,524ms | $0.0188 | +$0.1665 |
+
+**Totals**: 35 Turns | 1,008,039 Tokens | Spend: $0.2473 | Net Saved: +$2.7769 (91.82%)
 
 ### 4.2 Run B Telemetry: `gemma4:12b-it-qat` + `google/gemini-3.7-flash` (Extended Thinking)
 * **Session Date**: August 25, 2026
 * **Execution Time**: ~48 minutes
 
-```text
-Turn  | Tier / Model Target                 | Tokens  | Latency   | Spend     | Savings
-----------------------------------------------------------------------------------------
-1     | Local GPU (gemma4:12b-it-qat)       | 10,639  | 25,875ms  | $0.0000   | +$0.0319
-2     | Local GPU (gemma4:12b-it-qat)       | 10,944  | 12,758ms  | $0.0000   | +$0.0328
-3     | Local GPU (gemma4:12b-it-qat)       | 18,059  | 20,470ms  | $0.0000   | +$0.0542
-4     | Local GPU (gemma4:12b-it-qat)       | 25,000  | 32,318ms  | $0.0000   | +$0.0750
-5     | Local GPU (gemma4:12b-it-qat)       | 25,394  | 13,025ms  | $0.0000   | +$0.0762
-6     | Cloud Reasoning (gemini-3.7-flash)  | 29,631  | 3,695ms   | $0.0113   | +$0.0776
-7     | Cloud Reasoning (gemini-3.7-flash)  | 40,391  | 6,488ms   | $0.0162   | +$0.1050
-...   | ...                                 | ...     | ...       | ...       | ...
-28    | Cloud Reasoning (gemini-3.7-flash)  | 106,622 | 43,320ms  | $0.0537   | +$0.2662
-29    | Cloud Reasoning (gemini-3.7-flash)  | 107,309 | 2,809ms   | $0.0403   | +$0.2816
-30    | Cloud Reasoning (gemini-3.7-flash)  | 110,917 | 4,823ms   | $0.0419   | +$0.2909
-31    | Cloud Reasoning (gemini-3.7-flash)  | 112,021 | 5,350ms   | $0.0427   | +$0.2933
-----------------------------------------------------------------------------------------
-TOTALS: 31 Turns | 1,939,474 Tokens | Spend: $0.7604 | Net Saved: +$5.0581 (86.93%)
-```
+| Turn | Tier / Model Target | Tokens | Latency | Spend | Savings |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | Local GPU (gemma4:12b-it-qat) | 10,639 | 25,875ms | $0.0000 | +$0.0319 |
+| 2 | Local GPU (gemma4:12b-it-qat) | 10,944 | 12,758ms | $0.0000 | +$0.0328 |
+| 3 | Local GPU (gemma4:12b-it-qat) | 18,059 | 20,470ms | $0.0000 | +$0.0542 |
+| 4 | Local GPU (gemma4:12b-it-qat) | 25,000 | 32,318ms | $0.0000 | +$0.0750 |
+| 5 | Local GPU (gemma4:12b-it-qat) | 25,394 | 13,025ms | $0.0000 | +$0.0762 |
+| 6 | Cloud Reasoning (gemini-3.7-flash) | 29,631 | 3,695ms | $0.0113 | +$0.0776 |
+| 7 | Cloud Reasoning (gemini-3.7-flash) | 40,391 | 6,488ms | $0.0162 | +$0.1050 |
+| ... | ... | ... | ... | ... | ... |
+| 28 | Cloud Reasoning (gemini-3.7-flash) | 106,622 | 43,320ms | $0.0537 | +$0.2662 |
+| 29 | Cloud Reasoning (gemini-3.7-flash) | 107,309 | 2,809ms | $0.0403 | +$0.2816 |
+| 30 | Cloud Reasoning (gemini-3.7-flash) | 110,917 | 4,823ms | $0.0419 | +$0.2909 |
+| 31 | Cloud Reasoning (gemini-3.7-flash) | 112,021 | 5,350ms | $0.0427 | +$0.2933 |
+
+**Totals**: 31 Turns | 1,939,474 Tokens | Spend: $0.7604 | Net Saved: +$5.0581 (86.93%)
 
 <p align="center">
   <img src="benchmarks/charts/chart4_per_turn_trajectory.png" alt="Per-Turn Cost: Context Snowball in Action" width="800" />
@@ -218,11 +207,17 @@ function updateTierModel(yamlContent, targetTierName, newModel) {
     let insideTargetTier = false;
     let modified = false;
 
+    const namePattern = new RegExp(
+        `^\\s*-\\s*name:\\s*["']?${escapeRegex(targetTierName)}["']?`
+    );
+
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         // Match tier header: "- name: Target Tier" or "default_tier:"
-        if (line.match(new RegExp(`^\\s*-\\s*name:\\s*["']?${escapeRegex(targetTierName)}["']?`)) ||
-            (targetTierName === 'default_tier' && line.match(/^\s*default_tier:/))) {
+        const isHeader = line.match(namePattern) ||
+            (targetTierName === 'default_tier' && line.match(/^\s*default_tier:/));
+
+        if (isHeader) {
             insideTargetTier = true;
             continue;
         }
@@ -230,10 +225,12 @@ function updateTierModel(yamlContent, targetTierName, newModel) {
         if (insideTargetTier && line.match(/^\s*-\s*name:/)) {
             break;
         }
-        // Safely mutate model attribute while preserving indentation and inline comments
+        // Safely mutate model attribute while preserving indentation and comments
         if (insideTargetTier && line.match(/^\s*model:\s*/)) {
             const indent = line.match(/^(\s*)/)[1];
-            const comment = line.includes('#') ? ' ' + line.substring(line.indexOf('#')) : '';
+            const comment = line.includes('#') 
+                ? ' ' + line.substring(line.indexOf('#')) 
+                : '';
             lines[i] = `${indent}model: "${newModel}"${comment}`;
             modified = true;
             break;
@@ -258,26 +255,22 @@ function updateTierModel(yamlContent, targetTierName, newModel) {
 ### 6.1 The Three Essential Quality Tiers
 This benchmark reveals three distinct operational tiers in modern software engineering workflows:
 
-```
-┌────────────────────────────────────────────────────────┐
-│  Tier 1: High-Frequency Context Absorbers ($0.00)      │
-│  • Workstation GPU: Gemma 4 12B / Qwen 2.5 Coder 14B   │
-│  • Workload: File reads, greps, tests, syntax checks   │
-└───────────────────────────┬────────────────────────────┘
-                            │ (Escalate when context/retries expand)
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│  Tier 2: Mid-Complexity Cloud Workhorses               │
-│  • Fast Cloud: Qwen 3 Coder / DeepSeek V3 ($0.03-$0.15)│
-│  • Workload: Standard refactoring, basic boilerplate   │
-└───────────────────────────┬────────────────────────────┘
-                            │ (Escalate on regex/AST/state-machines)
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│  Tier 3: Low-Frequency Frontier Reasoning Engines      │
-│  • Thinking Cloud: Gemini 3.7 Flash / DeepSeek R1      │
-│  • Workload: Complex AST state machines, robust tests  │
-└────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph T1["Tier 1: High-Frequency Context Absorbers ($0.00)"]
+        T1_Desc["• Workstation GPU: Gemma 4 12B / Qwen 2.5 Coder 14B<br/>• Workload: File reads, greps, tests, syntax checks"]
+    end
+
+    subgraph T2["Tier 2: Mid-Complexity Cloud Workhorses"]
+        T2_Desc["• Fast Cloud: Qwen 3 Coder / DeepSeek V3 ($0.03-$0.15)<br/>• Workload: Standard refactoring, basic boilerplate"]
+    end
+
+    subgraph T3["Tier 3: Low-Frequency Frontier Reasoning Engines"]
+        T3_Desc["• Thinking Cloud: Gemini 3.7 Flash / DeepSeek R1<br/>• Workload: Complex AST state machines, robust tests"]
+    end
+
+    T1 -->|"Escalate when context or retries expand"| T2
+    T2 -->|"Escalate on regex, AST, or state machines"| T3
 ```
 
 By allowing local hardware to absorb 80%+ of total prompt turns, developers can afford to route critical implementation turns to frontier reasoning models while still maintaining an **85%+ net cost reduction**.
