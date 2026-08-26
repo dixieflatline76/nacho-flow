@@ -305,4 +305,38 @@ When executed, verify the deployment using these automated checks:
 
 ---
 
+## 7. 🤖 AI-Native Integration with Nacho Flow
+
+The synergy between **Nacho Flow** (smart AI edge router) and **Nacho Hugo** (static docs generator) creates an intelligent, automated documentation ecosystem:
+
+```mermaid
+flowchart LR
+    Docs["Markdown Docs (/docs)"] --> Hugo["Nacho Hugo Build"]
+    Hugo -->|"Generate Index"| LLMSTxt["site/llms.txt<br/>(For Coding Agents)"]
+    Hugo -->|"POST /v1/chat/completions"| NachoGateway["Nacho Flow Gateway<br/>(localhost:8000/v1)"]
+    NachoGateway -->|"Route to Local GPU ($0.00)"| LocalGPU["Gemma 4 12B ROCm<br/>Auto-Extract TL;DR & OG Tags"]
+    LocalGPU -->|"Injected at Build Time"| StaticHTML["Pre-Rendered HTML Pages"]
+    StaticHTML -->|"Interactive Browser Q&A"| LocalChat["In-Docs 'Ask AI' Widget<br/>(Queries Local Nacho Flow)"]
+```
+
+### 7.1 Automated `llms.txt` & `llms-full.txt` Generation
+* **The Standard for AI Coding Agents**: Coding agents (such as Roo Code, Cursor, Windsurf, and Claude Code) look for `https://spicebox.dev/nacho-flow/llms.txt` to understand a project's architecture and APIs.
+* **Nacho Hugo Feature**: During build, Nacho Hugo automatically parses all registered documentation files and generates:
+  1. `site/llms.txt`: A concise, token-optimized table of contents with doc summaries and links.
+  2. `site/llms-full.txt`: A consolidated, stripped-down single text file containing all system schemas, YAML config references, and rule directive specifications for immediate agent absorption.
+
+### 7.2 Zero-Cost Build-Time AI Summaries via Local GPU
+* During compilation, Nacho Hugo can optionally send raw markdown documents to `http://localhost:8000/v1` (Nacho Flow).
+* Nacho Flow evaluates and routes the request to your **local workstation GPU (`gemma4:12b-it-qat` on AMD ROCm) for $0.00 marginal cost** to:
+  * Auto-generate high-conversion OpenGraph meta descriptions.
+  * Extract relevant SEO keywords.
+  * Generate an executive *"💡 Key Takeaways / TL;DR"* callout card embedded at the top of each guide.
+
+### 7.3 Privacy-First "Ask AI" Documentation Assistant
+* Nacho Hugo static pages can embed a lightweight, zero-cloud **"Ask AI" documentation search box**.
+* When developers are reading documentation locally, the widget queries their local Nacho Flow instance (`http://127.0.0.1:8000/v1`).
+* **Zero API Costs & Total Privacy**: Developers can ask complex architectural questions about Nacho Flow and receive instant answers powered by their own local hardware without queries ever leaving their machine.
+
+---
+
 🌮 *This blueprint is complete and self-contained. Any future session can load this document and execute the Nacho Hugo pipeline in a single turn without additional context gathering.*
