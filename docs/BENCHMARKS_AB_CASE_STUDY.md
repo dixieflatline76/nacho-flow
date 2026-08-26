@@ -56,6 +56,10 @@ $$\text{FailureRecoveryCost} = \text{HumanDebugHours} \times \text{EngineerHourl
 
 When an inexpensive model outputs a hallucinated regular expression, circular unit tests, or broken AST parser, the developer is forced out of flow state. This $15.00 engineering intervention penalty completely dwarfs 51 cents of token savings.
 
+<p align="center">
+  <img src="benchmarks/charts/chart1_tco_comparison.png" alt="Total Cost of Ownership: Cheap Model vs Smart Model" width="800" />
+</p>
+
 ---
 
 ## 2. Experimental Setup & Benchmark Methodology
@@ -123,9 +127,17 @@ Total Cost of Ownership (TCO)  | $15.2473 (with failure cost)  | $0.7604 (Autono
 =======================================================================================================
 ```
 
+<p align="center">
+  <img src="benchmarks/charts/chart2_cost_savings_baseline.png" alt="Cloud Spend vs Unrouted Frontier Baseline" width="800" />
+</p>
+
 ---
 
 ## 4. Turn-by-Turn Telemetry & Execution Dynamics
+
+<p align="center">
+  <img src="benchmarks/charts/chart3_token_distribution.png" alt="Token Distribution: Local GPU vs Cloud" width="800" />
+</p>
 
 ### 4.1 Run A Telemetry: `gemma4:12b-it-qat` + `qwen/qwen3-coder`
 * **Session Date**: August 25, 2026
@@ -173,6 +185,10 @@ Turn  | Tier / Model Target                 | Tokens  | Latency   | Spend     | 
 ----------------------------------------------------------------------------------------
 TOTALS: 31 Turns | 1,939,474 Tokens | Spend: $0.7604 | Net Saved: +$5.0581 (86.93%)
 ```
+
+<p align="center">
+  <img src="benchmarks/charts/chart4_per_turn_trajectory.png" alt="Per-Turn Cost: Context Snowball in Action" width="800" />
+</p>
 
 ---
 
@@ -275,6 +291,10 @@ Scaling these empirical findings across professional engineering teams demonstra
 | **Daily Cost per Engineer (5 sessions)** | **$74.00** | **$3.90** | **$70.10 saved / day** |
 | **Monthly Cost (20 working days)** | **$1,480.00** | **$78.00** | **$1,402.00 saved / month** |
 | **Annual Fleet Cost (10 Developers)** | **$177,600.00** | **$9,360.00** | **+$168,240.00 USD Saved** |
+
+<p align="center">
+  <img src="benchmarks/charts/chart5_enterprise_fleet_roi.png" alt="Annual AI API Cost: 10-Engineer Team" width="800" />
+</p>
 
 ---
 
