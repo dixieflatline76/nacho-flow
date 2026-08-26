@@ -235,7 +235,7 @@ func updateSiteVersion(filename string, v Version) error {
 	return os.WriteFile(filepath.Clean(filename), updated, 0600)
 }
 
-// updatePackageJSON updates the "version" field in package.json/package-lock.json.
+// updatePackageJSON updates the root "version" field in package.json/package-lock.json.
 func updatePackageJSON(filename string, v Version) error {
 	data, err := os.ReadFile(filepath.Clean(filename))
 	if err != nil {
@@ -243,7 +243,7 @@ func updatePackageJSON(filename string, v Version) error {
 	}
 
 	versionStr := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
-	re := regexp.MustCompile(`("version"\s*:\s*)"[^"]+"`)
+	re := regexp.MustCompile(`("name"\s*:\s*"nacho-flow"(?:[^{}]*?)"version"\s*:\s*)"[^"]+"`)
 	updated := re.ReplaceAll(data, fmt.Appendf(nil, `${1}"%s"`, versionStr))
 
 	return os.WriteFile(filepath.Clean(filename), updated, 0600)
