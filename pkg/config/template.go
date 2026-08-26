@@ -1,4 +1,11 @@
-# =============================================================================
+// Copyright (c) 2026 Karl Kwong / Spicebox. Licensed under AGPL-3.0.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package config
+
+// DefaultStarterConfigTemplate is the canonical starter configuration
+// auto-initialized when nacho-flow boots on a clean environment without an existing config.yaml.
+const DefaultStarterConfigTemplate = `# =============================================================================
 # 🌮 NACHO FLOW CONFIGURATION
 # Intelligent Semantic AI Gateway & Multi-Tier Cost Optimizer
 # =============================================================================
@@ -76,3 +83,4 @@ default_tier:
   provider: "openrouter"
   model: "anthropic/claude-3.5-sonnet"
   when: "true"
+`

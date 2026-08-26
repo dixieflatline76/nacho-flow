@@ -250,8 +250,8 @@ func TestConfig_NonExistentPath_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected error for non-existent config path, got nil")
 	}
-	if !strings.Contains(err.Error(), "could not find config.yaml") {
-		t.Errorf("Expected error to mention could not find config.yaml, got: %v", err)
+	if !strings.Contains(err.Error(), "could not find") {
+		t.Errorf("Expected error to mention could not find, got: %v", err)
 	}
 }
 
@@ -341,3 +341,126 @@ providers:
 		t.Errorf("Expected default port 8000, got %d", cfg.Port)
 	}
 }
+
+// Test 1.12: Auto-bootstrap creates default starter config when no config exists
+func TestConfig_AutoBootstrap_CleanEnvironment(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("APPDATA", tempDir)
+	t.Setenv("XDG_CONFIG_HOME", tempDir)
+	t.Setenv("HOME", tempDir)
+	t.Setenv("USERPROFILE", tempDir)
+
+	// Change working dir to empty temp dir so local ./config.yaml doesn't exist
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	cfg, err := LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig(\"\") failed on clean environment: %v", err)
+	}
+
+	if cfg == nil {
+		t.Fatalf("Expected non-nil config")
+	}
+
+	if cfg.Port != 8000 {
+		t.Errorf("Expected default port 8000, got %d", cfg.Port)
+	}
+
+	// Verify standard providers
+	if _, ok := cfg.Providers["ollama"]; !ok {
+		t.Errorf("Expected 'ollama' provider in starter config")
+	}
+	if _, ok := cfg.Providers["openrouter"]; !ok {
+		t.Errorf("Expected 'openrouter' provider in starter config")
+	}
+
+	// Verify tiers
+	if len(cfg.Tiers) < 3 {
+		t.Errorf("Expected at least 3 tiers in starter config, got %d", len(cfg.Tiers))
+	}
+
+	// Verify default tier
+	if cfg.DefaultTier.Provider != "openrouter" {
+		t.Errorf("Expected default tier provider 'openrouter', got %s", cfg.DefaultTier.Provider)
+	}
+}
+
+// Test 1.13: Auto-bootstrap does not overwrite existing configuration
+func TestConfig_AutoBootstrap_ExistingConfigUntouched(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("APPDATA", tempDir)
+	t.Setenv("XDG_CONFIG_HOME", tempDir)
+
+	configDir := filepath.Join(tempDir, "nacho-flow")
+	if err := os.MkdirAll(configDir, 0750); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	configPath := filepath.Join(configDir, "config.yaml")
+	customContent := `
+port: 9876
+providers:
+  custom_prov:
+    base_url: "http://127.0.0.1:5000/v1"
+default_tier:
+  name: "Custom Fallback"
+  model: "custom-model"
+  provider: "custom_prov"
+`
+	if err := os.WriteFile(configPath, []byte(customContent), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	cfg, err := LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.Port != 9876 {
+		t.Errorf("Expected custom port 9876, got %d", cfg.Port)
+	}
+
+	// Verify file content was not overwritten
+	readBack, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if !strings.Contains(string(readBack), "custom_prov") {
+		t.Errorf("Existing config was overwritten!")
+	}
+}
+
+// Test 1.14: Explicit custom path missing returns strict error
+func TestConfig_ExplicitCustomPath_MissingFails(t *testing.T) {
+	tempDir := t.TempDir()
+	nonExistent := filepath.Join(tempDir, "missing", "custom-config.yaml")
+
+	_, err := LoadConfig(nonExistent)
+	if err == nil {
+		t.Fatalf("Expected error for missing explicit custom config, got nil")
+	}
+	if !strings.Contains(err.Error(), "could not find") {
+		t.Errorf("Expected 'could not find' in error, got: %v", err)
+	}
+
+	// Ensure file was not created
+	if _, statErr := os.Stat(nonExistent); !os.IsNotExist(statErr) {
+		t.Errorf("Missing custom config should not have been created on disk")
+	}
+}
+

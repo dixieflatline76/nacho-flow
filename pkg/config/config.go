@@ -16,15 +16,15 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 
 	if customPath != "" {
 		pathsToTry = append(pathsToTry, customPath)
-	}
+	} else {
+		// Local directory fallback
+		pathsToTry = append(pathsToTry, contract.DefaultConfigFileName, "./"+contract.DefaultConfigFileName)
 
-	// Local directory fallback
-	pathsToTry = append(pathsToTry, contract.DefaultConfigFileName, "./"+contract.DefaultConfigFileName)
-
-	// Cross-platform user config directory
-	userConfigDir, err := os.UserConfigDir()
-	if err == nil {
-		pathsToTry = append(pathsToTry, filepath.Join(userConfigDir, contract.AppName, contract.DefaultConfigFileName))
+		// Cross-platform user config directory
+		userConfigDir, err := os.UserConfigDir()
+		if err == nil {
+			pathsToTry = append(pathsToTry, filepath.Join(userConfigDir, contract.AppName, contract.DefaultConfigFileName))
+		}
 	}
 
 	var data []byte
@@ -42,7 +42,25 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	}
 
 	if data == nil {
-		return nil, fmt.Errorf("could not find %s in any standard location: %v", contract.DefaultConfigFileName, pathsToTry)
+		if customPath != "" {
+			return nil, fmt.Errorf("could not find %s in any standard location: %v", customPath, pathsToTry)
+		}
+
+		// Auto-bootstrap: When running without an explicit config and none is found,
+		// initialize the default starter configuration template into the user config directory.
+		data = []byte(DefaultStarterConfigTemplate)
+		loadedPath = "embedded:default"
+
+		if uDir, uErr := os.UserConfigDir(); uErr == nil {
+			targetDir := filepath.Join(uDir, contract.AppName)
+			targetFile := filepath.Join(targetDir, contract.DefaultConfigFileName)
+			if mkErr := os.MkdirAll(targetDir, 0750); mkErr == nil {
+				// #nosec G306 - User configuration file with restricted permissions
+				if writeErr := os.WriteFile(targetFile, data, 0600); writeErr == nil {
+					loadedPath = targetFile
+				}
+			}
+		}
 	}
 
 	var cfg contract.Config
