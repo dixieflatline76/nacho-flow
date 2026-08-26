@@ -251,7 +251,7 @@ The **Heat Seeker Engine** scans upstream providers for flash discounts, subsidi
    - Transforms domain deals into `DealRowView` View Models.
    - Formats elastic tabular output via Go's standard `text/tabwriter.Writer` (`nacho-flow deals` or `nacho-flow heat-seek`).
    - Supports structured JSON output (`nacho-flow deals -json`) for automated scripting.
-5. **Management REST API (`GET /api/v1/deals`)**: Surfaces real-time spot deals to local IDEs and web dashboards.
+5. **Internal Control Plane (`GET /api/v1/deals`)**: Surfaces real-time spot deals to the official VS Code extension and analytics dashboards.
 
 ---
 
@@ -287,7 +287,7 @@ flowchart TD
 
     subgraph GoDaemon ["🌮 Nacho Flow Go Daemon Core"]
         direction TB
-        MgmtAPI["Management REST API (/v1/mgmt/*)"]:::daemon
+        MgmtAPI["Control Plane IPC (/v1/mgmt/*)"]:::daemon
         EventBroker["SSE Real-Time Pub/Sub Event Broker (/v1/events)"]:::daemon
         RingBuffer["In-Memory Ring Buffer Sink (Last 500 Turns, 0ms Disk IO)"]:::daemon
         ProxyEngine["Proxy Director & 8-Format Tool Normalizer"]:::daemon

@@ -4,7 +4,7 @@
   "description": "VS Code extension for the Nacho Flow AI routing gateway - Real-time cost visibility, route inspection, and circuit breaker management",
   "version": "0.6.0",
   "publisher": "dixieflatline76",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/dixieflatline76/nacho-flow.git"

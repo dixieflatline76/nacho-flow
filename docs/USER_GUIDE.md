@@ -14,7 +14,7 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 7. [Autonomous Rule Auto-Tuning (`nacho-flow tune`)](#7-autonomous-rule-auto-tuning-nacho-flow-tune)
 8. [🔥 Heat Seeker: Live Model Deals & Discount Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-live-model-deals--discount-scout-nacho-flow-deals--nacho-flow-heat-seek)
 9. [🌶️ HotSauce Directives (In-Prompt Routing & Meta Commands)](#9-hotsauce-directives-in-prompt-routing--meta-commands)
-10. [🧩 VS Code Companion Extension & Management REST API](#10-vs-code-companion-extension--management-rest-api)
+10. [🧩 VS Code Companion Extension & Real-Time Control Plane](#10-vs-code-companion-extension--real-time-control-plane)
 
 ---
 
@@ -725,7 +725,7 @@ router:
 
 ---
 
-## 10. 🧩 VS Code Companion Extension & Management REST API
+## 10. 🧩 VS Code Companion Extension & Real-Time Control Plane
 
 The **Nacho Flow VS Code Extension** delivers full lifecycle management, visual routing telemetry, and agent configuration directly inside VS Code.
 
@@ -754,9 +754,12 @@ For complete extension setup and features, see the [VS Code Companion Extension 
 
 ---
 
-### 10.2 Management REST API Reference
+### 10.2 Control Plane IPC Endpoints (Internal Architecture)
 
-Nacho Flow includes management endpoints protected by Bearer authentication (`/v1/mgmt/*`):
+> [!NOTE]
+> These internal endpoints serve as the high-throughput IPC data plane connecting the compiled Go daemon with the official VS Code Companion Extension and centralized enterprise management hubs.
+
+Nacho Flow exposes internal management endpoints protected by Bearer authentication (`/api/v1/*` / `/v1/mgmt/*`):
 
 #### 1. Recalculate Statistics from Logs
 ```http

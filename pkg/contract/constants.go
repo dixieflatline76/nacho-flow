@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Karl Kwong / Spicebox. Licensed under AGPL-3.0.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package contract
 
 // Application metadata constants.

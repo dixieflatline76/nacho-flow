@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 module github.com/dixieflatline76/nacho-flow
 
 go 1.26.4

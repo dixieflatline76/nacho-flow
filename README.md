@@ -10,7 +10,7 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow"><img src="https://img.shields.io/badge/VS%20Code-Companion%20Extension-blue?logo=visual-studio-code&logoColor=white" alt="VS Code Extension"></a>
   <a href="https://pkg.go.dev/github.com/dixieflatline76/nacho-flow"><img src="https://pkg.go.dev/badge/github.com/dixieflatline76/nacho-flow.svg" alt="Go Reference"></a>
   <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/dixieflatline76/nacho-flow?logo=go&logoColor=white" alt="Go Version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
   <a href="https://github.com/dixieflatline76/nacho-flow/releases/latest"><img src="https://img.shields.io/github/v/release/dixieflatline76/nacho-flow?color=blue&label=release" alt="Latest Release"></a>
   <a href="https://github.com/dixieflatline76/homebrew-nacho-flow"><img src="https://img.shields.io/badge/Homebrew-nacho--flow-FBB040?logo=homebrew&logoColor=white" alt="Homebrew"></a>
   <a href="https://github.com/dixieflatline76/nacho-flow/pkgs/container/nacho-flow"><img src="https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white" alt="Docker GHCR"></a>
@@ -74,11 +74,11 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **⚡ High-Throughput Core**: Adds < 0.18 ms (180.8 µs) routing overhead and sustains 32,000+ req/s using lock-free atomic RCU state and pooled HTTP transports.
 * **🔥 "Heat Seeker" Live Model Deals & Curated Gallery**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
 * **🏛️ 3-Tier Curated Intelligence & OTA Sync**: Pre-packages verified SWE-bench & tool reliability scores (`//go:embed models.json`) with automatic Over-The-Air GitHub semver updates.
-* **🌐 Management REST API & Live SSE Telemetry Stream**: Exposes `/api/v1/info`, `/api/v1/events` (real-time SSE metrics), `/api/v1/routes` (circular buffer), `/api/v1/circuits`, `/api/v1/pricing`, `/api/v1/deals`, `/api/v1/config` (with 30s Memento rollback watchdog), and `/api/v1/tune` for programmatic management and VS Code extensions.
+* **🧩 Real-Time IDE Control & Live Telemetry**: Powers the official VS Code Companion Extension with zero-polling SSE live metrics, real-time cost savings graphs, active route inspection, and seamless daemon lifecycle controls.
 * **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
 * **🚦 Local Provider Circuit Breaker**: Detects consecutive local connection or 5xx failures and fast-fails directly to cloud fallback tiers with 0ms dial delay.
 * **🔄 Retry-Based Auto-Escalation**: Tracks session turn retries with a sliding 5-minute TTL, allowing routing rules to automatically escalate to cloud models when local attempts fail (`Retries < 2`).
-* **📏 Adaptive Token Estimator**: Continuously calibrates character-to-token ratios using an Exponential Moving Average (EMA) to prevent context undercounting on code and structured JSON.
+* **📏 Code-Aware Adaptive Token Estimator**: Dynamically corrects token calculations for dense code diffs, markdown, and structured JSON so agent harnesses never suffer premature tier escalations or unexpected context overflows.
 * **🛡️ Response Quality Validation & Delayed Headers**: Peeks initial SSE stream chunks before committing `HTTP 200` headers to enable transparent cloud failover if a local model returns an empty payload or unexpected termination.
 * **📐 Model Context Window Guard (`max_context`)**: Evaluates model physical context limits with O(1) pre-guards to prevent 400 Context Length Exceeded errors.
 * **🛠️ Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Llama Python `<|python_tag|>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown code fences, and Ollama/Qwen Bare JSON) into standard OpenAI `tool_calls` JSON structures via a modular Strategy Pipeline.
@@ -275,6 +275,19 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 
 ---
 
-## 📜 License
+## 📜 Licensing & Commercial Options
 
-MIT License © 2026 [dixieflatline76](https://github.com/dixieflatline76) | [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)
+Nacho Flow is available under a **Dual-Licensing Model**:
+
+1. **Free & Open-Source (GNU AGPL-3.0 with Additional Use Grant)**:
+   * 100% free for individual developers, open-source projects, and **internal enterprise self-hosting** (see our [Enterprise Safe Harbor in LICENSE](LICENSE)).
+   * If you distribute or host a modified version as a public cloud service to third parties, you must make your complete source code available under AGPL-3.0.
+2. **Spicebox Commercial & Enterprise OEM License**:
+   * For organizations embedding Nacho Flow into closed-source proprietary software, commercial SaaS platforms, or requiring custom legal indemnification and priority support SLAs.
+   * See **[COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)** or contact [`karl@spicebox.dev`](mailto:karl@spicebox.dev).
+
+Contributions are accepted under our **[Contributor License Agreement (.github/CLA.md)](.github/CLA.md)**.
+
+---
+
+Copyright © 2026 [Karl Kwong / Spicebox](https://spicebox.dev) · Licensed under **GNU AGPL-3.0** with Commercial Dual-Licensing.
