@@ -17,9 +17,13 @@ type TurnRecord struct {
 	IsLocal      bool      `json:"is_local"`
 	IsFallback   bool      `json:"is_fallback"`
 	LatencyMs    float64   `json:"latency_ms"`
-	StatusCode   int       `json:"status_code"`
-	IsRetry      bool      `json:"is_retry"`
-	CostSavedUSD float64   `json:"cost_saved_usd"`
+	StatusCode    int       `json:"status_code"`
+	IsRetry       bool      `json:"is_retry"`
+	CostSavedUSD  float64   `json:"cost_saved_usd"`
+	CostSpentUSD  float64   `json:"cost_spent_usd"`
+	ForcedTier    string    `json:"forced_tier,omitempty"`
+	ForcedModel   string    `json:"forced_model,omitempty"`
+	DirectiveUsed string    `json:"directive_used,omitempty"`
 }
 
 // ObservationSink defines a decoupled consumer of observation events.

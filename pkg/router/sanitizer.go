@@ -12,9 +12,10 @@ func NewSanitizer() contract.Sanitizer {
 	return &HistorySanitizer{}
 }
 
-// SanitizePayload strips image_url objects from message history if the target model lacks vision capabilities.
+// SanitizePayload strips image_url objects from message history if the target model lacks vision capabilities,
+// and strips @nacho: directive tags from message contents.
 func (s *HistorySanitizer) SanitizePayload(body []byte, targetHasVision bool) ([]byte, bool) {
-	if targetHasVision {
+	if targetHasVision && !HasDirective(string(body)) {
 		return body, false
 	}
 
@@ -41,7 +42,17 @@ func (s *HistorySanitizer) SanitizePayload(body []byte, targetHasVision bool) ([
 			continue
 		}
 
-		// Content can be a string or an array of parts
+		// Handle string content
+		if strContent, isStr := content.(string); isStr {
+			if HasDirective(strContent) {
+				msgMap["content"] = StripDirective(strContent)
+				messages[i] = msgMap
+				modified = true
+			}
+			continue
+		}
+
+		// Content can be an array of parts
 		parts, isArray := content.([]interface{})
 		if isArray {
 			newParts := make([]interface{}, 0, len(parts))
@@ -53,10 +64,15 @@ func (s *HistorySanitizer) SanitizePayload(body []byte, targetHasVision bool) ([
 				}
 
 				partType, _ := partMap["type"].(string)
-				if partType == "image_url" {
+				if partType == "image_url" && !targetHasVision {
 					// Strip image payload to prevent 400 Bad Request on text models
 					modified = true
 					continue
+				} else if partType == "text" {
+					if textStr, hasText := partMap["text"].(string); hasText && HasDirective(textStr) {
+						partMap["text"] = StripDirective(textStr)
+						modified = true
+					}
 				}
 				newParts = append(newParts, part)
 			}

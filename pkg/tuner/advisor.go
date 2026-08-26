@@ -19,6 +19,19 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 
 	b.WriteString("🔍 FRICTION & BOTTLENECK SIGNALS DETECTED:\n")
 	b.WriteString(fmt.Sprintf("  • Optimal Local Context Threshold: %d tokens\n", res.OptimalThreshold))
+
+	if res.RestrictImages {
+		b.WriteString("  • Multimodal Vision:              High Friction (Spikes local retries — restricted)\n")
+	} else {
+		b.WriteString("  • Multimodal Vision:              Clean (0% retry rate — enabled locally)\n")
+	}
+
+	if res.RestrictTools {
+		b.WriteString("  • Agentic Tool Calls:             High Friction (Spikes local retries — restricted)\n")
+	} else {
+		b.WriteString("  • Agentic Tool Calls:             Clean (0% retry rate — enabled locally)\n")
+	}
+
 	if len(res.FrictionKeywords) > 0 {
 		b.WriteString(fmt.Sprintf("  • High-Friction Domain Keywords:  %v (Spikes local retry probability)\n", res.FrictionKeywords))
 	} else {
@@ -33,26 +46,31 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 
 	// Find the local tier in current config to show diff
 	var oldRule string
-	var localTierName string
+	localTierName := res.TargetTierName
+	if localTierName == "" {
+		localTierName = "Local ROCm GPU"
+	}
+
 	if cfg != nil {
 		for _, tier := range cfg.Tiers {
-			if tier.Provider == "ollama" || strings.Contains(strings.ToLower(tier.Name), "local") {
+			if IsLocalTier(tier) {
 				oldRule = tier.When
-				localTierName = tier.Name
+				if tier.Name != "" {
+					localTierName = tier.Name
+				}
 				break
 			}
 		}
 	}
 	if oldRule == "" {
 		oldRule = "Tokens < 16000 && !HasImages && !HasTools"
-		localTierName = "Local ROCm GPU"
 	}
 
 	b.WriteString("\n🛠️ RECOMMENDED CONFIGURATION DIFF:\n")
 	b.WriteString("----------------------------------------------------------------------------------------\n")
-	b.WriteString(fmt.Sprintf("  Tier: \"%s\"\n", localTierName))
-	b.WriteString(fmt.Sprintf("  - when: \"%s\"\n", oldRule))
-	b.WriteString(fmt.Sprintf("  + when: \"%s\"\n", res.SynthesizedRule))
+	b.WriteString(fmt.Sprintf("  Tier: %q\n", localTierName))
+	b.WriteString(fmt.Sprintf("  - when: %q\n", oldRule))
+	b.WriteString(fmt.Sprintf("  + when: %q\n", res.SynthesizedRule))
 	b.WriteString("----------------------------------------------------------------------------------------\n\n")
 
 	b.WriteString("To apply this recommendation with automatic backup:\n")

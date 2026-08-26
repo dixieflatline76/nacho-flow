@@ -1,0 +1,422 @@
+{
+  "version": "v1.0.0",
+  "updated_at": "2026-08-24T08:33:04.5012563Z",
+  "description": "Canonical benchmark and capability intelligence catalog for Nacho Flow",
+  "models": {
+    "amazon/nova-2-lite-v1": {
+      "name": "Amazon: Nova 2 Lite",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "amazon/nova-lite-v1": {
+      "name": "Amazon: Nova Lite 1.0",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "anthropic/claude-3.5-sonnet": {
+      "name": "Anthropic: Claude 3.5 Sonnet",
+      "tier_role": "coding_workhorse",
+      "coding_index": 92,
+      "tool_reliability": 99,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "bytedance-seed/seed-1.6-flash": {
+      "name": "ByteDance Seed: Seed 1.6 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "bytedance-seed/seed-2.0-lite": {
+      "name": "ByteDance Seed: Seed-2.0-Lite",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "deepseek/deepseek-r1": {
+      "name": "DeepSeek: R1 (Reasoning)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 75,
+      "tool_reliability": 88,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "deepseek/deepseek-r1-0528": {
+      "name": "DeepSeek: R1 0528",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "deepseek/deepseek-r1-distill-llama-70b": {
+      "name": "DeepSeek: R1 Distill Llama 70B",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "deepseek/deepseek-v4-flash-vision-exp": {
+      "name": "DeepSeek: DeepSeek V4 Flash Vision Exp",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-2.5-flash": {
+      "name": "Google: Gemini 2.5 Flash",
+      "tier_role": "coding_workhorse",
+      "coding_index": 78.4,
+      "tool_reliability": 95,
+      "recommended_tiers": [
+        "tier_1_vision",
+        "tier_3_workhorse"
+      ]
+    },
+    "google/gemini-2.5-flash-image": {
+      "name": "Google: Nano Banana (Gemini 2.5 Flash Image)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-2.5-flash-lite": {
+      "name": "Google: Gemini 2.5 Flash Lite",
+      "tier_role": "vision_workhorse",
+      "coding_index": 68.1,
+      "tool_reliability": 90,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-2.5-flash-lite:batch": {
+      "name": "Google: Gemini 2.5 Flash Lite (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-2.5-flash:batch": {
+      "name": "Google: Gemini 2.5 Flash (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3-flash-preview": {
+      "name": "Google: Gemini 3 Flash Preview",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3-flash-preview:batch": {
+      "name": "Google: Gemini 3 Flash Preview (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.1-flash-image": {
+      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.1-flash-image-preview": {
+      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image Preview)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.1-flash-lite": {
+      "name": "Google: Gemini 3.1 Flash Lite",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.1-flash-lite-image": {
+      "name": "Google: Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.1-flash-lite-preview": {
+      "name": "Google: Gemini 3.1 Flash Lite Preview",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.1-flash-lite:batch": {
+      "name": "Google: Gemini 3.1 Flash Lite (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.5-flash": {
+      "name": "Google: Gemini 3.5 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.5-flash-lite": {
+      "name": "Google: Gemini 3.5 Flash Lite",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.5-flash-lite:batch": {
+      "name": "Google: Gemini 3.5 Flash Lite (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.5-flash:batch": {
+      "name": "Google: Gemini 3.5 Flash (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.6-flash": {
+      "name": "Google: Gemini 3.6 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.6-flash:batch": {
+      "name": "Google: Gemini 3.6 Flash (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.7-flash": {
+      "name": "Google: Gemini 3.7 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.7-flash:batch": {
+      "name": "Google: Gemini 3.7 Flash (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "kwaipilot/kat-coder-air-v2.5": {
+      "name": "Kwaipilot: KAT-Coder-Air V2.5",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "kwaipilot/kat-coder-pro-v2": {
+      "name": "Kwaipilot: KAT-Coder-Pro V2",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "kwaipilot/kat-coder-pro-v2.5": {
+      "name": "Kwaipilot: KAT-Coder-Pro V2.5",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
+      "name": "NVIDIA: Nemotron 3 Nano Omni (free)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "perplexity/sonar-reasoning-pro": {
+      "name": "Perplexity: Sonar Reasoning Pro",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "qwen/qwen3-coder": {
+      "name": "Qwen: Qwen3 Coder 480B A35B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "qwen/qwen3-coder-30b-a3b-instruct": {
+      "name": "Qwen: Qwen3 Coder 30B A3B Instruct",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "qwen/qwen3-coder-480b": {
+      "name": "Qwen: Qwen 3 Coder 480B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 82,
+      "tool_reliability": 96,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "qwen/qwen3-coder-flash": {
+      "name": "Qwen: Qwen3 Coder Flash",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "qwen/qwen3-coder-next": {
+      "name": "Qwen: Qwen3 Coder Next",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "qwen/qwen3-coder-plus": {
+      "name": "Qwen: Qwen3 Coder Plus",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ]
+    },
+    "qwen/qwen3.5-flash-02-23": {
+      "name": "Qwen: Qwen3.5-Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "qwen/qwen3.6-flash": {
+      "name": "Qwen: Qwen3.6 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "qwen/qwen3.7-flash": {
+      "name": "Qwen: Qwen3.7 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "stepfun/step-3.7-flash": {
+      "name": "StepFun: Step 3.7 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "~google/gemini-flash-latest": {
+      "name": "Google Gemini Flash Latest",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    }
+  }
+}

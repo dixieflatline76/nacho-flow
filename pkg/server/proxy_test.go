@@ -441,7 +441,7 @@ func TestProxy_DynamicPricingSavings_CalculatedFromOracle(t *testing.T) {
 	defer mockORServer.Close()
 
 	orProvider := telemetry.NewOpenRouterPricingProviderWithURL(mockORServer.URL, "test-key")
-	oracle.RegisterProvider(orProvider)
+	oracle.RegisterProvider(orProvider, 0)
 	_ = oracle.Sync(context.Background())
 
 	tracker := telemetry.NewStatsTracker(100)
@@ -735,7 +735,7 @@ func TestProxy_CloudPricingDifferential(t *testing.T) {
 
 	oracle := telemetry.NewPricingOracle()
 	orProvider := telemetry.NewOpenRouterPricingProviderWithURL(mockORServer.URL, "test-key")
-	oracle.RegisterProvider(orProvider)
+	oracle.RegisterProvider(orProvider, 0)
 	_ = oracle.Sync(context.Background())
 
 	tracker := telemetry.NewStatsTracker(100)
@@ -1495,13 +1495,13 @@ func TestProxy_RecordTelemetry_VisionTier4(t *testing.T) {
 	}
 	p := provider.NewGenericLLMProvider("google", contract.ProviderConfig{Type: "cloud"})
 	reqCtx := contract.RequestContext{Tokens: 1000}
-
-	srv.recordTelemetry(tier, p, reqCtx, 200, time.Now(), false, slog.Default())
+	usage := StreamUsage{PromptTokens: 800, CompletionTokens: 200, TotalTokens: 1000}
+	srv.recordTelemetry(tier, p, reqCtx, usage, 200, time.Now(), false, slog.Default())
 
 	// Also local tier 1
 	pLocal := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{Type: "local"})
 	tierLocal := contract.Tier{Name: "Local Default", Model: "qwen", Provider: "ollama"}
-	srv.recordTelemetry(tierLocal, pLocal, reqCtx, 200, time.Now(), false, slog.Default())
+	srv.recordTelemetry(tierLocal, pLocal, reqCtx, usage, 200, time.Now(), false, slog.Default())
 }
 
 func TestProxy_IsDefectiveEmptyContent_DeepBranches(t *testing.T) {
@@ -1558,6 +1558,98 @@ func TestProxy_ServeHTTP_RoutingEdgeCases(t *testing.T) {
 	srv.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405 for GET /v1/chat/completions, got %d", rec.Code)
+	}
+}
+
+type proxyMockPricingProvider struct {
+	name   string
+	prices map[string]telemetry.ModelMetadata
+}
+
+func (p *proxyMockPricingProvider) Name() string { return p.name }
+func (p *proxyMockPricingProvider) FetchPricing(ctx context.Context) (map[string]telemetry.ModelMetadata, error) {
+	return p.prices, nil
+}
+
+func TestProxy_StreamingUsage_DualRateCostAccounting(t *testing.T) {
+	// Upstream test server returning streaming SSE with final usage chunk
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Hello streaming\"}}]}\n\n")
+		// Emit final usage block (OpenRouter style)
+		fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":50000,\"completion_tokens\":1000,\"total_tokens\":51000}}\n\n")
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock_cloud": {
+				BaseURL: upstream.URL,
+				Type:    "cloud",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Cloud Tier",
+				Provider: "mock_cloud",
+				Model:    "qwen-coder-test",
+				When:     "true",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Tier",
+			Provider: "mock_cloud",
+			Model:    "qwen-coder-test",
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	oracle := telemetry.NewPricingOracle()
+	tracker := telemetry.NewStatsTracker(100)
+
+	// Set pricing for qwen-coder-test: $0.30 prompt / $1.50 completion per 1M
+	oracle.RegisterProvider(&proxyMockPricingProvider{
+		name: "mock_cloud",
+		prices: map[string]telemetry.ModelMetadata{
+			"qwen-coder-test": {
+				ModelPricing: telemetry.ModelPricing{PromptCostPerMillion: 0.30, CompletionCostPerMillion: 1.50},
+				ModelID:      "qwen-coder-test",
+			},
+		},
+	}, 0)
+	_ = oracle.Sync(context.Background())
+
+	srv := NewServerWithTelemetry(cfg, evaluator, router.NewClassifier(), router.NewSanitizer(), oracle, tracker, nil)
+
+	rec := httptest.NewRecorder()
+	reqBody := `{"model":"auto","stream":true,"messages":[{"role":"user","content":"Hello"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Allow tracker channel to drain
+	time.Sleep(50 * time.Millisecond)
+	stats := tracker.GetStats()
+
+	if stats.TotalRequests != 1 {
+		t.Errorf("expected 1 total request in tracker, got %d", stats.TotalRequests)
+	}
+
+	// Expected spend: (50000 / 1M) * 0.30 + (1000 / 1M) * 1.50 = $0.015 + $0.0015 = $0.0165
+	if fmt.Sprintf("%.4f", stats.TotalCostSpentUSD) != "0.0165" {
+		t.Errorf("expected $0.0165 spent in tracker, got %f", stats.TotalCostSpentUSD)
+	}
+
+	// Expected baseline: (51000 / 1M) * 3.00 = $0.153
+	// Expected saved: 0.153 - 0.0165 = $0.1365
+	if fmt.Sprintf("%.4f", stats.EstimatedCostSavedUSD) != "0.1365" {
+		t.Errorf("expected $0.1365 saved in tracker, got %f", stats.EstimatedCostSavedUSD)
 	}
 }
 

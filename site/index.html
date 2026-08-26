@@ -33,6 +33,7 @@
             <div class="links">
                 <a href="index.html" class="active">Home</a>
                 <a href="docs.html?doc=user_guide">User Guide</a>
+                <a href="docs.html?doc=extension_guide">VS Code Extension</a>
                 <a href="docs.html?doc=architecture">Architecture</a>
                 <a href="docs.html?doc=benchmarks">Benchmarks</a>
                 <a href="docs.html?doc=roadmap">Roadmap</a>
@@ -66,6 +67,9 @@
         <div class="cta-group">
             <a href="#quickstart" class="btn-primary">
                 <span>🚀 Quick Install</span>
+            </a>
+            <a href="docs.html?doc=extension_guide" class="btn-secondary" style="border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.1);">
+                <span>🧩 VS Code Extension</span>
             </a>
             <a href="docs.html?doc=user_guide" class="btn-secondary">
                 <span>📖 Documentation Hub</span>
@@ -154,7 +158,7 @@
                     <span class="dot-green"></span>
                 </div>
                 <div class="terminal-title">nacho-flow proxy daemon (localhost:8000)</div>
-                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● LIVE 30,800 req/s</div>
+                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● LIVE 32,450 req/s</div>
             </div>
             <div class="terminal-body">
                 <div class="term-line">
@@ -174,10 +178,46 @@
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:43:01</span>
-                    <span class="term-tag tag-local">CIRCUIT HEAL</span>
-                    <span class="term-msg">Ollama 0ms failover armed | Telemetry: <strong style="color:var(--accent-color);">94.7% net spend reduction vs Claude Sonnet 5 direct</strong></span>
+                    <span class="term-tag tag-local">HEAT SEEKER</span>
+                    <span class="term-msg">Heat Seeker: <span class="term-highlight">gemini-2.5-flash-lite</span> surfaced at <strong style="color:#10b981;">$0.10/1M</strong> (replaces tier_1_vision at 96.7% savings)</span>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <!-- VS Code Companion Extension Showcase -->
+    <section class="extension-section">
+        <h2 class="section-title">Visual Control Plane for VS Code</h2>
+        <p class="section-subtitle">Real-time cost telemetry, visual route inspector, and one-click agent setup inside your editor.</p>
+
+        <div class="extension-grid">
+            <div class="extension-card glass">
+                <div class="extension-badge">SIDEBAR CONTROL HUB</div>
+                <h3>1-Click Local Engine & Agent Setup</h3>
+                <p>Start, stop, and stream local daemon logs with zero CLI fuss. Detects local Ollama/vLLM models and provides instant copy helpers for Roo Code, Cline, and Cursor.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">🚀 3-Tier Binary Resolver</span>
+                    <span class="ext-tag">🔒 Isolated Remote Credentials</span>
+                    <span class="ext-tag">📋 1-Click Agent Setup</span>
+                </div>
+            </div>
+
+            <div class="extension-card glass">
+                <div class="extension-badge">REAL-TIME DASHBOARD</div>
+                <h3>Live Route Inspector & Circuit Breakers</h3>
+                <p>Zero-polling SSE stream tracks your active token volume and cumulative savings. Inspect the last 500 LLM requests in memory with 0ms disk overhead.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">⚡ 0ms In-Memory Ring Buffer</span>
+                    <span class="ext-tag">🚦 Interactive Circuit Breakers</span>
+                    <span class="ext-tag">🔥 Heat Seeker Live Deals</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="docs.html?doc=extension_guide" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 8px;">
+                <span>📖 Read the VS Code Extension Guide →</span>
+            </a>
         </div>
     </section>
 
@@ -215,8 +255,20 @@
         <div class="features-grid">
             <div class="feature-card glass">
                 <div class="feature-icon">⚡</div>
-                <h3>&lt; 0.36ms Low Latency Core</h3>
-                <p>Handles 30,800+ req/s with lock-free atomic RCU router state and pre-pooled HTTP transports.</p>
+                <h3>&lt; 0.18ms Low Latency Core</h3>
+                <p>Handles 32,450+ req/s with lock-free atomic RCU router state and pre-pooled HTTP transports.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🔥</div>
+                <h3>Heat Seeker</h3>
+                <p>Drop-in tier replacements, automatically discovered. Maps market price drops directly to your active tier roles.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🏛️</div>
+                <h3>3-Tier Curated Intelligence (OTA)</h3>
+                <p>Embedded verified model gallery with automatic Over-The-Air GitHub semver updates and fallback capability classification.</p>
             </div>
 
             <div class="feature-card glass">
@@ -252,7 +304,19 @@
             <div class="feature-card glass">
                 <div class="feature-icon">🛠️</div>
                 <h3>Universal Tool Calling Normalizer</h3>
-                <p>Converts 7 tool-calling format families (Hermes, Mistral, Llama 3, Claude XML, ReAct) into standard OpenAI <code>tool_calls</code> JSON.</p>
+                <p>Converts 8 tool-calling format families (Hermes, Mistral, Llama 3, Claude XML, ReAct) into standard OpenAI <code>tool_calls</code> JSON.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🎛️</div>
+                <h3>Cost-Penalty Auto-Tuner CLI</h3>
+                <p>Run <code>nacho-flow tune</code> to perform statistical odds-ratio grid search on your historical logs and generate optimal rules.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🌶️</div>
+                <h3>HotSauce Directives (In-Prompt Routing)</h3>
+                <p>Splash heat onto prompt turns to override routing (<code>@nacho:local</code>, <code>@nacho:cloud</code>, <code>@nacho:reasoning</code>, <code>@nacho:tier="..."</code>) or query daemon metadata (<code>@nacho:help</code>, <code>@nacho:tiers</code>, <code>@nacho:deals</code>) with &lt; 7ns zero-alloc bailout and zero LLM cost.</p>
             </div>
 
             <div class="feature-card glass">
@@ -262,9 +326,9 @@
             </div>
 
             <div class="feature-card glass">
-                <div class="feature-icon">🎛️</div>
-                <h3>Cost-Penalty Auto-Tuner CLI</h3>
-                <p>Run <code>nacho-flow tune</code> to perform statistical odds-ratio grid search on your historical logs and generate optimal rules.</p>
+                <div class="feature-icon">🌐</div>
+                <h3>Management REST API & Live SSE</h3>
+                <p>Full control with <code>/api/v1/deals</code>, real-time SSE metrics stream, circular route buffer, and 30s config rollback watchdog.</p>
             </div>
         </div>
     </section>
@@ -276,14 +340,15 @@
 
         <div class="install-box glass">
             <div class="install-tabs">
-                <button class="tab-btn active" onclick="switchInstallTab('winget', this)">Windows (Winget)</button>
+                <button class="tab-btn active" onclick="switchInstallTab('vscode', this)">VS Code Extension</button>
+                <button class="tab-btn" onclick="switchInstallTab('winget', this)">Windows (Winget)</button>
                 <button class="tab-btn" onclick="switchInstallTab('brew', this)">macOS / Linux (Homebrew)</button>
                 <button class="tab-btn" onclick="switchInstallTab('curl', this)">Universal Shell</button>
                 <button class="tab-btn" onclick="switchInstallTab('docker', this)">Docker (GHCR)</button>
             </div>
 
             <div class="code-container">
-                <code class="code-text" id="install-command">winget install dixieflatline76.NachoFlow</code>
+                <code class="code-text" id="install-command">code --install-extension nacho-flow-*.vsix</code>
                 <button class="btn-copy" onclick="copyInstallCommand()">Copy</button>
             </div>
         </div>
@@ -296,17 +361,18 @@
 
         <div class="ide-card glass">
             <div class="install-tabs">
-                <button class="tab-btn active" onclick="switchIdeTab('cursor', this)">Cursor</button>
-                <button class="tab-btn" onclick="switchIdeTab('roocode', this)">Roo Code / Cline</button>
+                <button class="tab-btn active" onclick="switchIdeTab('roocode', this)">Roo Code / Cline</button>
+                <button class="tab-btn" onclick="switchIdeTab('cursor', this)">Cursor</button>
                 <button class="tab-btn" onclick="switchIdeTab('aider', this)">Aider</button>
                 <button class="tab-btn" onclick="switchIdeTab('continue', this)">Continue.dev</button>
             </div>
 
             <div class="code-container" style="background:#0a0c13;">
-                <pre style="width:100%;"><code class="code-text" id="ide-config" style="white-space: pre;"># In Cursor Settings -> Models:
-OpenAI API Base: http://localhost:8000/v1
-OpenAI API Key:  sk-nacho-secret-key
-Custom Model:    nacho-hybrid</code></pre>
+                <pre style="width:100%;"><code class="code-text" id="ide-config" style="white-space: pre;"># In Roo Code / Cline Provider Settings:
+Provider: OpenAI Compatible
+Base URL: http://127.0.0.1:8000/v1
+API Key:  sk-nacho-secret-key
+Model ID: nacho-hybrid</code></pre>
                 <button class="btn-copy" onclick="copyIdeConfig()">Copy</button>
             </div>
         </div>
@@ -319,7 +385,9 @@ Custom Model:    nacho-hybrid</code></pre>
                 🌮 Nacho Flow · Part of <a href="https://spicebox.dev" style="color:var(--accent-color);">spicebox.dev</a>
             </div>
             <div class="footer-links">
+                <a href="index.html">Home</a>
                 <a href="docs.html?doc=user_guide">User Guide</a>
+                <a href="docs.html?doc=extension_guide">VS Code Extension</a>
                 <a href="docs.html?doc=architecture">Architecture</a>
                 <a href="docs.html?doc=benchmarks">Benchmarks</a>
                 <a href="docs.html?doc=roadmap">Roadmap</a>
@@ -336,6 +404,7 @@ Custom Model:    nacho-hybrid</code></pre>
     <!-- Interactive Scripts -->
     <script>
         const installCommands = {
+            vscode: 'code --install-extension nacho-flow-*.vsix',
             winget: 'winget install dixieflatline76.NachoFlow',
             brew: 'brew tap dixieflatline76/nacho-flow && brew install nacho-flow',
             curl: 'curl -fsSL https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/scripts/install.sh | bash',

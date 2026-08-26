@@ -4,54 +4,211 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
 // ModelPricing represents USD cost per million tokens.
 type ModelPricing struct {
-	PromptCostPerMillion     float64
-	CompletionCostPerMillion float64
+	PromptCostPerMillion     float64 `json:"prompt_cost_per_million"`
+	CompletionCostPerMillion float64 `json:"completion_cost_per_million"`
+}
+
+// ModelMetadata represents enriched token pricing and capability metadata for an LLM model.
+type ModelMetadata struct {
+	ModelPricing
+	ModelID           string  `json:"model_id"`
+	Provider          string  `json:"provider,omitempty"`
+	Name              string  `json:"name"`
+	ContextLength     int     `json:"context_length"`
+	SupportsTools     bool    `json:"supports_tools"`
+	SupportsVision    bool    `json:"supports_vision"`
+	SupportsReasoning bool    `json:"supports_reasoning"`
+	CodingIndex       float64 `json:"coding_index"`
+	AgenticIndex      float64 `json:"agentic_index"`
+	ExpiresAt         *string `json:"expires_at,omitempty"`
 }
 
 // PricingProvider is the plugin interface implemented by provider pricing fetchers.
 type PricingProvider interface {
 	Name() string
-	FetchPricing(ctx context.Context) (map[string]ModelPricing, error)
+	FetchPricing(ctx context.Context) (map[string]ModelMetadata, error)
 }
 
-// PricingOracle manages lock-free model pricing lookup across registered providers.
+type providerEntry struct {
+	provider PricingProvider
+	interval time.Duration
+	cancel   context.CancelFunc
+}
+
+// PricingOracle manages lock-free model pricing lookup, capability ranking, and async background sync.
 type PricingOracle struct {
-	providers  []PricingProvider
-	pricingMap atomic.Pointer[map[string]ModelPricing]
-	mu         sync.Mutex
+	providers   map[string]*providerEntry
+	metadataMap atomic.Pointer[map[string]ModelMetadata]
+	lastSynced  atomic.Int64
+	classifier  *Classifier
+	mu          sync.Mutex
+	rootCtx     context.Context
+	defaultInt  time.Duration
 }
 
 // NewPricingOracle creates a new initialized PricingOracle.
 func NewPricingOracle() *PricingOracle {
-	oracle := &PricingOracle{}
-	emptyMap := make(map[string]ModelPricing)
-	oracle.pricingMap.Store(&emptyMap)
+	oracle := &PricingOracle{
+		providers:  make(map[string]*providerEntry),
+		classifier: NewClassifier(nil),
+	}
+	emptyMap := make(map[string]ModelMetadata)
+	oracle.metadataMap.Store(&emptyMap)
 	return oracle
 }
 
-// RegisterProvider registers a pricing provider plugin.
-func (o *PricingOracle) RegisterProvider(p PricingProvider) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.providers = append(o.providers, p)
+// NewPricingOracleWithClassifier creates an initialized PricingOracle with a custom capability classifier.
+func NewPricingOracleWithClassifier(classifier *Classifier) *PricingOracle {
+	oracle := NewPricingOracle()
+	if classifier != nil {
+		oracle.classifier = classifier
+	}
+	return oracle
 }
 
-// Sync queries all registered providers and atomically swaps the active pricing map.
-func (o *PricingOracle) Sync(ctx context.Context) error {
+// SetClassifier configures the active capability classifier.
+func (o *PricingOracle) SetClassifier(c *Classifier) {
 	o.mu.Lock()
-	providers := make([]PricingProvider, len(o.providers))
-	copy(providers, o.providers)
+	defer o.mu.Unlock()
+	if c != nil {
+		o.classifier = c
+	}
+}
+
+// RegisterProvider registers or updates a pricing provider plugin with its sync interval.
+// If a provider is re-registered (e.g. during config hot-reload), old runners are gracefully stopped.
+func (o *PricingOracle) RegisterProvider(p PricingProvider, syncInterval time.Duration) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	name := strings.ToLower(p.Name())
+	if existing, exists := o.providers[name]; exists && existing.cancel != nil {
+		existing.cancel() // Stop previous polling loop for hot-reload
+	}
+
+	entry := &providerEntry{
+		provider: p,
+		interval: syncInterval,
+	}
+	o.providers[name] = entry
+
+	// If background sync is already active, launch runner immediately
+	if o.rootCtx != nil {
+		o.startProviderRunner(entry, o.defaultInt)
+	}
+}
+
+// StartBackgroundSync launches background polling loops for all registered providers and sets the root lifecycle context.
+func (o *PricingOracle) StartBackgroundSync(ctx context.Context, defaultInterval time.Duration) {
+	o.mu.Lock()
+	o.rootCtx = ctx
+	o.defaultInt = defaultInterval
+	entries := make([]*providerEntry, 0, len(o.providers))
+	for _, entry := range o.providers {
+		entries = append(entries, entry)
+	}
 	o.mu.Unlock()
 
-	mergedMap := make(map[string]ModelPricing)
+	for _, entry := range entries {
+		o.startProviderRunner(entry, defaultInterval)
+	}
+}
+
+// startProviderRunner executes an independent polling loop for a registered provider.
+func (o *PricingOracle) startProviderRunner(entry *providerEntry, defaultInterval time.Duration) {
+	interval := defaultInterval
+	if entry.interval > 0 {
+		interval = entry.interval
+	}
+
+	provCtx, provCancel := context.WithCancel(o.rootCtx)
+	entry.cancel = provCancel
+
+	go func(p PricingProvider, tickInterval time.Duration, ctx context.Context) {
+		// Initial sync
+		if prices, err := p.FetchPricing(ctx); err == nil {
+			o.updateProviderData(p.Name(), prices)
+		} else {
+			slog.Warn("initial pricing sync failed for provider", "provider", p.Name(), "error", err)
+		}
+
+		ticker := time.NewTicker(tickInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if prices, err := p.FetchPricing(ctx); err == nil {
+					o.updateProviderData(p.Name(), prices)
+				} else {
+					slog.Warn("background pricing sync failed for provider", "provider", p.Name(), "error", err)
+				}
+			}
+		}
+	}(entry.provider, interval, provCtx)
+}
+
+// updateProviderData atomically copies the active metadata map, applies the provider's updates, and swaps the pointer.
+func (o *PricingOracle) updateProviderData(providerName string, newPrices map[string]ModelMetadata) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	currentPtr := o.metadataMap.Load()
+	mergedMap := make(map[string]ModelMetadata)
+	if currentPtr != nil {
+		for k, v := range *currentPtr {
+			mergedMap[k] = v
+		}
+	}
+
+	for modelID, meta := range newPrices {
+		if meta.ModelID == "" {
+			meta.ModelID = modelID
+		}
+		if meta.Provider == "" {
+			meta.Provider = strings.ToLower(providerName)
+		}
+		key := fmt.Sprintf("%s%s%s", strings.ToLower(providerName), contract.PricingNamespaceSeparator, modelID)
+		mergedMap[key] = meta
+		if _, exists := mergedMap[modelID]; !exists {
+			mergedMap[modelID] = meta
+		}
+	}
+
+	o.metadataMap.Store(&mergedMap)
+	o.lastSynced.Store(time.Now().UnixNano())
+}
+
+// LastSynced returns the UTC timestamp of the most recent successful pricing sync.
+func (o *PricingOracle) LastSynced() time.Time {
+	nano := o.lastSynced.Load()
+	if nano == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, nano).UTC()
+}
+
+// Sync manually queries all registered providers and updates the pricing map.
+func (o *PricingOracle) Sync(ctx context.Context) error {
+	o.mu.Lock()
+	providers := make([]PricingProvider, 0, len(o.providers))
+	for _, entry := range o.providers {
+		providers = append(providers, entry.provider)
+	}
+	o.mu.Unlock()
 
 	var lastErr error
 	for _, p := range providers {
@@ -61,91 +218,192 @@ func (o *PricingOracle) Sync(ctx context.Context) error {
 			lastErr = err
 			continue
 		}
-
-		providerName := strings.ToLower(p.Name())
-		for modelID, pricing := range prices {
-			// Store namespaced key: e.g. "openrouter:anthropic/claude-3.5-sonnet"
-			key := fmt.Sprintf("%s:%s", providerName, modelID)
-			mergedMap[key] = pricing
-
-			// Store direct model key as fallback if not present
-			if _, exists := mergedMap[modelID]; !exists {
-				mergedMap[modelID] = pricing
-			}
-		}
+		o.updateProviderData(p.Name(), prices)
 	}
-
-	// Atomically swap the pointer to the new map (zero locks on read path)
-	o.pricingMap.Store(&mergedMap)
 	return lastErr
 }
 
-// GetPrice looks up the pricing for a given provider and model. Lock-free.
+// GetPrice looks up the pricing for a given provider and model. Lock-free $O(1)$.
 func (o *PricingOracle) GetPrice(provider, model string) (ModelPricing, bool) {
-	mPtr := o.pricingMap.Load()
-	if mPtr == nil {
+	meta, found := o.GetModelMetadata(provider, model)
+	if !found {
 		return ModelPricing{}, false
+	}
+	return meta.ModelPricing, true
+}
+
+// GetModelMetadata looks up the enriched metadata for a given provider and model. Lock-free $O(1)$.
+func (o *PricingOracle) GetModelMetadata(provider, model string) (ModelMetadata, bool) {
+	mPtr := o.metadataMap.Load()
+	if mPtr == nil {
+		return ModelMetadata{}, false
 	}
 	m := *mPtr
 
-	// Try namespaced lookup
-	key := fmt.Sprintf("%s:%s", strings.ToLower(provider), model)
-	if p, ok := m[key]; ok {
-		return p, true
+	key := fmt.Sprintf("%s%s%s", strings.ToLower(provider), contract.PricingNamespaceSeparator, model)
+	if meta, ok := m[key]; ok {
+		return meta, true
 	}
 
-	// Fallback to direct model ID
-	if p, ok := m[model]; ok {
-		return p, true
+	if meta, ok := m[model]; ok {
+		return meta, true
 	}
 
-	return ModelPricing{}, false
+	return ModelMetadata{}, false
 }
 
 // GetAllPricing returns a shallow copy of the active pricing map. Lock-free.
 func (o *PricingOracle) GetAllPricing() map[string]ModelPricing {
-	mPtr := o.pricingMap.Load()
+	mPtr := o.metadataMap.Load()
 	if mPtr == nil {
 		return make(map[string]ModelPricing)
 	}
 	m := *mPtr
 	copyMap := make(map[string]ModelPricing, len(m))
 	for k, v := range m {
-		copyMap[k] = v
+		copyMap[k] = v.ModelPricing
 	}
 	return copyMap
 }
 
-// CalculateCost calculates the total estimated USD cost for a given request. Lock-free.
+// CalculateCost calculates total estimated USD cost for prompt and completion tokens. Lock-free.
 func (o *PricingOracle) CalculateCost(provider, model string, promptTokens, completionTokens int) float64 {
 	pricing, found := o.GetPrice(provider, model)
 	if !found {
 		return 0.0
 	}
 
-	promptCost := (float64(promptTokens) / 1_000_000.0) * pricing.PromptCostPerMillion
-	completionCost := (float64(completionTokens) / 1_000_000.0) * pricing.CompletionCostPerMillion
+	promptCost := (float64(promptTokens) / contract.TokensPerMillion) * pricing.PromptCostPerMillion
+	completionCost := (float64(completionTokens) / contract.TokensPerMillion) * pricing.CompletionCostPerMillion
 	return promptCost + completionCost
 }
 
-// StartBackgroundSync periodically updates pricing in the background.
-func (o *PricingOracle) StartBackgroundSync(ctx context.Context, interval time.Duration) {
-	// Perform initial sync
-	_ = o.Sync(ctx)
+// CalculateFinancials computes dual financial telemetry: actual USD spent and estimated USD saved vs benchmark.
+func (o *PricingOracle) CalculateFinancials(provider, model string, isLocal bool, promptTokens, completionTokens int, baselineRatePerM float64) (costSpent float64, costSaved float64) {
+	totalTokens := promptTokens + completionTokens
+	if totalTokens <= 0 {
+		return 0.0, 0.0
+	}
 
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+	if baselineRatePerM <= 0 {
+		baselineRatePerM = contract.DefaultBenchmarkPricePerMillion
+	}
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := o.Sync(ctx); err != nil {
-					slog.Warn("background pricing sync encountered error", "error", err)
-				}
+	baselineCost := (float64(totalTokens) / contract.TokensPerMillion) * baselineRatePerM
+
+	if isLocal {
+		return 0.0, baselineCost
+	}
+
+	pricing, found := o.GetPrice(provider, model)
+	if !found {
+		return 0.0, 0.0
+	}
+
+	costSpent = (float64(promptTokens)/contract.TokensPerMillion)*pricing.PromptCostPerMillion +
+		(float64(completionTokens)/contract.TokensPerMillion)*pricing.CompletionCostPerMillion
+
+	if baselineCost > costSpent {
+		costSaved = baselineCost - costSpent
+	}
+	return costSpent, costSaved
+}
+
+// GetDeals scans the atomically cached models and returns top qualifying deals ranked by Quality-to-Price.
+func (o *PricingOracle) GetDeals(cfg contract.DealsConfig, benchmarkCostPerM float64, limit int) []contract.DealInfo {
+	if benchmarkCostPerM <= 0 {
+		benchmarkCostPerM = contract.DefaultBenchmarkPricePerMillion
+	}
+	if limit <= 0 {
+		limit = contract.DefaultDealsLimit
+	}
+
+	metaPtr := o.metadataMap.Load()
+	if metaPtr == nil {
+		return nil
+	}
+
+	// Apply sensible defaults when cfg has zero values (unconfigured)
+	requireTools := cfg.RequireTools
+	minCoding := cfg.MinCodingIndex
+	alertThreshold := cfg.AlertThresholdPct
+	if !cfg.RequireTools && cfg.MinCodingIndex == 0 && cfg.AlertThresholdPct == 0 {
+		requireTools = true
+		minCoding = contract.DefaultDealsMinCodingIndex
+		alertThreshold = contract.DefaultDealsAlertThresholdPct
+	}
+
+	var deals []contract.DealInfo
+	for modelID, meta := range *metaPtr {
+		// Skip namespaced duplicate keys
+		if strings.Contains(modelID, contract.PricingNamespaceSeparator) {
+			continue
+		}
+
+		// Skip models with negative/unpriced metadata
+		if meta.PromptCostPerMillion < 0 || meta.CompletionCostPerMillion < 0 {
+			continue
+		}
+
+		// Multi-tier capability & role classification
+		role, codingScore, recTiers := o.classifier.ClassifyModel(meta)
+
+		if requireTools && !meta.SupportsTools {
+			continue
+		}
+
+		if minCoding > 0 && codingScore > 0 && codingScore < minCoding {
+			continue
+		}
+
+		var discountPct float64
+		if benchmarkCostPerM > 0 {
+			if meta.PromptCostPerMillion == 0 {
+				discountPct = contract.DiscountFullFree
+			} else if benchmarkCostPerM > meta.PromptCostPerMillion {
+				discountPct = ((benchmarkCostPerM - meta.PromptCostPerMillion) / benchmarkCostPerM) * 100.0
 			}
 		}
-	}()
+
+		if alertThreshold > 0 && discountPct < alertThreshold {
+			continue
+		}
+
+		providerName := meta.Provider
+		if providerName == "" {
+			providerName = contract.ProviderOpenRouter
+		}
+
+		deals = append(deals, contract.DealInfo{
+			Provider:           providerName,
+			ModelID:            modelID,
+			Name:               meta.Name,
+			ContextLength:      meta.ContextLength,
+			PromptCostPerM:     meta.PromptCostPerMillion,
+			CompletionCostPerM: meta.CompletionCostPerMillion,
+			DiscountPct:        discountPct,
+			IsFree:             meta.PromptCostPerMillion == 0 && meta.CompletionCostPerMillion == 0,
+			SupportsTools:      meta.SupportsTools,
+			SupportsVision:     meta.SupportsVision,
+			SupportsReasoning:  meta.SupportsReasoning,
+			TierRole:           string(role),
+			CodingIndex:        codingScore,
+			AgenticIndex:       meta.AgenticIndex,
+			RecommendedTiers:   recTiers,
+			ExpiresAt:          meta.ExpiresAt,
+		})
+	}
+
+	// Sort by DiscountPct DESC, then CodingIndex DESC
+	sort.Slice(deals, func(i, j int) bool {
+		if deals[i].DiscountPct != deals[j].DiscountPct {
+			return deals[i].DiscountPct > deals[j].DiscountPct
+		}
+		return deals[i].CodingIndex > deals[j].CodingIndex
+	})
+
+	if len(deals) > limit {
+		deals = deals[:limit]
+	}
+	return deals
 }

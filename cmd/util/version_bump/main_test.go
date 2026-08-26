@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -133,13 +134,44 @@ func TestUpdateSiteVersion(t *testing.T) {
 	}
 }
 
+func TestUpdatePackageJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	pkgPath := filepath.Join(tmpDir, "package.json")
+
+	content := `{
+  "name": "nacho-flow",
+  "version": "0.5.2",
+  "description": "test"
+}`
+	_ = os.WriteFile(pkgPath, []byte(content), 0600)
+
+	v := Version{Major: 0, Minor: 6, Patch: 0}
+	if err := updatePackageJSON(pkgPath, v); err != nil {
+		t.Fatalf("updatePackageJSON failed: %v", err)
+	}
+
+	data, err := os.ReadFile(pkgPath)
+	if err != nil || !strings.Contains(string(data), `"version": "0.6.0"`) {
+		t.Fatalf("package.json not updated properly: %s", string(data))
+	}
+
+	// Missing file error
+	if err := updatePackageJSON(filepath.Join(tmpDir, "missing.json"), v); err == nil {
+		t.Fatalf("expected error on missing package.json")
+	}
+}
+
 func TestRunWithRunners_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	versionFile := filepath.Join(tmpDir, "version.txt")
 	siteFile := filepath.Join(tmpDir, "index.html")
+	pkgJsonFile := filepath.Join(tmpDir, "package.json")
+	pkgLockFile := filepath.Join(tmpDir, "package-lock.json")
 
 	_ = os.WriteFile(versionFile, []byte("0.5.2\n"), 0600)
 	_ = os.WriteFile(siteFile, []byte(`<span class="logo-badge logo-badge-version" id="version-badge">v0.5.2</span>`), 0600)
+	_ = os.WriteFile(pkgJsonFile, []byte(`{"name": "nacho-flow", "version": "0.5.2"}`), 0600)
+	_ = os.WriteFile(pkgLockFile, []byte(`{"name": "nacho-flow", "version": "0.5.2"}`), 0600)
 
 	var gitCalls [][]string
 	mockGit := func(args ...string) error {
@@ -154,7 +186,7 @@ func TestRunWithRunners_Success(t *testing.T) {
 		return "", nil
 	}
 
-	err := runWithRunners([]string{"cmd", "-type=minor"}, versionFile, siteFile, mockGit, mockOut)
+	err := runWithRunners([]string{"cmd", "-type=minor"}, versionFile, siteFile, pkgJsonFile, pkgLockFile, mockGit, mockOut)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
@@ -170,6 +202,12 @@ func TestRunWithRunners_Success(t *testing.T) {
 	if err != nil || string(siteContent) != `<span class="logo-badge logo-badge-version" id="version-badge">v0.6.0</span>` {
 		t.Fatalf("site file not updated properly: %s", string(siteContent))
 	}
+
+	// Verify package.json updated to 0.6.0
+	pkgContent, err := os.ReadFile(pkgJsonFile)
+	if err != nil || !strings.Contains(string(pkgContent), `"version": "0.6.0"`) {
+		t.Fatalf("package.json not updated properly: %s", string(pkgContent))
+	}
 }
 
 func TestRunWithRunners_Errors(t *testing.T) {
@@ -182,13 +220,13 @@ func TestRunWithRunners_Errors(t *testing.T) {
 	mockOut := func(args ...string) (string, error) { return "main", nil }
 
 	// 1. Missing args
-	if err := runWithRunners([]string{"cmd"}, versionFile, siteFile, mockGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd"}, versionFile, siteFile, "", "", mockGit, mockOut); err == nil {
 		t.Fatal("expected error on missing bump type")
 	}
 
 	// 2. Branch error
 	branchErrOut := func(args ...string) (string, error) { return "", errors.New("branch failure") }
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, mockGit, branchErrOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", mockGit, branchErrOut); err == nil {
 		t.Fatal("expected error on branch failure")
 	}
 
@@ -200,7 +238,7 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		return nil
 	}
 	featureBranchOut := func(args ...string) (string, error) { return "feature", nil }
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, checkoutErrGit, featureBranchOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", checkoutErrGit, featureBranchOut); err == nil {
 		t.Fatal("expected error on checkout failure")
 	}
 
@@ -211,17 +249,17 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, pullErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", pullErrGit, mockOut); err == nil {
 		t.Fatal("expected error on pull failure")
 	}
 
 	// 5. Version file read error
-	if err := runWithRunners([]string{"cmd", "patch"}, filepath.Join(tmpDir, "missing.txt"), siteFile, mockGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, filepath.Join(tmpDir, "missing.txt"), siteFile, "", "", mockGit, mockOut); err == nil {
 		t.Fatal("expected error on missing version file")
 	}
 
 	// 6. Invalid bump type
-	if err := runWithRunners([]string{"cmd", "invalid-type"}, versionFile, siteFile, mockGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "invalid-type"}, versionFile, siteFile, "", "", mockGit, mockOut); err == nil {
 		t.Fatal("expected error on invalid bump type")
 	}
 
@@ -232,7 +270,7 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, commitErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", commitErrGit, mockOut); err == nil {
 		t.Fatal("expected error on commit failure")
 	}
 
@@ -243,7 +281,7 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, tagErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", tagErrGit, mockOut); err == nil {
 		t.Fatal("expected error on tag failure")
 	}
 
@@ -254,7 +292,7 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, pushErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", pushErrGit, mockOut); err == nil {
 		t.Fatal("expected error on push failure")
 	}
 }
@@ -303,7 +341,7 @@ func TestRunWithRunners_WriteFileError(t *testing.T) {
 
 	// Trigger write failure
 	writeErrFile := filepath.Join(tmpDir, "nonexistent_dir", "version.txt")
-	if err := runWithRunners([]string{"cmd", "patch"}, writeErrFile, siteFile, mockGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, writeErrFile, siteFile, "", "", mockGit, mockOut); err == nil {
 		t.Fatal("expected error on write failure or read failure")
 	}
 
@@ -314,7 +352,7 @@ func TestRunWithRunners_WriteFileError(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, tagPushErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", tagPushErrGit, mockOut); err == nil {
 		t.Fatal("expected error on tag push failure")
 	}
 }

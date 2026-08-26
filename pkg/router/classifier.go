@@ -109,9 +109,21 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	estimator := c.GetEstimator()
 	reqCtx.Tokens = estimator.Estimate(len(allText))
 	reqCtx.Prompt = latestUserPrompt
+	reqCtx.CleanPrompt = latestUserPrompt
 
-	// 4. Extract clean lowercased keywords strictly from latest user prompt (fallback to allText if no user prompt)
-	keywordSource := latestUserPrompt
+	// 4. Parse @nacho: in-prompt directives if present
+	if HasDirective(latestUserPrompt) {
+		info, cleanPrompt := ExtractDirective(latestUserPrompt)
+		reqCtx.CleanPrompt = cleanPrompt
+		reqCtx.ForcedTier = info.ForcedTier
+		reqCtx.ForcedModel = info.ForcedModel
+		reqCtx.IsMetaDirective = info.IsMeta
+		reqCtx.MetaDirective = info.Directive
+		reqCtx.MetaDirectiveRaw = info.Raw
+	}
+
+	// 5. Extract clean lowercased keywords strictly from latest user prompt (fallback to allText if no user prompt)
+	keywordSource := reqCtx.CleanPrompt
 	if keywordSource == "" {
 		keywordSource = allText
 	}

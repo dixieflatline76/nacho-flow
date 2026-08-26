@@ -101,7 +101,7 @@ func TestOptimizer_GroundTruth_Scenario2_14kClean(t *testing.T) {
 	if len(result.FrictionKeywords) != 0 {
 		t.Errorf("Expected 0 friction keywords, got %v", result.FrictionKeywords)
 	}
-	if result.SynthesizedRule != "Tokens < 14000 && !HasImages && !HasTools" {
+	if result.SynthesizedRule != "Tokens < 14000" {
 		t.Errorf("Unexpected synthesized rule: %s", result.SynthesizedRule)
 	}
 }
@@ -156,7 +156,199 @@ func TestOptimizer_GroundTruth_Scenario3_10kSQL(t *testing.T) {
 	}
 }
 
-// Test 2.4: AST verification on distilled rules
+// Test 2.4: Multimodal Local Vision Success (64GB GPU)
+func TestOptimizer_Multimodal_LocalVisionSuccess(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+
+	var records []telemetry.TurnRecord
+	for i := 0; i < 500; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Tokens:    4000,
+			HasImages: true,
+			IsLocal:   true,
+			IsRetry:   false,
+		})
+	}
+
+	result, err := optimizer.Optimize(records, &contract.Config{})
+	if err != nil {
+		t.Fatalf("Optimizer failed: %v", err)
+	}
+
+	if result.RestrictImages {
+		t.Errorf("Expected RestrictImages=false for clean vision turns")
+	}
+	if strings.Contains(result.SynthesizedRule, "!HasImages") {
+		t.Errorf("Rule should NOT restrict images: %s", result.SynthesizedRule)
+	}
+}
+
+// Test 2.5: Multimodal Local Vision High Friction
+func TestOptimizer_Multimodal_LocalVisionFriction(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+
+	var records []telemetry.TurnRecord
+	// 100 normal turns
+	for i := 0; i < 100; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Tokens:    2000,
+			HasImages: false,
+			IsLocal:   true,
+			IsRetry:   i < 5,
+		})
+	}
+	// 20 turns with images (100% fail)
+	for i := 0; i < 20; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Tokens:    2000,
+			HasImages: true,
+			IsLocal:   true,
+			IsRetry:   true,
+		})
+	}
+
+	result, err := optimizer.Optimize(records, &contract.Config{})
+	if err != nil {
+		t.Fatalf("Optimizer failed: %v", err)
+	}
+
+	if !result.RestrictImages {
+		t.Errorf("Expected RestrictImages=true for failing vision turns")
+	}
+	if !strings.Contains(result.SynthesizedRule, "!HasImages") {
+		t.Errorf("Rule should restrict images: %s", result.SynthesizedRule)
+	}
+}
+
+// Test 2.6: Preserves User Guardrails (Retries < 2)
+func TestOptimizer_PreservesGuardrails(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:     "Local GPU",
+				Provider: "ollama",
+				When:     "Tokens < 10000 && !HasImages && Retries < 2",
+			},
+		},
+	}
+
+	var records []telemetry.TurnRecord
+	for i := 0; i < 100; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Tokens:  3000,
+			IsLocal: true,
+			IsRetry: false,
+		})
+	}
+
+	result, err := optimizer.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimizer failed: %v", err)
+	}
+
+	if !strings.Contains(result.SynthesizedRule, "Retries < 2") {
+		t.Errorf("Expected preserved Retries < 2 guardrail, got: %s", result.SynthesizedRule)
+	}
+}
+
+// Test 2.7: Respects Tier MaxContext
+func TestOptimizer_RespectsMaxContext(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:       "Local GPU Free",
+				Provider:   "ollama",
+				MaxContext: 20000,
+				When:       "Tokens < 10000",
+			},
+		},
+	}
+
+	var records []telemetry.TurnRecord
+	for i := 0; i < 200; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Tokens:  1000 + i*150,
+			IsLocal: true,
+			IsRetry: false,
+		})
+	}
+
+	result, err := optimizer.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimizer failed: %v", err)
+	}
+
+	if result.OptimalThreshold > 20000 {
+		t.Errorf("Expected threshold <= 20000, got: %d", result.OptimalThreshold)
+	}
+}
+
+// Test Fix 4: Historical cloud retries do not inflate local retries avoided
+func TestOptimizer_CloudRetriesDoNotInflateAvoidedRetries(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+
+	var records []telemetry.TurnRecord
+	// 50 turns on cloud that had retries (e.g. rate limits)
+	for i := 0; i < 50; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Tokens:  30000,
+			IsLocal: false,
+			IsRetry: true,
+		})
+	}
+	// 50 turns on local, perfectly clean (0 retries)
+	for i := 0; i < 50; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Tokens:  2000,
+			IsLocal: true,
+			IsRetry: false,
+		})
+	}
+
+	result, err := optimizer.Optimize(records, &contract.Config{})
+	if err != nil {
+		t.Fatalf("Optimizer failed: %v", err)
+	}
+
+	// Because local turns had 0 retries, retries eliminated MUST be 0 (not 50)
+	if result.RetriesEliminated != 0 {
+		t.Errorf("Expected 0 retries eliminated when local turns had 0 retries, got: %d", result.RetriesEliminated)
+	}
+}
+
+// Test IsLocalTier detector covering various local and cloud configurations
+func TestIsLocalTier_Detection(t *testing.T) {
+	tests := []struct {
+		tier     contract.Tier
+		expected bool
+	}{
+		{contract.Tier{Provider: "ollama", Name: "Tier 1"}, true},
+		{contract.Tier{Provider: "vllm", Name: "Tier 1"}, true},
+		{contract.Tier{Provider: "lmstudio", Name: "Tier 1"}, true},
+		{contract.Tier{Provider: "localai", Name: "Tier 1"}, true},
+		{contract.Tier{Provider: "llama.cpp", Name: "Tier 1"}, true},
+		{contract.Tier{Provider: "llamacpp", Name: "Tier 1"}, true},
+		{contract.Tier{Provider: "custom", Name: "My Local GPU"}, true},
+		{contract.Tier{Provider: "custom", Name: "ROCm GPU Workstation"}, true},
+		{contract.Tier{Provider: "custom", Name: "On-Premises Server"}, true},
+		{contract.Tier{Provider: "openrouter", Name: "Claude Sonnet"}, false},
+		{contract.Tier{Provider: "anthropic", Name: "Claude Opus"}, false},
+		{contract.Tier{Provider: "openai", Name: "GPT-4o"}, false},
+	}
+
+	for _, tc := range tests {
+		got := IsLocalTier(tc.tier)
+		if got != tc.expected {
+			t.Errorf("IsLocalTier(%+v) = %v, expected %v", tc.tier, got, tc.expected)
+		}
+	}
+}
+
+// Test 2.8: AST verification on distilled rules
 func TestDistiller_ASTValidation(t *testing.T) {
 	rule, err := DistillRule(12000, []string{"sql", "deadlock"})
 	if err != nil {
@@ -195,6 +387,37 @@ func TestOptimizer_ZeroRecords(t *testing.T) {
 	}
 	if result.OptimalThreshold != 16000 {
 		t.Errorf("Expected default 16000 threshold, got %d", result.OptimalThreshold)
+	}
+
+	// Zero records with existing tier
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{Name: "Local GPU", Provider: "ollama", When: "Tokens < 8000 && Retries < 2"},
+		},
+	}
+	res2, err := optimizer.Optimize(nil, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed on zero records with existing config: %v", err)
+	}
+	if !strings.Contains(res2.SynthesizedRule, "Retries < 2") {
+		t.Errorf("Expected preserved Retries < 2 on zero records, got: %s", res2.SynthesizedRule)
+	}
+
+	// Zero records with malformed existing when
+	badCfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{Name: "Local GPU", Provider: "ollama", When: "Tokens < && bad"},
+		},
+	}
+	_, err = optimizer.Optimize(nil, badCfg)
+	if err == nil {
+		t.Fatalf("Expected error on zero records with malformed when expr")
+	}
+
+	// With records and malformed existing when
+	_, err = optimizer.Optimize([]telemetry.TurnRecord{{IsLocal: true, Tokens: 500}}, badCfg)
+	if err == nil {
+		t.Fatalf("Expected error on malformed when expr with records")
 	}
 }
 
@@ -239,12 +462,20 @@ func TestOptimizer_OptimizeWithContext(t *testing.T) {
 	}
 }
 
-func NewOptimizerForTest() *CostPenaltyOptimizer {
-	return &CostPenaltyOptimizer{
-		MinOccurrences:      10,
-		OddsRatioThreshold:  1.5,
-		CostPerMillionCloud: 2.50,
-		RetryPenaltyUSD:     2.00,
+func TestOptimizer_CustomPolicy(t *testing.T) {
+	policy := TuningPolicy{
+		Name:                "custom_frugal",
+		CostPerMillionCloud: 1.00,
+		RetryPenaltyUSD:     0.50,
+		MinOccurrences:      5,
+		OddsRatioThreshold:  2.0,
+	}
+	opt := NewCostPenaltyOptimizerWithPolicy(policy)
+	if opt.Policy.Name != "custom_frugal" {
+		t.Errorf("Expected policy name custom_frugal, got: %s", opt.Policy.Name)
 	}
 }
 
+func NewOptimizerForTest() *CostPenaltyOptimizer {
+	return NewCostPenaltyOptimizer()
+}

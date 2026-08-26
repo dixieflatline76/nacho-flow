@@ -212,6 +212,88 @@ func TestEvaluator_MaxContext_SkipsTier(t *testing.T) {
 	}
 }
 
+func TestExprEvaluator_ForcedDirectives(t *testing.T) {
+	tiers := []contract.Tier{
+		{Name: "Reasoning Tier", Model: "deepseek/deepseek-r1", Provider: "openrouter", When: "HasTools"},
+		{Name: "Local GPU Tier", Model: "qwen2.5-coder:14b", Provider: "ollama", When: "Tokens < 8000"},
+		{Name: "Cloud Fast", Model: "qwen-30b", Provider: "openrouter", When: "Tokens >= 8000"},
+	}
+	defaultTier := contract.Tier{Name: "Default Cloud", Model: "claude-3.5", Provider: "openrouter"}
+
+	eval, err := NewExprEvaluator(tiers, defaultTier)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 1. Forced Local ignores token thresholds (e.g. 50,000 tokens)
+	t1, err := eval.SelectTier(contract.RequestContext{Tokens: 50000, ForcedTier: "local"})
+	if err != nil || t1.Name != "Local GPU Tier" {
+		t.Errorf("expected Local GPU Tier, got %q (err: %v)", t1.Name, err)
+	}
+
+	// 2. Forced Cloud / Frontier
+	t2, err := eval.SelectTier(contract.RequestContext{Tokens: 50, ForcedTier: "cloud"})
+	if err != nil || t2.Name != "Default Cloud" {
+		t.Errorf("expected Default Cloud, got %q (err: %v)", t2.Name, err)
+	}
+	t2b, err := eval.SelectTier(contract.RequestContext{Tokens: 50, ForcedTier: "frontier"})
+	if err != nil || t2b.Name != "Default Cloud" {
+		t.Errorf("expected Default Cloud for frontier, got %q (err: %v)", t2b.Name, err)
+	}
+
+	// 3. Forced Reasoning
+	t3, err := eval.SelectTier(contract.RequestContext{Tokens: 50, ForcedTier: "reasoning"})
+	if err != nil || t3.Name != "Reasoning Tier" {
+		t.Errorf("expected Reasoning Tier, got %q (err: %v)", t3.Name, err)
+	}
+
+	// 4. Forced Named Tier (case-insensitive) & Default Tier name match
+	t4, err := eval.SelectTier(contract.RequestContext{Tokens: 50, ForcedTier: "local gpu tier"})
+	if err != nil || t4.Name != "Local GPU Tier" {
+		t.Errorf("expected Local GPU Tier, got %q (err: %v)", t4.Name, err)
+	}
+	t4b, err := eval.SelectTier(contract.RequestContext{Tokens: 50, ForcedTier: "default cloud"})
+	if err != nil || t4b.Name != "Default Cloud" {
+		t.Errorf("expected Default Cloud by name, got %q (err: %v)", t4b.Name, err)
+	}
+
+	// 5. Forced Model override
+	t5, err := eval.SelectTier(contract.RequestContext{Tokens: 50, ForcedModel: "meta-llama/llama-3.3-70b"})
+	if err != nil || t5.Model != "meta-llama/llama-3.3-70b" {
+		t.Errorf("expected transient tier with model meta-llama/llama-3.3-70b, got %q (err: %v)", t5.Model, err)
+	}
+
+	// 6. Non-existent named tier returns error
+	_, err6 := eval.SelectTier(contract.RequestContext{ForcedTier: "Non-Existent Tier XYZ"})
+	if err6 == nil {
+		t.Errorf("expected error for non-existent forced tier")
+	}
+
+	// 7. No reasoning tier configured
+	evalNoReasoning, _ := NewExprEvaluator([]contract.Tier{
+		{Name: "General Tier", Model: "gpt-4o", Provider: "openai", When: "Tokens < 100"},
+	}, defaultTier)
+	_, err7 := evalNoReasoning.SelectTier(contract.RequestContext{ForcedTier: "reasoning"})
+	if err7 == nil {
+		t.Errorf("expected error when no reasoning tier is configured")
+	}
+
+	// 8. Forced Local when only cloud tiers configured
+	evalNoLocal, _ := NewExprEvaluator([]contract.Tier{
+		{Name: "Cloud 1", Model: "gpt-4o", Provider: "openai", When: "Tokens < 100"},
+	}, defaultTier)
+	t8, err8 := evalNoLocal.SelectTier(contract.RequestContext{ForcedTier: "local"})
+	if err8 != nil || t8.Name != "Cloud 1" {
+		t.Errorf("expected Cloud 1 first tier fallback, got %q", t8.Name)
+	}
+
+	evalEmpty, _ := NewExprEvaluator([]contract.Tier{}, defaultTier)
+	t9, err9 := evalEmpty.SelectTier(contract.RequestContext{ForcedTier: "local"})
+	if err9 != nil || t9.Name != "Default Cloud" {
+		t.Errorf("expected Default Cloud fallback when 0 tiers, got %q", t9.Name)
+	}
+}
+
 // BenchmarkExprEvaluator measures nanosecond tier evaluation speed.
 func BenchmarkExprEvaluator(b *testing.B) {
 	tiers := []contract.Tier{

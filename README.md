@@ -7,6 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/dixieflatline76/nacho-flow/actions/workflows/ci.yml"><img src="https://github.com/dixieflatline76/nacho-flow/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow"><img src="https://img.shields.io/badge/VS%20Code-Companion%20Extension-blue?logo=visual-studio-code&logoColor=white" alt="VS Code Extension"></a>
   <a href="https://pkg.go.dev/github.com/dixieflatline76/nacho-flow"><img src="https://pkg.go.dev/badge/github.com/dixieflatline76/nacho-flow.svg" alt="Go Reference"></a>
   <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/dixieflatline76/nacho-flow?logo=go&logoColor=white" alt="Go Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
@@ -19,7 +20,7 @@
 >
 > A fast, zero-dependency hybrid AI gateway that routes agent prompt turns between **local GPUs ($0.00)** and **cloud APIs (up to 94.7% cost reduction)** with 100% reasoning fidelity.
 
-**Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Roo Code](https://github.com/RooVetGit/Roo-Code), [Cline](https://github.com/cline/cline), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)).
+**Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Roo Code](https://github.com/RooVetGit/Roo-Code), [Cline](https://github.com/cline/cline), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)). Includes an integrated **VS Code Companion Extension** with real-time cost telemetry, visual route inspector, and one-click agent setup.
 
 🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)  
 Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
@@ -70,8 +71,10 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 
 ## ✨ Key Features
 
-* **⚡ High-Throughput Core**: Adds < 0.36 ms routing overhead and handles 30,000+ req/s using lock-free atomic RCU state and pooled HTTP transports.
-* **🌐 Management REST API & Live SSE Telemetry Stream**: Exposes `/api/v1/info`, `/api/v1/events` (real-time SSE metrics), `/api/v1/routes` (circular buffer), `/api/v1/circuits`, `/api/v1/pricing`, `/api/v1/config` (with 30s Memento rollback watchdog), and `/api/v1/tune` for programmatic management and VS Code extensions.
+* **⚡ High-Throughput Core**: Adds < 0.18 ms (180.8 µs) routing overhead and sustains 32,000+ req/s using lock-free atomic RCU state and pooled HTTP transports.
+* **🔥 "Heat Seeker" Spot Market Arbitrage & Curated Gallery**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
+* **🏛️ 3-Tier Curated Intelligence & OTA Sync**: Pre-packages verified SWE-bench & tool reliability scores (`//go:embed models.json`) with automatic Over-The-Air GitHub semver updates.
+* **🌐 Management REST API & Live SSE Telemetry Stream**: Exposes `/api/v1/info`, `/api/v1/events` (real-time SSE metrics), `/api/v1/routes` (circular buffer), `/api/v1/circuits`, `/api/v1/pricing`, `/api/v1/deals`, `/api/v1/config` (with 30s Memento rollback watchdog), and `/api/v1/tune` for programmatic management and VS Code extensions.
 * **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
 * **🚦 Local Provider Circuit Breaker**: Detects consecutive local connection or 5xx failures and fast-fails directly to cloud fallback tiers with 0ms dial delay.
 * **🔄 Retry-Based Auto-Escalation**: Tracks session turn retries with a sliding 5-minute TTL, allowing routing rules to automatically escalate to cloud models when local attempts fail (`Retries < 2`).
@@ -80,11 +83,12 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **📐 Model Context Window Guard (`max_context`)**: Evaluates model physical context limits with O(1) pre-guards to prevent 400 Context Length Exceeded errors.
 * **🛠️ Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Llama Python `<|python_tag|>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown code fences, and Ollama/Qwen Bare JSON) into standard OpenAI `tool_calls` JSON structures via a modular Strategy Pipeline.
 * **🔒 Inbound Gateway Client Authentication**: Secures LAN and remote endpoints with optional Bearer token authentication while preserving a public `/health` endpoint.
+* **🌶️ HotSauce Directives (In-Prompt Routing)**: Splash heat onto any prompt turn to override routing (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) or query daemon metadata (`@nacho:help`, `@nacho:tiers`, `@nacho:status`, `@nacho:deals`) with < 7ns zero-alloc bailout, $0.00 cost, and strict fallback bypass.
 * **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Evaluates custom tier rules in `config.yaml` based on token estimates, tool calls, images, retries, and prompt keywords.
 * **🖼️ Historical Image Sanitization**: Automatically strips base64 `image_url` payloads from older turns when routing to text-only models.
 * **🏷️ Dynamic Version Reporting**: Exposes build version across `/health`, `/v1/health`, and CLI (`nacho-flow version`, `-v`).
 * **💾 Persistent Telemetry Store**: Saves cumulative token counts and estimated cost metrics to disk (`~/.config/nacho-flow/stats.json`).
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.3\%\text{--}100\%$ statement test coverage across all packages (100% on strategy & config, 97.2% on router, 95.9% on daemon binary), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (100% on strategy & config, 97.1% on router, 95.4% on daemon binary), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 * **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 * **📦 Zero Dependencies**: Single static binary with zero CGO or Python requirements (`CGO_ENABLED=0`).
 
@@ -260,6 +264,7 @@ Visit the official website and interactive documentation portal at **[spicebox.d
 
 For in-depth guides, benchmark data, and architecture deep-dives:
 - **[Interactive Docs Hub](https://spicebox.dev/nacho-flow/docs.html)**: Live web documentation with interactive diagrams and search.
+- **[VS Code Companion Extension Guide](docs/EXTENSION_USER_GUIDE.md)**: Sidebar control hub, status bar widget, route inspector, and agent setup.
 - **[Product & Commercial Roadmap](ROADMAP.md)**: Open-source data plane, IDE extension, fleet protocol, and SaaS control plane.
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
 - **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**30,800+ req/s, 350k requests up to 1,000 workers**) on AMD Ryzen hardware.

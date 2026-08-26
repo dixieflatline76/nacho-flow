@@ -48,16 +48,26 @@ type fastStreamChunk struct {
 	Usage             json.RawMessage    `json:"usage,omitempty"`
 }
 
+type StreamUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 // StreamNormalizer wraps an upstream SSE response stream and normalizes reasoning tokens
 // (from DeepSeek-R1, OpenRouter, etc.) into standard <think>...</think> tags within delta.content.
+// It also intercepts the upstream usage object emitted at stream completion.
 type StreamNormalizer struct {
-	upstream      io.ReadCloser
-	reader        *bufio.Reader
-	outBuf        *bytes.Buffer
-	inThinking    bool
-	alreadyTagged bool
-	closed        bool
-	eofReached    bool
+	upstream               io.ReadCloser
+	reader                 *bufio.Reader
+	outBuf                 *bytes.Buffer
+	inThinking             bool
+	alreadyTagged          bool
+	closed                 bool
+	eofReached             bool
+	capturedUsage          StreamUsage
+	hasUsage               bool
+	emittedCompletionChars int
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -137,6 +147,17 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		return
 	}
 
+	// Intercept usage block if present (e.g. OpenRouter / OpenAI final streaming chunk)
+	if bytes.Contains(payload, []byte("\"usage\"")) {
+		var rawChunk struct {
+			Usage *StreamUsage `json:"usage,omitempty"`
+		}
+		if json.Unmarshal(payload, &rawChunk) == nil && rawChunk.Usage != nil && (rawChunk.Usage.PromptTokens > 0 || rawChunk.Usage.CompletionTokens > 0 || rawChunk.Usage.TotalTokens > 0) {
+			s.capturedUsage = *rawChunk.Usage
+			s.hasUsage = true
+		}
+	}
+
 	// Fast path: if chunk has no reasoning markers and no think tag, check if transition needed
 	hasReasoningMarker := bytes.Contains(payload, []byte("reasoning_content")) ||
 		bytes.Contains(payload, []byte("\"reasoning\"")) ||
@@ -148,6 +169,9 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		bytes.Contains(payload, []byte("<|im_end|>"))
 
 	if !hasReasoningMarker && !s.inThinking && !bytes.Contains(payload, []byte("<think>")) {
+		if idx := bytes.Index(payload, []byte("\"content\":")); idx != -1 {
+			s.emittedCompletionChars += len(payload) - idx
+		}
 		s.outBuf.Write(line)
 		return
 	}
@@ -169,6 +193,7 @@ func (s *StreamNormalizer) processLine(line []byte) {
 	}
 
 	if reasoningText != "" {
+		s.emittedCompletionChars += len(reasoningText)
 		// Model is emitting reasoning tokens
 		sanitized := strings.ReplaceAll(reasoningText, "</think>", "&lt;/think&gt;")
 		choice.Delta.ReasoningContent = ""
@@ -178,6 +203,7 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		if !s.inThinking && !s.alreadyTagged {
 			s.inThinking = true
 			choice.Delta.Content = "<think>\n" + sanitized
+			s.alreadyTagged = true
 		} else {
 			choice.Delta.Content = sanitized
 		}
@@ -188,7 +214,8 @@ func (s *StreamNormalizer) processLine(line []byte) {
 			s.outBuf.WriteString("\n\n")
 			return
 		}
-	} else {
+	} else if choice.Delta.Content != "" {
+		s.emittedCompletionChars += len(choice.Delta.Content)
 		// Normalize text-embedded reasoning tags (Qwen, Claude-style thinking tags)
 		content := choice.Delta.Content
 		if strings.Contains(content, "<|im_start|>think") {
@@ -270,4 +297,22 @@ func (s *StreamNormalizer) Close() error {
 		s.reader = nil
 	}
 	return err
+}
+
+// GetUsage returns captured upstream usage metrics or fallback estimated completion tokens.
+func (s *StreamNormalizer) GetUsage() (StreamUsage, bool) {
+	if s.hasUsage {
+		return s.capturedUsage, true
+	}
+	if s.emittedCompletionChars > 0 {
+		estTokens := s.emittedCompletionChars / 4
+		if estTokens == 0 {
+			estTokens = 1
+		}
+		return StreamUsage{
+			CompletionTokens: estTokens,
+			TotalTokens:      estTokens,
+		}, false
+	}
+	return StreamUsage{}, false
 }

@@ -158,7 +158,41 @@ func TestSessionTracker_EdgeCases(t *testing.T) {
 	if r := st.GetRetries("random-unknown-id"); r != 0 {
 		t.Errorf("Expected 0 retries for unknown session, got %d", r)
 	}
+}
 
+func TestSessionTracker_MetaDebounce(t *testing.T) {
+	st := NewSessionTracker(time.Minute)
+
+	// 1. Empty session key should not debounce
+	if st.ShouldDebounceMeta("", "help", 2*time.Second) {
+		t.Errorf("empty session should never be debounced")
+	}
+
+	// 2. First call for session should not debounce
+	sess := "session-debounce-1"
+	if st.ShouldDebounceMeta(sess, "help", 2*time.Second) {
+		t.Errorf("first meta call should not be debounced")
+	}
+
+	// 3. Immediate repeat call with same directive within window SHOULD debounce
+	if !st.ShouldDebounceMeta(sess, "help", 2*time.Second) {
+		t.Errorf("immediate repeat meta call should be debounced")
+	}
+
+	// 4. Different directive within window should NOT debounce
+	if st.ShouldDebounceMeta(sess, "tiers", 2*time.Second) {
+		t.Errorf("different directive should not be debounced")
+	}
+
+	// 5. Expired window should NOT debounce
+	time.Sleep(20 * time.Millisecond)
+	if st.ShouldDebounceMeta(sess, "tiers", 10*time.Millisecond) {
+		t.Errorf("call after window expired should not be debounced")
+	}
+}
+
+func TestSessionTracker_TurnZeroHash(t *testing.T) {
+	st := NewSessionTracker(time.Minute)
 	// Turn with 0 prompt hash
 	st.RecordTurn("sess-zero", 0)
 	retries, isRetry := st.RecordTurn("sess-zero", 0)

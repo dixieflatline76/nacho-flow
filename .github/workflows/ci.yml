@@ -33,8 +33,21 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Run unit tests
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: 'extension/package-lock.json'
+
+      - name: Run Go unit tests
         run: go test -v ./...
+
+      - name: Run VS Code extension unit tests
+        run: |
+          cd extension
+          npm ci
+          npm test
 
       - name: Dry Run Build
         run: go build -o bin/nacho-flow ./cmd/nacho-flow
@@ -44,7 +57,7 @@ jobs:
         run: bash scripts/install_test.sh
 
   build-linux:
-    name: Build Linux Binaries
+    name: Build Linux Binaries & VSIXs
     runs-on: ubuntu-latest
     if: github.event.action == 'published'
     steps:
@@ -57,6 +70,13 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: 'extension/package-lock.json'
+
       - name: Run Linux Tests
         run: go test -v ./...
 
@@ -67,6 +87,26 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o "dist/nacho-flow-${VERSION}-linux-amd64" ./cmd/nacho-flow
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=${VERSION}" -o "dist/nacho-flow-${VERSION}-linux-arm64" ./cmd/nacho-flow
 
+      - name: Package Linux VSIXs (x64 & arm64)
+        run: |
+          VERSION=$(cat version.txt | tr -d '\r\n')
+          cd extension
+          npm ci
+          npm run compile
+          node esbuild.config.js
+          mkdir -p bin
+          
+          # Package linux-x64 VSIX
+          cp "../dist/nacho-flow-${VERSION}-linux-amd64" bin/nacho-flow
+          chmod +x bin/nacho-flow
+          npx vsce package --target linux-x64 --no-dependencies --out "../dist/nacho-flow-${VERSION}-linux-x64.vsix"
+          
+          # Package linux-arm64 VSIX
+          cp "../dist/nacho-flow-${VERSION}-linux-arm64" bin/nacho-flow
+          chmod +x bin/nacho-flow
+          npx vsce package --target linux-arm64 --no-dependencies --out "../dist/nacho-flow-${VERSION}-linux-arm64.vsix"
+          rm -rf bin
+
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -74,7 +114,7 @@ jobs:
           path: dist/
 
   build-win:
-    name: Build Windows Binary
+    name: Build Windows Binary & VSIX
     runs-on: windows-latest
     if: github.event.action == 'published'
     env:
@@ -88,6 +128,13 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: 'extension/package-lock.json'
 
       - name: Build Windows Executable
         run: |
@@ -114,6 +161,19 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
 
+      - name: Package Windows VSIX (win32-x64)
+        run: |
+          $version = (Get-Content version.txt).Trim()
+          cd extension
+          npm ci
+          npm run compile
+          node esbuild.config.js
+          New-Item -ItemType Directory -Force -Path bin
+          Copy-Item "../dist/nacho-flow-${version}-windows-amd64.exe" -Destination "bin/nacho-flow.exe"
+          npx vsce package --target win32-x64 --no-dependencies --out "../dist/nacho-flow-${version}-win32-x64.vsix"
+          Remove-Item -Force -Recurse bin
+        shell: pwsh
+
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -121,7 +181,7 @@ jobs:
           path: dist/
 
   build-mac:
-    name: Build macOS Binaries
+    name: Build macOS Binaries & VSIXs
     runs-on: macos-latest
     if: github.event.action == 'published'
     env:
@@ -134,6 +194,13 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: 'extension/package-lock.json'
 
       - name: Import Apple Certificates
         if: env.MACOS_CERTIFICATE != ''
@@ -163,6 +230,26 @@ jobs:
             codesign --force --options=runtime --sign "${SIGNING_IDENTITY}" --timestamp "dist/nacho-flow-${VERSION}-darwin-arm64"
             codesign --force --options=runtime --sign "${SIGNING_IDENTITY}" --timestamp "dist/nacho-flow-${VERSION}-darwin-amd64"
           fi
+
+      - name: Package macOS VSIXs (darwin-arm64 & darwin-x64)
+        run: |
+          VERSION=$(cat version.txt | tr -d '\r\n')
+          cd extension
+          npm ci
+          npm run compile
+          node esbuild.config.js
+          mkdir -p bin
+          
+          # Package darwin-arm64 VSIX
+          cp "../dist/nacho-flow-${VERSION}-darwin-arm64" bin/nacho-flow
+          chmod +x bin/nacho-flow
+          npx vsce package --target darwin-arm64 --no-dependencies --out "../dist/nacho-flow-${VERSION}-darwin-arm64.vsix"
+          
+          # Package darwin-x64 VSIX
+          cp "../dist/nacho-flow-${VERSION}-darwin-amd64" bin/nacho-flow
+          chmod +x bin/nacho-flow
+          npx vsce package --target darwin-x64 --no-dependencies --out "../dist/nacho-flow-${VERSION}-darwin-x64.vsix"
+          rm -rf bin
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4

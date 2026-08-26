@@ -53,10 +53,10 @@ func main() {
 }
 
 func runCLI(args []string) error {
-	return runWithRunners(args, "version.txt", "site/index.html", defaultGitRunner, defaultOutputRunner)
+	return runWithRunners(args, "version.txt", "site/index.html", "extension/package.json", "extension/package-lock.json", defaultGitRunner, defaultOutputRunner)
 }
 
-func runWithRunners(args []string, versionFile, siteFile string, git GitRunner, outRunner OutputRunner) error {
+func runWithRunners(args []string, versionFile, siteFile, pkgJsonFile, pkgLockFile string, git GitRunner, outRunner OutputRunner) error {
 	if len(args) < 2 {
 		return fmt.Errorf("usage: go run cmd/util/version_bump/main.go <bump-type>\nWhere <bump-type> is one of: patch, minor, major (or -type=patch, etc.)")
 	}
@@ -95,7 +95,7 @@ func runWithRunners(args []string, versionFile, siteFile string, git GitRunner, 
 		return fmt.Errorf("error incrementing version: %w", err)
 	}
 
-	// 5. Write new version to version.txt and site/index.html
+	// 5. Write new version to version.txt, site/index.html, and extension/package.json
 	err = writeVersionToFile(versionFile, newVersion)
 	if err != nil {
 		return fmt.Errorf("error writing new version to file: %w", err)
@@ -104,6 +104,16 @@ func runWithRunners(args []string, versionFile, siteFile string, git GitRunner, 
 	filesToCommit := []string{versionFile}
 	if err := updateSiteVersion(siteFile, newVersion); err == nil {
 		filesToCommit = append(filesToCommit, siteFile)
+	}
+	if pkgJsonFile != "" {
+		if err := updatePackageJSON(pkgJsonFile, newVersion); err == nil {
+			filesToCommit = append(filesToCommit, pkgJsonFile)
+		}
+	}
+	if pkgLockFile != "" {
+		if err := updatePackageJSON(pkgLockFile, newVersion); err == nil {
+			filesToCommit = append(filesToCommit, pkgLockFile)
+		}
 	}
 
 	// 6. Commit version files
@@ -224,3 +234,18 @@ func updateSiteVersion(filename string, v Version) error {
 
 	return os.WriteFile(filepath.Clean(filename), updated, 0600)
 }
+
+// updatePackageJSON updates the "version" field in package.json/package-lock.json.
+func updatePackageJSON(filename string, v Version) error {
+	data, err := os.ReadFile(filepath.Clean(filename))
+	if err != nil {
+		return err
+	}
+
+	versionStr := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
+	re := regexp.MustCompile(`("version"\s*:\s*)"[^"]+"`)
+	updated := re.ReplaceAll(data, fmt.Appendf(nil, `${1}"%s"`, versionStr))
+
+	return os.WriteFile(filepath.Clean(filename), updated, 0600)
+}
+

@@ -14,7 +14,10 @@ func TestAdvisor_GeneratesReport(t *testing.T) {
 	result := &TuningResult{
 		OptimalThreshold:    12500,
 		FrictionKeywords:    []string{"sql", "migration"},
-		SynthesizedRule:     "Tokens < 12500 && !HasImages && !HasTools && !any(Keywords, { # in ['sql', 'migration'] })",
+		RestrictImages:      false,
+		RestrictTools:       false,
+		TargetTierName:      "Local ROCm GPU",
+		SynthesizedRule:     "Tokens < 12500 && !any(Keywords, { # in ['migration', 'sql'] })",
 		CurrentCostUSD:      45.00,
 		ProjectedCostUSD:    48.20,
 		ProjectedSavingsUSD: 14.50,
@@ -41,6 +44,9 @@ func TestAdvisor_GeneratesReport(t *testing.T) {
 	if !strings.Contains(report, "340 retries eliminated") {
 		t.Errorf("Expected report to mention retries eliminated")
 	}
+	if !strings.Contains(report, "Clean (0% retry rate — enabled locally)") {
+		t.Errorf("Expected report to mention clean modalities")
+	}
 	if !strings.Contains(report, "- when: \"Tokens < 16000 && !HasImages && !HasTools\"") {
 		t.Errorf("Expected report to contain original when rule in diff")
 	}
@@ -49,7 +55,39 @@ func TestAdvisor_GeneratesReport(t *testing.T) {
 	}
 }
 
-// Test 3.2: Atomic apply updates config and creates backup
+// Test 3.2: Advisory report with friction modalities and non-local config
+func TestAdvisor_FrictionModalities(t *testing.T) {
+	result := &TuningResult{
+		OptimalThreshold:    8000,
+		RestrictImages:      true,
+		RestrictTools:       true,
+		TargetTierName:      "",
+		SynthesizedRule:     "Tokens < 8000 && !HasImages && !HasTools",
+		TotalSampleTurns:    200,
+		RetriesEliminated:   12,
+		ProjectedSavingsUSD: 5.0,
+	}
+
+	// Config with only cloud tiers (tests fallback oldRule branch)
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{Name: "Cloud Workhorse", Provider: "openrouter", When: "true"},
+		},
+	}
+
+	report := GenerateAdvisoryReport(result, cfg)
+	if !strings.Contains(report, "Multimodal Vision:              High Friction") {
+		t.Errorf("Expected report to mention high friction vision")
+	}
+	if !strings.Contains(report, "Agentic Tool Calls:             High Friction") {
+		t.Errorf("Expected report to mention high friction tools")
+	}
+	if !strings.Contains(report, "Local ROCm GPU") {
+		t.Errorf("Expected fallback tier name")
+	}
+}
+
+// Test 3.3: Atomic apply updates config and creates backup
 func TestApplier_AtomicBackupAndApply(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
@@ -94,7 +132,7 @@ tiers:
 	}
 }
 
-// Test 3.3: CostPenaltyOptimizer constructor, name, and empty records
+// Test 3.4: CostPenaltyOptimizer constructor, name, and empty records
 func TestOptimizer_ConstructorAndEmptyRecords(t *testing.T) {
 	opt := NewCostPenaltyOptimizer()
 	if opt.Name() != "cost_penalty" {
@@ -110,7 +148,7 @@ func TestOptimizer_ConstructorAndEmptyRecords(t *testing.T) {
 	}
 }
 
-// Test 3.4: ApplyTuning error handling on missing file and malformed YAML
+// Test 3.5: ApplyTuning error handling on missing file and malformed YAML
 func TestApplier_ErrorCases(t *testing.T) {
 	result := &TuningResult{SynthesizedRule: "Tokens < 10000"}
 
@@ -133,12 +171,13 @@ func TestApplier_ErrorCases(t *testing.T) {
 	}
 }
 
-// Test 3.5: Advisory report with no friction keywords, zero projected savings, and nil config
+// Test 3.6: Advisory report with no friction keywords, zero projected savings, and nil config
 func TestAdvisor_NoFrictionKeywordsAndNilConfig(t *testing.T) {
 	result := &TuningResult{
 		OptimalThreshold:    16000,
 		FrictionKeywords:    nil,
-		SynthesizedRule:     "Tokens < 16000 && !HasImages && !HasTools",
+		TargetTierName:      "Local ROCm GPU",
+		SynthesizedRule:     "Tokens < 16000",
 		ProjectedSavingsUSD: 0.0,
 		TotalSampleTurns:    100,
 	}
@@ -152,8 +191,8 @@ func TestAdvisor_NoFrictionKeywordsAndNilConfig(t *testing.T) {
 	}
 }
 
-// Test 3.6: ApplyTuning fallback to first tier when no local tier is found
-func TestApplier_FallbackFirstTier(t *testing.T) {
+// Test 3.7: ApplyTuning rejects config with only cloud tiers
+func TestApplier_RejectCloudOnly(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "cloud_only_config.yaml")
 
@@ -171,20 +210,12 @@ tiers:
 
 	result := &TuningResult{SynthesizedRule: "Tokens < 8000"}
 	_, err := ApplyTuning(configPath, result)
-	if err != nil {
-		t.Fatalf("Failed to apply tuning: %v", err)
-	}
-
-	updated, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("Failed to read updated config: %v", err)
-	}
-	if !strings.Contains(string(updated), "Tokens < 8000") {
-		t.Errorf("Expected first tier to be updated when no local tier is present, got: %s", string(updated))
+	if err == nil {
+		t.Fatalf("Expected error when applying tuning to cloud-only config, got nil")
 	}
 }
 
-// Test 3.7: DistillRule with special character keyword triggering expr compile error
+// Test 3.8: DistillRule with special character keyword triggering expr compile error
 func TestDistiller_InvalidKeywordCompilationError(t *testing.T) {
 	_, err := DistillRule(16000, []string{"unclosed'quote"})
 	if err == nil {
@@ -192,7 +223,7 @@ func TestDistiller_InvalidKeywordCompilationError(t *testing.T) {
 	}
 }
 
-// Test 3.8: ApplyTuning destination directory collision
+// Test 3.9: ApplyTuning destination directory collision
 func TestApplier_DestinationDirectoryCollision(t *testing.T) {
 	tempDir := t.TempDir()
 	configDir := filepath.Join(tempDir, "config.yaml")

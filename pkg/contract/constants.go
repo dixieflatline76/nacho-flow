@@ -22,6 +22,8 @@ const (
 	HeaderContentLength    = "Content-Length"
 	ContentTypeJSON        = "application/json"
 	ContentTypeEventStream = "text/event-stream"
+	AuthSchemeBearer       = "Bearer "
+	HTTPProtocol           = "http"
 )
 
 // Standard API endpoint routes.
@@ -41,7 +43,52 @@ const (
 	PathAPICircuitsReset = "/api/v1/circuits/reset"
 	PathAPIPricing       = "/api/v1/pricing"
 	PathAPIConfig        = "/api/v1/config"
-	PathAPITune          = "/api/v1/tune"
+	PathAPITune             = "/api/v1/tune"
+	PathAPIDeals            = "/api/v1/deals"
+	PathAPIStatsReset       = "/api/v1/stats/reset"
+	PathAPIStatsRecalculate = "/api/v1/stats/recalculate"
+)
+
+// Provider names and API endpoint defaults.
+const (
+	ProviderOpenRouter   = "openrouter"
+	ProviderOllama       = "ollama"
+	OpenRouterProduction = "https://openrouter.ai"
+	OpenRouterModelsPath = "/api/v1/models"
+)
+
+// Standard Tier and Role identifiers.
+const (
+	TierIDVision    = "tier_1_vision"
+	TierIDLocalGPU  = "tier_2_local_gpu"
+	TierIDWorkhorse = "tier_3_workhorse"
+	TierIDFrontier  = "tier_4_frontier"
+)
+
+// Model capabilities and parameter tags.
+const (
+	ModalityImage = "image"
+	ModalityText  = "text"
+	ParamTools    = "tools"
+)
+
+// Spot Market, Arbitrage & Pricing constants.
+const (
+	PricingNamespaceSeparator     = "::"
+	TokensPerMillion              = 1_000_000.0
+	DefaultDealsAlertThresholdPct = 30.0
+	DefaultDealsMinCodingIndex    = 40.0
+	DefaultDealsLimit             = 20
+	DiscountFullFree              = 100.0
+)
+
+// Curated Catalog & OTA Defaults.
+const (
+	DefaultCatalogFileName   = "models.json"
+	DefaultCatalogCacheDir   = ".nacho-flow/cache/curation"
+	DefaultCatalogVersion    = "v1.0.0"
+	FallbackCatalogVersion   = "v0.0.0"
+	DefaultRemoteCatalogURL  = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/models.json"
 )
 
 // File system and environment variable defaults.
@@ -60,4 +107,5 @@ const (
 	DefaultBenchmarkModel           = "anthropic/claude-3.5-sonnet"
 	DefaultBenchmarkPricePerMillion = 3.00
 	DefaultServerPort               = 8000
+	DefaultDaemonHost               = "127.0.0.1"
 )

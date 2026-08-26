@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -255,6 +256,21 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
+		if r.URL.Query().Get("format") == "yaml" || strings.Contains(r.Header.Get("Accept"), "yaml") {
+			w.Header().Set(contract.HeaderContentType, "application/x-yaml")
+			w.WriteHeader(http.StatusOK)
+			if s.configPath != "" {
+				if rawBytes, err := os.ReadFile(s.configPath); err == nil {
+					_, _ = w.Write(rawBytes)
+					return
+				}
+			}
+			sanitized := config.SanitizeConfig(s.GetConfig())
+			yamlBytes, _ := yaml.Marshal(sanitized)
+			_, _ = w.Write(yamlBytes)
+			return
+		}
+
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusOK)
 
@@ -271,104 +287,55 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
-func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
-	var incoming contract.Config
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&incoming); err != nil {
-		// Fallback try YAML
-		_ = r.Body.Close()
-		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": map[string]string{
-				"type":    "invalid_payload",
-				"message": fmt.Sprintf("failed to parse JSON configuration: %v", err),
-			},
-		})
-		return
-	}
+// ApplyConfig atomically validates, merges secrets, compiles expressions, and swaps runtime state.
+// ApplyConfig atomically updates in-memory routing rules and optionally saves to disk.
+// If rawYAML bytes are provided, they will be written directly to disk to preserve comments.
+func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAML ...[]byte) (string, error) {
+	var backupFile string
 
-	// 1. Merge masked secrets with current active secrets in memory
-	merged := config.MergeSecrets(s.GetConfig(), &incoming)
+	// 1. Merge with existing secrets if incoming has masked placeholders
+	merged := config.MergeSecrets(s.GetConfig(), incoming)
 
-	// 2. Validate provider definitions and base URLs
+	// 2. Validate providers
 	if len(merged.Providers) == 0 {
-		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": map[string]string{
-				"type":    "invalid_config",
-				"message": "configuration must have at least one provider defined",
-			},
-		})
-		return
+		return "", fmt.Errorf("configuration must have at least one provider defined")
 	}
 
 	for id, p := range merged.Providers {
 		if strings.TrimSpace(p.BaseURL) == "" {
-			w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": map[string]string{
-					"type":    "invalid_config",
-					"message": fmt.Sprintf("provider '%s' is missing required base_url", id),
-				},
-			})
-			return
+			return "", fmt.Errorf("provider '%s' is missing required base_url", id)
 		}
 	}
 
 	// Validate tier references
 	for _, tier := range merged.Tiers {
 		if _, exists := merged.Providers[tier.Provider]; !exists {
-			w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": map[string]string{
-					"type":    "invalid_config",
-					"message": fmt.Sprintf("tier '%s' references unknown provider '%s'", tier.Name, tier.Provider),
-				},
-			})
-			return
+			return "", fmt.Errorf("tier '%s' references unknown provider '%s'", tier.Name, tier.Provider)
 		}
 	}
 
 	// 3. Pre-compile AST expr rules to verify syntax
 	newEval, err := strategy.NewExprEvaluator(merged.Tiers, merged.DefaultTier)
 	if err != nil {
-		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": map[string]string{
-				"type":    "invalid_expr",
-				"message": err.Error(),
-			},
-		})
-		return
+		return "", fmt.Errorf("invalid routing expression: %w", err)
 	}
 
-	// Dry run mode check
-	if r.URL.Query().Get("dry_run") == "true" {
-		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "ok",
-			"dry_run": true,
-			"message": "Configuration and routing expressions validated successfully",
-		})
-		return
-	}
-
-	// 4. Create memento and update disk file if configPath is set
-	var backupFile string
-	if s.configPath != "" {
+	// 4. Create memento and update disk file if persistDisk is true
+	if persistDisk && s.configPath != "" {
 		if data, readErr := os.ReadFile(s.configPath); readErr == nil {
 			timestamp := time.Now().Format("20060102T150405")
 			backupFile = filepath.Clean(fmt.Sprintf("%s.bak.%s", s.configPath, timestamp))
 			_ = os.WriteFile(backupFile, data, 0600)
 		}
 
-		if yamlBytes, marshalErr := yaml.Marshal(merged); marshalErr == nil {
+		var yamlBytes []byte
+		if len(rawYAML) > 0 && len(rawYAML[0]) > 0 {
+			yamlBytes = rawYAML[0]
+		} else {
+			yamlBytes, _ = yaml.Marshal(merged)
+		}
+
+		if len(yamlBytes) > 0 {
 			dir := filepath.Dir(s.configPath)
 			tmpFile := filepath.Clean(filepath.Join(dir, fmt.Sprintf("config.tmp.%d.yaml", os.Getpid())))
 			if writeErr := os.WriteFile(tmpFile, yamlBytes, 0600); writeErr == nil {
@@ -386,6 +353,23 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		registry:  newReg,
 	})
 
+	// 5b. Dynamically reconfigure PricingOracle providers upon hot-reload
+	if s.oracle != nil {
+		for id, p := range merged.Providers {
+			idLower := strings.ToLower(id)
+			if idLower == contract.ProviderOpenRouter || strings.Contains(strings.ToLower(p.BaseURL), contract.ProviderOpenRouter) {
+				var interval time.Duration
+				if p.PricingSyncInterval != "" {
+					interval, _ = time.ParseDuration(p.PricingSyncInterval)
+				}
+				s.oracle.RegisterProvider(
+					telemetry.NewOpenRouterPricingProviderWithURL(p.BaseURL, p.APIKey),
+					interval,
+				)
+			}
+		}
+	}
+
 	// 6. Arm Watchdog for Auto-Rollback (if next proxy requests fail consecutively)
 	s.armWatchdog(mementoState, 30*time.Second)
 
@@ -395,6 +379,87 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			Timestamp: time.Now().Format(time.RFC3339),
 			Version:   contract.Version,
 		})
+	}
+
+	return backupFile, nil
+}
+
+// ReloadConfigFromDisk reads and re-evaluates the config.yaml file from disk.
+func (s *Server) ReloadConfigFromDisk() error {
+	if s.configPath == "" {
+		return fmt.Errorf("no config path configured")
+	}
+	loadedCfg, err := config.LoadConfig(s.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config from disk: %w", err)
+	}
+	_, err = s.ApplyConfig(loadedCfg, false)
+	return err
+}
+
+func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": map[string]string{
+				"type":    "invalid_payload",
+				"message": "failed to read request body",
+			},
+		})
+		return
+	}
+
+	var incoming contract.Config
+	if jsonErr := json.Unmarshal(bodyBytes, &incoming); jsonErr != nil {
+		if yamlErr := yaml.Unmarshal(bodyBytes, &incoming); yamlErr != nil {
+			w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]string{
+					"type":    "invalid_payload",
+					"message": fmt.Sprintf("failed to parse configuration: json: %v, yaml: %v", jsonErr, yamlErr),
+				},
+			})
+			return
+		}
+	}
+
+	if r.URL.Query().Get("dry_run") == "true" {
+		merged := config.MergeSecrets(s.GetConfig(), &incoming)
+		if _, evalErr := strategy.NewExprEvaluator(merged.Tiers, merged.DefaultTier); evalErr != nil {
+			w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]string{
+					"type":    "invalid_expr",
+					"message": evalErr.Error(),
+				},
+			})
+			return
+		}
+		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "ok",
+			"dry_run": true,
+			"message": "Configuration and routing expressions validated successfully",
+		})
+		return
+	}
+
+	backupFile, applyErr := s.ApplyConfig(&incoming, true, bodyBytes)
+	if applyErr != nil {
+		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": map[string]string{
+				"type":    "invalid_config",
+				"message": applyErr.Error(),
+			},
+		})
+		return
 	}
 
 	w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
@@ -455,4 +520,100 @@ func (s *Server) handleAPITune(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// handleAPIStatsReset serves POST /api/v1/stats/reset.
+func (s *Server) handleAPIStatsReset(w http.ResponseWriter, r *http.Request) {
+	if s.setCORS(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.tracker != nil {
+		s.tracker.Reset()
+	}
+
+	if s.ringBuffer != nil {
+		s.ringBuffer.Reset()
+	}
+
+	if s.diskStore != nil && s.tracker != nil {
+		_ = s.diskStore.Save(s.tracker.GetStats())
+	}
+
+	if s.eventBroker != nil && s.tracker != nil {
+		_ = s.eventBroker.PublishJSON(telemetry.EventStats, s.tracker.GetStats())
+	}
+
+	w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"message": "Telemetry stats reset to zero",
+	})
+}
+
+// handleAPIStatsRecalculate serves POST /api/v1/stats/recalculate.
+func (s *Server) handleAPIStatsRecalculate(w http.ResponseWriter, r *http.Request) {
+	if s.setCORS(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := s.trafficLogPath
+	if path == "" {
+		path = "logs/traffic.jsonl"
+	}
+
+	records, err := telemetry.ReadRecords(path, 0)
+	if err != nil {
+		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": map[string]string{
+				"type":    "recalculate_error",
+				"message": err.Error(),
+			},
+		})
+		return
+	}
+
+	benchmarkCost := contract.DefaultBenchmarkPricePerMillion
+
+	if s.tracker != nil {
+		s.tracker.RecalculateFromRecords(records, s.oracle, benchmarkCost)
+	}
+
+	if s.ringBuffer != nil {
+		s.ringBuffer.Reset()
+		start := 0
+		if len(records) > 500 {
+			start = len(records) - 500
+		}
+		for _, rec := range records[start:] {
+			s.ringBuffer.Emit(rec)
+		}
+	}
+
+	if s.diskStore != nil && s.tracker != nil {
+		_ = s.diskStore.Save(s.tracker.GetStats())
+	}
+
+	if s.eventBroker != nil && s.tracker != nil {
+		_ = s.eventBroker.PublishJSON(telemetry.EventStats, s.tracker.GetStats())
+	}
+
+	w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":            "ok",
+		"message":           "Telemetry stats recalculated from traffic log",
+		"records_processed": len(records),
+	})
 }

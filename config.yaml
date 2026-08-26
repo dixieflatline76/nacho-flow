@@ -17,39 +17,41 @@ providers:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
     headers:
-      HTTP-Referer: "https://spicebox.dev"
+      HTTP-Referer: "https://github.com/dixieflatline76/nacho-flow"
       X-Title: "nacho-flow"
 
-# 1..N Dynamic Tiers evaluated sequentially using expr-lang/expr syntax (First Match Wins)
-tiers:
-  # Tier 1 (High Precedence): Concurrency & Reasoning Keywords
-  - name: "Cloud Reasoning"
-    model: "deepseek/deepseek-r1"
-    provider: "openrouter"
-    when: "any(Keywords, { # in ['deadlock', 'mutex', 'race', 'concurrency', 'atomic'] })"
+# Spot Market Arbitrage & Deal Discovery (v0.8.0)
+deals:
+  enabled: true
+  alert_threshold_pct: 30.0    # Minimum discount % relative to benchmark ($3.00/1M) to qualify as a deal
+  min_coding_index: 40.0       # Minimum Artificial Analysis coding benchmark score (or curated equivalent)
+  require_tools: true          # Ensure discounted models support structured tool/function calling
 
-  # Tier 2 (High Precedence): Multimodal Vision (Screenshots attached)
-  - name: "Cloud Vision"
-    model: "google/gemini-2.5-flash-lite"
+# Dynamic Tiers evaluated sequentially using expr-lang/expr syntax (First Match Wins)
+tiers:
+  # Tier 1 (High Precedence): Multimodal Vision (Screenshots / UI mockups)
+  - name: "Tier 1: Cloud Vision"
     provider: "openrouter"
+    model: "google/gemini-2.5-flash-lite"
     when: "HasImages"
 
-  # Tier 3: Local ROCm GPU (100% Free, Routine tasks < 16k context without images or tools)
-  - name: "Local ROCm GPU"
-    model: "qwen2.5-coder:14b"
+  # Tier 2: Local GPU (100% Free for quick tasks, single-file edits, and low context)
+  - name: "Tier 2: Local GPU Free (Gemma 4 12B QAT)"
     provider: "ollama"
-    when: "Tokens < 16000 && !HasImages && !HasTools"
+    model: "gemma4:12b-it-qat"
+    when: "Tokens < 16000 && !HasImages && Retries == 0"
     strip_images: true
+    max_context: 64000
 
-  # Tier 4: Fast Agentic Cloud (Large context >= 16k or active tools)
-  - name: "Cloud Agentic Fast"
-    model: "qwen/qwen3-coder-30b-a3b-instruct"
+  # Tier 2: Frontier-Grade Cloud Workhorse (Gemini 3.7 Flash Thinking)
+  - name: "Tier 2: Cloud Workhorse (Gemini 3.7 Flash)"
     provider: "openrouter"
-    when: "Tokens >= 16000 || HasTools"
+    model: "google/gemini-3.7-flash"
+    when: "Retries < 1"
 
-# Fallback Tier if no expr rules match
+# Default Tier: Frontier Rescue for Complex Architecture, Infinite Loop Breaks, & Retries >= 2
 default_tier:
-  name: "Cloud Fallback"
-  model: "~deepseek/deepseek-v4-flash-latest"
+  name: "Tier 4: Frontier Rescue (Claude Sonnet 5)"
   provider: "openrouter"
+  model: "anthropic/claude-sonnet-5"
   when: "true"

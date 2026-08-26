@@ -1,0 +1,144 @@
+{
+  "name": "nacho-flow",
+  "displayName": "Nacho Flow",
+  "description": "VS Code extension for the Nacho Flow AI routing gateway - Real-time cost visibility, route inspection, and circuit breaker management",
+  "version": "0.6.0",
+  "publisher": "dixieflatline76",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dixieflatline76/nacho-flow.git"
+  },
+  "icon": "resources/icons/nacho.png",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "nacho-flow.showDashboard",
+        "title": "Nacho Flow: Show Dashboard"
+      },
+      {
+        "command": "nacho-flow.refreshStats",
+        "title": "Nacho Flow: Refresh Statistics"
+      },
+      {
+        "command": "nacho-flow.openConfig",
+        "title": "Nacho Flow: Open Configuration Editor"
+      },
+      {
+        "command": "nacho-flow.resetCircuit",
+        "title": "Nacho Flow: Reset Circuit Breaker"
+      },
+      {
+        "command": "nacho-flow.setAuthToken",
+        "title": "Nacho Flow: Set Auth Token"
+      },
+      {
+        "command": "nacho-flow.runOptimizer",
+        "title": "Nacho Flow: Run Auto-Tuner & Optimize Routing"
+      },
+      {
+        "command": "nacho-flow.refreshDeals",
+        "title": "Nacho Flow: Refresh Heatseeker Deals"
+      },
+      {
+        "command": "nacho-flow.openSettings",
+        "title": "Nacho Flow: Open Controls in Sidebar"
+      },
+      {
+        "command": "nacho-flow.setTimeWindowToday",
+        "title": "Nacho Flow: Set Timeframe to Today"
+      },
+      {
+        "command": "nacho-flow.setTimeWindowWeek",
+        "title": "Nacho Flow: Set Timeframe to This Week"
+      },
+      {
+        "command": "nacho-flow.setTimeWindowMonth",
+        "title": "Nacho Flow: Set Timeframe to This Month"
+      },
+      {
+        "command": "nacho-flow.setTimeWindowAllTime",
+        "title": "Nacho Flow: Set Timeframe to All Time"
+      },
+      {
+        "command": "nacho-flow.openDocs",
+        "title": "Nacho Flow: Open User Guide & Documentation"
+      },
+      {
+        "command": "nacho-flow.openSupport",
+        "title": "Nacho Flow: Open Support & Community"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "nacho-flow-sidebar",
+          "title": "Nacho Flow",
+          "icon": "resources/icons/nacho.svg"
+        }
+      ]
+    },
+    "views": {
+      "nacho-flow-sidebar": [
+        {
+          "type": "webview",
+          "id": "nacho-flow.sidebarView",
+          "name": "Nacho Flow",
+          "icon": "resources/icons/nacho.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Nacho Flow",
+      "properties": {
+        "nachoFlow.daemonUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000",
+          "description": "URL of the Nacho Flow daemon (supports remote Tailscale/LAN URLs)"
+        },
+        "nachoFlow.authToken": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Bearer Auth Token for connecting to a protected Nacho Flow daemon"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "lint": "eslint src --ext ts",
+    "test": "jest",
+    "test:coverage": "c8 jest"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "@typescript-eslint/parser": "^6.7.0",
+    "@vscode/test-electron": "^2.3.0",
+    "@vscode/vsce": "^2.19.0",
+    "c8": "^12.0.0",
+    "esbuild": "^0.19.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.12",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "eventsource": "^2.0.2"
+  }
+}

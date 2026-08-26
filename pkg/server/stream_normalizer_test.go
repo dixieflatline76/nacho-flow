@@ -508,3 +508,59 @@ data: [DONE]
 		t.Errorf("expected final response text, got:\n%s", result)
 	}
 }
+
+func TestStreamNormalizer_UsageExtraction(t *testing.T) {
+	rawSSE := `data: {"id":"gen-usage-1","choices":[{"index":0,"delta":{"content":"Hello world!"}}]}
+
+data: {"id":"gen-usage-1","choices":[],"usage":{"prompt_tokens":58000,"completion_tokens":1200,"total_tokens":59200}}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+
+	_, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	usage, ok := norm.GetUsage()
+	if !ok {
+		t.Fatalf("expected usage to be extracted from final SSE chunk")
+	}
+	if usage.PromptTokens != 58000 {
+		t.Errorf("expected prompt_tokens 58000, got %d", usage.PromptTokens)
+	}
+	if usage.CompletionTokens != 1200 {
+		t.Errorf("expected completion_tokens 1200, got %d", usage.CompletionTokens)
+	}
+	if usage.TotalTokens != 59200 {
+		t.Errorf("expected total_tokens 59200, got %d", usage.TotalTokens)
+	}
+}
+
+func TestStreamNormalizer_FallbackTokenEstimation(t *testing.T) {
+	rawSSE := `data: {"id":"gen-fallback-1","choices":[{"index":0,"delta":{"content":"This is sixteen characters."}}]}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+
+	_, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	usage, ok := norm.GetUsage()
+	if ok {
+		t.Fatalf("expected ok=false for estimated fallback usage")
+	}
+	if usage.CompletionTokens == 0 {
+		t.Errorf("expected non-zero estimated completion tokens from emitted text")
+	}
+}

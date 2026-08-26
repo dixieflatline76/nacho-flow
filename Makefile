@@ -2,7 +2,7 @@ VERSION := $(shell sh -c "cat version.txt" 2> /dev/null || cmd /c "type version.
 BINARY_NAME=nacho-flow
 LDFLAGS_COMMON := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build test test-race test-cover fmt vet lint check ci bench tune tune-apply bump-patch bump-minor bump-major build-win-amd64 build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-all clean
+.PHONY: all build test test-race test-cover test-extension build-extension package-extension fmt vet lint check ci bench tune tune-apply bump-patch bump-minor bump-major build-win-amd64 build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-all clean
 
 all: check build
 
@@ -40,6 +40,20 @@ test-cover:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report written to coverage.html"
 
+test-extension:
+	@echo "Running VS Code extension test suite..."
+	cd extension && npm test
+
+build-extension:
+	@echo "Building VS Code extension..."
+	cd extension && npm run compile && node esbuild.config.js
+
+package-extension: build-extension
+	@echo "Packaging local VS Code extension..."
+	@mkdir -p extension/bin dist
+	go build -ldflags="$(LDFLAGS_COMMON)" -o extension/bin/$(BINARY_NAME) ./cmd/nacho-flow
+	cd extension && npx vsce package --no-dependencies --out ../dist/nacho-flow-$(VERSION).vsix
+
 bench:
 	@echo "Running high-concurrency benchmark suite..."
 	go run ./cmd/util/nacho_bench
@@ -52,8 +66,8 @@ tune-apply:
 	@echo "Applying tuned rules to config.yaml..."
 	go run ./cmd/nacho-flow tune --apply
 
-check: fmt vet sec test-race
-	@echo "✅ All code quality checks, security scans, and race tests passed!"
+check: fmt vet sec test-race test-extension
+	@echo "✅ All code quality checks, security scans, race tests, and extension tests passed!"
 
 ci: check build-all
 	@echo "🚀 CI Pipeline verification passed!"

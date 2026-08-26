@@ -54,11 +54,17 @@
                 <div class="doc-nav-item" id="nav-user_guide" onclick="loadDoc('user_guide', true)">
                     <span>📖</span> User Guide & Config
                 </div>
+                <div class="doc-nav-item" id="nav-extension_guide" onclick="loadDoc('extension_guide', true)">
+                    <span>🧩</span> VS Code Companion Extension
+                </div>
                 <div class="doc-nav-item" id="nav-architecture" onclick="loadDoc('architecture', true)">
                     <span>🏛️</span> Architecture & Design
                 </div>
                 <div class="doc-nav-item" id="nav-benchmarks" onclick="loadDoc('benchmarks', true)">
                     <span>⚡</span> Benchmarks & Stress Tests
+                </div>
+                <div class="doc-nav-item" id="nav-case_study" onclick="loadDoc('case_study', true)">
+                    <span>🔬</span> A/B Case Study Whitepaper
                 </div>
                 <div class="doc-nav-item" id="nav-tuning_guide" onclick="loadDoc('tuning_guide', true)">
                     <span>🎛️</span> Rule Tuning & Auto-Tuner
@@ -106,8 +112,10 @@
     <script>
         const docsMap = {
             'user_guide': { path: 'docs/USER_GUIDE.md', fallback: '../docs/USER_GUIDE.md', title: 'User Guide - Nacho Flow' },
+            'extension_guide': { path: 'docs/EXTENSION_USER_GUIDE.md', fallback: '../docs/EXTENSION_USER_GUIDE.md', title: 'VS Code Extension Guide - Nacho Flow' },
             'architecture': { path: 'docs/ARCHITECTURE.md', fallback: '../docs/ARCHITECTURE.md', title: 'Architecture - Nacho Flow' },
             'benchmarks': { path: 'docs/BENCHMARKS.md', fallback: '../docs/BENCHMARKS.md', title: 'Benchmarks - Nacho Flow' },
+            'case_study': { path: 'docs/BENCHMARKS_AB_CASE_STUDY.md', fallback: '../docs/BENCHMARKS_AB_CASE_STUDY.md', title: 'A/B Benchmark Whitepaper - Nacho Flow' },
             'tuning_guide': { path: 'docs/TUNING_GUIDE.md', fallback: '../docs/TUNING_GUIDE.md', title: 'Rule Tuning - Nacho Flow' },
             'developer_guide': { path: 'docs/DEVELOPER_GUIDE.md', fallback: '../docs/DEVELOPER_GUIDE.md', title: 'Developer Guide - Nacho Flow' },
             'roadmap': { path: 'ROADMAP.md', fallback: '../ROADMAP.md', title: 'Roadmap - Nacho Flow' }
@@ -158,6 +166,18 @@
                 if (!res.ok) throw new Error('Could not load markdown file');
 
                 let markdown = await res.text();
+
+                if (!window.cachedVersion) {
+                    try {
+                        const vRes = await fetch('version.txt');
+                        if (vRes.ok) {
+                            window.cachedVersion = (await vRes.text()).trim();
+                        }
+                    } catch (_) {}
+                }
+                if (window.cachedVersion) {
+                    markdown = markdown.replace(/\{\{VERSION\}\}/g, window.cachedVersion);
+                }
 
                 // Custom transformer for GitHub Alerts (> [!NOTE], > [!TIP], etc.)
                 markdown = markdown.replace(/>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n((?:>.*\n?)*)/gi, function(match, p1, p2) {
