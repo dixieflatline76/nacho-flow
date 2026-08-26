@@ -72,7 +72,7 @@ const (
 	ParamTools    = "tools"
 )
 
-// Spot Market, Arbitrage & Pricing constants.
+// Model Deals & Pricing constants.
 const (
 	PricingNamespaceSeparator     = "::"
 	TokensPerMillion              = 1_000_000.0

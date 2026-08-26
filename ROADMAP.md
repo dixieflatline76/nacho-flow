@@ -62,7 +62,7 @@ The core technical routing engine is fully operational, thoroughly tested, and d
 - [x] **Cost-Penalty Auto-Tuner (`pkg/tuner`)**: Empirical turn-record replay analyzing context thresholds and domain friction keywords with automated backup creation.
 - [ ] **Global Multi-Tier Decision List Induction (v2 Tuner)**: Advanced combinatorial optimizer synthesizing full $N$-tier decision lists simultaneously with precedence conflict resolution and shadow-route prevention.
 - [x] **Curated Model Gallery & OTA Sync (`pkg/telemetry/curation`)**: Embedded binary baseline + Over-The-Air GitHub semver updates with 3-tier capability classification.
-- [x] **"Heat Seeker" Spot Market Arbitrage Engine (`nacho-flow deals` / `nacho-flow heat-seek`)**: Automated promotion discovery and tier recommendation with elastic `text/tabwriter` CLI reporting and REST API endpoint (`/api/v1/deals`).
+- [x] **"Heat Seeker" Live Model Deals & Discovery Engine (`nacho-flow deals` / `nacho-flow heat-seek`)**: Automated promotion discovery and tier recommendation with elastic `text/tabwriter` CLI reporting and REST API endpoint (`/api/v1/deals`).
 - [x] **Dedicated Catalog Generator Tool (`cmd/util/gen_catalog`)**: Tooling to scrape, benchmark, and regenerate canonical repository and embedded catalogs.
 - [x] **Comprehensive Test Suite & CI Matrix**: 96%+ global statement coverage (strictly $\ge 95.0\%$ across every package) with zero race conditions (`-race`), zero security alerts (`gosec`), and multi-platform CI verification (macOS, Ubuntu, Windows).
 - [x] **Dedicated Homebrew Distribution**: Published Formula in [`dixieflatline76/homebrew-nacho-flow`](https://github.com/dixieflatline76/homebrew-nacho-flow) with automated background service blocks.

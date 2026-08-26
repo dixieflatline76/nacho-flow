@@ -185,7 +185,7 @@
 			if (p.baseUrl && p.id !== 'ollama' && p.id !== 'openrouter') {
 				metaText = `<div class="partner-meta-text">Target: <code>${escapeHtml(p.baseUrl)}</code></div>`;
 			} else if (p.id === 'openrouter') {
-				metaText = `<div class="partner-meta-text">Spot market arbitrage & frontier cloud models</div>`;
+				metaText = `<div class="partner-meta-text">Live model deals & frontier cloud endpoints</div>`;
 			}
 
 			const logoSvg = getProviderLogoSvg(p.id, p.icon);

@@ -12,7 +12,7 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 5. [IDE & Agent Integrations](#5-ide--agent-integrations)
 6. [Monitoring, Telemetry & Stats API](#6-monitoring-telemetry--stats-api)
 7. [Autonomous Rule Auto-Tuning (`nacho-flow tune`)](#7-autonomous-rule-auto-tuning-nacho-flow-tune)
-8. [🔥 Heat Seeker: Spot Market Arbitrage & Deal Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-spot-market-arbitrage--deal-scout-nacho-flow-deals--nacho-flow-heat-seek)
+8. [🔥 Heat Seeker: Live Model Deals & Discount Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-live-model-deals--discount-scout-nacho-flow-deals--nacho-flow-heat-seek)
 9. [🌶️ HotSauce Directives (In-Prompt Routing & Meta Commands)](#9-hotsauce-directives-in-prompt-routing--meta-commands)
 10. [🧩 VS Code Companion Extension & Management REST API](#10-vs-code-companion-extension--management-rest-api)
 
@@ -576,7 +576,7 @@ For comprehensive rule syntax, context variables, and recipes, see the full [Rul
 
 ---
 
-## 8. 🔥 Heat Seeker (`nacho-flow deals` / `nacho-flow heat-seek`)
+## 8. 🔥 Heat Seeker: Live Model Deals & Discount Scout (`nacho-flow deals` / `nacho-flow heat-seek`)
 
 Heat Seeker continuously scans the LLM market for models that can replace your active routing tiers at a fraction of the cost. Every recommendation is validated for tool-calling support, coding capability, and compatibility with your configured tier roles — then mapped to the specific tier it can substitute.
 
@@ -618,7 +618,7 @@ Fine-tune your deal scout thresholds:
 
 ```yaml
 deals:
-  enabled: true                  # Enable background spot market tracking
+  enabled: true                  # Enable background model deal tracking
   alert_threshold_pct: 50.0      # Minimum discount % required to surface deal (Default: 30.0%)
   min_coding_index: 60.0         # Minimum SWE-bench/coding score required (Default: 40.0)
   require_tools: true            # Only show models supporting tool/function calling (Default: true)

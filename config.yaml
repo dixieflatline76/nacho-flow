@@ -20,7 +20,7 @@ providers:
       HTTP-Referer: "https://github.com/dixieflatline76/nacho-flow"
       X-Title: "nacho-flow"
 
-# Spot Market Arbitrage & Deal Discovery (v0.8.0)
+# Heat Seeker: Live Model Deals & Discovery (v0.8.0)
 deals:
   enabled: true
   alert_threshold_pct: 30.0    # Minimum discount % relative to benchmark ($3.00/1M) to qualify as a deal

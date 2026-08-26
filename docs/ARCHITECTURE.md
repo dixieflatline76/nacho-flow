@@ -210,7 +210,7 @@ The auto-tuning engine uses an **Advisory-First**, pure Go empirical cost-penalt
 
 ## 6. Curated Model Gallery & 3-Tier Classification Subsystem (`pkg/telemetry/curation`, `pkg/telemetry/classifier.go`)
 
-Nacho Flow v0.8.0 introduces the **3-Tier Capability & Intelligence Pipeline** to accurately classify models for routing and spot arbitrage recommendations:
+Nacho Flow v0.8.0 introduces the **3-Tier Capability & Intelligence Pipeline** to accurately classify models for routing and live model deal recommendations:
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -240,9 +240,9 @@ Nacho Flow v0.8.0 introduces the **3-Tier Capability & Intelligence Pipeline** t
 
 ---
 
-## 7. Lock-Free Pricing Oracle & "Heat Seeker" Spot Arbitrage Engine (`pkg/telemetry/pricing.go`)
+## 7. Lock-Free Pricing Oracle & "Heat Seeker" Live Model Deals Engine (`pkg/telemetry/pricing.go`)
 
-The **Spot Market Arbitrage Engine** scans upstream providers for flash discounts, subsidized models, and free frontier endpoints:
+The **Heat Seeker Engine** scans upstream providers for flash discounts, subsidized models, and free frontier endpoints:
 
 1. **Lock-Free Read Path**: Pricing metadata is stored in an `atomic.Pointer[map[string]ModelMetadata]`. Proxy routing lookups execute lock-free in $\mathcal{O}(1)$ time ($< 40\text{ ns}$) with zero mutex contention.
 2. **Copy-On-Write Background Polling**: Provider plugins poll pricing endpoints asynchronously, cloning the metadata map on updates and swapping the atomic pointer.

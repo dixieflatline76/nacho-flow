@@ -10,7 +10,7 @@ This document details the performance characteristics, load-testing methodology,
 - **Pipeline Latency**: **~0.18 ms** (180.8 microseconds) end-to-end overhead per request.
 - **Extreme Concurrency**: Handled **1,000 parallel workers** with **100.0% success rate** (0 dropped connections, 0 errors).
 - **Memory Footprint**: Peak heap memory remained under **105 MB** sustaining up to 500 concurrent client streams.
-- **Telemetry & Spot Arbitrage Integrity**: Lock-free atomic pricing metadata map and asynchronous stats tracking operate with **zero race conditions** and **zero data drops**.
+- **Telemetry & Model Deals Integrity**: Lock-free atomic pricing metadata map and asynchronous stats tracking operate with **zero race conditions** and **zero data drops**.
 - **Real-World Complex Workloads**: Maintains **~30,800 req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek/Bare-JSON Strategy Pipeline).
 
 ---

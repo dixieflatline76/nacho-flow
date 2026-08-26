@@ -72,7 +72,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 ## ✨ Key Features
 
 * **⚡ High-Throughput Core**: Adds < 0.18 ms (180.8 µs) routing overhead and sustains 32,000+ req/s using lock-free atomic RCU state and pooled HTTP transports.
-* **🔥 "Heat Seeker" Spot Market Arbitrage & Curated Gallery**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
+* **🔥 "Heat Seeker" Live Model Deals & Curated Gallery**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
 * **🏛️ 3-Tier Curated Intelligence & OTA Sync**: Pre-packages verified SWE-bench & tool reliability scores (`//go:embed models.json`) with automatic Over-The-Air GitHub semver updates.
 * **🌐 Management REST API & Live SSE Telemetry Stream**: Exposes `/api/v1/info`, `/api/v1/events` (real-time SSE metrics), `/api/v1/routes` (circular buffer), `/api/v1/circuits`, `/api/v1/pricing`, `/api/v1/deals`, `/api/v1/config` (with 30s Memento rollback watchdog), and `/api/v1/tune` for programmatic management and VS Code extensions.
 * **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
