@@ -4,7 +4,7 @@
 **Author:** [@dixieflatline76](https://github.com/dixieflatline76) · [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)  
 **Date:** August 2026  
 **Document Classification:** Technical Whitepaper & Empirical Benchmark Report  
-**Artifact Version:** `1.2.0`
+**Document Version:** `1.0.0` (Official Release, Aligned with Nacho Flow `v0.6.0`)
 
 ---
 
@@ -21,7 +21,7 @@ Both runs were benchmarked against a **Direct Frontier Cloud Baseline** (`anthro
 ### Key Empirical Findings:
 * **The Hybrid Architecture Slashes Cloud Spend by 87%–92%**: Even the "expensive" Gemini Extended Thinking run achieved an **86.93% cost reduction** ($0.7604 total spend vs. $5.8185 Sonnet baseline), while Run A achieved a **91.82% cost reduction** ($0.2473 spend).
 * **Local GPUs Absorbed High-Frequency Reads at $0.00**: Over 90,000 to 216,000 background context tokens were offloaded to the local AMD Radeon GPU across routine file read and grep turns with zero API spend.
-* **The Hidden Finding: Failure Cost & Total Cost of Ownership (TCO)**: While Run A was ~51¢ cheaper in raw token spend, it failed the feature implementation due to brittle YAML parsing and circular mock tests, necessitating human engineering intervention (~$12.50 to $25.00 in developer time). Run B succeeded on the first pass with zero rework. **The cheaper model was significantly more expensive when factoring in failure recovery.**
+* **The Hidden Finding: Failure Cost & Total Cost of Ownership (TCO)**: While Run A was ~51¢ cheaper in raw token spend, it failed the feature implementation due to brittle YAML parsing and circular mock tests, necessitating human engineering intervention ($15.00 based on 15 minutes of recovery @ $60/hr). Run B succeeded on the first pass with zero rework. **The cheaper model was significantly more expensive when factoring in failure recovery.**
 
 ---
 
@@ -52,7 +52,9 @@ Industry analysis overwhelmingly fixates on raw cost-per-million-tokens. However
 $$\text{TCO} = \text{CloudTokenSpend} + \text{FailureRecoveryCost}$$
 $$\text{FailureRecoveryCost} = \text{HumanDebugHours} \times \text{EngineerHourlyRate} + \text{WastedTurnReruns}$$
 
-When an inexpensive model outputs a hallucinated regular expression, circular unit tests, or broken AST parser, the developer is forced out of flow state to manually debug, revert commits, and re-prompt the agent. A 15-minute human debugging loop for an engineer billed at $60/hr incurs **$15.00 in labor cost**, completely wiping out 50 cents of token savings.
+* **Stated Baseline Assumption**: We define the standard failure recovery penalty as **$15.00 USD**, representing 15 minutes of active human developer intervention (context switching, manual regex debugging, YAML document restoration, and re-prompting) for a mid-level software engineer billed at a conservative rate of **$60.00 / hour ($1.00 / minute)**.
+
+When an inexpensive model outputs a hallucinated regular expression, circular unit tests, or broken AST parser, the developer is forced out of flow state. This $15.00 engineering intervention penalty completely dwarfs 51 cents of token savings.
 
 ---
 
@@ -116,8 +118,8 @@ Effective Cost Reduction (%)   | 91.82% SAVINGS                | 86.93% SAVINGS
 YAML Parser Implementation     | ❌ FAILED (Naive prefix match)| 🏆 PERFECT (Regex State Machine)
 QuickPick UX Labels            | ❌ POOR (Internal enum slugs) | 🏆 EXCELLENT (Live Tier Names + Recs)
 Unit Test Rigor & Integrity    | ❌ POOR (Circular fake mocks) | 🏆 RIGOROUS (Real YAML Mutation Tests)
-Human Debugging Required       | ~15-30 min manual rework      | 0 minutes (Zero rework)
-Total Cost of Ownership (TCO)  | ~$15.25 (with human debug)    | $0.76 (True autonomous completion)
+Human Debugging Required       | ~15 min ($15.00 recovery)     | 0 minutes (Zero rework)
+Total Cost of Ownership (TCO)  | $15.2473 (with failure cost)  | $0.7604 (Autonomous first-pass pass)
 =======================================================================================================
 ```
 
@@ -276,8 +278,16 @@ Scaling these empirical findings across professional engineering teams demonstra
 
 ---
 
-## 7. Conclusions & Strategic Recommendations
+## 7. Conclusions, Limitations & Strategic Recommendations
 
+### 7.1 Strategic Conclusions
 1. **Routing Intelligence Trumps Raw Model Size**: Run A used a 480B parameter model family that struggled with subtle regex state machine logic. Run B used a compact, high-efficiency thinking model (`gemini-3.7-flash` Extended Thinking) and completed the task flawlessly. Routing to the *right* model architecture matters more than routing to the largest parameter count.
 2. **Failure Cost Dominates Token Cost**: In real-world software engineering, a model that is 3x cheaper per token is a net financial loss if it forces human debugging loops. True cost optimization requires balancing token prices against first-pass success rates.
 3. **The Definitive 2026 Pareto Frontier**: The winning engineering strategy is neither 100% local nor 100% cloud. The optimal architecture pairs **Local GPU inference ($0.00)** for high-frequency context absorption with **Frontier Extended Thinking models** for complex logic, mediated by a low-latency edge gateway like **Nacho Flow**.
+
+### 7.2 Limitations & Threats to Validity
+In adherence to empirical scientific rigor, we acknowledge the following boundaries of this study:
+* **Single-Task Feature Scope**: The benchmark evaluated one complete, multi-file software engineering task (interactive UI, CSS, VS Code QuickPick, comment-preserving YAML AST manipulation, and Jest unit tests). While representative of full-stack agentic workflows, broader evaluation across backend systems, database migrations, and compiler optimization tasks is ongoing.
+* **Model Sample Size**: This study specifically compared `qwen/qwen3-coder` against `google/gemini-3.7-flash` with Extended Thinking. Future evaluations will incorporate additional frontier reasoning architectures (e.g. DeepSeek-R1, OpenAI o3-mini, and Claude 3.7 Sonnet).
+* **Workstation Hardware Profile**: Local GPU inference was benchmarked exclusively on an AMD Radeon RX 9070 XT (16 GB VRAM) running quantized `gemma4:12b-it-qat` via AMD ROCm. Workstations with different VRAM constraints (e.g. 8 GB RTX 4060 or 64 GB Mac Studio) will exhibit different local threshold boundaries.
+* **Agent Harness Coupling**: Autonomous execution was driven by Roo Code. While Nacho Flow provides a standardized OpenAI-compatible interface, variations in prompt engineering and tool invocation loops across Cline, Cursor, and Aider may yield minor variance in turn counts.
