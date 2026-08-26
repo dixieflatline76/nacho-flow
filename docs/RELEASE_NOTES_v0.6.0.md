@@ -45,8 +45,8 @@ Nacho Flow **v0.6.0** is a major platform milestone delivering the official VS C
 ---
 
 ### ⚖️ Licensing & Commercial Dual-License
-* **GNU AGPL-3.0 + Enterprise Safe Harbor**: Nacho Flow is 100% free and open-source under AGPL-3.0 with an explicit **Additional Use Grant** permitting organizations to self-host internally without copyleft impact on private codebases.
-* **Commercial & OEM Licensing**: Commercial licenses available for organizations embedding Nacho Flow into proprietary products or hosting commercial SaaS platforms ([COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) / `karl@spicebox.dev`).
+* **GNU AGPL-3.0 + API Interoperability Exception**: The core Go daemon is licensed under AGPL-3.0 with an explicit **Section 7 Exception** ensuring calling applications and private prompts are not considered derivative works. The official VS Code Extension is licensed under **MIT** for zero-friction developer adoption.
+* **Commercial & OEM Licensing**: Dedicated commercial licenses available for enterprise fleet management, corporate AGPL exemptions, priority support SLAs, and closed-source software embedding ([COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) / `karl@spicebox.dev`).
 
 ---
 

@@ -610,25 +610,16 @@ copy of the Program in return for a fee.
 
 ----------------------------------------------------------------------
 
-                   ADDITIONAL PERMISSIONS & USE GRANT
-                (Enterprise Internal Self-Hosting Safe Harbor)
+           ADDITIONAL PERMISSION UNDER AGPL-3.0 SECTION 7
+                   (API Client Interoperability)
 
 Copyright (c) 2026 Karl Kwong / Spicebox (<https://spicebox.dev>).
 
 Pursuant to Section 7 of the GNU Affero General Public License v3.0, the
 copyright holder grants the following Additional Permission:
 
-1. Enterprise Internal Self-Hosting Safe Harbor:
-   You are granted permission to install, self-host, and execute Nacho Flow
-   internally within your organization, enterprise, agency, or team for internal
-   development, testing, evaluation, and internal production routing workloads
-   without being required to open-source or disclose your organization's internal
-   codebases, proprietary software, or internal AI agent workflows.
-
-2. Restriction on Commercial Hosted Services:
-   This Additional Permission does NOT grant any right to provide, host, package,
-   or distribute Nacho Flow as a publicly accessible hosted cloud service,
-   multi-tenant commercial SaaS, or competing managed routing platform to third
-   parties. Offering Nacho Flow as a commercial service or embedding it into a
-   closed-source commercial product requires a separate Commercial License from
-   Spicebox (<karl@spicebox.dev>).
+Conveyance of this Program or interaction with it exclusively over its
+public OpenAI-compatible network APIs (/v1/*) or IPC telemetry streams
+does not cause calling client applications, autonomous agent workflows,
+prompt inputs, or private models to be deemed derivative works under
+this License.

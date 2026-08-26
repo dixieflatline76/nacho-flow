@@ -8,40 +8,42 @@ Nacho Flow is developed and maintained by **Karl Kwong / Spicebox** ([spicebox.d
 
 Nacho Flow is available under two distinct licensing options:
 
-1. **Free & Open-Source (GNU AGPL-3.0 with Internal Use Grant)**:
-   * **Free for Individuals, Teams & Internal Enterprise Self-Hosting**: You can freely download, run, and self-host Nacho Flow for internal development and production workloads without any fee or license requirement.
-   * **Copyleft Requirement for Hosted Services**: If you modify Nacho Flow and host it as a publicly accessible service to third parties, you must release your full stack under AGPL-3.0.
+1. **Free & Open-Source (GNU AGPL-3.0 with API Interoperability Exception)**:
+   * **Free for Individuals, Developers & Open-Source Projects**: Anyone can freely download, compile, and run Nacho Flow under GNU AGPL-3.0.
+   * **API Interoperability**: Calling Nacho Flow's OpenAI-compatible `/v1/*` endpoints from external applications, agent harnesses, or IDEs does not contaminate your private code.
+   * **Reciprocal Copyleft**: Any organization that modifies or conveys Nacho Flow over a network must provide complete source code under AGPL-3.0.
 
 2. **Spicebox Commercial & Enterprise OEM License**:
-   * For organizations, commercial SaaS providers, and platform vendors who wish to embed Nacho Flow into proprietary products or provide commercial hosted routing services without AGPL-3.0 copyleft obligations.
+   * The official commercial agreement for organizations that require closed-source deployment, corporate AGPL exemptions, enterprise fleet management, dedicated support SLAs, and legal indemnification.
 
 ---
 
 ## 📋 Who Needs a Commercial License?
 
-You require a commercial license if you intend to:
-* **Embed Nacho Flow into a Closed-Source Commercial Product**: Distribute Nacho Flow as part of a proprietary software package, developer tool, or hardware appliance.
-* **Offer a Commercial Hosted SaaS / Managed Service**: Provide managed AI routing, proxy, or control plane services to external third parties for a fee.
-* **Comply with Corporate "No-AGPL" Policies**: Organizations whose legal or procurement policies prohibit AGPL software in their production supply chain.
+A commercial license is required if your organization intends to:
+* **Deploy Across Enterprise Fleets & Server Infrastructure**: Run Nacho Flow as a centralized multi-seat developer gateway without AGPL compliance overhead.
+* **Embed Nacho Flow into Proprietary / Commercial Products**: Distribute Nacho Flow as an embedded component of closed-source developer tools, SaaS platforms, or hardware appliances.
+* **Offer Commercial Hosted SaaS / Managed Routing**: Host Nacho Flow as a multi-tenant commercial routing service or managed gateway for external customers.
+* **Comply with Corporate "No-AGPL" Procurement Policies**: Organizations whose legal policies prohibit AGPL software in internal or customer-facing infrastructure.
 
 ---
 
 ## 🎁 What is Included in the Commercial License?
 
-* **Complete AGPL Waiver**: Royalty-free commercial distribution and execution rights free from AGPL copyleft or source disclosure obligations.
-* **Enterprise Control Plane & Fleet Hub Access**: Direct integration with centralized fleet management, SSO, and team budget auditing.
-* **Full IP & Legal Indemnification**: Comprehensive intellectual property warranty and defense indemnification against copyright/patent claims.
-* **Priority Enterprise Support**: Dedicated engineering support SLA, priority feature roadmap requests, and direct communication channels.
-* **Custom OEM Embedding**: Tailored binary packaging, customized branding, and custom upstream inference adapters.
+* **Full AGPL-3.0 Exemption**: Complete release from copyleft source disclosure obligations and network reciprocity requirements.
+* **Enterprise Control Plane & Fleet Hub**: Access to centralized team spend dashboards, SSO/SAML integration, and fleet-wide policy synchronization.
+* **Comprehensive IP Indemnification**: Full intellectual property warranty and legal defense indemnification against third-party copyright and patent claims.
+* **Dedicated Enterprise Support & SLAs**: Guaranteed response times, direct engineering escalation channels, and priority feature roadmap input.
+* **Custom OEM Tailoring**: Custom upstream adapters, white-label binary builds, and dedicated configuration tuning.
 
 ---
 
-## 📬 Commercial Inquiries & Pricing
+## 📬 Commercial Inquiries & Evaluation Licenses
 
-Commercial licenses are structured on an annual subscription or OEM royalty model based on fleet size and deployment scope.
+Commercial agreements are structured as annual subscriptions based on fleet size or custom OEM royalty terms.
 
-To discuss commercial licensing, custom terms, or request an evaluation agreement, please contact:
+To discuss licensing options, request an enterprise evaluation license, or review custom commercial terms, please contact:
 
 * **Email**: [`karl@spicebox.dev`](mailto:karl@spicebox.dev)
 * **Website**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)
-* **Publisher**: Spicebox / Karl Kwong
+* **Publisher**: Karl Kwong / Spicebox

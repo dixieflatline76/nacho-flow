@@ -279,15 +279,16 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 
 Nacho Flow is available under a **Dual-Licensing Model**:
 
-1. **Free & Open-Source (GNU AGPL-3.0 with Additional Use Grant)**:
-   * 100% free for individual developers, open-source projects, and **internal enterprise self-hosting** (see our [Enterprise Safe Harbor in LICENSE](LICENSE)).
-   * If you distribute or host a modified version as a public cloud service to third parties, you must make your complete source code available under AGPL-3.0.
+1. **Free & Open-Source (GNU AGPL-3.0 with API Interoperability Exception)**:
+   * 100% free for individual developers, open-source projects, and local evaluation under GNU AGPL-3.0.
+   * **API Interoperability**: Calling Nacho Flow's OpenAI-compatible APIs (`/v1/*`) from client applications, agent harnesses, or IDEs does not cause your private code to be deemed a derivative work (see our [Section 7 Exception in LICENSE](LICENSE)).
+   * **Reciprocal Copyleft**: Modifying and distributing or network-hosting Nacho Flow requires complete source code disclosure under AGPL-3.0.
 2. **Spicebox Commercial & Enterprise OEM License**:
-   * For organizations embedding Nacho Flow into closed-source proprietary software, commercial SaaS platforms, or requiring custom legal indemnification and priority support SLAs.
+   * For organizations requiring enterprise fleet deployments, closed-source software embedding, commercial SaaS hosting, corporate "No-AGPL" compliance, priority SLAs, and full IP indemnification.
    * See **[COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)** or contact [`karl@spicebox.dev`](mailto:karl@spicebox.dev).
 
 Contributions are accepted under our **[Contributor License Agreement (.github/CLA.md)](.github/CLA.md)**.
 
 ---
 
-Copyright © 2026 [Karl Kwong / Spicebox](https://spicebox.dev) · Licensed under **GNU AGPL-3.0** with Commercial Dual-Licensing.
+Copyright © 2026 [Karl Kwong / Spicebox](https://spicebox.dev) · Licensed under **GNU AGPL-3.0** with Commercial Dual-Licensing. (VS Code Extension licensed under **MIT**).
