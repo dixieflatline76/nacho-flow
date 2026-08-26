@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
@@ -177,10 +178,13 @@ func TestRun_FullExecution(t *testing.T) {
 	}
 
 	// Write error paths
-	_ = run([]string{"-out", tempDir}, server.URL)
-	_ = run([]string{"-embed-out", tempDir}, server.URL)
+	_ = run([]string{"-out", tempDir, "-embed-out", embedFile}, server.URL)
+	_ = run([]string{"-out", outFile, "-embed-out", tempDir}, server.URL)
 
-	// Test main() execution with intercepted logFatal
+	// Test main() execution with intercepted logFatal and isolated args
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"gen_catalog", "-out", outFile, "-embed-out", embedFile}
 	oldLogFatal := logFatal
 	defer func() { logFatal = oldLogFatal }()
 	logFatal = func(format string, v ...interface{}) {}
