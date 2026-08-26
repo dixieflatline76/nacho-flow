@@ -397,8 +397,15 @@ func TestConfig_AutoBootstrap_ExistingConfigUntouched(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("APPDATA", tempDir)
 	t.Setenv("XDG_CONFIG_HOME", tempDir)
+	t.Setenv("HOME", tempDir)
+	t.Setenv("USERPROFILE", tempDir)
 
-	configDir := filepath.Join(tempDir, "nacho-flow")
+	userConfig, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("UserConfigDir failed: %v", err)
+	}
+
+	configDir := filepath.Join(userConfig, "nacho-flow")
 	if err := os.MkdirAll(configDir, 0750); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
