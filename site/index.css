@@ -962,6 +962,16 @@ footer {
     line-height: 1.75;
 }
 
+.markdown-body img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+    margin: 1.5rem auto;
+    display: block;
+}
+
 .markdown-body ul, .markdown-body ol {
     margin-bottom: 1.5rem;
     padding-left: 1.8rem;

@@ -33,7 +33,11 @@ jobs:
       - name: Prepare Site Distribution
         run: |
           mkdir -p site/docs
-          cp docs/*.md site/docs/
+          cp -r docs/* site/docs/
+          mkdir -p site/benchmarks
+          cp -r docs/benchmarks/* site/benchmarks/ 2>/dev/null || true
+          mkdir -p site/images
+          cp -r images/* site/images/ 2>/dev/null || true
           cp ROADMAP.md site/ROADMAP.md
           cp version.txt site/version.txt
           VERSION=$(cat version.txt | tr -d '[:space:]')
