@@ -596,9 +596,21 @@ providers:
 		_ = p.run(mock)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < 40; i++ {
+		p.mu.Lock()
+		srv := p.server
+		p.mu.Unlock()
+		if srv != nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	_ = p.Stop(mock)
-	<-done
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("program.run timed out on Stop")
+	}
 
 	*portFlag = 0
 	*configPathFlag = ""
@@ -742,9 +754,21 @@ providers:
 		_ = p.run(mock)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	for i := 0; i < 40; i++ {
+		p.mu.Lock()
+		srv := p.server
+		p.mu.Unlock()
+		if srv != nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	_ = p.Stop(mock)
-	<-done
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("program.run timed out on Stop")
+	}
 	*configPathFlag = ""
 }
 

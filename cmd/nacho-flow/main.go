@@ -164,6 +164,9 @@ func (p *program) run(s service.Service) error {
 	}
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
+	p.mu.Lock()
+	p.cancelBg = bgCancel
+	p.mu.Unlock()
 	oracle.StartBackgroundSync(bgCtx, 24*time.Hour)
 
 	// Trigger async OTA catalog refresh
@@ -285,6 +288,10 @@ func (p *program) run(s service.Service) error {
 	}
 
 	p.mu.Lock()
+	if bgCtx.Err() != nil {
+		p.mu.Unlock()
+		return nil
+	}
 	p.cancelBg = bgCancel
 	p.store = diskStore
 	p.tracker = tracker
