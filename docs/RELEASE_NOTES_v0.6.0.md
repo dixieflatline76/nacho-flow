@@ -10,7 +10,7 @@ Nacho Flow **v0.6.0** is a major platform milestone delivering the official VS C
 * **Full-Page Financial Dashboard**: Real-time interactive glassmorphic webview displaying live cost savings graphs, active route inspection, circuit breaker health, and live YAML configuration editing.
 * **Separate Local & Remote Settings**: Independent configuration state preserving remote host URLs and auth tokens when toggling between workstation and remote GPU servers.
 * 💡 **Why It Matters (The "So What?")**:
-  * **For Developers**: You never have to switch to a terminal or edit JSON configs. One click connects Roo Code, Cursor, or Cline to your local or remote GPU gateway.
+  * **For Developers**: Control everything from your editor — launch daemons with live logs, hot-reload `config.yaml` rules with real-time syntax validation, and connect Roo Code, Cursor, or Cline in one click.
   * **For IT Admins**: Engineers on managed laptops can connect to shared on-premise GPU rigs over LAN/VPN with encrypted credential storage in the OS keychain.
 
 ---
