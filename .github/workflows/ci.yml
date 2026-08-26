@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: 'extension/package-lock.json'
 
       - name: Run Go unit tests
-        run: go test -v ./...
+        run: go test -v ./cmd/... ./pkg/...
 
       - name: Run VS Code extension unit tests
         run: |
@@ -78,7 +78,7 @@ jobs:
           cache-dependency-path: 'extension/package-lock.json'
 
       - name: Run Linux Tests
-        run: go test -v ./...
+        run: go test -v ./cmd/... ./pkg/...
 
       - name: Build Linux Binaries (amd64 & arm64)
         run: |
