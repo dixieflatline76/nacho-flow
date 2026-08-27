@@ -221,7 +221,7 @@ func (m *mockService) Install() error                                         { 
 func (m *mockService) Uninstall() error                                       { return nil }
 func (m *mockService) Logger(errs chan<- error) (service.Logger, error)       { return nil, nil }
 func (m *mockService) SystemLogger(errs chan<- error) (service.Logger, error) { return nil, nil }
-func (m *mockService) Run() error                                            { return nil }
+func (m *mockService) Run() error                                             { return nil }
 func (m *mockService) String() string                                         { return "mock" }
 func (m *mockService) Platform() string                                       { return "mock" }
 func (m *mockService) Status() (service.Status, error)                        { return service.StatusRunning, nil }
@@ -834,17 +834,3 @@ func TestProgram_Run_DaemonModeConfigError(t *testing.T) {
 		t.Errorf("expected error in daemon mode when config file does not exist, got nil")
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

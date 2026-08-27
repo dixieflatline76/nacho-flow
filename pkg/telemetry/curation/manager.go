@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/safeio"
 	"golang.org/x/mod/semver"
 )
 
@@ -60,10 +61,11 @@ func (m *Manager) loadInitialCatalog() {
 
 	var cacheCat CuratedCatalog
 	cacheValid := false
-	cachePath := filepath.Join(m.cacheDir, contract.DefaultCatalogFileName)
-	if data, err := os.ReadFile(cachePath); err == nil {
-		if json.Unmarshal(data, &cacheCat) == nil && cacheCat.Version != "" {
-			cacheValid = true
+	if sbd, err := safeio.NewSafeBoundedDir(m.cacheDir); err == nil {
+		if data, readErr := sbd.ReadFile(contract.DefaultCatalogFileName); readErr == nil {
+			if json.Unmarshal(data, &cacheCat) == nil && cacheCat.Version != "" {
+				cacheValid = true
+			}
 		}
 	}
 
@@ -134,11 +136,11 @@ func (m *Manager) SyncOTA(ctx context.Context) (bool, error) {
 		}
 	}
 
-	// Persist to disk cache
-	_ = os.MkdirAll(m.cacheDir, 0750)
-	cachePath := filepath.Join(m.cacheDir, contract.DefaultCatalogFileName)
-	if data, err := json.MarshalIndent(remoteCat, "", "  "); err == nil {
-		_ = os.WriteFile(cachePath, data, 0600)
+	// Persist to disk cache using SafeBoundedDir
+	if sbd, sbdErr := safeio.NewSafeBoundedDir(m.cacheDir); sbdErr == nil {
+		if data, marshalErr := json.MarshalIndent(remoteCat, "", "  "); marshalErr == nil {
+			_ = sbd.AtomicWrite(contract.DefaultCatalogFileName, data, 0600)
+		}
 	}
 
 	// Atomically swap in-memory catalog pointer

@@ -6,7 +6,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
-func TestFullRooCodeAgentTurnSequence(t *testing.T) {
+func TestFullZooCodeAgentTurnSequence(t *testing.T) {
 	tiers := []contract.Tier{
 		// Tier 1: Concurrency & Reasoning
 		{
@@ -57,7 +57,7 @@ func TestFullRooCodeAgentTurnSequence(t *testing.T) {
 		t.Errorf("Turn 1 expected 'Cloud Vision', got '%s'", r1.Name)
 	}
 
-	// Turn 2: Roo Code sends tool definitions for list_files -> must route to Cloud Agentic Fast tier
+	// Turn 2: Zoo Code sends tool definitions for list_files -> must route to Cloud Agentic Fast tier
 	turn2 := contract.RequestContext{Tokens: 1500, HasImages: false, HasTools: true}
 	r2, _ := eval.SelectTier(turn2)
 	if r2.Name != "Cloud Agentic Fast" {

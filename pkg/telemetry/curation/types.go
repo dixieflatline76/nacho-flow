@@ -25,8 +25,8 @@ type ModelCuratedProfile struct {
 
 // CuratedCatalog represents the canonical JSON structure for all curated model intelligence.
 type CuratedCatalog struct {
-	Version     string                          `json:"version"` // e.g. "v1.0.0" (Semver)
-	UpdatedAt   time.Time                       `json:"updated_at"`
-	Description string                          `json:"description"`
+	Version     string                         `json:"version"` // e.g. "v1.0.0" (Semver)
+	UpdatedAt   time.Time                      `json:"updated_at"`
+	Description string                         `json:"description"`
 	Models      map[string]ModelCuratedProfile `json:"models"`
 }

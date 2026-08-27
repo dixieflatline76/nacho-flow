@@ -52,11 +52,11 @@ func init() {
 }
 
 var (
-	configPathFlag    = flag.String("config", "", "Path to config.yaml file")
-	portFlag          = flag.Int("port", 0, "Port to listen on (overrides config.yaml)")
-	logLevelFlag      = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
-	versionFlag       = flag.Bool("version", false, "Print version and exit")
-	vFlag             = flag.Bool("v", false, "Print version and exit")
+	configPathFlag         = flag.String("config", "", "Path to config.yaml file")
+	portFlag               = flag.Int("port", 0, "Port to listen on (overrides config.yaml)")
+	logLevelFlag           = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	versionFlag            = flag.Bool("version", false, "Print version and exit")
+	vFlag                  = flag.Bool("v", false, "Print version and exit")
 	logFatal               = log.Fatal
 	applyTuningFunc        = tuner.ApplyTuning
 	serviceNewFunc         = service.New

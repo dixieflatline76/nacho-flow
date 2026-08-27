@@ -10,9 +10,9 @@
 
 ## 🔬 Executive Summary
 
-Autonomous AI coding agents (such as **Roo Code**, **Cline**, **Cursor**, and **Aider**) operate via iterative feedback loops where accumulated conversational history, project file maps, terminal outputs, and diagnostics are re-transmitted on every single turn. This architectural pattern induces a severe **"Context Snowball"**, causing routine turn costs (e.g., inspecting a log, checking a syntax definition, or executing `git status`) to cost upwards of $2.00–$3.00 per prompt at frontier cloud rates.
+Autonomous AI coding agents across IDE extensions (**Zoo Code**, **Cline**) and CLI terminal harnesses (**OpenCode**, **Aider**) operate via iterative feedback loops where accumulated conversational history, project file maps, terminal outputs, and diagnostics are re-transmitted on every single turn. This architectural pattern induces a severe **"Context Snowball"**, causing routine turn costs (e.g., inspecting a log, checking a syntax definition, or executing `git status`) to cost upwards of $2.00–$3.00 per prompt at frontier cloud rates.
 
-This whitepaper presents an empirical, head-to-head A/B case study evaluating **Nacho Flow**—a high-performance, deterministic semantic AI gateway built in pure Go. We tasked Roo Code with implementing a non-trivial, multi-file software engineering feature in a TypeScript/VS Code extension repository under two hybrid routing configurations:
+This whitepaper presents an empirical, head-to-head A/B case study evaluating **Nacho Flow**—a high-performance, deterministic semantic AI gateway built in pure Go. We tasked Zoo Code with implementing a non-trivial, multi-file software engineering feature in a TypeScript/VS Code extension repository under two hybrid routing configurations:
 1. **Run A (Cost-Optimized Hybrid)**: Local GPU offload (`gemma4:12b-it-qat` on AMD ROCm) + Cloud Fast Coder (`qwen/qwen3-coder`).
 2. **Run B (Reasoning-Optimized Hybrid)**: Local GPU offload (`gemma4:12b-it-qat` on AMD ROCm) + Cloud Frontier Reasoning (`google/gemini-3.7-flash` with Extended Thinking).
 
@@ -82,7 +82,7 @@ We selected a real-world, complex full-stack feature within the **Nacho Flow VS 
 | **Local Inference Runtime** | Ollama via AMD ROCm / DirectML |
 | **Local Quantized Model** | `gemma4:12b-it-qat` ($0.00 marginal cost) |
 | **Cloud Proxy Gateway** | Nacho Flow v0.6.0 (`http://127.0.0.1:8000/v1`) |
-| **Agent Harness** | Roo Code (VS Code Extension) |
+| **Agent Harness** | Zoo Code (VS Code Extension) |
 | **Baseline Reference Pricing** | Anthropic Claude 3.5 Sonnet ($3.00 / 1M Input Tokens) |
 
 ### 2.3 Empirical Legitimacy: Real Work vs. Synthetic Puzzles
@@ -91,7 +91,7 @@ Unlike conventional AI coding benchmarks (such as HumanEval or synthetic single-
 | Dimension | Synthetic AI Benchmarks | This Empirical Case Study |
 | :--- | :--- | :--- |
 | **Task Type** | Isolated 10-line algorithmic puzzles | Real multi-file feature implementation |
-| **Agent Autonomy** | Scripted single prompts | Autonomous agent (Roo Code) driving tools |
+| **Agent Autonomy** | Scripted single prompts | Autonomous agent (Zoo Code) driving tools |
 | **Infrastructure** | Direct cloud API calls | Hybrid edge routing via Nacho Flow gateway |
 | **Controlled Variables** | Only prompt wording | Identical starting workspace, files, and local GPU |
 | **Outcomes Measured** | Binary Pass/Fail string match | Tokens, latency, cost, AST robustness, and test integrity |
@@ -303,4 +303,4 @@ In adherence to empirical scientific rigor, we acknowledge the following boundar
 * **Single-Task Feature Scope**: The benchmark evaluated one complete, multi-file software engineering task (interactive UI, CSS, VS Code QuickPick, comment-preserving YAML AST manipulation, and Jest unit tests). While representative of full-stack agentic workflows, broader evaluation across backend systems, database migrations, and compiler optimization tasks is ongoing.
 * **Model Sample Size**: This study specifically compared `qwen/qwen3-coder` against `google/gemini-3.7-flash` with Extended Thinking. Future evaluations will incorporate additional frontier reasoning architectures (e.g. DeepSeek-R1, OpenAI o3-mini, and Claude 3.7 Sonnet).
 * **Workstation Hardware Profile**: Local GPU inference was benchmarked exclusively on an AMD Radeon RX 9070 XT (16 GB VRAM) running quantized `gemma4:12b-it-qat` via AMD ROCm. Workstations with different VRAM constraints (e.g. 8 GB RTX 4060 or 64 GB Mac Studio) will exhibit different local threshold boundaries.
-* **Agent Harness Coupling**: Autonomous execution was driven by Roo Code. While Nacho Flow provides a standardized OpenAI-compatible interface, variations in prompt engineering and tool invocation loops across Cline, Cursor, and Aider may yield minor variance in turn counts.
+* **Agent Harness Coupling**: Autonomous execution was driven by Zoo Code. While Nacho Flow provides a standardized OpenAI-compatible interface, variations in prompt engineering and tool invocation loops across other IDE extensions (such as Cline) and CLI agents (such as OpenCode and Aider) may yield minor variance in turn counts.

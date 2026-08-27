@@ -119,8 +119,10 @@ type HelpCommandHandler struct {
 	registry *MetaRegistry
 }
 
-func (h *HelpCommandHandler) Name() string        { return "help" }
-func (h *HelpCommandHandler) Description() string { return "Show available HotSauce directives and usage" }
+func (h *HelpCommandHandler) Name() string { return "help" }
+func (h *HelpCommandHandler) Description() string {
+	return "Show available HotSauce directives and usage"
+}
 func (h *HelpCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("🌶️ **Nacho Flow: HotSauce Directives**\n\n")
@@ -146,8 +148,10 @@ func (h *HelpCommandHandler) Execute(ctx context.Context, reqCtx contract.Reques
 // TiersCommandHandler renders all active tiers and models from config.yaml.
 type TiersCommandHandler struct{}
 
-func (t *TiersCommandHandler) Name() string        { return "tiers" }
-func (t *TiersCommandHandler) Description() string { return "List your configured routing tiers and models" }
+func (t *TiersCommandHandler) Name() string { return "tiers" }
+func (t *TiersCommandHandler) Description() string {
+	return "List your configured routing tiers and models"
+}
 func (t *TiersCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
 	if env.Config == nil || len(env.Config.Tiers) == 0 {
 		return "🌮 **Configured Tiers**\n\nNo tiers currently configured in `config.yaml`.", nil
@@ -172,8 +176,10 @@ func (t *TiersCommandHandler) Execute(ctx context.Context, reqCtx contract.Reque
 // StatusCommandHandler renders live uptime, circuit breaker states, and session telemetry.
 type StatusCommandHandler struct{}
 
-func (s *StatusCommandHandler) Name() string        { return "status" }
-func (s *StatusCommandHandler) Description() string { return "View daemon health, circuit breakers, and savings" }
+func (s *StatusCommandHandler) Name() string { return "status" }
+func (s *StatusCommandHandler) Description() string {
+	return "View daemon health, circuit breakers, and savings"
+}
 func (s *StatusCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
 	uptime := "N/A"
 	if !env.StartTime.IsZero() {
@@ -207,8 +213,10 @@ func (s *StatusCommandHandler) Execute(ctx context.Context, reqCtx contract.Requ
 // DealsCommandHandler renders active spot deals from the Pricing Oracle.
 type DealsCommandHandler struct{}
 
-func (d *DealsCommandHandler) Name() string        { return "deals" }
-func (d *DealsCommandHandler) Description() string { return "View drop-in tier replacements (Heat Seeker)" }
+func (d *DealsCommandHandler) Name() string { return "deals" }
+func (d *DealsCommandHandler) Description() string {
+	return "View drop-in tier replacements (Heat Seeker)"
+}
 func (d *DealsCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
 	if env.Oracle == nil {
 		return "🔥 **Heat Seeker**\n\nPricing oracle is not active.", nil

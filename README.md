@@ -20,7 +20,7 @@
 >
 > A fast, zero-dependency hybrid AI gateway that routes agent prompt turns between **local GPUs ($0.00)** and **cloud APIs (up to 94.7% cost reduction)** with 100% reasoning fidelity.
 
-**Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Roo Code](https://github.com/RooVetGit/Roo-Code), [Cline](https://github.com/cline/cline), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)). Includes an integrated **VS Code Companion Extension** with real-time cost telemetry, visual route inspector, and one-click agent setup.
+**Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Zoo Code](https://github.com/zoocodeorganization/zoo-code), [Cline](https://github.com/cline/cline), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)). Includes an integrated **VS Code Companion Extension** with real-time cost telemetry, visual route inspector, and one-click agent setup.
 
 🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)  
 Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
@@ -209,7 +209,7 @@ nacho-flow service start
 
 Nacho Flow exposes a standard OpenAI-compatible proxy endpoint on `http://localhost:8000/v1`. Since Nacho Flow dynamically routes and rewrites model IDs turn-by-turn based on your `config.yaml` tier rules, you can use `nacho-hybrid` (or any string) as your Model ID.
 
-#### 🦘 Roo Code & Cline (VS Code)
+#### 🦁 Zoo Code & Cline (VS Code)
 In **Settings** (Gear Icon $\rightarrow$ API Configuration):
 * **API Provider**: `OpenAI Compatible`
 * **Base URL**: `http://localhost:8000/v1` *(or `http://127.0.0.1:8000/v1`)*
@@ -221,18 +221,25 @@ In **Settings** (Gear Icon $\rightarrow$ API Configuration):
   * **Context Window**: `128,000` tokens
   * **Max Output**: `8,192` tokens
 
-#### 🖱️ Cursor
-In **Cursor Settings** $\rightarrow$ **Models**:
-* **OpenAI API Base URL**: `http://localhost:8000/v1`
-* **OpenAI API Key**: `sk-nacho-secret-key` *(or any dummy string)*
-* Add custom model: `nacho-hybrid`
+#### ⚡ OpenCode (Terminal Agent)
+```bash
+export OPENAI_BASE_URL="http://127.0.0.1:8000/v1"
+export OPENAI_API_KEY="sk-nacho-secret-key"
+opencode --model openai/nacho-hybrid
+```
 
-#### 🤖 Aider
+#### 🤖 Aider (CLI Pair Programmer)
 ```bash
 export OPENAI_API_BASE="http://127.0.0.1:8000/v1"
 export OPENAI_API_KEY="sk-nacho-secret-key"
 aider --model openai/nacho-hybrid
 ```
+
+#### 🖱️ Cursor
+In **Cursor Settings** $\rightarrow$ **Models**:
+* **OpenAI API Base URL**: `http://localhost:8000/v1`
+* **OpenAI API Key**: `sk-nacho-secret-key` *(or any dummy string)*
+* Add custom model: `nacho-hybrid`
 
 #### ⏩ Continue.dev
 In `~/.continue/config.json`:

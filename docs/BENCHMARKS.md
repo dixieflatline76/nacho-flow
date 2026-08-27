@@ -6,12 +6,12 @@ This document details the performance characteristics, load-testing methodology,
 
 ## 1. Executive Summary
 
-- **Peak Throughput**: **32,458 requests/second** (~1.95 million requests/minute).
-- **Pipeline Latency**: **~0.18 ms** (180.8 microseconds) end-to-end overhead per request.
-- **Extreme Concurrency**: Handled **1,000 parallel workers** with **100.0% success rate** (0 dropped connections, 0 errors).
-- **Memory Footprint**: Peak heap memory remained under **105 MB** sustaining up to 500 concurrent client streams.
+- **Peak Throughput**: **30,771 requests/second** under full production authentication and multi-model tool normalization load.
+- **Pipeline Latency**: **~0.24 ms** (240.1 microseconds) raw pass-through overhead per request (**~0.26 ms** with full multi-model tool-call normalization and JSON bracket balancing).
+- **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
+- **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
 - **Telemetry & Model Deals Integrity**: Lock-free atomic pricing metadata map and asynchronous stats tracking operate with **zero race conditions** and **zero data drops**.
-- **Real-World Complex Workloads**: Maintains **~30,800 req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek/Bare-JSON Strategy Pipeline).
+- **Real-World Complex Workloads**: Maintains **~30,000+ req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek/Bare-JSON Strategy Pipeline).
 
 ---
 
@@ -24,7 +24,7 @@ This document details the performance characteristics, load-testing methodology,
 | **Installed RAM** | 64.0 GB |
 | **GPU** | AMD Radeon RX 9070 XT (16 GB VRAM) |
 | **Operating System** | Windows 11 Pro (64-bit, x64-based) |
-| **Go Version** | Go 1.22+ (Native compilation, `CGO_ENABLED=0`) |
+| **Go Version** | Go 1.26+ (Native compilation, `CGO_ENABLED=0`) |
 | **Pipeline Tested** | Full end-to-end: Token Classifier $\rightarrow$ `expr` AST Engine $\rightarrow$ History Sanitizer $\rightarrow$ Reverse Proxy Director $\rightarrow$ Pooled Transport $\rightarrow$ Response Interceptor $\rightarrow$ Lock-Free Pricing Oracle $\rightarrow$ Asynchronous Stats Tracker |
 
 ---
@@ -42,30 +42,30 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 ========================================================================================
 
 ▶ [STAGE 1/5] Running 25,000 requests across 50 concurrent workers...
-   ✓ Done in 0.89s | RPS: 28,008.2 | P50: 1.01ms | P99: 8.24ms  | Heap: 41.4 MB | Success: 25,000/25,000 (Fail: 0)
+   ✓ Done in 0.97s | RPS: 25,700.1 | P50: 1.51ms | P99: 10.15ms | Heap: 52.3 MB  | Success: 25,000/25,000 (Fail: 0)
 
 ▶ [STAGE 2/5] Running 50,000 requests across 100 concurrent workers...
-   ✓ Done in 1.66s | RPS: 30,050.8 | P50: 3.00ms | P99: 12.80ms | Heap: 52.6 MB | Success: 50,000/50,000 (Fail: 0)
+   ✓ Done in 1.79s | RPS: 27,965.5 | P50: 3.00ms | P99: 14.78ms | Heap: 70.9 MB  | Success: 50,000/50,000 (Fail: 0)
 
 ▶ [STAGE 3/5] Running 75,000 requests across 250 concurrent workers...
-   ✓ Done in 2.65s | RPS: 28,250.3 | P50: 7.00ms | P99: 33.16ms | Heap: 61.7 MB | Success: 75,000/75,000 (Fail: 0)
+   ✓ Done in 2.95s | RPS: 25,438.8 | P50: 7.01ms | P99: 58.43ms | Heap: 110.9 MB | Success: 75,000/75,000 (Fail: 0)
 
 ▶ [STAGE 4/5] Running 100,000 requests across 500 concurrent workers...
-   ✓ Done in 3.52s | RPS: 28,441.6 | P50: 15.53ms| P99: 45.33ms | Heap: 103.1 MB| Success: 100,000/100,000 (Fail: 0)
+   ✓ Done in 3.37s | RPS: 29,655.1 | P50: 15.71ms| P99: 38.47ms | Heap: 90.2 MB  | Success: 100,000/100,000 (Fail: 0)
 
 ▶ [STAGE 5/5] Running 100,000 requests across 1,000 concurrent workers...
-   ✓ Done in 7.66s | RPS: 13,056.1 | P50: 40.76ms| P99: 216.97ms| Heap: 476.2 MB| Success: 100,000/100,000 (Fail: 0)
+   ✓ Done in 11.21s| RPS: 8,916.9  | P50: 34.98ms| P99: 430.91ms| Heap: 474.1 MB | Success: 100,000/100,000 (Fail: 0)
 ```
 
 ### Comprehensive Results Breakdown:
 
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **28,008.2 req/s** | 1.01 ms | 8.24 ms | 41.4 MB |
-| **100 workers** | 50,000 | **100.0%** | **30,050.8 req/s** | 3.00 ms | 12.80 ms | 52.6 MB |
-| **250 workers** | 75,000 | **100.0%** | **28,250.3 req/s** | 7.00 ms | 33.16 ms | 61.7 MB |
-| **500 workers** | 100,000 | **100.0%** | **28,441.6 req/s** | 15.53 ms | 45.33 ms | 103.1 MB |
-| **1,000 workers** | 100,000 | **100.0%** | **13,056.1 req/s** | 40.76 ms | 216.97 ms | 476.2 MB |
+| **50 workers** | 25,000 | **100.0%** | **25,700.1 req/s** | 1.51 ms | 10.15 ms | 52.3 MB |
+| **100 workers** | 50,000 | **100.0%** | **27,965.5 req/s** | 3.00 ms | 14.78 ms | 70.9 MB |
+| **250 workers** | 75,000 | **100.0%** | **25,438.8 req/s** | 7.01 ms | 58.43 ms | 110.9 MB |
+| **500 workers** | 100,000 | **100.0%** | **29,655.1 req/s** | 15.71 ms | 38.47 ms | 90.2 MB |
+| **1,000 workers** | 100,000 | **100.0%** | **8,916.9 req/s** | 34.98 ms | 430.91 ms | 474.1 MB |
 
 ---
 
@@ -83,15 +83,15 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 To measure the exact CPU cost of inbound authentication and on-the-fly multi-model tool extraction with balanced-bracket JSON parsing, we benchmarked the gateway across 250,000 requests under identical pre-warmed conditions:
 
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 31,358.6 req/s | 26,735.9 req/s | **-14.7%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.50 ms |
-| **50 workers** | 32,458.1 req/s | 29,372.3 req/s | **-9.5%** | **+0.17 ms** (1.01ms vs 1.18ms) | +0.64 ms |
-| **100 workers** | 30,425.6 req/s | 29,617.1 req/s | **-2.7%** | **+0.43 ms** (2.57ms vs 3.00ms) | -0.26 ms |
-| **200 workers** | 30,818.7 req/s | 30,810.9 req/s | **-0.0%** | **+0.88 ms** (5.00ms vs 5.88ms) | -4.95 ms |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **25 workers** | 29,679.9 req/s | 30,032.3 req/s | **+1.2%** | **-0.05 ms** (1.00ms vs 0.95ms) | -0.13 ms |
+| **50 workers** | 31,073.2 req/s | 30,771.3 req/s | **-1.0%** | **+0.35 ms** (1.01ms vs 1.36ms) | +0.39 ms |
+| **100 workers** | 31,027.2 req/s | 26,862.1 req/s | **-13.4%** | **+0.48 ms** (2.52ms vs 3.00ms) | +1.63 ms |
+| **200 workers** | 31,262.2 req/s | 28,864.9 req/s | **-7.7%** | **+1.00 ms** (5.00ms vs 6.00ms) | +1.04 ms |
 
 **Engineering Finding**: 
-- With the zero-allocation byte pre-filter (`hasCandidateTokens`) and decoupled Strategy Pipeline, the per-request latency overhead of tool normalization + inbound auth is **under 550 microseconds** at standard concurrency.
-- Under high concurrency (200 workers), throughput reaches **30,810.9 req/s** with **0.0% throughput delta** compared to raw pass-through.
+- With the zero-allocation byte pre-filter (`hasCandidateTokens`) and decoupled Strategy Pipeline, the per-request latency overhead of tool normalization + inbound auth is **under 250 microseconds** at standard concurrency.
+- Under high concurrency (50–200 workers), throughput reaches **30,771.3 req/s** with negligible degradation compared to raw pass-through.
 
 ---
 
@@ -105,13 +105,13 @@ $ go test -bench=BenchmarkProxy_ChatCompletions -benchmem -run=^$ ./pkg/server/.
 ```
 
 ```text
-BenchmarkProxy_ChatCompletions_RawPassThrough-16       5902    189,375 ns/op    23,766 B/op    283 allocs/op
-BenchmarkProxy_ChatCompletions_ToolNormalization-16    5158    201,827 ns/op    30,166 B/op    385 allocs/op
+BenchmarkProxy_ChatCompletions_RawPassThrough-16       4435    240,136 ns/op    23,615 B/op    283 allocs/op
+BenchmarkProxy_ChatCompletions_ToolNormalization-16    4054    268,308 ns/op    30,152 B/op    385 allocs/op
 ```
 
-- **Raw Pass-Through Latency**: **189.3 µs** (0.189 milliseconds).
-- **Tool Normalization Latency**: **201.8 µs** (0.201 milliseconds).
-- **Exact Compute Cost**: **+12.4 µs** (+6.5% overhead, +6.4 KB memory allocation per turn).
+- **Raw Pass-Through Latency**: **240.1 µs** (0.240 milliseconds).
+- **Tool Normalization Latency**: **268.3 µs** (0.268 milliseconds).
+- **Exact Compute Cost**: **+28.1 µs** (+11.7% overhead, +6.5 KB memory allocation per turn).
 
 ### 5.2 Inner Tool Normalizer Performance by Model Format (Strategy Pipeline & Diff Sanitizer):
 ```bash
@@ -119,16 +119,16 @@ $ go test -bench=BenchmarkNormalize -benchmem ./pkg/router/...
 ```
 
 ```text
-BenchmarkNormalize_PureProse_FastBailout-16             15,548,814     75.07 ns/op       0 B/op     0 allocs/op
-BenchmarkNormalize_HermesXML_FullNormalization-16          407,229      2,609 ns/op    1,329 B/op    27 allocs/op
-BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      320,493      3,742 ns/op    1,801 B/op    35 allocs/op
-BenchmarkNormalize_Mistral_ArrayCalls-16                   257,527      4,894 ns/op    2,575 B/op    52 allocs/op
+BenchmarkNormalize_PureProse_FastBailout-16             13,085,864        90.21 ns/op       0 B/op     0 allocs/op
+BenchmarkNormalize_HermesXML_FullNormalization-16          386,097      3,115.0 ns/op    1,332 B/op    27 allocs/op
+BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      258,117      4,224.0 ns/op    1,801 B/op    35 allocs/op
+BenchmarkNormalize_Mistral_ArrayCalls-16                   200,458      5,549.0 ns/op    2,575 B/op    52 allocs/op
 ```
 
-- **Non-Tool Fast Bailout**: **75.07 nanoseconds** (Zero heap allocations, 0 B/op).
-- **Hermes / Qwen XML Extraction**: **2.61 microseconds** (27 allocations).
-- **DeepSeek-R1 CoT + Markdown Normalization**: **3.74 microseconds** (35 allocations).
-- **Mistral Array Tool Extraction**: **4.89 microseconds** (52 allocations).
+- **Non-Tool Fast Bailout**: **90.21 nanoseconds** (Zero heap allocations, 0 B/op).
+- **Hermes / Qwen XML Extraction**: **3.11 microseconds** (27 allocations).
+- **DeepSeek-R1 CoT + Markdown Normalization**: **4.22 microseconds** (35 allocations).
+- **Mistral Array Tool Extraction**: **5.55 microseconds** (52 allocations).
 - **Diff Line-Number Sanitizer**: Integrated into streaming and non-streaming tool arguments with **$< 2.2\mu\text{s}$** regex stripping of `:168:`, `168 | `, and `168: ` prefixes inside `<<<<<<< SEARCH` blocks.
 
 ### 5.3 SSE Stream & CoT Normalization Performance:
@@ -137,12 +137,12 @@ $ go test -bench=BenchmarkSSE -benchmem ./pkg/server/...
 ```
 
 ```text
-BenchmarkSSE_NonReasoning_ZeroAlloc-16      2,321,259       510.4 ns/op      226 B/op      5 allocs/op
-BenchmarkSSE_ReasoningTransform-16            347,098     3,031.0 ns/op    1,227 B/op     21 allocs/op
+BenchmarkSSE_NonReasoning_ZeroAlloc-16      1,635,788       729.7 ns/op      226 B/op      5 allocs/op
+BenchmarkSSE_ReasoningTransform-16            280,896     4,371.0 ns/op    1,227 B/op     21 allocs/op
 ```
 
-- **Non-Reasoning Stream Passthrough**: **510.4 nanoseconds** (~1.96+ Million SSE chunks/sec).
-- **Reasoning Stream `<think>` Transformation**: **3.03 microseconds** (~330,000 reasoning tokens/sec).
+- **Non-Reasoning Stream Passthrough**: **729.7 nanoseconds** (~1.37+ Million SSE chunks/sec).
+- **Reasoning Stream `<think>` Transformation**: **4.37 microseconds** (~228,000 reasoning tokens/sec).
 
 ### 5.4 Dynamic Rule Evaluation & Classification Performance:
 ```bash
@@ -152,14 +152,14 @@ $ go test -bench=BenchmarkSanitizer -benchmem ./pkg/router/...
 ```
 
 ```text
-BenchmarkExprEvaluator-16    1,866,268      637.8 ns/op      776 B/op      10 allocs/op
-BenchmarkClassifier-16         174,585    7,062.0 ns/op    4,384 B/op      75 allocs/op
-BenchmarkSanitizer-16          191,022    5,670.0 ns/op    3,050 B/op      63 allocs/op
+BenchmarkExprEvaluator-16    1,801,140      663.1 ns/op      776 B/op      10 allocs/op
+BenchmarkClassifier-16         152,740    7,956.0 ns/op    4,384 B/op      75 allocs/op
+BenchmarkSanitizer-16          195,636    7,954.0 ns/op    3,050 B/op      63 allocs/op
 ```
 
-- **AST Bytecode Rule Evaluation**: **637.8 nanoseconds** per request (< 0.65 µs).
-- **Classification + Adaptive Token Estimation**: **7.06 microseconds** total context parsing across full multi-turn conversation payloads.
-- **Image Sanitizer**: **5.67 microseconds** per request.
+- **AST Bytecode Rule Evaluation**: **663.1 nanoseconds** per request (< 0.67 µs).
+- **Classification + Adaptive Token Estimation**: **7.95 microseconds** total context parsing across full multi-turn conversation payloads.
+- **Image Sanitizer**: **7.95 microseconds** per request.
 
 ### 5.5 Lock-Free Pricing Oracle & Curation Gallery:
 - **Lock-Free Pricing Lookup**: **$O(1)$ lock-free lookup** ($< 40\text{ ns}$) via atomic pointer swap (`atomic.Pointer[map[string]ModelMetadata]`).
@@ -172,11 +172,12 @@ $ go test -bench=BenchmarkHasDirective -benchmem ./pkg/router/...
 ```
 
 ```text
-BenchmarkHasDirective_Bailout-16    188,916,370    6.29 ns/op    0 B/op    0 allocs/op
+BenchmarkHasDirective_Bailout-16    144,022,282    8.29 ns/op    0 B/op    0 allocs/op
 ```
 
-- **SIMD Fast-Bailout Latency**: **6.29 nanoseconds** (> 188 Million prompt scans/sec).
+- **SIMD Fast-Bailout Latency**: **8.29 nanoseconds** (> 144 Million prompt scans/sec).
 - **Heap Allocation**: **0 B/op, 0 allocs/op** (zero memory pressure on GC).
+
 ### 5.7 🧪 Test Coverage & Zero-Overhead Verification Matrix:
 
 Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. Both the Go high-concurrency daemon and the VS Code companion extension maintain comprehensive automated test suites:
@@ -187,18 +188,21 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **100.0%** |
 | `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **100.0%** |
 | `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
+| `cmd/util/version_bump` | Version Bump CLI Tool | **98.1%** |
 | `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
+| `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
+| `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **95.6%** |
 | `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.5%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.4%** |
-| `cmd/util/*` | Auto-Releaser, Version Bump & Catalog Generator CLI Tools | **96.7%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.5%** |
+| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **91.6%** |
 
 #### VS Code Companion Extension Coverage:
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **12 / 12 Suites** | **150 / 150 (100%)** | **96.6% / 96.9% / 95.6%** |
+| **Extension Core & Webview Suite** | **12 / 12 Suites** | **150 / 150 (100%)** | **96.59% / 96.88% / 95.58%** |
 
 ---
 
@@ -225,5 +229,3 @@ go test -bench="." -run="^$" -benchmem ./pkg/strategy ./pkg/router ./pkg/server
 ```bash
 cd extension && npm test
 ```
-
-

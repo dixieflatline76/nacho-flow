@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/safeio"
 )
 
 // Version represents a semantic version with major, minor, and patch components.
@@ -224,7 +226,14 @@ func commitVersionFiles(filenames []string, version string, git GitRunner) error
 
 // updateSiteVersion updates the logo badge in site/index.html with the new version.
 func updateSiteVersion(filename string, v Version) error {
-	data, err := os.ReadFile(filepath.Clean(filename))
+	dir := filepath.Dir(filename)
+	base := filepath.Base(filename)
+	sbd, err := safeio.NewSafeBoundedDir(dir)
+	if err != nil {
+		return err
+	}
+
+	data, err := sbd.ReadFile(base)
 	if err != nil {
 		return err
 	}
@@ -232,12 +241,19 @@ func updateSiteVersion(filename string, v Version) error {
 	re := regexp.MustCompile(`(class="logo-badge[^"]*" id="version-badge">)[^<]*(</span>)`)
 	updated := re.ReplaceAll(data, fmt.Appendf(nil, "${1}%s${2}", v.String()))
 
-	return os.WriteFile(filepath.Clean(filename), updated, 0600)
+	return sbd.WriteFile(base, updated, 0600)
 }
 
 // updatePackageJSON updates the root "version" field in package.json/package-lock.json.
 func updatePackageJSON(filename string, v Version) error {
-	data, err := os.ReadFile(filepath.Clean(filename))
+	dir := filepath.Dir(filename)
+	base := filepath.Base(filename)
+	sbd, err := safeio.NewSafeBoundedDir(dir)
+	if err != nil {
+		return err
+	}
+
+	data, err := sbd.ReadFile(base)
 	if err != nil {
 		return err
 	}
@@ -246,6 +262,5 @@ func updatePackageJSON(filename string, v Version) error {
 	re := regexp.MustCompile(`("name"\s*:\s*"nacho-flow"(?:[^{}]*?)"version"\s*:\s*)"[^"]+"`)
 	updated := re.ReplaceAll(data, fmt.Appendf(nil, `${1}"%s"`, versionStr))
 
-	return os.WriteFile(filepath.Clean(filename), updated, 0600)
+	return sbd.WriteFile(base, updated, 0600)
 }
-

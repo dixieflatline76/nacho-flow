@@ -30,20 +30,70 @@
                 <span>🌮</span> Nacho Flow
                 <span class="logo-badge logo-badge-version" id="version-badge">v0.6.0</span>
             </a>
-            <div class="links">
-                <a href="index.html" class="active">Home</a>
-                <a href="docs.html?doc=user_guide">User Guide</a>
-                <a href="docs.html?doc=extension_guide">VS Code Extension</a>
-                <a href="docs.html?doc=architecture">Architecture</a>
-                <a href="docs.html?doc=benchmarks">Benchmarks</a>
-                <a href="docs.html?doc=roadmap">Roadmap</a>
-                <a href="support.html">Support</a>
-                <a href="privacy.html">Privacy</a>
+            <div class="links" id="nav-links">
+                <a href="index.html" class="nav-link active">Home</a>
+                
+                <!-- Documentation Glass Dropdown -->
+                <div class="nav-dropdown">
+                    <button class="dropdown-trigger" aria-expanded="false" aria-haspopup="true">
+                        <span>Documentation</span>
+                        <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <div class="dropdown-menu glass">
+                        <a href="docs.html?doc=user_guide" class="dropdown-item">
+                            <span class="dropdown-icon">📖</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">User Guide</span>
+                                <span class="dropdown-desc">CLI commands, config.yaml & agent setup</span>
+                            </div>
+                        </a>
+                        <a href="docs.html?doc=extension_guide" class="dropdown-item">
+                            <span class="dropdown-icon">🧩</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">VS Code Extension</span>
+                                <span class="dropdown-desc">Live HUD, process manager & telemetry webview</span>
+                            </div>
+                        </a>
+                        <a href="docs.html?doc=architecture" class="dropdown-item">
+                            <span class="dropdown-icon">🏗️</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">Architecture & System Design</span>
+                                <span class="dropdown-desc">Internal pipeline, DTOs & RFC-002 shield</span>
+                            </div>
+                        </a>
+                        <a href="docs.html?doc=benchmarks" class="dropdown-item">
+                            <span class="dropdown-icon">📊</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">Benchmarks & Case Study</span>
+                                <span class="dropdown-desc">30k req/s stress test & empirical findings</span>
+                            </div>
+                        </a>
+                        <a href="docs.html?doc=tuning_guide" class="dropdown-item">
+                            <span class="dropdown-icon">🎯</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">Cost-Penalty Auto-Tuner</span>
+                                <span class="dropdown-desc">Automated AST cost-reduction heuristics</span>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+
+                <a href="docs.html?doc=roadmap" class="nav-link">Roadmap</a>
+                <a href="support.html" class="nav-link">Support</a>
                 <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-github-nav">
                     <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
                     GitHub
                 </a>
             </div>
+
+            <!-- Mobile Toggle -->
+            <button class="mobile-toggle" id="mobile-toggle" aria-label="Toggle navigation menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
         </div>
     </nav>
 
@@ -61,7 +111,7 @@
         <h1>You just paid $2.00 to ask your AI agent to check a log file.</h1>
         <p class="subtitle">Route simple turns to your GPU ($0). Route hard turns to cloud. Stop the bleeding.</p>
         <p class="explainer">
-            Autonomous agent harnesses (<strong>Roo Code</strong>, <strong>Cline</strong>, <strong>Aider</strong>, <strong>Cursor</strong>) re-send your entire project transcript, file maps, and terminal outputs with every prompt. <strong>Nacho Flow</strong> keeps routine inspections, syntax edits, and unit tests on your local GPU for <strong>$0.00</strong>, automatically escalating to Claude or DeepSeek only when reasoning context demands it.
+            Autonomous agent harnesses (<strong>Zoo Code</strong>, <strong>Cline</strong>, <strong>OpenCode</strong>, <strong>Aider</strong>) re-send your entire project transcript, file maps, and terminal outputs with every prompt. <strong>Nacho Flow</strong> keeps routine inspections, syntax edits, and unit tests on your local GPU for <strong>$0.00</strong>, automatically escalating to Claude or DeepSeek only when reasoning context demands it.
         </p>
 
         <div class="cta-group">
@@ -109,7 +159,7 @@
     <!-- Real-World Session Economics (Before vs After) -->
     <section class="comparison-section">
         <h2 class="section-title">Real-World Session Economics</h2>
-        <p class="section-subtitle">Side-by-side benchmark of a typical 65-turn refactoring task in Roo Code / Cline.</p>
+        <p class="section-subtitle">Side-by-side benchmark of a typical 65-turn refactoring task in Zoo Code / Cline.</p>
 
         <div class="comparison-grid">
             <div class="comparison-card glass cloud">
@@ -194,7 +244,7 @@
             <div class="extension-card glass">
                 <div class="extension-badge">SIDEBAR CONTROL HUB</div>
                 <h3>1-Click Local Engine & Agent Setup</h3>
-                <p>Start, stop, and stream local daemon logs with zero CLI fuss. Detects local Ollama/vLLM models and provides instant copy helpers for Roo Code, Cline, and Cursor.</p>
+                <p>Start, stop, and stream local daemon logs with zero CLI fuss. Detects local Ollama/vLLM models and provides instant copy helpers for Zoo Code, Cline, and Cursor.</p>
                 <div class="extension-tags">
                     <span class="ext-tag">🚀 3-Tier Binary Resolver</span>
                     <span class="ext-tag">🔒 Isolated Remote Credentials</span>
@@ -230,7 +280,7 @@
             <div class="step-card glass">
                 <div class="step-num">1</div>
                 <h3>Point Your Agent Harness</h3>
-                <p>Change your API Base URL to <code>http://localhost:8000/v1</code> in Cursor, Roo Code, Cline, or Aider. Nacho Flow speaks standard OpenAI API wire format.</p>
+                <p>Change your API Base URL to <code>http://localhost:8000/v1</code> in Zoo Code, OpenCode, Aider, or Cline. Nacho Flow speaks standard OpenAI API wire format.</p>
             </div>
 
             <div class="step-card glass">
@@ -361,14 +411,14 @@
 
         <div class="ide-card glass">
             <div class="install-tabs">
-                <button class="tab-btn active" onclick="switchIdeTab('roocode', this)">Roo Code / Cline</button>
-                <button class="tab-btn" onclick="switchIdeTab('cursor', this)">Cursor</button>
+                <button class="tab-btn active" onclick="switchIdeTab('zoocode', this)">Zoo Code / Cline</button>
+                <button class="tab-btn" onclick="switchIdeTab('opencode', this)">OpenCode</button>
                 <button class="tab-btn" onclick="switchIdeTab('aider', this)">Aider</button>
-                <button class="tab-btn" onclick="switchIdeTab('continue', this)">Continue.dev</button>
+                <button class="tab-btn" onclick="switchIdeTab('cursor', this)">Cursor</button>
             </div>
 
             <div class="code-container" style="background:#0a0c13;">
-                <pre style="width:100%;"><code class="code-text" id="ide-config" style="white-space: pre;"># In Roo Code / Cline Provider Settings:
+                <pre style="width:100%;"><code class="code-text" id="ide-config" style="white-space: pre;"># In Zoo Code / Cline Provider Settings:
 Provider: OpenAI Compatible
 Base URL: http://127.0.0.1:8000/v1
 API Key:  sk-nacho-secret-key
@@ -412,9 +462,11 @@ Model ID: nacho-hybrid</code></pre>
         };
 
         const ideConfigs = {
-            cursor: `# In Cursor Settings -> Models:\nOpenAI API Base: http://localhost:8000/v1\nOpenAI API Key:  sk-nacho-secret-key\nCustom Model:    nacho-hybrid`,
-            roocode: `# In Roo Code / Cline Provider Settings:\nProvider: OpenAI Compatible\nBase URL: http://127.0.0.1:8000/v1\nAPI Key:  sk-nacho-secret-key\nModel ID: nacho-hybrid`,
+            zoocode: `# In Zoo Code / Cline Provider Settings:\nProvider: OpenAI Compatible\nBase URL: http://127.0.0.1:8000/v1\nAPI Key:  sk-nacho-secret-key\nModel ID: nacho-hybrid`,
+            roocode: `# In Zoo Code / Cline Provider Settings:\nProvider: OpenAI Compatible\nBase URL: http://127.0.0.1:8000/v1\nAPI Key:  sk-nacho-secret-key\nModel ID: nacho-hybrid`,
+            opencode: `# Run OpenCode in terminal:\nexport OPENAI_BASE_URL="http://127.0.0.1:8000/v1"\nexport OPENAI_API_KEY="sk-nacho-secret-key"\nopencode --model openai/nacho-hybrid`,
             aider: `# Run Aider in terminal:\nexport OPENAI_API_BASE="http://127.0.0.1:8000/v1"\nexport OPENAI_API_KEY="sk-nacho-secret-key"\naider --model openai/nacho-hybrid`,
+            cursor: `# In Cursor Settings -> Models:\nOpenAI API Base: http://localhost:8000/v1\nOpenAI API Key:  sk-nacho-secret-key\nCustom Model:    nacho-hybrid`,
             continue: `// In ~/.continue/config.json:\n{\n  "models": [{\n    "title": "Nacho Flow Hybrid",\n    "provider": "openai",\n    "model": "nacho-hybrid",\n    "apiBase": "http://127.0.0.1:8000/v1",\n    "apiKey": "sk-nacho-secret-key"\n  }]\n}`
         };
 
@@ -489,6 +541,15 @@ Model ID: nacho-hybrid</code></pre>
                 video.addEventListener('ended', () => {
                     container.classList.remove('playing');
                     video.currentTime = 0;
+                });
+            }
+
+            // Mobile nav drawer toggle
+            const toggle = document.getElementById('mobile-toggle');
+            const links = document.getElementById('nav-links');
+            if (toggle && links) {
+                toggle.addEventListener('click', () => {
+                    links.classList.toggle('open');
                 });
             }
         });

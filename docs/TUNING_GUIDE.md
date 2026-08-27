@@ -16,7 +16,7 @@ This guide teaches you how to write, optimize, test, and tune dynamic routing ru
 
 ## 1. How the Evaluation Pipeline Works
 
-When an agent (Roo Code, Cline, Aider, Cursor) sends a prompt turn, Nacho Flow evaluates your configured tiers sequentially from **top to bottom** (*First Match Wins*):
+When an agent (Zoo Code, Cline, Aider, Cursor) sends a prompt turn, Nacho Flow evaluates your configured tiers sequentially from **top to bottom** (*First Match Wins*):
 
 ```mermaid
 flowchart TD

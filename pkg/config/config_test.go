@@ -470,4 +470,3 @@ func TestConfig_ExplicitCustomPath_MissingFails(t *testing.T) {
 		t.Errorf("Missing custom config should not have been created on disk")
 	}
 }
-

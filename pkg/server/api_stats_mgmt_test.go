@@ -597,4 +597,3 @@ func TestAPI_MetaCommands_DirectExecute(t *testing.T) {
 		t.Errorf("unexpected deals output: %s, err: %v", dealsOut, err)
 	}
 }
-
