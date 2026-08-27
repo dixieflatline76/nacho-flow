@@ -7,6 +7,7 @@ import { StatusBarManager } from '../ui/status-bar/item';
 import { DashboardPanel } from '../ui/webview/dashboard';
 import { SidebarViewProvider } from '../ui/sidebar/sidebar-view-provider';
 import { ProcessManager } from './process-manager';
+import { TelemetryPoller, RefreshIntervalSeconds } from './telemetry-poller';
 
 export class ExtensionController {
 	private context: vscode.ExtensionContext;
@@ -18,8 +19,9 @@ export class ExtensionController {
 	private sidebarProvider: SidebarViewProvider | null = null;
 	private outputChannel: vscode.OutputChannel | null = null;
 	private processManager!: ProcessManager;
-	private updateInterval: NodeJS.Timeout | null = null;
+	private telemetryPoller: TelemetryPoller | null = null;
 	private activeTimeWindow: string = 'all_time';
+	private routesRefreshInterval: RefreshIntervalSeconds = 60;
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
@@ -29,9 +31,12 @@ export class ExtensionController {
 	}
 
 	public async initialize(): Promise<void> {
-		// Load persisted time window preference
+		// Load persisted preferences
 		this.activeTimeWindow = this.context.globalState?.get<string>('nachoFlow_timeWindow', 'all_time') || 'all_time';
 		this.statusBar.setTimeWindow(this.activeTimeWindow);
+
+		const savedInterval = this.context.globalState?.get<number>('nachoFlow_routesRefreshInterval');
+		this.routesRefreshInterval = (typeof savedInterval !== 'undefined' ? savedInterval : 60) as RefreshIntervalSeconds;
 
 		// Create Output Channel for live engine logs
 		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Routing Engine');
@@ -508,6 +513,14 @@ export class ExtensionController {
 							await this.setTimeWindow(message.timeWindow, false);
 						}
 						break;
+					case 'setRoutesRefreshInterval':
+						if (typeof message.interval !== 'undefined') {
+							await this.setRoutesRefreshInterval(message.interval, false);
+						}
+						break;
+					case 'openSettings':
+						await this.openSettings();
+						break;
 				}
 			},
 			() => {
@@ -516,8 +529,20 @@ export class ExtensionController {
 		);
 		this.context.subscriptions.push(this.dashboardPanel);
 		
-		// Send initial active timeframe to dashboard
+		// Wire webview visibility observer to pause/resume poller
+		if (this.dashboardPanel && typeof this.dashboardPanel.onDidChangeViewState === 'function') {
+			this.dashboardPanel.onDidChangeViewState((e) => {
+				if (e.webviewPanel.visible) {
+					this.telemetryPoller?.resume(true);
+				} else {
+					this.telemetryPoller?.pause();
+				}
+			});
+		}
+
+		// Send initial active timeframe and refresh interval to dashboard
 		this.dashboardPanel.setTimeWindow(this.activeTimeWindow);
+		this.dashboardPanel.setRoutesRefreshInterval(this.routesRefreshInterval);
 
 		// Load initial data
 		this.loadDashboardData();
@@ -531,6 +556,19 @@ export class ExtensionController {
 		this.statusBar.setTimeWindow(this.activeTimeWindow);
 		if (notifyDashboard && this.dashboardPanel) {
 			this.dashboardPanel.setTimeWindow(this.activeTimeWindow);
+		}
+	}
+
+	public async setRoutesRefreshInterval(interval: number, notifyDashboard: boolean = true): Promise<void> {
+		this.routesRefreshInterval = (Number(interval) as RefreshIntervalSeconds) || 0;
+		if (this.context.globalState) {
+			await this.context.globalState.update('nachoFlow_routesRefreshInterval', this.routesRefreshInterval);
+		}
+		if (this.telemetryPoller) {
+			this.telemetryPoller.setIntervalSeconds(this.routesRefreshInterval);
+		}
+		if (notifyDashboard && this.dashboardPanel) {
+			this.dashboardPanel.setRoutesRefreshInterval(this.routesRefreshInterval);
 		}
 	}
 
@@ -997,31 +1035,53 @@ export class ExtensionController {
 		);
 	}
 
-	private async updateStats(): Promise<void> {
+	private async pollTelemetry(): Promise<void> {
 		if (!this.restClient) return;
-		
+
 		try {
-			const stats = await this.restClient.getStats();
-			this.statusBar.updateStats(stats);
-			if (this.dashboardPanel) {
-				this.dashboardPanel.updateStats(stats);
+			const [stats, routes] = await Promise.all([
+				typeof this.restClient.getStats === 'function' ? this.restClient.getStats().catch(() => null) : Promise.resolve(null),
+				this.dashboardPanel && typeof this.restClient.getRoutes === 'function' ? this.restClient.getRoutes(10).catch(() => null) : Promise.resolve(null)
+			]);
+
+			if (stats) {
+				this.statusBar.updateStats(stats);
+				if (this.dashboardPanel) {
+					this.dashboardPanel.updateStats(stats);
+				}
+			} else {
+				this.statusBar.updateStats(null);
+			}
+
+			if (routes && this.dashboardPanel) {
+				this.dashboardPanel.updateRoutes(routes);
 			}
 		} catch (error) {
-			console.error('Failed to update stats:', error);
-			// Update status bar to show error state
+			console.error('Failed to poll telemetry:', error);
 			this.statusBar.updateStats(null);
 		}
 	}
 
+	private async updateStats(): Promise<void> {
+		await this.pollTelemetry();
+	}
+
 	private startPeriodicUpdates(): void {
-		this.updateInterval = setInterval(() => {
-			this.updateStats();
-		}, 30000); // Update every 30 seconds
+		if (!this.telemetryPoller) {
+			this.telemetryPoller = new TelemetryPoller({
+				intervalSeconds: this.routesRefreshInterval,
+				onTick: async () => {
+					await this.pollTelemetry();
+				}
+			});
+			this.context.subscriptions.push(this.telemetryPoller);
+		}
 	}
 
 	public dispose(): void {
-		if (this.updateInterval) {
-			clearInterval(this.updateInterval);
+		if (this.telemetryPoller) {
+			this.telemetryPoller.dispose();
+			this.telemetryPoller = null;
 		}
 		this.statusBar.dispose();
 		if (this.sseClient) {

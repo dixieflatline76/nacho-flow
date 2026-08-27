@@ -36,12 +36,14 @@ describe('DashboardPanel', () => {
 
     // Create mock webview panel
     mockWebviewPanel = {
+      visible: true,
       webview: {
         asWebviewUri: jest.fn().mockImplementation((uri) => `mocked-uri-${uri.path}`),
         html: '',
         postMessage: jest.fn(),
         onDidReceiveMessage: jest.fn()
       },
+      onDidChangeViewState: jest.fn(),
       onDidDispose: jest.fn(),
       dispose: jest.fn()
     };
@@ -73,11 +75,17 @@ describe('DashboardPanel', () => {
       );
     });
 
-    it('should set the HTML content for the webview', () => {
+    it('should set the HTML content for the webview with auto-refresh controls', () => {
       expect(mockWebviewPanel.webview.html).toContain('<!DOCTYPE html>');
       expect(mockWebviewPanel.webview.html).toContain('<title>Nacho Flow Dashboard</title>');
       expect(mockWebviewPanel.webview.html).toContain('mocked-uri-[object Object]/resources/webview/dashboard.js');
       expect(mockWebviewPanel.webview.html).toContain('mocked-uri-[object Object]/resources/webview/dashboard.css');
+      expect(mockWebviewPanel.webview.html).toContain('id="refresh-60s"');
+      expect(mockWebviewPanel.webview.html).toContain('id="refresh-30s"');
+      expect(mockWebviewPanel.webview.html).toContain('id="refresh-15s"');
+      expect(mockWebviewPanel.webview.html).toContain('id="refresh-off"');
+      expect(mockWebviewPanel.webview.html).toContain('id="btn-open-settings"');
+      expect(mockWebviewPanel.webview.html).toContain('control-center-section');
     });
 
     it('should set up message listener when onMessage is provided', () => {
@@ -108,6 +116,19 @@ describe('DashboardPanel', () => {
         command: 'updateRoutes',
         data: { routes: [] }
       });
+    });
+
+    it('should post setRoutesRefreshInterval message', () => {
+      dashboardPanel.setRoutesRefreshInterval(30);
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'setRoutesRefreshInterval',
+        data: { interval: 30 }
+      });
+    });
+
+    it('should expose isVisible and onDidChangeViewState getters', () => {
+      expect(dashboardPanel.isVisible).toBe(true);
+      expect(dashboardPanel.onDidChangeViewState).toBe(mockWebviewPanel.onDidChangeViewState);
     });
 
     it('should post updateCircuits message', () => {

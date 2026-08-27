@@ -97,7 +97,20 @@ jest.mock('./config/auth-manager');
 jest.mock('./api/client');
 jest.mock('./sse/client');
 jest.mock('../ui/status-bar/item');
-jest.mock('../ui/webview/dashboard');
+jest.mock('../ui/webview/dashboard', () => ({
+  DashboardPanel: jest.fn().mockImplementation(() => ({
+    setTimeWindow: jest.fn(),
+    setRoutesRefreshInterval: jest.fn(),
+    updateStats: jest.fn(),
+    updateDeals: jest.fn(),
+    updateRoutes: jest.fn(),
+    updateCircuits: jest.fn(),
+    updateConfig: jest.fn(),
+    updateOptimization: jest.fn(),
+    onDidChangeViewState: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+    dispose: jest.fn()
+  }))
+}));
 jest.mock('../ui/sidebar/sidebar-view-provider', () => ({
   SidebarViewProvider: Object.assign(
     jest.fn().mockImplementation(() => ({
@@ -868,14 +881,17 @@ default_tier:
       expect(mockDashboardPanel.updateStats).toHaveBeenCalledWith({ total_requests: 42 });
     });
 
-    it('should trigger updateStats in periodic timer interval', () => {
+    it('should trigger pollTelemetry in periodic timer interval', () => {
       jest.useFakeTimers();
-      const updateStatsSpy = jest.spyOn(extensionController as any, 'updateStats').mockImplementation();
+      const pollTelemetrySpy = jest.spyOn(extensionController as any, 'pollTelemetry').mockImplementation();
       
+      (extensionController as any).routesRefreshInterval = 30;
+      (extensionController as any).telemetryPoller = null;
       (extensionController as any).startPeriodicUpdates();
       jest.advanceTimersByTime(30000);
 
-      expect(updateStatsSpy).toHaveBeenCalled();
+      expect(pollTelemetrySpy).toHaveBeenCalled();
+      (extensionController as any).telemetryPoller?.dispose();
       jest.useRealTimers();
     });
 
@@ -1367,6 +1383,108 @@ default_tier:
       const onMessage = DashboardClass.mock.calls[DashboardClass.mock.calls.length - 1][1];
       await onMessage({ command: 'setTimeWindow', timeWindow: 'this_month' });
       expect(statusBarSpy).toHaveBeenCalledWith('this_month');
+    });
+
+    it('should test setRoutesRefreshInterval and visibility listeners', async () => {
+      const mockGlobalState = {
+        get: jest.fn().mockReturnValue(60),
+        update: jest.fn().mockResolvedValue(undefined)
+      };
+      (extensionController as any).context = {
+        globalState: mockGlobalState,
+        subscriptions: [],
+        extensionUri: { fsPath: '/test' }
+      };
+
+      let viewStateListener: any;
+      const mockDashboard = {
+        setTimeWindow: jest.fn(),
+        setRoutesRefreshInterval: jest.fn(),
+        onDidChangeViewState: jest.fn().mockImplementation((cb: any) => {
+          viewStateListener = cb;
+        }),
+        dispose: jest.fn()
+      };
+      const DashboardClass = require('../ui/webview/dashboard').DashboardPanel;
+      DashboardClass.mockImplementation(() => mockDashboard);
+
+      const pollerMock = {
+        setIntervalSeconds: jest.fn(),
+        pause: jest.fn(),
+        resume: jest.fn(),
+        dispose: jest.fn()
+      };
+      (extensionController as any).telemetryPoller = pollerMock;
+
+      // Open dashboard to test webview message and visibility listener
+      (extensionController as any).showDashboard();
+
+      await extensionController.setRoutesRefreshInterval(15, true);
+      expect(mockGlobalState.update).toHaveBeenCalledWith('nachoFlow_routesRefreshInterval', 15);
+      expect(pollerMock.setIntervalSeconds).toHaveBeenCalledWith(15);
+      expect(mockDashboard.setRoutesRefreshInterval).toHaveBeenCalledWith(15);
+
+      // Trigger visibility change
+      if (viewStateListener) {
+        viewStateListener({ webviewPanel: { visible: true } });
+        expect(pollerMock.resume).toHaveBeenCalledWith(true);
+
+        viewStateListener({ webviewPanel: { visible: false } });
+        expect(pollerMock.pause).toHaveBeenCalled();
+      }
+
+      // Test webview message for setRoutesRefreshInterval and openSettings
+      const onMessage = DashboardClass.mock.calls[DashboardClass.mock.calls.length - 1][1];
+      await onMessage({ command: 'setRoutesRefreshInterval', interval: 30 });
+      expect(pollerMock.setIntervalSeconds).toHaveBeenCalledWith(30);
+
+      const openSettingsSpy = jest.spyOn(extensionController, 'openSettings').mockResolvedValue(undefined);
+      await onMessage({ command: 'openSettings' });
+      expect(openSettingsSpy).toHaveBeenCalled();
+
+      // Test dispose cleanup
+      extensionController.dispose();
+      expect(pollerMock.dispose).toHaveBeenCalled();
+    });
+
+    it('should test pollTelemetry and updateStats branches', async () => {
+      const mockStats = { total_requests: 100, cost_spent_usd: 1.5 };
+      const mockRoutes = { routes: [{ id: 'r1' }] };
+      const mockRestClient = {
+        getStats: jest.fn().mockResolvedValue(mockStats),
+        getRoutes: jest.fn().mockResolvedValue(mockRoutes)
+      };
+      const mockDashboard = {
+        updateStats: jest.fn(),
+        updateRoutes: jest.fn()
+      };
+
+      (extensionController as any).restClient = mockRestClient;
+      (extensionController as any).dashboardPanel = mockDashboard;
+      const statusBarSpy = jest.spyOn((extensionController as any).statusBar, 'updateStats');
+
+      // Success path
+      await (extensionController as any).pollTelemetry();
+      expect(statusBarSpy).toHaveBeenCalledWith(mockStats);
+      expect(mockDashboard.updateStats).toHaveBeenCalledWith(mockStats);
+      expect(mockDashboard.updateRoutes).toHaveBeenCalledWith(mockRoutes);
+
+      // Partial null path
+      mockRestClient.getStats.mockRejectedValueOnce(new Error('Failed stats'));
+      await (extensionController as any).pollTelemetry();
+      expect(statusBarSpy).toHaveBeenCalledWith(null);
+
+      // Error in pollTelemetry outer block
+      mockRestClient.getStats.mockImplementationOnce(() => {
+        throw new Error('Fatal socket error');
+      });
+      await (extensionController as any).pollTelemetry();
+      expect(statusBarSpy).toHaveBeenCalledWith(null);
+
+      // Test startPeriodicUpdates creation
+      (extensionController as any).telemetryPoller = null;
+      (extensionController as any).startPeriodicUpdates();
+      expect((extensionController as any).telemetryPoller).toBeDefined();
     });
   });
 });
