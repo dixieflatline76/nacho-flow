@@ -1180,8 +1180,8 @@ default_tier:
       expect(vscode.env.openExternal).toHaveBeenCalled();
 
       // Test openMarketplace
-      await sidebarMsgHandler({ command: 'openMarketplace', extensionId: 'RooVeterinaryInc.roo-cline' });
-      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('workbench.extensions.search', 'RooVeterinaryInc.roo-cline');
+      await sidebarMsgHandler({ command: 'openMarketplace', extensionId: 'zoocodeorganization.zoo-code' });
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('workbench.extensions.search', 'zoocodeorganization.zoo-code');
 
       // Test recalculateStats
       const recalcSpy = jest.spyOn(extensionController as any, 'handleRecalculateStats').mockResolvedValue(undefined);

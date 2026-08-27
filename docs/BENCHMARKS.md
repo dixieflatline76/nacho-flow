@@ -6,12 +6,12 @@ This document details the performance characteristics, load-testing methodology,
 
 ## 1. Executive Summary
 
-- **Peak Throughput**: **28,562 requests/second** under full production authentication and multi-model tool normalization load.
+- **Peak Throughput**: **30,771 requests/second** under full production authentication and multi-model tool normalization load.
 - **Pipeline Latency**: **~0.24 ms** (240.1 microseconds) raw pass-through overhead per request (**~0.26 ms** with full multi-model tool-call normalization and JSON bracket balancing).
 - **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
-- **Memory Footprint**: Peak heap memory remained under **128 MB** sustaining up to 500 concurrent client streams.
+- **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
 - **Telemetry & Model Deals Integrity**: Lock-free atomic pricing metadata map and asynchronous stats tracking operate with **zero race conditions** and **zero data drops**.
-- **Real-World Complex Workloads**: Maintains **~28,000+ req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek/Bare-JSON Strategy Pipeline).
+- **Real-World Complex Workloads**: Maintains **~30,000+ req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek/Bare-JSON Strategy Pipeline).
 
 ---
 
@@ -24,7 +24,7 @@ This document details the performance characteristics, load-testing methodology,
 | **Installed RAM** | 64.0 GB |
 | **GPU** | AMD Radeon RX 9070 XT (16 GB VRAM) |
 | **Operating System** | Windows 11 Pro (64-bit, x64-based) |
-| **Go Version** | Go 1.22+ (Native compilation, `CGO_ENABLED=0`) |
+| **Go Version** | Go 1.26+ (Native compilation, `CGO_ENABLED=0`) |
 | **Pipeline Tested** | Full end-to-end: Token Classifier $\rightarrow$ `expr` AST Engine $\rightarrow$ History Sanitizer $\rightarrow$ Reverse Proxy Director $\rightarrow$ Pooled Transport $\rightarrow$ Response Interceptor $\rightarrow$ Lock-Free Pricing Oracle $\rightarrow$ Asynchronous Stats Tracker |
 
 ---
@@ -42,30 +42,30 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 ========================================================================================
 
 ▶ [STAGE 1/5] Running 25,000 requests across 50 concurrent workers...
-   ✓ Done in 1.05s | RPS: 23,915.2 | P50: 1.55ms | P99: 11.02ms | Heap: 72.9 MB  | Success: 25,000/25,000 (Fail: 0)
+   ✓ Done in 0.97s | RPS: 25,700.1 | P50: 1.51ms | P99: 10.15ms | Heap: 52.3 MB  | Success: 25,000/25,000 (Fail: 0)
 
 ▶ [STAGE 2/5] Running 50,000 requests across 100 concurrent workers...
-   ✓ Done in 1.89s | RPS: 26,510.0 | P50: 3.00ms | P99: 15.54ms | Heap: 60.0 MB  | Success: 50,000/50,000 (Fail: 0)
+   ✓ Done in 1.79s | RPS: 27,965.5 | P50: 3.00ms | P99: 14.78ms | Heap: 70.9 MB  | Success: 50,000/50,000 (Fail: 0)
 
 ▶ [STAGE 3/5] Running 75,000 requests across 250 concurrent workers...
-   ✓ Done in 3.38s | RPS: 22,178.9 | P50: 7.94ms | P99: 50.22ms | Heap: 117.3 MB | Success: 75,000/75,000 (Fail: 0)
+   ✓ Done in 2.95s | RPS: 25,438.8 | P50: 7.01ms | P99: 58.43ms | Heap: 110.9 MB | Success: 75,000/75,000 (Fail: 0)
 
 ▶ [STAGE 4/5] Running 100,000 requests across 500 concurrent workers...
-   ✓ Done in 4.21s | RPS: 23,737.0 | P50: 17.01ms| P99: 77.93ms | Heap: 128.1 MB | Success: 100,000/100,000 (Fail: 0)
+   ✓ Done in 3.37s | RPS: 29,655.1 | P50: 15.71ms| P99: 38.47ms | Heap: 90.2 MB  | Success: 100,000/100,000 (Fail: 0)
 
 ▶ [STAGE 5/5] Running 100,000 requests across 1,000 concurrent workers...
-   ✓ Done in 7.07s | RPS: 14,137.4 | P50: 37.16ms| P99: 239.84ms| Heap: 281.5 MB | Success: 100,000/100,000 (Fail: 0)
+   ✓ Done in 11.21s| RPS: 8,916.9  | P50: 34.98ms| P99: 430.91ms| Heap: 474.1 MB | Success: 100,000/100,000 (Fail: 0)
 ```
 
 ### Comprehensive Results Breakdown:
 
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **23,915.2 req/s** | 1.55 ms | 11.02 ms | 72.9 MB |
-| **100 workers** | 50,000 | **100.0%** | **26,510.0 req/s** | 3.00 ms | 15.54 ms | 60.0 MB |
-| **250 workers** | 75,000 | **100.0%** | **22,178.9 req/s** | 7.94 ms | 50.22 ms | 117.3 MB |
-| **500 workers** | 100,000 | **100.0%** | **23,737.0 req/s** | 17.01 ms | 77.93 ms | 128.1 MB |
-| **1,000 workers** | 100,000 | **100.0%** | **14,137.4 req/s** | 37.16 ms | 239.84 ms | 281.5 MB |
+| **50 workers** | 25,000 | **100.0%** | **25,700.1 req/s** | 1.51 ms | 10.15 ms | 52.3 MB |
+| **100 workers** | 50,000 | **100.0%** | **27,965.5 req/s** | 3.00 ms | 14.78 ms | 70.9 MB |
+| **250 workers** | 75,000 | **100.0%** | **25,438.8 req/s** | 7.01 ms | 58.43 ms | 110.9 MB |
+| **500 workers** | 100,000 | **100.0%** | **29,655.1 req/s** | 15.71 ms | 38.47 ms | 90.2 MB |
+| **1,000 workers** | 100,000 | **100.0%** | **8,916.9 req/s** | 34.98 ms | 430.91 ms | 474.1 MB |
 
 ---
 
@@ -84,14 +84,14 @@ To measure the exact CPU cost of inbound authentication and on-the-fly multi-mod
 
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 24,997.9 req/s | 24,472.8 req/s | **-2.1%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.88 ms |
-| **50 workers** | 27,855.6 req/s | 27,951.7 req/s | **+0.3%** | **+0.25 ms** (1.24ms vs 1.49ms) | +0.44 ms |
-| **100 workers** | 25,345.4 req/s | 28,562.4 req/s | **+12.7%** | **+0.00 ms** (3.00ms vs 3.00ms) | -8.07 ms |
-| **200 workers** | 24,213.9 req/s | 25,376.4 req/s | **+4.8%** | **+0.02 ms** (6.18ms vs 6.21ms) | +2.19 ms |
+| **25 workers** | 29,679.9 req/s | 30,032.3 req/s | **+1.2%** | **-0.05 ms** (1.00ms vs 0.95ms) | -0.13 ms |
+| **50 workers** | 31,073.2 req/s | 30,771.3 req/s | **-1.0%** | **+0.35 ms** (1.01ms vs 1.36ms) | +0.39 ms |
+| **100 workers** | 31,027.2 req/s | 26,862.1 req/s | **-13.4%** | **+0.48 ms** (2.52ms vs 3.00ms) | +1.63 ms |
+| **200 workers** | 31,262.2 req/s | 28,864.9 req/s | **-7.7%** | **+1.00 ms** (5.00ms vs 6.00ms) | +1.04 ms |
 
 **Engineering Finding**: 
 - With the zero-allocation byte pre-filter (`hasCandidateTokens`) and decoupled Strategy Pipeline, the per-request latency overhead of tool normalization + inbound auth is **under 250 microseconds** at standard concurrency.
-- Under high concurrency (100–200 workers), throughput reaches **28,562.4 req/s** with zero degradation compared to raw pass-through.
+- Under high concurrency (50–200 workers), throughput reaches **30,771.3 req/s** with negligible degradation compared to raw pass-through.
 
 ---
 

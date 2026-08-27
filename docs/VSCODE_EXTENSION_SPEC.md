@@ -2,7 +2,7 @@
 
 > **Document Version:** `0.1.0-draft`  
 > **Target Daemon Version:** `nacho-flow v0.6.0+`  
-> **Audience:** Roo Code / Extension Developer  
+> **Audience:** Zoo Code / Extension Developer  
 > **Status:** Working Draft — Subject to ongoing alignment with the backend development.
 
 ---
@@ -360,9 +360,9 @@ data: {"timestamp":"2026-08-22T18:05:00Z","version":"0.6.0","applied_rule_change
 
 ---
 
-## 4. UI Component Architecture for Roo Code
+## 4. UI Component Architecture for Zoo Code
 
-Roo Code can build the extension progressively across 3 tiers:
+Zoo Code can build the extension progressively across 3 tiers:
 
 ### Tier 1: Core MVP (Status Bar & Health Indicator)
 1. **Status Bar Item (`StatusBarItem`):**
@@ -372,9 +372,9 @@ Roo Code can build the extension progressively across 3 tiers:
 2. **Connection Health Watchdog:**
    - Connects to `/api/v1/events` SSE.
    - If SSE disconnects, shows `$(alert) Nacho: Offline` and attempts exponential backoff reconnection.
-3. **Roo Code Integration Validator:**
-   - Detects if VS Code `settings.json` or Roo Code provider config points to `http://localhost:8000/v1`.
-   - 1-Click "Fix Roo Code Config" command.
+3. **Zoo Code Integration Validator:**
+   - Detects if VS Code `settings.json` or Zoo Code provider config points to `http://localhost:8000/v1`.
+   - 1-Click "Fix Zoo Code Config" command.
 
 ### Tier 2: Route History & Circuit Breakers Panel (Webview)
 1. **Route History Table:**
@@ -398,7 +398,7 @@ Roo Code can build the extension progressively across 3 tiers:
 
 ---
 
-## 5. Summary Checklist for Roo Code
+## 5. Summary Checklist for Zoo Code
 
 | Phase | Feature | Endpoints Used | Status |
 | :--- | :--- | :--- | :---: |

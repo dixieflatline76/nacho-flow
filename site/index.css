@@ -101,17 +101,151 @@ nav {
 .links {
     display: flex;
     align-items: center;
-    gap: 1.8rem;
+    gap: 1.6rem;
 }
 
-.links a {
+.links a.nav-link,
+.links a:not(.btn-github-nav):not(.dropdown-item) {
     font-size: 0.9rem;
     font-weight: 500;
     color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 0.2rem;
+    transition: color 0.2s ease;
 }
 
-.links a:hover, .links a.active {
+.links a.nav-link:hover,
+.links a.nav-link.active,
+.links a:not(.btn-github-nav):not(.dropdown-item):hover,
+.links a:not(.btn-github-nav):not(.dropdown-item).active {
     color: var(--accent-color);
+}
+
+/* Glass Dropdown Menu */
+.nav-dropdown {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.dropdown-trigger {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.2rem;
+    transition: color 0.2s ease;
+}
+
+.dropdown-trigger:hover,
+.nav-dropdown:hover .dropdown-trigger,
+.nav-dropdown:focus-within .dropdown-trigger {
+    color: var(--accent-color);
+}
+
+.dropdown-chevron {
+    transition: transform 0.2s ease;
+}
+
+.nav-dropdown:hover .dropdown-chevron,
+.nav-dropdown:focus-within .dropdown-chevron {
+    transform: rotate(180deg);
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    width: 320px;
+    padding: 0.5rem;
+    border-radius: 16px;
+    background: rgba(17, 18, 24, 0.94);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.7), 0 0 25px rgba(245, 158, 11, 0.1);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    z-index: 1100;
+}
+
+/* Invisible bridge so mouse hover doesn't break between trigger and dropdown */
+.dropdown-menu::before {
+    content: '';
+    position: absolute;
+    top: -12px;
+    left: 0;
+    right: 0;
+    height: 12px;
+}
+
+.nav-dropdown:hover .dropdown-menu,
+.nav-dropdown:focus-within .dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    text-decoration: none;
+}
+
+.dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(245, 158, 11, 0.2);
+    transform: translateX(2px);
+}
+
+.dropdown-icon {
+    font-size: 1.15rem;
+    line-height: 1;
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+}
+
+.dropdown-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.dropdown-title {
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    font-weight: 600;
+    display: block;
+}
+
+.dropdown-item:hover .dropdown-title {
+    color: var(--accent-hover);
+}
+
+.dropdown-desc {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    line-height: 1.35;
+    display: block;
 }
 
 .btn-github-nav {
@@ -124,12 +258,71 @@ nav {
     border-radius: 8px;
     font-size: 0.85rem;
     font-weight: 600;
+    color: var(--text-primary);
 }
 
 .btn-github-nav:hover {
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
     border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Mobile Toggle */
+.mobile-toggle {
+    display: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    flex-direction: column;
+    gap: 5px;
+    padding: 6px;
+}
+
+.mobile-toggle span {
+    display: block;
+    width: 22px;
+    height: 2px;
+    background: var(--text-primary);
+    border-radius: 2px;
+    transition: all 0.25s ease;
+}
+
+@media (max-width: 900px) {
+    .links {
+        display: none;
+    }
+    .mobile-toggle {
+        display: flex;
+    }
+    .links.open {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        position: absolute;
+        top: 70px;
+        left: 0;
+        right: 0;
+        background: rgba(15, 17, 24, 0.98);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid var(--border-color);
+        gap: 1.2rem;
+    }
+    .dropdown-menu {
+        position: static;
+        transform: none;
+        width: 100%;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        box-shadow: none;
+        background: rgba(255, 255, 255, 0.02);
+        margin-top: 0.5rem;
+    }
+    .nav-dropdown:hover .dropdown-chevron {
+        transform: none;
+    }
 }
 
 /* Hero Section */

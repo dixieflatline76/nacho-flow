@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/config"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
+	"github.com/dixieflatline76/nacho-flow/pkg/safeio"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"gopkg.in/yaml.v3"
@@ -260,14 +260,18 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set(contract.HeaderContentType, "application/x-yaml")
 			w.WriteHeader(http.StatusOK)
 			if s.configPath != "" {
-				if rawBytes, err := os.ReadFile(s.configPath); err == nil {
-					_, _ = w.Write(rawBytes)
-					return
+				configDir := filepath.Dir(s.configPath)
+				configFile := filepath.Base(s.configPath)
+				if sbd, err := safeio.NewSafeBoundedDir(configDir); err == nil {
+					if rawBytes, readErr := sbd.ReadFile(configFile); readErr == nil {
+						_, _ = w.Write(rawBytes)
+						return
+					}
 				}
 			}
-			sanitized := config.SanitizeConfig(s.GetConfig())
-			// #nosec G117 - sanitized config explicitly masks all auth tokens and secrets before marshaling
-			yamlBytes, _ := yaml.Marshal(sanitized)
+			publicDTO := config.ToPublicDTO(s.GetConfig())
+			yamlData, _ := publicDTO.MarshalYAML()
+			yamlBytes, _ := yaml.Marshal(yamlData)
 			_, _ = w.Write(yamlBytes)
 			return
 		}
@@ -275,9 +279,9 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusOK)
 
-		sanitized := config.SanitizeConfig(s.GetConfig())
-		// #nosec G117 - sanitized config explicitly masks all auth tokens and secrets before encoding
-		_ = json.NewEncoder(w).Encode(sanitized)
+		publicDTO := config.ToPublicDTO(s.GetConfig())
+		jsonBytes, _ := publicDTO.MarshalJSON()
+		_, _ = w.Write(jsonBytes)
 		return
 	}
 
@@ -324,26 +328,26 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 
 	// 4. Create memento and update disk file if persistDisk is true
 	if persistDisk && s.configPath != "" {
-		if data, readErr := os.ReadFile(s.configPath); readErr == nil {
-			timestamp := time.Now().Format("20060102T150405")
-			backupFile = filepath.Clean(fmt.Sprintf("%s.bak.%s", s.configPath, timestamp))
-			// #nosec G703 - backup file path is constructed from server configPath
-			_ = os.WriteFile(backupFile, data, 0600)
-		}
+		configDir := filepath.Dir(s.configPath)
+		configFile := filepath.Base(s.configPath)
+		if sbd, err := safeio.NewSafeBoundedDir(configDir); err == nil {
+			if data, readErr := sbd.ReadFile(configFile); readErr == nil {
+				timestamp := time.Now().Format("20060102T150405")
+				backupName := fmt.Sprintf("%s.bak.%s", configFile, timestamp)
+				if writeErr := sbd.WriteFile(backupName, data, 0600); writeErr == nil {
+					backupFile, _ = sbd.ResolveSafePath(backupName)
+				}
+			}
 
-		var yamlBytes []byte
-		if len(rawYAML) > 0 && len(rawYAML[0]) > 0 {
-			yamlBytes = rawYAML[0]
-		} else {
-			// #nosec G117 - marshaling validated configuration with merged secrets
-			yamlBytes, _ = yaml.Marshal(merged)
-		}
+			var yamlBytes []byte
+			if len(rawYAML) > 0 && len(rawYAML[0]) > 0 {
+				yamlBytes = rawYAML[0]
+			} else {
+				yamlBytes, _ = config.SerializeConfigYAML(merged)
+			}
 
-		if len(yamlBytes) > 0 {
-			dir := filepath.Dir(s.configPath)
-			tmpFile := filepath.Clean(filepath.Join(dir, fmt.Sprintf("config.tmp.%d.yaml", os.Getpid())))
-			if writeErr := os.WriteFile(tmpFile, yamlBytes, 0600); writeErr == nil {
-				_ = os.Rename(tmpFile, s.configPath)
+			if len(yamlBytes) > 0 {
+				_ = sbd.AtomicWrite(configFile, yamlBytes, 0600)
 			}
 		}
 	}

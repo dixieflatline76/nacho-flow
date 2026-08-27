@@ -330,10 +330,11 @@
 		}
 	};
 
-	window.copyRooEndpoint = function() {
+	window.copyZooEndpoint = function() {
 		const text = proxyEndpointText ? proxyEndpointText.textContent : 'http://127.0.0.1:8000/v1';
-		vscode.postMessage({ command: 'copyToClipboard', text, label: 'Roo Code Proxy Endpoint' });
+		vscode.postMessage({ command: 'copyToClipboard', text, label: 'Zoo Code Proxy Endpoint' });
 	};
+	window.copyRooEndpoint = window.copyZooEndpoint;
 
 	window.copyOllamaCommand = function(modelName) {
 		let model = modelName;

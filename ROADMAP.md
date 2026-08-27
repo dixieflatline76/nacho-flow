@@ -15,7 +15,7 @@ Nacho Flow adheres strictly to the **Tailscale / Grafana Open-Core Architecture*
 flowchart TD
     subgraph "IDE & Developer Layer"
         VSC["VS Code / Cursor Extension"] -->|"Lifecycle & One-Click Config"| DP["Nacho Flow Data Plane (Local Go Binary)"]
-        AGENT["Coding Agents (Roo Code, Cline, Aider)"] -->|"POST localhost:8000/v1"| DP
+        AGENT["Coding Agents (Zoo Code, Cline, OpenCode, Aider)"] -->|"POST localhost:8000/v1"| DP
     end
 
     subgraph "Data Plane Routing & Execution (Open Source)"
@@ -74,7 +74,7 @@ The core technical routing engine is fully operational, thoroughly tested, and d
 Bring the power of Nacho Flow directly inside the developer's primary workspace to maximize distribution and eliminate setup friction.
 
 - [ ] **One-Click Agent Auto-Configuration**:
-  - Automatically detect installed extensions (Roo Code, Cline, Continue).
+  - Automatically detect installed extensions (Zoo Code, Cline, Continue).
   - One-click button to inject `http://127.0.0.1:8000/v1` and custom model headers directly into VS Code `settings.json`.
 - [ ] **Status Bar Real-Time Savings HUD**:
   - Live indicator displaying: `🌮 Nacho: $14.20 Saved Today | 78% Local GPU`.
@@ -85,6 +85,8 @@ Bring the power of Nacho Flow directly inside the developer's primary workspace 
 - [ ] **Interactive Visual Tuner Webview**:
   - GUI for `nacho-flow tune` rendering cost-vs-retries trade-offs.
   - One-click **"Apply Recommendation"** button updating `config.yaml` with backup creation.
+- [ ] **Agentic Tool Fallback Shield (RFC-002)**:
+  - Real-time prose-to-tool auto-wrapping ([RFC-002](docs/RFC-002-AGENTIC-TOOL-FALLBACK-SHIELD.md)) intercepting conversational plan/question turns from local models and synthesizing schema-compliant `ask_followup_question` tool payloads to eliminate 3-strike agent harness crashes in Zoo Code and Cline.
 - [ ] **Daemon Lifecycle Automation**:
   - Auto-spawn daemon on VS Code startup and graceful shutdown on IDE exit.
   - Automatic detection and execution of Homebrew/System PATH binaries.

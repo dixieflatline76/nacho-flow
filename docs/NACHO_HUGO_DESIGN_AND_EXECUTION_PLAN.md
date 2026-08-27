@@ -320,7 +320,7 @@ flowchart LR
 ```
 
 ### 7.1 Automated `llms.txt` & `llms-full.txt` Generation
-* **The Standard for AI Coding Agents**: Coding agents (such as Roo Code, Cursor, Windsurf, and Claude Code) look for `https://spicebox.dev/nacho-flow/llms.txt` to understand a project's architecture and APIs.
+* **The Standard for AI Coding Agents**: Coding agents (such as Zoo Code, Cursor, Windsurf, and Claude Code) look for `https://spicebox.dev/nacho-flow/llms.txt` to understand a project's architecture and APIs.
 * **Nacho Hugo Feature**: During build, Nacho Hugo automatically parses all registered documentation files and generates:
   1. `site/llms.txt`: A concise, token-optimized table of contents with doc summaries and links.
   2. `site/llms-full.txt`: A consolidated, stripped-down single text file containing all system schemas, YAML config references, and rule directive specifications for immediate agent absorption.

@@ -24,7 +24,7 @@ If you just want to stop wasting cloud money and start saving in under 2 minutes
 
 ```
 ┌─────────────────────────┐      ┌──────────────────────────┐      ┌─────────────────────────┐
-│ 1. Start Ollama Locally │ ───> │ 2. Run Nacho Flow Gateway │ ───> │ 3. Point Roo/Cursor to  │
+│ 1. Start Ollama Locally │ ───> │ 2. Run Nacho Flow Gateway │ ───> │ 3. Point Zoo/Aider to   │
 │ ollama run qwen2.5-coder│      │ nacho-flow               │      │ http://127.0.0.1:8000/v1│
 └─────────────────────────┘      └──────────────────────────┘      └─────────────────────────┘
 ```
@@ -46,7 +46,7 @@ If you just want to stop wasting cloud money and start saving in under 2 minutes
    nacho-flow
    ```
    *(Or if using VS Code, install the companion extension and click **▶ Start** in the sidebar!)*
-4. **Point Your Coding Agent** (Roo Code, Cline, Cursor, Aider):
+4. **Point Your Coding Agent** (Zoo Code, Cline, Cursor, Aider):
    * **API Provider**: `OpenAI Compatible`
    * **Base URL**: `http://127.0.0.1:8000/v1`
    * **API Key**: `sk-nacho-secret-key` (or any string)
@@ -288,7 +288,7 @@ Nacho Flow includes a **zero-alloc lexical bracket balancer** that automatically
 6. **ReAct / LangChain**: `Action: tool_name\nAction Input: {...}`
 7. **DeepSeek-R1 & Qwen Reasoning**: Preserves `<think>...</think>`, `<|im_start|>think`, and `<thinking>` internal thoughts while extracting the embedded tool call block.
 
-Nacho Flow converts all of these into standard OpenAI `tool_calls` arrays with stringified `function.arguments` JSON, enabling **flawless tool execution in Roo Code, Cline, Cursor, and Continue**.
+Nacho Flow converts all of these into standard OpenAI `tool_calls` arrays with stringified `function.arguments` JSON, enabling **flawless tool execution in Zoo Code, Cline, Cursor, and Continue**.
 
 ---
 
@@ -402,7 +402,7 @@ Install Nacho Flow as a `systemd` service on Ubuntu, Debian, Arch, Fedora, or Ro
 
 Nacho Flow exposes a standard OpenAI-compatible API on `http://127.0.0.1:8000/v1` (or your host LAN / Tailscale IP, e.g. `http://192.168.1.100:8000/v1`). Because Nacho Flow intercepts requests and dynamically rewrites models according to your tier rules, you can use `nacho-hybrid` (or any string) as your Model ID.
 
-### 1. Roo Code & Cline (VS Code)
+### 1. Zoo Code & Cline (VS Code)
 In **Settings** (Gear Icon $\rightarrow$ API Configuration):
 - **API Provider**: `OpenAI Compatible`
 - **Base URL**: `http://localhost:8000/v1` *(or `http://<lan-ip>:8000/v1`)*
@@ -414,13 +414,35 @@ In **Settings** (Gear Icon $\rightarrow$ API Configuration):
   - **Context Window**: `128,000` tokens
   * **Max Output**: `8,192` tokens
 
-### 2. Cursor
-In **Cursor Settings** $\rightarrow$ **Models**:
-- **OpenAI API Base URL**: `http://localhost:8000/v1`
-- **OpenAI API Key**: `sk-nacho-secret-key` *(or any dummy string)*
-- Add custom model: `nacho-hybrid`
+### 2. OpenCode (Terminal Agent)
+```bash
+# Run OpenCode in terminal:
+export OPENAI_BASE_URL="http://127.0.0.1:8000/v1"
+export OPENAI_API_KEY="sk-nacho-secret-key"
+opencode --model openai/nacho-hybrid
+```
+Or in `~/.config/opencode/config.json`:
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "nacho": {
+      "npm": "@ai-sdk/openai",
+      "options": {
+        "baseURL": "http://127.0.0.1:8000/v1",
+        "apiKey": "sk-nacho-secret-key"
+      },
+      "models": {
+        "nacho-hybrid": {
+          "name": "Nacho Flow Hybrid"
+        }
+      }
+    }
+  }
+}
+```
 
-### 3. Aider
+### 3. Aider (CLI Pair Programmer)
 ```bash
 # Local Single-Machine Setup
 export OPENAI_API_BASE="http://127.0.0.1:8000/v1"
@@ -433,7 +455,13 @@ export OPENAI_API_KEY="sk-nacho-gateway-token"
 aider --model openai/nacho-hybrid
 ```
 
-### 4. Continue.dev
+### 4. Cursor
+In **Cursor Settings** $\rightarrow$ **Models**:
+- **OpenAI API Base URL**: `http://localhost:8000/v1`
+- **OpenAI API Key**: `sk-nacho-secret-key` *(or any dummy string)*
+- Add custom model: `nacho-hybrid`
+
+### 5. Continue.dev
 In `~/.continue/config.json`:
 ```json
 {
@@ -453,7 +481,7 @@ In `~/.continue/config.json`:
 
 ### 5.5 ✅ 3 Ways to Verify It's Working
 
-Once you have pointed Roo Code, Cline, or Cursor to Nacho Flow, test your setup by asking your agent a routine question (e.g. `"explain this file"`). Here is how to immediately verify that the turn ran on your local GPU for **$0.00**:
+Once you have pointed Zoo Code, Cline, or Cursor to Nacho Flow, test your setup by asking your agent a routine question (e.g. `"explain this file"`). Here is how to immediately verify that the turn ran on your local GPU for **$0.00**:
 
 1. **Check Live Terminal Logs (or VS Code Output Channel `🌮 Nacho Flow Engine`)**:
    You will see an instant routing log line:
@@ -674,7 +702,7 @@ Two ways to optimize your routing costs:
 
 ---
 
-**HotSauce Directives** allow developers and autonomous coding agents (Claude Code, Cursor, Cline, Roo Code, Aider, OpenCode) to manually spice up prompt turns with instant routing overrides or inspect daemon metadata dynamically directly from conversational prompts using zero-cost `@nacho:` tags.
+**HotSauce Directives** allow developers and autonomous coding agents (Claude Code, Cursor, Cline, Zoo Code, Aider, OpenCode) to manually spice up prompt turns with instant routing overrides or inspect daemon metadata dynamically directly from conversational prompts using zero-cost `@nacho:` tags.
 
 ### 🔥 Heat Levels (Routing Overrides)
 
@@ -735,7 +763,7 @@ The **Nacho Flow VS Code Extension** delivers full lifecycle management, visual 
    - **Local Daemon Lifecycle**: 1-click Start, Stop, and Restart with real-time log output streaming to the `🌮 Nacho Flow Engine` output channel.
    - **Engine Mode Toggle**: Seamlessly switch between **This Machine** (`127.0.0.1:8000`) and **Remote Server** (`http://<ip>:8000` with Bearer auth). Credentials and endpoint preferences are persisted separately.
    - **Upstream Engine Discovery**: Live discovery and status chips for Ollama, OpenRouter, vLLM, SGLang, and llama.cpp.
-   - **1-Click Agent Setup**: Instant copy helpers for Base URL, API Key, and Model ID (`nacho-hybrid`) for Roo Code, Cline, and Cursor.
+   - **1-Click Agent Setup**: Instant copy helpers for Base URL, API Key, and Model ID (`nacho-hybrid`) for Zoo Code, Cline, and Cursor.
    - **Direct Help & Support**: 1-click buttons linking directly to the User Guide and Support Desk.
 
 2. **Status Bar & Hover Telemetry**:
@@ -796,7 +824,7 @@ Closes a tripped circuit breaker to immediately resume traffic to that upstream 
 
 ### 10.3 Markdown Diff Sanitizer
 
-Local models occasionally emit malformed markdown diff blocks (e.g. invalid hunk prefixes or corrupt headers). Nacho Flow's internal **Diff Sanitizer** automatically cleans and standardizes diff blocks before returning responses to coding agents (Roo Code, Cline, Cursor), preventing agent file-patching crashes.
+Local models occasionally emit malformed markdown diff blocks (e.g. invalid hunk prefixes or corrupt headers). Nacho Flow's internal **Diff Sanitizer** automatically cleans and standardizes diff blocks before returning responses to coding agents (Zoo Code, Cline, Cursor), preventing agent file-patching crashes.
 
 
 

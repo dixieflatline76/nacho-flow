@@ -291,7 +291,7 @@
 
 		const routes = routesData.routes.slice(0, 10);
 		if (routes.length === 0) {
-			routesContent.innerHTML = '<div class="loading">No route history recorded yet. Route requests from Roo Code, Cline, or Cursor to begin logging!</div>';
+			routesContent.innerHTML = '<div class="loading">No route history recorded yet. Route requests from Zoo Code, Cline, or Cursor to begin logging!</div>';
 			return;
 		}
 

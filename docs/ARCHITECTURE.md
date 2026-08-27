@@ -14,7 +14,7 @@ flowchart TD
     classDef cloud fill:#3b0764,stroke:#a855f7,stroke-width:2px,color:#fff;
     classDef tool fill:#172554,stroke:#60a5fa,stroke-width:2px,color:#fff;
 
-    Client["💻 Autonomous Coding Agent<br/>(Cursor · Roo Code · Cline · Aider · Continue)"]:::client
+    Client["💻 Autonomous Coding Agent<br/>(Zoo Code · Cline · OpenCode · Aider · Cursor)"]:::client
 
     subgraph NachoGateway ["🌮 Nacho Flow Edge Gateway (Pure Go Core)"]
         direction TB
@@ -305,7 +305,7 @@ flowchart TD
 1. **Zero Route Duplication**: All token calculation, `expr` rule evaluation, circuit trips, and pricing logic execute in Go. The extension never duplicates token math or routing rules.
 2. **Real-Time Push Updates**: Rather than polling, the extension subscribes to the daemon's Server-Sent Events broker (`GET /v1/events`). Metrics update in real-time across the Status Bar and Analytics Webview with zero CPU spin.
 3. **Isolated Credential State**: `AuthManager` isolates Local mode (`127.0.0.1:8000`) and Remote mode (`http://<ip>:8000`), storing tokens securely in `vscode.SecretStorage` and guaranteeing that toggling modes never overwrites remote server credentials.
-4. **Markdown Diff Sanitizer (`pkg/router/diff_sanitizer.go`)**: Validates diff block syntax on responses, sanitizing malformed hunk prefixes before delivery to coding agents (Roo Code, Cline, Cursor).
+4. **Markdown Diff Sanitizer (`pkg/router/diff_sanitizer.go`)**: Validates diff block syntax on responses, sanitizing malformed hunk prefixes before delivery to coding agents (Zoo Code, Cline, Cursor).
 
 
 

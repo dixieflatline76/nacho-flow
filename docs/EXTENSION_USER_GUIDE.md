@@ -1,6 +1,6 @@
 # 🧩 Nacho Flow: VS Code Companion Extension Guide
 
-The **Nacho Flow VS Code Extension** provides real-time cost visibility, visual routing inspection, local process lifecycle management, circuit breaker control, and automated configuration for autonomous coding agents (such as Roo Code, Cline, and Cursor).
+The **Nacho Flow VS Code Extension** provides real-time cost visibility, visual routing inspection, local process lifecycle management, circuit breaker control, and automated configuration for autonomous coding agents (such as Zoo Code, Cline, and Cursor).
 
 ---
 
@@ -10,7 +10,7 @@ The **Nacho Flow VS Code Extension** provides real-time cost visibility, visual 
    - **One-Click Local Lifecycle**: Start, stop, restart, and view live daemon engine logs directly inside VS Code with zero command-line overhead.
    - **Seamless Mode Toggling**: Effortlessly toggle between **This Machine** (`http://127.0.0.1:8000`) and **Remote Server** (LAN or Tailscale URL with Bearer token authentication).
    - **Upstream Inference Engine Status**: Real-time status chips and model discovery for Ollama, OpenRouter, vLLM, SGLang, and llama.cpp.
-   - **One-Click Agent Copy**: Instant copy buttons for **Base URL**, **API Key**, and **Model ID** formatted for immediate paste into Roo Code, Cline, or Cursor.
+   - **One-Click Agent Copy**: Instant copy buttons for **Base URL**, **API Key**, and **Model ID** formatted for immediate paste into Zoo Code, Cline, or Cursor.
 
 2. **Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`)**:
    - **Cost & Token Telemetry**: Live cards showing Total Spend, Total Savings, Savings Percentage, and Total Request count.
@@ -42,7 +42,7 @@ Under **3. Coding Agents** in the sidebar:
 - Click **📋 Copy** next to `Base URL` (`http://127.0.0.1:8000/v1` or remote).
 - Click **📋 Copy** next to `API Key`.
 - Click **📋 Copy** next to `Model ID` (`nacho-hybrid`).
-- Paste into **Roo Code**, **Cline**, or **Cursor** settings under OpenAI Compatible.
+- Paste into **Zoo Code**, **Cline**, or **Cursor** settings under OpenAI Compatible.
 
 ---
 

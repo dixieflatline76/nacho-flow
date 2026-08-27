@@ -54,6 +54,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	private getHtmlForWebview(webview: vscode.Webview): string {
 		const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'sidebar', 'sidebar.css'));
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'sidebar', 'sidebar.js'));
+		const zooIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'icons', 'zoo.svg'));
 
 		return `<!DOCTYPE html>
 <html lang="en">
@@ -156,13 +157,13 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<div class="section-card">
 		<div class="section-header">🤖 3. Coding Agents</div>
 		<div class="section-body">
-			<div class="partner-desc">Configure OpenAI-compatible provider in Roo Code, Cline, or Cursor:</div>
+			<div class="partner-desc">Configure OpenAI-compatible provider in Zoo Code, Cline, or Cursor:</div>
 			<div class="agent-config-card">
 				<div class="agent-config-row">
 					<span class="agent-config-label">Base URL</span>
 					<div class="agent-config-val">
 						<span id="proxy-endpoint-text" class="agent-config-code">http://127.0.0.1:8000/v1</span>
-						<button class="btn-icon-copy" onclick="copyRooEndpoint()" title="Copy Base URL">
+						<button class="btn-icon-copy" onclick="copyZooEndpoint()" title="Copy Base URL">
 							<span class="brand-logo-svg" style="width: 10px; height: 10px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></span>
 							Copy
 						</button>
@@ -190,9 +191,9 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 				</div>
 			</div>
 			<div class="btn-row" style="margin-top: 4px;">
-				<button class="btn btn-secondary btn-compact" onclick="openMarketplace('RooVeterinaryInc.roo-cline')">
-					<span class="brand-logo-svg roo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 11.23L5.18 10.45L12 5.03L18.97 7.04L19.59 5.34L23 10.45L20.83 10.61L15.56 12L14.01 14.17L16.8 18.97L15.41 18.97L12 13.86L12 11.54L9.37 9.83L5.8 11.69Z"/></svg></span>
-					Install Roo Code
+				<button class="btn btn-secondary btn-compact" onclick="openMarketplace('zoocodeorganization.zoo-code')">
+					<img src="${zooIconUri}" class="brand-logo-svg zoo" style="width: 14px; height: 14px; object-fit: contain;" alt="Zoo Code" />
+					Install Zoo Code
 				</button>
 				<button class="btn btn-secondary btn-compact" onclick="openMarketplace('saoudrizwan.claude-dev')">
 					<span class="brand-logo-svg cline"><svg viewBox="0 0 466.73 487.04" fill="currentColor"><path d="M463.6,275.08l-29.26-58.75v-33.83c0-56.08-45.01-101.5-100.53-101.5h-50.01c3.62-7.43,5.61-15.79,5.61-24.61,0-31.17-25.08-56.39-56.07-56.39s-56.07,25.22-56.07,56.39c0,8.82,1.99,17.17,5.61,24.61h-50.01c-55.51,0-100.52,45.42-100.52,101.5v33.83l-29.87,58.59c-3.01,5.9-3.01,12.92,0,18.81l29.87,57.93v33.83c0,56.08,45.01,101.5,100.52,101.5h200.95c55.51,0,100.53-45.42,100.53-101.5v-33.83l29.21-58.13c2.9-5.79,2.9-12.61.05-18.46ZM202.75,322.96c0,25.48-20.54,46.14-45.88,46.14s-45.88-20.66-45.88-46.14v-82.02c0-25.48,20.54-46.14,45.88-46.14s45.88,20.66,45.88,46.14v82.02ZM350.58,322.96c0,25.48-20.54,46.14-45.88,46.14s-45.88-20.66-45.88-46.14v-82.02c0-25.48,20.54-46.14,45.88-46.14s45.88,20.66,45.88,46.14v82.02Z"/></svg></span>
