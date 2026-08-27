@@ -85,8 +85,8 @@ Bring the power of Nacho Flow directly inside the developer's primary workspace 
 - [ ] **Interactive Visual Tuner Webview**:
   - GUI for `nacho-flow tune` rendering cost-vs-retries trade-offs.
   - One-click **"Apply Recommendation"** button updating `config.yaml` with backup creation.
-- [ ] **Agentic Tool Fallback Shield (RFC-002)**:
-  - Real-time prose-to-tool auto-wrapping ([RFC-002](docs/RFC-002-AGENTIC-TOOL-FALLBACK-SHIELD.md)) intercepting conversational plan/question turns from local models and synthesizing schema-compliant `ask_followup_question` tool payloads to eliminate 3-strike agent harness crashes in Zoo Code and Cline.
+- [x] **Agentic Tool Fallback Shield**:
+  - Real-time zero-allocation sliding tail-buffer prose-to-tool auto-wrapping intercepting conversational plan/question turns from local models and synthesizing schema-compliant `ask_followup_question` tool payloads to eliminate 3-strike agent harness crashes in Zoo Code and Cline.
 - [ ] **Daemon Lifecycle Automation**:
   - Auto-spawn daemon on VS Code startup and graceful shutdown on IDE exit.
   - Automatic detection and execution of Homebrew/System PATH binaries.

@@ -36,9 +36,10 @@ flowchart TD
         direction TB
         DelayedHeader["5. Delayed SSE Header & Quality Validator (Empty Chunk Peeker)"]:::tool
         ToolNormalizer["6. Universal Tool Calling & &lt;think&gt; Stream Normalizer"]:::tool
-        Telemetry["7. Lock-Free Persistence & Cost-Reduction Tracker"]:::core
+        Shield["7. Agentic Tool Fallback Shield (Sliding Tail-Buffer)"]:::tool
+        Telemetry["8. Lock-Free Persistence & Cost-Reduction Tracker"]:::core
 
-        DelayedHeader --> ToolNormalizer --> Telemetry
+        DelayedHeader --> ToolNormalizer --> Shield --> Telemetry
     end
 
     Client -->|POST /v1/chat/completions| Auth
@@ -76,7 +77,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **Session Retry Tracking**: Computes an FNV-1a hash of the initial conversation prompt prefix to correlate prompt turns within a sliding 5-minute window. Increments a turn retry counter on consecutive turns with identical prefixes without detached goroutines (lazy TTL eviction).
 - **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities without underestimating payloads.
 - **Multimodal Detection**: Scans message blocks for `image_url` payloads and base64 strings (`HasImages`).
-- **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`).
+- **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`), extracting declared interactive tools (`ask_followup_question`, `ask_question`).
 - **Scoped Keyword Extraction**: Extracts programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) **strictly from the clean prompt**, preventing historical multi-turn token pollution.
 
 ### Stage 2: AST-Compiled Rule Evaluation & Directive Dispatch (`pkg/strategy/expr_evaluator.go`)
@@ -127,6 +128,13 @@ Every incoming request passes through an optimized multi-stage processing pipeli
   7. *Markdown Code Fences*: ` ```json\n{"name": "..."}\n``` ` (with 3 or 4 backticks, preserving `<think>` CoT blocks)
   8. *Bare JSON Object/Array*: Direct Ollama/Qwen JSON completions with conversational preambles (`{"name": "...", "arguments": {...}}`).
 - **OpenAI Conformance**: Converts extracted tools into strict OpenAI `tool_calls` structures with stringified `arguments`, updates `finish_reason` to `"tool_calls"`, and recalculates `Content-Length`.
+
+### Stage 5d: Agentic Tool Fallback Shield (Sliding Tail-Buffer) (`pkg/router/shield/`)
+- **The Problem**: Rigid agent harnesses (Zoo Code, Cline) enforce a 0-turn error policy (`"You did not use a tool!"`). Local models answering questions or mode proposals in prose trigger 3-strike task abortions.
+- **Zero-Allocation Tail Buffer (`tail_buffer.go`)**: Maintains a 256-byte circular ring buffer across streaming responses using `sync.Pool` recycling.
+- **Rule Engine & Heuristic Guards (`rule_engine.go`)**: Evaluates prose endings in $4.67\text{ ns}$ for question marks (`?`), approval heuristics (*"Are you satisfied"*, *"Would you like"*), or mode switches (*"switch to code mode"*).
+- **Strategy Schema Synthesis (`strategy.go`)**: Generates compliant tool calls for `ask_followup_question`, `ask_question`, or `switch_mode`.
+- **Pre-`[DONE]` Stream Delta Injection (`stream_normalizer.go`)**: If upstream finishes without emitting native tool calls, the shield emits a synthetic `tool_calls` chunk with `finish_reason: "tool_calls"` immediately before streaming `data: [DONE]`.
 
 ### Stage 6: Telemetry Calibration & Lock-Free Pricing (`pkg/router/estimator.go`, `pkg/telemetry/pricing.go`)
 - **Estimator Dynamic Calibration**: If upstream returns `usage.prompt_tokens`, calibrates the local `TokenEstimator` ratio in real time using lock-free atomic pointer swaps.

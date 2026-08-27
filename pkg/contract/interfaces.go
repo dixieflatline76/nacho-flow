@@ -9,6 +9,7 @@ type RequestContext struct {
 	Tokens           int      `json:"tokens"`
 	HasImages        bool     `json:"has_images"`
 	HasTools         bool     `json:"has_tools"`
+	InteractiveTool  string   `json:"interactive_tool,omitempty"`
 	Keywords         []string `json:"keywords"`
 	Prompt           string   `json:"prompt"`
 	CleanPrompt      string   `json:"clean_prompt,omitempty"`
@@ -74,12 +75,21 @@ type DealInfo struct {
 	ExpiresAt          *string  `json:"expires_at,omitempty"`
 }
 
+// AgentShieldConfig configures the Agentic Tool Fallback Shield.
+type AgentShieldConfig struct {
+	Enabled              *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	TailBufferBytes      int      `yaml:"tail_buffer_bytes,omitempty" json:"tail_buffer_bytes,omitempty"`
+	QuestionHeuristics   []string `yaml:"question_heuristics,omitempty" json:"question_heuristics,omitempty"`
+	ModeSwitchHeuristics []string `yaml:"mode_switch_heuristics,omitempty" json:"mode_switch_heuristics,omitempty"`
+}
+
 // Config defines the top-level configuration loaded from config.yaml.
 type Config struct {
 	Port        int                       `yaml:"port" json:"port"`
 	AuthToken   string                    `yaml:"auth_token,omitempty" json:"auth_token,omitempty"`
 	Router      RouterConfig              `yaml:"router,omitempty" json:"router,omitempty"`
 	Deals       DealsConfig               `yaml:"deals,omitempty" json:"deals,omitempty"`
+	AgentShield AgentShieldConfig         `yaml:"agent_shield,omitempty" json:"agent_shield,omitempty"`
 	Providers   map[string]ProviderConfig `yaml:"providers" json:"providers"`
 	Tiers       []Tier                    `yaml:"tiers" json:"tiers"`
 	DefaultTier Tier                      `yaml:"default_tier" json:"default_tier"`

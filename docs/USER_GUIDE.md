@@ -226,6 +226,25 @@ default_tier:
   model: "deepseek/deepseek-v4-flash-latest"
   provider: "openrouter"
   when: "true"
+
+# 🛡️ Agentic Tool Fallback Shield
+# Intercepts conversational plans & questions from local models in Zoo Code / Cline
+# and auto-synthesizes schema-compliant tool calls to prevent 3-strike deadlocks.
+agent_shield:
+  enabled: true
+  tail_buffer_bytes: 256
+  question_heuristics:
+    - "are you satisfied"
+    - "would you like"
+    - "should i"
+    - "do you approve"
+    - "please confirm"
+    - "let me know if"
+    - "how would you like to proceed"
+  mode_switch_heuristics:
+    - "switch to code mode"
+    - "switch to architect mode"
+    - "ready to implement"
 ```
 
 ---

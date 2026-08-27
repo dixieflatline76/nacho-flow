@@ -1652,3 +1652,209 @@ func TestProxy_StreamingUsage_DualRateCostAccounting(t *testing.T) {
 		t.Errorf("expected $0.1365 saved in tracker, got %f", stats.EstimatedCostSavedUSD)
 	}
 }
+
+func TestServer_NonStreamingAgentShieldFallback(t *testing.T) {
+	// Mock backend that returns non-streaming prose response asking a question
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"id":"chatcmpl-test","choices":[{"index":0,"message":{"role":"assistant","content":"I have written the architectural blueprint.\n\nAre you satisfied with this plan?"},"finish_reason":"stop"}]}`
+		w.Write([]byte(resp))
+	}))
+	defer ts.Close()
+
+	disabled := false
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {
+				BaseURL: ts.URL,
+				Type:    "local",
+			},
+		},
+		AgentShield: contract.AgentShieldConfig{
+			QuestionHeuristics:   []string{"are you satisfied"},
+			ModeSwitchHeuristics: []string{"ready to implement"},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default",
+			Provider: "mock",
+			Model:    "test-model",
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(nil, cfg.DefaultTier)
+	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
+
+	// 1. Request with tools including ask_followup_question
+	reqBody := `{"model":"auto","stream":false,"tools":[{"type":"function","function":{"name":"ask_followup_question"}}],"messages":[{"role":"user","content":"Write a plan"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("failed to parse json response: %v", err)
+	}
+
+	choices := parsed["choices"].([]interface{})
+	firstChoice := choices[0].(map[string]interface{})
+	if firstChoice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason 'tool_calls', got %v", firstChoice["finish_reason"])
+	}
+
+	msg := firstChoice["message"].(map[string]interface{})
+	toolCalls := msg["tool_calls"].([]interface{})
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 synthesized tool call, got %d", len(toolCalls))
+	}
+
+	// 2. Test disabled shield config
+	cfgDisabled := &contract.Config{
+		Providers: cfg.Providers,
+		AgentShield: contract.AgentShieldConfig{
+			Enabled: &disabled,
+		},
+		DefaultTier: cfg.DefaultTier,
+	}
+	srvDisabled := NewServer(cfgDisabled, evaluator, router.NewClassifier(), router.NewSanitizer())
+	if srvDisabled.shieldMgr != nil {
+		t.Fatal("expected nil shieldMgr when enabled=false")
+	}
+}
+
+func TestServer_ProxyHelpers(t *testing.T) {
+	// 1. singleJoiningSlash
+	if singleJoiningSlash("http://localhost", "/v1") != "http://localhost/v1" {
+		t.Errorf("unexpected slash join")
+	}
+	if singleJoiningSlash("http://localhost/", "v1") != "http://localhost/v1" {
+		t.Errorf("unexpected slash join")
+	}
+	if singleJoiningSlash("http://localhost/", "/v1") != "http://localhost/v1" {
+		t.Errorf("unexpected slash join")
+	}
+	if singleJoiningSlash("http://localhost", "v1") != "http://localhost/v1" {
+		t.Errorf("unexpected slash join")
+	}
+
+	// 2. hasCandidateToolTokens
+	if !hasCandidateToolTokens([]byte("<tool_call>{}</tool_call>")) {
+		t.Errorf("expected true for tool tokens")
+	}
+	if hasCandidateToolTokens([]byte("plain content")) {
+		t.Errorf("expected false for plain content")
+	}
+
+	// 3. isDefectiveEmptyContent
+	if !isDefectiveEmptyContent([]byte(`{"choices":[]}`)) {
+		t.Errorf("expected defective for empty choices")
+	}
+	if !isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":""}}]}`)) {
+		t.Errorf("expected defective for empty content")
+	}
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"ok"}}]}`)) {
+		t.Errorf("expected not defective for ok content")
+	}
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"","reasoning":"thinking"}}]}`)) {
+		t.Errorf("expected not defective for reasoning content")
+	}
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"","tool_calls":[{"id":"1"}]}}]}`)) {
+		t.Errorf("expected not defective when tool_calls exist")
+	}
+	if isDefectiveEmptyContent([]byte(`invalid json`)) {
+		t.Errorf("expected false on unmarshal error")
+	}
+
+	// 4. authenticateClient edge cases
+	srv := NewServer(&contract.Config{AuthToken: "secret123"}, nil, nil, nil)
+	rValidBearer := httptest.NewRequest("GET", "/", nil)
+	rValidBearer.Header.Set("Authorization", "Bearer secret123")
+	if !srv.authenticateClient(rValidBearer) {
+		t.Errorf("expected valid bearer token")
+	}
+
+	rValidAPIKey := httptest.NewRequest("GET", "/", nil)
+	rValidAPIKey.Header.Set("api-key", "secret123")
+	if !srv.authenticateClient(rValidAPIKey) {
+		t.Errorf("expected valid api-key header")
+	}
+
+	rInvalid := httptest.NewRequest("GET", "/", nil)
+	rInvalid.Header.Set("Authorization", "Bearer wrong")
+	if srv.authenticateClient(rInvalid) {
+		t.Errorf("expected false for wrong token")
+	}
+
+	// 5. State getters with empty state
+	emptySrv := &Server{}
+	if emptySrv.GetConfig() == nil {
+		t.Errorf("expected non-nil default config")
+	}
+	if emptySrv.GetEvaluator() != nil {
+		t.Errorf("expected nil evaluator")
+	}
+	if emptySrv.GetRegistry() != nil {
+		t.Errorf("expected nil registry")
+	}
+	emptySrv.armWatchdog(nil, time.Second)
+	emptySrv.SetTuner(nil)
+	emptySrv.SetDiskStore(nil)
+
+	// 6. allowProvider / recordProviderSuccess / recordProviderFailure
+	cbProv := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{BaseURL: "http://localhost:11434"})
+	if !srv.allowProvider(cbProv) {
+		t.Errorf("expected allowProvider true")
+	}
+	srv.recordProviderSuccess(cbProv)
+	srv.recordProviderFailure(cbProv)
+}
+
+func TestProxy_AgentShield_NonStreamingRescue(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","choices":[{"index":0,"message":{"role":"assistant","content":"I have created the plan. Are you satisfied with this architecture?"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Local GPU", Model: "qwen", Provider: "mock_local", When: "true"},
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	reqBody := `{"model":"qwen","tools":[{"type":"function","function":{"name":"ask_followup_question","description":"Ask user a question"}}],"messages":[{"role":"user","content":"Plan the project"}]}`
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqBody))
+
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+
+	choices := res["choices"].([]interface{})
+	msg := choices[0].(map[string]interface{})["message"].(map[string]interface{})
+	toolCalls, ok := msg["tool_calls"].([]interface{})
+	if !ok || len(toolCalls) == 0 {
+		t.Fatalf("expected tool_calls in rescued non-streaming response, got: %v", res)
+	}
+
+	fn := toolCalls[0].(map[string]interface{})["function"].(map[string]interface{})
+	if fn["name"] != "ask_followup_question" {
+		t.Fatalf("expected tool name 'ask_followup_question', got %v", fn["name"])
+	}
+}

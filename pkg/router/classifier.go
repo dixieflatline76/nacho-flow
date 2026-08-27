@@ -44,9 +44,10 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 		return reqCtx, err
 	}
 
-	// 1. Check tools
+	// 1. Check tools and extract supported interactive tool for agent fallback shield
 	if tools, ok := raw["tools"].([]interface{}); ok && len(tools) > 0 {
 		reqCtx.HasTools = true
+		reqCtx.InteractiveTool = ExtractSupportedInteractiveTool(tools)
 	}
 
 	// 2. Parse messages to count tokens, detect images, and extract keywords
@@ -148,4 +149,26 @@ func extractKeywords(text string) []string {
 	}
 
 	return keywords
+}
+
+// ExtractSupportedInteractiveTool inspects tools to find supported conversational tool schemas.
+func ExtractSupportedInteractiveTool(tools []interface{}) string {
+	for _, t := range tools {
+		tMap, ok := t.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		var name string
+		if fnMap, ok := tMap["function"].(map[string]interface{}); ok {
+			name, _ = fnMap["name"].(string)
+		} else if n, ok := tMap["name"].(string); ok {
+			name = n
+		}
+
+		lower := strings.ToLower(name)
+		if lower == "ask_followup_question" || lower == "ask_question" || lower == "user_prompt" || lower == "interactive_input" {
+			return name
+		}
+	}
+	return ""
 }

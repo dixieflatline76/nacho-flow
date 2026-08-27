@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 )
 
 // chunkReader simulates fragmented TCP streaming by delivering bytes in arbitrary chunk sizes.
@@ -563,4 +565,105 @@ data: [DONE]
 	if usage.CompletionTokens == 0 {
 		t.Errorf("expected non-zero estimated completion tokens from emitted text")
 	}
+
+	// Test 0 chars branch
+	emptyNorm := NewStreamNormalizer(io.NopCloser(strings.NewReader("")))
+	defer emptyNorm.Close()
+	zeroUsage, ok := emptyNorm.GetUsage()
+	if ok || zeroUsage.CompletionTokens != 0 {
+		t.Fatalf("expected 0 completion tokens for empty stream")
+	}
+
+	// Test 1 char branch (estTokens >= 1)
+	singleNorm := NewStreamNormalizer(io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}\n\n")))
+	defer singleNorm.Close()
+	_, _ = io.ReadAll(singleNorm)
+	oneUsage, ok := singleNorm.GetUsage()
+	if ok || oneUsage.CompletionTokens < 1 {
+		t.Fatalf("expected >= 1 completion token for single character, got %d", oneUsage.CompletionTokens)
+	}
+}
+
+func TestStreamNormalizer_AgentShieldFallback(t *testing.T) {
+	t.Run("Synthesizes tool call delta before [DONE] on trailing question", func(t *testing.T) {
+		rawSSE := `data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{"content":"I have planned the Go CLI app. "}}]}
+
+data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{"content":"Are you satisfied with this plan?"}}]}
+
+data: [DONE]
+
+`
+		r := io.NopCloser(strings.NewReader(rawSSE))
+		norm := NewStreamNormalizer(r)
+		defer norm.Close()
+
+		mgr := shield.NewDefaultShieldManager()
+		norm.SetShield("ask_followup_question", mgr)
+
+		outBytes, err := io.ReadAll(norm)
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+
+		outStr := string(outBytes)
+		if !strings.Contains(outStr, "\"ask_followup_question\"") {
+			t.Fatalf("expected output stream to contain synthesized 'ask_followup_question', got: %s", outStr)
+		}
+		if !strings.Contains(outStr, "\"finish_reason\":\"tool_calls\"") {
+			t.Fatalf("expected finish_reason 'tool_calls' in stream, got: %s", outStr)
+		}
+		if !strings.HasSuffix(strings.TrimSpace(outStr), "data: [DONE]") {
+			t.Fatalf("expected stream to terminate with data: [DONE], got: %s", outStr)
+		}
+	})
+
+	t.Run("Bypasses shield when native tool calls are present", func(t *testing.T) {
+		rawSSE := `data: {"id":"chatcmpl-2","choices":[{"index":0,"delta":{"content":"Let me execute the command: "}}]}
+
+data: {"id":"chatcmpl-2","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"execute_command","arguments":"{\"command\":\"go test\"}"}}]}}]}
+
+data: [DONE]
+
+`
+		r := io.NopCloser(strings.NewReader(rawSSE))
+		norm := NewStreamNormalizer(r)
+		defer norm.Close()
+
+		mgr := shield.NewDefaultShieldManager()
+		norm.SetShield("ask_followup_question", mgr)
+
+		outBytes, err := io.ReadAll(norm)
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+
+		outStr := string(outBytes)
+		if strings.Contains(outStr, "call_autowrap_") {
+			t.Fatalf("expected no autowrap when native tool calls exist, got: %s", outStr)
+		}
+	})
+
+	t.Run("Bypasses shield when message is normal completion with no question", func(t *testing.T) {
+		rawSSE := `data: {"id":"chatcmpl-3","choices":[{"index":0,"delta":{"content":"Files were created successfully."}}]}
+
+data: [DONE]
+
+`
+		r := io.NopCloser(strings.NewReader(rawSSE))
+		norm := NewStreamNormalizer(r)
+		defer norm.Close()
+
+		mgr := shield.NewDefaultShieldManager()
+		norm.SetShield("ask_followup_question", mgr)
+
+		outBytes, err := io.ReadAll(norm)
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+
+		outStr := string(outBytes)
+		if strings.Contains(outStr, "ask_followup_question") {
+			t.Fatalf("expected no tool call synthesis for non-question completion, got: %s", outStr)
+		}
+	})
 }

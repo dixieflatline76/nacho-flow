@@ -60,7 +60,7 @@
                             <span class="dropdown-icon">🏗️</span>
                             <div class="dropdown-text">
                                 <span class="dropdown-title">Architecture & System Design</span>
-                                <span class="dropdown-desc">Internal pipeline, DTOs & RFC-002 shield</span>
+                                <span class="dropdown-desc">Internal pipeline, DTOs & agentic shield</span>
                             </div>
                         </a>
                         <a href="docs.html?doc=benchmarks" class="dropdown-item">
@@ -349,6 +349,12 @@
                 <div class="feature-icon">🛡️</div>
                 <h3>Delayed SSE Header Quality Guard</h3>
                 <p>Holds back <code>HTTP 200</code> headers on streams until peeking valid data, enabling cloud failover on empty or broken local payloads.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🛡️</div>
+                <h3>Agentic Tool Fallback Shield</h3>
+                <p>Sliding tail-buffer analysis (4.67ns, 0 allocs) detects conversational plans/questions from local models in Zoo Code/Cline and synthesizes <code>ask_followup_question</code> tool calls to eliminate 3-strike crashes.</p>
             </div>
 
             <div class="feature-card glass">

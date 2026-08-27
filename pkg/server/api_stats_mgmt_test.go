@@ -596,4 +596,24 @@ func TestAPI_MetaCommands_DirectExecute(t *testing.T) {
 	if err != nil || !strings.Contains(dealsOut, "Heat Seeker") {
 		t.Errorf("unexpected deals output: %s, err: %v", dealsOut, err)
 	}
+
+	// 4. Test handleAPIStatsRecalculate and reset
+	srv := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
+	wReset := httptest.NewRecorder()
+	reqReset := httptest.NewRequest(http.MethodPost, "/api/v1/stats/reset", nil)
+	srv.handleAPIStatsReset(wReset, reqReset)
+	if wReset.Code != http.StatusOK {
+		t.Errorf("expected 200 for reset, got %d", wReset.Code)
+	}
+
+	// Recalculate with valid temp file
+	tmpLog := filepath.Join(t.TempDir(), "traffic.jsonl")
+	_ = os.WriteFile(tmpLog, []byte(""), 0600)
+	srv.SetTrafficLogPath(tmpLog)
+	wRecalcOK := httptest.NewRecorder()
+	reqRecalc := httptest.NewRequest(http.MethodPost, "/api/v1/stats/recalculate", nil)
+	srv.handleAPIStatsRecalculate(wRecalcOK, reqRecalc)
+	if wRecalcOK.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid recalculate with file, got %d", wRecalcOK.Code)
+	}
 }
