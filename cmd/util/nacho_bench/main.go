@@ -435,9 +435,9 @@ func runFullStressTest() {
 	}
 
 	stages := []struct {
-		stage       int
-		workers     int
-		requests    int
+		stage    int
+		workers  int
+		requests int
 	}{
 		{stage: 1, workers: 50, requests: 25000},
 		{stage: 2, workers: 100, requests: 50000},

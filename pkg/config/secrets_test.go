@@ -109,4 +109,3 @@ func TestSecrets_MaskAndMerge(t *testing.T) {
 		t.Errorf("expected orig for MergeSecrets(orig, nil)")
 	}
 }
-

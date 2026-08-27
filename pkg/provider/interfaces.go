@@ -43,4 +43,3 @@ type PricingProvider interface {
 type CircuitBreakerProvider interface {
 	CircuitBreaker() *CircuitBreaker
 }
-

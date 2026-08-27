@@ -613,7 +613,19 @@ func (s *Server) dispatchTier(
 			}
 		}
 		if readErr == nil {
-			_, _ = io.Copy(w, normalizer)
+			buf := make([]byte, 4096)
+			for {
+				n, err := normalizer.Read(buf)
+				if n > 0 {
+					_, _ = w.Write(buf[:n])
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
+				if err != nil {
+					break
+				}
+			}
 		}
 		usage, _ := normalizer.GetUsage()
 		_ = normalizer.Close()
@@ -806,19 +818,19 @@ func (s *Server) recordTelemetry(
 	}
 
 	s.tracker.Record(telemetry.Observation{
-		Tier:       tierNum,
-		TierName:   targetTier.Name,
-		Model:      targetTier.Model,
-		Provider:   targetTier.Provider,
-		Tokens:     totalTokens,
-		CostSpent:  costSpent,
-		CostSaved:  costSaved,
-		IsLocal:    isLocal,
-		IsFallback: isFallback,
-		LatencyMs:  latency,
-		Keywords:   reqCtx.Keywords,
-		HasImages:  reqCtx.HasImages,
-		HasTools:   reqCtx.HasTools,
+		Tier:          tierNum,
+		TierName:      targetTier.Name,
+		Model:         targetTier.Model,
+		Provider:      targetTier.Provider,
+		Tokens:        totalTokens,
+		CostSpent:     costSpent,
+		CostSaved:     costSaved,
+		IsLocal:       isLocal,
+		IsFallback:    isFallback,
+		LatencyMs:     latency,
+		Keywords:      reqCtx.Keywords,
+		HasImages:     reqCtx.HasImages,
+		HasTools:      reqCtx.HasTools,
 		StatusCode:    statusCode,
 		IsRetry:       reqCtx.IsRetry,
 		ForcedTier:    reqCtx.ForcedTier,

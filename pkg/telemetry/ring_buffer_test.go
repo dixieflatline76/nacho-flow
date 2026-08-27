@@ -107,4 +107,3 @@ func TestRingBufferSink_ZeroCapacityAndLimit(t *testing.T) {
 		t.Errorf("expected 1 item for limit 0 (fallback to capacity)")
 	}
 }
-

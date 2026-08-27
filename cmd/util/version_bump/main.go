@@ -232,6 +232,7 @@ func updateSiteVersion(filename string, v Version) error {
 	re := regexp.MustCompile(`(class="logo-badge[^"]*" id="version-badge">)[^<]*(</span>)`)
 	updated := re.ReplaceAll(data, fmt.Appendf(nil, "${1}%s${2}", v.String()))
 
+	// #nosec G703 - filename is cleaned and passed via CLI release tool
 	return os.WriteFile(filepath.Clean(filename), updated, 0600)
 }
 
@@ -246,6 +247,6 @@ func updatePackageJSON(filename string, v Version) error {
 	re := regexp.MustCompile(`("name"\s*:\s*"nacho-flow"(?:[^{}]*?)"version"\s*:\s*)"[^"]+"`)
 	updated := re.ReplaceAll(data, fmt.Appendf(nil, `${1}"%s"`, versionStr))
 
+	// #nosec G703 - filename is cleaned and passed via CLI release tool
 	return os.WriteFile(filepath.Clean(filename), updated, 0600)
 }
-

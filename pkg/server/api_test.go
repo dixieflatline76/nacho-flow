@@ -441,7 +441,7 @@ func TestAPI_Pricing_Endpoint(t *testing.T) {
 	}
 
 	var resp struct {
-		BenchmarkModel string                             `json:"benchmark_model"`
+		BenchmarkModel string                            `json:"benchmark_model"`
 		Pricing        map[string]telemetry.ModelPricing `json:"pricing"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -830,11 +830,3 @@ func TestAPI_AllEndpoints_MethodNotAllowed(t *testing.T) {
 		})
 	}
 }
-
-
-
-
-
-
-
-

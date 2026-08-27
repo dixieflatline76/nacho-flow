@@ -522,9 +522,6 @@ func TestNormalizerPipeline_EmptyAndNoMatch(t *testing.T) {
 	}
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // Go Micro-Benchmarks (Nanosecond & Allocation Accuracy)
 // ---------------------------------------------------------------------------

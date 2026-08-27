@@ -1309,10 +1309,10 @@ type plainMockProvider struct {
 	id string
 }
 
-func (p *plainMockProvider) ID() string             { return p.id }
-func (p *plainMockProvider) Name() string           { return p.id }
-func (p *plainMockProvider) BaseURL() string        { return "http://localhost" }
-func (p *plainMockProvider) IsLocal() bool          { return false }
+func (p *plainMockProvider) ID() string                     { return p.id }
+func (p *plainMockProvider) Name() string                   { return p.id }
+func (p *plainMockProvider) BaseURL() string                { return "http://localhost" }
+func (p *plainMockProvider) IsLocal() bool                  { return false }
 func (p *plainMockProvider) Ping(ctx context.Context) error { return nil }
 
 func TestProxy_NonCircuitBreakerProvider_Fallbacks(t *testing.T) {
@@ -1652,6 +1652,3 @@ func TestProxy_StreamingUsage_DualRateCostAccounting(t *testing.T) {
 		t.Errorf("expected $0.1365 saved in tracker, got %f", stats.EstimatedCostSavedUSD)
 	}
 }
-
-
-

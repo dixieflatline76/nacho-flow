@@ -39,13 +39,13 @@ const (
 	PathCompletions     = "/v1/completions"
 
 	// Management REST API endpoint routes (v0.6.0+).
-	PathAPIInfo          = "/api/v1/info"
-	PathAPIEvents        = "/api/v1/events"
-	PathAPIRoutes        = "/api/v1/routes"
-	PathAPICircuits      = "/api/v1/circuits"
-	PathAPICircuitsReset = "/api/v1/circuits/reset"
-	PathAPIPricing       = "/api/v1/pricing"
-	PathAPIConfig        = "/api/v1/config"
+	PathAPIInfo             = "/api/v1/info"
+	PathAPIEvents           = "/api/v1/events"
+	PathAPIRoutes           = "/api/v1/routes"
+	PathAPICircuits         = "/api/v1/circuits"
+	PathAPICircuitsReset    = "/api/v1/circuits/reset"
+	PathAPIPricing          = "/api/v1/pricing"
+	PathAPIConfig           = "/api/v1/config"
 	PathAPITune             = "/api/v1/tune"
 	PathAPIDeals            = "/api/v1/deals"
 	PathAPIStatsReset       = "/api/v1/stats/reset"
@@ -87,11 +87,11 @@ const (
 
 // Curated Catalog & OTA Defaults.
 const (
-	DefaultCatalogFileName   = "models.json"
-	DefaultCatalogCacheDir   = ".nacho-flow/cache/curation"
-	DefaultCatalogVersion    = "v1.0.0"
-	FallbackCatalogVersion   = "v0.0.0"
-	DefaultRemoteCatalogURL  = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/models.json"
+	DefaultCatalogFileName  = "models.json"
+	DefaultCatalogCacheDir  = ".nacho-flow/cache/curation"
+	DefaultCatalogVersion   = "v1.0.0"
+	FallbackCatalogVersion  = "v0.0.0"
+	DefaultRemoteCatalogURL = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/models.json"
 )
 
 // File system and environment variable defaults.

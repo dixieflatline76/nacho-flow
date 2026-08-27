@@ -153,4 +153,3 @@ func TestEventBroker_EdgeCasesAndClose(t *testing.T) {
 	broker.Publish(Event{Type: "test"})
 	broker.Unsubscribe(ch)
 }
-

@@ -9,12 +9,12 @@ import (
 
 const (
 	// Badges & visual indicator constants.
-	BadgeHotDeal            = "🔥"
-	BadgeFreeTier           = "🆓"
-	PlaceholderCodingScore  = "--"
-	TokensKiloThreshold     = 1000
-	TokensMegaThreshold     = 1_000_000
-	TokensMegaDivisor       = 1_000_000.0
+	BadgeHotDeal           = "🔥"
+	BadgeFreeTier          = "🆓"
+	PlaceholderCodingScore = "--"
+	TokensKiloThreshold    = 1000
+	TokensMegaThreshold    = 1_000_000
+	TokensMegaDivisor      = 1_000_000.0
 )
 
 // DealRowView represents a presentation-ready row for tabular and human display.

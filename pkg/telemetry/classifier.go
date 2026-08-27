@@ -14,8 +14,8 @@ const (
 )
 
 var (
-	coderKeywords    = []string{"coder", "codestral", "starcoder", "deepseek-coder"}
-	reasonerKeywords = []string{"r1", "reason", "thinking"}
+	coderKeywords     = []string{"coder", "codestral", "starcoder", "deepseek-coder"}
+	reasonerKeywords  = []string{"r1", "reason", "thinking"}
 	fastProseKeywords = []string{"flash", "lite", "mini"}
 )
 

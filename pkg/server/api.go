@@ -266,6 +266,7 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			sanitized := config.SanitizeConfig(s.GetConfig())
+			// #nosec G117 - sanitized config explicitly masks all auth tokens and secrets before marshaling
 			yamlBytes, _ := yaml.Marshal(sanitized)
 			_, _ = w.Write(yamlBytes)
 			return
@@ -275,6 +276,7 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 
 		sanitized := config.SanitizeConfig(s.GetConfig())
+		// #nosec G117 - sanitized config explicitly masks all auth tokens and secrets before encoding
 		_ = json.NewEncoder(w).Encode(sanitized)
 		return
 	}
@@ -325,6 +327,7 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 		if data, readErr := os.ReadFile(s.configPath); readErr == nil {
 			timestamp := time.Now().Format("20060102T150405")
 			backupFile = filepath.Clean(fmt.Sprintf("%s.bak.%s", s.configPath, timestamp))
+			// #nosec G703 - backup file path is constructed from server configPath
 			_ = os.WriteFile(backupFile, data, 0600)
 		}
 
@@ -332,6 +335,7 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 		if len(rawYAML) > 0 && len(rawYAML[0]) > 0 {
 			yamlBytes = rawYAML[0]
 		} else {
+			// #nosec G117 - marshaling validated configuration with merged secrets
 			yamlBytes, _ = yaml.Marshal(merged)
 		}
 

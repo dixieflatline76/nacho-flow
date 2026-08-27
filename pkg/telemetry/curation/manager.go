@@ -61,6 +61,7 @@ func (m *Manager) loadInitialCatalog() {
 	var cacheCat CuratedCatalog
 	cacheValid := false
 	cachePath := filepath.Join(m.cacheDir, contract.DefaultCatalogFileName)
+	// #nosec G304 - cache path is constructed from trusted cacheDir and constant catalog filename
 	if data, err := os.ReadFile(cachePath); err == nil {
 		if json.Unmarshal(data, &cacheCat) == nil && cacheCat.Version != "" {
 			cacheValid = true
