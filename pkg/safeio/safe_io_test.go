@@ -139,4 +139,13 @@ func TestSafeBoundedDir_ConstructorAndEdgeCases(t *testing.T) {
 	if _, err := sbd.ReadFile("missing.txt"); err == nil {
 		t.Errorf("expected error reading missing file")
 	}
+
+	// Invalid root dir
+	invalidSbd := &SafeBoundedDir{rootDir: "\x00invalid\x00path"}
+	if _, err := invalidSbd.ReadFile("test.txt"); err == nil {
+		t.Errorf("expected error for invalid root dir")
+	}
+	if err := invalidSbd.WriteFile("test.txt", []byte("a"), 0600); err == nil {
+		t.Errorf("expected error writing to invalid root dir")
+	}
 }

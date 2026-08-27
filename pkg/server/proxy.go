@@ -18,6 +18,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
+	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 	"github.com/dixieflatline76/nacho-flow/pkg/store"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -38,6 +39,7 @@ type Server struct {
 	tracker        *telemetry.StatsTracker
 	sessionTracker *router.SessionTracker
 	metaRegistry   *MetaRegistry
+	shieldMgr      *shield.ShieldManager
 	logger         *slog.Logger
 	transport      *http.Transport
 	ringBuffer     *telemetry.RingBufferSink
@@ -213,6 +215,15 @@ func NewServerWithTelemetryAndRegistry(
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
+	var shieldMgr *shield.ShieldManager
+	if cfg.AgentShield.Enabled == nil || *cfg.AgentShield.Enabled {
+		if len(cfg.AgentShield.QuestionHeuristics) > 0 || len(cfg.AgentShield.ModeSwitchHeuristics) > 0 {
+			shieldMgr = shield.NewShieldManager(cfg.AgentShield.QuestionHeuristics, cfg.AgentShield.ModeSwitchHeuristics)
+		} else {
+			shieldMgr = shield.NewDefaultShieldManager()
+		}
+	}
+
 	srv := &Server{
 		classifier:     class,
 		sanitizer:      san,
@@ -220,6 +231,7 @@ func NewServerWithTelemetryAndRegistry(
 		tracker:        tracker,
 		sessionTracker: router.NewSessionTracker(5 * time.Minute),
 		metaRegistry:   NewMetaRegistry(),
+		shieldMgr:      shieldMgr,
 		logger:         logger,
 		transport:      transport,
 		tuner:          tuner.NewCostPenaltyOptimizer(),
@@ -575,6 +587,9 @@ func (s *Server) dispatchTier(
 
 	if isStreaming {
 		normalizer := NewStreamNormalizer(resp.Body)
+		if reqCtx.InteractiveTool != "" {
+			normalizer.SetShield(reqCtx.InteractiveTool, s.shieldMgr)
+		}
 		peekBuf := make([]byte, 4096)
 		n, readErr := normalizer.Read(peekBuf)
 
@@ -693,6 +708,13 @@ func (s *Server) dispatchTier(
 						rawCallsJSON, _ := json.Marshal(extractedCalls)
 						firstChoice.Message.ToolCalls = rawCallsJSON
 						modified = true
+					} else if reqCtx.InteractiveTool != "" && s.shieldMgr != nil {
+						if synthCall, ok := s.shieldMgr.EvaluateAndSynthesize(firstChoice.Message.Content, reqCtx.InteractiveTool); ok && synthCall != nil {
+							firstChoice.FinishReason = "tool_calls"
+							rawCallsJSON, _ := json.Marshal([]interface{}{synthCall})
+							firstChoice.Message.ToolCalls = rawCallsJSON
+							modified = true
+						}
 					}
 				}
 

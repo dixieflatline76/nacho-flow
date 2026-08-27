@@ -101,48 +101,48 @@ We ran isolated Go micro-benchmarks targeting the core HTTP routing pipeline, AS
 
 ### 5.1 End-to-End Proxy Overhead:
 ```bash
-$ go test -bench=BenchmarkProxy_ChatCompletions -benchmem -run=^$ ./pkg/server/...
+$ go test -bench=BenchmarkProxy_ChatCompletions -run=^$ -benchmem -benchtime=3s ./pkg/server/...
 ```
 
 ```text
-BenchmarkProxy_ChatCompletions_RawPassThrough-16       4435    240,136 ns/op    23,615 B/op    283 allocs/op
-BenchmarkProxy_ChatCompletions_ToolNormalization-16    4054    268,308 ns/op    30,152 B/op    385 allocs/op
+BenchmarkProxy_ChatCompletions_RawPassThrough-16       19215    188,115 ns/op    23,683 B/op    283 allocs/op
+BenchmarkProxy_ChatCompletions_ToolNormalization-16    16897    221,487 ns/op    29,990 B/op    385 allocs/op
 ```
 
-- **Raw Pass-Through Latency**: **240.1 µs** (0.240 milliseconds).
-- **Tool Normalization Latency**: **268.3 µs** (0.268 milliseconds).
-- **Exact Compute Cost**: **+28.1 µs** (+11.7% overhead, +6.5 KB memory allocation per turn).
+- **Raw Pass-Through Latency**: **188.1 µs** (0.188 milliseconds).
+- **Tool Normalization Latency**: **221.5 µs** (0.221 milliseconds).
+- **Exact Compute Cost**: **+33.4 µs** (+17.7% overhead, +6.3 KB memory allocation per turn).
 
 ### 5.2 Inner Tool Normalizer Performance by Model Format (Strategy Pipeline & Diff Sanitizer):
 ```bash
-$ go test -bench=BenchmarkNormalize -benchmem ./pkg/router/...
+$ go test -bench=BenchmarkNormalize -benchmem -benchtime=3s ./pkg/router/...
 ```
 
 ```text
-BenchmarkNormalize_PureProse_FastBailout-16             13,085,864        90.21 ns/op       0 B/op     0 allocs/op
-BenchmarkNormalize_HermesXML_FullNormalization-16          386,097      3,115.0 ns/op    1,332 B/op    27 allocs/op
-BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      258,117      4,224.0 ns/op    1,801 B/op    35 allocs/op
-BenchmarkNormalize_Mistral_ArrayCalls-16                   200,458      5,549.0 ns/op    2,575 B/op    52 allocs/op
+BenchmarkNormalize_PureProse_FastBailout-16             47,096,130        75.32 ns/op       0 B/op     0 allocs/op
+BenchmarkNormalize_HermesXML_FullNormalization-16        1,377,504      2,601.0 ns/op    1,330 B/op    27 allocs/op
+BenchmarkNormalize_DeepSeekR1_ReasoningAndToolCall-16      854,274      3,823.0 ns/op    1,803 B/op    35 allocs/op
+BenchmarkNormalize_Mistral_ArrayCalls-16                   750,075      4,678.0 ns/op    2,577 B/op    52 allocs/op
 ```
 
-- **Non-Tool Fast Bailout**: **90.21 nanoseconds** (Zero heap allocations, 0 B/op).
-- **Hermes / Qwen XML Extraction**: **3.11 microseconds** (27 allocations).
-- **DeepSeek-R1 CoT + Markdown Normalization**: **4.22 microseconds** (35 allocations).
-- **Mistral Array Tool Extraction**: **5.55 microseconds** (52 allocations).
+- **Non-Tool Fast Bailout**: **75.32 nanoseconds** (Zero heap allocations, 0 B/op — > 47 Million checks/sec).
+- **Hermes / Qwen XML Extraction**: **2.60 microseconds** (27 allocations).
+- **DeepSeek-R1 CoT + Markdown Normalization**: **3.82 microseconds** (35 allocations).
+- **Mistral Array Tool Extraction**: **4.68 microseconds** (52 allocations).
 - **Diff Line-Number Sanitizer**: Integrated into streaming and non-streaming tool arguments with **$< 2.2\mu\text{s}$** regex stripping of `:168:`, `168 | `, and `168: ` prefixes inside `<<<<<<< SEARCH` blocks.
 
 ### 5.3 SSE Stream & CoT Normalization Performance:
 ```bash
-$ go test -bench=BenchmarkSSE -benchmem ./pkg/server/...
+$ go test -bench=BenchmarkSSE -benchmem -benchtime=3s ./pkg/server/...
 ```
 
 ```text
-BenchmarkSSE_NonReasoning_ZeroAlloc-16      1,635,788       729.7 ns/op      226 B/op      5 allocs/op
-BenchmarkSSE_ReasoningTransform-16            280,896     4,371.0 ns/op    1,227 B/op     21 allocs/op
+BenchmarkSSE_NonReasoning_ZeroAlloc-16      6,468,288       591.5 ns/op      305 B/op      5 allocs/op
+BenchmarkSSE_ReasoningTransform-16            831,742     3,667.0 ns/op    1,305 B/op     21 allocs/op
 ```
 
-- **Non-Reasoning Stream Passthrough**: **729.7 nanoseconds** (~1.37+ Million SSE chunks/sec).
-- **Reasoning Stream `<think>` Transformation**: **4.37 microseconds** (~228,000 reasoning tokens/sec).
+- **Non-Reasoning Stream Passthrough**: **591.5 nanoseconds** (~1.69+ Million SSE chunks/sec).
+- **Reasoning Stream `<think>` Transformation**: **3.67 microseconds** (~272,000 reasoning tokens/sec).
 
 ### 5.4 Dynamic Rule Evaluation & Classification Performance:
 ```bash
@@ -152,14 +152,14 @@ $ go test -bench=BenchmarkSanitizer -benchmem ./pkg/router/...
 ```
 
 ```text
-BenchmarkExprEvaluator-16    1,801,140      663.1 ns/op      776 B/op      10 allocs/op
-BenchmarkClassifier-16         152,740    7,956.0 ns/op    4,384 B/op      75 allocs/op
-BenchmarkSanitizer-16          195,636    7,954.0 ns/op    3,050 B/op      63 allocs/op
+BenchmarkExprEvaluator-16    1,765,756      685.2 ns/op      824 B/op      10 allocs/op
+BenchmarkClassifier-16         171,966    6,871.0 ns/op    4,384 B/op      75 allocs/op
+BenchmarkSanitizer-16          173,966    8,647.0 ns/op    3,050 B/op      63 allocs/op
 ```
 
-- **AST Bytecode Rule Evaluation**: **663.1 nanoseconds** per request (< 0.67 µs).
-- **Classification + Adaptive Token Estimation**: **7.95 microseconds** total context parsing across full multi-turn conversation payloads.
-- **Image Sanitizer**: **7.95 microseconds** per request.
+- **AST Bytecode Rule Evaluation**: **685.2 nanoseconds** per request (< 0.69 µs).
+- **Classification + Adaptive Token Estimation**: **6.87 microseconds** total context parsing across full multi-turn conversation payloads.
+- **Image Sanitizer**: **8.64 microseconds** per request.
 
 ### 5.5 Lock-Free Pricing Oracle & Curation Gallery:
 - **Lock-Free Pricing Lookup**: **$O(1)$ lock-free lookup** ($< 40\text{ ns}$) via atomic pointer swap (`atomic.Pointer[map[string]ModelMetadata]`).
@@ -172,13 +172,28 @@ $ go test -bench=BenchmarkHasDirective -benchmem ./pkg/router/...
 ```
 
 ```text
-BenchmarkHasDirective_Bailout-16    144,022,282    8.29 ns/op    0 B/op    0 allocs/op
+BenchmarkHasDirective_Bailout-16    178,862,852    6.901 ns/op    0 B/op    0 allocs/op
 ```
 
-- **SIMD Fast-Bailout Latency**: **8.29 nanoseconds** (> 144 Million prompt scans/sec).
+- **SIMD Fast-Bailout Latency**: **6.901 nanoseconds** (> 178 Million prompt scans/sec).
 - **Heap Allocation**: **0 B/op, 0 allocs/op** (zero memory pressure on GC).
 
-### 5.7 🧪 Test Coverage & Zero-Overhead Verification Matrix:
+
+### 5.7 🛡️ Agentic Tool Fallback Shield (Sliding Tail-Buffer):
+```bash
+$ go test -bench="." -benchmem ./pkg/router/shield/...
+```
+
+```text
+BenchmarkRuleEngine_Evaluate-16    273,097,629      4.672 ns/op      0 B/op    0 allocs/op
+BenchmarkTailBuffer_Append-16        4,711,068    255.400 ns/op      0 B/op    0 allocs/op
+```
+
+- **Rule Engine Evaluation**: **4.672 nanoseconds** (> 273 Million evaluations/sec).
+- **Sliding Ring Tail-Buffer Append**: **255.4 nanoseconds** (> 4.7 Million writes/sec).
+- **Heap Allocation**: **0 B/op, 0 allocs/op** (completely zero-alloc via `sync.Pool` recycling).
+
+### 5.8 🧪 Test Coverage & Zero-Overhead Verification Matrix:
 
 Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. Both the Go high-concurrency daemon and the VS Code companion extension maintain comprehensive automated test suites:
 
@@ -186,18 +201,20 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | Package / Subsystem | Primary Responsibility | Statement Coverage |
 | :--- | :--- | :--- |
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **100.0%** |
-| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **100.0%** |
+| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **99.3%** |
+| `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **99.0%** |
 | `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
-| `cmd/util/version_bump` | Version Bump CLI Tool | **98.1%** |
 | `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
+| `cmd/util/version_bump` | Version Bump CLI Tool | **96.5%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **95.6%** |
-| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.5%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.5%** |
+| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.0%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.6%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **91.6%** |
+| `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **86.2%** |
 
 #### VS Code Companion Extension Coverage:
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
@@ -222,10 +239,11 @@ go run ./cmd/util/nacho_bench -full
 
 ### 3. Run Standard Go Micro-Benchmarks:
 ```bash
-go test -bench="." -run="^$" -benchmem ./pkg/strategy ./pkg/router ./pkg/server
+go test -bench="." -run="^$" -benchmem ./pkg/strategy ./pkg/router ./pkg/router/shield ./pkg/server
 ```
 
 ### 4. Run Extension Test Suite & Coverage:
 ```bash
 cd extension && npm test
 ```
+

@@ -304,3 +304,18 @@ In adherence to empirical scientific rigor, we acknowledge the following boundar
 * **Model Sample Size**: This study specifically compared `qwen/qwen3-coder` against `google/gemini-3.7-flash` with Extended Thinking. Future evaluations will incorporate additional frontier reasoning architectures (e.g. DeepSeek-R1, OpenAI o3-mini, and Claude 3.7 Sonnet).
 * **Workstation Hardware Profile**: Local GPU inference was benchmarked exclusively on an AMD Radeon RX 9070 XT (16 GB VRAM) running quantized `gemma4:12b-it-qat` via AMD ROCm. Workstations with different VRAM constraints (e.g. 8 GB RTX 4060 or 64 GB Mac Studio) will exhibit different local threshold boundaries.
 * **Agent Harness Coupling**: Autonomous execution was driven by Zoo Code. While Nacho Flow provides a standardized OpenAI-compatible interface, variations in prompt engineering and tool invocation loops across other IDE extensions (such as Cline) and CLI agents (such as OpenCode and Aider) may yield minor variance in turn counts.
+
+---
+
+## 8. Appendix: Agentic Tool Fallback Shield Micro-Benchmarks
+
+To ensure the sliding tail-buffer and schema synthesis introduces zero measurable latency to the critical proxy path, micro-benchmarks were conducted on AMD Ryzen 7 5700X3D (8 cores, 16 threads):
+
+| Micro-Benchmark | Operation | Execution Time | Heap Allocations | Throughput |
+| :--- | :--- | :--- | :--- | :--- |
+| **`BenchmarkRuleEngine_Evaluate`** | Tail Question & Mode Evaluation | **$4.672\text{ ns/op}$** | **$0\text{ B/op}$ ($0\text{ allocs}$)** | **$273.1\text{M ops/sec}$** |
+| **`BenchmarkTailBuffer_Append`** | Sliding 256B Circular Ring Append | **$255.4\text{ ns/op}$** | **$0\text{ B/op}$ ($0\text{ allocs}$)** | **$4.71\text{M ops/sec}$** |
+| **`BenchmarkProxy_ChatCompletions_RawPassThrough`** | End-to-End HTTP Proxy Pass-through | **$188.1\mu\text{s/op}$** | **$23.7\text{ KB/op}$ ($283\text{ allocs}$)** | **$5,316\text{ req/s}$** |
+| **`BenchmarkNormalize_PureProse_FastBailout`** | Zero-Allocation Prose Detection Bailout | **$75.32\text{ ns/op}$** | **$0\text{ B/op}$ ($0\text{ allocs}$)** | **$47.1\text{M ops/sec}$** |
+
+

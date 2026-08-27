@@ -817,6 +817,8 @@ func TestAPI_AllEndpoints_MethodNotAllowed(t *testing.T) {
 		{"handleAPIPricing POST", srv.handleAPIPricing, http.MethodPost, contract.PathAPIPricing},
 		{"handleAPIConfig DELETE", srv.handleAPIConfig, http.MethodDelete, contract.PathAPIConfig},
 		{"handleAPITune GET", srv.handleAPITune, http.MethodGet, contract.PathAPITune},
+		{"handleAPIStatsReset GET", srv.handleAPIStatsReset, http.MethodGet, "/api/v1/stats/reset"},
+		{"handleAPIStatsRecalculate GET", srv.handleAPIStatsRecalculate, http.MethodGet, "/api/v1/stats/recalculate"},
 	}
 
 	for _, tt := range tests {
@@ -829,4 +831,14 @@ func TestAPI_AllEndpoints_MethodNotAllowed(t *testing.T) {
 			}
 		})
 	}
+
+	// Test malformed config update
+	t.Run("handleConfigUpdate malformed JSON", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, strings.NewReader("{bad json"))
+		w := httptest.NewRecorder()
+		srv.handleConfigUpdate(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request, got %d", w.Code)
+		}
+	})
 }

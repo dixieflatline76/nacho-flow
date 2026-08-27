@@ -46,6 +46,25 @@ deals:
   require_tools: true
 
 # =============================================================================
+# 🛡️ AGENTIC TOOL FALLBACK SHIELD
+# =============================================================================
+agent_shield:
+  enabled: true
+  tail_buffer_bytes: 256
+  question_heuristics:
+    - "are you satisfied"
+    - "would you like"
+    - "should i"
+    - "do you approve"
+    - "please confirm"
+    - "let me know if"
+    - "how would you like to proceed"
+  mode_switch_heuristics:
+    - "switch to code mode"
+    - "switch to architect mode"
+    - "ready to implement"
+
+# =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
 # =============================================================================
 tiers:

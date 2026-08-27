@@ -2,6 +2,8 @@
 
 The **Nacho Flow VS Code Extension** provides real-time cost visibility, visual routing inspection, local process lifecycle management, circuit breaker control, and automated configuration for autonomous coding agents (such as Zoo Code, Cline, and Cursor).
 
+![Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub and Zoo Code Pairing](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/images/vscode-extension-showcase.png)
+
 ---
 
 ## 🌟 Key Features

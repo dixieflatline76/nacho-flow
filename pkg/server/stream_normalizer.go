@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"sync"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 )
 
 var (
@@ -56,7 +58,7 @@ type StreamUsage struct {
 
 // StreamNormalizer wraps an upstream SSE response stream and normalizes reasoning tokens
 // (from DeepSeek-R1, OpenRouter, etc.) into standard <think>...</think> tags within delta.content.
-// It also intercepts the upstream usage object emitted at stream completion.
+// It also intercepts the upstream usage object emitted at stream completion and enforces the Agentic Tool Fallback Shield.
 type StreamNormalizer struct {
 	upstream               io.ReadCloser
 	reader                 *bufio.Reader
@@ -68,6 +70,11 @@ type StreamNormalizer struct {
 	capturedUsage          StreamUsage
 	hasUsage               bool
 	emittedCompletionChars int
+	interactiveTool        string
+	shieldMgr              *shield.ShieldManager
+	tailBuffer             *shield.TailBuffer
+	hasNativeTools         bool
+	proseAccumulator       strings.Builder
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -81,6 +88,15 @@ func NewStreamNormalizer(r io.ReadCloser) *StreamNormalizer {
 		upstream: r,
 		reader:   br,
 		outBuf:   buf,
+	}
+}
+
+// SetShield attaches an Agentic Tool Fallback Shield to this streaming session.
+func (s *StreamNormalizer) SetShield(interactiveTool string, mgr *shield.ShieldManager) {
+	s.interactiveTool = interactiveTool
+	s.shieldMgr = mgr
+	if interactiveTool != "" && mgr != nil && s.tailBuffer == nil {
+		s.tailBuffer = shield.GetTailBuffer()
 	}
 }
 
@@ -143,8 +159,60 @@ func (s *StreamNormalizer) processLine(line []byte) {
 			s.inThinking = false
 			s.outBuf.WriteString("data: {\"choices\":[{\"delta\":{\"content\":\"\\n</think>\\n\\n\"}}]}\n\n")
 		}
+
+		// Agentic Shield: Terminal synthetic tool call evaluation if 0 native tools emitted
+		if !s.hasNativeTools && s.interactiveTool != "" && s.shieldMgr != nil && s.tailBuffer != nil {
+			if matched, _ := s.shieldMgr.RuleEngine().Evaluate(s.tailBuffer.Bytes()); matched {
+				if synthCall, ok := s.shieldMgr.EvaluateAndSynthesize(s.proseAccumulator.String(), s.interactiveTool); ok && synthCall != nil {
+					// 1. Emit synthetic tool_calls delta chunk
+					deltaJSON, _ := json.Marshal(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{
+								"index": 0,
+								"delta": map[string]interface{}{
+									"tool_calls": []interface{}{
+										map[string]interface{}{
+											"index": 0,
+											"id":    synthCall.ID,
+											"type":  synthCall.Type,
+											"function": map[string]string{
+												"name":      synthCall.Function.Name,
+												"arguments": synthCall.Function.Arguments,
+											},
+										},
+									},
+								},
+							},
+						},
+					})
+					s.outBuf.WriteString("data: ")
+					s.outBuf.Write(deltaJSON)
+					s.outBuf.WriteString("\n\n")
+
+					// 2. Emit finish_reason chunk
+					finishJSON, _ := json.Marshal(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{
+								"index":         0,
+								"delta":         map[string]interface{}{},
+								"finish_reason": "tool_calls",
+							},
+						},
+					})
+					s.outBuf.WriteString("data: ")
+					s.outBuf.Write(finishJSON)
+					s.outBuf.WriteString("\n\n")
+				}
+			}
+		}
+
 		s.outBuf.Write(line)
 		return
+	}
+
+	// Check if chunk contains native tool calls
+	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
+		s.hasNativeTools = true
 	}
 
 	// Intercept usage block if present (e.g. OpenRouter / OpenAI final streaming chunk)
@@ -171,6 +239,12 @@ func (s *StreamNormalizer) processLine(line []byte) {
 	if !hasReasoningMarker && !s.inThinking && !bytes.Contains(payload, []byte("<think>")) {
 		if idx := bytes.Index(payload, []byte("\"content\":")); idx != -1 {
 			s.emittedCompletionChars += len(payload) - idx
+		}
+		if s.tailBuffer != nil {
+			if contentStr := payloadContent(payload); contentStr != "" {
+				s.tailBuffer.Append([]byte(contentStr))
+				s.proseAccumulator.WriteString(contentStr)
+			}
 		}
 		s.outBuf.Write(line)
 		return
@@ -255,6 +329,11 @@ func (s *StreamNormalizer) processLine(line []byte) {
 			}
 		}
 
+		if s.tailBuffer != nil && !s.inThinking {
+			s.tailBuffer.Append([]byte(choice.Delta.Content))
+			s.proseAccumulator.WriteString(choice.Delta.Content)
+		}
+
 		if choice.Delta.Content != payloadContent(payload) {
 			if newPayload, err := marshalNoEscapeHTML(chunk); err == nil {
 				s.outBuf.WriteString("data: ")
@@ -295,6 +374,10 @@ func (s *StreamNormalizer) Close() error {
 		s.reader.Reset(nil)
 		readerPool.Put(s.reader)
 		s.reader = nil
+	}
+	if s.tailBuffer != nil {
+		shield.PutTailBuffer(s.tailBuffer)
+		s.tailBuffer = nil
 	}
 	return err
 }

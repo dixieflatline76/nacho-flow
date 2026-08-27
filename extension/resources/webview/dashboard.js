@@ -31,12 +31,26 @@
 					window.setTimeWindow(message.data.timeWindow, false);
 				}
 				break;
+			case 'setRoutesRefreshInterval':
+				if (message.data && typeof message.data.interval !== 'undefined') {
+					window.setRoutesRefreshInterval(message.data.interval, false);
+				}
+				break;
 		}
 	});
 
 	let activeTimeWindow = (currentState && currentState.timeWindow) || (function() {
 		try { return localStorage.getItem('nacho_flow_time_window'); } catch(_) { return null; }
 	})() || 'all_time';
+
+	let activeRefreshInterval = (currentState && typeof currentState.routesRefreshInterval !== 'undefined') 
+		? currentState.routesRefreshInterval 
+		: (function() {
+			try { 
+				const val = localStorage.getItem('nacho_flow_routes_refresh_interval');
+				return val !== null ? parseInt(val, 10) : 60;
+			} catch(_) { return 60; }
+		})() ?? 60;
 
 	window.setTimeWindow = function(windowKey, notifyExtension = true) {
 		activeTimeWindow = windowKey;
@@ -58,6 +72,26 @@
 
 		if (notifyExtension) {
 			vscode.postMessage({ command: 'setTimeWindow', timeWindow: windowKey });
+		}
+	};
+
+	window.setRoutesRefreshInterval = function(intervalSec, notifyExtension = true) {
+		activeRefreshInterval = Number(intervalSec);
+		currentState.routesRefreshInterval = activeRefreshInterval;
+		vscode.setState(currentState);
+		try { localStorage.setItem('nacho_flow_routes_refresh_interval', activeRefreshInterval.toString()); } catch (_) {}
+
+		const btnMap = { 60: 'refresh-60s', 30: 'refresh-30s', 15: 'refresh-15s', 0: 'refresh-off' };
+		Object.entries(btnMap).forEach(([sec, btnId]) => {
+			const btn = document.getElementById(btnId);
+			if (btn) {
+				if (Number(sec) === activeRefreshInterval) btn.classList.add('active');
+				else btn.classList.remove('active');
+			}
+		});
+
+		if (notifyExtension) {
+			vscode.postMessage({ command: 'setRoutesRefreshInterval', interval: activeRefreshInterval });
 		}
 	};
 
@@ -437,6 +471,10 @@
 		vscode.postMessage({ command: 'refreshAll' });
 	};
 
+	window.openSettings = function() {
+		vscode.postMessage({ command: 'openSettings' });
+	};
+
 	window.editConfig = function() {
 		vscode.postMessage({ command: 'editConfig' });
 	};
@@ -462,6 +500,7 @@
 	// Initialize
 	document.addEventListener('DOMContentLoaded', () => {
 		window.setTimeWindow(activeTimeWindow);
+		window.setRoutesRefreshInterval(activeRefreshInterval);
 		vscode.postMessage({ command: 'initialize' });
 	});
 })();
