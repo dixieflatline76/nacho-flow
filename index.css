@@ -790,6 +790,58 @@ h1 {
     border-radius: 6px;
 }
 
+/* VS Code Screenshot Showcase Frame */
+.extension-preview-frame {
+    margin: 2.5rem auto 2.5rem;
+    max-width: 1080px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(15, 17, 24, 0.9);
+    box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(99, 102, 241, 0.15);
+    position: relative;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.extension-preview-frame:hover {
+    transform: translateY(-4px);
+    border-color: rgba(99, 102, 241, 0.4);
+    box-shadow: 0 35px 80px -15px rgba(0, 0, 0, 0.9), 0 0 50px rgba(99, 102, 241, 0.25);
+}
+
+.extension-preview-header {
+    background: rgba(22, 27, 34, 0.8);
+    padding: 0.75rem 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.extension-preview-title {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+}
+
+.extension-preview-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 0.15rem 0.55rem;
+    border-radius: 12px;
+}
+
+.extension-preview-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    object-fit: cover;
+}
+
 /* 1-Click Install Section */
 .install-section {
     max-width: 860px;

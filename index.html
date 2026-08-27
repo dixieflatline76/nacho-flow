@@ -28,7 +28,7 @@
         <div class="nav-content">
             <a href="index.html" class="logo">
                 <span>🌮</span> Nacho Flow
-                <span class="logo-badge logo-badge-version" id="version-badge">v0.6.0</span>
+                <span class="logo-badge logo-badge-version" id="version-badge">v0.6.1</span>
             </a>
             <div class="links" id="nav-links">
                 <a href="index.html" class="nav-link active">Home</a>
@@ -240,6 +240,20 @@
         <h2 class="section-title">Visual Control Plane for VS Code</h2>
         <p class="section-subtitle">Real-time cost telemetry, visual route inspector, and one-click agent setup inside your editor.</p>
 
+        <!-- Glassmorphic Editor Preview Frame -->
+        <div class="extension-preview-frame">
+            <div class="extension-preview-header">
+                <div class="terminal-dots">
+                    <span class="dot-red"></span>
+                    <span class="dot-yellow"></span>
+                    <span class="dot-green"></span>
+                </div>
+                <div class="extension-preview-title">Visual Studio Code — Nacho Flow Dashboard &amp; Sidebar Hub</div>
+                <div class="extension-preview-badge">● LIVE SSE CONTROL PLANE</div>
+            </div>
+            <img src="images/vscode-extension-showcase.png" alt="Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub and Zoo Code Pairing" class="extension-preview-img" loading="lazy">
+        </div>
+
         <div class="extension-grid">
             <div class="extension-card glass">
                 <div class="extension-badge">SIDEBAR CONTROL HUB</div>
@@ -349,6 +363,12 @@
                 <div class="feature-icon">🛡️</div>
                 <h3>Delayed SSE Header Quality Guard</h3>
                 <p>Holds back <code>HTTP 200</code> headers on streams until peeking valid data, enabling cloud failover on empty or broken local payloads.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">🛡️</div>
+                <h3>Agentic Tool Fallback Shield</h3>
+                <p>Sliding tail-buffer analysis (4.67ns, 0 allocs) detects conversational plans/questions from local models in Zoo Code/Cline and synthesizes <code>ask_followup_question</code> tool calls to eliminate 3-strike crashes.</p>
             </div>
 
             <div class="feature-card glass">
