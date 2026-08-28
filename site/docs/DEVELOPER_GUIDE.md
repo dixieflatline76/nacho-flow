@@ -203,6 +203,49 @@ To add a specialized provider plugin:
 
 ---
 
+### 8.2 Adding a Pricing Provider via Factory Registry (`pkg/telemetry/registry.go`)
+
+Nacho Flow uses an open, decoupled factory registry for dynamic model pricing lookups and "Heat Seeker" spot deal discovery:
+
+1. **Implement `PricingProvider` (`pkg/telemetry/interfaces.go`)**:
+   ```go
+   package custompricing
+
+   import (
+       "context"
+       "github.com/dixieflatline76/nacho-flow/pkg/contract"
+       "github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+   )
+
+   type CustomPricingProvider struct {
+       apiKey string
+   }
+
+   func (c *CustomPricingProvider) ID() string { return "custom_aggregator" }
+
+   func (c *CustomPricingProvider) FetchPricing(ctx context.Context) (map[string]contract.ModelPricing, error) {
+       // Fetch and parse model pricing from custom API or internal catalog
+       return map[string]contract.ModelPricing{ ... }, nil
+   }
+   ```
+
+2. **Self-Register in `init()`**:
+   ```go
+   func init() {
+       telemetry.RegisterPricingFactory("custom_aggregator", func(apiKey string) telemetry.PricingProvider {
+           return &CustomPricingProvider{apiKey: apiKey}
+       })
+   }
+   ```
+
+3. **Zero Core Modifications**:
+   Because `cmd/nacho-flow/main.go` and `pkg/server/api.go` iterate over `telemetry.GetRegisteredPricingFactories()`, adding your new pricing provider file automatically enables:
+   - Live startup pricing catalog synchronization.
+   - On-demand refresh via `POST /v1/pricing/refresh`.
+   - Transparent integration with the lock-free atomic pricing map (`atomic.Pointer[map[string]ModelMetadata]`).
+
+---
+
 ## 9. Release & CI/CD Pipeline
 
 Nacho Flow uses a 2-stage release lifecycle in GitHub Actions (`.github/workflows/ci.yml`):
