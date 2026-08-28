@@ -69,27 +69,45 @@ The core technical routing engine is fully operational, thoroughly tested, and d
 
 ---
 
-### Phase 2: IDE-First Distribution (VS Code Companion Extension) 🎯 (In Progress)
+### Phase 2: IDE-First Distribution (VS Code Companion Extension) 🎯 (Completed in v0.8.0)
 
 Bring the power of Nacho Flow directly inside the developer's primary workspace to maximize distribution and eliminate setup friction.
 
+- [x] **Status Bar Real-Time Savings HUD**:
+  - Live indicator displaying: `🌮 Nacho: $14.20 Saved Today | 78% Local GPU`.
+  - QuickPick menu with instant start, stop, restart, and configuration editing actions.
+- [x] **Visual Trace & Route History Webview**:
+  - Live inspector displaying arriving prompts, calculated token counts, latency breakdown, and matched routing rules.
+  - Per-turn inspection of adaptive token bounds, keywords, and HotSauce directives (`@nacho:*`).
+- [x] **Interactive Visual Tuner Webview**:
+  - GUI for `nacho-flow tune` rendering statistical cost-vs-retries trade-offs.
+  - One-click **"Apply Recommendation"** button updating `config.yaml` with automated timestamped backup creation.
+- [x] **Agentic Tool Fallback Shield**:
+  - Real-time zero-allocation sliding tail-buffer prose-to-tool auto-wrapping intercepting conversational plan/question turns from local models and synthesizing schema-compliant `ask_followup_question` tool payloads to eliminate 3-strike agent harness crashes in Zoo Code and Cline.
+- [x] **Daemon Lifecycle Automation & Structured Error Diagnostics**:
+  - Auto-spawn daemon on VS Code startup and graceful supervised shutdown on IDE exit.
+  - Structured error parsing on port collisions (`[FATAL:PORT_IN_USE:<port>]`) with 1-click `[📝 Open config.yaml]` resolution toasts.
 - [ ] **One-Click Agent Auto-Configuration**:
   - Automatically detect installed extensions (Zoo Code, Cline, Continue).
   - One-click button to inject `http://127.0.0.1:8000/v1` and custom model headers directly into VS Code `settings.json`.
-- [ ] **Status Bar Real-Time Savings HUD**:
-  - Live indicator displaying: `🌮 Nacho: $14.20 Saved Today | 78% Local GPU`.
-  - QuickPick menu with instant start, stop, restart, and log viewing actions.
-- [ ] **Visual Trace & Diff Inspector Webview**:
-  - Live inspector displaying arriving prompts, calculated token counts, and matched routing rules.
-  - Side-by-side visual diff showing raw local markdown output converted into clean OpenAI `tool_calls` JSON.
-- [ ] **Interactive Visual Tuner Webview**:
-  - GUI for `nacho-flow tune` rendering cost-vs-retries trade-offs.
-  - One-click **"Apply Recommendation"** button updating `config.yaml` with backup creation.
-- [x] **Agentic Tool Fallback Shield**:
-  - Real-time zero-allocation sliding tail-buffer prose-to-tool auto-wrapping intercepting conversational plan/question turns from local models and synthesizing schema-compliant `ask_followup_question` tool payloads to eliminate 3-strike agent harness crashes in Zoo Code and Cline.
-- [ ] **Daemon Lifecycle Automation**:
-  - Auto-spawn daemon on VS Code startup and graceful shutdown on IDE exit.
-  - Automatic detection and execution of Homebrew/System PATH binaries.
+
+---
+
+### Phase 2.5: Provider Ecosystem Expansion (v0.9.0 & v0.9.1) 🔌 (Next Up)
+
+Expand first-class provider presets, starter templates, and dynamic pricing oracle adapters leveraging the `RegisterPricingFactory` registry.
+
+#### 🚀 Milestone v0.9.0: Speed, Local & Enterprise Starter Pack
+- [ ] **Groq LPU Integration**: Ultra-speed 500+ tok/s preset for instant code linting and intermediary turn analysis (`https://api.groq.com/openai/v1`).
+- [ ] **vLLM Production Local GPU**: First-class local provider configuration for multi-GPU workstations (Dual 3090/4090s) with continuous batching and $0.00 local accounting (`http://127.0.0.1:8000/v1`).
+- [ ] **DeepInfra Sub-Cent Cloud Overflow**: Low-cost overflow pricing preset for Qwen 2.5 Coder & DeepSeek-V3 with dynamic pricing catalog adapter (`https://api.deepinfra.com/v1/openai`).
+- [ ] **Langdock Enterprise GDPR Gateway**: Sovereign European data residency preset with zero data retention for EU enterprise compliance (`https://api.langdock.com/openai/eu/v1`).
+
+#### ⚡ Milestone v0.9.1: Specialized Code & Extreme Velocity Pack
+- [ ] **Mistral & Codestral**: Official Codestral 22B Fill-In-The-Middle (FIM) code completion and 256k context window adapter (`https://api.mistral.ai/v1`).
+- [ ] **Cerebras Extreme Speed**: 1,800+ tok/s wafer-scale engine preset for Llama 3.1 8B/70B (`https://api.cerebras.ai/v1`).
+- [ ] **LM Studio Desktop Preset**: Seamless local zero-config integration for macOS/Windows desktop GUI model switcher (`http://127.0.0.1:1234/v1`).
+- [ ] **Fireworks AI**: Function-calling fine-tuned model endpoints with speculative decoding (`https://api.fireworks.ai/inference/v1`).
 
 ---
 
