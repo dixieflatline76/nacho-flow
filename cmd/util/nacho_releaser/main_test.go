@@ -211,8 +211,8 @@ func TestRenderTemplate_WingetLocale(t *testing.T) {
 	if !strings.Contains(content, "PublisherSupportUrl: https://github.com/dixieflatline76/nacho-flow/issues") {
 		t.Errorf("expected PublisherSupportUrl, got: %s", content)
 	}
-	if !strings.Contains(content, "License: MIT") {
-		t.Errorf("expected License: MIT, got: %s", content)
+	if !strings.Contains(content, "License: AGPL-3.0-or-later") {
+		t.Errorf("expected License: AGPL-3.0-or-later, got: %s", content)
 	}
 }
 

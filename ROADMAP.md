@@ -148,7 +148,7 @@ Targeted compliance and security features for regulated industries and large ent
 
 To maintain open-source community trust and viral developer adoption, technical capabilities remain open, while organizational governance is commercialized:
 
-| Capability | Open-Source Data Plane (Free / MIT) | Team SaaS Tier ($49–$199/mo) | Enterprise Tier ($20k+/yr) |
+| Capability | Open-Source Data Plane (Free / AGPL-3.0) | Team SaaS Tier ($49–$199/mo) | Enterprise Tier ($20k+/yr) |
 | :--- | :---: | :---: | :---: |
 | **Wire-Speed Routing (`expr` AST)** | 🟢 Included | 🟢 Included | 🟢 Included |
 | **Universal Tool Call Normalization** | 🟢 Included | 🟢 Included | 🟢 Included |

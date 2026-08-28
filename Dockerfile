@@ -31,7 +31,7 @@ LABEL org.opencontainers.image.title="Nacho Flow" \
       org.opencontainers.image.description="High-performance OpenAI-compatible hybrid AI gateway for local GPUs and cloud APIs" \
       org.opencontainers.image.url="https://spicebox.dev/nacho-flow/" \
       org.opencontainers.image.source="https://github.com/dixieflatline76/nacho-flow" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 WORKDIR /app
 
