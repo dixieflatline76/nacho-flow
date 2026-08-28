@@ -1,8 +1,6 @@
 package tuner
 
 import (
-	"strings"
-
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
@@ -50,14 +48,9 @@ type OptimizationStrategy interface {
 }
 
 // IsLocalTier returns true if the tier represents a local or on-prem inference engine.
-func IsLocalTier(tier contract.Tier) bool {
-	provider := strings.ToLower(tier.Provider)
-	name := strings.ToLower(tier.Name)
-	if provider == "ollama" || provider == "vllm" || provider == "lmstudio" || provider == "localai" || provider == "llama.cpp" || provider == "llamacpp" {
-		return true
-	}
-	if strings.Contains(name, "local") || strings.Contains(name, "gpu") || strings.Contains(name, "on-prem") {
-		return true
+func IsLocalTier(tier contract.Tier, providers map[string]contract.ProviderConfig) bool {
+	if p, ok := providers[tier.Provider]; ok {
+		return p.IsLocal()
 	}
 	return false
 }

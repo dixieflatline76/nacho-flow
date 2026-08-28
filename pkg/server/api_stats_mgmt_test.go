@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -190,6 +191,7 @@ port: 8000
 providers:
   ollama:
     base_url: http://localhost:11434
+    type: local
 tiers:
   - name: Tier 1
     model: test-model
@@ -222,7 +224,7 @@ tiers:
 func TestAPI_Stats_ConfigYamlEndpoint(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	yamlContent := "port: 9000\nproviders:\n  p1:\n    base_url: http://localhost:8000\n"
+	yamlContent := "port: 9000\nproviders:\n  p1:\n    base_url: http://localhost:8000\n    type: local\n"
 	_ = os.WriteFile(configPath, []byte(yamlContent), 0600)
 
 	srv := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
@@ -407,7 +409,7 @@ func TestAPI_Stats_ConfigUpdate_Success(t *testing.T) {
 	validJSON := `{
 		"port": 8000,
 		"providers": {
-			"ollama": { "base_url": "http://localhost:11434" }
+			"ollama": { "base_url": "http://localhost:11434", "type": "local" }
 		},
 		"tiers": [
 			{ "name": "T1", "model": "m1", "provider": "ollama", "when": "Tokens < 100" }
@@ -426,6 +428,7 @@ port: 8000
 providers:
   ollama:
     base_url: http://localhost:11434
+    type: local
 tiers:
   - name: T1
     model: m1
@@ -617,3 +620,224 @@ func TestAPI_MetaCommands_DirectExecute(t *testing.T) {
 		t.Errorf("expected 200 for valid recalculate with file, got %d", wRecalcOK.Code)
 	}
 }
+
+func TestAPI_Coverage_ComprehensiveBranches(t *testing.T) {
+	// 1. handleConfigUpdate: Read error
+	srv := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
+	reqErrBody := httptest.NewRequest(http.MethodPut, "/api/v1/config", errReader{})
+	wErrBody := httptest.NewRecorder()
+	srv.handleConfigUpdate(wErrBody, reqErrBody)
+	if wErrBody.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for unreadable body, got %d", wErrBody.Code)
+	}
+
+	// 2. handleConfigUpdate: Apply error (e.g. unknown tier provider)
+	invalidTierProv := `{"providers": {"ollama": {"base_url": "http://localhost:11434", "type": "local"}}, "tiers": [{"name": "T1", "provider": "missing", "when": "Tokens > 0"}]}`
+	reqApplyErr := httptest.NewRequest(http.MethodPut, "/api/v1/config", strings.NewReader(invalidTierProv))
+	wApplyErr := httptest.NewRecorder()
+	srv.handleConfigUpdate(wApplyErr, reqApplyErr)
+	if wApplyErr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid tier provider, got %d", wApplyErr.Code)
+	}
+
+	// 3. handleAPIEvents: non-GET
+	reqPostEvents := httptest.NewRequest(http.MethodPost, "/api/v1/events", nil)
+	wPostEvents := httptest.NewRecorder()
+	srv.handleAPIEvents(wPostEvents, reqPostEvents)
+	if wPostEvents.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for POST /api/v1/events, got %d", wPostEvents.Code)
+	}
+
+	// 4. handleAPICircuits: non-GET & GET with registry
+	testCfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"prov1": {BaseURL: "http://localhost:8000", Type: contract.ProviderTypeLocal},
+		},
+	}
+	reg := provider.NewRegistryFromConfig(testCfg)
+	srvWithReg := NewServerWithTelemetryAndRegistry(testCfg, nil, nil, nil, nil, nil, reg, nil)
+
+	reqCircuitsGet := httptest.NewRequest(http.MethodGet, "/api/v1/circuits", nil)
+	wCircuitsGet := httptest.NewRecorder()
+	srvWithReg.handleAPICircuits(wCircuitsGet, reqCircuitsGet)
+	if wCircuitsGet.Code != http.StatusOK {
+		t.Errorf("expected 200 for GET /api/v1/circuits with reg, got %d", wCircuitsGet.Code)
+	}
+
+	reqCircuitsPost := httptest.NewRequest(http.MethodPost, "/api/v1/circuits", nil)
+	wCircuitsPost := httptest.NewRecorder()
+	srvWithReg.handleAPICircuits(wCircuitsPost, reqCircuitsPost)
+	if wCircuitsPost.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for POST /api/v1/circuits, got %d", wCircuitsPost.Code)
+	}
+
+	// 5. handleAPICircuitsReset: non-POST & with broker
+	broker := telemetry.NewEventBroker()
+	srvWithBroker := NewServerWithTelemetryAndRegistry(testCfg, nil, nil, nil, nil, nil, reg, nil)
+	srvWithBroker.SetEventBroker(broker)
+
+	reqResetGet := httptest.NewRequest(http.MethodGet, "/api/v1/circuits/reset", nil)
+	wResetGet := httptest.NewRecorder()
+	srvWithBroker.handleAPICircuitsReset(wResetGet, reqResetGet)
+	if wResetGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET /api/v1/circuits/reset, got %d", wResetGet.Code)
+	}
+
+	reqResetJSON := httptest.NewRequest(http.MethodPost, "/api/v1/circuits/reset", strings.NewReader(`{"provider": "prov1"}`))
+	wResetJSON := httptest.NewRecorder()
+	srvWithBroker.handleAPICircuitsReset(wResetJSON, reqResetJSON)
+	if wResetJSON.Code != http.StatusOK {
+		t.Errorf("expected 200 for POST /api/v1/circuits/reset with JSON, got %d", wResetJSON.Code)
+	}
+
+	// 6. handleAPIPricing: non-GET & GET with oracle
+	oracle := telemetry.NewPricingOracle()
+	srvWithOracle := NewServerWithTelemetry(nil, nil, nil, nil, oracle, nil, nil)
+
+	reqPricingPost := httptest.NewRequest(http.MethodPost, "/api/v1/pricing", nil)
+	wPricingPost := httptest.NewRecorder()
+	srvWithOracle.handleAPIPricing(wPricingPost, reqPricingPost)
+	if wPricingPost.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for POST /api/v1/pricing, got %d", wPricingPost.Code)
+	}
+
+	reqPricingGet := httptest.NewRequest(http.MethodGet, "/api/v1/pricing", nil)
+	wPricingGet := httptest.NewRecorder()
+	srvWithOracle.handleAPIPricing(wPricingGet, reqPricingGet)
+	if wPricingGet.Code != http.StatusOK {
+		t.Errorf("expected 200 for GET /api/v1/pricing with oracle, got %d", wPricingGet.Code)
+	}
+
+	// 7. ReloadConfigFromDisk: empty config path
+	srvNoPath := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
+	if err := srvNoPath.ReloadConfigFromDisk(); err == nil {
+		t.Errorf("expected error when ReloadConfigFromDisk has empty configPath")
+	}
+
+	// 8. handleAPIStatsRecalculate: non-POST & with diskStore + broker + log file
+	tmpDir := t.TempDir()
+	tmpLog := filepath.Join(tmpDir, "traffic.jsonl")
+	recordLine := `{"request_id":"req-1","timestamp":1700000000,"tier":"T1","model":"m1","provider":"p1","status":200,"latency_ms":10,"input_tokens":100,"output_tokens":50,"estimated_cost":0.001,"is_local":false,"is_fallback":false,"is_retry":false}` + "\n"
+	_ = os.WriteFile(tmpLog, []byte(recordLine), 0600)
+
+	statsPath := filepath.Join(tmpDir, "stats.json")
+	dStore, _ := store.NewDiskStore(statsPath)
+	tracker := telemetry.NewStatsTracker(10)
+	srvFull := NewServerWithTelemetry(nil, nil, nil, nil, oracle, tracker, nil)
+	srvFull.SetDiskStore(dStore)
+	srvFull.SetEventBroker(broker)
+	srvFull.SetTrafficLogPath(tmpLog)
+
+	reqRecalcPostNotAllowed := httptest.NewRequest(http.MethodGet, "/api/v1/stats/recalculate", nil)
+	wRecalcPostNotAllowed := httptest.NewRecorder()
+	srvFull.handleAPIStatsRecalculate(wRecalcPostNotAllowed, reqRecalcPostNotAllowed)
+	if wRecalcPostNotAllowed.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET /api/v1/stats/recalculate, got %d", wRecalcPostNotAllowed.Code)
+	}
+
+	reqRecalcValid := httptest.NewRequest(http.MethodPost, "/api/v1/stats/recalculate", nil)
+	wRecalcValid := httptest.NewRecorder()
+	srvFull.handleAPIStatsRecalculate(wRecalcValid, reqRecalcValid)
+	if wRecalcValid.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid recalculate with all components, got %d", wRecalcValid.Code)
+	}
+
+	// 9. handleAPIEvents: non-flusher response writer and nil broker and active event streaming
+	srvNilBroker := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
+	reqEventsNil := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	wEventsNil := httptest.NewRecorder()
+	srvNilBroker.handleAPIEvents(wEventsNil, reqEventsNil)
+	if wEventsNil.Code != http.StatusOK {
+		t.Errorf("expected 200 for handleAPIEvents with nil broker, got %d", wEventsNil.Code)
+	}
+
+	pw := &plainWriter{header: make(http.Header)}
+	srvNilBroker.handleAPIEvents(pw, reqEventsNil)
+	if pw.status != http.StatusInternalServerError {
+		t.Errorf("expected 500 for non-flusher writer, got %d", pw.status)
+	}
+
+	// Active broker SSE test
+	srvBrokerEvents := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
+	brokerEvents := telemetry.NewEventBroker()
+	srvBrokerEvents.SetEventBroker(brokerEvents)
+	ctxCancel, cancelSSE := context.WithCancel(context.Background())
+	reqSSE := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctxCancel)
+	wSSE := httptest.NewRecorder()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		brokerEvents.Publish(telemetry.Event{Type: telemetry.EventStatsUpdated, Data: []byte(`{"test":true}`)})
+		time.Sleep(20 * time.Millisecond)
+		cancelSSE()
+	}()
+	srvBrokerEvents.handleAPIEvents(wSSE, reqSSE)
+	if !strings.Contains(wSSE.Body.String(), "event: stats_updated") {
+		t.Errorf("expected SSE body to contain event: stats_updated, got %s", wSSE.Body.String())
+	}
+
+	// 10. handleAPICircuits and Pricing with nil components
+	srvNilReg := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
+	wNilCircuits := httptest.NewRecorder()
+	srvNilReg.handleAPICircuits(wNilCircuits, httptest.NewRequest(http.MethodGet, "/api/v1/circuits", nil))
+	if wNilCircuits.Code != http.StatusOK {
+		t.Errorf("expected 200 for circuits with nil reg, got %d", wNilCircuits.Code)
+	}
+
+	wNilPricing := httptest.NewRecorder()
+	srvNilReg.handleAPIPricing(wNilPricing, httptest.NewRequest(http.MethodGet, "/api/v1/pricing", nil))
+	if wNilPricing.Code != http.StatusOK {
+		t.Errorf("expected 200 for pricing with nil oracle, got %d", wNilPricing.Code)
+	}
+
+	// 11. handleAPITune: non-POST and nil tuner
+	wTuneGet := httptest.NewRecorder()
+	srvNilReg.handleAPITune(wTuneGet, httptest.NewRequest(http.MethodGet, "/api/v1/tune", nil))
+	if wTuneGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET /api/v1/tune, got %d", wTuneGet.Code)
+	}
+
+	wTuneNil := httptest.NewRecorder()
+	srvNilReg.SetTuner(nil)
+	srvNilReg.handleAPITune(wTuneNil, httptest.NewRequest(http.MethodPost, "/api/v1/tune", nil))
+	if wTuneNil.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for tune with nil tuner, got %d", wTuneNil.Code)
+	}
+
+	// 12. handleConfigUpdate: dry_run branches (invalid config, invalid expr, valid)
+	dryRunInvalidCfg := `{"providers": {}}`
+	reqDryRunValErr := httptest.NewRequest(http.MethodPut, "/api/v1/config?dry_run=true", strings.NewReader(dryRunInvalidCfg))
+	wDryRunValErr := httptest.NewRecorder()
+	srvNilReg.handleConfigUpdate(wDryRunValErr, reqDryRunValErr)
+	if wDryRunValErr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for dry_run validation error, got %d", wDryRunValErr.Code)
+	}
+
+	dryRunInvalidExpr := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "local"}}, "tiers": [{"name": "T1", "provider": "p", "when": "invalid == expr +++"}]}`
+	reqDryRunExprErr := httptest.NewRequest(http.MethodPut, "/api/v1/config?dry_run=true", strings.NewReader(dryRunInvalidExpr))
+	wDryRunExprErr := httptest.NewRecorder()
+	srvNilReg.handleConfigUpdate(wDryRunExprErr, reqDryRunExprErr)
+	if wDryRunExprErr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for dry_run invalid expression, got %d", wDryRunExprErr.Code)
+	}
+
+	dryRunValid := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "local"}}, "tiers": [{"name": "T1", "provider": "p", "when": "Tokens > 0"}]}`
+	reqDryRunOK := httptest.NewRequest(http.MethodPut, "/api/v1/config?dry_run=true", strings.NewReader(dryRunValid))
+	wDryRunOK := httptest.NewRecorder()
+	srvNilReg.handleConfigUpdate(wDryRunOK, reqDryRunOK)
+	if wDryRunOK.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid dry_run, got %d", wDryRunOK.Code)
+	}
+}
+
+type plainWriter struct {
+	header http.Header
+	status int
+	buf    bytes.Buffer
+}
+
+func (p *plainWriter) Header() http.Header { return p.header }
+func (p *plainWriter) Write(b []byte) (int, error) { return p.buf.Write(b) }
+func (p *plainWriter) WriteHeader(status int) { p.status = status }
+
+
+

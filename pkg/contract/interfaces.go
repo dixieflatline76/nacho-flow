@@ -20,6 +20,7 @@ type RequestContext struct {
 	IsMetaDirective  bool     `json:"is_meta_directive,omitempty"`
 	MetaDirective    string   `json:"meta_directive,omitempty"`
 	MetaDirectiveRaw string   `json:"meta_directive_raw,omitempty"`
+	Features         uint16   `json:"features,omitempty"`
 }
 
 // RouterConfig configures gateway routing behavior.
@@ -27,24 +28,56 @@ type RouterConfig struct {
 	EnableInPromptDirectives *bool `yaml:"enable_in_prompt_directives,omitempty" json:"enable_in_prompt_directives,omitempty"`
 }
 
+// NormalizersConfig configures selective tool and stream normalizer sub-strategies.
+type NormalizersConfig struct {
+	Enabled  *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Markdown *bool `yaml:"markdown,omitempty" json:"markdown,omitempty"`
+	BareJSON *bool `yaml:"bare_json,omitempty" json:"bare_json,omitempty"`
+	ReAct    *bool `yaml:"react,omitempty" json:"react,omitempty"`
+	Think    *bool `yaml:"think,omitempty" json:"think,omitempty"`
+}
+
 // Tier defines a single model routing rule in the 1..N evaluation pipeline.
 type Tier struct {
-	Name            string `yaml:"name" json:"name"`
-	Model           string `yaml:"model" json:"model"`
-	Provider        string `yaml:"provider" json:"provider"`
-	When            string `yaml:"when" json:"when"`
-	StripImages     bool   `yaml:"strip_images" json:"strip_images"`
-	ReasoningEffort string `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
-	MaxContext      int    `yaml:"max_context,omitempty" json:"max_context,omitempty"`
+	Name            string             `yaml:"name" json:"name"`
+	Model           string             `yaml:"model" json:"model"`
+	Provider        string             `yaml:"provider" json:"provider"`
+	When            string             `yaml:"when" json:"when"`
+	StripImages     bool               `yaml:"strip_images" json:"strip_images"`
+	ReasoningEffort string             `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
+	MaxContext      int                `yaml:"max_context,omitempty" json:"max_context,omitempty"`
+	Raw             *bool              `yaml:"raw,omitempty" json:"raw,omitempty"`
+	Shield          *bool              `yaml:"shield,omitempty" json:"shield,omitempty"`
+	Normalizer      *bool              `yaml:"normalizer,omitempty" json:"normalizer,omitempty"`
+	Normalizers     *NormalizersConfig `yaml:"normalizers,omitempty" json:"normalizers,omitempty"`
 }
+
+// ProviderType defines the execution classification of an LLM backend.
+type ProviderType string
+
+const (
+	// ProviderTypeLocal designates free local/on-prem inference (e.g. Ollama, vLLM, LM Studio, llama.cpp).
+	// Incurred cost is exactly $0.00, and full baseline token savings are credited.
+	ProviderTypeLocal ProviderType = "local"
+
+	// ProviderTypeCloud designates metered cloud APIs (e.g. OpenRouter, Anthropic, OpenAI, DeepSeek Cloud).
+	// Incurred cost is calculated against live or cached token rate pricing tables.
+	ProviderTypeCloud ProviderType = "cloud"
+)
 
 // ProviderConfig defines a first-class LLM provider configuration.
 type ProviderConfig struct {
 	BaseURL             string            `yaml:"base_url" json:"base_url"`
 	APIKey              string            `yaml:"api_key,omitempty" json:"api_key,omitempty"`
-	Type                string            `yaml:"type,omitempty" json:"type,omitempty"` // "local" or "cloud"
+	Type                ProviderType      `yaml:"type" json:"type"` // MANDATORY: "local" or "cloud"
 	Headers             map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	PricingSyncInterval string            `yaml:"pricing_sync_interval,omitempty" json:"pricing_sync_interval,omitempty"` // e.g. "15m", "24h"
+}
+
+// IsLocal returns true if the provider is a free local/on-prem inference engine.
+// O(1) evaluation, zero heap allocations.
+func (p ProviderConfig) IsLocal() bool {
+	return p.Type == ProviderTypeLocal
 }
 
 // DealsConfig configures the spot market and discount detection engine.

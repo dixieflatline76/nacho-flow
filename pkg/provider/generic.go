@@ -60,7 +60,7 @@ func (p *GenericLLMProvider) BaseURL() string {
 }
 
 func (p *GenericLLMProvider) IsLocal() bool {
-	return p.config.Type == "local" || strings.Contains(strings.ToLower(p.id), "local") || strings.Contains(strings.ToLower(p.id), "ollama")
+	return p.config.IsLocal()
 }
 
 // GetAPIKey returns the resolved API key.

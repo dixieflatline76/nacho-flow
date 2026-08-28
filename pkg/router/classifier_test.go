@@ -203,6 +203,78 @@ func TestClassifier_WithCustomEstimator(t *testing.T) {
 	if ctx.Tokens < 4 || ctx.Tokens > 6 {
 		t.Errorf("Expected ~5 tokens with calibrated estimator, got %d", ctx.Tokens)
 	}
+
+	if c, ok := classifier.(*RequestClassifier); !ok || c.GetEstimator() == nil {
+		t.Fatalf("expected non-nil estimator")
+	}
+
+	// Nil estimator fallback branches
+	cNil := NewClassifierWithEstimator(nil)
+	if c, ok := cNil.(*RequestClassifier); !ok || c.GetEstimator() == nil {
+		t.Fatalf("expected non-nil estimator for nil init")
+	}
+
+	cEmpty := &RequestClassifier{}
+	if cEmpty.GetEstimator() == nil {
+		t.Fatalf("expected lazy non-nil estimator on empty struct")
+	}
+}
+
+func TestClassifier_InteractiveToolExtraction(t *testing.T) {
+	c := NewClassifier()
+
+	// 1. ask_question
+	jsonBody := `{"messages":[{"role":"user","content":"test"}],"tools":[{"type":"function","function":{"name":"ask_question"}}]}`
+	ctx, _ := c.Classify([]byte(jsonBody))
+	if ctx.InteractiveTool != "ask_question" {
+		t.Fatalf("expected ask_question, got %s", ctx.InteractiveTool)
+	}
+
+	// 2. user_prompt
+	jsonBody = `{"messages":[{"role":"user","content":"test"}],"tools":[{"type":"function","function":{"name":"user_prompt"}}]}`
+	ctx, _ = c.Classify([]byte(jsonBody))
+	if ctx.InteractiveTool != "user_prompt" {
+		t.Fatalf("expected user_prompt, got %s", ctx.InteractiveTool)
+	}
+
+	// 3. interactive_input
+	jsonBody = `{"messages":[{"role":"user","content":"test"}],"tools":[{"name":"interactive_input"}]}`
+	ctx, _ = c.Classify([]byte(jsonBody))
+	if ctx.InteractiveTool != "interactive_input" {
+		t.Fatalf("expected interactive_input, got %s", ctx.InteractiveTool)
+	}
+
+	// 4. unsupported tool
+	jsonBody = `{"messages":[{"role":"user","content":"test"}],"tools":[{"type":"function","function":{"name":"random_tool"}}]}`
+	ctx, _ = c.Classify([]byte(jsonBody))
+	if ctx.InteractiveTool != "" {
+		t.Fatalf("expected empty interactive tool, got %s", ctx.InteractiveTool)
+	}
+
+	// 5. Direct ExtractSupportedInteractiveTool test
+	res := ExtractSupportedInteractiveTool([]interface{}{"not-a-map", map[string]interface{}{"invalid": 123}})
+	if res != "" {
+		t.Fatalf("expected empty result for invalid map, got %s", res)
+	}
+}
+
+func TestClassifier_FeatureFlagsInDirectives(t *testing.T) {
+	c := NewClassifier()
+
+	// 1. @nacho:raw
+	jsonBody := `{"messages":[{"role":"user","content":"@nacho:raw write code"}]}`
+	ctx, _ := c.Classify([]byte(jsonBody))
+	if ctx.Features != uint16(FeatureRawPassThrough) {
+		t.Fatalf("expected FeatureRawPassThrough, got %d", ctx.Features)
+	}
+
+	// 2. @nacho:no-shield
+	jsonBody = `{"messages":[{"role":"user","content":"@nacho:no-shield ask me questions"}]}`
+	ctx, _ = c.Classify([]byte(jsonBody))
+	expected := uint16(FeatureDefaultAll.MaskOut(FeatureShieldEnabled | FeatureShieldFollowup | FeatureShieldModeSwitch))
+	if ctx.Features != expected {
+		t.Fatalf("expected %d, got %d", expected, ctx.Features)
+	}
 }
 
 // BenchmarkClassifier measures request parsing and keyword extraction speed per operation.

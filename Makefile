@@ -58,6 +58,19 @@ bench:
 	@echo "Running high-concurrency benchmark suite..."
 	go run ./cmd/util/nacho_bench
 
+bench-sync:
+	@echo "Running high-concurrency benchmark suite & syncing documentation..."
+	go run ./cmd/util/nacho_bench -sync
+
+cover-sync:
+	@echo "Running full test coverage suite & syncing documentation..."
+	go run ./cmd/util/nacho_cover
+
+test-sync:
+	@echo "Running race tests & syncing coverage..."
+	go test -race ./...
+	go run ./cmd/util/nacho_cover
+
 tune:
 	@echo "Running advisory route tuner..."
 	go run ./cmd/nacho-flow tune

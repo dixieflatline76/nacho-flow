@@ -48,7 +48,14 @@ flowchart TD
 ### Tier Properties:
 - `max_context` (`int`): Optional. Upper bound of the model's context window (e.g. `16384`, `32768`). If `Tokens > max_context`, Nacho Flow immediately skips this tier with zero expression overhead.
 - `strip_images` (`bool`): If `true`, strips raw base64 image strings from older conversation turns to prevent 400 errors on text-only models.
-- `reasoning_effort` (`string`): Passes `"low"`, `"medium"`, or `"high"` to supported reasoning providers.
+- `reasoning_effort` (`string`): Passes `"low"`, `"medium"`, or `"high"` to supported reasoning providers (e.g. OpenAI o3-mini).
+- `raw` (`bool`): If `true`, disables all tool normalizers, thinking-tag converters, and fallback shields for a 100% transparent, unadulterated SSE stream.
+- `shield` (`bool`): If `false`, disables the Agentic Tool Fallback Shield (prevents converting trailing questions/plans into synthetic `ask_followup_question` tool calls), essential for automated headless scripts and batch CI runners.
+- `normalizer` (`bool`): Master toggle for the Universal Tool Normalizer on this tier.
+- `normalizers` (`object`): Granular sub-normalizer toggles:
+  - `markdown` (`bool`): Normalizes ```json ... ``` markdown code blocks into OpenAI tool calls.
+  - `bare_json` (`bool`): Normalizes raw top-level JSON objects into OpenAI tool calls.
+  - `react` (`bool`): Normalizes ReAct `Action: / Action Input:` patterns into OpenAI tool calls.
 
 ---
 
@@ -167,6 +174,59 @@ tiers:
     provider: "openrouter"
     reasoning_effort: "low"
     when: "Tokens > 20000"
+```
+
+---
+
+### Recipe 4: Headless Automated CI & Evaluation (No Interactive Tool Prompts)
+When running automated CI scripts, batch test generators, or headless benchmark runners, you want plain text model output rather than interactive tool wrapping:
+
+```yaml
+tiers:
+  - name: "Headless Automated CI Evaluator"
+    model: "deepseek/deepseek-chat"
+    provider: "openrouter"
+    when: "any(Keywords, { # in ['ci_batch', 'test_eval', 'headless'] })"
+    # Disables synthetic ask_followup_question tool calls so batch runners never hang
+    shield: false
+    # Retains standard tool normalization for valid function calls
+    normalizer: true
+```
+
+---
+
+### Recipe 5: Transparent Raw Stream & Tokenizer Benchmarking
+When benchmarking exact upstream token throughput, debugging SSE streaming libraries, or developing custom client wrappers without proxy rewrites:
+
+```yaml
+tiers:
+  - name: "Raw Stream Debugging & Benchmarking"
+    model: "anthropic/claude-sonnet-5"
+    provider: "openrouter"
+    when: "any(Keywords, { # in ['raw_stream', 'inspect_bytes', 'benchmark'] })"
+    # Completely bypasses all normalizers, reasoning stream wrappers, and fallback shields
+    raw: true
+```
+
+---
+
+### Recipe 6: Tailored Tool Parsing for Local Open-Weight Models
+When running specialized local models (such as Qwen 2.5 Coder or Mistral NeMo) that output structured tool calls in Markdown code blocks or bare JSON, but produce code diffs containing words like `Action: ` that could trip ReAct regexes:
+
+```yaml
+tiers:
+  - name: "Local Qwen Coder (Selective Parsers)"
+    model: "qwen2.5-coder:14b"
+    provider: "local_gpu"
+    max_context: 16384
+    when: "Tokens < 12000 && !HasImages && Retries < 2"
+    shield: true
+    normalizer: true
+    # Selectively configure sub-normalizer strategies
+    normalizers:
+      markdown: true    # Normalizes ```json ... ``` tool blocks
+      bare_json: true   # Normalizes raw JSON objects
+      react: false      # Disables ReAct regex scanner to eliminate code diff false positives
 ```
 
 ---
@@ -295,12 +355,34 @@ nacho-flow tune --apply
 
 ## 7. Manual Heuristic Tuning Tips (For Custom Power Rules)
 
-If you prefer writing and refining your own rules by hand:
-
+### 7.1 General Routing & Hardware Guardrails
 1. **Check Live Financials First**: Run `curl http://127.0.0.1:8000/v1/stats` or view `@nacho:status` in your chat prompt to see your current local vs cloud distribution. Aim for **70%–85% local turns** on typical coding tasks.
 2. **Start with Conservative Token Bounds**: If your local GPU has 16GB VRAM running a 14B model, set `Tokens < 12000`. If running an 8B model, set `Tokens < 8000`.
 3. **Always Include `Retries < 2` on Local Tiers**: This ensures that if a local model produces a broken response, the agent's second attempt automatically escalates to a cloud frontier model (e.g. Claude Sonnet 5 or DeepSeek-R1) instead of looping indefinitely on local hardware.
-4. **Use `strip_images: true` on Text-Only Local Models**: If your agent sends a screenshot in Turn 1, Turn 10 doesn't need 40,000 tokens of raw base64 image data sent to a text-only local model. Setting `strip_images: true` removes legacy base64 strings while preserving the conversational text.
+4. **Use `strip_images: true` on Text-Only Local Models**: If your agent sends a screenshot in Turn 1, Turn 10 doesn't need 40,000 tokens of raw base64 image data sent to a text-only local model. Setting `strip_images: true` removes legacy base64 strings while preserving conversational text.
+
+---
+
+### 7.2 Tuning Tool Normalizers & Eliminating Regex False Positives
+Modern open-weight models have vastly different formatting behaviors:
+* **Disable ReAct on Structured Code Models**: Advanced coder models (like `qwen2.5-coder:14b` or `deepseek-chat`) output standard JSON or markdown blocks. If they generate code diffs or commit messages containing phrases like `Action: Added mutex lock`, aggressive ReAct regexes can trigger false-positive tool extractions. Set `normalizers.react: false` on tiers dedicated to structured models.
+* **Keep Markdown Fences Active for Ollama/vLLM**: Many open-source models wrap their function calls in ` ```json ... ``` ` blocks. Setting `normalizers.markdown: true` ensures these are converted to standard OpenAI `tool_calls` without breaking client JSON parsers.
+* **Raw Passthrough for Benchmarking**: If you want to benchmark raw upstream token velocity or test custom client parsers without proxy interception, set `raw: true` or use `@nacho:raw` in your prompt.
+
+---
+
+### 7.3 Tuning the Agentic Fallback Shield
+In agent IDEs like Zoo Code or Cline, agents expect models to always invoke tools (`read_file`, `execute_command`). When smaller local models output conversational plans or ask questions ("Should I proceed with the edit?"), agent harnesses fail with "Model did not invoke a tool" 3-strike deadlocks.
+* **For Interactive Coding (IDE)**: Keep `shield: true` (default). Nacho Flow's sliding tail-buffer (4.67ns, 0 allocs) detects trailing question heuristics and wraps the text into an `ask_followup_question` tool call, prompting you in the UI instead of crashing.
+* **For Headless CI & Batch Scripts**: Set `shield: false` on your batch tier (or splash `@nacho:no-shield` in prompts). Automated scripts don't have interactive humans to answer tool questions, so returning raw conversational text prevents test runner timeouts.
+
+---
+
+### 7.4 Testing Rules On-The-Fly with Directives
+Before committing changes to `config.yaml`, test different routing behaviors live in your chat:
+* `@nacho:raw` — Force unadulterated pass-through on the current prompt.
+* `@nacho:no-shield` — Disable fallback tool synthesis for the current turn.
+* `@nacho:tier="<Name>"` — Route directly to a specific named tier to test its model output.
 
 ---
 

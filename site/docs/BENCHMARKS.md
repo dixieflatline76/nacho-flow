@@ -6,12 +6,14 @@ This document details the performance characteristics, load-testing methodology,
 
 ## 1. Executive Summary
 
-- **Peak Throughput**: **30,771 requests/second** under full production authentication and multi-model tool normalization load.
-- **Pipeline Latency**: **~0.24 ms** (240.1 microseconds) raw pass-through overhead per request (**~0.26 ms** with full multi-model tool-call normalization and JSON bracket balancing).
+<!-- BENCHMARK:EXECUTIVE_SUMMARY_START -->
+- **Peak Throughput**: **29,710 requests/second** under full production authentication and tool normalization load.
+- **Pipeline Latency**: **~0.19 ms** raw pass-through overhead per request (**~0.22 ms** with full multi-model tool-call normalization).
 - **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
 - **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
 - **Telemetry & Model Deals Integrity**: Lock-free atomic pricing metadata map and asynchronous stats tracking operate with **zero race conditions** and **zero data drops**.
-- **Real-World Complex Workloads**: Maintains **~30,000+ req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization (Hermes/Mistral/Llama/DeepSeek/Bare-JSON Strategy Pipeline).
+- **Real-World Complex Workloads**: Maintains **~30,000+ req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization.
+<!-- BENCHMARK:EXECUTIVE_SUMMARY_END -->
 
 ---
 
@@ -59,13 +61,15 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 
 ### Comprehensive Results Breakdown:
 
+<!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **25,700.1 req/s** | 1.51 ms | 10.15 ms | 52.3 MB |
-| **100 workers** | 50,000 | **100.0%** | **27,965.5 req/s** | 3.00 ms | 14.78 ms | 70.9 MB |
-| **250 workers** | 75,000 | **100.0%** | **25,438.8 req/s** | 7.01 ms | 58.43 ms | 110.9 MB |
-| **500 workers** | 100,000 | **100.0%** | **29,655.1 req/s** | 15.71 ms | 38.47 ms | 90.2 MB |
-| **1,000 workers** | 100,000 | **100.0%** | **8,916.9 req/s** | 34.98 ms | 430.91 ms | 474.1 MB |
+| **50 workers** | 25,000 | **100.0%** | **23373.1 req/s** | 1.62 ms | 11.79 ms | 62.5 MB |
+| **100 workers** | 50,000 | **100.0%** | **24170.9 req/s** | 3.00 ms | 24.60 ms | 119.2 MB |
+| **250 workers** | 75,000 | **100.0%** | **26250.6 req/s** | 7.81 ms | 35.05 ms | 89.5 MB |
+| **500 workers** | 100,000 | **100.0%** | **24722.7 req/s** | 15.04 ms | 90.00 ms | 144.4 MB |
+| **1000 workers** | 100,000 | **100.0%** | **25368.8 req/s** | 35.89 ms | 79.43 ms | 185.9 MB |
+<!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
 
@@ -80,14 +84,14 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 
 ### Isolated A/B Overhead Analysis (Raw Pass-Through vs Full Security & Normalization):
 
-To measure the exact CPU cost of inbound authentication and on-the-fly multi-model tool extraction with balanced-bracket JSON parsing, we benchmarked the gateway across 250,000 requests under identical pre-warmed conditions:
-
+<!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 29,679.9 req/s | 30,032.3 req/s | **+1.2%** | **-0.05 ms** (1.00ms vs 0.95ms) | -0.13 ms |
-| **50 workers** | 31,073.2 req/s | 30,771.3 req/s | **-1.0%** | **+0.35 ms** (1.01ms vs 1.36ms) | +0.39 ms |
-| **100 workers** | 31,027.2 req/s | 26,862.1 req/s | **-13.4%** | **+0.48 ms** (2.52ms vs 3.00ms) | +1.63 ms |
-| **200 workers** | 31,262.2 req/s | 28,864.9 req/s | **-7.7%** | **+1.00 ms** (5.00ms vs 6.00ms) | +1.04 ms |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **25 workers** | 29684.7 req/s | 28377.6 req/s | **-4.4%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.32 ms |
+| **50 workers** | 30409.5 req/s | 29710.4 req/s | **-2.3%** | **+0.11 ms** (1.01ms vs 1.12ms) | +0.72 ms |
+| **100 workers** | 29449.0 req/s | 27325.8 req/s | **-7.2%** | **+0.02 ms** (2.98ms vs 3.00ms) | +3.92 ms |
+| **200 workers** | 30225.1 req/s | 24730.2 req/s | **-18.2%** | **+1.00 ms** (5.51ms vs 6.51ms) | +10.84 ms |
+<!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 
 - With the zero-allocation byte pre-filter (`hasCandidateTokens`) and decoupled Strategy Pipeline, the per-request latency overhead of tool normalization + inbound auth is **under 250 microseconds** at standard concurrency.
@@ -198,28 +202,33 @@ BenchmarkTailBuffer_Append-16        4,711,068    255.400 ns/op      0 B/op    0
 Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. Both the Go high-concurrency daemon and the VS Code companion extension maintain comprehensive automated test suites:
 
 #### Go Daemon Statement Coverage:
+<!-- COVERAGE:GO_TABLE_START -->
 | Package / Subsystem | Primary Responsibility | Statement Coverage |
 | :--- | :--- | :--- |
-| `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **100.0%** |
-| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **99.3%** |
+| `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **100.0%** |
+| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **99.4%** |
 | `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **99.0%** |
 | `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
+| `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **97.9%** |
 | `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
+| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **96.9%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **96.5%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
-| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **95.6%** |
-| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.0%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.6%** |
-| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **91.6%** |
-| `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **86.2%** |
+| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **95.8%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.7%** |
+| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.2%** |
+| `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
+<!-- COVERAGE:GO_TABLE_END -->
 
 #### VS Code Companion Extension Coverage:
+<!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **12 / 12 Suites** | **150 / 150 (100%)** | **96.59% / 96.88% / 95.58%** |
+| **Extension Core & Webview Suite** | **13 / 13 Suites** | **169 / 169 (100%)** | **96.19% / 96.58% / 95.71%** |
+<!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---
 
@@ -246,4 +255,3 @@ go test -bench="." -run="^$" -benchmem ./pkg/strategy ./pkg/router ./pkg/router/
 ```bash
 cd extension && npm test
 ```
-

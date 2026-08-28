@@ -302,26 +302,13 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 	// 1. Merge with existing secrets if incoming has masked placeholders
 	merged := config.MergeSecrets(s.GetConfig(), incoming)
 
-	// 2. Validate providers
-	if len(merged.Providers) == 0 {
-		return "", fmt.Errorf("configuration must have at least one provider defined")
-	}
-
-	for id, p := range merged.Providers {
-		if strings.TrimSpace(p.BaseURL) == "" {
-			return "", fmt.Errorf("provider '%s' is missing required base_url", id)
-		}
-	}
-
-	// Validate tier references
-	for _, tier := range merged.Tiers {
-		if _, exists := merged.Providers[tier.Provider]; !exists {
-			return "", fmt.Errorf("tier '%s' references unknown provider '%s'", tier.Name, tier.Provider)
-		}
+	// 2. Validate configuration contract (providers, types, base_urls, tier provider references)
+	if err := config.ValidateConfig(merged); err != nil {
+		return "", err
 	}
 
 	// 3. Pre-compile AST expr rules to verify syntax
-	newEval, err := strategy.NewExprEvaluator(merged.Tiers, merged.DefaultTier)
+	newEval, err := strategy.NewExprEvaluator(merged.Tiers, merged.DefaultTier, merged.Providers)
 	if err != nil {
 		return "", fmt.Errorf("invalid routing expression: %w", err)
 	}
@@ -364,16 +351,9 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 	// 5b. Dynamically reconfigure PricingOracle providers upon hot-reload
 	if s.oracle != nil {
 		for id, p := range merged.Providers {
-			idLower := strings.ToLower(id)
-			if idLower == contract.ProviderOpenRouter || strings.Contains(strings.ToLower(p.BaseURL), contract.ProviderOpenRouter) {
-				var interval time.Duration
-				if p.PricingSyncInterval != "" {
-					interval, _ = time.ParseDuration(p.PricingSyncInterval)
-				}
-				s.oracle.RegisterProvider(
-					telemetry.NewOpenRouterPricingProviderWithURL(p.BaseURL, p.APIKey),
-					interval,
-				)
+			if factory, ok := telemetry.LookupPricingFactory(id); ok {
+				prov, interval := factory(id, p, 0)
+				s.oracle.RegisterProvider(prov, interval)
 			}
 		}
 	}
@@ -436,7 +416,18 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Query().Get("dry_run") == "true" {
 		merged := config.MergeSecrets(s.GetConfig(), &incoming)
-		if _, evalErr := strategy.NewExprEvaluator(merged.Tiers, merged.DefaultTier); evalErr != nil {
+		if valErr := config.ValidateConfig(merged); valErr != nil {
+			w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]string{
+					"type":    "validation_error",
+					"message": valErr.Error(),
+				},
+			})
+			return
+		}
+		if _, evalErr := strategy.NewExprEvaluator(merged.Tiers, merged.DefaultTier, merged.Providers); evalErr != nil {
 			w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{

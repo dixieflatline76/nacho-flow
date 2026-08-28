@@ -225,6 +225,9 @@ func TestOptimizer_PreservesGuardrails(t *testing.T) {
 	optimizer := NewCostPenaltyOptimizer()
 
 	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+		},
 		Tiers: []contract.Tier{
 			{
 				Name:     "Local GPU",
@@ -258,6 +261,9 @@ func TestOptimizer_RespectsMaxContext(t *testing.T) {
 	optimizer := NewCostPenaltyOptimizer()
 
 	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+		},
 		Tiers: []contract.Tier{
 			{
 				Name:       "Local GPU Free",
@@ -322,6 +328,16 @@ func TestOptimizer_CloudRetriesDoNotInflateAvoidedRetries(t *testing.T) {
 
 // Test IsLocalTier detector covering various local and cloud configurations
 func TestIsLocalTier_Detection(t *testing.T) {
+	providers := map[string]contract.ProviderConfig{
+		"ollama":       {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+		"vllm":         {BaseURL: "http://gpu-rig.tailscale:8000/v1", Type: contract.ProviderTypeLocal},
+		"lmstudio":     {BaseURL: "http://127.0.0.1:1234/v1", Type: contract.ProviderTypeLocal},
+		"custom_local": {BaseURL: "http://192.168.1.50:8080/v1", Type: contract.ProviderTypeLocal},
+		"openrouter":   {BaseURL: "https://openrouter.ai/api/v1", Type: contract.ProviderTypeCloud},
+		"anthropic":    {BaseURL: "https://api.anthropic.com/v1", Type: contract.ProviderTypeCloud},
+		"openai":       {BaseURL: "https://api.openai.com/v1", Type: contract.ProviderTypeCloud},
+	}
+
 	tests := []struct {
 		tier     contract.Tier
 		expected bool
@@ -329,19 +345,15 @@ func TestIsLocalTier_Detection(t *testing.T) {
 		{contract.Tier{Provider: "ollama", Name: "Tier 1"}, true},
 		{contract.Tier{Provider: "vllm", Name: "Tier 1"}, true},
 		{contract.Tier{Provider: "lmstudio", Name: "Tier 1"}, true},
-		{contract.Tier{Provider: "localai", Name: "Tier 1"}, true},
-		{contract.Tier{Provider: "llama.cpp", Name: "Tier 1"}, true},
-		{contract.Tier{Provider: "llamacpp", Name: "Tier 1"}, true},
-		{contract.Tier{Provider: "custom", Name: "My Local GPU"}, true},
-		{contract.Tier{Provider: "custom", Name: "ROCm GPU Workstation"}, true},
-		{contract.Tier{Provider: "custom", Name: "On-Premises Server"}, true},
+		{contract.Tier{Provider: "custom_local", Name: "Remote LAN Mac Studio"}, true},
 		{contract.Tier{Provider: "openrouter", Name: "Claude Sonnet"}, false},
 		{contract.Tier{Provider: "anthropic", Name: "Claude Opus"}, false},
 		{contract.Tier{Provider: "openai", Name: "GPT-4o"}, false},
+		{contract.Tier{Provider: "unknown_prov", Name: "Unknown"}, false},
 	}
 
 	for _, tc := range tests {
-		got := IsLocalTier(tc.tier)
+		got := IsLocalTier(tc.tier, providers)
 		if got != tc.expected {
 			t.Errorf("IsLocalTier(%+v) = %v, expected %v", tc.tier, got, tc.expected)
 		}
@@ -391,6 +403,9 @@ func TestOptimizer_ZeroRecords(t *testing.T) {
 
 	// Zero records with existing tier
 	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Provider: "ollama", When: "Tokens < 8000 && Retries < 2"},
 		},
@@ -405,6 +420,9 @@ func TestOptimizer_ZeroRecords(t *testing.T) {
 
 	// Zero records with malformed existing when
 	badCfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Provider: "ollama", When: "Tokens < && bad"},
 		},

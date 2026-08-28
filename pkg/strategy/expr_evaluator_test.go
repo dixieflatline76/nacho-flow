@@ -218,9 +218,14 @@ func TestExprEvaluator_ForcedDirectives(t *testing.T) {
 		{Name: "Local GPU Tier", Model: "qwen2.5-coder:14b", Provider: "ollama", When: "Tokens < 8000"},
 		{Name: "Cloud Fast", Model: "qwen-30b", Provider: "openrouter", When: "Tokens >= 8000"},
 	}
+	providers := map[string]contract.ProviderConfig{
+		"ollama":     {Type: contract.ProviderTypeLocal, BaseURL: "http://127.0.0.1:11434"},
+		"openrouter": {Type: contract.ProviderTypeCloud, BaseURL: "https://openrouter.ai/api/v1"},
+	}
+
 	defaultTier := contract.Tier{Name: "Default Cloud", Model: "claude-3.5", Provider: "openrouter"}
 
-	eval, err := NewExprEvaluator(tiers, defaultTier)
+	eval, err := NewExprEvaluator(tiers, defaultTier, providers)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

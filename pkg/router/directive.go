@@ -23,9 +23,20 @@ type DirectiveInfo struct {
 	Raw         string // The raw matching token (e.g. "@nacho:fast")
 }
 
-// HasDirective performs a < 4ns zero-allocation byte pre-filter on the prompt.
+// HasDirective performs a fast, zero-allocation byte pre-filter on the prompt.
 func HasDirective(text string) bool {
-	return strings.Contains(text, DirectivePrefix)
+	if len(text) < len(DirectivePrefix) {
+		return false
+	}
+	prefixLen := len(DirectivePrefix)
+	for i := 0; i <= len(text)-prefixLen; i++ {
+		if text[i] == '@' {
+			if strings.EqualFold(text[i:i+prefixLen], DirectivePrefix) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ExtractDirective parses the first @nacho: directive in prompt and strips all directives from clean prompt.
@@ -85,6 +96,10 @@ func ExtractDirective(prompt string) (DirectiveInfo, string) {
 		case "reasoning":
 			info.Directive = "reasoning"
 			info.ForcedTier = "reasoning"
+		case "raw":
+			info.Directive = "raw"
+		case "no-shield", "noshield":
+			info.Directive = "no-shield"
 		case "help":
 			info.Directive = "help"
 			info.IsMeta = true
@@ -106,6 +121,27 @@ func ExtractDirective(prompt string) (DirectiveInfo, string) {
 
 	clean := StripDirective(prompt)
 	return info, clean
+}
+
+// ScanDirectives scans the prompt for spicy feature directives (@nacho:raw, @nacho:no-shield)
+// and returns the resolved FeatureFlag bitmask and the stripped clean prompt.
+// If no feature directive is present, it returns FeatureDefaultAll.
+func ScanDirectives(prompt string) (FeatureFlag, string) {
+	if prompt == "" || !HasDirective(prompt) {
+		return FeatureDefaultAll, prompt
+	}
+
+	flags := FeatureDefaultAll
+	lower := strings.ToLower(prompt)
+
+	if strings.Contains(lower, "@nacho:raw") {
+		flags = FeatureRawPassThrough
+	} else if strings.Contains(lower, "@nacho:no-shield") || strings.Contains(lower, "@nacho:noshield") {
+		flags = flags.MaskOut(FeatureShieldEnabled | FeatureShieldFollowup | FeatureShieldModeSwitch)
+	}
+
+	clean := StripDirective(prompt)
+	return flags, clean
 }
 
 // StripDirective removes all @nacho:... directives and collapses excess whitespace.

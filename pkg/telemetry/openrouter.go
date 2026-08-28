@@ -160,3 +160,19 @@ func (p *OpenRouterPricingProvider) FetchPricing(ctx context.Context) (map[strin
 
 	return result, nil
 }
+
+func init() {
+	RegisterPricingFactory(contract.ProviderOpenRouter, func(id string, cfg contract.ProviderConfig, defaultInterval time.Duration) (PricingProvider, time.Duration) {
+		interval := defaultInterval
+		if cfg.PricingSyncInterval != "" {
+			if parsed, err := time.ParseDuration(cfg.PricingSyncInterval); err == nil {
+				interval = parsed
+			}
+		}
+		baseURL := cfg.BaseURL
+		if baseURL == "" {
+			baseURL = contract.OpenRouterProduction
+		}
+		return NewOpenRouterPricingProviderWithURL(baseURL, cfg.APIKey), interval
+	})
+}

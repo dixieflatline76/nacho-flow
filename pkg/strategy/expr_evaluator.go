@@ -18,10 +18,11 @@ type compiledTier struct {
 type ExprEvaluator struct {
 	compiled    []compiledTier
 	defaultTier contract.Tier
+	providers   map[string]contract.ProviderConfig
 }
 
 // NewExprEvaluator compiles all tier expressions in advance for nanosecond execution.
-func NewExprEvaluator(tiers []contract.Tier, defaultTier contract.Tier) (*ExprEvaluator, error) {
+func NewExprEvaluator(tiers []contract.Tier, defaultTier contract.Tier, providers ...map[string]contract.ProviderConfig) (*ExprEvaluator, error) {
 	compiledList := make([]compiledTier, 0, len(tiers))
 
 	for _, t := range tiers {
@@ -39,9 +40,15 @@ func NewExprEvaluator(tiers []contract.Tier, defaultTier contract.Tier) (*ExprEv
 		})
 	}
 
+	var provMap map[string]contract.ProviderConfig
+	if len(providers) > 0 {
+		provMap = providers[0]
+	}
+
 	return &ExprEvaluator{
 		compiled:    compiledList,
 		defaultTier: defaultTier,
+		providers:   provMap,
 	}, nil
 }
 
@@ -62,10 +69,12 @@ func (e *ExprEvaluator) SelectTier(reqCtx contract.RequestContext) (contract.Tie
 		switch forced {
 		case "local":
 			for _, ct := range e.compiled {
-				p := strings.ToLower(ct.tier.Provider)
-				if p == "ollama" || p == "vllm" || p == "local" || strings.Contains(strings.ToLower(ct.tier.Name), "local") {
+				if provCfg, ok := e.providers[ct.tier.Provider]; ok && provCfg.IsLocal() {
 					return ct.tier, nil
 				}
+			}
+			if provCfg, ok := e.providers[e.defaultTier.Provider]; ok && provCfg.IsLocal() {
+				return e.defaultTier, nil
 			}
 			if len(e.compiled) > 0 {
 				return e.compiled[0].tier, nil

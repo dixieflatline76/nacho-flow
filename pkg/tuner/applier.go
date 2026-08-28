@@ -39,7 +39,7 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 	// 2. Mutate Local Tier rule
 	updated := false
 	for i, tier := range cfg.Tiers {
-		if IsLocalTier(tier) {
+		if IsLocalTier(tier, cfg.Providers) {
 			cfg.Tiers[i].When = result.SynthesizedRule
 			updated = true
 			break

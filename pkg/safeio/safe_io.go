@@ -34,16 +34,16 @@ func (s *SafeBoundedDir) RootDir() string {
 	return s.rootDir
 }
 
-// ResolveSafePath validates that the target relative path does not escape the root directory boundary.
-func (s *SafeBoundedDir) ResolveSafePath(relPath string) (string, error) {
+// resolveRel validates that the target relative path does not escape rootDir and returns both absolute and relative paths.
+func (s *SafeBoundedDir) resolveRel(relPath string) (string, string, error) {
 	trimmed := strings.TrimSpace(relPath)
 	if trimmed == "" {
-		return "", fmt.Errorf("filename cannot be empty")
+		return "", "", fmt.Errorf("filename cannot be empty")
 	}
 
 	// Reject absolute paths or rooted paths immediately
 	if filepath.IsAbs(trimmed) || strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "\\") || (len(trimmed) >= 2 && trimmed[1] == ':') {
-		return "", fmt.Errorf("security violation: absolute/rooted path rejected (%q)", relPath)
+		return "", "", fmt.Errorf("security violation: absolute/rooted path rejected (%q)", relPath)
 	}
 
 	// Clean and combine
@@ -52,15 +52,21 @@ func (s *SafeBoundedDir) ResolveSafePath(relPath string) (string, error) {
 	// Ensure the resolved target starts strictly within rootDir
 	rel, err := filepath.Rel(s.rootDir, targetPath)
 	if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
-		return "", fmt.Errorf("security violation: path traversal outside root directory (%q)", relPath)
+		return "", "", fmt.Errorf("security violation: path traversal outside root directory (%q)", relPath)
 	}
 
-	return targetPath, nil
+	return targetPath, rel, nil
+}
+
+// ResolveSafePath validates that the target relative path does not escape the root directory boundary.
+func (s *SafeBoundedDir) ResolveSafePath(relPath string) (string, error) {
+	abs, _, err := s.resolveRel(relPath)
+	return abs, err
 }
 
 // ReadFile safely reads file contents strictly within the bounded directory using os.Root.
 func (s *SafeBoundedDir) ReadFile(relPath string) ([]byte, error) {
-	safePath, err := s.ResolveSafePath(relPath)
+	_, rel, err := s.resolveRel(relPath)
 	if err != nil {
 		return nil, err
 	}
@@ -70,11 +76,6 @@ func (s *SafeBoundedDir) ReadFile(relPath string) ([]byte, error) {
 		return nil, err
 	}
 	defer root.Close()
-
-	rel, err := filepath.Rel(s.rootDir, safePath)
-	if err != nil {
-		return nil, err
-	}
 
 	f, err := root.Open(filepath.ToSlash(rel))
 	if err != nil {
@@ -87,7 +88,7 @@ func (s *SafeBoundedDir) ReadFile(relPath string) ([]byte, error) {
 
 // WriteFile safely writes data to a file strictly within the bounded directory.
 func (s *SafeBoundedDir) WriteFile(relPath string, data []byte, perm os.FileMode) error {
-	safePath, err := s.ResolveSafePath(relPath)
+	safePath, rel, err := s.resolveRel(relPath)
 	if err != nil {
 		return err
 	}
@@ -102,11 +103,6 @@ func (s *SafeBoundedDir) WriteFile(relPath string, data []byte, perm os.FileMode
 		return err
 	}
 	defer root.Close()
-
-	rel, err := filepath.Rel(s.rootDir, safePath)
-	if err != nil {
-		return err
-	}
 
 	f, err := root.OpenFile(filepath.ToSlash(rel), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {

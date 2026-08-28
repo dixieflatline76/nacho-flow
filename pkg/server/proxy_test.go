@@ -64,6 +64,13 @@ func TestHealthEndpoint(t *testing.T) {
 			t.Fatalf("Endpoint %s: Expected status 200, got %d", endpoint, rec.Code)
 		}
 
+		if rec.Header().Get("Server") != contract.AppName+"/"+contract.Version {
+			t.Errorf("Endpoint %s: Expected Server header %q, got %q", endpoint, contract.AppName+"/"+contract.Version, rec.Header().Get("Server"))
+		}
+		if rec.Header().Get("X-Nacho-Flow") != "true" {
+			t.Errorf("Endpoint %s: Expected X-Nacho-Flow header 'true', got %q", endpoint, rec.Header().Get("X-Nacho-Flow"))
+		}
+
 		var resp map[string]interface{}
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("Endpoint %s: Failed to parse JSON: %v", endpoint, err)
@@ -71,11 +78,17 @@ func TestHealthEndpoint(t *testing.T) {
 		if resp["status"] != "ok" {
 			t.Errorf("Endpoint %s: Expected status 'ok', got %v", endpoint, resp["status"])
 		}
-		if resp["service"] != "nacho-flow" {
-			t.Errorf("Endpoint %s: Expected service 'nacho-flow', got %v", endpoint, resp["service"])
+		if resp["app"] != contract.AppName {
+			t.Errorf("Endpoint %s: Expected app %q, got %v", endpoint, contract.AppName, resp["app"])
+		}
+		if resp["service"] != contract.AppName {
+			t.Errorf("Endpoint %s: Expected service %q, got %v", endpoint, contract.AppName, resp["service"])
 		}
 		if resp["version"] == nil || resp["version"] == "" {
 			t.Errorf("Endpoint %s: Expected non-empty version, got %v", endpoint, resp["version"])
+		}
+		if resp["uptime"] == nil || resp["uptime"] == "" {
+			t.Errorf("Endpoint %s: Expected non-empty uptime, got %v", endpoint, resp["uptime"])
 		}
 	}
 }
@@ -1856,5 +1869,183 @@ func TestProxy_AgentShield_NonStreamingRescue(t *testing.T) {
 	fn := toolCalls[0].(map[string]interface{})["function"].(map[string]interface{})
 	if fn["name"] != "ask_followup_question" {
 		t.Fatalf("expected tool name 'ask_followup_question', got %v", fn["name"])
+	}
+}
+
+func TestProxy_Phase3_DirectivesAndFeatureFlags(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","choices":[{"index":0,"message":{"role":"assistant","content":"I have created the plan. Do you want to proceed?"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	t.Run("@nacho:no-shield directive suppresses synthetic tool call", func(t *testing.T) {
+		cfg := &contract.Config{
+			Port: 8000,
+			Providers: map[string]contract.ProviderConfig{
+				"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+			},
+			Tiers: []contract.Tier{
+				{Name: "Local GPU", Model: "qwen", Provider: "mock_local", When: "true"},
+			},
+		}
+
+		srv := NewServer(cfg, nil, nil, nil)
+		rec := httptest.NewRecorder()
+		reqBody := `{"model":"qwen","tools":[{"type":"function","function":{"name":"ask_followup_question","description":"Ask user a question"}}],"messages":[{"role":"user","content":"@nacho:no-shield Plan the project"}]}`
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqBody))
+
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var res map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &res)
+		choices := res["choices"].([]interface{})
+		msg := choices[0].(map[string]interface{})["message"].(map[string]interface{})
+		if _, hasTools := msg["tool_calls"]; hasTools {
+			t.Fatalf("expected NO tool_calls when @nacho:no-shield is passed, got: %v", msg)
+		}
+		if msg["content"] != "I have created the plan. Do you want to proceed?" {
+			t.Fatalf("unexpected content: %v", msg["content"])
+		}
+	})
+
+	t.Run("Tier with raw: true passes through without modification", func(t *testing.T) {
+		rawTrue := true
+		cfg := &contract.Config{
+			Port: 8000,
+			Providers: map[string]contract.ProviderConfig{
+				"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+			},
+			Tiers: []contract.Tier{
+				{Name: "Raw Tier", Model: "qwen", Provider: "mock_local", Raw: &rawTrue, When: "true"},
+			},
+		}
+
+		srv := NewServer(cfg, nil, nil, nil)
+		rec := httptest.NewRecorder()
+		reqBody := `{"model":"qwen","tools":[{"type":"function","function":{"name":"ask_followup_question"}}],"messages":[{"role":"user","content":"Plan the project"}]}`
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqBody))
+
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var res map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &res)
+		choices := res["choices"].([]interface{})
+		msg := choices[0].(map[string]interface{})["message"].(map[string]interface{})
+		if _, hasTools := msg["tool_calls"]; hasTools {
+			t.Fatalf("expected NO tool_calls on raw tier, got: %v", msg)
+		}
+	})
+
+	t.Run("Tier with shield: false disables agentic fallback", func(t *testing.T) {
+		shieldFalse := false
+		cfg := &contract.Config{
+			Port: 8000,
+			Providers: map[string]contract.ProviderConfig{
+				"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+			},
+			Tiers: []contract.Tier{
+				{Name: "No Shield Tier", Model: "qwen", Provider: "mock_local", Shield: &shieldFalse, When: "true"},
+			},
+		}
+
+		srv := NewServer(cfg, nil, nil, nil)
+		rec := httptest.NewRecorder()
+		reqBody := `{"model":"qwen","tools":[{"type":"function","function":{"name":"ask_followup_question"}}],"messages":[{"role":"user","content":"Plan the project"}]}`
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqBody))
+
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var res map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &res)
+		choices := res["choices"].([]interface{})
+		msg := choices[0].(map[string]interface{})["message"].(map[string]interface{})
+		if _, hasTools := msg["tool_calls"]; hasTools {
+			t.Fatalf("expected NO tool_calls on shield: false tier, got: %v", msg)
+		}
+	})
+}
+
+func TestResolveFeatureFlags_AllPermutations(t *testing.T) {
+	bTrue := true
+	bFalse := false
+
+	// 1. Explicit directive non-zero / non-default overrides everything
+	customFeatures := uint16(router.FeatureToolNormalizer | router.FeatureNormMarkdown)
+	flags := resolveFeatureFlags(contract.RequestContext{Features: customFeatures}, contract.Tier{Raw: &bTrue}, true)
+	if uint16(flags) != customFeatures {
+		t.Fatalf("expected explicit features %d, got %d", customFeatures, flags)
+	}
+
+	// 2. Raw tier policy
+	flags = resolveFeatureFlags(contract.RequestContext{}, contract.Tier{Raw: &bTrue}, true)
+	if flags != router.FeatureRawPassThrough {
+		t.Fatalf("expected FeatureRawPassThrough, got %v", flags)
+	}
+
+	// 3. Global shield disabled
+	flags = resolveFeatureFlags(contract.RequestContext{}, contract.Tier{}, false)
+	if flags.Has(router.FeatureShieldEnabled) {
+		t.Fatalf("expected FeatureShieldEnabled to be false when global shield is false")
+	}
+
+	// 4. Tier Shield explicitly enabled
+	flags = resolveFeatureFlags(contract.RequestContext{}, contract.Tier{Shield: &bTrue}, false)
+	if !flags.Has(router.FeatureShieldEnabled) {
+		t.Fatalf("expected FeatureShieldEnabled to be true when tier.Shield is true")
+	}
+
+	// 5. Tier Shield explicitly disabled
+	flags = resolveFeatureFlags(contract.RequestContext{}, contract.Tier{Shield: &bFalse}, true)
+	if flags.Has(router.FeatureShieldEnabled) {
+		t.Fatalf("expected FeatureShieldEnabled to be false when tier.Shield is false")
+	}
+
+	// 6. Tier Normalizer disabled
+	flags = resolveFeatureFlags(contract.RequestContext{}, contract.Tier{Normalizer: &bFalse}, true)
+	if flags.Has(router.FeatureToolNormalizer) {
+		t.Fatalf("expected FeatureToolNormalizer to be false when tier.Normalizer is false")
+	}
+
+	// 7. Tier Normalizers struct permutations
+	flags = resolveFeatureFlags(contract.RequestContext{}, contract.Tier{
+		Normalizers: &contract.NormalizersConfig{
+			Enabled:  &bFalse,
+			Markdown: &bFalse,
+			BareJSON: &bFalse,
+			ReAct:    &bFalse,
+			Think:    &bFalse,
+		},
+	}, true)
+	if flags.Has(router.FeatureToolNormalizer) || flags.Has(router.FeatureNormMarkdown) || flags.Has(router.FeatureNormBareJSON) || flags.Has(router.FeatureNormReAct) || flags.Has(router.FeatureThinkNormalizer) {
+		t.Fatalf("expected normalizer sub-flags to be disabled, got %d", flags)
+	}
+}
+
+func TestStreamNormalizer_Features_RawPassThrough(t *testing.T) {
+	rawSSE := "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"raw thinking\"}}]}\n\ndata: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	norm.SetFeatures(uint16(router.FeatureRawPassThrough))
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	// Raw pass-through should preserve the reasoning_content delta verbatim without adding <think> tags
+	if !strings.Contains(string(out), "reasoning_content") || strings.Contains(string(out), "<think>") {
+		t.Fatalf("expected raw pass-through without <think> tags, got: %s", string(out))
 	}
 }

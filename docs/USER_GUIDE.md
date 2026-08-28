@@ -140,6 +140,7 @@ providers:
   # Cloud Fallback (When reasoning context exceeds local limits)
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
     api_key: "ENV_OPENROUTER_API_KEY"
 
 tiers:
@@ -180,6 +181,7 @@ providers:
   # 2. OpenRouter Aggregator
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
     api_key: "ENV_OPENROUTER_API_KEY"
     headers:
       HTTP-Referer: "https://spicebox.dev"
@@ -188,6 +190,7 @@ providers:
   # 3. Langdock Enterprise / Private Tenant
   langdock:
     base_url: "https://api.langdock.com/v1"
+    type: "cloud"
     api_key: "ENV_LANGDOCK_API_KEY"
     headers:
       X-Custom-Org: "engineering"
@@ -195,6 +198,7 @@ providers:
   # 4. DeepSeek Direct
   deepseek:
     base_url: "https://api.deepseek.com/v1"
+    type: "cloud"
     api_key: "ENV_DEEPSEEK_API_KEY"
 
 # Ordered Dynamic Routing Tiers (Evaluated from top to bottom: First Match Wins)
@@ -251,6 +255,82 @@ agent_shield:
     - "switch to architect mode"
     - "ready to implement"
 ```
+
+---
+
+### 2.3 Tier Feature Flags & Transformation Policies: Granular Proxy Control
+
+By default, Nacho Flow acts as an intelligent proxy that actively optimizes and sanitizes LLM streams:
+1. **Universal Tool Normalizer**: Converts 8 raw tool formats (Hermes XML, Mistral arrays, bare JSON, Markdown fences) into OpenAI-standard `tool_calls`.
+2. **Reasoning Stream Formatter**: Formats raw `<|im_start|>think` and `<thinking>` streams into `<think>...</think>` tags for IDE UI accordions.
+3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline and synthesizes `ask_followup_question` tool calls to prevent agent deadlocks.
+
+However, different workflows and engineering personas require different levels of proxy intervention. Nacho Flow provides granular controls to selectively tune or completely bypass these transformations.
+
+---
+
+#### 👥 Why Different Personas Use These Controls
+
+| Persona / Use Case | Challenge / Goal | Solution | How to Use |
+| :--- | :--- | :--- | :--- |
+| **🛠️ The Systems Developer / Prompt Engineer** | Needs to inspect raw, unadulterated SSE byte streams directly from upstream models for tokenizer debugging, raw benchmarking, or custom client tools. | **Full Raw Pass-Through**: Bypasses all normalizers, reasoning formatters, and fallback shields with 0 modification. | • In-prompt: `@nacho:raw`<br>• In `config.yaml`: `raw: true` on tier |
+| **🤖 The Headless Automation / CI Pipeline** | Automated CI scripts and batch evaluators don't have interactive human operators. If a local model outputs a question ("Would you like me to proceed?"), synthesizing an interactive `ask_followup_question` tool call halts the automated runner. | **Disable Fallback Shield**: Allows pure text questions to stream back as standard conversational content without tool synthesis. | • In-prompt: `@nacho:no-shield`<br>• In `config.yaml`: `shield: false` on tier |
+| **🖥️ The Self-Hosted Model Specialist / Operator** | Hosting specialized models on vLLM or Ollama (e.g. Qwen 2.5 vs Mistral NeMo) that output structured tool calls in a known format. You want to disable aggressive ReAct regexes to avoid false positives on code diffs while keeping Markdown JSON fences active. | **Selective Sub-Strategy Toggles**: Fine-tunes exact parser families per tier. | • In `config.yaml`: `normalizers: { markdown: true, bare_json: true, react: false }` |
+
+---
+
+#### ⚙️ Configuration Reference (`config.yaml`)
+
+You can declare transformation policies directly on individual routing tiers in `config.yaml`:
+
+```yaml
+tiers:
+  # Scenario 1: Dedicated Raw Passthrough Tier for Benchmark & Token Debugging
+  - name: "Raw Stream Debugging"
+    model: "anthropic/claude-sonnet-5"
+    provider: "openrouter"
+    when: "any(Keywords, { # in ['raw_stream', 'inspect_bytes', 'benchmark'] })"
+    # When raw: true, the proxy acts as a transparent reverse proxy (zero stream rewriting)
+    raw: true
+
+  # Scenario 2: Autonomous Headless CI Tier (No Interactive Tool Wrapping)
+  - name: "Headless Automated CI Tasks"
+    model: "deepseek/deepseek-r1"
+    provider: "openrouter"
+    when: "any(Keywords, { # in ['ci_eval', 'batch_test', 'headless'] })"
+    # Disables synthetic ask_followup_question tool calls; keeps tool normalizers active
+    shield: false
+
+  # Scenario 3: Specialized Local Model with Tailored Parser Pipeline
+  - name: "Local Qwen Coder (Selective Normalizers)"
+    model: "qwen2.5-coder:14b"
+    provider: "ollama"
+    when: "Tokens < 8000"
+    shield: true
+    normalizer: true
+    # Granular sub-normalizer toggles:
+    normalizers:
+      markdown: true    # Parses ```json { "name": ... } ``` markdown blocks
+      bare_json: true   # Parses raw top-level JSON objects
+      react: false      # Disables ReAct "Action: / Action Input:" regex scanner
+```
+
+---
+
+#### ⚖️ Precedence Hierarchy (How Flags Are Resolved)
+
+Nacho Flow resolves active feature flags on every single turn using a strict 3-level precedence model:
+
+$$\mathbf{\text{Per-Turn In-Prompt Directive}} \quad \succ \quad \mathbf{\text{Routing Tier Policy}} \quad \succ \quad \mathbf{\text{Global Config Defaults}}$$
+
+1. **Per-Turn In-Prompt Directives (Highest Priority)**:
+   - Adding `@nacho:raw` to your prompt forces full transparent pass-through for that single turn regardless of tier settings.
+   - Adding `@nacho:no-shield` disables fallback tool synthesis for that single turn.
+   - Directive tokens are stripped before upstream transmission with **zero prompt leakage**.
+2. **Routing Tier Policy**:
+   - The matched tier's `raw`, `shield`, `normalizer`, and `normalizers` settings apply to the turn.
+3. **Global Config Defaults (Base Fallback)**:
+   - If a tier omits a flag, Nacho Flow falls back to global settings declared under `agent_shield` and default proxy normalizers.
 
 ---
 
@@ -740,6 +820,8 @@ Splash any HotSauce directive into your prompt to override automatic rule evalua
 | `@nacho:reasoning` | 🔥 **Inferno** | Forces routing to your deep reasoning tier (DeepSeek-R1 / o1). | `@nacho:reasoning prove why this algorithm is O(N log N)` |
 | `@nacho:tier="<Name>"` | 🌶️ **Custom** | Forces routing to a specific named tier from `config.yaml`. | `@nacho:tier="Tier 1: Local ROCm" quick fix` |
 | `@nacho:model="<ID>"` | 🌶️ **Chef's Special** | Directs request straight to a specific model ID across any configured provider. | `@nacho:model="deepseek/deepseek-r1" solve this concurrency race` |
+| `@nacho:raw` | 🛡️ **Raw Pass-Through** | Bypasses all stream normalizers, reasoning wrappers, and agentic fallback shield. | `@nacho:raw inspect raw stream tokens` |
+| `@nacho:no-shield` | 🛡️ **Shield Bypass** | Bypasses synthetic tool-call synthesis on trailing questions/plans. | `@nacho:no-shield ask me follow-up questions in text` |
 
 #### Architectural Guarantees:
 1. **Clean Upstream Forwarding**: All `@nacho:` tags are automatically stripped and whitespace is collapsed before the prompt reaches upstream LLMs. The model never sees the directive.

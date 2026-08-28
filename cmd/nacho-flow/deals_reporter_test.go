@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -105,3 +106,18 @@ func TestNewDealsReporter(t *testing.T) {
 		t.Errorf("expected *JSONReporter, got %T", jsonRep)
 	}
 }
+
+type errWriter struct{}
+
+func (e *errWriter) Write(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("write error")
+}
+
+func TestJSONReporter_Render_Error(t *testing.T) {
+	reporter := NewJSONReporter()
+	err := reporter.Render(&errWriter{}, server.DealsResponse{})
+	if err == nil {
+		t.Errorf("expected error writing to errWriter, got nil")
+	}
+}
+

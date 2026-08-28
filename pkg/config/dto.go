@@ -11,7 +11,7 @@ import (
 type SanitizedProviderDTO struct {
 	BaseURL             string
 	Key                 string
-	Type                string
+	Type                contract.ProviderType
 	Headers             map[string]string
 	PricingSyncInterval string
 }

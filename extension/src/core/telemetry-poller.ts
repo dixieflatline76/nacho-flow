@@ -97,6 +97,9 @@ export class TelemetryPoller implements vscode.Disposable {
 		this.timer = setInterval(() => {
 			void this.executeTick();
 		}, this.intervalSeconds * 1000);
+		if (this.timer && typeof this.timer.unref === 'function') {
+			this.timer.unref();
+		}
 	}
 
 	private clearTimer(): void {
