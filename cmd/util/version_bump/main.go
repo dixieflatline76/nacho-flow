@@ -107,6 +107,19 @@ func runWithRunners(args []string, versionFile, siteFile, pkgJsonFile, pkgLockFi
 	if err := updateSiteVersion(siteFile, newVersion); err == nil {
 		filesToCommit = append(filesToCommit, siteFile)
 	}
+	allHtmlFiles := []string{
+		"index.html", "docs.html", "support.html", "privacy.html",
+		"site/docs.html", "site/support.html", "site/privacy.html",
+	}
+	for _, hf := range allHtmlFiles {
+		if hf != siteFile {
+			if _, statErr := os.Stat(hf); statErr == nil {
+				if err := updateSiteVersion(hf, newVersion); err == nil {
+					filesToCommit = append(filesToCommit, hf)
+				}
+			}
+		}
+	}
 	if pkgJsonFile != "" {
 		if err := updatePackageJSON(pkgJsonFile, newVersion); err == nil {
 			filesToCommit = append(filesToCommit, pkgJsonFile)

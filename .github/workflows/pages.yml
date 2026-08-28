@@ -41,7 +41,7 @@ jobs:
           cp ROADMAP.md site/ROADMAP.md
           cp version.txt site/version.txt
           VERSION=$(cat version.txt | tr -d '[:space:]')
-          sed -i "s/class=\"logo-badge logo-badge-version\" id=\"version-badge\">[^<]*/class=\"logo-badge logo-badge-version\" id=\"version-badge\">v$VERSION/g" site/index.html
+          sed -i "s/class=\"logo-badge logo-badge-version\" id=\"version-badge\">[^<]*/class=\"logo-badge logo-badge-version\" id=\"version-badge\">v$VERSION/g" site/*.html
           sed -i "s/{{VERSION}}/$VERSION/g" site/docs/*.md
 
       - name: Setup Pages
