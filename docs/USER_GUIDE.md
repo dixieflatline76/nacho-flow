@@ -258,6 +258,42 @@ agent_shield:
 
 ---
 
+### 2.3 Tier Feature Flags & Transformation Policies (v0.8.0)
+
+In addition to routing conditions (`when`), each tier in `config.yaml` can declaratively configure feature toggles to control which transformations are applied:
+
+```yaml
+tiers:
+  - name: "Raw Passthrough Debugging Tier"
+    model: "anthropic/claude-sonnet-5"
+    provider: "openrouter"
+    when: "Keywords contains 'raw_stream'"
+    # Completely disables tool normalization, think-tag stream rewriting, and agentic fallback shield
+    raw: true
+
+  - name: "Local GPU Fast Coder"
+    model: "qwen2.5-coder:14b"
+    provider: "ollama"
+    when: "Tokens < 8000"
+    # Selectively toggle fallback shield or tool normalizers
+    shield: true
+    normalizer: true
+    normalizers:
+      markdown: true    # Normalizes ```json ... ``` tool blocks
+      bare_json: true   # Normalizes raw JSON objects
+      react: false      # Disables ReAct Action: extraction
+```
+
+#### Precedence Hierarchy
+Nacho Flow resolves feature flags using a strict 3-tier hierarchy:
+$$\text{Per-Turn In-Prompt Directive (@nacho:*)} \succ \text{Tier Policy (config.yaml)} \succ \text{Global Config Defaults}$$
+
+- **In-Prompt Directives**: `@nacho:raw` sets `FeatureRawPassThrough` (all bits `0`); `@nacho:no-shield` masks out the fallback shield for a single turn.
+- **Tier Configuration**: Sets deploy-time policy for requests matching that tier.
+- **Global Config**: Base defaults configured under `agent_shield` and global proxy settings.
+
+---
+
 ## 3. Writing Custom Routing Tiers (`expr` Rules)
 
 For a complete guide with recipes on tuning token thresholds, keyword extraction, and reasoning parameters, check out the **[Rule & Tier Tuning Guide](TUNING_GUIDE.md)**.

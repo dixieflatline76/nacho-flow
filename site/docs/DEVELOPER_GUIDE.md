@@ -20,25 +20,30 @@ nacho-flow/
 │   ├── nacho-flow/         # Production binary entrypoint (CLI, deals reporter, service manager, tuner)
 │   └── util/
 │       ├── gen_catalog/    # Curated model catalog generator & OTA sync updater
-│       ├── nacho_bench/    # In-memory load testing & stress benchmark CLI
+│       ├── nacho_bench/    # In-memory load testing & bare-metal doc synchronization harness (-sync)
+│       ├── nacho_cover/    # Statement-level test coverage matrix analyzer & doc synchronizer
 │       ├── nacho_releaser/ # Automated multi-platform GitHub release tool
 │       └── version_bump/   # Semantic version bumping utility
 ├── data/
 │   └── models.json         # Canonical remote model catalog for GitHub OTA serving
 ├── docs/                   # Architecture, Benchmarks, Tuning Guide, User & Dev Guides
+├── extension/              # VS Code Companion Extension (TypeScript thin client, Webview, SSE IPC)
 ├── logs/                   # Default directory for interactive log files
 ├── pkg/
-│   ├── config/             # YAML configuration parser & validation
-│   ├── contract/           # Core interface definitions & shared types
+│   ├── config/             # YAML configuration parser, RCU reloader & validation
+│   ├── contract/           # Core interface definitions, ProviderType enum & bitmask DTOs
 │   ├── provider/           # Capability interfaces (LLM, Auth, Header, Health, CircuitBreaker, Registry)
-│   ├── router/             # Context classifier, adaptive estimator, session tracker, image sanitizer, tool normalizer
+│   ├── router/             # Context classifier, adaptive estimator, session tracker, image sanitizer, tool normalizer, feature flags
+│   │   └── shield/         # Agentic fallback shield, sliding tail-buffer & question heuristic engine
+│   ├── safeio/             # Bounded path and safe atomic filesystem operations
 │   ├── server/             # HTTP reverse proxy, delayed header validator, stream normalizer (reasoning -> think), deals API
 │   ├── store/              # Atomic disk persistence for telemetry (stats.json)
 │   ├── strategy/           # Compiled expr-lang dynamic rule evaluator with MaxContext guards
-│   ├── telemetry/          # Pricing oracle, OpenRouter plugin, StatsTracker, 3-tier classifier
+│   ├── telemetry/          # Pricing oracle, factory registry, OpenRouter plugin, StatsTracker, 3-tier classifier
 │   │   └── curation/       # Embedded baseline + OTA GitHub semver catalog manager
 │   └── tuner/              # Cost-penalty rule synthesizer & advisory engine
 ├── scripts/                # Universal Linux/macOS shell installer & test harness
+├── site/                   # Static landing page, interactive documentation hub & benchmarks
 ├── .github/workflows/      # CI/CD pipeline, Docker GHCR publisher & Azure Trusted Signing
 ├── Dockerfile              # Distroless multi-arch container image
 ├── .dockerignore           # Container build exclusions
@@ -54,7 +59,7 @@ Nacho Flow provides a comprehensive `Makefile` implementing Spice-grade quality,
 
 | Target | Command Executed | Description & When to Use |
 | :--- | :--- | :--- |
-| **`make check`** | `fmt vet sec test-race` | **Primary local gate**: Run before every commit or PR. |
+| **`make check`** | `fmt vet sec test-race test-extension` | **Primary local gate**: Run before every commit or PR. |
 | **`make build`** | `go build ... -o bin/nacho-flow` | Compiles optimized local binary with embedded version. |
 | **`make fmt`** | `gofmt -s -w .` | Simplifies and formats all Go source files. |
 | **`make vet`** | `go vet ./...` | Analyzes code for potential correctness and bug patterns. |
@@ -64,8 +69,12 @@ Nacho Flow provides a comprehensive `Makefile` implementing Spice-grade quality,
 | **`make test-race`** | `go test -v -race -count=1 ./...` | Runs test suite with Go's race detector active. |
 | **`make test-cover`**| `go test -coverprofile=...` | Generates interactive HTML test coverage report. |
 | **`make bench`** | `go run ./cmd/util/nacho_bench` | Runs pre-warmed high-concurrency benchmark suite. |
+| **`make bench-sync`**| `go run ./cmd/util/nacho_bench -sync` | Runs bare-metal benchmark harness and updates doc tables. |
+| **`make cover-sync`**| `go run ./cmd/util/nacho_cover` | Evaluates Go + Jest coverage and syncs documentation matrices. |
+| **`make test-sync`** | `go test -race ./... && nacho_cover` | Executes full race test suite and updates coverage tables. |
 | **`make tune`** | `go run ./cmd/nacho-flow tune` | Analyzes `traffic.jsonl` and prints advisory tuning report. |
 | **`make tune-apply`**| `go run ./cmd/nacho-flow tune --apply` | Synthesizes rules and atomically updates `config.yaml`. |
+| **`make package-extension`** | `npx vsce package ...` | Builds and packages local VS Code extension `.vsix`. |
 | **`make bump-patch`**| `version_bump -type=patch` | Bumps patch version (e.g. `0.2.0` $\rightarrow$ `0.2.1`) & tags git. |
 | **`make bump-minor`**| `version_bump -type=minor` | Bumps minor version (e.g. `0.2.0` $\rightarrow$ `0.3.0`) & tags git. |
 | **`make bump-major`**| `version_bump -type=major` | Bumps major version (e.g. `0.2.0` $\rightarrow$ `1.0.0`) & tags git. |
