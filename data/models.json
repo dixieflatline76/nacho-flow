@@ -21,6 +21,24 @@
         "tier_1_vision"
       ]
     },
+    "anthropic/claude-sonnet-5": {
+      "name": "Anthropic: Claude Sonnet 5",
+      "tier_role": "coding_workhorse",
+      "coding_index": 97.4,
+      "tool_reliability": 99,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "anthropic/claude-3.7-sonnet": {
+      "name": "Anthropic: Claude 3.7 Sonnet",
+      "tier_role": "coding_workhorse",
+      "coding_index": 95.8,
+      "tool_reliability": 99,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
     "anthropic/claude-3.5-sonnet": {
       "name": "Anthropic: Claude 3.5 Sonnet",
       "tier_role": "coding_workhorse",

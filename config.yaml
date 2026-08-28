@@ -69,10 +69,10 @@ tiers:
     when: "Retries == 1 || 'reason' in Keywords || 'algorithm' in Keywords || 'architect' in Keywords"
 
 # =============================================================================
-# 🛡️ DEFAULT TIER: Frontier Powerhouse (Claude 3.5 Sonnet)
+# 🛡️ DEFAULT TIER: Frontier Powerhouse (Claude Sonnet 5)
 # =============================================================================
 default_tier:
-  name: "Tier 4: Frontier Powerhouse (Claude 3.5 Sonnet)"
+  name: "Tier 4: Frontier Powerhouse (Claude Sonnet 5)"
   provider: "openrouter"
-  model: "anthropic/claude-3.5-sonnet"
+  model: "anthropic/claude-sonnet-5"
   when: "true"

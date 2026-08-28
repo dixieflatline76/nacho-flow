@@ -254,7 +254,7 @@ The **Heat Seeker Engine** scans upstream providers for flash discounts, subsidi
 
 1. **Lock-Free Read Path**: Pricing metadata is stored in an `atomic.Pointer[map[string]ModelMetadata]`. Proxy routing lookups execute lock-free in $\mathcal{O}(1)$ time ($< 40\text{ ns}$) with zero mutex contention.
 2. **Copy-On-Write Background Polling**: Provider plugins poll pricing endpoints asynchronously, cloning the metadata map on updates and swapping the atomic pointer.
-3. **Quality-to-Price Ranking (`PricingOracle.GetDeals()`)**: Filters models by tool support, coding benchmark thresholds, and discount percent against a reference frontier model (`claude-3.5-sonnet` at $3.00/1M).
+3. **Quality-to-Price Ranking (`PricingOracle.GetDeals()`)**: Filters models by tool support, coding benchmark thresholds, and discount percent against a reference frontier model (`claude-sonnet-5` at $2.00/1M).
 4. **"Heat Seeker" CLI Reporter Strategy (`cmd/nacho-flow/deals_*.go`)**:
    - Transforms domain deals into `DealRowView` View Models.
    - Formats elastic tabular output via Go's standard `text/tabwriter.Writer` (`nacho-flow deals` or `nacho-flow heat-seek`).

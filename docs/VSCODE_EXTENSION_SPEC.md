@@ -223,16 +223,16 @@ data: {"timestamp":"2026-08-22T18:05:00Z","version":"0.6.0","applied_rule_change
 #### Response (`200 OK`):
 ```json
 {
-  "benchmark_model": "anthropic/claude-3.5-sonnet",
-  "benchmark_price_per_million": 3.00,
+  "benchmark_model": "anthropic/claude-sonnet-5",
+  "benchmark_price_per_million": 2.00,
   "pricing": {
     "openrouter:qwen/qwen3-coder": {
       "prompt_cost_per_million": 0.20,
       "completion_cost_per_million": 0.60
     },
-    "openrouter:anthropic/claude-3.7-sonnet": {
-      "prompt_cost_per_million": 3.00,
-      "completion_cost_per_million": 15.00
+    "openrouter:anthropic/claude-sonnet-5": {
+      "prompt_cost_per_million": 2.00,
+      "completion_cost_per_million": 10.00
     },
     "ollama:qwen2.5-coder:7b": {
       "prompt_cost_per_million": 0.0,
@@ -279,7 +279,7 @@ data: {"timestamp":"2026-08-22T18:05:00Z","version":"0.6.0","applied_rule_change
   "default_tier": {
     "name": "Tier 3: Cloud Reasoning Fallback",
     "provider": "openrouter",
-    "model": "anthropic/claude-3.7-sonnet"
+    "model": "anthropic/claude-sonnet-5"
   }
 }
 ```

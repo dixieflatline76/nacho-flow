@@ -152,8 +152,8 @@ tiers:
 
 # Flagship cloud model for deep reasoning or heavy context
 default_tier:
-  name: "Cloud Fallback"
-  model: "anthropic/claude-3.5-sonnet"
+  name: "Cloud Fallback (Claude Sonnet 5)"
+  model: "anthropic/claude-sonnet-5"
   provider: "openrouter"
 ```
 
