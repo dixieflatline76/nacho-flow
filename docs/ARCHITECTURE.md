@@ -278,7 +278,7 @@ Nacho Flow employs a tri-channel distribution model:
 
 ## 9. VS Code Companion Extension & Management Control Plane Architecture
 
-Nacho Flow v0.6.0 introduces an integrated VS Code companion extension designed under the **Thin-Client Doctrine**:
+Nacho Flow includes an integrated VS Code companion extension designed under the strict **Thin-Client Doctrine** (for full protocol DTOs and state machines, see the [VS Code Extension Technical Specification](file:///docs/VSCODE_EXTENSION_SPEC.md)):
 
 ```mermaid
 flowchart TD
@@ -310,10 +310,17 @@ flowchart TD
 ```
 
 ### 9.1 Thin-Client Separation of Concerns
-1. **Zero Route Duplication**: All token calculation, `expr` rule evaluation, circuit trips, and pricing logic execute in Go. The extension never duplicates token math or routing rules.
-2. **Real-Time Push Updates**: Rather than polling, the extension subscribes to the daemon's Server-Sent Events broker (`GET /v1/events`). Metrics update in real-time across the Status Bar and Analytics Webview with zero CPU spin.
+1. **Zero Domain Logic in TypeScript**: All token calculation, `expr` AST rule evaluation, circuit trips, pricing oracle lookups, and stream transformations execute exclusively in the compiled Go daemon. The extension never duplicates routing or token math.
+2. **Real-Time Push Updates via SSE**: Rather than polling, the extension subscribes to the daemon's Server-Sent Events broker (`GET /v1/events`). Metrics update in real-time across the Status Bar and Analytics Webview with zero CPU spin.
 3. **Isolated Credential State**: `AuthManager` isolates Local mode (`127.0.0.1:8000`) and Remote mode (`http://<ip>:8000`), storing tokens securely in `vscode.SecretStorage` and guaranteeing that toggling modes never overwrites remote server credentials.
-4. **Markdown Diff Sanitizer (`pkg/router/diff_sanitizer.go`)**: Validates diff block syntax on responses, sanitizing malformed hunk prefixes before delivery to coding agents (Zoo Code, Cline, Cursor).
+4. **Single Source of Truth (`config.yaml`)**: To prevent configuration drift, the extension provides no parallel sidebar toggle switches. All operational rules and normalizer flags are edited in `config.yaml` with instant hot-reload via atomic RCU.
+
+### 9.2 Resilient Daemon Lifecycle & Actionable Diagnostics
+1. **Socket Collision Pre-Flight Probing**: The daemon inspects port availability using cross-platform socket tests (`isAddressInUse`), detecting POSIX `EADDRINUSE` and Windows `WSAEADDRINUSE (10048)`.
+2. **Structured Fatal Error Signals**: On fatal startup errors, the daemon writes machine-parseable tags to stderr (e.g., `[FATAL:PORT_IN_USE:8000]`, `[FATAL:CONFIG_ERROR]`).
+3. **Actionable VS Code Notifications**: The extension parses structured stderr signals and presents human-readable error toasts equipped with a 1-click **`[📝 Open config.yaml]`** button to resolve port conflicts instantly.
+4. **Graceful Subprocess Termination**: Process trees on Windows are terminated using clean job objects/tree kills, safely suppressing expected `taskkill` exit codes (`4294967295`) without user-facing errors.
+
 
 
 
