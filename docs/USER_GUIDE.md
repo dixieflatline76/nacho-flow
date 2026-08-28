@@ -258,39 +258,79 @@ agent_shield:
 
 ---
 
-### 2.3 Tier Feature Flags & Transformation Policies (v0.8.0)
+### 2.3 Tier Feature Flags & Transformation Policies: Granular Proxy Control
 
-In addition to routing conditions (`when`), each tier in `config.yaml` can declaratively configure feature toggles to control which transformations are applied:
+By default, Nacho Flow acts as an intelligent proxy that actively optimizes and sanitizes LLM streams:
+1. **Universal Tool Normalizer**: Converts 8 raw tool formats (Hermes XML, Mistral arrays, bare JSON, Markdown fences) into OpenAI-standard `tool_calls`.
+2. **Reasoning Stream Formatter**: Formats raw `<|im_start|>think` and `<thinking>` streams into `<think>...</think>` tags for IDE UI accordions.
+3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline and synthesizes `ask_followup_question` tool calls to prevent agent deadlocks.
+
+However, different workflows and engineering personas require different levels of proxy intervention. Nacho Flow provides granular controls to selectively tune or completely bypass these transformations.
+
+---
+
+#### 👥 Why Different Personas Use These Controls
+
+| Persona / Use Case | Challenge / Goal | Solution | How to Use |
+| :--- | :--- | :--- | :--- |
+| **🛠️ The Systems Developer / Prompt Engineer** | Needs to inspect raw, unadulterated SSE byte streams directly from upstream models for tokenizer debugging, raw benchmarking, or custom client tools. | **Full Raw Pass-Through**: Bypasses all normalizers, reasoning formatters, and fallback shields with 0 modification. | • In-prompt: `@nacho:raw`<br>• In `config.yaml`: `raw: true` on tier |
+| **🤖 The Headless Automation / CI Pipeline** | Automated CI scripts and batch evaluators don't have interactive human operators. If a local model outputs a question ("Would you like me to proceed?"), synthesizing an interactive `ask_followup_question` tool call halts the automated runner. | **Disable Fallback Shield**: Allows pure text questions to stream back as standard conversational content without tool synthesis. | • In-prompt: `@nacho:no-shield`<br>• In `config.yaml`: `shield: false` on tier |
+| **🖥️ The Self-Hosted Model Specialist / Operator** | Hosting specialized models on vLLM or Ollama (e.g. Qwen 2.5 vs Mistral NeMo) that output structured tool calls in a known format. You want to disable aggressive ReAct regexes to avoid false positives on code diffs while keeping Markdown JSON fences active. | **Selective Sub-Strategy Toggles**: Fine-tunes exact parser families per tier. | • In `config.yaml`: `normalizers: { markdown: true, bare_json: true, react: false }` |
+
+---
+
+#### ⚙️ Configuration Reference (`config.yaml`)
+
+You can declare transformation policies directly on individual routing tiers in `config.yaml`:
 
 ```yaml
 tiers:
-  - name: "Raw Passthrough Debugging Tier"
+  # Scenario 1: Dedicated Raw Passthrough Tier for Benchmark & Token Debugging
+  - name: "Raw Stream Debugging"
     model: "anthropic/claude-sonnet-5"
     provider: "openrouter"
-    when: "Keywords contains 'raw_stream'"
-    # Completely disables tool normalization, think-tag stream rewriting, and agentic fallback shield
+    when: "any(Keywords, { # in ['raw_stream', 'inspect_bytes', 'benchmark'] })"
+    # When raw: true, the proxy acts as a transparent reverse proxy (zero stream rewriting)
     raw: true
 
-  - name: "Local GPU Fast Coder"
+  # Scenario 2: Autonomous Headless CI Tier (No Interactive Tool Wrapping)
+  - name: "Headless Automated CI Tasks"
+    model: "deepseek/deepseek-r1"
+    provider: "openrouter"
+    when: "any(Keywords, { # in ['ci_eval', 'batch_test', 'headless'] })"
+    # Disables synthetic ask_followup_question tool calls; keeps tool normalizers active
+    shield: false
+
+  # Scenario 3: Specialized Local Model with Tailored Parser Pipeline
+  - name: "Local Qwen Coder (Selective Normalizers)"
     model: "qwen2.5-coder:14b"
     provider: "ollama"
     when: "Tokens < 8000"
-    # Selectively toggle fallback shield or tool normalizers
     shield: true
     normalizer: true
+    # Granular sub-normalizer toggles:
     normalizers:
-      markdown: true    # Normalizes ```json ... ``` tool blocks
-      bare_json: true   # Normalizes raw JSON objects
-      react: false      # Disables ReAct Action: extraction
+      markdown: true    # Parses ```json { "name": ... } ``` markdown blocks
+      bare_json: true   # Parses raw top-level JSON objects
+      react: false      # Disables ReAct "Action: / Action Input:" regex scanner
 ```
 
-#### Precedence Hierarchy
-Nacho Flow resolves feature flags using a strict 3-tier hierarchy:
-$$\text{Per-Turn In-Prompt Directive (@nacho:*)} \succ \text{Tier Policy (config.yaml)} \succ \text{Global Config Defaults}$$
+---
 
-- **In-Prompt Directives**: `@nacho:raw` sets `FeatureRawPassThrough` (all bits `0`); `@nacho:no-shield` masks out the fallback shield for a single turn.
-- **Tier Configuration**: Sets deploy-time policy for requests matching that tier.
-- **Global Config**: Base defaults configured under `agent_shield` and global proxy settings.
+#### ⚖️ Precedence Hierarchy (How Flags Are Resolved)
+
+Nacho Flow resolves active feature flags on every single turn using a strict 3-level precedence model:
+
+$$\mathbf{\text{Per-Turn In-Prompt Directive}} \quad \succ \quad \mathbf{\text{Routing Tier Policy}} \quad \succ \quad \mathbf{\text{Global Config Defaults}}$$
+
+1. **Per-Turn In-Prompt Directives (Highest Priority)**:
+   - Adding `@nacho:raw` to your prompt forces full transparent pass-through for that single turn regardless of tier settings.
+   - Adding `@nacho:no-shield` disables fallback tool synthesis for that single turn.
+   - Directive tokens are stripped before upstream transmission with **zero prompt leakage**.
+2. **Routing Tier Policy**:
+   - The matched tier's `raw`, `shield`, `normalizer`, and `normalizers` settings apply to the turn.
+3. **Global Config Defaults (Base Fallback)**:
+   - If a tier omits a flag, Nacho Flow falls back to global settings declared under `agent_shield` and default proxy normalizers.
 
 ---
 
