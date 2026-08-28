@@ -251,9 +251,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Health check endpoint (always public for load balancers & monitoring)
 	if r.URL.Path == contract.PathHealth || r.URL.Path == contract.PathV1Health {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+		w.Header().Set("Server", contract.AppName+"/"+contract.Version)
+		w.Header().Set("X-Nacho-Flow", "true")
 		w.WriteHeader(http.StatusOK)
-		resp := fmt.Sprintf(`{"status":"ok","service":"%s","version":"%s"}`, contract.AppName, contract.Version)
-		_, _ = w.Write([]byte(resp))
+		uptime := ""
+		if !s.startTime.IsZero() {
+			uptime = time.Since(s.startTime).String()
+		}
+		respMap := map[string]interface{}{
+			"status":  "ok",
+			"app":     contract.AppName,
+			"service": contract.AppName,
+			"version": contract.Version,
+		}
+		if uptime != "" {
+			respMap["uptime"] = uptime
+		}
+		_ = json.NewEncoder(w).Encode(respMap)
 		return
 	}
 
@@ -460,6 +474,55 @@ func (s *Server) forwardWithFallback(
 	s.dispatchTier(w, r, reqCtx, targetTier, body, startTime, reqLogger, isFallback)
 }
 
+func resolveFeatureFlags(reqCtx contract.RequestContext, targetTier contract.Tier, globalShieldEnabled bool) router.FeatureFlag {
+	// If explicit in-prompt directive was parsed (and not default), it takes highest precedence
+	if reqCtx.Features != 0 && reqCtx.Features != uint16(router.FeatureDefaultAll) {
+		return router.FeatureFlag(reqCtx.Features)
+	}
+
+	// Next precedence: Tier Policy in config.yaml
+	if targetTier.Raw != nil && *targetTier.Raw {
+		return router.FeatureRawPassThrough
+	}
+
+	flags := router.FeatureDefaultAll
+	if !globalShieldEnabled {
+		flags = flags.MaskOut(router.FeatureShieldEnabled | router.FeatureShieldFollowup | router.FeatureShieldModeSwitch)
+	}
+
+	if targetTier.Shield != nil {
+		if !*targetTier.Shield {
+			flags = flags.MaskOut(router.FeatureShieldEnabled | router.FeatureShieldFollowup | router.FeatureShieldModeSwitch)
+		} else {
+			flags = flags | router.FeatureShieldEnabled
+		}
+	}
+
+	if targetTier.Normalizer != nil && !*targetTier.Normalizer {
+		flags = flags.MaskOut(router.FeatureToolNormalizer | router.FeatureNormMarkdown | router.FeatureNormBareJSON | router.FeatureNormReAct)
+	}
+
+	if targetTier.Normalizers != nil {
+		if targetTier.Normalizers.Enabled != nil && !*targetTier.Normalizers.Enabled {
+			flags = flags.MaskOut(router.FeatureToolNormalizer | router.FeatureNormMarkdown | router.FeatureNormBareJSON | router.FeatureNormReAct)
+		}
+		if targetTier.Normalizers.Markdown != nil && !*targetTier.Normalizers.Markdown {
+			flags = flags.MaskOut(router.FeatureNormMarkdown)
+		}
+		if targetTier.Normalizers.BareJSON != nil && !*targetTier.Normalizers.BareJSON {
+			flags = flags.MaskOut(router.FeatureNormBareJSON)
+		}
+		if targetTier.Normalizers.ReAct != nil && !*targetTier.Normalizers.ReAct {
+			flags = flags.MaskOut(router.FeatureNormReAct)
+		}
+		if targetTier.Normalizers.Think != nil && !*targetTier.Normalizers.Think {
+			flags = flags.MaskOut(router.FeatureThinkNormalizer | router.FeatureThinkSanitize)
+		}
+	}
+
+	return flags
+}
+
 func (s *Server) dispatchTier(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -470,6 +533,9 @@ func (s *Server) dispatchTier(
 	reqLogger *slog.Logger,
 	isFallback bool,
 ) {
+	globalShield := s.GetConfig().AgentShield.Enabled == nil || *s.GetConfig().AgentShield.Enabled
+	activeFeatures := resolveFeatureFlags(reqCtx, targetTier, globalShield)
+	reqCtx.Features = uint16(activeFeatures)
 	// Check Circuit Breaker before connecting
 	reg := s.GetRegistry()
 	var targetProvider provider.LLMProvider
@@ -587,7 +653,8 @@ func (s *Server) dispatchTier(
 
 	if isStreaming {
 		normalizer := NewStreamNormalizer(resp.Body)
-		if reqCtx.InteractiveTool != "" {
+		normalizer.SetFeatures(reqCtx.Features)
+		if activeFeatures.Has(router.FeatureShieldEnabled) && reqCtx.InteractiveTool != "" {
 			normalizer.SetShield(reqCtx.InteractiveTool, s.shieldMgr)
 		}
 		peekBuf := make([]byte, 4096)
@@ -676,58 +743,62 @@ func (s *Server) dispatchTier(
 
 	// Normalize non-streaming tools & reasoning
 	if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeJSON) {
-		var completionResp fastChatCompletionResponse
-		if json.Unmarshal(bodyBytes, &completionResp) == nil {
-			if len(completionResp.Usage) > 0 {
-				_ = json.Unmarshal(completionResp.Usage, &nonStreamUsage)
-			}
-			if len(completionResp.Choices) > 0 {
-				firstChoice := &completionResp.Choices[0]
-				modified := false
+		if activeFeatures != router.FeatureRawPassThrough {
+			var completionResp fastChatCompletionResponse
+			if json.Unmarshal(bodyBytes, &completionResp) == nil {
+				if len(completionResp.Usage) > 0 {
+					_ = json.Unmarshal(completionResp.Usage, &nonStreamUsage)
+				}
+				if len(completionResp.Choices) > 0 {
+					firstChoice := &completionResp.Choices[0]
+					modified := false
 
-				reasoningText := firstChoice.Message.ReasoningContent
-				if reasoningText == "" {
-					reasoningText = firstChoice.Message.Reasoning
-				}
-				if reasoningText == "" {
-					reasoningText = firstChoice.Message.Reason
-				}
-				if reasoningText != "" && !strings.Contains(firstChoice.Message.Content, "<think>") {
-					firstChoice.Message.Content = "<think>\n" + reasoningText + "\n</think>\n\n" + firstChoice.Message.Content
-					firstChoice.Message.ReasoningContent = ""
-					firstChoice.Message.Reasoning = ""
-					firstChoice.Message.Reason = ""
-					modified = true
-				}
-
-				if reqCtx.HasTools && len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" {
-					cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(firstChoice.Message.Content)
-					if parsed && len(extractedCalls) > 0 {
-						firstChoice.Message.Content = cleanedText
-						firstChoice.FinishReason = "tool_calls"
-						rawCallsJSON, _ := json.Marshal(extractedCalls)
-						firstChoice.Message.ToolCalls = rawCallsJSON
-						modified = true
-					} else if reqCtx.InteractiveTool != "" && s.shieldMgr != nil {
-						if synthCall, ok := s.shieldMgr.EvaluateAndSynthesize(firstChoice.Message.Content, reqCtx.InteractiveTool); ok && synthCall != nil {
-							firstChoice.FinishReason = "tool_calls"
-							rawCallsJSON, _ := json.Marshal([]interface{}{synthCall})
-							firstChoice.Message.ToolCalls = rawCallsJSON
+					if activeFeatures.Has(router.FeatureThinkNormalizer) {
+						reasoningText := firstChoice.Message.ReasoningContent
+						if reasoningText == "" {
+							reasoningText = firstChoice.Message.Reasoning
+						}
+						if reasoningText == "" {
+							reasoningText = firstChoice.Message.Reason
+						}
+						if reasoningText != "" && !strings.Contains(firstChoice.Message.Content, "<think>") {
+							firstChoice.Message.Content = "<think>\n" + reasoningText + "\n</think>\n\n" + firstChoice.Message.Content
+							firstChoice.Message.ReasoningContent = ""
+							firstChoice.Message.Reasoning = ""
+							firstChoice.Message.Reason = ""
 							modified = true
 						}
 					}
-				}
 
-				if modified {
-					if newJSON, err := marshalNoEscapeHTML(completionResp); err == nil {
-						bodyBytes = newJSON
+					if activeFeatures.Has(router.FeatureToolNormalizer) && reqCtx.HasTools && len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" {
+						cleanedText, extractedCalls, parsed := router.NormalizeMarkdownToolCalls(firstChoice.Message.Content)
+						if parsed && len(extractedCalls) > 0 {
+							firstChoice.Message.Content = cleanedText
+							firstChoice.FinishReason = "tool_calls"
+							rawCallsJSON, _ := json.Marshal(extractedCalls)
+							firstChoice.Message.ToolCalls = rawCallsJSON
+							modified = true
+						} else if activeFeatures.Has(router.FeatureShieldEnabled) && reqCtx.InteractiveTool != "" && s.shieldMgr != nil {
+							if synthCall, ok := s.shieldMgr.EvaluateAndSynthesize(firstChoice.Message.Content, reqCtx.InteractiveTool); ok && synthCall != nil {
+								firstChoice.FinishReason = "tool_calls"
+								rawCallsJSON, _ := json.Marshal([]interface{}{synthCall})
+								firstChoice.Message.ToolCalls = rawCallsJSON
+								modified = true
+							}
+						}
 					}
-				}
 
-				// Calibrate Adaptive Token Estimator if usage prompt tokens reported
-				if nonStreamUsage.PromptTokens > 0 {
-					if calibrator, ok := s.classifier.(interface{ GetEstimator() *router.TokenEstimator }); ok {
-						calibrator.GetEstimator().Calibrate(nonStreamUsage.PromptTokens, len(body))
+					if modified {
+						if newJSON, err := marshalNoEscapeHTML(completionResp); err == nil {
+							bodyBytes = newJSON
+						}
+					}
+
+					// Calibrate Adaptive Token Estimator if usage prompt tokens reported
+					if nonStreamUsage.PromptTokens > 0 {
+						if calibrator, ok := s.classifier.(interface{ GetEstimator() *router.TokenEstimator }); ok {
+							calibrator.GetEstimator().Calibrate(nonStreamUsage.PromptTokens, len(body))
+						}
 					}
 				}
 			}

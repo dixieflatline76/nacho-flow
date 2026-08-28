@@ -13,6 +13,10 @@ func TestApplyTuning_Success_MatchingOllama(t *testing.T) {
 
 	initialYAML := `
 port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
 tiers:
   - name: "Local Fast"
     provider: "ollama"
@@ -51,6 +55,10 @@ func TestApplyTuning_Success_MatchingName(t *testing.T) {
 
 	initialYAML := `
 port: 8000
+providers:
+  custom:
+    base_url: "http://127.0.0.1:5000"
+    type: "local"
 tiers:
   - name: "My Local Tier"
     provider: "custom"
@@ -85,6 +93,10 @@ func TestApplyTuning_Success_MatchingVLLM(t *testing.T) {
 
 	initialYAML := `
 port: 8000
+providers:
+  vllm:
+    base_url: "http://127.0.0.1:8000"
+    type: "local"
 tiers:
   - name: "vLLM Workhorse"
     provider: "vllm"
@@ -120,6 +132,13 @@ func TestApplyTuning_ErrorWhenNoLocalTier(t *testing.T) {
 
 	initialYAML := `
 port: 8000
+providers:
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
+  openai:
+    base_url: "https://api.openai.com/v1"
+    type: "cloud"
 tiers:
   - name: "Cloud Claude Sonnet"
     provider: "openrouter"
@@ -196,6 +215,10 @@ func TestApplyTuning_RenameDirectoryFailure(t *testing.T) {
 	cfgPath := filepath.Join(tmpDir, "config.yaml")
 	initialYAML := `
 port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
 tiers:
   - name: "Local GPU"
     provider: "ollama"

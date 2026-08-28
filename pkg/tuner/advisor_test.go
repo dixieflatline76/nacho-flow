@@ -26,6 +26,9 @@ func TestAdvisor_GeneratesReport(t *testing.T) {
 	}
 
 	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+		},
 		Tiers: []contract.Tier{
 			{
 				Name:     "Local ROCm GPU",
@@ -70,6 +73,9 @@ func TestAdvisor_FrictionModalities(t *testing.T) {
 
 	// Config with only cloud tiers (tests fallback oldRule branch)
 	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {BaseURL: "https://openrouter.ai/api/v1", Type: contract.ProviderTypeCloud},
+		},
 		Tiers: []contract.Tier{
 			{Name: "Cloud Workhorse", Provider: "openrouter", When: "true"},
 		},
@@ -97,6 +103,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
 tiers:
   - name: "Local GPU"
     model: "qwen2.5-coder"
@@ -198,6 +205,10 @@ func TestApplier_RejectCloudOnly(t *testing.T) {
 
 	yamlContent := `
 port: 8000
+providers:
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
 tiers:
   - name: "Cloud Tier 1"
     model: "claude-sonnet"

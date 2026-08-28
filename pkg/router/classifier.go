@@ -121,6 +121,11 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 		reqCtx.IsMetaDirective = info.IsMeta
 		reqCtx.MetaDirective = info.Directive
 		reqCtx.MetaDirectiveRaw = info.Raw
+
+		flags, _ := ScanDirectives(latestUserPrompt)
+		reqCtx.Features = uint16(flags)
+	} else {
+		reqCtx.Features = uint16(FeatureDefaultAll)
 	}
 
 	// 5. Extract clean lowercased keywords strictly from latest user prompt (fallback to allText if no user prompt)

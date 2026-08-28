@@ -148,4 +148,39 @@ func TestSafeBoundedDir_ConstructorAndEdgeCases(t *testing.T) {
 	if err := invalidSbd.WriteFile("test.txt", []byte("a"), 0600); err == nil {
 		t.Errorf("expected error writing to invalid root dir")
 	}
+	if err := invalidSbd.AtomicWrite("test.txt", []byte("a"), 0600); err == nil {
+		t.Errorf("expected error in atomic write for invalid root dir")
+	}
+
+	// Conflict where parent directory is a file
+	filePath := filepath.Join(tempDir, "file_blocking_dir")
+	if err := os.WriteFile(filePath, []byte("blocker"), 0600); err != nil {
+		t.Fatalf("failed to create blocker file: %v", err)
+	}
+
+	// Trying to write inside file_blocking_dir/child.txt should fail on MkdirAll
+	conflictPath := filepath.Join("file_blocking_dir", "child.txt")
+	if err := sbd.WriteFile(conflictPath, []byte("data"), 0600); err == nil {
+		t.Errorf("expected error in WriteFile when directory creation is blocked by a file")
+	}
+	if err := sbd.AtomicWrite(conflictPath, []byte("data"), 0600); err == nil {
+		t.Errorf("expected error in AtomicWrite when directory creation is blocked by a file")
+	}
+
+	dirPath := filepath.Join(tempDir, "existing_dir")
+	if err := os.MkdirAll(dirPath, 0750); err != nil {
+		t.Fatalf("failed to create existing dir: %v", err)
+	}
+
+	if err := sbd.WriteFile("existing_dir", []byte("data"), 0600); err == nil {
+		t.Errorf("expected error writing data to an existing directory path")
+	}
+	if err := sbd.AtomicWrite("existing_dir", []byte("data"), 0600); err == nil {
+		t.Errorf("expected error in AtomicWrite when target is an existing directory path")
+	}
+	if _, err := sbd.ReadFile("existing_dir"); err == nil {
+		t.Errorf("expected error reading an existing directory as a file")
+	}
 }
+
+

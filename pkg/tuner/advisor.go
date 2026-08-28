@@ -53,7 +53,7 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 
 	if cfg != nil {
 		for _, tier := range cfg.Tiers {
-			if IsLocalTier(tier) {
+			if IsLocalTier(tier, cfg.Providers) {
 				oldRule = tier.When
 				if tier.Name != "" {
 					localTierName = tier.Name

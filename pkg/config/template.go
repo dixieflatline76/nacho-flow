@@ -32,6 +32,7 @@ providers:
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
+    type: "cloud"
     headers:
       HTTP-Referer: "https://github.com/dixieflatline76/nacho-flow"
       X-Title: "nacho-flow"

@@ -6,7 +6,7 @@ import { SSEClient } from './sse/client';
 import { StatusBarManager } from '../ui/status-bar/item';
 import { DashboardPanel } from '../ui/webview/dashboard';
 import { SidebarViewProvider } from '../ui/sidebar/sidebar-view-provider';
-import { ProcessManager } from './process-manager';
+import { ProcessManager, ParsedStartupError } from './process-manager';
 import { TelemetryPoller, RefreshIntervalSeconds } from './telemetry-poller';
 
 export class ExtensionController {
@@ -188,7 +188,7 @@ export class ExtensionController {
 						this.showTransientToast('▶️ Nacho Flow: Starting Routing Engine...');
 						const result = await this.processManager.start(daemonUrl);
 						if (!result.success && result.error) {
-							vscode.window.showErrorMessage(result.error);
+							await this.handleEngineStartError(result);
 						}
 						await this.initializeClients();
 						await this.syncSidebarState();
@@ -208,7 +208,7 @@ export class ExtensionController {
 						this.showTransientToast('🔄 Nacho Flow: Restarting Routing Engine...');
 						const result = await this.processManager.restart(daemonUrl);
 						if (!result.success && result.error) {
-							vscode.window.showErrorMessage(result.error);
+							await this.handleEngineStartError(result);
 						}
 						await this.initializeClients();
 						await this.syncSidebarState();
@@ -734,6 +734,23 @@ export class ExtensionController {
 		vscode.window.showWarningMessage('Nacho Flow: Unable to fetch config from daemon or workspace');
 	}
 
+	private async handleEngineStartError(result: { success: boolean; error?: string; parsedError?: ParsedStartupError }): Promise<void> {
+		if (result.success || !result.error) {
+			return;
+		}
+		const parsed = result.parsedError;
+		if (parsed) {
+			if (parsed.type === 'PORT_IN_USE' || parsed.type === 'CONFIG_ERROR' || parsed.type === 'RULE_ERROR') {
+				const choice = await vscode.window.showErrorMessage(parsed.message, '📝 Open config.yaml');
+				if (choice === '📝 Open config.yaml') {
+					await this.showConfigEditor();
+				}
+				return;
+			}
+		}
+		vscode.window.showErrorMessage(result.error);
+	}
+
 	public async runOptimizer(): Promise<void> {
 		if (!this.restClient) {
 			vscode.window.showErrorMessage('Nacho Flow: Daemon client not initialized');
@@ -1039,10 +1056,14 @@ export class ExtensionController {
 		if (!this.restClient) return;
 
 		try {
-			const [stats, routes] = await Promise.all([
-				typeof this.restClient.getStats === 'function' ? this.restClient.getStats().catch(() => null) : Promise.resolve(null),
-				this.dashboardPanel && typeof this.restClient.getRoutes === 'function' ? this.restClient.getRoutes(10).catch(() => null) : Promise.resolve(null)
-			]);
+			const statsPromise = typeof this.restClient.getStats === 'function'
+				? Promise.resolve().then(() => this.restClient!.getStats()).catch(() => null)
+				: Promise.resolve(null);
+			const routesPromise = (this.dashboardPanel && typeof this.restClient.getRoutes === 'function')
+				? Promise.resolve().then(() => this.restClient!.getRoutes(10)).catch(() => null)
+				: Promise.resolve(null);
+
+			const [stats, routes] = await Promise.all([statsPromise, routesPromise]);
 
 			if (stats) {
 				this.statusBar.updateStats(stats);

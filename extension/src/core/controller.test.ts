@@ -1028,6 +1028,7 @@ default_tier:
     });
 
     it('should handle runOptimizer and refreshDeals error branches', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       (extensionController as any).restClient = {
         tune: jest.fn().mockRejectedValue(new Error('Tune failure')),
         getDeals: jest.fn().mockRejectedValue(new Error('Deals failure')),
@@ -1051,6 +1052,7 @@ default_tier:
 
       await (extensionController as any).handleResetStats();
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Nacho Flow: Failed to reset stats: Reset stats failure');
+      consoleSpy.mockRestore();
 
       // Test handleSaveSettings error
       jest.spyOn((extensionController as any).authManager, 'setRemoteUrl').mockRejectedValueOnce(new Error('Config write failure'));
@@ -1116,10 +1118,47 @@ default_tier:
       await sidebarMsgHandler({ command: 'startEngine' });
       expect(mockProcMgr.start).toHaveBeenCalled();
 
-      // Test startEngine with error
+      // Test startEngine with generic error
       mockProcMgr.start.mockResolvedValueOnce({ success: false, error: 'Failed' });
       await sidebarMsgHandler({ command: 'startEngine' });
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Failed');
+
+      // Test startEngine with PORT_IN_USE error and clicking Open config.yaml
+      (vscode.window.showErrorMessage as jest.Mock).mockResolvedValueOnce('📝 Open config.yaml');
+      const showConfigSpy = jest.spyOn(extensionController as any, 'showConfigEditor').mockResolvedValueOnce(undefined);
+      mockProcMgr.start.mockResolvedValueOnce({
+        success: false,
+        error: 'Port 8000 is already in use by another application.',
+        parsedError: {
+          type: 'PORT_IN_USE',
+          port: 8000,
+          message: 'Port 8000 is already in use by another application. Please free port 8000 or change the port in config.yaml.',
+          rawError: 'raw'
+        }
+      });
+      await sidebarMsgHandler({ command: 'startEngine' });
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Port 8000 is already in use'),
+        '📝 Open config.yaml'
+      );
+      expect(showConfigSpy).toHaveBeenCalled();
+
+      // Test startEngine with CONFIG_ERROR
+      (vscode.window.showErrorMessage as jest.Mock).mockResolvedValueOnce(undefined);
+      mockProcMgr.start.mockResolvedValueOnce({
+        success: false,
+        error: 'Configuration error',
+        parsedError: {
+          type: 'CONFIG_ERROR',
+          message: 'Configuration error in config.yaml: missing type',
+          rawError: 'raw'
+        }
+      });
+      await sidebarMsgHandler({ command: 'startEngine' });
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        'Configuration error in config.yaml: missing type',
+        '📝 Open config.yaml'
+      );
 
       // Test startEngine remote warning
       mockProcMgr.isLocalUrl.mockReturnValueOnce(false);
@@ -1475,11 +1514,13 @@ default_tier:
       expect(statusBarSpy).toHaveBeenCalledWith(null);
 
       // Error in pollTelemetry outer block
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       mockRestClient.getStats.mockImplementationOnce(() => {
         throw new Error('Fatal socket error');
       });
       await (extensionController as any).pollTelemetry();
       expect(statusBarSpy).toHaveBeenCalledWith(null);
+      consoleSpy.mockRestore();
 
       // Test startPeriodicUpdates creation
       (extensionController as any).telemetryPoller = null;

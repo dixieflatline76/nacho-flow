@@ -140,6 +140,7 @@ providers:
   # Cloud Fallback (When reasoning context exceeds local limits)
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
     api_key: "ENV_OPENROUTER_API_KEY"
 
 tiers:
@@ -180,6 +181,7 @@ providers:
   # 2. OpenRouter Aggregator
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
     api_key: "ENV_OPENROUTER_API_KEY"
     headers:
       HTTP-Referer: "https://spicebox.dev"
@@ -188,6 +190,7 @@ providers:
   # 3. Langdock Enterprise / Private Tenant
   langdock:
     base_url: "https://api.langdock.com/v1"
+    type: "cloud"
     api_key: "ENV_LANGDOCK_API_KEY"
     headers:
       X-Custom-Org: "engineering"
@@ -195,6 +198,7 @@ providers:
   # 4. DeepSeek Direct
   deepseek:
     base_url: "https://api.deepseek.com/v1"
+    type: "cloud"
     api_key: "ENV_DEEPSEEK_API_KEY"
 
 # Ordered Dynamic Routing Tiers (Evaluated from top to bottom: First Match Wins)
@@ -740,6 +744,8 @@ Splash any HotSauce directive into your prompt to override automatic rule evalua
 | `@nacho:reasoning` | 🔥 **Inferno** | Forces routing to your deep reasoning tier (DeepSeek-R1 / o1). | `@nacho:reasoning prove why this algorithm is O(N log N)` |
 | `@nacho:tier="<Name>"` | 🌶️ **Custom** | Forces routing to a specific named tier from `config.yaml`. | `@nacho:tier="Tier 1: Local ROCm" quick fix` |
 | `@nacho:model="<ID>"` | 🌶️ **Chef's Special** | Directs request straight to a specific model ID across any configured provider. | `@nacho:model="deepseek/deepseek-r1" solve this concurrency race` |
+| `@nacho:raw` | 🛡️ **Raw Pass-Through** | Bypasses all stream normalizers, reasoning wrappers, and agentic fallback shield. | `@nacho:raw inspect raw stream tokens` |
+| `@nacho:no-shield` | 🛡️ **Shield Bypass** | Bypasses synthetic tool-call synthesis on trailing questions/plans. | `@nacho:no-shield ask me follow-up questions in text` |
 
 #### Architectural Guarantees:
 1. **Clean Upstream Forwarding**: All `@nacho:` tags are automatically stripped and whitespace is collapsed before the prompt reaches upstream LLMs. The model never sees the directive.

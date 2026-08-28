@@ -21,12 +21,14 @@ providers:
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "sk-or-test-key"
+    type: "cloud"
     headers:
       HTTP-Referer: "https://spicebox.dev"
       X-Title: "nacho-flow"
   langdock:
     base_url: "https://api.langdock.com/v1"
     api_key: "sk-langdock-test"
+    type: "cloud"
     headers:
       X-Custom-Org: "engineering"
 tiers:
@@ -100,6 +102,7 @@ providers:
   langdock:
     base_url: "https://api.langdock.com/v1"
     api_key: "ENV_TEST_LANGDOCK_API_SECRET"
+    type: "cloud"
 tiers:
   - name: "Langdock Tier"
     model: "claude-3-5-sonnet"
@@ -168,6 +171,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
 tiers:
   - name: "Ghost Tier"
     model: "claude-3-5-sonnet"
@@ -203,6 +207,7 @@ auth_token: "ENV_SECRET_GATEWAY_TOKEN"
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
@@ -229,6 +234,7 @@ port: 8080
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
@@ -301,6 +307,7 @@ port: 8000
 providers:
   local:
     base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
 default_tier:
   name: "Fallback"
   model: "qwen2.5"
@@ -328,6 +335,7 @@ func TestConfig_DefaultPortAssignment(t *testing.T) {
 providers:
   local:
     base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
@@ -415,6 +423,7 @@ port: 9876
 providers:
   custom_prov:
     base_url: "http://127.0.0.1:5000/v1"
+    type: "local"
 default_tier:
   name: "Custom Fallback"
   model: "custom-model"

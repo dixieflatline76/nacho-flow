@@ -2,13 +2,17 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -185,6 +189,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
+    type: "local"
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
 
@@ -285,6 +290,7 @@ providers:
   openrouter:
     base_url: "http://127.0.0.1:11434"
     api_key: "sk-or-test"
+    type: "cloud"
 tiers:
   - name: "Cloud"
     provider: "openrouter"
@@ -353,6 +359,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
+    type: "local"
 `
 	_ = os.WriteFile(cfgPath, []byte(validCfg), 0600)
 	trafficLogPath := filepath.Join(tmpDir, "traffic.jsonl")
@@ -386,6 +393,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
+    type: "local"
 tiers:
   - name: "Local"
     provider: "ollama"
@@ -428,7 +436,7 @@ tiers:
 
 	// Error path 3: bad optimizer analysis or config
 	badCfgPath := filepath.Join(tmpDir, "bad_cfg_for_tune.yaml")
-	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: ''\ntiers:\n  - name: 'T1'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
+	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: 'http://127.0.0.1:11434'\n    type: 'local'\ntiers:\n  - name: 'T1'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
 	if err := runTune([]string{"-config", badCfgPath, "-traffic-log", trafficLogPath}); err == nil {
 		t.Errorf("expected error for bad tier expression in tune, got nil")
 	}
@@ -496,6 +504,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
+    type: "local"
 tiers:
   - name: "Bad Tier"
     provider: "ollama"
@@ -519,6 +528,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
+    type: "local"
 tiers:
   - name: "Bad Tier"
     provider: "ollama"
@@ -553,6 +563,7 @@ port: -1
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
+    type: "local"
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
 	*configPathFlag = cfgPath
@@ -582,6 +593,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
+    type: "local"
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
 
@@ -631,6 +643,7 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
+    type: "local"
 `
 	_ = os.WriteFile(cfgPath, []byte(validCfg), 0600)
 	trafficLogPath := filepath.Join(tmpDir, "traffic.jsonl")
@@ -718,6 +731,7 @@ providers:
   mock_provider:
     api_key: "sk-test-key"
     base_url: "http://127.0.0.1:11434"
+    type: "cloud"
 `
 	_ = os.WriteFile(cfgPath, []byte(validCfg), 0600)
 	*configPathFlag = cfgPath
@@ -742,6 +756,7 @@ providers:
   openrouter:
     api_key: "sk-or-live-key"
     base_url: "http://127.0.0.1:59993/v1"
+    type: "cloud"
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
 	*configPathFlag = cfgPath
@@ -834,3 +849,174 @@ func TestProgram_Run_DaemonModeConfigError(t *testing.T) {
 		t.Errorf("expected error in daemon mode when config file does not exist, got nil")
 	}
 }
+
+func TestRunDeals_InvalidFlagsAndErrorPaths(t *testing.T) {
+	// 1. Invalid flag error
+	err := runDeals([]string{"-unknown-flag-for-deals"})
+	if err == nil {
+		t.Errorf("expected error with unknown flag, got nil")
+	}
+
+	// 2. Mock failing server
+	tsErr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("bad gateway"))
+	}))
+	defer tsErr.Close()
+
+	_, err = fetchDeals(tsErr.URL, "token")
+	if err == nil {
+		t.Errorf("expected error on 502 Bad Gateway from fetchDeals, got nil")
+	}
+}
+
+func TestProgram_HotReload_DiskChangeTrigger(t *testing.T) {
+	mock := &mockService{}
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfg1 := `
+port: 59970
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
+`
+	_ = os.WriteFile(cfgPath, []byte(cfg1), 0600)
+	*configPathFlag = cfgPath
+
+	p := &program{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = p.run(mock)
+	}()
+
+	for i := 0; i < 40; i++ {
+		p.mu.Lock()
+		srv := p.server
+		p.mu.Unlock()
+		if srv != nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Modify config file
+	time.Sleep(100 * time.Millisecond)
+	cfg2 := `
+port: 59970
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
+`
+	_ = os.WriteFile(cfgPath, []byte(cfg2), 0600)
+	// Give the watcher ticker a cycle
+	time.Sleep(1200 * time.Millisecond)
+
+	_ = p.Stop(mock)
+	<-done
+	*configPathFlag = ""
+}
+
+func TestIsAddressInUse(t *testing.T) {
+	if isAddressInUse(nil) {
+		t.Error("expected false for nil error")
+	}
+
+	if !isAddressInUse(syscall.EADDRINUSE) {
+		t.Error("expected true for direct syscall.EADDRINUSE")
+	}
+
+	// Windows WSAEADDRINUSE (errno 10048) wrapped in net.OpError -> os.SyscallError
+	winErr := &net.OpError{
+		Op:  "listen",
+		Net: "tcp",
+		Err: &os.SyscallError{
+			Syscall: "bind",
+			Err:     syscall.Errno(10048),
+		},
+	}
+	if !isAddressInUse(winErr) {
+		t.Error("expected true for Windows WSAEADDRINUSE errno 10048")
+	}
+
+	// POSIX EADDRINUSE wrapped in net.OpError -> os.SyscallError
+	posixErr := &net.OpError{
+		Op:  "listen",
+		Net: "tcp",
+		Err: &os.SyscallError{
+			Syscall: "bind",
+			Err:     syscall.EADDRINUSE,
+		},
+	}
+	if !isAddressInUse(posixErr) {
+		t.Error("expected true for POSIX EADDRINUSE wrapped error")
+	}
+
+	// Unrelated error
+	otherErr := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: errors.New("connection refused"),
+	}
+	if isAddressInUse(otherErr) {
+		t.Error("expected false for unrelated net.OpError")
+	}
+
+	if isAddressInUse(errors.New("random application error")) {
+		t.Error("expected false for random error")
+	}
+}
+
+func TestProgram_Run_PortInUse(t *testing.T) {
+	origInteractive := serviceInteractiveFunc
+	serviceInteractiveFunc = func() bool { return false }
+	defer func() { serviceInteractiveFunc = origInteractive }()
+
+	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:0"))
+	if err != nil {
+		t.Fatalf("failed to listen on port: %v", err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfgContent := fmt.Sprintf(`
+port: %d
+providers:
+  test_prov:
+    type: cloud
+    base_url: http://127.0.0.1:1234
+default_tier:
+  provider: test_prov
+  model: test-model
+tiers:
+  - name: fast
+    provider: test_prov
+    model: test-model
+`, port)
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	*configPathFlag = cfgPath
+	defer func() { *configPathFlag = "" }()
+
+	p := &program{}
+	mock := &mockService{}
+
+	runErr := p.run(mock)
+	if runErr == nil {
+		t.Fatal("expected error from port collision, got nil")
+	}
+	if !isAddressInUse(runErr) {
+		t.Errorf("expected isAddressInUse to be true for runErr: %v", runErr)
+	}
+}
+

@@ -239,3 +239,91 @@ func BenchmarkHasDirective_Bailout(b *testing.B) {
 		_ = HasDirective(plainPrompt)
 	}
 }
+
+func TestScanDirectives_FeatureFlags(t *testing.T) {
+	tests := []struct {
+		name          string
+		prompt        string
+		wantFlags     FeatureFlag
+		wantClean     string
+		checkHas      FeatureFlag
+		checkNotHas   FeatureFlag
+	}{
+		{
+			name:        "plain prompt defaults to FeatureDefaultAll",
+			prompt:      "Write a binary search in Go",
+			wantFlags:   FeatureDefaultAll,
+			wantClean:   "Write a binary search in Go",
+			checkHas:    FeatureShieldEnabled | FeatureToolNormalizer | FeatureThinkNormalizer,
+			checkNotHas: 0,
+		},
+		{
+			name:        "empty prompt defaults to FeatureDefaultAll",
+			prompt:      "",
+			wantFlags:   FeatureDefaultAll,
+			wantClean:   "",
+			checkHas:    FeatureShieldEnabled | FeatureToolNormalizer,
+			checkNotHas: 0,
+		},
+		{
+			name:        "@nacho:raw directive clears all flags",
+			prompt:      "@nacho:raw Stream this verbatim without tools",
+			wantFlags:   FeatureRawPassThrough,
+			wantClean:   "Stream this verbatim without tools",
+			checkHas:    0,
+			checkNotHas: FeatureShieldEnabled | FeatureToolNormalizer | FeatureThinkNormalizer,
+		},
+		{
+			name:        "@Nacho:RAW uppercase case-insensitive",
+			prompt:      "Please @Nacho:RAW return raw JSON payload",
+			wantFlags:   FeatureRawPassThrough,
+			wantClean:   "Please return raw JSON payload",
+			checkHas:    0,
+			checkNotHas: FeatureShieldEnabled | FeatureToolNormalizer,
+		},
+		{
+			name:        "@nacho:no-shield disables shield but preserves tool/think normalizers",
+			prompt:      "@nacho:no-shield Ask me any clarifying question",
+			wantFlags:   FeatureDefaultAll.MaskOut(FeatureShieldEnabled | FeatureShieldFollowup | FeatureShieldModeSwitch),
+			wantClean:   "Ask me any clarifying question",
+			checkHas:    FeatureToolNormalizer | FeatureThinkNormalizer,
+			checkNotHas: FeatureShieldEnabled | FeatureShieldFollowup | FeatureShieldModeSwitch,
+		},
+		{
+			name:        "@Nacho:No-Shield mixed case",
+			prompt:      "@Nacho:No-Shield plan the migration",
+			wantFlags:   FeatureDefaultAll.MaskOut(FeatureShieldEnabled | FeatureShieldFollowup | FeatureShieldModeSwitch),
+			wantClean:   "plan the migration",
+			checkHas:    FeatureToolNormalizer,
+			checkNotHas: FeatureShieldEnabled,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotFlags, gotClean := ScanDirectives(tt.prompt)
+			if gotClean != tt.wantClean {
+				t.Errorf("ScanDirectives(%q) cleanPrompt = %q, want %q", tt.prompt, gotClean, tt.wantClean)
+			}
+			if gotFlags != tt.wantFlags {
+				t.Errorf("ScanDirectives(%q) flags = %v, want %v", tt.prompt, gotFlags, tt.wantFlags)
+			}
+			if tt.checkHas != 0 && !gotFlags.Has(tt.checkHas) {
+				t.Errorf("ScanDirectives(%q) expected flags to have %v", tt.prompt, tt.checkHas)
+			}
+			if tt.checkNotHas != 0 && gotFlags.Has(tt.checkNotHas) {
+				t.Errorf("ScanDirectives(%q) expected flags NOT to have %v", tt.prompt, tt.checkNotHas)
+			}
+		})
+	}
+}
+
+func BenchmarkScanDirectives(b *testing.B) {
+	prompt := "@nacho:raw Stream this unformatted response without synthetic tools"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = ScanDirectives(prompt)
+	}
+}
+

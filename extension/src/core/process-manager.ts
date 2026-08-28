@@ -10,11 +10,102 @@ export interface ProcessLaunchConfig {
 	cwd?: string;
 }
 
+export interface ParsedStartupError {
+	type: 'PORT_IN_USE' | 'CONFIG_ERROR' | 'RULE_ERROR' | 'BINARY_NOT_FOUND' | 'REMOTE_ENGINE' | 'SPAWN_ERROR' | 'UNKNOWN';
+	message: string;
+	port?: number;
+	rawError: string;
+}
+
+/**
+ * Deterministically classifies daemon startup and runtime errors from stderr/stdout streams.
+ */
+export function parseStartupError(stderr: string, stdout: string = '', defaultPort = 8000): ParsedStartupError {
+	const combined = `${stderr}\n${stdout}`.trim();
+
+	// 1. Port In Use / Bind Collision
+	const portMatch = combined.match(/\[FATAL:PORT_IN_USE:(\d+)\]/);
+	if (
+		portMatch ||
+		combined.includes('PORT_IN_USE') ||
+		combined.toLowerCase().includes('eaddrinuse') ||
+		combined.includes('10048') ||
+		combined.toLowerCase().includes('address already in use')
+	) {
+		const port = portMatch ? parseInt(portMatch[1], 10) : defaultPort;
+		return {
+			type: 'PORT_IN_USE',
+			port,
+			message: `Port ${port} is already in use by another application. Please free port ${port} or change the port in config.yaml.`,
+			rawError: combined
+		};
+	}
+
+	// 2. Config Syntax / Validation Error
+	if (
+		combined.includes('[FATAL:CONFIG_ERROR]') ||
+		combined.includes('yaml: unmarshal errors') ||
+		combined.includes('Config load error') ||
+		combined.includes('no providers defined in configuration')
+	) {
+		const cleaned = stderr
+			.split('\n')
+			.map((line) => line.replace(/^\[FATAL:CONFIG_ERROR\]\s*/, '').trim())
+			.filter((line) => line.length > 0 && !line.startsWith('time='))
+			.join(' ');
+		return {
+			type: 'CONFIG_ERROR',
+			message: `Configuration error in config.yaml: ${cleaned || 'Invalid YAML format or schema validation failed.'}`,
+			rawError: combined
+		};
+	}
+
+	// 3. Routing Rule Compilation Error
+	if (
+		combined.includes('[FATAL:RULE_ERROR]') ||
+		combined.includes('Evaluator compile error') ||
+		combined.includes('failed to compile expr')
+	) {
+		const cleaned = stderr
+			.split('\n')
+			.map((line) => line.replace(/^\[FATAL:RULE_ERROR\]\s*/, '').trim())
+			.filter((line) => line.length > 0 && !line.startsWith('time='))
+			.join(' ');
+		return {
+			type: 'RULE_ERROR',
+			message: `Routing rule error in config.yaml: ${cleaned || 'Failed to compile tier expression.'}`,
+			rawError: combined
+		};
+	}
+
+	// 4. Fatal Server Error
+	if (combined.includes('[FATAL:SERVER_ERROR]')) {
+		const cleaned = stderr
+			.split('\n')
+			.map((line) => line.replace(/^\[FATAL:SERVER_ERROR\]\s*/, '').trim())
+			.filter((line) => line.length > 0 && !line.startsWith('time='))
+			.join(' ');
+		return {
+			type: 'SPAWN_ERROR',
+			message: `Nacho Flow server error: ${cleaned}`,
+			rawError: combined
+		};
+	}
+
+	return {
+		type: 'UNKNOWN',
+		message: stderr.trim() || 'Nacho Flow process exited prematurely.',
+		rawError: combined
+	};
+}
+
 export class ProcessManager {
 	private childProcess: child_process.ChildProcess | null = null;
 	private outputChannel: vscode.OutputChannel;
 	private extensionUri: vscode.Uri;
 	private lastStderr: string[] = [];
+	private lastStdout: string[] = [];
+	private isStopping = false;
 
 	constructor(extensionUri: vscode.Uri, outputChannel: vscode.OutputChannel) {
 		this.extensionUri = extensionUri;
@@ -114,14 +205,34 @@ export class ProcessManager {
 	}
 
 	/**
-	 * Starts the local Nacho Flow engine background process.
+	 * Starts the local Nacho Flow engine background process with structured error parsing.
 	 */
-	public async start(daemonUrl: string, configPath?: string): Promise<{ success: boolean; error?: string }> {
+	public async start(
+		daemonUrl: string,
+		configPath?: string
+	): Promise<{ success: boolean; error?: string; parsedError?: ParsedStartupError }> {
 		if (!this.isLocalUrl(daemonUrl)) {
+			const error =
+				'Nacho Flow: Cannot start remote engine via local subprocess. Please ensure the remote daemon is running on its host machine.';
 			return {
 				success: false,
-				error: 'Nacho Flow: Cannot start remote engine via local subprocess. Please ensure the remote daemon is running on its host machine.'
+				error,
+				parsedError: {
+					type: 'REMOTE_ENGINE',
+					message: error,
+					rawError: error
+				}
 			};
+		}
+
+		let targetPort = 8000;
+		try {
+			const parsed = new URL(daemonUrl);
+			if (parsed.port) {
+				targetPort = parseInt(parsed.port, 10);
+			}
+		} catch {
+			// fallback default 8000
 		}
 
 		// 1. Check if engine is already running
@@ -134,9 +245,15 @@ export class ProcessManager {
 		// 2. Resolve executable
 		const launchConfig = this.resolveBinary();
 		if (!launchConfig) {
+			const error = 'Nacho Flow: Executable not found. Please install nacho-flow or place the binary in your PATH.';
 			return {
 				success: false,
-				error: 'Nacho Flow: Executable not found. Please install nacho-flow or place the binary in your PATH.'
+				error,
+				parsedError: {
+					type: 'BINARY_NOT_FOUND',
+					message: error,
+					rawError: error
+				}
 			};
 		}
 
@@ -146,6 +263,8 @@ export class ProcessManager {
 		}
 
 		this.lastStderr = [];
+		this.lastStdout = [];
+		this.isStopping = false;
 		this.outputChannel.appendLine(`[ProcessManager] Launching: ${launchConfig.command} ${args.join(' ')}`);
 
 		try {
@@ -159,6 +278,10 @@ export class ProcessManager {
 
 			child.stdout?.on('data', (data: Buffer) => {
 				const text = data.toString();
+				this.lastStdout.push(text);
+				if (this.lastStdout.length > 20) {
+					this.lastStdout.shift();
+				}
 				this.outputChannel.append(text);
 			});
 
@@ -177,7 +300,12 @@ export class ProcessManager {
 			});
 
 			child.on('exit', (code: number | null, signal: string | null) => {
-				this.outputChannel.appendLine(`[ProcessManager] Engine exited with code ${code}, signal: ${signal}`);
+				if (this.isStopping) {
+					this.outputChannel.appendLine('[ProcessManager] Engine stopped cleanly.');
+					this.isStopping = false;
+				} else {
+					this.outputChannel.appendLine(`[ProcessManager] Engine exited with code ${code}, signal: ${signal}`);
+				}
 				this.childProcess = null;
 			});
 
@@ -186,12 +314,15 @@ export class ProcessManager {
 			for (let i = 0; i < maxAttempts; i++) {
 				await new Promise((r) => setTimeout(r, 200));
 
-				// Check if process crashed immediately
+				// Check if process crashed prematurely
 				if (!this.childProcess && !alreadyHealthy) {
 					const errorDetail = this.lastStderr.join('').trim();
+					const stdoutDetail = this.lastStdout.join('').trim();
+					const parsed = parseStartupError(errorDetail, stdoutDetail, targetPort);
 					return {
 						success: false,
-						error: errorDetail ? `Nacho Flow failed to start: ${errorDetail}` : 'Nacho Flow process exited prematurely.'
+						error: parsed.message,
+						parsedError: parsed
 					};
 				}
 
@@ -202,15 +333,25 @@ export class ProcessManager {
 				}
 			}
 
+			const errorDetail = this.lastStderr.join('').trim();
+			const stdoutDetail = this.lastStdout.join('').trim();
+			const parsed = parseStartupError(errorDetail, stdoutDetail, targetPort);
 			return {
 				success: false,
-				error: 'Nacho Flow startup timed out waiting for health check.'
+				error: parsed.type !== 'UNKNOWN' ? parsed.message : 'Nacho Flow startup timed out waiting for health check.',
+				parsedError: parsed
 			};
 		} catch (err: any) {
 			this.childProcess = null;
+			const msg = `Failed to spawn Nacho Flow: ${err.message}`;
 			return {
 				success: false,
-				error: `Failed to spawn Nacho Flow: ${err.message}`
+				error: msg,
+				parsedError: {
+					type: 'SPAWN_ERROR',
+					message: msg,
+					rawError: err.stack || err.message
+				}
 			};
 		}
 	}
@@ -224,6 +365,7 @@ export class ProcessManager {
 		}
 
 		try {
+			this.isStopping = true;
 			this.outputChannel.appendLine('[ProcessManager] Stopping local engine process...');
 			if (process.platform === 'win32') {
 				try {
@@ -239,6 +381,7 @@ export class ProcessManager {
 			this.childProcess = null;
 			return true;
 		} catch (err: any) {
+			this.isStopping = false;
 			this.outputChannel.appendLine(`[ProcessManager] Error stopping process: ${err.message}`);
 			this.childProcess = null;
 			return false;
@@ -248,7 +391,10 @@ export class ProcessManager {
 	/**
 	 * Restarts the engine by stopping and starting.
 	 */
-	public async restart(daemonUrl: string, configPath?: string): Promise<{ success: boolean; error?: string }> {
+	public async restart(
+		daemonUrl: string,
+		configPath?: string
+	): Promise<{ success: boolean; error?: string; parsedError?: ParsedStartupError }> {
 		await this.stop();
 		await new Promise((r) => setTimeout(r, 500));
 		return await this.start(daemonUrl, configPath);
@@ -267,6 +413,7 @@ export class ProcessManager {
 	public dispose(): void {
 		if (this.childProcess) {
 			try {
+				this.isStopping = true;
 				if (process.platform === 'win32' && this.childProcess.pid) {
 					child_process.execSync(`taskkill /pid ${this.childProcess.pid} /f /t`);
 				} else {

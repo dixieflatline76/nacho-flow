@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 )
 
@@ -75,6 +76,7 @@ type StreamNormalizer struct {
 	tailBuffer             *shield.TailBuffer
 	hasNativeTools         bool
 	proseAccumulator       strings.Builder
+	features               uint16
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -88,7 +90,13 @@ func NewStreamNormalizer(r io.ReadCloser) *StreamNormalizer {
 		upstream: r,
 		reader:   br,
 		outBuf:   buf,
+		features: uint16(router.FeatureDefaultAll),
 	}
+}
+
+// SetFeatures configures active FeatureFlags on the stream normalizer.
+func (s *StreamNormalizer) SetFeatures(features uint16) {
+	s.features = features
 }
 
 // SetShield attaches an Agentic Tool Fallback Shield to this streaming session.
@@ -147,6 +155,12 @@ func marshalNoEscapeHTML(v any) ([]byte, error) {
 func (s *StreamNormalizer) processLine(line []byte) {
 	trimmed := bytes.TrimRight(line, "\r\n")
 
+	// Raw pass-through fast path
+	if s.features == uint16(router.FeatureRawPassThrough) {
+		s.outBuf.Write(line)
+		return
+	}
+
 	// Pass comments, empty lines, and non-data lines directly through
 	if !bytes.HasPrefix(trimmed, []byte("data: ")) {
 		s.outBuf.Write(line)
@@ -160,8 +174,9 @@ func (s *StreamNormalizer) processLine(line []byte) {
 			s.outBuf.WriteString("data: {\"choices\":[{\"delta\":{\"content\":\"\\n</think>\\n\\n\"}}]}\n\n")
 		}
 
+		shieldEnabled := (s.features & uint16(router.FeatureShieldEnabled)) != 0
 		// Agentic Shield: Terminal synthetic tool call evaluation if 0 native tools emitted
-		if !s.hasNativeTools && s.interactiveTool != "" && s.shieldMgr != nil && s.tailBuffer != nil {
+		if shieldEnabled && !s.hasNativeTools && s.interactiveTool != "" && s.shieldMgr != nil && s.tailBuffer != nil {
 			if matched, _ := s.shieldMgr.RuleEngine().Evaluate(s.tailBuffer.Bytes()); matched {
 				if synthCall, ok := s.shieldMgr.EvaluateAndSynthesize(s.proseAccumulator.String(), s.interactiveTool); ok && synthCall != nil {
 					// 1. Emit synthetic tool_calls delta chunk

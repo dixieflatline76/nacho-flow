@@ -6,11 +6,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -92,6 +94,24 @@ func (p *program) asyncRun(s service.Service) {
 	}
 }
 
+func isAddressInUse(err error) bool {
+	if err == nil {
+		return false
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		var sysErr *os.SyscallError
+		if errors.As(opErr.Err, &sysErr) {
+			var errno syscall.Errno
+			if errors.As(sysErr.Err, &errno) {
+				// WSAEADDRINUSE (10048) on Windows, EADDRINUSE on Unix (98 Linux, 48 Darwin)
+				return errno == syscall.EADDRINUSE || errno == 10048
+			}
+		}
+	}
+	return errors.Is(err, syscall.EADDRINUSE)
+}
+
 func parseLogLevel(lvl string) slog.Level {
 	switch lvl {
 	case "debug":
@@ -128,6 +148,7 @@ func (p *program) run(s service.Service) error {
 			fmt.Println("  3. View documentation at https://spicebox.dev/nacho-flow/docs.html")
 			return nil
 		}
+		fmt.Fprintf(os.Stderr, "[FATAL:CONFIG_ERROR] %v\n", err)
 		appLogger.Error("Config load error", slog.Any("error", err))
 		return err
 	}
@@ -136,8 +157,9 @@ func (p *program) run(s service.Service) error {
 		cfg.Port = *portFlag
 	}
 
-	evaluator, err := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	evaluator, err := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier, cfg.Providers)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[FATAL:RULE_ERROR] %v\n", err)
 		appLogger.Error("Evaluator compile error", slog.Any("error", err))
 		return err
 	}
@@ -150,16 +172,9 @@ func (p *program) run(s service.Service) error {
 	modelClassifier := telemetry.NewClassifier(curationMgr)
 	oracle := telemetry.NewPricingOracleWithClassifier(modelClassifier)
 	for id, p := range cfg.Providers {
-		idLower := strings.ToLower(id)
-		if idLower == contract.ProviderOpenRouter || strings.Contains(strings.ToLower(p.BaseURL), contract.ProviderOpenRouter) {
-			var syncInterval time.Duration
-			if p.PricingSyncInterval != "" {
-				syncInterval, _ = time.ParseDuration(p.PricingSyncInterval)
-			}
-			oracle.RegisterProvider(
-				telemetry.NewOpenRouterPricingProviderWithURL(p.BaseURL, p.APIKey),
-				syncInterval,
-			)
+		if factory, ok := telemetry.LookupPricingFactory(id); ok {
+			prov, syncInterval := factory(id, p, 0)
+			oracle.RegisterProvider(prov, syncInterval)
 		}
 	}
 
@@ -305,7 +320,13 @@ func (p *program) run(s service.Service) error {
 		slog.String("brand", "spicebox.dev"),
 	)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		appLogger.Error("HTTP server error", slog.Any("error", err))
+		if isAddressInUse(err) {
+			fmt.Fprintf(os.Stderr, "[FATAL:PORT_IN_USE:%d] Port %d is already in use by another application. Please free port %d or change the port in config.yaml.\n", cfg.Port, cfg.Port, cfg.Port)
+			appLogger.Error("Port bind collision", slog.Int("port", cfg.Port), slog.String("code", "PORT_IN_USE"), slog.Any("error", err))
+		} else {
+			fmt.Fprintf(os.Stderr, "[FATAL:SERVER_ERROR] %v\n", err)
+			appLogger.Error("HTTP server error", slog.Any("error", err))
+		}
 		_ = p.Stop(s)
 		return err
 	}

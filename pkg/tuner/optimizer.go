@@ -39,7 +39,7 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 
 	if currentConfig != nil {
 		for i, tier := range currentConfig.Tiers {
-			if IsLocalTier(tier) {
+			if IsLocalTier(tier, currentConfig.Providers) {
 				targetTier = &currentConfig.Tiers[i]
 				existingWhen = tier.When
 				targetTierName = tier.Name

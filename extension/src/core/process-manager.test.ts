@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { ProcessManager } from './process-manager';
+import { ProcessManager, parseStartupError } from './process-manager';
 
 jest.mock('child_process');
 jest.mock('fs');
@@ -226,7 +226,8 @@ describe('ProcessManager', () => {
 
 			const result = await startPromise;
 			expect(result.success).toBe(false);
-			expect(result.error).toContain('bind: address already in use');
+			expect(result.error).toContain('Port 8000 is already in use by another application');
+			expect(result.parsedError?.type).toBe('PORT_IN_USE');
 		});
 
 		it('should stop and restart active process correctly', async () => {
@@ -311,6 +312,91 @@ describe('ProcessManager', () => {
 			expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining('Process error: Spawn error'));
 
 			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
+		it('should cleanly suppress raw exit code logs when stopped intentionally', async () => {
+			let exitHandler: any;
+			const mockChild: any = {
+				pid: 99999,
+				stdout: { on: jest.fn() },
+				stderr: { on: jest.fn() },
+				on: jest.fn((event, fn) => {
+					if (event === 'exit') exitHandler = fn;
+				}),
+				kill: jest.fn(),
+				killed: false
+			};
+			jest.spyOn(processManager, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			(child_process.spawn as jest.Mock).mockReturnValue(mockChild);
+			(child_process.execSync as jest.Mock).mockImplementation(() => {});
+
+			let healthCalls = 0;
+			jest.spyOn(processManager, 'checkHealth').mockImplementation(async () => {
+				healthCalls++;
+				return healthCalls > 1;
+			});
+
+			await processManager.start('http://127.0.0.1:8000');
+			expect(processManager.isRunning()).toBe(true);
+
+			await processManager.stop();
+
+			// Simulate Windows taskkill exit event
+			if (exitHandler) {
+				exitHandler(4294967295, null);
+			}
+
+			expect(mockOutputChannel.appendLine).toHaveBeenCalledWith('[ProcessManager] Engine stopped cleanly.');
+		});
+	});
+
+	describe('parseStartupError', () => {
+		it('should accurately parse PORT_IN_USE token with port number', () => {
+			const stderr = '[FATAL:PORT_IN_USE:8000] Port 8000 is already in use by another application.';
+			const parsed = parseStartupError(stderr, '', 8000);
+			expect(parsed.type).toBe('PORT_IN_USE');
+			expect(parsed.port).toBe(8000);
+			expect(parsed.message).toBe('Port 8000 is already in use by another application. Please free port 8000 or change the port in config.yaml.');
+		});
+
+		it('should fallback to EADDRINUSE detection without structured tag', () => {
+			const stderr = 'listen tcp 0.0.0.0:9000: bind: address already in use (EADDRINUSE)';
+			const parsed = parseStartupError(stderr, '', 9000);
+			expect(parsed.type).toBe('PORT_IN_USE');
+			expect(parsed.port).toBe(9000);
+			expect(parsed.message).toContain('Please free port 9000');
+		});
+
+		it('should accurately parse CONFIG_ERROR token and format clean message', () => {
+			const stderr = '[FATAL:CONFIG_ERROR] provider "openrouter": "type" is required and must be "local" or "cloud"';
+			const parsed = parseStartupError(stderr, '', 8000);
+			expect(parsed.type).toBe('CONFIG_ERROR');
+			expect(parsed.message).toContain('Configuration error in config.yaml');
+			expect(parsed.message).toContain('"type" is required');
+		});
+
+		it('should accurately parse RULE_ERROR token', () => {
+			const stderr = '[FATAL:RULE_ERROR] failed to compile expr for tier "Bad"';
+			const parsed = parseStartupError(stderr, '', 8000);
+			expect(parsed.type).toBe('RULE_ERROR');
+			expect(parsed.message).toContain('Routing rule error in config.yaml');
+		});
+
+		it('should accurately parse SERVER_ERROR token', () => {
+			const stderr = '[FATAL:SERVER_ERROR] listen tcp: address -1: invalid port';
+			const parsed = parseStartupError(stderr, '', 8000);
+			expect(parsed.type).toBe('SPAWN_ERROR');
+			expect(parsed.message).toContain('Nacho Flow server error');
+		});
+
+		it('should return UNKNOWN for unstructured error strings', () => {
+			const stderr = 'Unrecognized process failure occurred';
+			const parsed = parseStartupError(stderr, '', 8000);
+			expect(parsed.type).toBe('UNKNOWN');
+			expect(parsed.message).toBe('Unrecognized process failure occurred');
 		});
 	});
 });
