@@ -977,7 +977,7 @@ func TestProgram_Run_PortInUse(t *testing.T) {
 	serviceInteractiveFunc = func() bool { return false }
 	defer func() { serviceInteractiveFunc = origInteractive }()
 
-	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:0"))
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("failed to listen on port: %v", err)
 	}

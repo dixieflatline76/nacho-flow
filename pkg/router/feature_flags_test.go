@@ -81,7 +81,7 @@ func BenchmarkHas(b *testing.B) {
 	target := router.FeatureToolNormalizer
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if !flags.Has(target) {
 			b.Fatal("unexpected false")
 		}
@@ -93,7 +93,7 @@ func BenchmarkMaskOut(b *testing.B) {
 	mask := router.FeatureShieldEnabled | router.FeatureShieldFollowup
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res := flags.MaskOut(mask)
 		if res.Has(router.FeatureShieldEnabled) {
 			b.Fatal("unexpected true")

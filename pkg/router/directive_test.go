@@ -322,7 +322,7 @@ func BenchmarkScanDirectives(b *testing.B) {
 	prompt := "@nacho:raw Stream this unformatted response without synthetic tools"
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = ScanDirectives(prompt)
 	}
 }

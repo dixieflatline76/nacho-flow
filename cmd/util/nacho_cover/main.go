@@ -86,7 +86,7 @@ func renderExtTable(coverage ExtensionCoverage) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-func renderSummary(globalPct float64, coverages []PackageCoverage) string {
+func renderSummary(globalPct float64) string {
 	return fmt.Sprintf("* **🧪 Engineered for Reliability**: Strictly $\\ge 95.0\\%%\\text{--}100\\%%$ statement test coverage across all packages (%.1f%% global coverage), 100%% race-detector clean (`-race`), and static security audited (`gosec`).", globalPct)
 }
 
@@ -211,7 +211,7 @@ func main() {
 
 	goTableMd := renderGoTable(goCoverages)
 	extTableMd := renderExtTable(extCoverage)
-	summaryMd := renderSummary(globalPct, goCoverages)
+	summaryMd := renderSummary(globalPct)
 
 	targets := []string{
 		"docs/BENCHMARKS.md",

@@ -68,10 +68,7 @@ func TestRenderExtTable(t *testing.T) {
 }
 
 func TestRenderSummary(t *testing.T) {
-	summary := renderSummary(96.4, []PackageCoverage{
-		{Package: "pkg/strategy", CoveragePct: 97.9},
-		{Package: "pkg/config", CoveragePct: 99.4},
-	})
+	summary := renderSummary(96.4)
 	if !strings.Contains(summary, "96.4%") {
 		t.Errorf("expected global 96.4%% in summary, got:\n%s", summary)
 	}
