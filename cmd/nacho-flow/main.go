@@ -142,7 +142,12 @@ func (p *program) run(s service.Service) error {
 	if err != nil {
 		if serviceInteractiveFunc() {
 			fmt.Printf("\n🌮 Nacho Flow %s (https://spicebox.dev/nacho-flow/)\n\n", contract.Version)
-			fmt.Println("No configuration file found. To get started:")
+			if strings.Contains(err.Error(), "could not find") {
+				fmt.Println("No configuration file found. To get started:")
+			} else {
+				fmt.Printf("Configuration error: %v\n\n", err)
+				fmt.Println("To fix your configuration:")
+			}
 			fmt.Println("  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml")
 			fmt.Println("  2. Run 'nacho-flow -help' for available options.")
 			fmt.Println("  3. View documentation at https://spicebox.dev/nacho-flow/docs.html")
