@@ -66,6 +66,19 @@ agent_shield:
     - "ready to implement"
 
 # =============================================================================
+# 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
+# In-Flight Stream Defense that murders infinite loops & monologue traps in <3s
+# =============================================================================
+cycle_killer:
+  enabled: true
+  max_prose_tokens: 800
+  max_thinking_tokens: 1500
+  repetition_window: 6
+  repetition_threshold: 3
+  thinking_repetition_threshold: 5
+  max_retries: 1
+
+# =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
 # =============================================================================
 tiers:

@@ -15,7 +15,12 @@ type RequestContext struct {
 	CleanPrompt      string   `json:"clean_prompt,omitempty"`
 	Retries          int      `json:"retries,omitempty"`
 	IsRetry          bool     `json:"is_retry,omitempty"`
-	ForcedTier       string   `json:"forced_tier,omitempty"`
+	HasToolProgress  bool     `json:"has_tool_progress,omitempty"`
+	HistoryErrors          int      `json:"history_errors,omitempty"`
+	CycleRetries           int      `json:"cycle_retries,omitempty"`
+	CycleBreakerTriggered  bool     `json:"cycle_breaker_triggered,omitempty"`
+	CycleBreakerReason     string   `json:"cycle_breaker_reason,omitempty"`
+	ForcedTier             string   `json:"forced_tier,omitempty"`
 	ForcedModel      string   `json:"forced_model,omitempty"`
 	IsMetaDirective  bool     `json:"is_meta_directive,omitempty"`
 	MetaDirective    string   `json:"meta_directive,omitempty"`
@@ -37,19 +42,36 @@ type NormalizersConfig struct {
 	Think    *bool `yaml:"think,omitempty" json:"think,omitempty"`
 }
 
+// CycleBreakerDefaultCorrectionPrompt is the default authoritative system override prompt injected on Stage 1 cycle breaking.
+const CycleBreakerDefaultCorrectionPrompt = "[SYSTEM OVERRIDE] You produced excessive reasoning without calling any tools. Stop planning. Execute immediately. Call the appropriate tool NOW with the correct arguments. Do not explain your reasoning."
+
+// CycleBreakerConfig configures active inference stream loop and monologue detection.
+type CycleBreakerConfig struct {
+	Enabled                     *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	MaxProseTokens              int    `yaml:"max_prose_tokens,omitempty" json:"max_prose_tokens,omitempty"`
+	MaxThinkingTokens           int    `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
+	RepetitionWindow            int    `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
+	RepetitionThreshold         int    `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
+	ThinkingRepetitionThreshold int    `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
+	MaxRetries                  int    `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`
+	CorrectionPrompt            string `yaml:"correction_prompt,omitempty" json:"correction_prompt,omitempty"`
+}
+
 // Tier defines a single model routing rule in the 1..N evaluation pipeline.
 type Tier struct {
-	Name            string             `yaml:"name" json:"name"`
-	Model           string             `yaml:"model" json:"model"`
-	Provider        string             `yaml:"provider" json:"provider"`
-	When            string             `yaml:"when" json:"when"`
-	StripImages     bool               `yaml:"strip_images" json:"strip_images"`
-	ReasoningEffort string             `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
-	MaxContext      int                `yaml:"max_context,omitempty" json:"max_context,omitempty"`
-	Raw             *bool              `yaml:"raw,omitempty" json:"raw,omitempty"`
-	Shield          *bool              `yaml:"shield,omitempty" json:"shield,omitempty"`
-	Normalizer      *bool              `yaml:"normalizer,omitempty" json:"normalizer,omitempty"`
-	Normalizers     *NormalizersConfig `yaml:"normalizers,omitempty" json:"normalizers,omitempty"`
+	Name            string              `yaml:"name" json:"name"`
+	Model           string              `yaml:"model" json:"model"`
+	Provider        string              `yaml:"provider" json:"provider"`
+	When            string              `yaml:"when" json:"when"`
+	StripImages     bool                `yaml:"strip_images" json:"strip_images"`
+	ReasoningEffort string              `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
+	MaxContext      int                 `yaml:"max_context,omitempty" json:"max_context,omitempty"`
+	Raw             *bool               `yaml:"raw,omitempty" json:"raw,omitempty"`
+	Shield          *bool               `yaml:"shield,omitempty" json:"shield,omitempty"`
+	Normalizer      *bool               `yaml:"normalizer,omitempty" json:"normalizer,omitempty"`
+	Normalizers     *NormalizersConfig  `yaml:"normalizers,omitempty" json:"normalizers,omitempty"`
+	CycleKiller     *CycleBreakerConfig `yaml:"cycle_killer,omitempty" json:"cycle_killer,omitempty"`
+	CycleBreaker    *CycleBreakerConfig `yaml:"cycle_breaker,omitempty" json:"cycle_breaker,omitempty"`
 }
 
 // ProviderType defines the execution classification of an LLM backend.
@@ -118,14 +140,16 @@ type AgentShieldConfig struct {
 
 // Config defines the top-level configuration loaded from config.yaml.
 type Config struct {
-	Port        int                       `yaml:"port" json:"port"`
-	AuthToken   string                    `yaml:"auth_token,omitempty" json:"auth_token,omitempty"`
-	Router      RouterConfig              `yaml:"router,omitempty" json:"router,omitempty"`
-	Deals       DealsConfig               `yaml:"deals,omitempty" json:"deals,omitempty"`
-	AgentShield AgentShieldConfig         `yaml:"agent_shield,omitempty" json:"agent_shield,omitempty"`
-	Providers   map[string]ProviderConfig `yaml:"providers" json:"providers"`
-	Tiers       []Tier                    `yaml:"tiers" json:"tiers"`
-	DefaultTier Tier                      `yaml:"default_tier" json:"default_tier"`
+	Port         int                       `yaml:"port" json:"port"`
+	AuthToken    string                    `yaml:"auth_token,omitempty" json:"auth_token,omitempty"`
+	Router       RouterConfig              `yaml:"router,omitempty" json:"router,omitempty"`
+	Deals        DealsConfig               `yaml:"deals,omitempty" json:"deals,omitempty"`
+	AgentShield  AgentShieldConfig         `yaml:"agent_shield,omitempty" json:"agent_shield,omitempty"`
+	CycleKiller  CycleBreakerConfig        `yaml:"cycle_killer,omitempty" json:"cycle_killer,omitempty"`
+	CycleBreaker CycleBreakerConfig        `yaml:"cycle_breaker,omitempty" json:"cycle_breaker,omitempty"`
+	Providers    map[string]ProviderConfig `yaml:"providers" json:"providers"`
+	Tiers        []Tier                    `yaml:"tiers" json:"tiers"`
+	DefaultTier  Tier                      `yaml:"default_tier" json:"default_tier"`
 }
 
 // Evaluator evaluates N tiers sequentially to find the matching tier for a request.

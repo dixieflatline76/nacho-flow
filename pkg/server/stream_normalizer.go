@@ -65,6 +65,7 @@ type StreamNormalizer struct {
 	reader                 *bufio.Reader
 	outBuf                 *bytes.Buffer
 	inThinking             bool
+	inStructuredReasoning  bool
 	alreadyTagged          bool
 	closed                 bool
 	eofReached             bool
@@ -76,6 +77,9 @@ type StreamNormalizer struct {
 	tailBuffer             *shield.TailBuffer
 	hasNativeTools         bool
 	proseAccumulator       strings.Builder
+	cycleBreaker           *shield.CycleBreaker
+	cycleViolated          bool
+	cycleViolationReason   string
 	features               uint16
 }
 
@@ -106,6 +110,16 @@ func (s *StreamNormalizer) SetShield(interactiveTool string, mgr *shield.ShieldM
 	if interactiveTool != "" && mgr != nil && s.tailBuffer == nil {
 		s.tailBuffer = shield.GetTailBuffer()
 	}
+}
+
+// SetCycleBreaker attaches an active inference CycleBreaker to this streaming session.
+func (s *StreamNormalizer) SetCycleBreaker(cb *shield.CycleBreaker) {
+	s.cycleBreaker = cb
+}
+
+// CheckCycleViolation reports whether the stream triggered a cycle breaker violation (repetition loop or monologue budget).
+func (s *StreamNormalizer) CheckCycleViolation() (bool, string) {
+	return s.cycleViolated, s.cycleViolationReason
 }
 
 func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
@@ -247,6 +261,8 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		bytes.Contains(payload, []byte("\"reason\"")) ||
 		bytes.Contains(payload, []byte("<|im_start|>think")) ||
 		bytes.Contains(payload, []byte("<|im_start|>thought")) ||
+		bytes.Contains(payload, []byte("<|channel>thought")) ||
+		bytes.Contains(payload, []byte("</thought>")) ||
 		bytes.Contains(payload, []byte("<thinking>")) ||
 		bytes.Contains(payload, []byte("</thinking>")) ||
 		bytes.Contains(payload, []byte("<|im_end|>"))
@@ -255,10 +271,16 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		if idx := bytes.Index(payload, []byte("\"content\":")); idx != -1 {
 			s.emittedCompletionChars += len(payload) - idx
 		}
-		if s.tailBuffer != nil {
-			if contentStr := payloadContent(payload); contentStr != "" {
+		if contentStr := payloadContent(payload); contentStr != "" {
+			if s.tailBuffer != nil {
 				s.tailBuffer.Append([]byte(contentStr))
 				s.proseAccumulator.WriteString(contentStr)
+			}
+			if s.cycleBreaker != nil && !s.cycleViolated {
+				if triggered, reason := s.cycleBreaker.ProcessDelta(contentStr, false); triggered {
+					s.cycleViolated = true
+					s.cycleViolationReason = reason
+				}
 			}
 		}
 		s.outBuf.Write(line)
@@ -291,10 +313,18 @@ func (s *StreamNormalizer) processLine(line []byte) {
 
 		if !s.inThinking && !s.alreadyTagged {
 			s.inThinking = true
+			s.inStructuredReasoning = true
 			choice.Delta.Content = "<think>\n" + sanitized
 			s.alreadyTagged = true
 		} else {
 			choice.Delta.Content = sanitized
+		}
+
+		if s.cycleBreaker != nil && !s.cycleViolated {
+			if triggered, reason := s.cycleBreaker.ProcessDelta(sanitized, true); triggered {
+				s.cycleViolated = true
+				s.cycleViolationReason = reason
+			}
 		}
 
 		if newPayload, err := marshalNoEscapeHTML(chunk); err == nil {
@@ -315,6 +345,10 @@ func (s *StreamNormalizer) processLine(line []byte) {
 			content = strings.ReplaceAll(content, "<|im_start|>thought", "<think>")
 			s.alreadyTagged = true
 		}
+		if strings.Contains(content, "<|channel>thought") {
+			content = strings.ReplaceAll(content, "<|channel>thought", "<think>")
+			s.alreadyTagged = true
+		}
 		if strings.Contains(content, "<thinking>") {
 			content = strings.ReplaceAll(content, "<thinking>", "<think>")
 			s.alreadyTagged = true
@@ -322,17 +356,22 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		if strings.Contains(content, "</thinking>") {
 			content = strings.ReplaceAll(content, "</thinking>", "</think>")
 		}
+		if strings.Contains(content, "</thought>") {
+			content = strings.ReplaceAll(content, "</thought>", "</think>")
+		}
 		if strings.Contains(content, "<|im_end|>") {
 			content = strings.ReplaceAll(content, "<|im_end|>", "</think>")
 		}
 		choice.Delta.Content = content
 
 		if strings.Contains(choice.Delta.Content, "<think>") {
+			s.inThinking = true
 			s.alreadyTagged = true
 		}
 
-		if s.inThinking {
-			// Transition from thinking to final answer, tool call, or finish
+		if s.inStructuredReasoning {
+			// Transition from structured reasoning (reasoning_content) to final answer, tool call, or finish
+			s.inStructuredReasoning = false
 			s.inThinking = false
 			choice.Delta.Content = "\n</think>\n\n" + choice.Delta.Content
 
@@ -344,9 +383,21 @@ func (s *StreamNormalizer) processLine(line []byte) {
 			}
 		}
 
-		if s.tailBuffer != nil && !s.inThinking {
+		isThinkingDelta := s.inThinking
+		if strings.Contains(choice.Delta.Content, "</think>") {
+			s.inThinking = false
+		}
+
+		if s.tailBuffer != nil && !isThinkingDelta {
 			s.tailBuffer.Append([]byte(choice.Delta.Content))
 			s.proseAccumulator.WriteString(choice.Delta.Content)
+		}
+
+		if s.cycleBreaker != nil && !s.cycleViolated {
+			if triggered, reason := s.cycleBreaker.ProcessDelta(choice.Delta.Content, isThinkingDelta); triggered {
+				s.cycleViolated = true
+				s.cycleViolationReason = reason
+			}
 		}
 
 		if choice.Delta.Content != payloadContent(payload) {

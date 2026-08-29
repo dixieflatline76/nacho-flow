@@ -69,10 +69,12 @@ type Observation struct {
 	HasTools           bool
 	StatusCode         int
 	IsRetry            bool
-	ForcedTier         string
-	ForcedModel        string
-	DirectiveUsed      string
-	ObservedAt         time.Time
+	ForcedTier            string
+	ForcedModel           string
+	DirectiveUsed         string
+	CycleBreakerTriggered bool
+	CycleBreakerReason    string
+	ObservedAt            time.Time
 }
 
 // StatsTracker processes proxy telemetry asynchronously via a dedicated background channel.
@@ -376,9 +378,11 @@ func (s *StatsTracker) worker() {
 				IsRetry:       obs.IsRetry,
 				CostSavedUSD:  obs.CostSaved,
 				CostSpentUSD:  obs.CostSpent,
-				ForcedTier:    obs.ForcedTier,
-				ForcedModel:   obs.ForcedModel,
-				DirectiveUsed: obs.DirectiveUsed,
+				ForcedTier:            obs.ForcedTier,
+				ForcedModel:           obs.ForcedModel,
+				DirectiveUsed:         obs.DirectiveUsed,
+				CycleBreakerTriggered: obs.CycleBreakerTriggered,
+				CycleBreakerReason:    obs.CycleBreakerReason,
 			}
 			for _, sink := range *sinksPtr {
 				sink.Emit(record)

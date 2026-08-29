@@ -14,6 +14,7 @@ const (
 // SessionState tracks the retry count, prompt hash, and last activity timestamp of a session.
 type SessionState struct {
 	RetriesCount      int
+	EscalationCount   int
 	LastTurnTime      time.Time
 	PromptHash        uint64
 	LastMetaDirective string
@@ -51,8 +52,10 @@ func HashPrompt(prompt string) uint64 {
 }
 
 // RecordTurn records a turn for sessionKey and promptHash.
+// If hasToolProgress is true (e.g. intermediate tool calls succeeded in an agent loop),
+// the turn is treated as forward progress and Retries is reset to 0 even if promptHash is identical.
 // Returns (retries, isRetry).
-func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64) (retries int, isRetry bool) {
+func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64, hasToolProgress bool) (retries int, isRetry bool) {
 	if sessionKey == "" {
 		return 0, false
 	}
@@ -67,13 +70,23 @@ func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64) (retr
 		// Check lazy expiration
 		if now.Sub(state.LastTurnTime) > st.ttl {
 			state.RetriesCount = 0
+			state.EscalationCount = 0
 			state.PromptHash = promptHash
 			state.LastTurnTime = now
 			return 0, false
 		}
 
-		// Check if it's the exact same prompt (Retry)
+		// Check if it's the exact same prompt
 		if state.PromptHash == promptHash && promptHash != 0 {
+			if hasToolProgress {
+				// Agent is making forward progress (successful tool calls in history).
+				// This is a normal multi-step autonomous loop, NOT a retry.
+				state.RetriesCount = 0
+				state.EscalationCount = 0
+				state.LastTurnTime = now
+				return 0, false
+			}
+			// No tool progress + same prompt = genuine retry
 			state.RetriesCount++
 			state.LastTurnTime = now
 			return state.RetriesCount, true
@@ -81,6 +94,7 @@ func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64) (retr
 
 		// Distinct turn within same session
 		state.RetriesCount = 0
+		state.EscalationCount = 0
 		state.PromptHash = promptHash
 		state.LastTurnTime = now
 		return 0, false
@@ -137,6 +151,37 @@ func (st *SessionTracker) GetRetries(sessionKey string) int {
 		return 0
 	}
 	return state.RetriesCount
+}
+
+const MaxEscalationTurns = 3
+
+// RecordEscalation increments the escalation counter for the session.
+// Returns true if the budget is exhausted (consecutive frontier turns > MaxEscalationTurns).
+func (st *SessionTracker) RecordEscalation(sessionKey string) bool {
+	if sessionKey == "" {
+		return false
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state, exists := st.sessions[sessionKey]
+	if !exists {
+		return false
+	}
+	state.EscalationCount++
+	return state.EscalationCount > MaxEscalationTurns
+}
+
+// ResetEscalation resets the escalation counter (called when NOT on the default tier).
+func (st *SessionTracker) ResetEscalation(sessionKey string) {
+	if sessionKey == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state, exists := st.sessions[sessionKey]
+	if exists {
+		state.EscalationCount = 0
+	}
 }
 
 // ShouldDebounceMeta checks if an identical meta directive was executed within window for sessionKey.

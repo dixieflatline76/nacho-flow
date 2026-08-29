@@ -417,7 +417,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.sessionTracker == nil {
 		s.sessionTracker = router.NewSessionTracker(5 * time.Minute)
 	}
-	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash)
+
+	// Pass tool progress signal from classifier to session tracker
+	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash, reqCtx.HasToolProgress)
+
+	// In-history errors OVERRIDE session tracker when they detect real failures
+	if reqCtx.HistoryErrors > retries {
+		retries = reqCtx.HistoryErrors
+		isRetry = true
+	}
+
 	reqCtx.Retries = retries
 	reqCtx.IsRetry = isRetry
 
@@ -426,6 +435,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		reqLogger.Error("Error evaluating tier, falling back to default", slog.Any("error", err))
 		targetTier = s.GetConfig().DefaultTier
+	}
+
+	// 4.5: Escalation budget — prevent runaway frontier costs
+	defaultTierName := s.GetConfig().DefaultTier.Name
+	if targetTier.Name == defaultTierName {
+		budgetExhausted := s.sessionTracker.RecordEscalation(sessionKey)
+		if budgetExhausted {
+			// Force de-escalation: pick the first cloud tier that isn't the default
+			for _, tier := range s.GetConfig().Tiers {
+				if tier.Name != defaultTierName {
+					targetTier = tier
+					break
+				}
+			}
+			reqLogger.Warn("Escalation budget exhausted, de-escalating",
+				slog.String("fallback_tier", targetTier.Name),
+				slog.String("fallback_model", targetTier.Model))
+		}
+	} else {
+		s.sessionTracker.ResetEscalation(sessionKey)
 	}
 
 	// 5. If forced directive is used, check provider circuit breaker (Strict Fallback Bypass)
@@ -456,6 +485,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Bool("has_images", reqCtx.HasImages),
 		slog.Bool("has_tools", reqCtx.HasTools),
 		slog.Int("retries", reqCtx.Retries),
+		slog.Bool("has_tool_progress", reqCtx.HasToolProgress),
+		slog.Int("history_errors", reqCtx.HistoryErrors),
 	)
 
 	s.forwardWithFallback(w, r, reqCtx, targetTier, body, startTime, reqLogger)
@@ -657,12 +688,34 @@ func (s *Server) dispatchTier(
 		if activeFeatures.Has(router.FeatureShieldEnabled) && reqCtx.InteractiveTool != "" {
 			normalizer.SetShield(reqCtx.InteractiveTool, s.shieldMgr)
 		}
-		peekBuf := make([]byte, 4096)
-		n, readErr := normalizer.Read(peekBuf)
+		var cb *shield.CycleBreaker
+		if targetProvider.IsLocal() && reqCtx.HasTools {
+			cb = resolveCycleBreaker(targetTier, s.GetConfig())
+			if cb != nil && cb.IsEnabled() {
+				normalizer.SetCycleBreaker(cb)
+			}
+		}
+
+		peekBytes := make([]byte, 0, 4096)
+		tempBuf := make([]byte, 512)
+		var readErr error
+		for len(peekBytes) < 2048 {
+			n, err := normalizer.Read(tempBuf)
+			if n > 0 {
+				peekBytes = append(peekBytes, tempBuf[:n]...)
+			}
+			if err != nil {
+				readErr = err
+				break
+			}
+			if violated, _ := normalizer.CheckCycleViolation(); violated {
+				break
+			}
+		}
 
 		// Check quality defect on stream: immediate [DONE] on local provider
-		trimmedPeek := strings.TrimSpace(string(peekBuf[:n]))
-		if targetProvider.IsLocal() && !isFallback && (trimmedPeek == "data: [DONE]" || (n == 0 && readErr == io.EOF)) {
+		trimmedPeek := strings.TrimSpace(string(peekBytes))
+		if targetProvider.IsLocal() && !isFallback && (trimmedPeek == "data: [DONE]" || (len(peekBytes) == 0 && readErr == io.EOF)) {
 			_ = normalizer.Close()
 			reqLogger.Warn("Local provider returned empty stream, failing over to cloud fallback tier",
 				slog.String("tier", targetTier.Name),
@@ -670,6 +723,38 @@ func (s *Server) dispatchTier(
 			if defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
 				s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
 				return
+			}
+		}
+
+		// Check Cycle Breaker violation on stream peek (Phase 1)
+		if cb != nil && cb.IsEnabled() && targetProvider.IsLocal() && !isFallback {
+			if violated, reason := normalizer.CheckCycleViolation(); violated {
+				_ = normalizer.Close()
+				reqCtx.CycleBreakerTriggered = true
+				reqCtx.CycleBreakerReason = reason
+				reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Runaway monologue intercepted",
+					slog.String("reason", reason),
+					slog.String("tier", targetTier.Name),
+					slog.Int("cycle_retries", reqCtx.CycleRetries),
+				)
+
+				if reqCtx.CycleRetries < cb.MaxRetries() {
+					// Stage 1: Local self-correction retry ($0.00) with [SYSTEM OVERRIDE] prompt
+					reqCtx.CycleRetries++
+					injectedBody := injectCorrectionPrompt(body, cb.CorrectionPrompt())
+					s.dispatchTier(w, r, reqCtx, targetTier, injectedBody, startTime, reqLogger, false)
+					return
+				}
+
+				// Stage 2: Cloud Failover after local retry exhaustion
+				if defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+					reqLogger.Warn("Local cycle retries exhausted, escalating to cloud fallback tier",
+						slog.String("fallback_tier", defaultTier.Name),
+						slog.String("fallback_model", defaultTier.Model),
+					)
+					s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
+					return
+				}
 			}
 		}
 
@@ -688,8 +773,8 @@ func (s *Server) dispatchTier(
 		w.Header().Set(contract.HeaderSpiceTargetModel, targetTier.Model)
 		w.WriteHeader(resp.StatusCode)
 
-		if n > 0 {
-			_, _ = w.Write(peekBuf[:n])
+		if len(peekBytes) > 0 {
+			_, _ = w.Write(peekBytes)
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
@@ -698,6 +783,22 @@ func (s *Server) dispatchTier(
 			buf := make([]byte, 4096)
 			for {
 				n, err := normalizer.Read(buf)
+				// Phase 2: Active Mid-Stream Circuit Severing (Check BEFORE writing to swallow degenerate chunks)
+				if violated, reason := normalizer.CheckCycleViolation(); violated && cb != nil && cb.IsEnabled() {
+					reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Severing runaway stream",
+						slog.String("reason", reason),
+						slog.String("tier", targetTier.Name),
+					)
+					reqCtx.CycleBreakerTriggered = true
+					reqCtx.CycleBreakerReason = reason
+					_ = normalizer.Close()
+					finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+					_, _ = w.Write([]byte(finishChunk))
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					}
+					break
+				}
 				if n > 0 {
 					_, _ = w.Write(buf[:n])
 					if flusher, ok := w.(http.Flusher); ok {
@@ -784,6 +885,34 @@ func (s *Server) dispatchTier(
 								rawCallsJSON, _ := json.Marshal([]interface{}{synthCall})
 								firstChoice.Message.ToolCalls = rawCallsJSON
 								modified = true
+							}
+						}
+					}
+
+					if len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" && targetProvider.IsLocal() && reqCtx.HasTools && !isFallback {
+						if cb := resolveCycleBreaker(targetTier, s.GetConfig()); cb != nil && cb.IsEnabled() {
+							if triggered, reason := cb.ProcessDelta(firstChoice.Message.Content, false); triggered {
+								reqCtx.CycleBreakerTriggered = true
+								reqCtx.CycleBreakerReason = reason
+								reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Runaway monologue intercepted",
+									slog.String("reason", reason),
+									slog.String("tier", targetTier.Name),
+									slog.Int("cycle_retries", reqCtx.CycleRetries),
+								)
+								if reqCtx.CycleRetries < cb.MaxRetries() {
+									reqCtx.CycleRetries++
+									injectedBody := injectCorrectionPrompt(body, cb.CorrectionPrompt())
+									s.dispatchTier(w, r, reqCtx, targetTier, injectedBody, startTime, reqLogger, false)
+									return
+								}
+								if defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+									reqLogger.Warn("Local cycle retries exhausted, escalating to cloud fallback tier",
+										slog.String("fallback_tier", defaultTier.Name),
+										slog.String("fallback_model", defaultTier.Model),
+									)
+									s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
+									return
+								}
 							}
 						}
 					}
@@ -911,24 +1040,26 @@ func (s *Server) recordTelemetry(
 	}
 
 	s.tracker.Record(telemetry.Observation{
-		Tier:          tierNum,
-		TierName:      targetTier.Name,
-		Model:         targetTier.Model,
-		Provider:      targetTier.Provider,
-		Tokens:        totalTokens,
-		CostSpent:     costSpent,
-		CostSaved:     costSaved,
-		IsLocal:       isLocal,
-		IsFallback:    isFallback,
-		LatencyMs:     latency,
-		Keywords:      reqCtx.Keywords,
-		HasImages:     reqCtx.HasImages,
-		HasTools:      reqCtx.HasTools,
-		StatusCode:    statusCode,
-		IsRetry:       reqCtx.IsRetry,
-		ForcedTier:    reqCtx.ForcedTier,
-		ForcedModel:   reqCtx.ForcedModel,
-		DirectiveUsed: reqCtx.MetaDirectiveRaw,
+		Tier:                  tierNum,
+		TierName:              targetTier.Name,
+		Model:                 targetTier.Model,
+		Provider:              targetTier.Provider,
+		Tokens:                totalTokens,
+		CostSpent:             costSpent,
+		CostSaved:             costSaved,
+		IsLocal:               isLocal,
+		IsFallback:            isFallback,
+		LatencyMs:             latency,
+		Keywords:              reqCtx.Keywords,
+		HasImages:             reqCtx.HasImages,
+		HasTools:              reqCtx.HasTools,
+		StatusCode:            statusCode,
+		IsRetry:               reqCtx.IsRetry,
+		ForcedTier:            reqCtx.ForcedTier,
+		ForcedModel:           reqCtx.ForcedModel,
+		DirectiveUsed:         reqCtx.MetaDirectiveRaw,
+		CycleBreakerTriggered: reqCtx.CycleBreakerTriggered,
+		CycleBreakerReason:    reqCtx.CycleBreakerReason,
 	})
 
 	reqLogger.Info("Completed proxy request",
@@ -939,6 +1070,7 @@ func (s *Server) recordTelemetry(
 		slog.Int("status", statusCode),
 		slog.Bool("is_fallback", isFallback),
 		slog.Bool("is_retry", reqCtx.IsRetry),
+		slog.Bool("cycle_breaker_triggered", reqCtx.CycleBreakerTriggered),
 	)
 }
 
@@ -1011,4 +1143,72 @@ func hasCandidateToolTokens(b []byte) bool {
 		bytes.Contains(b, []byte("<invoke")) ||
 		bytes.Contains(b, []byte("Action:")) ||
 		bytes.Contains(b, []byte("```"))
+}
+
+func resolveCycleBreaker(tier contract.Tier, cfg *contract.Config) *shield.CycleBreaker {
+	var cbCfg contract.CycleBreakerConfig
+	if cfg != nil {
+		cbCfg = cfg.CycleKiller
+		if cbCfg.Enabled == nil && cfg.CycleBreaker.Enabled != nil {
+			cbCfg = cfg.CycleBreaker
+		}
+	}
+
+	// Support both cycle_killer and cycle_breaker on tier level
+	tierCb := tier.CycleKiller
+	if tierCb == nil {
+		tierCb = tier.CycleBreaker
+	}
+
+	if tierCb != nil {
+		if tierCb.Enabled != nil {
+			cbCfg.Enabled = tierCb.Enabled
+		}
+		if tierCb.MaxProseTokens > 0 {
+			cbCfg.MaxProseTokens = tierCb.MaxProseTokens
+		}
+		if tierCb.RepetitionWindow > 0 {
+			cbCfg.RepetitionWindow = tierCb.RepetitionWindow
+		}
+		if tierCb.RepetitionThreshold > 0 {
+			cbCfg.RepetitionThreshold = tierCb.RepetitionThreshold
+		}
+		if tierCb.MaxRetries > 0 {
+			cbCfg.MaxRetries = tierCb.MaxRetries
+		}
+		if tierCb.CorrectionPrompt != "" {
+			cbCfg.CorrectionPrompt = tierCb.CorrectionPrompt
+		}
+	}
+	if cbCfg.Enabled != nil && !*cbCfg.Enabled {
+		return nil
+	}
+	return shield.NewCycleBreaker(&cbCfg)
+}
+
+func injectCorrectionPrompt(body []byte, prompt string) []byte {
+	if prompt == "" {
+		prompt = contract.CycleBreakerDefaultCorrectionPrompt
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+
+	messages, ok := payload["messages"].([]interface{})
+	if !ok {
+		return body
+	}
+
+	overrideMsg := map[string]interface{}{
+		"role":    "user",
+		"content": prompt,
+	}
+	payload["messages"] = append(messages, overrideMsg)
+
+	reencoded, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return reencoded
 }

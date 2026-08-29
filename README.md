@@ -82,6 +82,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **🛡️ Response Quality Validation & Delayed Headers**: Peeks initial SSE stream chunks before committing `HTTP 200` headers to enable transparent cloud failover if a local model returns an empty payload or unexpected termination.
 * **📐 Model Context Window Guard (`max_context`)**: Evaluates model physical context limits with O(1) pre-guards to prevent 400 Context Length Exceeded errors.
 * **🛡️ Agentic Tool Fallback Shield**: Sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
+* **🎸 Cycle Killer (In-Flight Stream Defense)**: Active dual-phase inference guard (*"Qu'est-ce que c'est?"*) tracking sliding N-gram windows (6-word window, 64-bit FNV-1a hash map) and non-tool prose budgets. Murders circular deliberation loops and runaway monologues in $<3$ seconds before they burn GPU compute, triggering local self-correction (`[SYSTEM OVERRIDE]` @ $0.00) or clean cloud failover.
 * **🛠️ Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Llama Python `<|python_tag|>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown code fences, and Ollama/Qwen Bare JSON) into standard OpenAI `tool_calls` JSON structures via a modular Strategy Pipeline.
 * **🔒 Inbound Gateway Client Authentication**: Secures LAN and remote endpoints with optional Bearer token authentication while preserving a public `/health` endpoint.
 * **🌶️ HotSauce Directives (In-Prompt Routing)**: Splash heat onto any prompt turn to override routing (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) or query daemon metadata (`@nacho:help`, `@nacho:tiers`, `@nacho:status`, `@nacho:deals`) with < 7ns zero-alloc bailout, $0.00 cost, and strict fallback bypass.
@@ -90,7 +91,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **🏷️ Dynamic Version Reporting**: Exposes build version across `/health`, `/v1/health`, and CLI (`nacho-flow version`, `-v`).
 * **💾 Persistent Telemetry Store**: Saves cumulative token counts and estimated cost metrics to disk (`~/.config/nacho-flow/stats.json`).
 <!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (96.4% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.2% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 * **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 * **📦 Zero Dependencies**: Single static binary with zero CGO or Python requirements (`CGO_ENABLED=0`).

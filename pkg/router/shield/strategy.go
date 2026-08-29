@@ -35,9 +35,28 @@ func (s *AskFollowupStrategy) ToolName() string {
 }
 
 func (s *AskFollowupStrategy) SynthesizeArgs(content string) (string, error) {
-	b, err := json.Marshal(map[string]string{
+	// Build a universal payload compatible with ALL agent clients:
+	// - Zoo Code / Roo Code require "follow_up" array of {text, mode} objects
+	// - Cline requires "options" array of strings
+	// By including BOTH fields, the payload satisfies every client's schema validator.
+	type followUpOption struct {
+		Text string  `json:"text"`
+		Mode *string `json:"mode"` // null in JSON
+	}
+
+	payload := map[string]interface{}{
 		"question": content,
-	})
+		"follow_up": []followUpOption{
+			{Text: "Yes, proceed with this plan.", Mode: nil},
+			{Text: "No, let me make changes first.", Mode: nil},
+		},
+		"options": []string{
+			"Yes, proceed with this plan.",
+			"No, let me make changes first.",
+		},
+	}
+
+	b, err := json.Marshal(payload)
 	return string(b), err
 }
 

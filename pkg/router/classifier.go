@@ -105,6 +105,9 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 		}
 	}
 
+	// 2.5 Scan trailing messages for error patterns and tool progress
+	reqCtx.HistoryErrors, reqCtx.HasToolProgress = scanTrailingMessages(messages)
+
 	// 3. Approximate token count using adaptive TokenEstimator
 	allText := fullText.String()
 	estimator := c.GetEstimator()
@@ -136,6 +139,123 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	reqCtx.Keywords = extractKeywords(keywordSource)
 
 	return reqCtx, nil
+}
+
+// agentErrorSignatures are known error patterns injected by agent clients
+// (Zoo Code, Cline, Roo Code) into conversation history when a tool call fails.
+var agentErrorSignatures = []string{
+	"[ERROR] You did not use a tool",
+	"Missing value for required parameter",
+	"The tool execution failed",
+	"<error_details>",
+	"No sufficiently similar match found",
+	"Command failed with exit code",
+	"Please retry with complete response",
+}
+
+// scanTrailingMessages inspects the last N messages in the conversation history
+// to detect: (a) consecutive trailing error turns, and (b) successful tool progress.
+//
+// Returns:
+//   - historyErrors: count of consecutive trailing error messages (from the end)
+//   - hasToolProgress: true if any recent message contains successful tool_result content
+func scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool) {
+	// Scan backwards from the end, up to 6 messages
+	start := len(messages) - 6
+	if start < 0 {
+		start = 0
+	}
+
+	// First pass: detect tool progress (any successful tool result in trailing messages)
+	for i := start; i < len(messages); i++ {
+		msgMap, ok := messages[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := msgMap["role"].(string)
+
+		// Successful tool results indicate forward progress
+		if role == "tool" {
+			hasToolProgress = true
+		}
+
+		// Check for multi-part content with tool_result type (Anthropic format)
+		if parts, ok := msgMap["content"].([]interface{}); ok {
+			for _, part := range parts {
+				partMap, ok := part.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				partType, _ := partMap["type"].(string)
+				if partType == "tool_result" {
+					// Check if this tool result is an error
+					isError, _ := partMap["is_error"].(bool)
+					if !isError {
+						hasToolProgress = true
+					}
+				}
+			}
+		}
+	}
+
+	// Second pass: count consecutive trailing errors (from the end, backwards)
+	for i := len(messages) - 1; i >= start; i-- {
+		msgMap, ok := messages[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := msgMap["role"].(string)
+
+		// Only user-role messages carry error feedback from agent clients
+		if role != "user" {
+			continue
+		}
+
+		text := extractAllTextFromContent(msgMap["content"])
+		foundError := false
+		for _, sig := range agentErrorSignatures {
+			if strings.Contains(text, sig) {
+				foundError = true
+				break
+			}
+		}
+
+		if foundError {
+			historyErrors++
+		} else {
+			// Break consecutive error chain on a non-error user message
+			break
+		}
+	}
+
+	return historyErrors, hasToolProgress
+}
+
+// extractAllTextFromContent extracts all text from a content field,
+// handling both plain string and multi-part array formats.
+func extractAllTextFromContent(content interface{}) string {
+	if s, ok := content.(string); ok {
+		return s
+	}
+	if parts, ok := content.([]interface{}); ok {
+		var sb strings.Builder
+		for _, part := range parts {
+			partMap, ok := part.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if text, ok := partMap["text"].(string); ok {
+				sb.WriteString(text)
+				sb.WriteString(" ")
+			}
+			if contentStr, ok := partMap["content"].(string); ok {
+				sb.WriteString(contentStr)
+				sb.WriteString(" ")
+			}
+		}
+		return sb.String()
+	}
+	return ""
 }
 
 func extractKeywords(text string) []string {

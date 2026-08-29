@@ -16,6 +16,7 @@ The **Nacho Flow VS Code Extension** provides real-time cost visibility, visual 
 
 2. **Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`)**:
    - **Cost & Token Telemetry**: Live cards showing Total Spend, Total Savings, Savings Percentage, and Total Request count.
+   - **Cycle Killer Defense Metrics**: Real-time counter of murdied loops, avoided runaway GPU compute minutes, and $0.00 local self-healing rate.
    - **Live Route Inspector**: Inspect the last 500 LLM requests in-memory with zero disk latency. See exact routing reasons, tokens, latency, cost, and provider.
    - **Interactive Circuit Breaker Control**: View live health, error trip counters, and reset tripped circuits with one click.
    - **Hot-Reloading Configuration Editor**: Edit `config.yaml` live in VS Code with instant syntax validation and hot-reload.

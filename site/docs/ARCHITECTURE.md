@@ -74,7 +74,12 @@ Every incoming request passes through an optimized multi-stage processing pipeli
   - Meta queries bypass upstream LLMs entirely ($0.00 cost, 0 tokens) and are handled in-process by strategy handlers (`MetaCommandHandler`).
   - Serialized via `JSONMetaPresenter` (OpenAI `chat.completion`) or `SSEMetaPresenter` (OpenAI `chat.completion.chunk` event streams).
   - Integrated with Levenshtein typo suggestion and sliding-window anti-abuse debounce.
-- **Session Retry Tracking**: Computes an FNV-1a hash of the initial conversation prompt prefix to correlate prompt turns within a sliding 5-minute window. Increments a turn retry counter on consecutive turns with identical prefixes without detached goroutines (lazy TTL eviction).
+- **Agentic Progress Awareness & Session Retry Tracking (`pkg/router/session.go`)**:
+  - Computes an FNV-1a hash of the initial conversation prompt prefix to correlate prompt turns within a sliding 5-minute window.
+  - **Tool Progress Gate (`hasToolProgress`)**: In multi-step autonomous agent loops (where the latest user prompt string remains identical across dozens of file reads/writes), the session tracker detects intermediate successful tool executions (`role: tool` / `tool_result`) and resets `RetriesCount = 0`, preventing false retry escalation.
+- **In-History Trailing Error Scanner (`pkg/router/classifier.go`)**:
+  - Scans the trailing messages in conversation history for known client error signatures (`[ERROR] You did not use a tool`, `Missing value for required parameter`, `<error_details>`, `No sufficiently similar match found`, etc.).
+  - Extracts consecutive error counts (`HistoryErrors`) and overrides `reqCtx.Retries`, triggering automatic rule-based tier escalation to DeepSeek R1 (Tier 3) or Claude Sonnet 5 (Tier 4) to self-heal without requiring custom client HTTP headers.
 - **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities without underestimating payloads.
 - **Multimodal Detection**: Scans message blocks for `image_url` payloads and base64 strings (`HasImages`).
 - **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`), extracting declared interactive tools (`ask_followup_question`, `ask_question`).
@@ -94,6 +99,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 
 ### Stage 4: Circuit-Breaker-Aware Dispatch & Strict Fallback Bypass (`pkg/server/proxy.go`, `pkg/provider/circuit_breaker.go`)
 - Resolves the target provider from the `provider.Registry`.
+- **Escalation Budget & Anti-Runaway Protection**: When requests route to the `DefaultTier` (Frontier Powerhouse / Claude Sonnet 5), `RecordEscalation` enforces a hard ceiling of `MaxEscalationTurns = 3`. If an error proves unfixable after 3 consecutive frontier turns, the proxy automatically de-escalates to Tier 2 (Gemini Flash), capping worst-case failure costs at ~**$0.21**.
 - **Forced Directive Fallback Bypass**: If a user explicitly requested a tier or model via directive and its provider circuit breaker is OPEN, the proxy does **not** silently fall through to cloud; it immediately returns an OpenAI-wire-compliant zero-cost chat alert (`RenderCircuitBlocked`).
 - **Standard Routing Circuit Breaker**: For automatic rule evaluations, if `cb.AllowRequest()` fails, the proxy bypasses the primary provider with 0ms dial delay and immediately dispatches to the default fallback tier.
 - Using zero-allocation interface assertions:
@@ -133,8 +139,17 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **The Problem**: Rigid agent harnesses (Zoo Code, Cline) enforce a 0-turn error policy (`"You did not use a tool!"`). Local models answering questions or mode proposals in prose trigger 3-strike task abortions.
 - **Zero-Allocation Tail Buffer (`tail_buffer.go`)**: Maintains a 256-byte circular ring buffer across streaming responses using `sync.Pool` recycling.
 - **Rule Engine & Heuristic Guards (`rule_engine.go`)**: Evaluates prose endings in $4.67\text{ ns}$ for question marks (`?`), approval heuristics (*"Are you satisfied"*, *"Would you like"*), or mode switches (*"switch to code mode"*).
-- **Strategy Schema Synthesis (`strategy.go`)**: Generates compliant tool calls for `ask_followup_question`, `ask_question`, or `switch_mode`.
+- **Universal Dual-Schema Strategy Synthesis (`strategy.go`)**: Generates compliant tool calls for `ask_followup_question`, `ask_question`, or `switch_mode`. Emits both `follow_up: [...]` (Zoo Code / Roo Code) and `options: [...]` (Cline) simultaneously to satisfy all extension schema validators without error loops.
 - **Pre-`[DONE]` Stream Delta Injection (`stream_normalizer.go`)**: If upstream finishes without emitting native tool calls, the shield emits a synthetic `tool_calls` chunk with `finish_reason: "tool_calls"` immediately before streaming `data: [DONE]`.
+
+### Stage 5e: 🎸 Cycle Killer: Two-Phase In-Flight Stream Defense (`pkg/router/shield/cycle_breaker.go`)
+- **The Problem ("Qu'est-ce que c'est?")**: Local models (e.g. 12B/14B QAT on ROCm) in complex agentic tool-calling sessions can get trapped in circular deliberation loops or generate 4-minute runaway prose monologues without calling tools. Post-turn defenses fail to stop mid-stream GPU burn.
+- **Dual-Trigger Detection Engine**:
+  1. **Sliding N-Gram Repetition Detector**: Tracks a rolling 6-word window using 64-bit FNV-1a hashing. If the same 6-word sequence repeats $\ge 3$ times, it trips in **< 3 seconds** (< 30 tokens).
+  2. **Prose Token Soft Ceiling**: Counts non-thinking, non-tool words against `max_prose_tokens` (default 800) during agentic turns (`HasTools == true`), while keeping `<think>` reasoning tags 100% exempt.
+- **Two-Phase Stream Defense Architecture**:
+  - **Phase 1: Pre-Header Adaptive Defense (2KB Peek Buffer)**: If a loop or monologue budget breach occurs before HTTP headers are committed, Nacho Flow cleanly aborts the stream, appends an authoritative `[SYSTEM OVERRIDE]` prompt (*"You produced excessive reasoning without calling any tools. Stop planning. Execute immediately. Call the appropriate tool NOW with the correct arguments. Do not explain your reasoning."*), and re-dispatches synchronously to the same local model. Incurred cost remains **$0.00**. On repeated breach, it transparently fails over to Tier 2 (Gemini Flash Cloud).
+  - **Phase 2: Active Mid-Stream Circuit Severing**: During active HTTP chunk streaming, `proxy.go` checks for cycle violations **before** writing chunks to the client. Upon violation, it immediately severs the upstream GPU connection (`resp.Body.Close()`), swallows the degenerate repeating chunk, and emits a clean terminal SSE finish sequence (`finish_reason: "stop"` followed by `data: [DONE]`), saving 4+ minutes of GPU lockup and unblocking the downstream agent in $<2$ seconds.
 
 ### Stage 6: Telemetry Calibration & Lock-Free Pricing (`pkg/router/estimator.go`, `pkg/telemetry/pricing.go`)
 - **Estimator Dynamic Calibration**: If upstream returns `usage.prompt_tokens`, calibrates the local `TokenEstimator` ratio in real time using lock-free atomic pointer swaps.

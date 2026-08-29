@@ -237,8 +237,9 @@ default_tier:
   when: "true"
 
 # 🛡️ Agentic Tool Fallback Shield
-# Intercepts conversational plans & questions from local models in Zoo Code / Cline
-# and auto-synthesizes schema-compliant tool calls to prevent 3-strike deadlocks.
+# Intercepts conversational plans & questions from local models in Zoo Code / Cline / Roo Code
+# and auto-synthesizes schema-compliant tool calls (supporting both follow_up and options arrays)
+# to prevent 3-strike deadlocks across all extensions.
 agent_shield:
   enabled: true
   tail_buffer_bytes: 256
@@ -254,6 +255,17 @@ agent_shield:
     - "switch to code mode"
     - "switch to architect mode"
     - "ready to implement"
+
+# 🎸 Cycle Killer: In-Flight Stream Defense (Qu'est-ce que c'est?)
+# Intercepts mid-stream repetition loops (<3s) and runaway prose monologues.
+# Stage 1: Injects [SYSTEM OVERRIDE] prompt and retries local model ($0.00).
+# Stage 2: Transparently fails over to cloud default tier if local retry loops again.
+cycle_killer:
+  enabled: true
+  max_prose_tokens: 800
+  repetition_window: 6
+  repetition_threshold: 3
+  max_retries: 1
 ```
 
 ---
@@ -263,7 +275,8 @@ agent_shield:
 By default, Nacho Flow acts as an intelligent proxy that actively optimizes and sanitizes LLM streams:
 1. **Universal Tool Normalizer**: Converts 8 raw tool formats (Hermes XML, Mistral arrays, bare JSON, Markdown fences) into OpenAI-standard `tool_calls`.
 2. **Reasoning Stream Formatter**: Formats raw `<|im_start|>think` and `<thinking>` streams into `<think>...</think>` tags for IDE UI accordions.
-3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline and synthesizes `ask_followup_question` tool calls to prevent agent deadlocks.
+3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline / Roo Code and synthesizes dual-schema `ask_followup_question` / `ask_question` tool calls to prevent agent deadlocks.
+4. **Anti-Runaway Escalation Budget**: Caps consecutive frontier tier executions at `MaxEscalationTurns = 3` before automatically de-escalating to cloud workhorse tiers.
 
 However, different workflows and engineering personas require different levels of proxy intervention. Nacho Flow provides granular controls to selectively tune or completely bypass these transformations.
 
