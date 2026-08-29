@@ -196,6 +196,62 @@
 				</div>
 			`;
 		}
+
+		renderCycleKiller(stats.cycle_killer);
+	}
+
+	function renderCycleKiller(ck) {
+		const ckContent = document.getElementById('cycle-killer-content');
+		if (!ckContent) return;
+		if (!ck) {
+			ckContent.innerHTML = '<div class="loading">No Cycle Killer telemetry recorded yet.</div>';
+			return;
+		}
+
+		const totalInterventions = ck.total_interventions || 0;
+		const avoidedTokens = ck.avoided_runaway_tokens || 0;
+		const avoidedGPUSeconds = ck.avoided_gpu_seconds || 0;
+		const stage1Heals = ck.stage1_local_heals || 0;
+		const stage2Escalations = ck.stage2_cloud_escalations || 0;
+		const healRate = ck.local_heal_success_rate_pct !== undefined
+			? ck.local_heal_success_rate_pct
+			: (totalInterventions > 0 ? (stage1Heals / totalInterventions) * 100 : 0);
+
+		const gpuMinutes = (avoidedGPUSeconds / 60).toFixed(1);
+		const avoidedTokensStr = avoidedTokens >= 1000000
+			? (avoidedTokens / 1000000).toFixed(1) + 'M'
+			: (avoidedTokens >= 1000 ? (avoidedTokens / 1000).toFixed(0) + 'k' : avoidedTokens.toString());
+
+		ckContent.innerHTML = `
+			<div class="cycle-killer-grid">
+				<div class="ck-item highlight">
+					<div class="ck-value">${totalInterventions} <span class="ck-unit">Loops</span></div>
+					<div class="ck-label">🛡️ Interventions Executed</div>
+					<div class="ck-sub">Runaway monologues & deliberation loops intercepted</div>
+				</div>
+				<div class="ck-item gpu-chip">
+					<div class="ck-value">${gpuMinutes} <span class="ck-unit">Min</span></div>
+					<div class="ck-label">⏱️ GPU Lockup Rescued</div>
+					<div class="ck-sub">Compute saved from infinite token generation</div>
+				</div>
+				<div class="ck-item token-chip">
+					<div class="ck-value">${avoidedTokensStr} <span class="ck-unit">Tokens</span></div>
+					<div class="ck-label">🪙 Avoided Runaway Tokens</div>
+					<div class="ck-sub">$0.00 compute waste prevented before context burn</div>
+				</div>
+				<div class="ck-item heal-chip">
+					<div class="ck-value">${Math.round(healRate)}% <span class="ck-unit">(${stage1Heals}/${totalInterventions})</span></div>
+					<div class="ck-label">⚡ Stage 1 Local Heal Rate</div>
+					<div class="ck-sub">Steered with [SYSTEM OVERRIDE] @ $0.00</div>
+				</div>
+			</div>
+			<div class="ck-footer-row">
+				<div class="ck-status-pill ${totalInterventions > 0 ? 'active' : 'idle'}">
+					<span class="status-dot"></span>
+					${totalInterventions > 0 ? `${totalInterventions} Loops Murdied &bull; Stage 2 Escalations: ${stage2Escalations}` : 'Watchdog Active &bull; 0 Degeneracies Detected'}
+				</div>
+			</div>
+		`;
 	}
 
 	function updateDeals(dealsData) {
@@ -333,12 +389,13 @@
 			const isLocal = route.is_local ? 'badge-local' : 'badge-cloud';
 			const badgeText = route.is_local ? 'Local' : 'Cloud';
 			const fallbackBadge = route.is_fallback ? '<span class="badge badge-fallback">Fallback</span>' : '';
+			const cycleBadge = route.cycle_breaker_triggered ? '<span class="badge badge-cycle" title="Cycle Killer Intercepted: ' + (route.cycle_breaker_reason || 'runaway loop') + '">🛡️ Intercepted</span>' : '';
 			
 			return `
 				<tr>
 					<td>${new Date(route.timestamp).toLocaleTimeString()}</td>
 					<td><strong>${route.selected_tier}</strong></td>
-					<td><span class="badge ${isLocal}">${badgeText}</span> ${fallbackBadge}</td>
+					<td><span class="badge ${isLocal}">${badgeText}</span> ${fallbackBadge} ${cycleBadge}</td>
 					<td>${(route.tokens || 0).toLocaleString()}</td>
 					<td>${(route.latency_ms || 0).toFixed(0)}ms</td>
 					<td class="saved-val">+$${(route.cost_saved_usd || 0).toFixed(4)}</td>

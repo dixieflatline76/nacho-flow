@@ -754,3 +754,131 @@ body {
 .btn-glow:hover {
 	box-shadow: 0 0 16px rgba(59, 130, 246, 0.6);
 }
+
+/* ==========================================================================
+   Cycle Killer Defense Panel & Badges
+   ========================================================================== */
+.cycle-killer-panel {
+	grid-column: span 1;
+}
+
+.cycle-killer-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 12px;
+}
+
+.ck-item {
+	background-color: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-widget-border, #333);
+	border-radius: 8px;
+	padding: 12px 10px;
+	text-align: center;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	transition: all 0.2s ease;
+}
+
+.ck-item.highlight {
+	border-color: #ef4444;
+	background: rgba(239, 68, 68, 0.08);
+}
+
+.ck-item.gpu-chip {
+	border-color: #f97316;
+	background: rgba(249, 115, 22, 0.08);
+}
+
+.ck-item.token-chip {
+	border-color: #3b82f6;
+	background: rgba(59, 130, 246, 0.08);
+}
+
+.ck-item.heal-chip {
+	border-color: #10b981;
+	background: rgba(16, 185, 129, 0.08);
+}
+
+.ck-value {
+	font-size: 20px;
+	font-weight: 700;
+	color: var(--vscode-foreground);
+	margin-bottom: 2px;
+	line-height: 1.2;
+}
+
+.ck-item.highlight .ck-value {
+	color: #ef4444;
+}
+
+.ck-item.gpu-chip .ck-value {
+	color: #f97316;
+}
+
+.ck-item.token-chip .ck-value {
+	color: #3b82f6;
+}
+
+.ck-item.heal-chip .ck-value {
+	color: #10b981;
+}
+
+.ck-unit {
+	font-size: 13px;
+	font-weight: 500;
+	opacity: 0.9;
+}
+
+.ck-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-top: 2px;
+}
+
+.ck-sub {
+	font-size: 10px;
+	color: var(--vscode-descriptionForeground);
+	margin-top: 3px;
+}
+
+.ck-footer-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: 12px;
+	padding-top: 8px;
+	border-top: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.08));
+}
+
+.ck-status-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	font-weight: 500;
+}
+
+.ck-status-pill .status-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background-color: #10b981;
+}
+
+.ck-status-pill.active .status-dot {
+	background-color: #ef4444;
+	box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+
+.badge-cycle {
+	background: rgba(239, 68, 68, 0.2);
+	color: #f87171;
+	border: 1px solid rgba(239, 68, 68, 0.4);
+}
