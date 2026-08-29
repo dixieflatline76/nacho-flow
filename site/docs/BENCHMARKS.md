@@ -219,7 +219,7 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.0%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **94.7%** |
 | `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.5%** |
-| `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **93.8%** |
+| `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **94.0%** |
 | `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **93.7%** |
 <!-- COVERAGE:GO_TABLE_END -->
 

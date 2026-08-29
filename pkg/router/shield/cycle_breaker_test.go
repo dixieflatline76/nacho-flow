@@ -59,24 +59,45 @@ func TestCycleBreaker_ProseTokenCeiling(t *testing.T) {
 		Enabled:             &enabled,
 		MaxProseTokens:      50,
 		RepetitionWindow:    6,
-		RepetitionThreshold: 5,
+		RepetitionThreshold: 5, // High threshold so ngram loop doesn't fire first
 	})
 
-	var triggered bool
-	var reason string
+	// Send unique words - should NOT trigger because maxNgramFreq stays 0
 	for i := 0; i < 100; i++ {
 		word := fmt.Sprintf("uniqueWord%d ", i)
-		triggered, reason = cb.ProcessDelta(word, false)
+		triggered, reason := cb.ProcessDelta(word, false)
+		if triggered {
+			t.Fatalf("unique words should never trigger cooperative budget check, got reason: %s at word %d", reason, i)
+		}
+	}
+}
+
+func TestCycleBreaker_CooperativeProseBudget(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxProseTokens:      200,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 100, // Set very high so ngram loop never fires
+	})
+
+	// Send semi-repetitive content: same phrase interspersed with unique words
+	// This will build up N-gram frequency >= 2 but below repetition threshold
+	var triggered bool
+	var reason string
+	for round := 0; round < 50; round++ {
+		cb.ProcessDelta(fmt.Sprintf("unique prefix number %d ", round), false)
+		triggered, reason = cb.ProcessDelta("the quick brown fox jumps over ", false)
 		if triggered {
 			break
 		}
 	}
 
 	if !triggered {
-		t.Fatalf("expected cycle breaker to trigger on prose token ceiling")
+		t.Fatalf("expected cooperative budget to trigger on semi-repetitive content exceeding budget")
 	}
-	if reason != "prose_token_budget_exceeded" {
-		t.Fatalf("expected prose_token_budget_exceeded, got %s", reason)
+	if reason != "prose_budget_exceeded_with_repetition" {
+		t.Fatalf("expected prose_budget_exceeded_with_repetition, got %s", reason)
 	}
 }
 
@@ -85,30 +106,50 @@ func TestCycleBreaker_ThinkingTokenBudget(t *testing.T) {
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:                     &enabled,
 		MaxThinkingTokens:           60,
-		ThinkingRepetitionThreshold: 10,
+		ThinkingRepetitionThreshold: 10, // High threshold so loop doesn't fire first
+	})
+
+	// Send unique words - should NOT trigger cooperative budget
+	for i := 0; i < 100; i++ {
+		word := fmt.Sprintf("thinkingStepNumber%d ", i)
+		triggered, reason := cb.ProcessDelta(word, true)
+		if triggered {
+			t.Fatalf("unique thinking words should never trigger cooperative budget, got reason: %s at word %d", reason, i)
+		}
+	}
+
+	if cb.ThinkingTokens() == 0 {
+		t.Fatalf("expected ThinkingTokens() > 0, got %d", cb.ThinkingTokens())
+	}
+	if cb.ProseTokens() != 0 {
+		t.Fatalf("expected ProseTokens() == 0 during thinking, got %d", cb.ProseTokens())
+	}
+}
+
+func TestCycleBreaker_CooperativeThinkingBudget(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:                     &enabled,
+		MaxThinkingTokens:           200,
+		RepetitionWindow:            6,
+		ThinkingRepetitionThreshold: 100, // Set very high so loop never fires
 	})
 
 	var triggered bool
 	var reason string
-	for i := 0; i < 100; i++ {
-		word := fmt.Sprintf("thinkingStepNumber%d ", i)
-		triggered, reason = cb.ProcessDelta(word, true)
+	for round := 0; round < 50; round++ {
+		cb.ProcessDelta(fmt.Sprintf("unique thinking step %d ", round), true)
+		triggered, reason = cb.ProcessDelta("let me reconsider this approach carefully ", true)
 		if triggered {
 			break
 		}
 	}
 
 	if !triggered {
-		t.Fatalf("expected cycle breaker to trigger on thinking token ceiling")
+		t.Fatalf("expected cooperative thinking budget to trigger on semi-repetitive content exceeding budget")
 	}
-	if reason != "thinking_budget_exceeded" {
-		t.Fatalf("expected thinking_budget_exceeded, got %s", reason)
-	}
-	if cb.ThinkingTokens() == 0 {
-		t.Fatalf("expected ThinkingTokens() > 0, got %d", cb.ThinkingTokens())
-	}
-	if cb.ProseTokens() != 0 {
-		t.Fatalf("expected ProseTokens() == 0 during thinking, got %d", cb.ProseTokens())
+	if reason != "thinking_budget_exceeded_with_repetition" {
+		t.Fatalf("expected thinking_budget_exceeded_with_repetition, got %s", reason)
 	}
 }
 

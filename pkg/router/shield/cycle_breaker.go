@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultMaxProseTokens              = 4096
-	defaultMaxThinkingTokens           = 2048
+	defaultMaxThinkingTokens           = 1500
 	defaultRepetitionWindow            = 6
 	defaultRepetitionThreshold         = 3
 	defaultThinkingRepetitionThreshold = 5
@@ -32,16 +32,18 @@ type CycleBreaker struct {
 	correctionPrompt            string
 
 	// Prose lane state
-	words       []string
-	ngramCounts map[uint64]int
-	proseTokens int
-	pendingWord strings.Builder
+	words        []string
+	ngramCounts  map[uint64]int
+	proseTokens  int
+	maxNgramFreq int
+	pendingWord  strings.Builder
 
 	// Thinking lane state (isolated)
-	thinkingWords       []string
-	thinkingNgramCounts map[uint64]int
-	thinkingTokens      int
-	thinkingPendingWord strings.Builder
+	thinkingWords        []string
+	thinkingNgramCounts  map[uint64]int
+	thinkingTokens       int
+	maxThinkingNgramFreq int
+	thinkingPendingWord  strings.Builder
 }
 
 // NewCycleBreaker initializes a CycleBreaker instance with provided or default configuration.
@@ -133,11 +135,13 @@ func (cb *CycleBreaker) Reset() {
 	cb.words = cb.words[:0]
 	cb.ngramCounts = make(map[uint64]int)
 	cb.proseTokens = 0
+	cb.maxNgramFreq = 0
 	cb.pendingWord.Reset()
 
 	cb.thinkingWords = cb.thinkingWords[:0]
 	cb.thinkingNgramCounts = make(map[uint64]int)
 	cb.thinkingTokens = 0
+	cb.maxThinkingNgramFreq = 0
 	cb.thinkingPendingWord.Reset()
 }
 
@@ -170,8 +174,8 @@ func (cb *CycleBreaker) ProcessDelta(content string, isThinking bool) (triggered
 			}
 		}
 
-		if cb.thinkingTokens > cb.maxThinkingTokens {
-			return true, "thinking_budget_exceeded"
+		if cb.thinkingTokens > cb.maxThinkingTokens && cb.maxThinkingNgramFreq >= 2 {
+			return true, "thinking_budget_exceeded_with_repetition"
 		}
 
 		return false, ""
@@ -194,8 +198,8 @@ func (cb *CycleBreaker) ProcessDelta(content string, isThinking bool) (triggered
 		}
 	}
 
-	if cb.proseTokens > cb.maxProseTokens {
-		return true, "prose_token_budget_exceeded"
+	if cb.proseTokens > cb.maxProseTokens && cb.maxNgramFreq >= 2 {
+		return true, "prose_budget_exceeded_with_repetition"
 	}
 
 	return false, ""
@@ -219,6 +223,9 @@ func (cb *CycleBreaker) addWord(word string) bool {
 	hashVal := h.Sum64()
 
 	cb.ngramCounts[hashVal]++
+	if cb.ngramCounts[hashVal] > cb.maxNgramFreq {
+		cb.maxNgramFreq = cb.ngramCounts[hashVal]
+	}
 	return cb.ngramCounts[hashVal] >= cb.repetitionThreshold
 }
 
@@ -239,5 +246,8 @@ func (cb *CycleBreaker) addThinkingWord(word string) bool {
 	hashVal := h.Sum64()
 
 	cb.thinkingNgramCounts[hashVal]++
+	if cb.thinkingNgramCounts[hashVal] > cb.maxThinkingNgramFreq {
+		cb.maxThinkingNgramFreq = cb.thinkingNgramCounts[hashVal]
+	}
 	return cb.thinkingNgramCounts[hashVal] >= cb.thinkingRepetitionThreshold
 }
