@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	defaultMaxProseTokens              = 800
-	defaultMaxThinkingTokens           = 1500
+	defaultMaxProseTokens              = 4096
+	defaultMaxThinkingTokens           = 2048
 	defaultRepetitionWindow            = 6
 	defaultRepetitionThreshold         = 3
 	defaultThinkingRepetitionThreshold = 5
