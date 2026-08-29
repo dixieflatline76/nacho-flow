@@ -759,20 +759,20 @@ body {
    Cycle Killer Defense Panel & Badges
    ========================================================================== */
 .cycle-killer-panel {
-	grid-column: span 1;
+	grid-column: span 2;
 }
 
 .cycle-killer-grid {
 	display: grid;
-	grid-template-columns: repeat(2, 1fr);
-	gap: 12px;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 16px;
 }
 
 .ck-item {
 	background-color: var(--vscode-editor-background);
 	border: 1px solid var(--vscode-widget-border, #333);
 	border-radius: 8px;
-	padding: 12px 10px;
+	padding: 16px 12px;
 	text-align: center;
 	display: flex;
 	flex-direction: column;
@@ -803,10 +803,10 @@ body {
 }
 
 .ck-value {
-	font-size: 20px;
+	font-size: 26px;
 	font-weight: 700;
 	color: var(--vscode-foreground);
-	margin-bottom: 2px;
+	margin-bottom: 4px;
 	line-height: 1.2;
 }
 
@@ -827,13 +827,13 @@ body {
 }
 
 .ck-unit {
-	font-size: 13px;
+	font-size: 15px;
 	font-weight: 500;
 	opacity: 0.9;
 }
 
 .ck-label {
-	font-size: 11px;
+	font-size: 12px;
 	font-weight: 600;
 	color: var(--vscode-foreground);
 	text-transform: uppercase;
@@ -842,9 +842,9 @@ body {
 }
 
 .ck-sub {
-	font-size: 10px;
+	font-size: 11px;
 	color: var(--vscode-descriptionForeground);
-	margin-top: 3px;
+	margin-top: 4px;
 }
 
 .ck-footer-row {

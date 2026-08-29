@@ -94,6 +94,11 @@ export class DashboardPanel {
 				<div id="stats-content">Loading...</div>
 			</div>
 
+			<div class="panel cycle-killer-panel">
+				<h2>🛡️ Cycle Killer Defense & Reliability (Qu'est-ce que c'est?)</h2>
+				<div id="cycle-killer-content">Loading defense telemetry...</div>
+			</div>
+
 			<div class="panel routes-panel">
 				<h2>🛣️ Recent Routes</h2>
 				<div id="routes-content">Loading...</div>
@@ -133,10 +138,6 @@ export class DashboardPanel {
 				<div class="panel circuits-panel">
 					<h2>🔌 Provider Circuit Breakers & 0ms Failover</h2>
 					<div id="circuits-content">Loading...</div>
-				</div>
-				<div class="panel cycle-killer-panel">
-					<h2>🛡️ Cycle Killer Defense & Reliability (Qu'est-ce que c'est?)</h2>
-					<div id="cycle-killer-content">Loading defense telemetry...</div>
 				</div>
 				<div class="panel config-panel">
 					<h2>📝 Active Tier Policies</h2>
