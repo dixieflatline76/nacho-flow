@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { ExtensionController } from './controller';
 import { AuthManager } from './config/auth-manager';
 import { RestClient } from './api/client';
@@ -375,11 +376,26 @@ describe('ExtensionController', () => {
       expect(vscode.window.showTextDocument).toHaveBeenCalled();
     });
 
-    it('should open workspace config.yaml if restClient fails', async () => {
+    it('should open standard OS config.yaml if restClient fails and standard path exists', async () => {
+      (extensionController as any).restClient = null;
+      jest.spyOn(extensionController, 'getStandardConfigPaths').mockReturnValue(['/mock/standard/config.yaml']);
+      jest.spyOn(extensionController, 'fileExists').mockImplementation((p) => p === '/mock/standard/config.yaml');
+      (vscode.workspace.openTextDocument as jest.Mock) = jest.fn().mockResolvedValue({ uri: '/mock/standard/config.yaml' });
+      (vscode.window.showTextDocument as jest.Mock) = jest.fn().mockResolvedValue({});
+
+      await (extensionController as any).showConfigEditor();
+
+      expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
+      expect(vscode.window.showTextDocument).toHaveBeenCalled();
+    });
+
+    it('should open workspace config.yaml if restClient fails and no standard path exists', async () => {
       const mockRestClient = {
         getConfigYaml: jest.fn().mockRejectedValue(new Error('Network error'))
       };
       (extensionController as any).restClient = mockRestClient;
+      jest.spyOn(extensionController, 'getStandardConfigPaths').mockReturnValue([]);
+      jest.spyOn(extensionController, 'fileExists').mockReturnValue(false);
       (vscode.workspace.findFiles as jest.Mock) = jest.fn().mockResolvedValue([{ fsPath: '/test/config.yaml' }]);
       (vscode.workspace.openTextDocument as jest.Mock) = jest.fn().mockResolvedValue({ uri: '/test/config.yaml' });
       (vscode.window.showTextDocument as jest.Mock) = jest.fn().mockResolvedValue({});
@@ -393,6 +409,8 @@ describe('ExtensionController', () => {
 
     it('should show warning message if config cannot be found anywhere', async () => {
       (extensionController as any).restClient = null;
+      jest.spyOn(extensionController, 'getStandardConfigPaths').mockReturnValue([]);
+      jest.spyOn(extensionController, 'fileExists').mockReturnValue(false);
       (vscode.workspace.findFiles as jest.Mock) = jest.fn().mockResolvedValue([]);
 
       await (extensionController as any).showConfigEditor();

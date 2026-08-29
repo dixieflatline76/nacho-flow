@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import * as http from 'http';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { AuthManager } from './config/auth-manager';
 import { RestClient } from './api/client';
 import { SSEClient } from './sse/client';
@@ -704,7 +707,28 @@ export class ExtensionController {
 
 	private activeConfigDocUri: vscode.Uri | null = null;
 
+	public getStandardConfigPaths(): string[] {
+		const home = os.homedir();
+		const paths: string[] = [];
+		if (process.platform === 'win32') {
+			const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+			paths.push(path.join(appData, 'nacho-flow', 'config.yaml'));
+		} else if (process.platform === 'darwin') {
+			paths.push(path.join(home, 'Library', 'Application Support', 'nacho-flow', 'config.yaml'));
+			paths.push(path.join(home, '.config', 'nacho-flow', 'config.yaml'));
+		} else {
+			paths.push(path.join(home, '.config', 'nacho-flow', 'config.yaml'));
+		}
+		paths.push(path.join(home, '.nacho-flow', 'config.yaml'));
+		return paths;
+	}
+
+	public fileExists(p: string): boolean {
+		return fs.existsSync(p);
+	}
+
 	private async showConfigEditor(): Promise<void> {
+		// 1. Try to fetch live configuration from running daemon REST API
 		if (this.restClient) {
 			try {
 				const yamlContent = await this.restClient.getConfigYaml();
@@ -725,12 +749,45 @@ export class ExtensionController {
 			} catch (_) {}
 		}
 
+		// 2. Check standard OS user config directory locations (macOS, Linux, Windows)
+		const standardPaths = this.getStandardConfigPaths();
+		for (const p of standardPaths) {
+			if (this.fileExists(p)) {
+				try {
+					const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(p));
+					this.activeConfigDocUri = doc.uri;
+					await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+					return;
+				} catch (_) {}
+			}
+		}
+
+		// 3. Search open workspace folders for local config.yaml
 		const files = await vscode.workspace.findFiles('**/config.yaml', '**/node_modules/**', 1);
 		if (files.length > 0) {
 			const doc = await vscode.workspace.openTextDocument(files[0]);
+			this.activeConfigDocUri = doc.uri;
 			await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
 			return;
 		}
+
+		// 4. If config does not exist anywhere, auto-bootstrap starter config.yaml
+		if (standardPaths.length > 0) {
+			const targetPath = standardPaths[0];
+			try {
+				const targetDir = path.dirname(targetPath);
+				if (!fs.existsSync(targetDir)) {
+					fs.mkdirSync(targetDir, { recursive: true });
+				}
+				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Intelligent Semantic AI Gateway & Multi-Tier Cost Optimizer\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "local"\n\n  openrouter:\n    base_url: "https://openrouter.ai/api/v1"\n    type: "cloud"\n    api_key: "ENV_OPENROUTER_API_KEY"\n`;
+				fs.writeFileSync(targetPath, starter, 'utf8');
+				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
+				this.activeConfigDocUri = doc.uri;
+				await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+				return;
+			} catch (_) {}
+		}
+
 		vscode.window.showWarningMessage('Nacho Flow: Unable to fetch config from daemon or workspace');
 	}
 
