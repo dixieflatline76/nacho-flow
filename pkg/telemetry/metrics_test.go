@@ -515,3 +515,188 @@ func TestStatsTracker_HTTPHandler(t *testing.T) {
 	// Double close should not panic
 	clampedTracker.Close()
 }
+
+func TestStatsTracker_CycleKiller_LocalHeal(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	tracker.Record(Observation{
+		Tier:                  1,
+		Tokens:                500,
+		IsLocal:               true,
+		IsFallback:            false,
+		CycleBreakerTriggered: true,
+		CycleBreakerReason:    "thinking_budget_exceeded",
+	})
+	tracker.Flush()
+
+	stats := tracker.GetStats()
+	if stats.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected 1 total intervention, got %d", stats.CycleKiller.TotalInterventions)
+	}
+	if stats.CycleKiller.Stage1LocalHeals != 1 {
+		t.Errorf("expected 1 stage 1 local heal, got %d", stats.CycleKiller.Stage1LocalHeals)
+	}
+	if stats.CycleKiller.Stage2CloudEscalations != 0 {
+		t.Errorf("expected 0 stage 2 cloud escalations, got %d", stats.CycleKiller.Stage2CloudEscalations)
+	}
+	if stats.CycleKiller.AvoidedRunawayTokens != 8000 {
+		t.Errorf("expected 8000 avoided tokens, got %d", stats.CycleKiller.AvoidedRunawayTokens)
+	}
+	expectedSeconds := int64(8000 / 35)
+	if stats.CycleKiller.AvoidedGPUSeconds != expectedSeconds {
+		t.Errorf("expected %d avoided GPU seconds, got %d", expectedSeconds, stats.CycleKiller.AvoidedGPUSeconds)
+	}
+	if stats.CycleKiller.LocalHealSuccessRatePct != 100.0 {
+		t.Errorf("expected 100.0%% local heal success rate, got %f", stats.CycleKiller.LocalHealSuccessRatePct)
+	}
+}
+
+func TestStatsTracker_CycleKiller_CloudEscalation(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	tracker.Record(Observation{
+		Tier:                  2,
+		Tokens:                500,
+		IsLocal:               false,
+		IsFallback:            true,
+		CycleBreakerTriggered: true,
+		CycleBreakerReason:    "prose_token_budget_exceeded",
+	})
+	tracker.Flush()
+
+	stats := tracker.GetStats()
+	if stats.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected 1 total intervention, got %d", stats.CycleKiller.TotalInterventions)
+	}
+	if stats.CycleKiller.Stage1LocalHeals != 0 {
+		t.Errorf("expected 0 stage 1 local heals, got %d", stats.CycleKiller.Stage1LocalHeals)
+	}
+	if stats.CycleKiller.Stage2CloudEscalations != 1 {
+		t.Errorf("expected 1 stage 2 cloud escalation, got %d", stats.CycleKiller.Stage2CloudEscalations)
+	}
+	if stats.CycleKiller.LocalHealSuccessRatePct != 0.0 {
+		t.Errorf("expected 0.0%% local heal success rate, got %f", stats.CycleKiller.LocalHealSuccessRatePct)
+	}
+}
+
+func TestStatsTracker_CycleKiller_HealRate(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	// 3 Local Heals
+	for i := 0; i < 3; i++ {
+		tracker.Record(Observation{
+			Tier:                  1,
+			IsLocal:               true,
+			IsFallback:            false,
+			CycleBreakerTriggered: true,
+		})
+	}
+	// 1 Cloud Escalation
+	tracker.Record(Observation{
+		Tier:                  2,
+		IsLocal:               false,
+		IsFallback:            true,
+		CycleBreakerTriggered: true,
+	})
+	tracker.Flush()
+
+	stats := tracker.GetStats()
+	if stats.CycleKiller.TotalInterventions != 4 {
+		t.Errorf("expected 4 total interventions, got %d", stats.CycleKiller.TotalInterventions)
+	}
+	if stats.CycleKiller.Stage1LocalHeals != 3 {
+		t.Errorf("expected 3 stage 1 local heals, got %d", stats.CycleKiller.Stage1LocalHeals)
+	}
+	if stats.CycleKiller.Stage2CloudEscalations != 1 {
+		t.Errorf("expected 1 stage 2 cloud escalation, got %d", stats.CycleKiller.Stage2CloudEscalations)
+	}
+	if stats.CycleKiller.LocalHealSuccessRatePct != 75.0 {
+		t.Errorf("expected 75.0%% local heal success rate, got %f", stats.CycleKiller.LocalHealSuccessRatePct)
+	}
+}
+
+func TestStatsTracker_CycleKiller_ZeroDivision(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	stats := tracker.GetStats()
+	if stats.CycleKiller.LocalHealSuccessRatePct != 0.0 {
+		t.Errorf("expected 0.0%% local heal rate when interventions == 0, got %f", stats.CycleKiller.LocalHealSuccessRatePct)
+	}
+}
+
+func TestStatsTracker_CycleKiller_NotTriggered(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	tracker.Record(Observation{
+		Tier:                  1,
+		Tokens:                500,
+		IsLocal:               true,
+		IsFallback:            false,
+		CycleBreakerTriggered: false,
+	})
+	tracker.Flush()
+
+	stats := tracker.GetStats()
+	if stats.CycleKiller.TotalInterventions != 0 {
+		t.Errorf("expected 0 total interventions, got %d", stats.CycleKiller.TotalInterventions)
+	}
+	if stats.CycleKiller.AvoidedRunawayTokens != 0 {
+		t.Errorf("expected 0 avoided runaway tokens, got %d", stats.CycleKiller.AvoidedRunawayTokens)
+	}
+	if stats.CycleKiller.AvoidedGPUSeconds != 0 {
+		t.Errorf("expected 0 avoided GPU seconds, got %d", stats.CycleKiller.AvoidedGPUSeconds)
+	}
+}
+
+func TestStatsTracker_CycleKiller_Recalculate(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	records := []TurnRecord{
+		{
+			Tokens:                100,
+			SelectedTier:          "Tier 1: Local GPU Free",
+			IsLocal:               true,
+			IsFallback:            false,
+			CycleBreakerTriggered: true,
+		},
+		{
+			Tokens:                200,
+			SelectedTier:          "Tier 2: Cloud Workhorse",
+			IsLocal:               false,
+			IsFallback:            true,
+			CycleBreakerTriggered: true,
+		},
+		{
+			Tokens:                300,
+			SelectedTier:          "Tier 1: Local GPU Free",
+			IsLocal:               true,
+			IsFallback:            false,
+			CycleBreakerTriggered: false,
+		},
+	}
+
+	tracker.RecalculateFromRecords(records, nil, 3.00)
+
+	stats := tracker.GetStats()
+	if stats.CycleKiller.TotalInterventions != 2 {
+		t.Errorf("expected 2 total interventions after recalculate, got %d", stats.CycleKiller.TotalInterventions)
+	}
+	if stats.CycleKiller.Stage1LocalHeals != 1 {
+		t.Errorf("expected 1 stage 1 local heal, got %d", stats.CycleKiller.Stage1LocalHeals)
+	}
+	if stats.CycleKiller.Stage2CloudEscalations != 1 {
+		t.Errorf("expected 1 stage 2 cloud escalation, got %d", stats.CycleKiller.Stage2CloudEscalations)
+	}
+	if stats.CycleKiller.AvoidedRunawayTokens != 16000 {
+		t.Errorf("expected 16000 avoided tokens, got %d", stats.CycleKiller.AvoidedRunawayTokens)
+	}
+	if stats.CycleKiller.LocalHealSuccessRatePct != 50.0 {
+		t.Errorf("expected 50.0%% local heal success rate, got %f", stats.CycleKiller.LocalHealSuccessRatePct)
+	}
+}

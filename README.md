@@ -91,7 +91,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **🏷️ Dynamic Version Reporting**: Exposes build version across `/health`, `/v1/health`, and CLI (`nacho-flow version`, `-v`).
 * **💾 Persistent Telemetry Store**: Saves cumulative token counts and estimated cost metrics to disk (`~/.config/nacho-flow/stats.json`).
 <!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.2% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.3% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 * **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 * **📦 Zero Dependencies**: Single static binary with zero CGO or Python requirements (`CGO_ENABLED=0`).

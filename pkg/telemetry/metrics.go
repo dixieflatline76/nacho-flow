@@ -38,6 +38,26 @@ type TimeWindowSnapshot struct {
 	AllTime   TimeWindowMetrics `json:"all_time"`
 }
 
+// CycleKillerMetrics captures cumulative defense telemetry for loop-severing interventions.
+type CycleKillerMetrics struct {
+	TotalInterventions     int64   `json:"total_interventions"`
+	AvoidedRunawayTokens   int64   `json:"avoided_runaway_tokens"`
+	AvoidedGPUSeconds      int64   `json:"avoided_gpu_seconds"`
+	Stage1LocalHeals       int64   `json:"stage1_local_heals"`
+	Stage2CloudEscalations int64   `json:"stage2_cloud_escalations"`
+	// LocalHealSuccessRatePct is computed on read in GetStats(), never stored to disk.
+	// It is included here solely for JSON serialization to the /v1/stats REST endpoint.
+	LocalHealSuccessRatePct float64 `json:"local_heal_success_rate_pct,omitempty"`
+}
+
+// estimatedAvoidedTokensPerIntervention is the empirical mean runaway token count
+// observed in unmitigated benchmark runs (Gemma 4 12B QAT, nqueen-cline-4).
+const estimatedAvoidedTokensPerIntervention = 8000
+
+// estimatedLocalTokensPerSecond is the approximate local GPU inference throughput
+// for 12B/14B QAT models on AMD ROCm, used to convert avoided tokens to GPU seconds.
+const estimatedLocalTokensPerSecond = 35
+
 // StatsSnapshot provides an immutable snapshot of proxy metrics for reporting.
 type StatsSnapshot struct {
 	StartedAt                string                       `json:"started_at"`
@@ -47,6 +67,7 @@ type StatsSnapshot struct {
 	TotalCostSpentUSD        float64                      `json:"total_cost_spent_usd"`
 	EstimatedCostSavedUSD    float64                      `json:"estimated_cost_saved_usd"`
 	CostReductionPct         float64                      `json:"cost_reduction_pct"`
+	CycleKiller              CycleKillerMetrics           `json:"cycle_killer"`
 	Windows                  TimeWindowSnapshot           `json:"windows"`
 	DailyBuckets             map[string]TimeWindowMetrics `json:"daily_buckets,omitempty"`
 }
@@ -356,6 +377,18 @@ func (s *StatsTracker) worker() {
 			s.stats.TotalCostSpentUSD += obs.CostSpent
 		}
 
+		// Cycle Killer defense telemetry accumulation
+		if obs.CycleBreakerTriggered {
+			s.stats.CycleKiller.TotalInterventions++
+			s.stats.CycleKiller.AvoidedRunawayTokens += estimatedAvoidedTokensPerIntervention
+			s.stats.CycleKiller.AvoidedGPUSeconds += estimatedAvoidedTokensPerIntervention / estimatedLocalTokensPerSecond
+			if obs.IsFallback {
+				s.stats.CycleKiller.Stage2CloudEscalations++
+			} else {
+				s.stats.CycleKiller.Stage1LocalHeals++
+			}
+		}
+
 		s.updateWindowsLocked(obs, observedAt)
 		s.mu.Unlock()
 
@@ -483,6 +516,18 @@ func (s *StatsTracker) RecalculateFromRecords(records []TurnRecord, oracle *Pric
 			s.stats.TotalCostSpentUSD += costSpent
 		}
 
+		// Cycle Killer recalculation from historical records
+		if rec.CycleBreakerTriggered {
+			s.stats.CycleKiller.TotalInterventions++
+			s.stats.CycleKiller.AvoidedRunawayTokens += estimatedAvoidedTokensPerIntervention
+			s.stats.CycleKiller.AvoidedGPUSeconds += estimatedAvoidedTokensPerIntervention / estimatedLocalTokensPerSecond
+			if rec.IsFallback {
+				s.stats.CycleKiller.Stage2CloudEscalations++
+			} else {
+				s.stats.CycleKiller.Stage1LocalHeals++
+			}
+		}
+
 		obs := Observation{
 			TierName:  rec.SelectedTier,
 			Model:     rec.TargetModel,
@@ -503,7 +548,12 @@ func (s *StatsTracker) RecalculateFromRecords(records []TurnRecord, oracle *Pric
 func (s *StatsTracker) GetStats() StatsSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.stats
+	snap := s.stats
+	// Compute derived Cycle Killer heal rate on read (never stored to disk)
+	if snap.CycleKiller.TotalInterventions > 0 {
+		snap.CycleKiller.LocalHealSuccessRatePct = float64(snap.CycleKiller.Stage1LocalHeals) / float64(snap.CycleKiller.TotalInterventions) * 100
+	}
+	return snap
 }
 
 // Flush drains pending observations before shutdown or snapshot export.
