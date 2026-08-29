@@ -121,11 +121,25 @@ func (cb *CycleBreaker) ProseTokens() int {
 	return cb.proseTokens
 }
 
+// MaxNgramFreq returns the highest observed N-gram frequency in the prose lane.
+func (cb *CycleBreaker) MaxNgramFreq() int {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.maxNgramFreq
+}
+
 // ThinkingTokens returns the current accumulated thinking token count.
 func (cb *CycleBreaker) ThinkingTokens() int {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	return cb.thinkingTokens
+}
+
+// MaxThinkingNgramFreq returns the highest observed N-gram frequency in the thinking lane.
+func (cb *CycleBreaker) MaxThinkingNgramFreq() int {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.maxThinkingNgramFreq
 }
 
 // Reset clears accumulated words, n-grams, and token counters across both prose and thinking lanes.

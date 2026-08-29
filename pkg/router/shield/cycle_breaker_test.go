@@ -70,6 +70,13 @@ func TestCycleBreaker_ProseTokenCeiling(t *testing.T) {
 			t.Fatalf("unique words should never trigger cooperative budget check, got reason: %s at word %d", reason, i)
 		}
 	}
+
+	if cb.ProseTokens() <= 50 {
+		t.Fatalf("expected ProseTokens() > 50 (budget ceiling), got %d", cb.ProseTokens())
+	}
+	if cb.MaxNgramFreq() > 1 {
+		t.Fatalf("expected MaxNgramFreq() <= 1 for all unique words, got %d", cb.MaxNgramFreq())
+	}
 }
 
 func TestCycleBreaker_CooperativeProseBudget(t *testing.T) {
@@ -118,8 +125,11 @@ func TestCycleBreaker_ThinkingTokenBudget(t *testing.T) {
 		}
 	}
 
-	if cb.ThinkingTokens() == 0 {
-		t.Fatalf("expected ThinkingTokens() > 0, got %d", cb.ThinkingTokens())
+	if cb.ThinkingTokens() <= 60 {
+		t.Fatalf("expected ThinkingTokens() > 60 (budget ceiling), got %d", cb.ThinkingTokens())
+	}
+	if cb.MaxThinkingNgramFreq() > 1 {
+		t.Fatalf("expected MaxThinkingNgramFreq() <= 1 for all unique thinking words, got %d", cb.MaxThinkingNgramFreq())
 	}
 	if cb.ProseTokens() != 0 {
 		t.Fatalf("expected ProseTokens() == 0 during thinking, got %d", cb.ProseTokens())
@@ -222,18 +232,25 @@ func TestCycleBreaker_ResetClearsBothLanes(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:                     &enabled,
-		MaxProseTokens:              100,
-		MaxThinkingTokens:           100,
+		MaxProseTokens:              50,
+		MaxThinkingTokens:           50,
 		RepetitionWindow:            4,
-		RepetitionThreshold:         2,
-		ThinkingRepetitionThreshold: 2,
+		RepetitionThreshold:         3,
+		ThinkingRepetitionThreshold: 3,
 	})
 
+	// Build up repeated N-grams in both lanes
 	cb.ProcessDelta("repeat this word phrase repeat this word phrase ", false)
-	cb.ProcessDelta("thinking about this word phrase right now ", true)
+	cb.ProcessDelta("thinking about this word phrase thinking about this word phrase ", true)
 
 	if cb.ProseTokens() == 0 || cb.ThinkingTokens() == 0 {
 		t.Fatalf("expected non-zero counts before reset")
+	}
+	if cb.MaxNgramFreq() < 2 {
+		t.Fatalf("expected MaxNgramFreq() >= 2 before reset, got %d", cb.MaxNgramFreq())
+	}
+	if cb.MaxThinkingNgramFreq() < 2 {
+		t.Fatalf("expected MaxThinkingNgramFreq() >= 2 before reset, got %d", cb.MaxThinkingNgramFreq())
 	}
 
 	cb.Reset()
@@ -244,14 +261,19 @@ func TestCycleBreaker_ResetClearsBothLanes(t *testing.T) {
 	if cb.ThinkingTokens() != 0 {
 		t.Fatalf("expected 0 thinking tokens after reset, got %d", cb.ThinkingTokens())
 	}
-
-	// Should not trigger on single phrase after reset
-	triggered, _ := cb.ProcessDelta("repeat this word phrase ", false)
-	if triggered {
-		t.Fatalf("should not trigger on first prose phrase after reset")
+	if cb.MaxNgramFreq() != 0 {
+		t.Fatalf("expected 0 MaxNgramFreq after reset, got %d", cb.MaxNgramFreq())
 	}
-	triggered, _ = cb.ProcessDelta("thinking about this word phrase ", true)
-	if triggered {
-		t.Fatalf("should not trigger on first thinking phrase after reset")
+	if cb.MaxThinkingNgramFreq() != 0 {
+		t.Fatalf("expected 0 MaxThinkingNgramFreq after reset, got %d", cb.MaxThinkingNgramFreq())
+	}
+
+	// Verify post-reset: sending unique tokens exceeding budget (50 tokens) does NOT trigger,
+	// confirming that stale maxNgramFreq was cleanly erased.
+	for i := 0; i < 60; i++ {
+		triggered, reason := cb.ProcessDelta(fmt.Sprintf("postResetUniqueWord%d ", i), false)
+		if triggered {
+			t.Fatalf("should not trigger after reset on unique words exceeding budget, got %s", reason)
+		}
 	}
 }
