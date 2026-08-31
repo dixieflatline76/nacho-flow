@@ -17,10 +17,14 @@ type RequestContext struct {
 	IsRetry          bool     `json:"is_retry,omitempty"`
 	HasToolProgress  bool     `json:"has_tool_progress,omitempty"`
 	HistoryErrors          int      `json:"history_errors,omitempty"`
-	CycleRetries           int      `json:"cycle_retries,omitempty"`
-	CycleBreakerTriggered  bool     `json:"cycle_breaker_triggered,omitempty"`
-	CycleBreakerReason     string   `json:"cycle_breaker_reason,omitempty"`
-	ForcedTier             string   `json:"forced_tier,omitempty"`
+	CycleRetries              int      `json:"cycle_retries,omitempty"`
+	CycleBreakerTriggered     bool     `json:"cycle_breaker_triggered,omitempty"`
+	CycleBreakerReason        string   `json:"cycle_breaker_reason,omitempty"`
+	CycleProseTokens          int      `json:"cycle_prose_tokens,omitempty"`
+	CycleMaxNgramFreq         int      `json:"cycle_max_ngram_freq,omitempty"`
+	CycleThinkingTokens       int      `json:"cycle_thinking_tokens,omitempty"`
+	CycleMaxThinkingNgramFreq int      `json:"cycle_max_thinking_ngram_freq,omitempty"`
+	ForcedTier                string   `json:"forced_tier,omitempty"`
 	ForcedModel      string   `json:"forced_model,omitempty"`
 	IsMetaDirective  bool     `json:"is_meta_directive,omitempty"`
 	MetaDirective    string   `json:"meta_directive,omitempty"`
@@ -136,6 +140,7 @@ type AgentShieldConfig struct {
 	TailBufferBytes      int      `yaml:"tail_buffer_bytes,omitempty" json:"tail_buffer_bytes,omitempty"`
 	QuestionHeuristics   []string `yaml:"question_heuristics,omitempty" json:"question_heuristics,omitempty"`
 	ModeSwitchHeuristics []string `yaml:"mode_switch_heuristics,omitempty" json:"mode_switch_heuristics,omitempty"`
+	ErrorSignatures      []string `yaml:"error_signatures,omitempty" json:"error_signatures,omitempty"`
 }
 
 // Config defines the top-level configuration loaded from config.yaml.

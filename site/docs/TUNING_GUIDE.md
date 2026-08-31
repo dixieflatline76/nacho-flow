@@ -260,6 +260,41 @@ tiers:
 
 ---
 
+## 4.5 Agent-Specific Presets: Cline vs Zoo Code
+
+Different AI coding agents have fundamentally different tool-calling architectures that affect how well they work with local models. Nacho Flow ships two preset configurations:
+
+| Config File | Optimized For | Key Trait |
+| :--- | :--- | :--- |
+| `config.yaml` | Zoo Code, Aider, OpenCode | `write_to_file` whole-file overwrites — local models handle this well |
+| `config.cline.yaml` | Cline, Roo Code | `replace_in_file` diff edits — requires exact `old_text` match, needs cloud precision |
+
+### Why Cline Needs a Different Config
+
+Cline's `SdkDiffEditCoordinator` requires the model to reproduce the **exact existing file content** in an `old_text` parameter. Local 12B models frequently fail this, producing near-matches that Cline rejects. Zoo Code's `write_to_file` approach sends the entire new file content, which local models handle reliably.
+
+### Key Tuning Differences
+
+| Parameter | Zoo Code (`config.yaml`) | Cline (`config.cline.yaml`) | Why |
+| :--- | :--- | :--- | :--- |
+| Local Token Threshold | `Tokens < 16000` | `Tokens < 10000` | Cline starts diffing by Turn 3–5; escalate earlier |
+| `HasToolProgress` Guard | Not used | `!HasToolProgress` | Once files are created, edits need cloud precision |
+| Cycle Killer Prose Limit | 4096 | 6144 | Cline's XML tool format needs more prose room |
+| Cycle Killer Repetition | 3 | 4 | Cline's XML is naturally more repetitive |
+| Max Context (Local) | 64000 | 32000 | Force cloud escalation earlier for edit-heavy tasks |
+
+### Usage
+
+```bash
+# For Cline / Roo Code users:
+nacho-flow -config config.cline.yaml
+
+# For Zoo Code / Aider / OpenCode users (default):
+nacho-flow
+```
+
+---
+
 ## 5. Testing & Validating Your Rules
 
 ### Dry-Run Validation

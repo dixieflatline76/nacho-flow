@@ -181,6 +181,9 @@ func NewServerWithTelemetryAndRegistry(
 	if class == nil {
 		class = router.NewClassifier()
 	}
+	if classWithSigs, ok := class.(interface{ SetErrorSignatures([]string) }); ok {
+		classWithSigs.SetErrorSignatures(cfg.AgentShield.ErrorSignatures)
+	}
 	if san == nil {
 		san = router.NewSanitizer()
 	}
@@ -487,6 +490,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Int("retries", reqCtx.Retries),
 		slog.Bool("has_tool_progress", reqCtx.HasToolProgress),
 		slog.Int("history_errors", reqCtx.HistoryErrors),
+		slog.String("user_agent", r.Header.Get("User-Agent")),
 	)
 
 	s.forwardWithFallback(w, r, reqCtx, targetTier, body, startTime, reqLogger)
@@ -811,6 +815,12 @@ func (s *Server) dispatchTier(
 			}
 		}
 		usage, _ := normalizer.GetUsage()
+		if cb != nil {
+			reqCtx.CycleProseTokens = cb.ProseTokens()
+			reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
+			reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
+			reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+		}
 		_ = normalizer.Close()
 
 		s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger)
@@ -899,6 +909,12 @@ func (s *Server) dispatchTier(
 									slog.String("tier", targetTier.Name),
 									slog.Int("cycle_retries", reqCtx.CycleRetries),
 								)
+							}
+							reqCtx.CycleProseTokens = cb.ProseTokens()
+							reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
+							reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
+							reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+							if reqCtx.CycleBreakerTriggered {
 								if reqCtx.CycleRetries < cb.MaxRetries() {
 									reqCtx.CycleRetries++
 									injectedBody := injectCorrectionPrompt(body, cb.CorrectionPrompt())
@@ -1057,9 +1073,13 @@ func (s *Server) recordTelemetry(
 		IsRetry:               reqCtx.IsRetry,
 		ForcedTier:            reqCtx.ForcedTier,
 		ForcedModel:           reqCtx.ForcedModel,
-		DirectiveUsed:         reqCtx.MetaDirectiveRaw,
-		CycleBreakerTriggered: reqCtx.CycleBreakerTriggered,
-		CycleBreakerReason:    reqCtx.CycleBreakerReason,
+		DirectiveUsed:             reqCtx.MetaDirectiveRaw,
+		CycleBreakerTriggered:     reqCtx.CycleBreakerTriggered,
+		CycleBreakerReason:        reqCtx.CycleBreakerReason,
+		CycleProseTokens:          reqCtx.CycleProseTokens,
+		CycleMaxNgramFreq:         reqCtx.CycleMaxNgramFreq,
+		CycleThinkingTokens:       reqCtx.CycleThinkingTokens,
+		CycleMaxThinkingNgramFreq: reqCtx.CycleMaxThinkingNgramFreq,
 	})
 
 	reqLogger.Info("Completed proxy request",
@@ -1071,6 +1091,10 @@ func (s *Server) recordTelemetry(
 		slog.Bool("is_fallback", isFallback),
 		slog.Bool("is_retry", reqCtx.IsRetry),
 		slog.Bool("cycle_breaker_triggered", reqCtx.CycleBreakerTriggered),
+		slog.Int("cycle_prose_tokens", reqCtx.CycleProseTokens),
+		slog.Int("cycle_max_ngram_freq", reqCtx.CycleMaxNgramFreq),
+		slog.Int("cycle_thinking_tokens", reqCtx.CycleThinkingTokens),
+		slog.Int("cycle_max_thinking_ngram_freq", reqCtx.CycleMaxThinkingNgramFreq),
 	)
 }
 

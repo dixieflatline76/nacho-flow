@@ -1,6 +1,13 @@
 # =============================================================================
-# 🌮 NACHO FLOW CONFIGURATION
-# Intelligent Semantic AI Gateway & Multi-Tier Cost Optimizer
+# 🌮 NACHO FLOW: CLINE-OPTIMIZED CONFIGURATION
+# Tuned for Cline / Roo Code's diff-based edit architecture (SdkDiffEditCoordinator)
+#
+# KEY DIFFERENCES FROM DEFAULT (Zoo Code) CONFIG:
+#   - Lower local token threshold (10000 vs 16000) to escalate before diffs
+#   - Relaxed Cycle Killer prose/thinking limits for Cline's XML tool format
+#   - HasToolProgress guard prevents local routing once file edits begin
+#
+# USAGE: nacho-flow -config config.cline.yaml
 # =============================================================================
 
 port: 8000
@@ -71,16 +78,18 @@ agent_shield:
     - "Command not executed:"
 
 # =============================================================================
-# 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
-# In-Flight Stream Defense that murders infinite loops & monologue traps in <3s
+# 🎸 CYCLE KILLER — CLINE-TUNED
+# Cline embeds tool calls as XML inside prose, so models legitimately produce
+# longer prose blocks before tool tags appear. These limits are relaxed vs
+# the Zoo Code defaults to avoid false-positive stream severing.
 # =============================================================================
 cycle_killer:
   enabled: true
-  max_prose_tokens: 4096
-  max_thinking_tokens: 1500
+  max_prose_tokens: 6144       # Zoo Code default: 4096. Cline XML needs more room.
+  max_thinking_tokens: 2000    # Zoo Code default: 1500. Extra planning runway.
   repetition_window: 6
-  repetition_threshold: 3
-  thinking_repetition_threshold: 5
+  repetition_threshold: 4      # Zoo Code default: 3. Cline XML is naturally repetitive.
+  thinking_repetition_threshold: 6  # Zoo Code default: 5.
   max_retries: 1
 
 # =============================================================================

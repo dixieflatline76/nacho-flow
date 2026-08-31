@@ -93,9 +93,13 @@ type Observation struct {
 	ForcedTier            string
 	ForcedModel           string
 	DirectiveUsed         string
-	CycleBreakerTriggered bool
-	CycleBreakerReason    string
-	ObservedAt            time.Time
+	CycleBreakerTriggered     bool
+	CycleBreakerReason        string
+	CycleProseTokens          int
+	CycleMaxNgramFreq         int
+	CycleThinkingTokens       int
+	CycleMaxThinkingNgramFreq int
+	ObservedAt                time.Time
 }
 
 // StatsTracker processes proxy telemetry asynchronously via a dedicated background channel.
@@ -414,8 +418,12 @@ func (s *StatsTracker) worker() {
 				ForcedTier:            obs.ForcedTier,
 				ForcedModel:           obs.ForcedModel,
 				DirectiveUsed:         obs.DirectiveUsed,
-				CycleBreakerTriggered: obs.CycleBreakerTriggered,
-				CycleBreakerReason:    obs.CycleBreakerReason,
+				CycleBreakerTriggered:     obs.CycleBreakerTriggered,
+				CycleBreakerReason:        obs.CycleBreakerReason,
+				CycleProseTokens:          obs.CycleProseTokens,
+				CycleMaxNgramFreq:         obs.CycleMaxNgramFreq,
+				CycleThinkingTokens:       obs.CycleThinkingTokens,
+				CycleMaxThinkingNgramFreq: obs.CycleMaxThinkingNgramFreq,
 			}
 			for _, sink := range *sinksPtr {
 				sink.Emit(record)

@@ -199,9 +199,9 @@ func TestClassifier_WithCustomEstimator(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	// 10 chars + space = ~11 chars / 2.0 ~= 5 tokens
-	if ctx.Tokens < 4 || ctx.Tokens > 6 {
-		t.Errorf("Expected ~5 tokens with calibrated estimator, got %d", ctx.Tokens)
+	// 56 bytes payload / 2.0 ~= 28 tokens
+	if ctx.Tokens < 25 || ctx.Tokens > 32 {
+		t.Errorf("Expected ~28 tokens with calibrated estimator, got %d", ctx.Tokens)
 	}
 
 	if c, ok := classifier.(*RequestClassifier); !ok || c.GetEstimator() == nil {

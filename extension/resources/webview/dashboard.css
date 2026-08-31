@@ -881,4 +881,38 @@ body {
 	background: rgba(239, 68, 68, 0.2);
 	color: #f87171;
 	border: 1px solid rgba(239, 68, 68, 0.4);
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: 500;
+	cursor: help;
+}
+
+.badge-cycle-clean {
+	background: rgba(16, 185, 129, 0.15);
+	color: #34d399;
+	border: 1px solid rgba(16, 185, 129, 0.35);
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: 500;
+	cursor: help;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.badge-cycle-clean:hover {
+	background: rgba(16, 185, 129, 0.25);
+	border-color: rgba(16, 185, 129, 0.6);
+}
+
+.badge-cycle-none {
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.5;
+	font-size: 11px;
 }

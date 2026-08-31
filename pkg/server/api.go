@@ -358,6 +358,11 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 		}
 	}
 
+	// 5c. Dynamically reconfigure Classifier error signatures upon hot-reload
+	if classWithSigs, ok := s.classifier.(interface{ SetErrorSignatures([]string) }); ok {
+		classWithSigs.SetErrorSignatures(merged.AgentShield.ErrorSignatures)
+	}
+
 	// 6. Arm Watchdog for Auto-Rollback (if next proxy requests fail consecutively)
 	s.armWatchdog(mementoState, 30*time.Second)
 

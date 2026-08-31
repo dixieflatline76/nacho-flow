@@ -3,13 +3,32 @@ package router
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
 type RequestClassifier struct {
-	estimator *TokenEstimator
+	mu              sync.RWMutex
+	estimator       *TokenEstimator
+	errorSignatures []string
+}
+
+// defaultAgentErrorSignatures are fallback error patterns injected by agent clients
+// (Zoo Code, Cline, Roo Code) when no custom error_signatures are specified in config.yaml.
+var defaultAgentErrorSignatures = []string{
+	"[ERROR] You did not use a tool",
+	"Missing value for required parameter",
+	"The tool execution failed",
+	"<error_details>",
+	"No sufficiently similar match found",
+	"Command failed with exit code",
+	"Please retry with complete response",
+	"Editor operation failed",
+	"Parameter `old_text` is required",
+	"Parameter old_text is required",
+	"Command not executed:",
 }
 
 // NewClassifier initializes a default RequestClassifier with an adaptive TokenEstimator.
@@ -25,6 +44,30 @@ func NewClassifierWithEstimator(e *TokenEstimator) contract.Classifier {
 	return &RequestClassifier{
 		estimator: e,
 	}
+}
+
+// SetErrorSignatures configures custom error patterns from config.yaml.
+func (c *RequestClassifier) SetErrorSignatures(signatures []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(signatures) == 0 {
+		c.errorSignatures = nil
+		return
+	}
+	c.errorSignatures = make([]string, len(signatures))
+	copy(c.errorSignatures, signatures)
+}
+
+// GetErrorSignatures returns active error signatures or default fallback.
+func (c *RequestClassifier) GetErrorSignatures() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if len(c.errorSignatures) == 0 {
+		return defaultAgentErrorSignatures
+	}
+	res := make([]string, len(c.errorSignatures))
+	copy(res, c.errorSignatures)
+	return res
 }
 
 // GetEstimator returns the active TokenEstimator instance for dynamic calibration.
@@ -50,14 +93,15 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 		reqCtx.InteractiveTool = ExtractSupportedInteractiveTool(tools)
 	}
 
-	// 2. Parse messages to count tokens, detect images, and extract keywords
+	// 2. Parse messages to extract prompt, keywords, image flags, and history errors
 	messages, ok := raw["messages"].([]interface{})
-	if !ok {
+	if !ok || len(messages) == 0 {
 		return reqCtx, nil
 	}
 
-	var fullText strings.Builder
 	var latestUserPrompt string
+	var fallbackText strings.Builder
+	hasNonEmptyContent := false
 
 	for _, m := range messages {
 		msgMap, ok := m.(map[string]interface{})
@@ -73,8 +117,11 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 
 		// Handle text string content
 		if strContent, ok := content.(string); ok {
-			fullText.WriteString(strContent)
-			fullText.WriteString(" ")
+			if strContent != "" {
+				hasNonEmptyContent = true
+			}
+			fallbackText.WriteString(strContent)
+			fallbackText.WriteString(" ")
 			if role == "user" {
 				latestUserPrompt = strContent
 			}
@@ -93,10 +140,14 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 				switch partType {
 				case "image_url":
 					reqCtx.HasImages = true
+					hasNonEmptyContent = true
 				case "text":
 					textStr, _ := partMap["text"].(string)
-					fullText.WriteString(textStr)
-					fullText.WriteString(" ")
+					if textStr != "" {
+						hasNonEmptyContent = true
+					}
+					fallbackText.WriteString(textStr)
+					fallbackText.WriteString(" ")
 					if role == "user" {
 						latestUserPrompt = textStr
 					}
@@ -106,12 +157,13 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	}
 
 	// 2.5 Scan trailing messages for error patterns and tool progress
-	reqCtx.HistoryErrors, reqCtx.HasToolProgress = scanTrailingMessages(messages)
+	reqCtx.HistoryErrors, reqCtx.HasToolProgress = c.scanTrailingMessages(messages)
 
-	// 3. Approximate token count using adaptive TokenEstimator
-	allText := fullText.String()
-	estimator := c.GetEstimator()
-	reqCtx.Tokens = estimator.Estimate(len(allText))
+	// 3. Approximate total token count using zero-allocation len(body) estimator
+	if hasNonEmptyContent || reqCtx.HasTools {
+		estimator := c.GetEstimator()
+		reqCtx.Tokens = estimator.Estimate(len(body))
+	}
 	reqCtx.Prompt = latestUserPrompt
 	reqCtx.CleanPrompt = latestUserPrompt
 
@@ -131,35 +183,37 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 		reqCtx.Features = uint16(FeatureDefaultAll)
 	}
 
-	// 5. Extract clean lowercased keywords strictly from latest user prompt (fallback to allText if no user prompt)
+	// 5. Extract clean lowercased keywords strictly from latest user prompt (fallback to fallbackText if no user prompt)
 	keywordSource := reqCtx.CleanPrompt
 	if keywordSource == "" {
-		keywordSource = allText
+		keywordSource = fallbackText.String()
 	}
 	reqCtx.Keywords = extractKeywords(keywordSource)
 
 	return reqCtx, nil
 }
 
-// agentErrorSignatures are known error patterns injected by agent clients
-// (Zoo Code, Cline, Roo Code) into conversation history when a tool call fails.
-var agentErrorSignatures = []string{
-	"[ERROR] You did not use a tool",
-	"Missing value for required parameter",
-	"The tool execution failed",
-	"<error_details>",
-	"No sufficiently similar match found",
-	"Command failed with exit code",
-	"Please retry with complete response",
+// isErrorText checks if a message text contains known error signatures or failure indicators.
+func isErrorText(text string, signatures []string) bool {
+	if strings.Contains(text, `"success":false`) || strings.Contains(text, `"success": false`) {
+		return true
+	}
+	if len(signatures) == 0 {
+		signatures = defaultAgentErrorSignatures
+	}
+	for _, sig := range signatures {
+		if strings.Contains(text, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 // scanTrailingMessages inspects the last N messages in the conversation history
 // to detect: (a) consecutive trailing error turns, and (b) successful tool progress.
-//
-// Returns:
-//   - historyErrors: count of consecutive trailing error messages (from the end)
-//   - hasToolProgress: true if any recent message contains successful tool_result content
-func scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool) {
+func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool) {
+	signatures := c.GetErrorSignatures()
+
 	// Scan backwards from the end, up to 6 messages
 	start := len(messages) - 6
 	if start < 0 {
@@ -174,12 +228,15 @@ func scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolPro
 		}
 		role, _ := msgMap["role"].(string)
 
-		// Successful tool results indicate forward progress
+		// Check OpenAI-style role: tool
 		if role == "tool" {
-			hasToolProgress = true
+			text := extractAllTextFromContent(msgMap["content"])
+			if !isErrorText(text, signatures) {
+				hasToolProgress = true
+			}
 		}
 
-		// Check for multi-part content with tool_result type (Anthropic format)
+		// Check Anthropic-style multi-part content with tool_result type
 		if parts, ok := msgMap["content"].([]interface{}); ok {
 			for _, part := range parts {
 				partMap, ok := part.(map[string]interface{})
@@ -188,10 +245,12 @@ func scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolPro
 				}
 				partType, _ := partMap["type"].(string)
 				if partType == "tool_result" {
-					// Check if this tool result is an error
 					isError, _ := partMap["is_error"].(bool)
 					if !isError {
-						hasToolProgress = true
+						text := extractAllTextFromContent(partMap["content"])
+						if !isErrorText(text, signatures) {
+							hasToolProgress = true
+						}
 					}
 				}
 			}
@@ -206,24 +265,16 @@ func scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolPro
 		}
 		role, _ := msgMap["role"].(string)
 
-		// Only user-role messages carry error feedback from agent clients
-		if role != "user" {
+		// User and tool role messages carry error feedback from agent clients
+		if role != "user" && role != "tool" {
 			continue
 		}
 
 		text := extractAllTextFromContent(msgMap["content"])
-		foundError := false
-		for _, sig := range agentErrorSignatures {
-			if strings.Contains(text, sig) {
-				foundError = true
-				break
-			}
-		}
-
-		if foundError {
+		if isErrorText(text, signatures) {
 			historyErrors++
 		} else {
-			// Break consecutive error chain on a non-error user message
+			// Break consecutive error chain on a non-error message
 			break
 		}
 	}

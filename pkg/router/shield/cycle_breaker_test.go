@@ -9,9 +9,22 @@ import (
 
 func TestCycleBreaker_Disabled(t *testing.T) {
 	disabled := false
+	prompt := "Custom override"
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
-		Enabled: &disabled,
+		Enabled:          &disabled,
+		CorrectionPrompt: prompt,
+		MaxRetries:       2,
 	})
+
+	if cb.IsEnabled() {
+		t.Errorf("expected IsEnabled to return false")
+	}
+	if cb.CorrectionPrompt() != prompt {
+		t.Errorf("expected CorrectionPrompt %q, got %q", prompt, cb.CorrectionPrompt())
+	}
+	if cb.MaxRetries() != 2 {
+		t.Errorf("expected MaxRetries 2, got %d", cb.MaxRetries())
+	}
 
 	// Process infinite repetition while disabled
 	for i := 0; i < 20; i++ {

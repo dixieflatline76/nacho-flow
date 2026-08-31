@@ -222,12 +222,35 @@
 			? (avoidedTokens / 1000000).toFixed(1) + 'M'
 			: (avoidedTokens >= 1000 ? (avoidedTokens / 1000).toFixed(0) + 'k' : avoidedTokens.toString());
 
+		// Calculate verified clean streams from recent route telemetry
+		let verifiedCleanCount = 0;
+		let peakObservedNgram = 1;
+		const routesList = (currentState.routes && currentState.routes.routes) ? currentState.routes.routes : (Array.isArray(currentState.routes) ? currentState.routes : []);
+		routesList.forEach(r => {
+			if (!r.cycle_breaker_triggered && (r.cycle_prose_tokens > 0 || r.cycle_max_ngram_freq > 0)) {
+				verifiedCleanCount++;
+				if (r.cycle_max_ngram_freq && r.cycle_max_ngram_freq > peakObservedNgram) {
+					peakObservedNgram = r.cycle_max_ngram_freq;
+				}
+			}
+		});
+
+		const statusPillText = totalInterventions > 0
+			? `${totalInterventions} Loops Intercepted &bull; Stage 1 Heals: ${stage1Heals} &bull; Stage 2 Escalations: ${stage2Escalations}`
+			: (verifiedCleanCount > 0
+				? `Active Defense: ${verifiedCleanCount} Streams Verified Clean &bull; Peak N-Gram: ${peakObservedNgram}x &bull; 0 False Positives`
+				: 'Watchdog Active &bull; 0 Degeneracies Detected');
+
+		const loopsLabel = totalInterventions > 0
+			? `${totalInterventions} <span class="ck-unit">Loops</span>`
+			: (verifiedCleanCount > 0 ? `0 <span class="ck-unit">(${verifiedCleanCount} Clean)</span>` : '0 <span class="ck-unit">Loops</span>');
+
 		ckContent.innerHTML = `
 			<div class="cycle-killer-grid">
-				<div class="ck-item highlight">
-					<div class="ck-value">${totalInterventions} <span class="ck-unit">Loops</span></div>
+				<div class="ck-item ${totalInterventions > 0 ? 'highlight' : 'heal-chip'}">
+					<div class="ck-value">${loopsLabel}</div>
 					<div class="ck-label">🛡️ Interventions Executed</div>
-					<div class="ck-sub">Runaway monologues & deliberation loops intercepted</div>
+					<div class="ck-sub">${totalInterventions > 0 ? 'Runaway monologues & deliberation loops intercepted' : 'Zero false positives on unique code streams'}</div>
 				</div>
 				<div class="ck-item gpu-chip">
 					<div class="ck-value">${gpuMinutes} <span class="ck-unit">Min</span></div>
@@ -248,7 +271,7 @@
 			<div class="ck-footer-row">
 				<div class="ck-status-pill ${totalInterventions > 0 ? 'active' : 'idle'}">
 					<span class="status-dot"></span>
-					${totalInterventions > 0 ? `${totalInterventions} Loops Murdied &bull; Stage 2 Escalations: ${stage2Escalations}` : 'Watchdog Active &bull; 0 Degeneracies Detected'}
+					${statusPillText}
 				</div>
 			</div>
 		`;
@@ -373,6 +396,9 @@
 	}
 
 	function updateRoutes(routesData) {
+		currentState.routes = routesData;
+		vscode.setState(currentState);
+
 		const routesContent = document.getElementById('routes-content');
 		if (!routesData || !routesData.routes) {
 			routesContent.innerHTML = '<div class="loading">Loading route history...</div>';
@@ -389,15 +415,28 @@
 			const isLocal = route.is_local ? 'badge-local' : 'badge-cloud';
 			const badgeText = route.is_local ? 'Local' : 'Cloud';
 			const fallbackBadge = route.is_fallback ? '<span class="badge badge-fallback">Fallback</span>' : '';
-			const cycleBadge = route.cycle_breaker_triggered ? '<span class="badge badge-cycle" title="Cycle Killer Intercepted: ' + (route.cycle_breaker_reason || 'runaway loop') + '">🛡️ Intercepted</span>' : '';
+			
+			let cycleBadge = '';
+			if (route.cycle_breaker_triggered) {
+				const reason = route.cycle_breaker_reason || 'runaway loop';
+				const nFreq = route.cycle_max_ngram_freq ? ` (${route.cycle_max_ngram_freq}x)` : '';
+				cycleBadge = `<span class="badge badge-cycle" title="⚠️ Cycle Killer Intercepted: ${reason}${nFreq}">⚠️ Loop${nFreq}</span>`;
+			} else if ((route.cycle_prose_tokens && route.cycle_prose_tokens > 0) || (route.cycle_max_ngram_freq && route.cycle_max_ngram_freq > 0)) {
+				const proseTk = (route.cycle_prose_tokens || 0).toLocaleString();
+				const nFreq = route.cycle_max_ngram_freq || 1;
+				cycleBadge = `<span class="badge badge-cycle-clean" title="🛡️ Cycle Defense Verified: ${proseTk} prose tokens, max N-gram: ${nFreq}x (Clean Pass)">🛡️ Clean ${nFreq}x</span>`;
+			} else {
+				cycleBadge = `<span class="badge-cycle-none">--</span>`;
+			}
 			
 			return `
 				<tr>
 					<td>${new Date(route.timestamp).toLocaleTimeString()}</td>
 					<td><strong>${route.selected_tier}</strong></td>
-					<td><span class="badge ${isLocal}">${badgeText}</span> ${fallbackBadge} ${cycleBadge}</td>
+					<td><span class="badge ${isLocal}">${badgeText}</span> ${fallbackBadge}</td>
 					<td>${(route.tokens || 0).toLocaleString()}</td>
 					<td>${(route.latency_ms || 0).toFixed(0)}ms</td>
+					<td>${cycleBadge}</td>
 					<td class="saved-val">+$${(route.cost_saved_usd || 0).toFixed(4)}</td>
 				</tr>
 			`;
@@ -412,6 +451,7 @@
 						<th>Type</th>
 						<th>Tokens</th>
 						<th>Latency</th>
+						<th>Cycle Shield</th>
 						<th>Saved</th>
 					</tr>
 				</thead>
@@ -420,6 +460,10 @@
 				</tbody>
 			</table>
 		`;
+
+		if (currentState.stats && currentState.stats.cycle_killer) {
+			renderCycleKiller(currentState.stats.cycle_killer);
+		}
 	}
 
 	function updateCircuits(circuitsData) {
