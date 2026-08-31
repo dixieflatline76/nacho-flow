@@ -700,3 +700,147 @@ func TestStatsTracker_CycleKiller_Recalculate(t *testing.T) {
 		t.Errorf("expected 50.0%% local heal success rate, got %f", stats.CycleKiller.LocalHealSuccessRatePct)
 	}
 }
+
+func TestStatsTracker_CycleKiller_TimeWindowBucketing(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	day1 := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)
+	day2 := time.Date(2026, 8, 21, 14, 0, 0, 0, time.UTC)
+
+	// Day 1: 1 local loop heal intervention
+	tracker.Record(Observation{
+		Tier:                  1,
+		Tokens:                5000,
+		CostSpent:             0.0,
+		CostSaved:             0.02,
+		IsLocal:               true,
+		IsFallback:            false,
+		ObservedAt:            day1,
+		CycleBreakerTriggered: true,
+	})
+
+	// Day 2: 1 clean turn, 0 loop interventions
+	tracker.Record(Observation{
+		Tier:                  1,
+		Tokens:                3000,
+		CostSpent:             0.0,
+		CostSaved:             0.01,
+		IsLocal:               true,
+		IsFallback:            false,
+		ObservedAt:            day2,
+		CycleBreakerTriggered: false,
+	})
+
+	tracker.Flush()
+	stats := tracker.GetStats()
+
+	// Today (Day 2) should have 0 Cycle Killer interventions
+	if stats.Windows.Today.CycleKiller.TotalInterventions != 0 {
+		t.Errorf("expected Today (Day 2) CycleKiller.TotalInterventions == 0, got %d", stats.Windows.Today.CycleKiller.TotalInterventions)
+	}
+	if stats.Windows.Today.CycleKiller.AvoidedRunawayTokens != 0 {
+		t.Errorf("expected Today (Day 2) AvoidedRunawayTokens == 0, got %d", stats.Windows.Today.CycleKiller.AvoidedRunawayTokens)
+	}
+
+	// Daily bucket for Day 1 should have 1 intervention
+	b1 := stats.DailyBuckets["2026-08-20"]
+	if b1.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected Day 1 bucket TotalInterventions == 1, got %d", b1.CycleKiller.TotalInterventions)
+	}
+	if b1.CycleKiller.Stage1LocalHeals != 1 {
+		t.Errorf("expected Day 1 bucket Stage1LocalHeals == 1, got %d", b1.CycleKiller.Stage1LocalHeals)
+	}
+
+	// AllTime should have 1 intervention
+	if stats.Windows.AllTime.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected AllTime CycleKiller.TotalInterventions == 1, got %d", stats.Windows.AllTime.CycleKiller.TotalInterventions)
+	}
+	if stats.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected Global CycleKiller.TotalInterventions == 1, got %d", stats.CycleKiller.TotalInterventions)
+	}
+}
+
+func TestStatsTracker_CycleKiller_WeeklyMonthlyAggregation(t *testing.T) {
+	tracker := NewStatsTracker(20)
+	defer tracker.Close()
+
+	// Wednesday, August 26, 2026 (Week 35)
+	day1 := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	// Thursday, August 27, 2026 (Week 35)
+	day2 := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+
+	// Day 1: Stage 1 local heal
+	tracker.Record(Observation{
+		Tier:                  1,
+		Tokens:                4000,
+		IsLocal:               true,
+		IsFallback:            false,
+		ObservedAt:            day1,
+		CycleBreakerTriggered: true,
+	})
+
+	// Day 2: Stage 2 cloud escalation
+	tracker.Record(Observation{
+		Tier:                  2,
+		Tokens:                6000,
+		CostSpent:             0.005,
+		IsLocal:               false,
+		IsFallback:            true,
+		ObservedAt:            day2,
+		CycleBreakerTriggered: true,
+	})
+
+	tracker.Flush()
+	stats := tracker.GetStats()
+
+	// Today (Day 2) should show only Day 2's escalation
+	if stats.Windows.Today.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected Today TotalInterventions == 1, got %d", stats.Windows.Today.CycleKiller.TotalInterventions)
+	}
+	if stats.Windows.Today.CycleKiller.Stage2CloudEscalations != 1 {
+		t.Errorf("expected Today Stage2CloudEscalations == 1, got %d", stats.Windows.Today.CycleKiller.Stage2CloudEscalations)
+	}
+	if stats.Windows.Today.CycleKiller.Stage1LocalHeals != 0 {
+		t.Errorf("expected Today Stage1LocalHeals == 0, got %d", stats.Windows.Today.CycleKiller.Stage1LocalHeals)
+	}
+
+	// ThisWeek (Week 35) should aggregate Day 1 + Day 2 = 2 interventions
+	if stats.Windows.ThisWeek.CycleKiller.TotalInterventions != 2 {
+		t.Errorf("expected ThisWeek TotalInterventions == 2, got %d", stats.Windows.ThisWeek.CycleKiller.TotalInterventions)
+	}
+	if stats.Windows.ThisWeek.CycleKiller.Stage1LocalHeals != 1 {
+		t.Errorf("expected ThisWeek Stage1LocalHeals == 1, got %d", stats.Windows.ThisWeek.CycleKiller.Stage1LocalHeals)
+	}
+	if stats.Windows.ThisWeek.CycleKiller.Stage2CloudEscalations != 1 {
+		t.Errorf("expected ThisWeek Stage2CloudEscalations == 1, got %d", stats.Windows.ThisWeek.CycleKiller.Stage2CloudEscalations)
+	}
+	if stats.Windows.ThisWeek.CycleKiller.AvoidedRunawayTokens != 16000 {
+		t.Errorf("expected ThisWeek AvoidedRunawayTokens == 16000, got %d", stats.Windows.ThisWeek.CycleKiller.AvoidedRunawayTokens)
+	}
+	if stats.Windows.ThisWeek.CycleKiller.LocalHealSuccessRatePct != 50.0 {
+		t.Errorf("expected ThisWeek LocalHealSuccessRatePct == 50.0, got %f", stats.Windows.ThisWeek.CycleKiller.LocalHealSuccessRatePct)
+	}
+
+	// ThisMonth (August 2026) should also have 2 interventions
+	if stats.Windows.ThisMonth.CycleKiller.TotalInterventions != 2 {
+		t.Errorf("expected ThisMonth TotalInterventions == 2, got %d", stats.Windows.ThisMonth.CycleKiller.TotalInterventions)
+	}
+
+	// Verify JSON serialization includes windowed cycle_killer
+	bytes, err := json.Marshal(stats)
+	if err != nil {
+		t.Fatalf("failed to marshal stats to JSON: %v", err)
+	}
+	var unmarshaled StatsSnapshot
+	if err := json.Unmarshal(bytes, &unmarshaled); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if unmarshaled.Windows.Today.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected unmarshaled Today TotalInterventions == 1, got %d", unmarshaled.Windows.Today.CycleKiller.TotalInterventions)
+	}
+	if unmarshaled.Windows.ThisWeek.CycleKiller.TotalInterventions != 2 {
+		t.Errorf("expected unmarshaled ThisWeek TotalInterventions == 2, got %d", unmarshaled.Windows.ThisWeek.CycleKiller.TotalInterventions)
+	}
+}
+

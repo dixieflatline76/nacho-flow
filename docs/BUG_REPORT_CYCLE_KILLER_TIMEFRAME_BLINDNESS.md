@@ -1,7 +1,7 @@
 # 🐛 Bug Report: Cycle Killer Telemetry Timeframe Blindness in Dashboard
 
 **Date Reported:** August 30, 2026  
-**Status:** Open / Documented (Target: v0.8.3 Patch)  
+**Status:** Resolved / Verified (Fixed in v0.8.4, 96.4% Backend / 95.8% Frontend Coverage)  
 **Severity:** Medium (UI/Telemetry Inconsistency — Data Display Disconnect)  
 **Affected Components:**
 - `pkg/telemetry/metrics.go` (Backend Statistics Engine)

@@ -197,7 +197,18 @@
 			`;
 		}
 
-		renderCycleKiller(stats.cycle_killer);
+		let currentCycleKiller = null;
+		if (activeTimeWindow === 'today') {
+			currentCycleKiller = stats.windows?.today?.cycle_killer;
+		} else if (activeTimeWindow === 'this_week') {
+			currentCycleKiller = stats.windows?.this_week?.cycle_killer;
+		} else if (activeTimeWindow === 'this_month') {
+			currentCycleKiller = stats.windows?.this_month?.cycle_killer;
+		} else {
+			currentCycleKiller = stats.windows?.all_time?.cycle_killer || stats.cycle_killer;
+		}
+
+		renderCycleKiller(currentCycleKiller);
 	}
 
 	function renderCycleKiller(ck) {

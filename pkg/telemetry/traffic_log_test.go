@@ -209,6 +209,10 @@ func TestTrafficLogger_CycleBreakerMetrics_Roundtrip(t *testing.T) {
 		CycleMaxThinkingNgramFreq: 1,
 	}
 
+	if logger.FilePath() != logPath {
+		t.Errorf("Expected FilePath %s, got %s", logPath, logger.FilePath())
+	}
+
 	logger.Emit(record)
 	if err := logger.Close(); err != nil {
 		t.Fatalf("Failed to close logger: %v", err)

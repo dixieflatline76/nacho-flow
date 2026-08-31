@@ -20,14 +20,15 @@ type TierMetrics struct {
 	Fallbacks           int64 `json:"fallbacks"`
 }
 
-// TimeWindowMetrics captures aggregated volume and financial telemetry for a discrete timeframe.
+// TimeWindowMetrics captures aggregated volume, financial, and defense telemetry for a discrete timeframe.
 type TimeWindowMetrics struct {
-	Requests         int64   `json:"requests"`
-	TokensTotal      int64   `json:"tokens_total"`
-	TokensLocal      int64   `json:"tokens_local"`
-	CostSpentUSD     float64 `json:"cost_spent_usd"`
-	CostSavedUSD     float64 `json:"cost_saved_usd"`
-	CostReductionPct float64 `json:"cost_reduction_pct"`
+	Requests         int64              `json:"requests"`
+	TokensTotal      int64              `json:"tokens_total"`
+	TokensLocal      int64              `json:"tokens_local"`
+	CostSpentUSD     float64            `json:"cost_spent_usd"`
+	CostSavedUSD     float64            `json:"cost_saved_usd"`
+	CostReductionPct float64            `json:"cost_reduction_pct"`
+	CycleKiller      CycleKillerMetrics `json:"cycle_killer"`
 }
 
 // TimeWindowSnapshot holds pre-aggregated metrics across standard time horizons.
@@ -317,6 +318,17 @@ func addToWindow(w *TimeWindowMetrics, obs Observation, tokens, localTokens int6
 	w.CostSpentUSD += obs.CostSpent
 	w.CostSavedUSD += obs.CostSaved
 	w.CostReductionPct = reductionPct(w.CostSavedUSD, w.CostSpentUSD)
+
+	if obs.CycleBreakerTriggered {
+		w.CycleKiller.TotalInterventions++
+		w.CycleKiller.AvoidedRunawayTokens += estimatedAvoidedTokensPerIntervention
+		w.CycleKiller.AvoidedGPUSeconds += estimatedAvoidedTokensPerIntervention / estimatedLocalTokensPerSecond
+		if obs.IsFallback {
+			w.CycleKiller.Stage2CloudEscalations++
+		} else {
+			w.CycleKiller.Stage1LocalHeals++
+		}
+	}
 }
 
 func addBucketToWindow(w *TimeWindowMetrics, b TimeWindowMetrics) {
@@ -326,6 +338,20 @@ func addBucketToWindow(w *TimeWindowMetrics, b TimeWindowMetrics) {
 	w.CostSpentUSD += b.CostSpentUSD
 	w.CostSavedUSD += b.CostSavedUSD
 	w.CostReductionPct = reductionPct(w.CostSavedUSD, w.CostSpentUSD)
+
+	w.CycleKiller.TotalInterventions += b.CycleKiller.TotalInterventions
+	w.CycleKiller.AvoidedRunawayTokens += b.CycleKiller.AvoidedRunawayTokens
+	w.CycleKiller.AvoidedGPUSeconds += b.CycleKiller.AvoidedGPUSeconds
+	w.CycleKiller.Stage1LocalHeals += b.CycleKiller.Stage1LocalHeals
+	w.CycleKiller.Stage2CloudEscalations += b.CycleKiller.Stage2CloudEscalations
+}
+
+func computeHealRate(ck *CycleKillerMetrics) {
+	if ck.TotalInterventions > 0 {
+		ck.LocalHealSuccessRatePct = float64(ck.Stage1LocalHeals) / float64(ck.TotalInterventions) * 100
+	} else {
+		ck.LocalHealSuccessRatePct = 0
+	}
 }
 
 func reductionPct(saved, spent float64) float64 {
@@ -537,13 +563,15 @@ func (s *StatsTracker) RecalculateFromRecords(records []TurnRecord, oracle *Pric
 		}
 
 		obs := Observation{
-			TierName:  rec.SelectedTier,
-			Model:     rec.TargetModel,
-			Provider:  rec.Provider,
-			Tokens:    rec.Tokens,
-			CostSpent: costSpent,
-			CostSaved: costSaved,
-			IsLocal:   rec.IsLocal,
+			TierName:              rec.SelectedTier,
+			Model:                 rec.TargetModel,
+			Provider:              rec.Provider,
+			Tokens:                rec.Tokens,
+			CostSpent:             costSpent,
+			CostSaved:             costSaved,
+			IsLocal:               rec.IsLocal,
+			IsFallback:            rec.IsFallback,
+			CycleBreakerTriggered: rec.CycleBreakerTriggered,
 		}
 		s.updateWindowsLocked(obs, observedAt)
 	}
@@ -557,9 +585,18 @@ func (s *StatsTracker) GetStats() StatsSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	snap := s.stats
-	// Compute derived Cycle Killer heal rate on read (never stored to disk)
-	if snap.CycleKiller.TotalInterventions > 0 {
-		snap.CycleKiller.LocalHealSuccessRatePct = float64(snap.CycleKiller.Stage1LocalHeals) / float64(snap.CycleKiller.TotalInterventions) * 100
+	// Compute derived Cycle Killer heal rate on read per window (never stored to disk)
+	computeHealRate(&snap.CycleKiller)
+	computeHealRate(&snap.Windows.Today.CycleKiller)
+	computeHealRate(&snap.Windows.ThisWeek.CycleKiller)
+	computeHealRate(&snap.Windows.ThisMonth.CycleKiller)
+	computeHealRate(&snap.Windows.AllTime.CycleKiller)
+	if s.stats.DailyBuckets != nil {
+		snap.DailyBuckets = make(map[string]TimeWindowMetrics, len(s.stats.DailyBuckets))
+		for k, bucket := range s.stats.DailyBuckets {
+			computeHealRate(&bucket.CycleKiller)
+			snap.DailyBuckets[k] = bucket
+		}
 	}
 	return snap
 }
