@@ -163,6 +163,7 @@ func NewStatsTrackerWithInitialSnapshot(bufferSize int, initial StatsSnapshot) *
 			CostSpentUSD:     tracker.stats.TotalCostSpentUSD,
 			CostSavedUSD:     tracker.stats.EstimatedCostSavedUSD,
 			CostReductionPct: allPct,
+			CycleKiller:      tracker.stats.CycleKiller,
 		}
 	}
 
@@ -227,6 +228,14 @@ func (s *StatsTracker) restoreWindowsFromBuckets(now time.Time) {
 	weekMetrics.CostReductionPct = reductionPct(weekMetrics.CostSavedUSD, weekMetrics.CostSpentUSD)
 	monthMetrics.CostReductionPct = reductionPct(monthMetrics.CostSavedUSD, monthMetrics.CostSpentUSD)
 
+	// Legacy migration: if daily buckets did not track CycleKiller but global stats has interventions
+	if weekMetrics.CycleKiller.TotalInterventions == 0 && s.stats.CycleKiller.TotalInterventions > 0 {
+		weekMetrics.CycleKiller = s.stats.CycleKiller
+	}
+	if monthMetrics.CycleKiller.TotalInterventions == 0 && s.stats.CycleKiller.TotalInterventions > 0 {
+		monthMetrics.CycleKiller = s.stats.CycleKiller
+	}
+
 	s.stats.Windows.ThisWeek = weekMetrics
 	s.stats.Windows.ThisMonth = monthMetrics
 
@@ -239,6 +248,7 @@ func (s *StatsTracker) restoreWindowsFromBuckets(now time.Time) {
 		CostSpentUSD:     s.stats.TotalCostSpentUSD,
 		CostSavedUSD:     s.stats.EstimatedCostSavedUSD,
 		CostReductionPct: allPct,
+		CycleKiller:      s.stats.CycleKiller,
 	}
 }
 

@@ -197,15 +197,30 @@
 			`;
 		}
 
+		// Select the cycle_killer object for the active time window.
+		// IMPORTANT: cycle_killer is always an object (never null/undefined), so we must check
+		// total_interventions > 0 — not just truthiness — before falling back to the root-level
+		// stats.cycle_killer. This handles legacy daemons where per-window CK wasn't persisted.
+		function windowCycleKiller(windowCK) {
+			if (windowCK?.total_interventions > 0) {
+				return windowCK;
+			}
+			// Fall back to root-level global accumulator if it has data
+			if (stats.cycle_killer?.total_interventions > 0) {
+				return stats.cycle_killer;
+			}
+			return windowCK;
+		}
+
 		let currentCycleKiller = null;
 		if (activeTimeWindow === 'today') {
-			currentCycleKiller = stats.windows?.today?.cycle_killer;
+			currentCycleKiller = windowCycleKiller(stats.windows?.today?.cycle_killer);
 		} else if (activeTimeWindow === 'this_week') {
-			currentCycleKiller = stats.windows?.this_week?.cycle_killer;
+			currentCycleKiller = windowCycleKiller(stats.windows?.this_week?.cycle_killer);
 		} else if (activeTimeWindow === 'this_month') {
-			currentCycleKiller = stats.windows?.this_month?.cycle_killer;
+			currentCycleKiller = windowCycleKiller(stats.windows?.this_month?.cycle_killer);
 		} else {
-			currentCycleKiller = stats.windows?.all_time?.cycle_killer || stats.cycle_killer;
+			currentCycleKiller = windowCycleKiller(stats.windows?.all_time?.cycle_killer);
 		}
 
 		renderCycleKiller(currentCycleKiller);
