@@ -78,13 +78,7 @@ func (r *MetaRegistry) Dispatch(
 	sessionTracker *router.SessionTracker,
 	isStream bool,
 ) {
-	sessionKey := rReq.Header.Get("x-session-id")
-	if sessionKey == "" {
-		sessionKey = rReq.Header.Get("session-id")
-	}
-	if sessionKey == "" {
-		sessionKey = rReq.RemoteAddr
-	}
+	sessionKey := extractSessionKey(rReq)
 
 	// 1. Anti-abuse rate debounce (2-second window for identical meta directives)
 	if sessionTracker != nil && sessionTracker.ShouldDebounceMeta(sessionKey, reqCtx.MetaDirective, 2*time.Second) {

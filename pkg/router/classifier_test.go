@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -199,9 +200,9 @@ func TestClassifier_WithCustomEstimator(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	// 10 chars + space = ~11 chars / 2.0 ~= 5 tokens
-	if ctx.Tokens < 4 || ctx.Tokens > 6 {
-		t.Errorf("Expected ~5 tokens with calibrated estimator, got %d", ctx.Tokens)
+	// 56 bytes payload / 2.0 ~= 28 tokens
+	if ctx.Tokens < 25 || ctx.Tokens > 32 {
+		t.Errorf("Expected ~28 tokens with calibrated estimator, got %d", ctx.Tokens)
 	}
 
 	if c, ok := classifier.(*RequestClassifier); !ok || c.GetEstimator() == nil {
@@ -258,6 +259,33 @@ func TestClassifier_InteractiveToolExtraction(t *testing.T) {
 	}
 }
 
+func TestClassifier_ExtractAllTextFromContent_Types(t *testing.T) {
+	// 1. Plain string
+	if s := extractAllTextFromContent("hello world"); s != "hello world" {
+		t.Errorf("expected 'hello world', got %q", s)
+	}
+
+	// 2. Multi-part array with text and content keys
+	parts := []interface{}{
+		map[string]interface{}{"text": "first part"},
+		map[string]interface{}{"content": "second part"},
+		"not-a-map",
+		map[string]interface{}{"other_key": 123},
+	}
+	extracted := extractAllTextFromContent(parts)
+	if !strings.Contains(extracted, "first part") || !strings.Contains(extracted, "second part") {
+		t.Errorf("expected multi-part extraction, got %q", extracted)
+	}
+
+	// 3. Unsupported types
+	if s := extractAllTextFromContent(12345); s != "" {
+		t.Errorf("expected empty string for int, got %q", s)
+	}
+	if s := extractAllTextFromContent(nil); s != "" {
+		t.Errorf("expected empty string for nil, got %q", s)
+	}
+}
+
 func TestClassifier_FeatureFlagsInDirectives(t *testing.T) {
 	c := NewClassifier()
 
@@ -274,6 +302,163 @@ func TestClassifier_FeatureFlagsInDirectives(t *testing.T) {
 	expected := uint16(FeatureDefaultAll.MaskOut(FeatureShieldEnabled | FeatureShieldFollowup | FeatureShieldModeSwitch))
 	if ctx.Features != expected {
 		t.Fatalf("expected %d, got %d", expected, ctx.Features)
+	}
+}
+
+func TestScanTrailingMessages_WriteProgress(t *testing.T) {
+	c := NewClassifier().(*RequestClassifier)
+	// Explicit tool list — no hidden Go defaults, mirrors config-driven behavior
+	configuredTools := []string{"write_to_file", "replace_in_file", "execute_command", "apply_diff"}
+
+	tests := []struct {
+		name                 string
+		customTools          []string
+		body                 string
+		wantToolProgress     bool
+		wantWriteProgress    bool
+		wantHistoryErrors    int
+	}{
+		{
+			name: "OpenAI format: write_to_file tool call and response",
+			body: `{
+				"messages": [
+					{"role": "user", "content": "Write the code"},
+					{"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "write_to_file", "arguments": "{}"}}]},
+					{"role": "tool", "tool_call_id": "call_1", "content": "File written successfully"}
+				]
+			}`,
+			wantToolProgress:  true,
+			wantWriteProgress: true,
+			wantHistoryErrors: 0,
+		},
+		{
+			name: "OpenAI format: read-only read_file tool call and response",
+			body: `{
+				"messages": [
+					{"role": "user", "content": "Read the code"},
+					{"role": "assistant", "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]},
+					{"role": "tool", "tool_call_id": "call_2", "content": "package main\nfunc main() {}"}
+				]
+			}`,
+			wantToolProgress:  true,
+			wantWriteProgress: false,
+			wantHistoryErrors: 0,
+		},
+		{
+			name: "OpenAI format: multiple tool calls (read + execute)",
+			body: `{
+				"messages": [
+					{"role": "user", "content": "Check and run"},
+					{"role": "assistant", "tool_calls": [
+						{"id": "c1", "type": "function", "function": {"name": "read_file"}},
+						{"id": "c2", "type": "function", "function": {"name": "execute_command"}}
+					]},
+					{"role": "tool", "tool_call_id": "c1", "content": "ok"},
+					{"role": "tool", "tool_call_id": "c2", "content": "tests passed"}
+				]
+			}`,
+			wantToolProgress:  true,
+			wantWriteProgress: true,
+			wantHistoryErrors: 0,
+		},
+		{
+			name: "Anthropic format: tool_use execute_command",
+			body: `{
+				"messages": [
+					{"role": "user", "content": "Run tests"},
+					{"role": "assistant", "content": [
+						{"type": "text", "text": "Running test suite"},
+						{"type": "tool_use", "id": "tu_1", "name": "execute_command", "input": {}}
+					]},
+					{"role": "user", "content": [
+						{"type": "tool_result", "tool_use_id": "tu_1", "content": "PASS"}
+					]}
+				]
+			}`,
+			wantToolProgress:  true,
+			wantWriteProgress: true,
+			wantHistoryErrors: 0,
+		},
+		{
+			name: "Anthropic format: tool_use list_files (read-only)",
+			body: `{
+				"messages": [
+					{"role": "user", "content": "List files"},
+					{"role": "assistant", "content": [
+						{"type": "tool_use", "id": "tu_2", "name": "list_files", "input": {}}
+					]},
+					{"role": "user", "content": [
+						{"type": "tool_result", "tool_use_id": "tu_2", "content": "file1.go, file2.go"}
+					]}
+				]
+			}`,
+			wantToolProgress:  true,
+			wantWriteProgress: false,
+			wantHistoryErrors: 0,
+		},
+		{
+			name: "Custom write tools: custom_build tool recognized, write_to_file ignored",
+			customTools: []string{"custom_build"},
+			body: `{
+				"messages": [
+					{"role": "assistant", "tool_calls": [{"id": "c3", "type": "function", "function": {"name": "custom_build"}}]},
+					{"role": "tool", "tool_call_id": "c3", "content": "Build succeeded"}
+				]
+			}`,
+			wantToolProgress:  true,
+			wantWriteProgress: true,
+			wantHistoryErrors: 0,
+		},
+		{
+			name: "Custom write tools: write_to_file not recognized when custom list active",
+			customTools: []string{"custom_build"},
+			body: `{
+				"messages": [
+					{"role": "assistant", "tool_calls": [{"id": "c4", "type": "function", "function": {"name": "write_to_file"}}]},
+					{"role": "tool", "tool_call_id": "c4", "content": "File written"}
+				]
+			}`,
+			wantToolProgress:  true,
+			wantWriteProgress: false,
+			wantHistoryErrors: 0,
+		},
+		{
+			name: "Failed tool execution is not progress",
+			body: `{
+				"messages": [
+					{"role": "assistant", "tool_calls": [{"id": "c5", "type": "function", "function": {"name": "write_to_file"}}]},
+					{"role": "tool", "tool_call_id": "c5", "content": "The tool execution failed: permission denied"}
+				]
+			}`,
+			wantToolProgress:  false,
+			wantWriteProgress: false,
+			wantHistoryErrors: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.customTools != nil {
+				c.SetKickstartWriteTools(tc.customTools)
+			} else {
+				c.SetKickstartWriteTools(configuredTools)
+			}
+
+			ctx, err := c.Classify([]byte(tc.body))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if ctx.HasToolProgress != tc.wantToolProgress {
+				t.Errorf("HasToolProgress = %v, want %v", ctx.HasToolProgress, tc.wantToolProgress)
+			}
+			if ctx.HasWriteProgress != tc.wantWriteProgress {
+				t.Errorf("HasWriteProgress = %v, want %v", ctx.HasWriteProgress, tc.wantWriteProgress)
+			}
+			if ctx.HistoryErrors != tc.wantHistoryErrors {
+				t.Errorf("HistoryErrors = %d, want %d", ctx.HistoryErrors, tc.wantHistoryErrors)
+			}
+		})
 	}
 }
 

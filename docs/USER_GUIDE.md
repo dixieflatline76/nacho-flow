@@ -223,22 +223,30 @@ tiers:
     when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
     strip_images: true
 
-  # Tier 4: Fast Agentic Cloud (Large context >= 16k, active tool calls, or retry recovery)
-  - name: "Cloud Agentic Fast"
-    model: "qwen/qwen3-coder-30b-a3b-instruct"
+  # Tier 4: Frontier Powerhouse (Complex refactoring, higher retry counts)
+  - name: "Cloud Frontier Powerhouse"
+    model: "anthropic/claude-sonnet-5"
     provider: "openrouter"
-    when: "Tokens >= 16000 || HasTools || Retries >= 2"
+    when: "Retries >= 2 && Retries < 8"
 
-# Fallback Tier if no expr rules match or if primary tier trips circuit breaker
+  # Tier 5: On-Demand Opus (Unreachable by automatic routing)
+  # Accessible strictly via @nacho:model or X-Spicy-Model, and invoked by Fairy Dusting
+  - name: "Opus On-Demand (Spicy Only)"
+    model: "anthropic/claude-opus-5"
+    provider: "openrouter"
+    when: "false"
+
+# 🛡️ Cost-Safe Default Tier: Safety net catch-all (Sonnet 5 prevents runaway Opus costs)
 default_tier:
-  name: "Cloud Fallback"
-  model: "deepseek/deepseek-v4-flash-latest"
+  name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
+  model: "anthropic/claude-sonnet-5"
   provider: "openrouter"
   when: "true"
 
 # 🛡️ Agentic Tool Fallback Shield
-# Intercepts conversational plans & questions from local models in Zoo Code / Cline
-# and auto-synthesizes schema-compliant tool calls to prevent 3-strike deadlocks.
+# Intercepts conversational plans & questions from local models in Zoo Code / Cline / Roo Code
+# and auto-synthesizes schema-compliant tool calls (supporting both follow_up and options arrays)
+# to prevent 3-strike deadlocks across all extensions.
 agent_shield:
   enabled: true
   tail_buffer_bytes: 256
@@ -254,6 +262,56 @@ agent_shield:
     - "switch to code mode"
     - "switch to architect mode"
     - "ready to implement"
+
+# 🎸 Cycle Killer & ⚡ Kickstart: In-Flight Stream Defense & Session Resuscitation
+cycle_killer:
+  enabled: true
+  max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
+  max_thinking_tokens: 1500         # Max reasoning tokens before repetition enforcement kicks in
+  repetition_window: 6              # Sliding n-gram window size (words) for loop detection
+  repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
+  thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks
+  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+  model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
+  retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
+  kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
+  kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
+  kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
+  kickstart_write_tools:            # Tools that count as "real progress" (read-only tools are ignored)
+    - write_to_file
+    - replace_in_file
+    - replace_file_content
+    - execute_command
+    - apply_diff
+
+# 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
+# Routes every N write-progress turns to frontier models with injected quality review prompts
+fairy_dust:
+  enabled: true
+  entries:
+    # Tactical Review: Catch subtle syntax/import bugs every 15 file writes
+    - name: "Tactical Code Review"
+      frequency: 15
+      max_count: 5
+      provider: "openrouter"
+      model: "anthropic/claude-sonnet-5"
+      prompt: >
+        [SYSTEM CHECKPOINT: TACTICAL CODE REVIEW]
+        Review recently written code for (1) correct imports and type safety,
+        (2) subtle edge case bugs, (3) test coverage gaps. If you spot issues,
+        fix them immediately. If correct, confirm and continue.
+
+    # Strategic Review: Catch architectural drift every 40 file writes
+    - name: "Strategic Architecture Review"
+      frequency: 40
+      max_count: 2
+      provider: "openrouter"
+      model: "anthropic/claude-opus-5"
+      prompt: >
+        [SYSTEM CHECKPOINT: STRATEGIC ARCHITECTURE REVIEW]
+        Perform a high-level architectural audit: (1) Does implementation match
+        original requirements? (2) Has technical debt accumulated? (3) Restructure
+        if necessary, or confirm trajectory and continue.
 ```
 
 ---
@@ -263,7 +321,8 @@ agent_shield:
 By default, Nacho Flow acts as an intelligent proxy that actively optimizes and sanitizes LLM streams:
 1. **Universal Tool Normalizer**: Converts 8 raw tool formats (Hermes XML, Mistral arrays, bare JSON, Markdown fences) into OpenAI-standard `tool_calls`.
 2. **Reasoning Stream Formatter**: Formats raw `<|im_start|>think` and `<thinking>` streams into `<think>...</think>` tags for IDE UI accordions.
-3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline and synthesizes `ask_followup_question` tool calls to prevent agent deadlocks.
+3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline / Roo Code and synthesizes dual-schema `ask_followup_question` / `ask_question` tool calls to prevent agent deadlocks.
+4. **Anti-Runaway Escalation Budget**: Caps consecutive frontier tier executions at `MaxEscalationTurns = 3` before automatically de-escalating to cloud workhorse tiers.
 
 However, different workflows and engineering personas require different levels of proxy intervention. Nacho Flow provides granular controls to selectively tune or completely bypass these transformations.
 
@@ -334,6 +393,64 @@ $$\mathbf{\text{Per-Turn In-Prompt Directive}} \quad \succ \quad \mathbf{\text{R
 
 ---
 
+### 2.4 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
+
+Autonomous agents writing code with low-cost or local models (e.g. Gemini 3.7 Flash, Devstral, Qwen) produce high throughput at minimal cost, but can accumulate subtle syntax errors, missing module extensions (e.g. Node 22 ESM `.js` imports), or architectural drift over long 40+ turn sessions.
+
+**Fairy Dusting** solves this by periodically and transparently hijacking prompt turns and routing them to frontier models (e.g., Claude Sonnet 5 or Claude Opus 5) with an injected quality review prompt.
+
+```mermaid
+flowchart TD
+    Turn["Agent Prompt Turn"] --> CheckWrite{"Is Write Progress?<br/>(write_to_file, apply_diff, etc.)"}
+    CheckWrite -- No --> NormalRoute["Normal Tier Evaluation"]
+    CheckWrite -- Yes --> IncCount["Increment WriteProgressCount"]
+    IncCount --> CheckCadence{"Matches Entry Cadence?<br/>(WriteCount % frequency == 0)"}
+    CheckCadence -- No --> NormalRoute
+    CheckCadence -- Yes --> FairyHijack["🧚 Fairy Dust Triggered!<br/>1. Select Highest-Priority Entry<br/>2. Route to Frontier Model<br/>3. Inject Review Prompt"]
+```
+
+#### How It Works:
+1. **Write-Progress Driven**: Fairy Dust only counts turns where the agent actually modifies files or executes state-altering commands (`write_to_file`, `replace_in_file`, `execute_command`, etc.). Read-only inspection turns (`read_file`, `list_dir`) do not increment the counter.
+2. **Layered Checkpoints**:
+   - **Tactical Code Review** (e.g., every 15 writes): Routes to Claude Sonnet 5 to inspect syntax, types, and imports.
+   - **Strategic Architecture Review** (e.g., every 40 writes): Routes to Claude Opus 5 to inspect high-level requirement alignment and design structure.
+3. **Candidate Priority**: If both a 15-turn tactical and a 40-turn strategic review trigger on turn 120, the highest-priority candidate (topmost in `entries` or highest configured priority) wins.
+4. **Max Count Enforcement**: Each entry respects a strict `max_count` cap per session, guaranteeing that frontier reviews never exceed your budget.
+
+---
+
+### 2.5 ⚡ Kickstart Resuscitation & Write-Only Filtering
+
+When autonomous agents get stuck in repetitive read-only planning loops (e.g. repeatedly calling `read_file` or updating task metadata without writing code), **Kickstart** intervenes to jolt the session forward:
+
+1. **Semantic Stall Detection**: If `kickstart_threshold: 5` is set, Nacho Flow monitors consecutive turns without state progress.
+2. **Write-Only Precision (`kickstart_write_only: true`)**: Ignores read-only churn (`read_file`, `list_files`, `update_todo`). Only actual file writes or command executions reset the stall counter.
+3. **Cline XML Support**: Automatically detects Cline's XML-style tool calls (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`) in text streams alongside OpenAI and Anthropic JSON formats.
+4. **Jolt & Escalation**:
+   - Injects a resuscitation directive prompting the model to transition to action.
+   - Sets `SessionKickstarted = true`, enabling rules like `when: "SessionKickstarted && Retries < 3"` to escalate to smarter models (e.g. Gemini 3.7 Flash).
+   - If stalled past `kickstart_max_count: 10`, automatically force-escalates to cloud default tier to break stubborn loops.
+
+---
+
+### 2.6 🛡️ Cost-Safe Default Tier & 🌶️ Spicy-Only Tiers (`when: "false"`)
+
+To protect your wallet from runaway loops while preserving on-demand access to flagship frontier models:
+
+* **Sonnet as Cost-Safe Default**: Configure `anthropic/claude-sonnet-5` ($3/$15 per 1M) as your `default_tier`. If a 30-turn loop occurs, the cost is capped at ~$2.50 rather than $12.65+ on Opus.
+* **Unrouted Spicy-Only Tiers (`when: "false"`)**:
+  ```yaml
+  - name: "Opus On-Demand (Spicy Only)"
+    model: "anthropic/claude-opus-5"
+    provider: "openrouter"
+    when: "false"
+  ```
+  Setting `when: "false"` guarantees that automatic tier routing **never** selects this model. It is reachable strictly through:
+  1. **Fairy Dusting**: Strategic architecture reviews (e.g. max 2 per session).
+  2. **HotSauce In-Prompt Directives**: `@nacho:model="anthropic/claude-opus-5"` or HTTP header `X-Spicy-Model`.
+
+---
+
 ## 3. Writing Custom Routing Tiers (`expr` Rules)
 
 For a complete guide with recipes on tuning token thresholds, keyword extraction, and reasoning parameters, check out the **[Rule & Tier Tuning Guide](TUNING_GUIDE.md)**.
@@ -348,6 +465,12 @@ For a complete guide with recipes on tuning token thresholds, keyword extraction
 | `Retries` | `int` | Number of consecutive prompt retries recorded in the current session (sliding 5m TTL) | `Retries < 2` |
 | `IsRetry` | `bool` | `true` if the current request is a retry of a previous failure | `!IsRetry` |
 | `Model` | `string` | The requested model ID sent by the client | `Model == 'nacho-hybrid'` |
+| `SessionKickstarted` | `bool` | `true` if session exceeded `kickstart_threshold` without tool/write progress | `SessionKickstarted && Retries < 3` |
+| `SessionKickstartCount` | `int` | Total number of kickstart events triggered in this session | `SessionKickstartCount > 2` |
+| `HasToolProgress` | `bool` | `true` if the previous turn contained successful tool execution | `HasToolProgress` |
+| `HasWriteProgress` | `bool` | `true` if the previous turn contained write/execute tool execution | `HasWriteProgress` |
+| `HistoryErrors` | `int` | Number of consecutive trailing tool execution errors in conversation history | `HistoryErrors >= 2` |
+| `CoolingDownModels` | `[]string` | List of model IDs currently on temporary cooldown from Cycle Killer severances | `!('gemma4:12b-it-qat' in CoolingDownModels)` |
 
 ### Tier Configuration Options:
 | Property | Type | Description |
@@ -630,20 +753,82 @@ curl http://127.0.0.1:8000/v1/stats
 ```
 ```json
 {
-  "started_at": "2026-08-19T20:15:46Z",
+  "started_at": "2026-08-31T08:00:00Z",
   "total_requests": 2540,
-  "tier_breakdown": {
-    "tier1_local_free": 1820,
-    "tier2_cloud_coder": 510,
-    "tier3_cloud_reasoning": 140,
-    "tier4_cloud_vision": 60,
-    "explicit_override": 0,
-    "fallbacks": 10
-  },
+  "total_tokens": 16850000,
   "total_tokens_routed_locally": 14500000,
-  "estimated_cost_saved_usd": 65.2500
+  "estimated_cost_spent_usd": 12.4500,
+  "estimated_cost_saved_usd": 65.2500,
+  "cost_reduction_pct": 83.98,
+  "tier_breakdown": {
+    "Tier 1: Local Free": 1820,
+    "Tier 2: Cloud Coder": 510,
+    "Tier 3: Cloud Reasoning": 140,
+    "Tier 4: Cloud Vision": 60,
+    "Explicit Override": 0,
+    "Fallbacks": 10
+  },
+  "cycle_killer": {
+    "total_interventions": 12,
+    "avoided_runaway_tokens": 96000,
+    "avoided_gpu_seconds": 2742.85,
+    "stage1_local_heals": 8,
+    "stage2_cloud_escalations": 4,
+    "session_kickstarts": 14,
+    "local_heal_success_rate_pct": 66.67
+  },
+  "fairy_dust": {
+    "total_triggers": 18,
+    "total_cost_usd": 1.3400,
+    "by_entry": {
+      "tactical_review": {
+        "triggers": 18,
+        "cost_usd": 1.3400,
+        "last_triggered_at": "2026-08-31T14:22:00Z"
+      }
+    }
+  },
+  "windows": {
+    "today": {
+      "requests": 450,
+      "tokens": 2800000,
+      "tokens_local": 2400000,
+      "cost_spent_usd": 2.1500,
+      "cost_saved_usd": 11.2000,
+      "cost_reduction_pct": 83.89,
+      "fairy_dust": { "total_triggers": 4, "total_cost_usd": 0.28 }
+    },
+    "yesterday": {
+      "requests": 620,
+      "tokens": 4100000,
+      "tokens_local": 3600000,
+      "cost_spent_usd": 3.1000,
+      "cost_saved_usd": 16.4000,
+      "cost_reduction_pct": 84.10,
+      "fairy_dust": { "total_triggers": 5, "total_cost_usd": 0.38 }
+    },
+    "this_week": {
+      "requests": 1420,
+      "tokens": 9200000,
+      "tokens_local": 8000000,
+      "cost_spent_usd": 6.8000,
+      "cost_saved_usd": 36.5000,
+      "cost_reduction_pct": 84.30
+    },
+    "this_month": {
+      "requests": 2540,
+      "tokens": 16850000,
+      "tokens_local": 14500000,
+      "cost_spent_usd": 12.4500,
+      "cost_saved_usd": 65.2500,
+      "cost_reduction_pct": 83.98
+    }
+  }
 }
 ```
+
+> [!NOTE]
+> All costs reflect **Prompt Cache-Aware Accounting** (applying upstream discounts from OpenRouter / Anthropic / DeepSeek) and include dedicated **Fairy Dust Telemetry** tracking proactive quality checkpoints.
 
 ---
 

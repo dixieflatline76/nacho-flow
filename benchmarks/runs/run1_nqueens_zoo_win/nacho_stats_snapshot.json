@@ -1,0 +1,92 @@
+{
+  "started_at": "2026-08-25T07:34:21Z",
+  "total_requests": 261,
+  "tier_breakdown": {
+    "tier1_local_free": 126,
+    "tier2_cloud_coder": 130,
+    "tier3_cloud_reasoning": 5,
+    "tier4_cloud_vision": 0,
+    "explicit_override": 0,
+    "fallbacks": 0
+  },
+  "total_tokens_routed_locally": 1611048,
+  "total_cost_spent_usd": 3.4205599749999993,
+  "estimated_cost_saved_usd": 19.507867025000007,
+  "cost_reduction_pct": 85.08157591883648,
+  "windows": {
+    "today": {
+      "requests": 102,
+      "tokens_total": 3255091,
+      "tokens_local": 525221,
+      "cost_spent_usd": 2.152755,
+      "cost_saved_usd": 7.745195999999998,
+      "cost_reduction_pct": 78.25049851226782
+    },
+    "this_week": {
+      "requests": 261,
+      "tokens_total": 7586050,
+      "tokens_local": 1611048,
+      "cost_spent_usd": 3.420559975,
+      "cost_saved_usd": 19.507867025,
+      "cost_reduction_pct": 85.08157591883648
+    },
+    "this_month": {
+      "requests": 261,
+      "tokens_total": 7586050,
+      "tokens_local": 1611048,
+      "cost_spent_usd": 3.420559975,
+      "cost_saved_usd": 19.507867025,
+      "cost_reduction_pct": 85.08157591883648
+    },
+    "all_time": {
+      "requests": 261,
+      "tokens_total": 7586050,
+      "tokens_local": 1611048,
+      "cost_spent_usd": 3.4205599749999993,
+      "cost_saved_usd": 19.507867025000007,
+      "cost_reduction_pct": 85.08157591883648
+    }
+  },
+  "daily_buckets": {
+    "2026-08-25": {
+      "requests": 72,
+      "tokens_total": 3011771,
+      "tokens_local": 349706,
+      "cost_spent_usd": 1.0156828,
+      "cost_saved_usd": 8.0196512,
+      "cost_reduction_pct": 88.75876862991451
+    },
+    "2026-08-26": {
+      "requests": 30,
+      "tokens_total": 77990,
+      "tokens_local": 77886,
+      "cost_spent_usd": 0.000037875,
+      "cost_saved_usd": 0.271489125,
+      "cost_reduction_pct": 99.98605111093923
+    },
+    "2026-08-27": {
+      "requests": 54,
+      "tokens_total": 1224590,
+      "tokens_local": 654733,
+      "cost_spent_usd": 0.22953349999999997,
+      "cost_saved_usd": 3.4442575000000004,
+      "cost_reduction_pct": 93.7521350561314
+    },
+    "2026-08-28": {
+      "requests": 3,
+      "tokens_total": 16608,
+      "tokens_local": 3502,
+      "cost_spent_usd": 0.0225508,
+      "cost_saved_usd": 0.027273200000000004,
+      "cost_reduction_pct": 54.73908156711625
+    },
+    "2026-08-29": {
+      "requests": 102,
+      "tokens_total": 3255091,
+      "tokens_local": 525221,
+      "cost_spent_usd": 2.152755,
+      "cost_saved_usd": 7.745195999999998,
+      "cost_reduction_pct": 78.25049851226782
+    }
+  }
+}

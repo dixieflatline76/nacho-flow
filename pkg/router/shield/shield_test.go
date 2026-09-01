@@ -196,7 +196,7 @@ func TestStrategy_SynthesizeArgs(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		var parsed map[string]string
+		var parsed map[string]interface{}
 		if err := json.Unmarshal([]byte(args), &parsed); err != nil {
 			t.Fatalf("failed to unmarshal synthesized args: %v", err)
 		}
@@ -281,7 +281,7 @@ func TestShieldManager_ProcessTurn(t *testing.T) {
 			t.Fatalf("expected function name 'ask_followup_question', got '%s'", call.Function.Name)
 		}
 
-		var args map[string]string
+		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			t.Fatalf("invalid json args: %v", err)
 		}

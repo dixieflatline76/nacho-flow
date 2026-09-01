@@ -134,6 +134,10 @@ export class ExtensionController {
 				this.setTimeWindow('today');
 			}),
 
+			vscode.commands.registerCommand('nacho-flow.setTimeWindowYesterday', () => {
+				this.setTimeWindow('yesterday');
+			}),
+
 			vscode.commands.registerCommand('nacho-flow.setTimeWindowWeek', () => {
 				this.setTimeWindow('this_week');
 			}),

@@ -33,10 +33,10 @@ nacho-flow/
 │   ├── config/             # YAML configuration parser, RCU reloader & validation
 │   ├── contract/           # Core interface definitions, ProviderType enum & bitmask DTOs
 │   ├── provider/           # Capability interfaces (LLM, Auth, Header, Health, CircuitBreaker, Registry)
-│   ├── router/             # Context classifier, adaptive estimator, session tracker, image sanitizer, tool normalizer, feature flags
-│   │   └── shield/         # Agentic fallback shield, sliding tail-buffer & question heuristic engine
+│   ├── router/             # Context classifier (OpenAI/Anthropic/Cline XML), adaptive estimator, session tracker, Kickstart resuscitation & Fairy Dusting state, image sanitizer, tool normalizer
+│   │   └── shield/         # Cycle Killer in-flight stream defense, agentic fallback shield, sliding tail-buffer & question heuristic engine
 │   ├── safeio/             # Bounded path and safe atomic filesystem operations
-│   ├── server/             # HTTP reverse proxy, delayed header validator, stream normalizer (reasoning -> think), deals API
+│   ├── server/             # HTTP reverse proxy, delayed header validator, stream normalizer (reasoning -> think), Fairy Dusting pipeline, deals API
 │   ├── store/              # Atomic disk persistence for telemetry (stats.json)
 │   ├── strategy/           # Compiled expr-lang dynamic rule evaluator with MaxContext guards
 │   ├── telemetry/          # Pricing oracle, factory registry, OpenRouter plugin, StatsTracker, 3-tier classifier
@@ -70,6 +70,8 @@ Nacho Flow provides a comprehensive `Makefile` implementing Spice-grade quality,
 | **`make test-cover`**| `go test -coverprofile=...` | Generates interactive HTML test coverage report. |
 | **`make bench`** | `go run ./cmd/util/nacho_bench` | Runs pre-warmed high-concurrency benchmark suite. |
 | **`make bench-sync`**| `go run ./cmd/util/nacho_bench -sync` | Runs bare-metal benchmark harness and updates doc tables. |
+| **`make test-fixtures`**| `go test -v -run "TestStatsTracker_HistoricalFixtures..."` | Runs historical telemetry fixtures contract tests. |
+| **`make fixtures-gen`**| `go run ./pkg/telemetry/testdata/gen_fixtures.go` | Regenerates deterministic 30-day telemetry test fixtures. |
 | **`make cover-sync`**| `go run ./cmd/util/nacho_cover` | Evaluates Go + Jest coverage and syncs documentation matrices. |
 | **`make test-sync`** | `go test -race ./... && nacho_cover` | Executes full race test suite and updates coverage tables. |
 | **`make tune`** | `go run ./cmd/nacho-flow tune` | Analyzes `traffic.jsonl` and prints advisory tuning report. |
@@ -282,6 +284,39 @@ go run ./cmd/util/gen_catalog -version v1.1.0 -out data/models.json -embed-out p
 * **Hard Minimum**: **$\ge 95.0\%$ Statement Coverage** enforced across every package with application logic.
 * **Concurrency Guarantee**: **0 data races** under `go test -race ./...`.
 * **Zero Allocations on Proxy Hot-Path**: Zero heap allocations in stream parsing fast bailout paths (`BenchmarkNormalize_PureProse_FastBailout`).
+
+### 10.3 Telemetry, Metrics & Historical Fixtures Mandate
+Whenever extending `pkg/telemetry` data models or time window horizons, developers must adhere to the mandatory 5-step fixture workflow:
+1. Update `pkg/telemetry/metrics.go` data models and aggregation logic.
+2. Update `pkg/telemetry/testdata/gen_fixtures.go` ground-truth calculations.
+3. Run `make fixtures-gen` to regenerate committed static fixtures.
+4. Run `make test-fixtures` (and `make test-race`) to verify zero mathematical drift.
+5. Run `make cover-sync` to sync documentation.
+
+### 10.4 Turn Record Schema & Cache-Aware Ingestion (`pkg/telemetry/sink.go`)
+Every LLM completion processed by the reverse proxy emits a structured `TurnRecord` to registered `ObservationSink` instances (`traffic.jsonl`, `RingBufferSink`):
+
+- **`cached_tokens`**: Count of prompt tokens retrieved from provider cache (eligible for 80% discount).
+- **`upstream_cost`**: Actual USD cost returned by the provider in `usage.cost` (Priority 1 in Pricing Oracle).
+- **`fairy_dusted`**: Boolean flag indicating if this turn was an elevated proactive quality checkpoint.
+- **`fairy_dust_entry`**: Name of the matching Fairy Dust entry (e.g. `tactical_review`).
+- **`cost_spent_usd`**: Final calculated cash spent in USD (accounting for cache discounts).
+- **`cost_saved_usd`**: Counterfactual baseline savings compared to standard frontier pricing.
+
+### 10.5 ⚠️ Critical Telemetry Footguns for Contributors
+
+1. **Sink Emission Completeness (Data Loss on Restart)**:
+   - `Observation` (`pkg/telemetry/metrics.go`) is the channel DTO; `TurnRecord` (`pkg/telemetry/sink.go`) is the disk/SSE DTO.
+   - When adding a new field to `Observation`, you **MUST** map it into the `TurnRecord` literal constructor in `worker()` (`pkg/telemetry/metrics.go`).
+   - If omitted from `TurnRecord`, in-memory counters work during the active session, but replaying `traffic.jsonl` upon daemon restart will read `0`/`false`, **silently zeroing out historical metrics**.
+   - Always verify sink emission with `TestStatsTracker_SinkEmission_FairyDustAndKickstart`.
+
+2. **Dashboard Window vs. Root Accumulators (Timeframe Blindness)**:
+   - In `/v1/stats`, root-level objects (`stats.cycle_killer`, `stats.fairy_dust`) are all-time global accumulators.
+   - Per-window objects live in `stats.windows.<window>.*` (`today`, `yesterday`, `this_week`, `this_month`, `all_time`).
+   - Extension webview renderers must **NEVER** read directly from root objects when window tabs are active. Always select through window helper functions (`windowCycleKiller`, `windowFairyDust`).
+
+For comprehensive architectural deep-dives, pricing math formulas, window rollover mechanics, and storage formats, refer to the **[Telemetry & Metrics Developer Guide](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/METRICS_DEVELOPER_GUIDE.md)**.
 
 ---
 

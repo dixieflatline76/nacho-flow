@@ -86,12 +86,18 @@ export class DashboardPanel {
 					<div class="time-window-tabs">
 						<button id="tab-all_time" class="tab-btn active" onclick="setTimeWindow('all_time')">All Time</button>
 						<button id="tab-today" class="tab-btn" onclick="setTimeWindow('today')">Today</button>
+						<button id="tab-yesterday" class="tab-btn" onclick="setTimeWindow('yesterday')">Yesterday</button>
 						<button id="tab-this_week" class="tab-btn" onclick="setTimeWindow('this_week')">This Week</button>
 						<button id="tab-this_month" class="tab-btn" onclick="setTimeWindow('this_month')">This Month</button>
 					</div>
 				</div>
 				<div id="stats-timeframe-info" class="timeframe-info"></div>
 				<div id="stats-content">Loading...</div>
+			</div>
+
+			<div class="panel cycle-killer-panel">
+				<h2>🛡️ Cycle Killer (Qu'est-ce que c'est?): Loop Defense & Proactive Rescue</h2>
+				<div id="cycle-killer-content">Loading defense telemetry...</div>
 			</div>
 
 			<div class="panel routes-panel">

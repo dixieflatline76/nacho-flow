@@ -329,13 +329,13 @@ func TestPricingOracle_CalculateFinancials(t *testing.T) {
 	oracle := NewPricingOracle()
 
 	// 1. Zero tokens
-	spent, saved := oracle.CalculateFinancials("openrouter", "qwen", false, 0, 0, 3.0)
+	spent, saved := oracle.CalculateFinancials("openrouter", "qwen", false, 0, 0, 0, 0.0, 3.0)
 	if spent != 0 || saved != 0 {
 		t.Errorf("expected 0,0 for zero tokens, got spent=%f, saved=%f", spent, saved)
 	}
 
 	// 2. Local provider (100% free)
-	spent, saved = oracle.CalculateFinancials("ollama", "qwen", true, 10000, 2000, 3.0)
+	spent, saved = oracle.CalculateFinancials("ollama", "qwen", true, 10000, 2000, 0, 0.0, 3.0)
 	expectedSaved := (12000.0 / 1_000_000.0) * 3.0
 	if fmt.Sprintf("%.6f", saved) != fmt.Sprintf("%.6f", expectedSaved) {
 		t.Errorf("expected %f saved for local, got %f", expectedSaved, saved)
@@ -360,12 +360,38 @@ func TestPricingOracle_CalculateFinancials(t *testing.T) {
 	// Total Spent: $0.0165
 	// Baseline (51,000 / 1M) * 3.00 = $0.153
 	// Saved: $0.153 - $0.0165 = $0.1365
-	spent, saved = oracle.CalculateFinancials("openrouter", "qwen-coder", false, 50000, 1000, 3.0)
+	spent, saved = oracle.CalculateFinancials("openrouter", "qwen-coder", false, 50000, 1000, 0, 0.0, 3.0)
 	if fmt.Sprintf("%.4f", spent) != "0.0165" {
 		t.Errorf("expected 0.0165 spent, got %f", spent)
 	}
 	if fmt.Sprintf("%.4f", saved) != "0.1365" {
 		t.Errorf("expected 0.1365 saved, got %f", saved)
+	}
+
+	// 4. Upstream cost override (OpenRouter ground truth)
+	spent, saved = oracle.CalculateFinancials("openrouter", "qwen-coder", false, 50000, 1000, 0, 0.05, 3.0)
+	if fmt.Sprintf("%.4f", spent) != "0.0500" {
+		t.Errorf("upstream cost override: expected 0.0500 spent, got %f", spent)
+	}
+	expectedBaseline := (51000.0 / 1_000_000.0) * 3.0
+	expectedSavedUpstream := expectedBaseline - 0.05
+	if fmt.Sprintf("%.4f", saved) != fmt.Sprintf("%.4f", expectedSavedUpstream) {
+		t.Errorf("upstream cost override: expected %f saved, got %f", expectedSavedUpstream, saved)
+	}
+
+	// 5. Cache-aware discount (35k of 50k prompt tokens cached, 80% discount on cached)
+	// Prompt: uncached = 15000 @ $0.30/1M = $0.0045
+	//         cached   = 35000 @ $0.30/1M * 0.20 = $0.0021
+	// Completion: 1000 @ $1.50/1M = $0.0015
+	// Total spent: $0.0081
+	// Baseline (51,000 / 1M) * 3.00 = $0.153
+	// Saved: 0.153 - 0.0081 = 0.1449
+	spent, saved = oracle.CalculateFinancials("openrouter", "qwen-coder", false, 50000, 1000, 35000, 0.0, 3.0)
+	if fmt.Sprintf("%.4f", spent) != "0.0081" {
+		t.Errorf("cache discount: expected 0.0081 spent, got %f", spent)
+	}
+	if fmt.Sprintf("%.4f", saved) != "0.1449" {
+		t.Errorf("cache discount: expected 0.1449 saved, got %f", saved)
 	}
 }
 

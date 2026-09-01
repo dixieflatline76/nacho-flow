@@ -301,6 +301,21 @@ func TestDefaultRunners(t *testing.T) {
 	// Simple invocation of default runners for coverage
 	_ = defaultGitRunner("version")
 	_, _ = defaultOutputRunner("version")
+
+	// Error path for defaultOutputRunner
+	_, err := defaultOutputRunner("invalid-command-that-fails-12345")
+	if err == nil {
+		t.Errorf("expected error running invalid git command")
+	}
+
+	// updateSiteVersion and updatePackageJSON error paths on invalid files
+	v := Version{Major: 1, Minor: 0, Patch: 0}
+	if err := updateSiteVersion("/nonexistent_dir_12345/index.html", v); err == nil {
+		t.Errorf("expected error updating nonexistent site file")
+	}
+	if err := updatePackageJSON("/nonexistent_dir_12345/package.json", v); err == nil {
+		t.Errorf("expected error updating nonexistent package file")
+	}
 }
 
 func TestRunCLI_Errors(t *testing.T) {

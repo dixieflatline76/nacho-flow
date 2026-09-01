@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // mockServiceLogger implements service.Logger for unit testing.
@@ -204,3 +205,51 @@ func TestLogger_NilWriterAndNilServiceLogger(t *testing.T) {
 	}
 	_ = closerEmptyDir.Close()
 }
+
+func TestLogger_MultiHandler_CompleteCoverage(t *testing.T) {
+	var buf1, buf2 bytes.Buffer
+	h1 := slog.NewTextHandler(&buf1, &slog.HandlerOptions{Level: slog.LevelInfo})
+	h2 := slog.NewTextHandler(&buf2, &slog.HandlerOptions{Level: slog.LevelWarn})
+
+	multi := &multiHandler{handlers: []slog.Handler{h1, h2}}
+
+	ctx := context.Background()
+
+	// Enabled
+	if !multi.Enabled(ctx, slog.LevelInfo) {
+		t.Errorf("expected multiHandler to be enabled at LevelInfo")
+	}
+	if multi.Enabled(ctx, slog.LevelDebug) {
+		t.Errorf("expected multiHandler to NOT be enabled at LevelDebug")
+	}
+
+	// Handle
+	rInfo := slog.NewRecord(time.Now(), slog.LevelInfo, "info message", 0)
+	if err := multi.Handle(ctx, rInfo); err != nil {
+		t.Fatalf("unexpected error in Handle: %v", err)
+	}
+
+	rWarn := slog.NewRecord(time.Now(), slog.LevelWarn, "warn message", 0)
+	if err := multi.Handle(ctx, rWarn); err != nil {
+		t.Fatalf("unexpected error in Handle: %v", err)
+	}
+
+	// WithAttrs
+	withAttrs := multi.WithAttrs([]slog.Attr{slog.String("scope", "test")})
+	if withAttrs == nil {
+		t.Fatalf("expected non-nil handler from WithAttrs")
+	}
+
+	// WithGroup
+	withGroup := multi.WithGroup("analytics")
+	if withGroup == nil {
+		t.Fatalf("expected non-nil handler from WithGroup")
+	}
+
+	// nopCloser Close
+	nc := nopCloser{}
+	if err := nc.Close(); err != nil {
+		t.Errorf("expected nil error from nopCloser.Close, got %v", err)
+	}
+}
+

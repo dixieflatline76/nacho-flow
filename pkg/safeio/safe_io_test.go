@@ -181,6 +181,19 @@ func TestSafeBoundedDir_ConstructorAndEdgeCases(t *testing.T) {
 	if _, err := sbd.ReadFile("existing_dir"); err == nil {
 		t.Errorf("expected error reading an existing directory as a file")
 	}
+
+	// Rename conflict in AtomicWrite where target is a non-empty directory
+	subDirPath := filepath.Join(tempDir, "non_empty_dir")
+	if err := os.MkdirAll(subDirPath, 0750); err != nil {
+		t.Fatalf("failed to create non_empty_dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subDirPath, "child.txt"), []byte("inner"), 0600); err != nil {
+		t.Fatalf("failed to create inner file: %v", err)
+	}
+
+	if err := sbd.AtomicWrite("non_empty_dir", []byte("data"), 0600); err == nil {
+		t.Errorf("expected error in AtomicWrite when target is a non-empty directory")
+	}
 }
 
 

@@ -2,7 +2,7 @@
   "name": "nacho-flow",
   "displayName": "Nacho Flow",
   "description": "VS Code extension for the Nacho Flow AI routing gateway - Real-time cost visibility, route inspection, and circuit breaker management",
-  "version": "0.8.2",
+  "version": "0.8.4",
   "publisher": "dixieflatline76",
   "license": "MIT",
   "repository": {
@@ -70,6 +70,10 @@
       {
         "command": "nacho-flow.setTimeWindowToday",
         "title": "Nacho Flow: Set Timeframe to Today"
+      },
+      {
+        "command": "nacho-flow.setTimeWindowYesterday",
+        "title": "Nacho Flow: Set Timeframe to Yesterday"
       },
       {
         "command": "nacho-flow.setTimeWindowWeek",
@@ -148,6 +152,7 @@
     "c8": "^12.0.0",
     "esbuild": "^0.19.0",
     "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.5.0",
     "ts-jest": "^29.4.12",
     "typescript": "^5.0.0"
   },

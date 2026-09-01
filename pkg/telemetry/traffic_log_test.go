@@ -187,3 +187,57 @@ func TestTrafficLogger_ConstructorAndReadRecordEdgeCases(t *testing.T) {
 		t.Errorf("Expected 2 valid records parsed, got %d", len(records))
 	}
 }
+
+// Test 1.5: Cycle Breaker metrics persistence and deserialization
+func TestTrafficLogger_CycleBreakerMetrics_Roundtrip(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "cycle_traffic.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 100)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	record := TurnRecord{
+		Timestamp:                 time.Now().UTC(),
+		RequestID:                 "req-cycle-telemetry",
+		Tokens:                    4096,
+		CycleBreakerTriggered:     false,
+		CycleProseTokens:          2847,
+		CycleMaxNgramFreq:         1,
+		CycleThinkingTokens:       1203,
+		CycleMaxThinkingNgramFreq: 1,
+	}
+
+	if logger.FilePath() != logPath {
+		t.Errorf("Expected FilePath %s, got %s", logPath, logger.FilePath())
+	}
+
+	logger.Emit(record)
+	if err := logger.Close(); err != nil {
+		t.Fatalf("Failed to close logger: %v", err)
+	}
+
+	records, err := ReadRecords(logPath, 0)
+	if err != nil {
+		t.Fatalf("Failed to read records: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 record, got %d", len(records))
+	}
+
+	got := records[0]
+	if got.CycleProseTokens != 2847 {
+		t.Errorf("Expected CycleProseTokens 2847, got %d", got.CycleProseTokens)
+	}
+	if got.CycleMaxNgramFreq != 1 {
+		t.Errorf("Expected CycleMaxNgramFreq 1, got %d", got.CycleMaxNgramFreq)
+	}
+	if got.CycleThinkingTokens != 1203 {
+		t.Errorf("Expected CycleThinkingTokens 1203, got %d", got.CycleThinkingTokens)
+	}
+	if got.CycleMaxThinkingNgramFreq != 1 {
+		t.Errorf("Expected CycleMaxThinkingNgramFreq 1, got %d", got.CycleMaxThinkingNgramFreq)
+	}
+}

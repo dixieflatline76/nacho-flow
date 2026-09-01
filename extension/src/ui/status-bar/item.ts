@@ -38,8 +38,9 @@ export class StatusBarManager {
 		} else {
 			const metrics = this.extractMetricsForTimeWindow();
 			const suffix = this.timeWindow === 'today' ? ' Today' : 
+				(this.timeWindow === 'yesterday' ? ' Yesterday' : 
 				(this.timeWindow === 'this_week' ? ' This Week' : 
-				(this.timeWindow === 'this_month' ? ' This Month' : ''));
+				(this.timeWindow === 'this_month' ? ' This Month' : '')));
 
 			this.item.text = `🌮 $${metrics.savedUSD.toFixed(2)} Saved${suffix} (${metrics.localPct}% Local)`;
 			this.item.tooltip = this.buildTooltip(metrics);
@@ -71,6 +72,16 @@ export class StatusBarManager {
 			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
 			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
 			timeframeTitle = 'Today (Active 24h)';
+		} else if (this.timeWindow === 'yesterday') {
+			const w = this.stats.windows?.yesterday;
+			totalReqs = w?.requests || 0;
+			totalTokens = w?.tokens_total || 0;
+			localTokens = w?.tokens_local || 0;
+			spentUSD = w?.cost_spent_usd || 0;
+			savedUSD = w?.cost_saved_usd || 0;
+			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
+			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			timeframeTitle = 'Yesterday (Prior 24h)';
 		} else if (this.timeWindow === 'this_week') {
 			const w = this.stats.windows?.this_week;
 			totalReqs = w?.requests || 0;
@@ -128,13 +139,13 @@ export class StatusBarManager {
 		md.appendMarkdown(`**🌮 Nacho Flow** • Smart Hybrid AI Gateway\n\n`);
 		md.appendMarkdown(`🕒 **Timeframe**: ${m.timeframeTitle}\n\n`);
 		md.appendMarkdown(`---\n\n`);
-		md.appendMarkdown(`💵 **Est. Cost Saved**: \`+$${m.savedUSD.toFixed(2)}\` *(${m.reductionPct}% saved)*\n\n`);
+		md.appendMarkdown(`💵 **Est. Cost Saved**: \`+$${m.savedUSD.toFixed(2)}\` *(${Math.round(m.reductionPct)}% saved)*\n\n`);
 		md.appendMarkdown(`📉 **Cloud API Spend**: \`$${m.spentUSD.toFixed(2)}\`\n\n`);
 		md.appendMarkdown(`⚡ **Local GPU ($0.00)**: \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)*\n\n`);
 		md.appendMarkdown(`🪙 **Total Prompt Turns**: \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)*\n\n`);
 		md.appendMarkdown(`🛣️ **Routing Engine**: \`${this.getBaseUrl()}\`\n\n`);
 		md.appendMarkdown(`---\n\n`);
-		md.appendMarkdown(`Switch: [Today](command:nacho-flow.setTimeWindowToday) &nbsp;|&nbsp; [This Week](command:nacho-flow.setTimeWindowWeek) &nbsp;|&nbsp; [This Month](command:nacho-flow.setTimeWindowMonth) &nbsp;|&nbsp; [All Time](command:nacho-flow.setTimeWindowAllTime)\n\n`);
+		md.appendMarkdown(`Switch: [Today](command:nacho-flow.setTimeWindowToday) &nbsp;|&nbsp; [Yesterday](command:nacho-flow.setTimeWindowYesterday) &nbsp;|&nbsp; [This Week](command:nacho-flow.setTimeWindowWeek) &nbsp;|&nbsp; [This Month](command:nacho-flow.setTimeWindowMonth) &nbsp;|&nbsp; [All Time](command:nacho-flow.setTimeWindowAllTime)\n\n`);
 		md.appendMarkdown(`---\n\n`);
 		md.appendMarkdown(`[📊 Dashboard](command:nacho-flow.showDashboard) &nbsp;|&nbsp; [⚡ Auto-Tune](command:nacho-flow.runOptimizer) &nbsp;|&nbsp; [🔥 Heat Seeker](command:nacho-flow.refreshDeals) &nbsp;|&nbsp; [⚙️ Settings](command:nacho-flow.openSettings)`);
 

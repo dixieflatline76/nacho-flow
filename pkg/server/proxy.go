@@ -181,6 +181,16 @@ func NewServerWithTelemetryAndRegistry(
 	if class == nil {
 		class = router.NewClassifier()
 	}
+	if classWithSigs, ok := class.(interface{ SetErrorSignatures([]string) }); ok {
+		classWithSigs.SetErrorSignatures(cfg.AgentShield.ErrorSignatures)
+	}
+	writeTools := cfg.CycleKiller.KickstartWriteTools
+	if len(writeTools) == 0 && len(cfg.CycleBreaker.KickstartWriteTools) > 0 {
+		writeTools = cfg.CycleBreaker.KickstartWriteTools
+	}
+	if classWithWriteTools, ok := class.(interface{ SetKickstartWriteTools([]string) }); ok {
+		classWithWriteTools.SetKickstartWriteTools(writeTools)
+	}
 	if san == nil {
 		san = router.NewSanitizer()
 	}
@@ -406,18 +416,109 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Track session retries for auto-escalation
-	sessionKey := r.Header.Get("x-session-id")
-	if sessionKey == "" {
-		sessionKey = r.Header.Get("session-id")
-	}
-	if sessionKey == "" {
-		sessionKey = r.RemoteAddr
-	}
+	sessionKey := extractSessionKey(r)
+	reqCtx.SessionKey = sessionKey
 	promptHash := router.HashPrompt(reqCtx.Prompt)
 	if s.sessionTracker == nil {
 		s.sessionTracker = router.NewSessionTracker(5 * time.Minute)
 	}
-	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash)
+
+	// Pass tool progress signal from classifier to session tracker
+	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash, reqCtx.HasToolProgress)
+	reqCtx.CoolingDownModels = s.sessionTracker.GetCoolingDownModels(sessionKey)
+
+	// Kickstart: detect semantic stall/idle loop across consecutive turns
+	cfg := s.GetConfig()
+	kickstartThreshold := cfg.CycleKiller.KickstartThreshold
+	if kickstartThreshold == 0 && cfg.CycleBreaker.KickstartThreshold > 0 {
+		kickstartThreshold = cfg.CycleBreaker.KickstartThreshold
+	}
+	if kickstartThreshold > 0 {
+		kickstartProgress := reqCtx.HasToolProgress
+		if cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+			kickstartProgress = reqCtx.HasWriteProgress
+		}
+		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold)
+		if isKickstarted {
+			reqCtx.SessionKickstarted = true
+			reqCtx.SessionKickstartCount = kickstartCount
+			reqLogger.Warn("Kickstart: agent idling without tool progress",
+				slog.Int("kickstart_count", kickstartCount),
+				slog.Int("kickstart_threshold", kickstartThreshold),
+				slog.Bool("write_only", cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly),
+				slog.String("session_key", sessionKey),
+			)
+		}
+
+		// Kickstart max cap: force-escalate to default tier when kickstart count exceeds limit
+		maxKS := cfg.CycleKiller.KickstartMaxCount
+		if maxKS == 0 {
+			maxKS = cfg.CycleBreaker.KickstartMaxCount
+		}
+		if maxKS > 0 && isKickstarted && kickstartCount >= maxKS {
+			reqLogger.Warn("Kickstart: max count exceeded, force-escalating to default tier",
+				slog.Int("kickstart_count", kickstartCount),
+				slog.Int("kickstart_max_count", maxKS),
+			)
+			reqCtx.ForcedTier = "cloud"
+		}
+	}
+
+	// Fairy Dust: periodic proactive frontier model quality checkpoints
+	fdCfg := cfg.FairyDust
+	if fdCfg.Enabled != nil && *fdCfg.Enabled && len(fdCfg.Entries) > 0 {
+		// 1. Record write progress (single global counter, increments only on write turns)
+		writeCount := s.sessionTracker.RecordWriteProgress(sessionKey, reqCtx.HasWriteProgress)
+
+		// 2. Check each entry; collect the highest-priority candidate that triggers
+		type fdCandidate struct {
+			entry    contract.FairyDustEntry
+			count    int
+		}
+		var winner *fdCandidate
+		if reqCtx.HasWriteProgress && writeCount > 0 {
+			for _, entry := range fdCfg.Entries {
+				if entry.Frequency <= 0 || entry.Model == "" {
+					continue
+				}
+				maxFD := entry.MaxPerSession
+				if maxFD <= 0 {
+					maxFD = 5
+				}
+				entryCount, shouldTrigger := s.sessionTracker.CheckFairyDust(
+					sessionKey, entry.Name, entry.Frequency, maxFD,
+				)
+				if shouldTrigger {
+					if winner == nil || entry.Priority > winner.entry.Priority {
+						entryCopy := entry
+						winner = &fdCandidate{entry: entryCopy, count: entryCount}
+					}
+				}
+			}
+		}
+
+		// 3. Apply winning entry
+		if winner != nil {
+			reqCtx.FairyDusted = true
+			reqCtx.FairyDustEntry = winner.entry.Name
+			reqCtx.FairyDustCount = winner.count
+			reqLogger.Info("Fairy Dust: quality checkpoint triggered",
+				slog.String("fairy_dust_entry", winner.entry.Name),
+				slog.Int("fairy_dust_count", winner.count),
+				slog.Int("write_progress_count", writeCount),
+				slog.String("fairy_dust_model", winner.entry.Model),
+				slog.Int("fairy_dust_priority", winner.entry.Priority),
+				slog.String("session_key", sessionKey),
+			)
+		}
+	}
+
+	// In-history errors OVERRIDE session tracker when they detect real failures
+	if reqCtx.HistoryErrors > retries {
+		retries = reqCtx.HistoryErrors
+		isRetry = true
+	}
+
 	reqCtx.Retries = retries
 	reqCtx.IsRetry = isRetry
 
@@ -426,6 +527,44 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		reqLogger.Error("Error evaluating tier, falling back to default", slog.Any("error", err))
 		targetTier = s.GetConfig().DefaultTier
+	}
+
+	// 4.5: Escalation budget — prevent runaway frontier costs
+	defaultTierName := s.GetConfig().DefaultTier.Name
+	if targetTier.Name == defaultTierName {
+		budgetExhausted := s.sessionTracker.RecordEscalation(sessionKey)
+		if budgetExhausted {
+			// Force de-escalation: pick the first cloud tier that isn't the default
+			for _, tier := range s.GetConfig().Tiers {
+				if tier.Name != defaultTierName {
+					targetTier = tier
+					break
+				}
+			}
+			reqLogger.Warn("Escalation budget exhausted, de-escalating",
+				slog.String("fallback_tier", targetTier.Name),
+				slog.String("fallback_model", targetTier.Model))
+		}
+	} else {
+		s.sessionTracker.ResetEscalation(sessionKey)
+	}
+
+	// 4.6: Fairy Dust — override tier with winning entry's frontier model
+	if reqCtx.FairyDusted {
+		for _, entry := range cfg.FairyDust.Entries {
+			if entry.Name == reqCtx.FairyDustEntry {
+				provider := entry.Provider
+				if provider == "" {
+					provider = s.GetConfig().DefaultTier.Provider
+				}
+				targetTier = contract.Tier{
+					Name:     fmt.Sprintf("Fairy Dust: %s #%d (%s)", entry.Name, reqCtx.FairyDustCount, entry.Model),
+					Model:    entry.Model,
+					Provider: provider,
+				}
+				break
+			}
+		}
 	}
 
 	// 5. If forced directive is used, check provider circuit breaker (Strict Fallback Bypass)
@@ -449,6 +588,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reqLogger.Info("Routing request",
+		slog.String("session_key", sessionKey),
 		slog.String("tier", targetTier.Name),
 		slog.String("model", targetTier.Model),
 		slog.String("provider", targetTier.Provider),
@@ -456,7 +596,42 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Bool("has_images", reqCtx.HasImages),
 		slog.Bool("has_tools", reqCtx.HasTools),
 		slog.Int("retries", reqCtx.Retries),
+		slog.Bool("has_tool_progress", reqCtx.HasToolProgress),
+		slog.Bool("has_write_progress", reqCtx.HasWriteProgress),
+		slog.Int("history_errors", reqCtx.HistoryErrors),
+		slog.Any("cooling_down_models", reqCtx.CoolingDownModels),
+		slog.String("user_agent", r.Header.Get("User-Agent")),
 	)
+
+	// Kickstart: inject prompt when idle loop detected
+	if reqCtx.SessionKickstarted {
+		kickstartPrompt := contract.DefaultKickstartPrompt
+		if cfg.CycleKiller.KickstartPrompt != "" {
+			kickstartPrompt = cfg.CycleKiller.KickstartPrompt
+		} else if cfg.CycleBreaker.KickstartPrompt != "" {
+			kickstartPrompt = cfg.CycleBreaker.KickstartPrompt
+		}
+		body = injectCorrectionPrompt(body, kickstartPrompt)
+		reqLogger.Info("Kickstart: injected prompt",
+			slog.Int("kickstart_count", reqCtx.SessionKickstartCount),
+		)
+	}
+
+	// Fairy Dust: inject checkpoint prompt from winning entry
+	if reqCtx.FairyDusted {
+		fdPrompt := contract.DefaultFairyDustPrompt
+		for _, entry := range cfg.FairyDust.Entries {
+			if entry.Name == reqCtx.FairyDustEntry && entry.Prompt != "" {
+				fdPrompt = entry.Prompt
+				break
+			}
+		}
+		body = injectCorrectionPrompt(body, fdPrompt)
+		reqLogger.Info("Fairy Dust: injected checkpoint prompt",
+			slog.String("fairy_dust_entry", reqCtx.FairyDustEntry),
+			slog.Int("fairy_dust_count", reqCtx.FairyDustCount),
+		)
+	}
 
 	s.forwardWithFallback(w, r, reqCtx, targetTier, body, startTime, reqLogger)
 }
@@ -657,12 +832,34 @@ func (s *Server) dispatchTier(
 		if activeFeatures.Has(router.FeatureShieldEnabled) && reqCtx.InteractiveTool != "" {
 			normalizer.SetShield(reqCtx.InteractiveTool, s.shieldMgr)
 		}
-		peekBuf := make([]byte, 4096)
-		n, readErr := normalizer.Read(peekBuf)
+		var cb *shield.CycleBreaker
+		if reqCtx.HasTools {
+			cb = resolveCycleBreaker(targetTier, s.GetConfig())
+			if cb != nil && cb.IsEnabled() {
+				normalizer.SetCycleBreaker(cb)
+			}
+		}
+
+		peekBytes := make([]byte, 0, 4096)
+		tempBuf := make([]byte, 512)
+		var readErr error
+		for len(peekBytes) < 2048 {
+			n, err := normalizer.Read(tempBuf)
+			if n > 0 {
+				peekBytes = append(peekBytes, tempBuf[:n]...)
+			}
+			if err != nil {
+				readErr = err
+				break
+			}
+			if violated, _ := normalizer.CheckCycleViolation(); violated {
+				break
+			}
+		}
 
 		// Check quality defect on stream: immediate [DONE] on local provider
-		trimmedPeek := strings.TrimSpace(string(peekBuf[:n]))
-		if targetProvider.IsLocal() && !isFallback && (trimmedPeek == "data: [DONE]" || (n == 0 && readErr == io.EOF)) {
+		trimmedPeek := strings.TrimSpace(string(peekBytes))
+		if targetProvider.IsLocal() && !isFallback && (trimmedPeek == "data: [DONE]" || (len(peekBytes) == 0 && readErr == io.EOF)) {
 			_ = normalizer.Close()
 			reqLogger.Warn("Local provider returned empty stream, failing over to cloud fallback tier",
 				slog.String("tier", targetTier.Name),
@@ -670,6 +867,43 @@ func (s *Server) dispatchTier(
 			if defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
 				s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
 				return
+			}
+		}
+
+		// Check Cycle Breaker violation on stream peek (Phase 1)
+		if cb != nil && cb.IsEnabled() && !isFallback {
+			if violated, reason := normalizer.CheckCycleViolation(); violated {
+				_ = normalizer.Close()
+				reqCtx.CycleBreakerTriggered = true
+				reqCtx.CycleBreakerReason = reason
+				reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Runaway monologue intercepted",
+					slog.String("reason", reason),
+					slog.String("tier", targetTier.Name),
+					slog.Int("cycle_retries", reqCtx.CycleRetries),
+				)
+
+				if reqCtx.CycleRetries < cb.MaxRetries() {
+					// Stage 1: Local self-correction retry ($0.00) with [SYSTEM OVERRIDE] prompt
+					reqCtx.CycleRetries++
+					injectedBody := injectCorrectionPrompt(body, cb.CorrectionPrompt())
+					s.dispatchTier(w, r, reqCtx, targetTier, injectedBody, startTime, reqLogger, false)
+					return
+				}
+
+				if s.sessionTracker != nil {
+					cooldown, floor := s.resolveCycleKillParams()
+					s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
+				}
+
+				// Stage 2: Cloud Failover after local retry exhaustion
+				if defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+					reqLogger.Warn("Local cycle retries exhausted, escalating to cloud fallback tier",
+						slog.String("fallback_tier", defaultTier.Name),
+						slog.String("fallback_model", defaultTier.Model),
+					)
+					s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
+					return
+				}
 			}
 		}
 
@@ -688,8 +922,8 @@ func (s *Server) dispatchTier(
 		w.Header().Set(contract.HeaderSpiceTargetModel, targetTier.Model)
 		w.WriteHeader(resp.StatusCode)
 
-		if n > 0 {
-			_, _ = w.Write(peekBuf[:n])
+		if len(peekBytes) > 0 {
+			_, _ = w.Write(peekBytes)
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
@@ -698,6 +932,26 @@ func (s *Server) dispatchTier(
 			buf := make([]byte, 4096)
 			for {
 				n, err := normalizer.Read(buf)
+				// Phase 2: Active Mid-Stream Circuit Severing (Check BEFORE writing to swallow degenerate chunks)
+				if violated, reason := normalizer.CheckCycleViolation(); violated && cb != nil && cb.IsEnabled() {
+					reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Severing runaway stream",
+						slog.String("reason", reason),
+						slog.String("tier", targetTier.Name),
+					)
+					reqCtx.CycleBreakerTriggered = true
+					reqCtx.CycleBreakerReason = reason
+					if s.sessionTracker != nil {
+						cooldown, floor := s.resolveCycleKillParams()
+						s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
+					}
+					_ = normalizer.Close()
+					finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+					_, _ = w.Write([]byte(finishChunk))
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					}
+					break
+				}
 				if n > 0 {
 					_, _ = w.Write(buf[:n])
 					if flusher, ok := w.(http.Flusher); ok {
@@ -710,6 +964,12 @@ func (s *Server) dispatchTier(
 			}
 		}
 		usage, _ := normalizer.GetUsage()
+		if cb != nil {
+			reqCtx.CycleProseTokens = cb.ProseTokens()
+			reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
+			reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
+			reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+		}
 		_ = normalizer.Close()
 
 		s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger)
@@ -784,6 +1044,44 @@ func (s *Server) dispatchTier(
 								rawCallsJSON, _ := json.Marshal([]interface{}{synthCall})
 								firstChoice.Message.ToolCalls = rawCallsJSON
 								modified = true
+							}
+						}
+					}
+
+					if len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" && reqCtx.HasTools && !isFallback {
+						if cb := resolveCycleBreaker(targetTier, s.GetConfig()); cb != nil && cb.IsEnabled() {
+							if triggered, reason := cb.ProcessDelta(firstChoice.Message.Content, false); triggered {
+								reqCtx.CycleBreakerTriggered = true
+								reqCtx.CycleBreakerReason = reason
+								reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Runaway monologue intercepted",
+									slog.String("reason", reason),
+									slog.String("tier", targetTier.Name),
+									slog.Int("cycle_retries", reqCtx.CycleRetries),
+								)
+							}
+							reqCtx.CycleProseTokens = cb.ProseTokens()
+							reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
+							reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
+							reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+							if reqCtx.CycleBreakerTriggered {
+								if reqCtx.CycleRetries < cb.MaxRetries() {
+									reqCtx.CycleRetries++
+									injectedBody := injectCorrectionPrompt(body, cb.CorrectionPrompt())
+									s.dispatchTier(w, r, reqCtx, targetTier, injectedBody, startTime, reqLogger, false)
+									return
+								}
+								if s.sessionTracker != nil {
+									cooldown, floor := s.resolveCycleKillParams()
+									s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
+								}
+								if defaultTier.Provider != "" && targetTier.Name != defaultTier.Name {
+									reqLogger.Warn("Local cycle retries exhausted, escalating to cloud fallback tier",
+										slog.String("fallback_tier", defaultTier.Name),
+										slog.String("fallback_model", defaultTier.Model),
+									)
+									s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
+									return
+								}
 							}
 						}
 					}
@@ -894,7 +1192,13 @@ func (s *Server) recordTelemetry(
 		baselineRatePerM = baselinePricing.PromptCostPerMillion
 	}
 
-	costSpent, costSaved := s.oracle.CalculateFinancials(targetTier.Provider, targetTier.Model, isLocal, promptTokens, completionTokens, baselineRatePerM)
+	cachedTokens := 0
+	if usage.PromptTokensDetails != nil {
+		cachedTokens = usage.PromptTokensDetails.CachedTokens
+	}
+	upstreamCost := usage.Cost
+
+	costSpent, costSaved := s.oracle.CalculateFinancials(targetTier.Provider, targetTier.Model, isLocal, promptTokens, completionTokens, cachedTokens, upstreamCost, baselineRatePerM)
 
 	tierNum := 2
 	if isLocal {
@@ -911,27 +1215,39 @@ func (s *Server) recordTelemetry(
 	}
 
 	s.tracker.Record(telemetry.Observation{
-		Tier:          tierNum,
-		TierName:      targetTier.Name,
-		Model:         targetTier.Model,
-		Provider:      targetTier.Provider,
-		Tokens:        totalTokens,
-		CostSpent:     costSpent,
-		CostSaved:     costSaved,
-		IsLocal:       isLocal,
-		IsFallback:    isFallback,
-		LatencyMs:     latency,
-		Keywords:      reqCtx.Keywords,
-		HasImages:     reqCtx.HasImages,
-		HasTools:      reqCtx.HasTools,
-		StatusCode:    statusCode,
-		IsRetry:       reqCtx.IsRetry,
-		ForcedTier:    reqCtx.ForcedTier,
-		ForcedModel:   reqCtx.ForcedModel,
-		DirectiveUsed: reqCtx.MetaDirectiveRaw,
+		Tier:                  tierNum,
+		TierName:              targetTier.Name,
+		Model:                 targetTier.Model,
+		Provider:              targetTier.Provider,
+		Tokens:                totalTokens,
+		CostSpent:             costSpent,
+		CostSaved:             costSaved,
+		IsLocal:               isLocal,
+		IsFallback:            isFallback,
+		LatencyMs:             latency,
+		Keywords:              reqCtx.Keywords,
+		HasImages:             reqCtx.HasImages,
+		HasTools:              reqCtx.HasTools,
+		StatusCode:            statusCode,
+		IsRetry:               reqCtx.IsRetry,
+		ForcedTier:            reqCtx.ForcedTier,
+		ForcedModel:           reqCtx.ForcedModel,
+		DirectiveUsed:             reqCtx.MetaDirectiveRaw,
+		CycleBreakerTriggered:     reqCtx.CycleBreakerTriggered,
+		CycleBreakerReason:        reqCtx.CycleBreakerReason,
+		CycleProseTokens:          reqCtx.CycleProseTokens,
+		CycleMaxNgramFreq:         reqCtx.CycleMaxNgramFreq,
+		CycleThinkingTokens:       reqCtx.CycleThinkingTokens,
+		CycleMaxThinkingNgramFreq: reqCtx.CycleMaxThinkingNgramFreq,
+		SessionKickstarted:        reqCtx.SessionKickstarted,
+		CachedTokens:              cachedTokens,
+		UpstreamCost:              upstreamCost,
+		FairyDusted:               reqCtx.FairyDusted,
+		FairyDustEntry:            reqCtx.FairyDustEntry,
 	})
 
 	reqLogger.Info("Completed proxy request",
+		slog.String("session_key", reqCtx.SessionKey),
 		slog.String("tier", targetTier.Name),
 		slog.String("model", targetTier.Model),
 		slog.Int("tokens", totalTokens),
@@ -939,6 +1255,16 @@ func (s *Server) recordTelemetry(
 		slog.Int("status", statusCode),
 		slog.Bool("is_fallback", isFallback),
 		slog.Bool("is_retry", reqCtx.IsRetry),
+		slog.Bool("cycle_breaker_triggered", reqCtx.CycleBreakerTriggered),
+		slog.Int("cycle_prose_tokens", reqCtx.CycleProseTokens),
+		slog.Int("cycle_max_ngram_freq", reqCtx.CycleMaxNgramFreq),
+		slog.Int("cycle_thinking_tokens", reqCtx.CycleThinkingTokens),
+		slog.Int("cycle_max_thinking_ngram_freq", reqCtx.CycleMaxThinkingNgramFreq),
+		slog.Bool("session_kickstarted", reqCtx.SessionKickstarted),
+		slog.Int("session_kickstart_count", reqCtx.SessionKickstartCount),
+		slog.Bool("fairy_dusted", reqCtx.FairyDusted),
+		slog.String("fairy_dust_entry", reqCtx.FairyDustEntry),
+		slog.Int("fairy_dust_count", reqCtx.FairyDustCount),
 	)
 }
 
@@ -1011,4 +1337,121 @@ func hasCandidateToolTokens(b []byte) bool {
 		bytes.Contains(b, []byte("<invoke")) ||
 		bytes.Contains(b, []byte("Action:")) ||
 		bytes.Contains(b, []byte("```"))
+}
+
+func resolveCycleBreaker(tier contract.Tier, cfg *contract.Config) *shield.CycleBreaker {
+	var cbCfg contract.CycleBreakerConfig
+	if cfg != nil {
+		cbCfg = cfg.CycleKiller
+		if cbCfg.Enabled == nil && cfg.CycleBreaker.Enabled != nil {
+			cbCfg = cfg.CycleBreaker
+		}
+	}
+
+	// Support both cycle_killer and cycle_breaker on tier level
+	tierCb := tier.CycleKiller
+	if tierCb == nil {
+		tierCb = tier.CycleBreaker
+	}
+
+	if tierCb != nil {
+		if tierCb.Enabled != nil {
+			cbCfg.Enabled = tierCb.Enabled
+		}
+		if tierCb.MaxProseTokens > 0 {
+			cbCfg.MaxProseTokens = tierCb.MaxProseTokens
+		}
+		if tierCb.RepetitionWindow > 0 {
+			cbCfg.RepetitionWindow = tierCb.RepetitionWindow
+		}
+		if tierCb.RepetitionThreshold > 0 {
+			cbCfg.RepetitionThreshold = tierCb.RepetitionThreshold
+		}
+		if tierCb.MaxRetries > 0 {
+			cbCfg.MaxRetries = tierCb.MaxRetries
+		}
+		if tierCb.CorrectionPrompt != "" {
+			cbCfg.CorrectionPrompt = tierCb.CorrectionPrompt
+		}
+	}
+	if cbCfg.Enabled != nil && !*cbCfg.Enabled {
+		return nil
+	}
+	return shield.NewCycleBreaker(&cbCfg)
+}
+
+func (s *Server) resolveCycleKillParams() (time.Duration, int) {
+	cfg := s.GetConfig()
+	cooldownSec := cfg.CycleKiller.ModelCooldownSeconds
+	if cooldownSec == 0 && cfg.CycleBreaker.ModelCooldownSeconds > 0 {
+		cooldownSec = cfg.CycleBreaker.ModelCooldownSeconds
+	}
+	cooldown := router.DefaultModelCooldown
+	if cooldownSec > 0 {
+		cooldown = time.Duration(cooldownSec) * time.Second
+	}
+
+	floor := cfg.CycleKiller.RetryFloor
+	if floor == 0 && cfg.CycleBreaker.RetryFloor > 0 {
+		floor = cfg.CycleBreaker.RetryFloor
+	}
+	if floor <= 0 {
+		floor = 3
+	}
+	return cooldown, floor
+}
+
+func injectCorrectionPrompt(body []byte, prompt string) []byte {
+	if prompt == "" {
+		prompt = contract.CycleBreakerDefaultCorrectionPrompt
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+
+	messages, ok := payload["messages"].([]interface{})
+	if !ok {
+		return body
+	}
+
+	overrideMsg := map[string]interface{}{
+		"role":    "user",
+		"content": prompt,
+	}
+	payload["messages"] = append(messages, overrideMsg)
+
+	reencoded, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return reencoded
+}
+
+// extractSessionKey extracts a consistent session identifier from HTTP headers or client IP.
+// If x-session-id or session-id headers are absent, it extracts the host IP from RemoteAddr
+// or proxy headers (X-Forwarded-For, X-Real-IP) rather than raw IP:port so that ephemeral
+// client TCP ports do not break cross-turn retry counting and kickstart state.
+func extractSessionKey(r *http.Request) string {
+	if s := r.Header.Get("x-session-id"); s != "" {
+		return s
+	}
+	if s := r.Header.Get("session-id"); s != "" {
+		return s
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		if ip := strings.TrimSpace(parts[0]); ip != "" {
+			return ip
+		}
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		if ip := strings.TrimSpace(xri); ip != "" {
+			return ip
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -519,6 +520,18 @@ tiers:
 	}
 }
 
+type syncDoneWriter struct {
+	done chan struct{}
+	once sync.Once
+}
+
+func (w *syncDoneWriter) Write(p []byte) (n int, err error) {
+	w.once.Do(func() {
+		close(w.done)
+	})
+	return len(p), nil
+}
+
 func TestProgram_Start_GoroutineErrorLogging(t *testing.T) {
 	mock := &mockService{}
 	tmpDir := t.TempDir()
@@ -548,8 +561,17 @@ tiers:
 	pNoLog.asyncRun(mock)
 
 	// 3. Test Start method
-	if err := p.Start(mock); err != nil {
+	exitCh := make(chan struct{})
+	pStart := &program{
+		onExit: exitCh,
+	}
+	if err := pStart.Start(mock); err != nil {
 		t.Errorf("expected nil error from Start, got: %v", err)
+	}
+	select {
+	case <-exitCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected Start asyncRun to exit in time")
 	}
 	*configPathFlag = ""
 }

@@ -20,10 +20,21 @@ type TurnRecord struct {
 	StatusCode    int       `json:"status_code"`
 	IsRetry       bool      `json:"is_retry"`
 	CostSavedUSD  float64   `json:"cost_saved_usd"`
-	CostSpentUSD  float64   `json:"cost_spent_usd"`
-	ForcedTier    string    `json:"forced_tier,omitempty"`
-	ForcedModel   string    `json:"forced_model,omitempty"`
-	DirectiveUsed string    `json:"directive_used,omitempty"`
+	CostSpentUSD          float64   `json:"cost_spent_usd"`
+	ForcedTier            string    `json:"forced_tier,omitempty"`
+	ForcedModel           string    `json:"forced_model,omitempty"`
+	DirectiveUsed         string    `json:"directive_used,omitempty"`
+	CycleBreakerTriggered     bool      `json:"cycle_breaker_triggered,omitempty"`
+	CycleBreakerReason        string    `json:"cycle_breaker_reason,omitempty"`
+	CycleProseTokens          int       `json:"cycle_prose_tokens,omitempty"`
+	CycleMaxNgramFreq         int       `json:"cycle_max_ngram_freq,omitempty"`
+	CycleThinkingTokens       int       `json:"cycle_thinking_tokens,omitempty"`
+	CycleMaxThinkingNgramFreq int       `json:"cycle_max_thinking_ngram_freq,omitempty"`
+	SessionKickstarted        bool      `json:"session_kickstarted,omitempty"`
+	CachedTokens              int       `json:"cached_tokens,omitempty"`
+	UpstreamCost              float64   `json:"upstream_cost,omitempty"`
+	FairyDusted               bool      `json:"fairy_dusted,omitempty"`
+	FairyDustEntry            string    `json:"fairy_dust_entry,omitempty"`
 }
 
 // ObservationSink defines a decoupled consumer of observation events.

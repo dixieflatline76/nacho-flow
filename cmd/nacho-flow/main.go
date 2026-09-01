@@ -75,6 +75,7 @@ type program struct {
 	slog              *slog.Logger
 	cancelBg          context.CancelFunc
 	statsSyncInterval time.Duration
+	onExit            chan struct{}
 }
 
 func (p *program) Start(s service.Service) error {
@@ -83,6 +84,14 @@ func (p *program) Start(s service.Service) error {
 }
 
 func (p *program) asyncRun(s service.Service) {
+	defer func() {
+		p.mu.Lock()
+		ch := p.onExit
+		p.mu.Unlock()
+		if ch != nil {
+			close(ch)
+		}
+	}()
 	if err := p.run(s); err != nil {
 		p.mu.Lock()
 		sl := p.slog
@@ -127,9 +136,13 @@ func parseLogLevel(lvl string) slog.Level {
 
 func (p *program) run(s service.Service) error {
 	// Initialize Smart Logger based on Interactive vs Daemon mode
-	svcLogger, err := s.Logger(nil)
-	if err != nil {
-		log.Printf("Service Logger warning: %v", err)
+	var svcLogger service.Logger
+	if s != nil {
+		var err error
+		svcLogger, err = s.Logger(nil)
+		if err != nil {
+			log.Printf("Service Logger warning: %v", err)
+		}
 	}
 
 	appLogger, logCloser := telemetry.InitLogger(serviceInteractiveFunc(), "logs", parseLogLevel(*logLevelFlag), svcLogger)

@@ -77,6 +77,13 @@
                                 <span class="dropdown-desc">Automated AST cost-reduction heuristics</span>
                             </div>
                         </a>
+                        <a href="docs.html?doc=metrics_guide" class="dropdown-item">
+                            <span class="dropdown-icon">📊</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">Telemetry & Metrics Guide</span>
+                                <span class="dropdown-desc">Financial engine, prompt caching & fixtures</span>
+                            </div>
+                        </a>
                     </div>
                 </div>
 
@@ -228,6 +235,11 @@
                     <span class="term-msg">Turn 3 (Tokens: 24,100, Tools: ['edit_file']) ➔ <span class="term-highlight">openrouter/qwen3-coder-480b</span> <span class="tag-cache">89.4% KV CACHE HIT</span></span>
                 </div>
                 <div class="term-line">
+                    <span class="term-time">19:42:50</span>
+                    <span class="term-tag tag-reason">FAIRY DUST</span>
+                    <span class="term-msg">Turn 15 (WriteProgress: 15) ➔ <span class="term-highlight">anthropic/claude-sonnet-5</span> (✨ Tactical Code Review #1 injected)</span>
+                </div>
+                <div class="term-line">
                     <span class="term-time">19:43:01</span>
                     <span class="term-tag tag-local">HEAT SEEKER</span>
                     <span class="term-msg">Heat Seeker: <span class="term-highlight">gemini-2.5-flash-lite</span> surfaced at <strong style="color:#10b981;">$0.10/1M</strong> (replaces tier_1_vision at 96.7% savings)</span>
@@ -322,7 +334,7 @@
                 <div class="feature-icon">⚡</div>
                 <h3>&lt; 0.18ms Low Latency Core</h3>
                 <!-- BENCHMARK:HERO_STATS_START -->
-<div class="stat-number">29,710+</div>
+<div class="stat-number">31,424+</div>
 <div class="stat-label">Requests / Sec</div>
 <!-- BENCHMARK:HERO_STATS_END -->
             </div>
@@ -369,6 +381,24 @@
                 <p>Holds back <code>HTTP 200</code> headers on streams until peeking valid data, enabling cloud failover on empty or broken local payloads.</p>
             </div>
 
+            <div class="feature-card glass" style="border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 8px 32px rgba(239, 68, 68, 0.15);">
+                <div class="feature-icon">🎸</div>
+                <h3>Cycle Killer (Qu'est-ce que c'est?)</h3>
+                <p>In-flight stream defense that murders infinite repetition loops (&lt;3s) and runaway prose monologues before they burn your GPU, transparently retrying or escalating without stalling.</p>
+            </div>
+
+            <div class="feature-card glass" style="border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 8px 32px rgba(245, 158, 11, 0.15);">
+                <div class="feature-icon">⚡</div>
+                <h3>Kickstart Resuscitation</h3>
+                <p>Detects semantic stalls and multi-turn idle loops (e.g. repeated <code>read_file</code> churn) and injects authoritative system nudges or escalates to frontier models (<code>SessionKickstarted</code>) with write-only tool filtering.</p>
+            </div>
+
+            <div class="feature-card glass" style="border-color: rgba(168, 85, 247, 0.4); box-shadow: 0 8px 32px rgba(168, 85, 247, 0.15);">
+                <div class="feature-icon">🧚</div>
+                <h3>Fairy Dusting (Proactive Checkpoints)</h3>
+                <p>Periodically and transparently routes turns to frontier reasoning models on a configurable write-progress cadence (e.g. every 15 file writes) with injected audit directives to catch subtle bugs before they cascade.</p>
+            </div>
+
             <div class="feature-card glass">
                 <div class="feature-icon">🛡️</div>
                 <h3>Agentic Tool Fallback Shield</h3>
@@ -409,6 +439,12 @@
                 <div class="feature-icon">🎛️</div>
                 <h3>Per-Tier Stream Policies</h3>
                 <p>Selectively toggle tool-call normalizers, thinking-token formatters, and fallback shields per tier in <code>config.yaml</code> to tailor proxy behavior for specific models.</p>
+            </div>
+
+            <div class="feature-card glass">
+                <div class="feature-icon">💰</div>
+                <h3>Prompt Cache-Aware Cost Engine</h3>
+                <p>Ingests upstream provider prompt caching discounts (~80% off prompt tokens from OpenRouter / DeepSeek) with a 3-tier priority oracle for dollar-accurate accounting.</p>
             </div>
 
             <div class="feature-card glass">

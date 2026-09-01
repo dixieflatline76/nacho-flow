@@ -10,7 +10,9 @@ This guide teaches you how to write, optimize, test, and tune dynamic routing ru
 5. [Testing & Validating Your Rules](#5-testing--validating-your-rules)
 6. [Autonomous Cost-Penalty Auto-Tuning (`nacho-flow tune`)](#6-autonomous-cost-penalty-auto-tuning-nacho-flow-tune)
 7. [Manual Heuristic Tuning Tips](#7-manual-heuristic-tuning-tips-for-custom-power-rules)
-8. [Troubleshooting & FAQ](#8-troubleshooting--faq)
+8. [Agent-Specific Harness Tuning: Zoo Code vs. Cline](#8-agent-specific-harness-tuning-zoo-code-vs-cline)
+9. [🧚 Fairy Dusting & Cost Shield Architecture](#9-fairy-dusting--cost-shield-architecture)
+10. [Troubleshooting & FAQ](#10-troubleshooting--faq)
 
 ---
 
@@ -41,12 +43,21 @@ flowchart TD
 | `HasImages` | `bool` | `true` if any message contains screenshots or image URLs | `HasImages == true` |
 | `HasTools` | `bool` | `true` if function/tool definitions or active tool calls are present | `HasTools == true` |
 | `Keywords` | `[]string` | Code keywords detected **strictly in the latest user prompt** | `any(Keywords, { # in ['deadlock', 'mutex'] })` |
-| `Retries` | `int` | Number of consecutive prompt retries in current session (sliding 5m TTL) | `Retries < 2` |
-| `IsRetry` | `bool` | `true` if this prompt is a retry of a previous failure | `!IsRetry` |
+| `Retries` | `int` | Consecutive error count from in-history failures (`[ERROR]`, `<error_details>`) and identical prompt retries. Automatically resets to `0` when intermediate tools succeed (`role: tool`). | `Retries < 2` |
+| `IsRetry` | `bool` | `true` if this turn is an error recovery turn | `!IsRetry` |
 | `Model` | `string` | The requested model ID sent by the client (e.g. `nacho-hybrid`) | `Model == 'nacho-coder'` |
+| `SessionKickstarted` | `bool` | `true` if the session exceeded `kickstart_threshold` without tool/write progress | `SessionKickstarted && Retries < 3` |
+| `SessionKickstartCount` | `int` | Number of times kickstart resuscitation has fired this session | `SessionKickstartCount > 2` |
+| `HasToolProgress` | `bool` | `true` if the previous turn contained successful tool execution | `HasToolProgress` |
+| `HasWriteProgress` | `bool` | `true` if the previous turn contained productive write/command tool execution | `HasWriteProgress` |
+| `HistoryErrors` | `int` | Number of consecutive trailing errors in conversation history | `HistoryErrors >= 2` |
+| `CoolingDownModels` | `[]string` | Models currently under cooldown after Cycle Killer severed streams | `!('gemma4:12b-it-qat' in CoolingDownModels)` |
+
+> [!TIP]
+> **Automatic Escalation Safety Cap**: When a turn escalates to the `default_tier` (e.g. Claude Sonnet 5), Nacho Flow automatically limits consecutive frontier execution to `MaxEscalationTurns = 3`. If a problem cannot be fixed after 3 consecutive frontier turns, the gateway automatically de-escalates to Tier 2 (e.g. Gemini 3.7 Flash) to prevent runaway billing.
 
 ### Tier Properties:
-- `max_context` (`int`): Optional. Upper bound of the model's context window (e.g. `16384`, `32768`). If `Tokens > max_context`, Nacho Flow immediately skips this tier with zero expression overhead.
+- `max_context` (`int`): Optional. Upper bound of the model's context window (e.g. `16384`, `32768`, `65536`). If `Tokens > max_context`, Nacho Flow immediately skips this tier with zero expression overhead.
 - `strip_images` (`bool`): If `true`, strips raw base64 image strings from older conversation turns to prevent 400 errors on text-only models.
 - `reasoning_effort` (`string`): Passes `"low"`, `"medium"`, or `"high"` to supported reasoning providers (e.g. OpenAI o3-mini).
 - `raw` (`bool`): If `true`, disables all tool normalizers, thinking-tag converters, and fallback shields for a 100% transparent, unadulterated SSE stream.
@@ -56,6 +67,13 @@ flowchart TD
   - `markdown` (`bool`): Normalizes ```json ... ``` markdown code blocks into OpenAI tool calls.
   - `bare_json` (`bool`): Normalizes raw top-level JSON objects into OpenAI tool calls.
   - `react` (`bool`): Normalizes ReAct `Action: / Action Input:` patterns into OpenAI tool calls.
+- `cycle_breaker` (`object`): In-Flight Stream Guard and Monologue Breaker settings:
+  - `enabled` (`bool`): Toggles real-time repetition and prose monologue detection.
+  - `max_prose_tokens` (`int`): Soft ceiling for pure prose tokens before triggering (default: `800`).
+  - `repetition_window` (`int`): Word window for N-gram sliding hash detector (default: `6`).
+  - `repetition_threshold` (`int`): Repetition match threshold for instant stream abort (default: `3`).
+  - `max_retries` (`int`): Number of Stage 1 local `$0.00` self-correction retries before cloud failover (default: `1`).
+  - `correction_prompt` (`string`): Custom authoritative `[SYSTEM OVERRIDE]` injection prompt.
 
 ---
 
@@ -69,8 +87,8 @@ To maximize cost savings without degrading agent intelligence, follow the **Hier
 [3. Active Tool Calls]             --> Route to Cloud Fast Coder (High Tool Adherence)
 [4. Routine Local Coding (< 16k)]  --> Route to Local GPU (Ollama/vLLM) ($0.00 / 100% Free)
 [5. Retry Escalation (Retries>=2)] --> Route to Cloud Provider (Breaks Local Failure Loops)
-[6. Large Context Overflow (>= 16k)]-> Route to Cheap Cloud Fast (e.g. Qwen 3 Coder / DeepSeek)
-[Default Fallback]                 --> Reliable Cloud Fallback
+[6. Large Context Overflow (>= 16k)]-> Route to Cheap Cloud Fast (e.g. Gemini 3.7 Flash)
+[Default Fallback]                 --> Reliable Cloud Fallback (Capped at 3 turns max)
 ```
 
 ### 🎯 GPU Hardware & Token Sizing Cheat Sheet
@@ -80,9 +98,9 @@ Not sure what token limits to set for your local workstation? Use this reference
 | Workstation Hardware | VRAM | Recommended Local Model | Suggested `Tokens` Bound |
 | :--- | :--- | :--- | :--- |
 | **8 GB VRAM** (RTX 3060/4060, Apple M1/M2 8GB) | 8 GB | `qwen2.5-coder:7b` | `Tokens < 8000` |
-| **16 GB VRAM** (RTX 4080, RX 7800/9070 XT, Apple 16-24GB) | 16 GB | `qwen2.5-coder:14b` | `Tokens < 16000` |
-| **24 GB VRAM** (RTX 3090/4090, Apple M-Max 32GB) | 24 GB | `qwen2.5-coder:32b` (Q4) | `Tokens < 24000` |
-| **32 GB+ VRAM / Mac Studio** | 32 GB+ | `qwen2.5-coder:32b` (Q8) / `deepseek-r1:32b` | `Tokens < 32000` |
+| **16 GB VRAM** (Radeon RX 6900/9070 XT, RTX 4080) | 16 GB | `qwen-3.8:27b` (`IQ3_S`) / `gemma4:12b` | `Tokens < 16000` |
+| **24 GB VRAM** (RTX 3090/4090, Apple M-Max 32GB) | 24 GB | `qwen-3.8:27b` (`Q4_K_M`) / `ornith-1.5:35b` | `Tokens < 32000` |
+| **32 GB+ VRAM / Mac Studio** | 32 GB+ | `qwen-3.8:27b` (`Q8`) / `deepseek-r1:32b` | `Tokens < 48000` |
 
 ---
 
@@ -227,6 +245,66 @@ tiers:
       markdown: true    # Normalizes ```json ... ``` tool blocks
       bare_json: true   # Normalizes raw JSON objects
       react: false      # Disables ReAct regex scanner to eliminate code diff false positives
+
+---
+
+### Recipe 7: 🎸 Cycle Killer & ⚡ Kickstart Defense
+When using local models (e.g. Gemma 4 12B QAT, DeepSeek-R1 14B) or cloud tiers that occasionally suffer from degenerative circular reasoning, 4-minute monologue loops, or multi-turn read/plan stalls:
+
+```yaml
+tiers:
+  - name: "Local GPU with Cycle Killer & Kickstart"
+    model: "gemma4:12b-it-qat"
+    provider: "ollama"
+    when: "Tokens < 16000 && Retries == 0"
+    cycle_killer:
+      enabled: true
+      max_prose_tokens: 4096    # Max non-tool prose tokens (reasoning <think> is 100% exempt)
+      max_thinking_tokens: 1500 # Max thinking token budget before repetition enforcement
+      repetition_window: 6      # Sliding N-gram window (6 words)
+      repetition_threshold: 3   # Murders stream if same 6-word phrase repeats 3x (<3s)
+      max_retries: 1            # Stage 1: retries locally with [SYSTEM OVERRIDE] @ $0.00
+      kickstart_threshold: 5    # ⚡ Kickstart: fires after 5 consecutive turns without tool progress (0 = disabled)
+      # kickstart_write_only: true # Only count file writes / terminal commands as progress (ignores read-only tools)
+      # kickstart_write_tools:     # Optional custom write tools list (defaults cover major agents)
+```
+*(Also supports `cycle_breaker:` as a backwards-compatible alias, and works across both local and cloud tiers).*
+
+---
+
+## 4.5 Agent-Specific Presets: Cline vs Zoo Code
+
+Different AI coding agents have fundamentally different tool-calling architectures that affect how well they work with local models. Nacho Flow ships two preset configurations:
+
+| Config File | Optimized For | Key Trait |
+| :--- | :--- | :--- |
+| `config.yaml` | Zoo Code, Aider, OpenCode | `write_to_file` whole-file overwrites — local models handle this well |
+| `config.cline.yaml` | Cline, Roo Code | `replace_in_file` diff edits — requires exact `old_text` match, needs cloud precision |
+
+### Why Cline Needs a Different Config
+
+Cline's `SdkDiffEditCoordinator` requires the model to reproduce the **exact existing file content** in an `old_text` parameter. Local 12B models frequently fail this, producing near-matches that Cline rejects. Zoo Code's `write_to_file` approach sends the entire new file content, which local models handle reliably.
+
+### Key Tuning Differences
+
+| Parameter | Zoo Code (`config.yaml`) | Cline (`config.cline.yaml`) | Why |
+| :--- | :--- | :--- | :--- |
+| Local Token Threshold | `Tokens < 16000` | `Tokens < 10000` | Cline starts diffing by Turn 3–5; escalate earlier |
+| `HasToolProgress` Guard | Not used | `!HasToolProgress` | Once files are created, edits need cloud precision |
+| Cycle Killer Prose Limit | 4096 | 6144 | Cline's XML tool format needs more prose room |
+| Cycle Killer Repetition | 3 | 4 | Cline's XML is naturally more repetitive |
+| `kickstart_threshold` | 5 | 0 (disabled by default) | Zoo Code is prone to `read_file`/`update_todo` semantic loops |
+| `kickstart_write_only` | Optional (`true`) | Not needed | Ignores `read_file`/`list_dir` tool churn, only counts write/exec tools |
+| Max Context (Local) | 64000 | 32000 | Force cloud escalation earlier for edit-heavy tasks |
+
+### Usage
+
+```bash
+# For Cline / Roo Code users:
+nacho-flow -config config.cline.yaml
+
+# For Zoo Code / Aider / OpenCode users (default):
+nacho-flow
 ```
 
 ---
@@ -386,7 +464,98 @@ Before committing changes to `config.yaml`, test different routing behaviors liv
 
 ---
 
-## 8. Troubleshooting & FAQ
+---
+
+## 8. Agent-Specific Harness Tuning: Zoo Code vs. Cline
+
+Different autonomous coding agents interact with LLMs using fundamentally different protocols. Tuning Nacho Flow for your specific extension ensures optimal performance, zero false-positive stream interruptions, and maximum cost efficiency.
+
+### 8.1 Architectural Differences
+
+| Dimension | Zoo Code / Roo Code | Cline |
+| :--- | :--- | :--- |
+| **Tool Calling Protocol** | OpenAI JSON `tools` parameter | XML tags embedded in conversational prose (`<write_to_file>`) |
+| **Context Accumulation** | Compact sliding transcript + pruned tools | Full multi-turn conversation transcripts re-sent every turn |
+| **Average Turn 50+ Context** | ~35k–45k tokens | ~80k–110k tokens |
+| **Local Model Compatibility** | Gemma 4 12B, Qwen 2.5/3 (native JSON function calling) | Qwen 3 14B, Devstral (XML agent-trained models) |
+| **Cycle Killer Prose Threshold** | `max_prose_tokens: 4096` | `max_prose_tokens: 6144` (relaxed for prose-embedded XML) |
+| **Kickstart Recommendation** | **Enabled** (`kickstart_threshold: 5`) | **Disabled or High** (`kickstart_threshold: 0` / off) |
+
+### 8.2 Zoo Code Tuning Profile (`config.zoo.yaml`)
+Zoo Code uses native OpenAI tool calling. Local models like Gemma 4 produce JSON tool calls reliably without long conversational preambles:
+```yaml
+cycle_killer:
+  enabled: true
+  max_prose_tokens: 4096
+  max_thinking_tokens: 1500
+  repetition_threshold: 3
+  kickstart_threshold: 5
+  kickstart_write_only: true
+```
+
+### 8.3 Cline Tuning Profile (`config.cline.yaml`)
+Cline models output XML tags within prose explanations. To avoid false-positive Cycle Killer stream severing and prevent Kickstart loops:
+```yaml
+cycle_killer:
+  enabled: true
+  max_prose_tokens: 6144       # Relaxed for prose XML preambles
+  max_thinking_tokens: 2000    # Extra planning runway
+  repetition_threshold: 4      # XML formats are naturally more repetitive
+  # kickstart_threshold: 0     # Disabled: Cline rarely idles in read loops
+  kickstart_write_tools:       # Required for Fairy Dust write progress tracking
+    - write_to_file
+    - replace_in_file
+    - execute_command
+    - insert_code_block
+```
+
+---
+
+## 9. 🧚 Fairy Dusting & Cost Shield Architecture
+
+### 9.1 Proactive Quality Checkpoints
+Rather than debugging syntax errors and missing module extensions 40 turns into a session, Fairy Dusting introduces scheduled frontier checkpoints triggered **strictly on productive write turns** (`WriteProgressCount`):
+
+```yaml
+fairy_dust:
+  enabled: true
+  entries:
+    # Tactical Checkpoint: Catches missing imports (.js in ESM), type mismatches, syntax regressions
+    - name: "Tactical Code Review"
+      frequency: 15       # Fires every 15 file writes
+      max_count: 5        # Hard cap: max 5 reviews per session
+      provider: "openrouter"
+      model: "anthropic/claude-sonnet-5"
+      prompt: >
+        [SYSTEM CHECKPOINT: TACTICAL CODE REVIEW]
+        Inspect recent edits for syntax correctness, valid imports, and edge-case errors.
+
+    # Strategic Checkpoint: Catches architectural drift, missing requirements, structural debt
+    - name: "Strategic Architecture Review"
+      frequency: 40       # Fires every 40 file writes
+      max_count: 2        # Hard cap: max 2 deep audits per session
+      provider: "openrouter"
+      model: "anthropic/claude-opus-5"
+      prompt: >
+        [SYSTEM CHECKPOINT: STRATEGIC ARCHITECTURE REVIEW]
+        Audit implementation against initial requirements and resolve systemic structural drift.
+```
+
+### 9.2 The Cost-Safe Default Tier Shield
+In runaway error cascades or edge cases, routing must **never default to ultra-expensive models** ($15/$75 per 1M Opus 5):
+1. **Set `default_tier` to Claude Sonnet 5**: Sonnet 5 ($3/$15) is 5× cheaper than Opus. A 30-turn runaway costs ~$2.50 instead of $12.65+.
+2. **Isolate Opus with `when: "false"`**:
+   ```yaml
+   - name: "Tier 5: Opus On-Demand (Spicy Only)"
+     provider: "openrouter"
+     model: "anthropic/claude-opus-5"
+     when: "false"
+   ```
+   This guarantees that automated routing never accidentally lands on Opus. Opus is accessible solely through **Fairy Dust strategic reviews** and **manual in-prompt `@nacho:model` / `X-Spicy-Model` overrides**.
+
+---
+
+## 10. Troubleshooting & FAQ
 
 ### Q: How do I know if my local GPU is actually processing turns?
 - **Response Headers**: Check the `x-nacho-router-tier` and `x-nacho-target-model` headers returned in your agent's HTTP responses.
@@ -402,4 +571,5 @@ Before committing changes to `config.yaml`, test different routing behaviors liv
 
 ### Q: How do I test a new rule before putting it in production?
 - You can override any turn on-the-fly directly from your chat prompt using **🌶️ HotSauce Directives** (`@nacho:local`, `@nacho:cloud`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) without modifying `config.yaml`.
+
 

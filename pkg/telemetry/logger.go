@@ -141,6 +141,48 @@ func (h *serviceLoggerHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
+// multiHandler fans out slog.Record events across multiple underlying handlers.
+type multiHandler struct {
+	handlers []slog.Handler
+}
+
+func (m *multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, h := range m.handlers {
+		if h.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *multiHandler) Handle(ctx context.Context, r slog.Record) error {
+	var firstErr error
+	for _, h := range m.handlers {
+		if h.Enabled(ctx, r.Level) {
+			if err := h.Handle(ctx, r); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+func (m *multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	newHandlers := make([]slog.Handler, len(m.handlers))
+	for i, h := range m.handlers {
+		newHandlers[i] = h.WithAttrs(attrs)
+	}
+	return &multiHandler{handlers: newHandlers}
+}
+
+func (m *multiHandler) WithGroup(name string) slog.Handler {
+	newHandlers := make([]slog.Handler, len(m.handlers))
+	for i, h := range m.handlers {
+		newHandlers[i] = h.WithGroup(name)
+	}
+	return &multiHandler{handlers: newHandlers}
+}
+
 // NewServiceLogger creates an slog.Logger that delegates to a platform service.Logger.
 func NewServiceLogger(svcLogger service.Logger, level slog.Level) *slog.Logger {
 	handler := &serviceLoggerHandler{
@@ -151,18 +193,42 @@ func NewServiceLogger(svcLogger service.Logger, level slog.Level) *slog.Logger {
 }
 
 // InitLogger initializes the logger based on whether the application is running interactively.
+// In daemon mode, it dual-writes to both the system service logger (e.g. journald/eventlog)
+// and the rotating router.log file on disk.
 func InitLogger(isInteractive bool, logDir string, level slog.Level, svcLogger service.Logger) (*slog.Logger, io.Closer) {
+	if logDir == "" {
+		logDir = "logs"
+	}
+	logFilePath := filepath.Join(logDir, contract.DefaultRouterLogFileName)
+
 	if isInteractive {
-		if logDir == "" {
-			logDir = "logs"
-		}
-		logFilePath := filepath.Join(logDir, contract.DefaultRouterLogFileName)
 		return NewInteractiveLogger(os.Stdout, logFilePath, level)
 	}
 
-	if svcLogger != nil {
-		return NewServiceLogger(svcLogger, level), nopCloser{}
+	dir := filepath.Dir(logFilePath)
+	if dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0750)
 	}
 
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})), nopCloser{}
+	fileRotator := &lumberjack.Logger{
+		Filename:   logFilePath,
+		MaxSize:    10, // Megabytes
+		MaxBackups: 5,
+		Compress:   false,
+	}
+
+	fileHandler := slog.NewTextHandler(fileRotator, &slog.HandlerOptions{Level: level})
+
+	if svcLogger != nil {
+		svcHandler := &serviceLoggerHandler{
+			svcLogger: svcLogger,
+			level:     level,
+		}
+		dualHandler := &multiHandler{
+			handlers: []slog.Handler{svcHandler, fileHandler},
+		}
+		return slog.New(dualHandler), fileRotator
+	}
+
+	return slog.New(fileHandler), fileRotator
 }
