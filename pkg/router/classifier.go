@@ -10,9 +10,10 @@ import (
 )
 
 type RequestClassifier struct {
-	mu              sync.RWMutex
-	estimator       *TokenEstimator
-	errorSignatures []string
+	mu                  sync.RWMutex
+	estimator           *TokenEstimator
+	errorSignatures     []string
+	kickstartWriteTools []string
 }
 
 // defaultAgentErrorSignatures are fallback error patterns injected by agent clients
@@ -30,6 +31,8 @@ var defaultAgentErrorSignatures = []string{
 	"Parameter old_text is required",
 	"Command not executed:",
 }
+
+
 
 // NewClassifier initializes a default RequestClassifier with an adaptive TokenEstimator.
 func NewClassifier() contract.Classifier {
@@ -68,6 +71,31 @@ func (c *RequestClassifier) GetErrorSignatures() []string {
 	res := make([]string, len(c.errorSignatures))
 	copy(res, c.errorSignatures)
 	return res
+}
+
+// SetKickstartWriteTools configures custom write-tool names from config.yaml.
+func (c *RequestClassifier) SetKickstartWriteTools(tools []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(tools) == 0 {
+		c.kickstartWriteTools = nil
+		return
+	}
+	c.kickstartWriteTools = make([]string, len(tools))
+	copy(c.kickstartWriteTools, tools)
+}
+
+// GetKickstartWriteTools returns the configured write-tool names as a lookup map.
+// Returns an empty map if no tools are configured — kickstart_write_only will
+// effectively never detect write progress unless the list is specified in config.
+func (c *RequestClassifier) GetKickstartWriteTools() map[string]bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	lookup := make(map[string]bool, len(c.kickstartWriteTools))
+	for _, t := range c.kickstartWriteTools {
+		lookup[strings.ToLower(strings.TrimSpace(t))] = true
+	}
+	return lookup
 }
 
 // GetEstimator returns the active TokenEstimator instance for dynamic calibration.
@@ -157,7 +185,7 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	}
 
 	// 2.5 Scan trailing messages for error patterns and tool progress
-	reqCtx.HistoryErrors, reqCtx.HasToolProgress = c.scanTrailingMessages(messages)
+	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress = c.scanTrailingMessages(messages)
 
 	// 3. Approximate total token count using zero-allocation len(body) estimator
 	if hasNonEmptyContent || reqCtx.HasTools {
@@ -210,17 +238,95 @@ func isErrorText(text string, signatures []string) bool {
 }
 
 // scanTrailingMessages inspects the last N messages in the conversation history
-// to detect: (a) consecutive trailing error turns, and (b) successful tool progress.
-func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool) {
+// to detect: (a) consecutive trailing error turns, (b) successful tool progress,
+// and (c) write-specific tool progress (e.g. file writes, terminal executions).
+func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool, hasWriteProgress bool) {
 	signatures := c.GetErrorSignatures()
+	writeTools := c.GetKickstartWriteTools()
 
-	// Scan backwards from the end, up to 6 messages
-	start := len(messages) - 6
+	// Scan backwards from the end, up to 8 messages to capture assistant calls + tool responses
+	start := len(messages) - 8
 	if start < 0 {
 		start = 0
 	}
 
-	// First pass: detect tool progress (any successful tool result in trailing messages)
+	// First pass: collect call IDs for write/execute tool invocations in assistant turns
+	writeCallIDs := make(map[string]bool)
+	hasAnyWriteCall := false
+
+	for i := start; i < len(messages); i++ {
+		msgMap, ok := messages[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := msgMap["role"].(string)
+
+		if role == "assistant" {
+			// Check OpenAI-style tool_calls
+			if toolCalls, ok := msgMap["tool_calls"].([]interface{}); ok {
+				for _, tc := range toolCalls {
+					tcMap, ok := tc.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					id, _ := tcMap["id"].(string)
+					fnName := ""
+					if fnMap, ok := tcMap["function"].(map[string]interface{}); ok {
+						fnName, _ = fnMap["name"].(string)
+					}
+					if fnName == "" {
+						fnName, _ = tcMap["name"].(string)
+					}
+					if writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
+						if id != "" {
+							writeCallIDs[id] = true
+						}
+						hasAnyWriteCall = true
+					}
+				}
+			}
+			// Check legacy OpenAI function_call
+			if fnCall, ok := msgMap["function_call"].(map[string]interface{}); ok {
+				fnName, _ := fnCall["name"].(string)
+				if writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
+					hasAnyWriteCall = true
+				}
+			}
+			// Check Anthropic-style tool_use content blocks
+			if parts, ok := msgMap["content"].([]interface{}); ok {
+				for _, part := range parts {
+					partMap, ok := part.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					partType, _ := partMap["type"].(string)
+					if partType == "tool_use" {
+						id, _ := partMap["id"].(string)
+						name, _ := partMap["name"].(string)
+						if writeTools[strings.ToLower(strings.TrimSpace(name))] {
+							if id != "" {
+								writeCallIDs[id] = true
+							}
+							hasAnyWriteCall = true
+						}
+					}
+				}
+			}
+			// Check Cline-style XML tool calls embedded in text content
+			// Cline models emit <write_to_file>, <replace_in_file>, etc. as XML tags in prose
+			if textContent, ok := msgMap["content"].(string); ok && len(writeTools) > 0 {
+				lowerText := strings.ToLower(textContent)
+				for toolName := range writeTools {
+					if strings.Contains(lowerText, "<"+toolName+">") {
+						hasAnyWriteCall = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Second pass: detect tool progress and write-specific progress on tool results
 	for i := start; i < len(messages); i++ {
 		msgMap, ok := messages[i].(map[string]interface{})
 		if !ok {
@@ -233,6 +339,12 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 			text := extractAllTextFromContent(msgMap["content"])
 			if !isErrorText(text, signatures) {
 				hasToolProgress = true
+				toolCallID, _ := msgMap["tool_call_id"].(string)
+				if toolCallID != "" && writeCallIDs[toolCallID] {
+					hasWriteProgress = true
+				} else if toolCallID == "" && hasAnyWriteCall {
+					hasWriteProgress = true
+				}
 			}
 		}
 
@@ -250,14 +362,30 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 						text := extractAllTextFromContent(partMap["content"])
 						if !isErrorText(text, signatures) {
 							hasToolProgress = true
+							toolUseID, _ := partMap["tool_use_id"].(string)
+							if toolUseID != "" && writeCallIDs[toolUseID] {
+								hasWriteProgress = true
+							} else if toolUseID == "" && hasAnyWriteCall {
+								hasWriteProgress = true
+							}
 						}
 					}
 				}
 			}
 		}
+
+		// Check Cline-style: user message following an assistant with XML tool calls.
+		// In Cline's protocol, every user message after a tool call IS the tool result.
+		if role == "user" && hasAnyWriteCall {
+			text := extractAllTextFromContent(msgMap["content"])
+			if !isErrorText(text, signatures) {
+				hasToolProgress = true
+				hasWriteProgress = true
+			}
+		}
 	}
 
-	// Second pass: count consecutive trailing errors (from the end, backwards)
+	// Third pass: count consecutive trailing errors (from the end, backwards)
 	for i := len(messages) - 1; i >= start; i-- {
 		msgMap, ok := messages[i].(map[string]interface{})
 		if !ok {
@@ -279,7 +407,7 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 		}
 	}
 
-	return historyErrors, hasToolProgress
+	return historyErrors, hasToolProgress, hasWriteProgress
 }
 
 // extractAllTextFromContent extracts all text from a content field,

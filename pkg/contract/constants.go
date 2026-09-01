@@ -107,7 +107,7 @@ const (
 
 // Runtime fallback defaults.
 const (
-	DefaultBenchmarkModel           = "anthropic/claude-3.5-sonnet"
+	DefaultBenchmarkModel           = "anthropic/claude-sonnet-5"
 	DefaultBenchmarkPricePerMillion = 3.00
 	DefaultServerPort               = 8000
 	DefaultDaemonHost               = "127.0.0.1"

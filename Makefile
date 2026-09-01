@@ -40,6 +40,14 @@ test-cover:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report written to coverage.html"
 
+fixtures-gen:
+	@echo "Regenerating deterministic telemetry fixtures..."
+	go run ./pkg/telemetry/testdata/gen_fixtures.go --seed 42 --days 30
+
+test-fixtures:
+	@echo "Running historical telemetry fixtures contract tests..."
+	go test -v -run "TestStatsTracker_HistoricalFixtures|TestStatsTracker_LegacyMigration_Fixtures" ./pkg/telemetry/...
+
 test-extension:
 	@echo "Running VS Code extension test suite..."
 	cd extension && npm test

@@ -58,7 +58,7 @@
 		vscode.setState(currentState);
 		try { localStorage.setItem('nacho_flow_time_window', windowKey); } catch (_) {}
 
-		['all_time', 'today', 'this_week', 'this_month'].forEach(k => {
+		['all_time', 'today', 'yesterday', 'this_week', 'this_month'].forEach(k => {
 			const btn = document.getElementById(`tab-${k}`);
 			if (btn) {
 				if (k === windowKey) btn.classList.add('active');
@@ -130,6 +130,16 @@
 			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
 			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
 			timeframeLabel = `📅 Today's Telemetry (Active 24h rolling UTC window)`;
+		} else if (activeTimeWindow === 'yesterday') {
+			const w = stats.windows?.yesterday;
+			totalReqs = w?.requests || 0;
+			totalTokens = w?.tokens_total || 0;
+			localTokens = w?.tokens_local || 0;
+			spentUSD = w?.cost_spent_usd || 0;
+			savedUSD = w?.cost_saved_usd || 0;
+			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
+			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			timeframeLabel = `📅 Yesterday's Telemetry (Prior 24h UTC window)`;
 		} else if (activeTimeWindow === 'this_week') {
 			const w = stats.windows?.this_week;
 			totalReqs = w?.requests || 0;
@@ -174,9 +184,9 @@
 			statsContent.innerHTML = `
 				<div class="stat-grid">
 					<div class="stat-item highlight">
-						<div class="stat-value">+$${savedUSD.toFixed(2)}</div>
+						<div class="stat-value">$${savedUSD.toFixed(2)}</div>
 						<div class="stat-label">💵 Est. Cost Saved</div>
-						<div class="stat-sub">${Math.round(reductionPct)}% saved vs. direct cloud</div>
+						<div class="stat-sub">${Math.round(reductionPct)}% saved vs. direct cloud (claude-sonnet-5 baseline)</div>
 					</div>
 					<div class="stat-item spent-chip">
 						<div class="stat-value">$${spentUSD.toFixed(2)}</div>
@@ -197,40 +207,74 @@
 			`;
 		}
 
-		// Select the cycle_killer object for the active time window.
-		// IMPORTANT: cycle_killer is always an object (never null/undefined), so we must check
-		// total_interventions > 0 — not just truthiness — before falling back to the root-level
-		// stats.cycle_killer. This handles legacy daemons where per-window CK wasn't persisted.
+		// ─── FOOTGUN WARNING (for LLM agents and contributors) ──────────────────────
+		// The /v1/stats payload has TWO locations for CycleKiller AND FairyDust data:
+		//
+		//   stats.cycle_killer              ← ROOT-LEVEL all-time global accumulator.
+		//   stats.fairy_dust               ← ROOT-LEVEL all-time global accumulator.
+		//                                     NEVER use these for windowed display.
+		//   stats.windows.<window>.cycle_killer  ← Per-window object (correct source).
+		//   stats.windows.<window>.fairy_dust    ← Per-window object (correct source).
+		//
+		// renderDefensePanel() must ALWAYS be called via windowCycleKiller() and
+		// windowFairyDust() below, never directly with the root-level fields.
+		// Using the root-level fields is a recurring bug: it makes Today/Yesterday
+		// show all-time cumulative totals regardless of the active tab.
+		// ─────────────────────────────────────────────────────────────────────────────
+
+		// windowCycleKiller: returns the per-window CK object when it exists (including
+		// when it is legitimately zero — a quiet window is not the same as "no data").
+		// Falls back to the root accumulator ONLY for legacy daemons (pre-v0.8.4) that
+		// never populated per-window CK fields.
 		function windowCycleKiller(windowCK) {
-			if (windowCK?.total_interventions > 0) {
+			if (windowCK != null) {
 				return windowCK;
 			}
-			// Fall back to root-level global accumulator if it has data
-			if (stats.cycle_killer?.total_interventions > 0) {
-				return stats.cycle_killer;
+			// Legacy daemon: window object was never populated — fall back to root accumulator.
+			return stats.cycle_killer ?? null;
+		}
+
+		// windowFairyDust: same per-window selection logic for FairyDust metrics.
+		// Falls back to root stats.fairy_dust ONLY for legacy daemons.
+		function windowFairyDust(windowFD) {
+			if (windowFD != null) {
+				return windowFD;
 			}
-			return windowCK;
+			return stats.fairy_dust ?? null;
 		}
 
 		let currentCycleKiller = null;
+		let currentFairyDust = null;
 		if (activeTimeWindow === 'today') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.today?.cycle_killer);
+			currentFairyDust = windowFairyDust(stats.windows?.today?.fairy_dust);
+		} else if (activeTimeWindow === 'yesterday') {
+			currentCycleKiller = windowCycleKiller(stats.windows?.yesterday?.cycle_killer);
+			currentFairyDust = windowFairyDust(stats.windows?.yesterday?.fairy_dust);
 		} else if (activeTimeWindow === 'this_week') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.this_week?.cycle_killer);
+			currentFairyDust = windowFairyDust(stats.windows?.this_week?.fairy_dust);
 		} else if (activeTimeWindow === 'this_month') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.this_month?.cycle_killer);
+			currentFairyDust = windowFairyDust(stats.windows?.this_month?.fairy_dust);
 		} else {
 			currentCycleKiller = windowCycleKiller(stats.windows?.all_time?.cycle_killer);
+			currentFairyDust = windowFairyDust(stats.windows?.all_time?.fairy_dust);
 		}
 
-		renderCycleKiller(currentCycleKiller);
+		renderDefensePanel(currentCycleKiller, currentFairyDust);
 	}
 
-	function renderCycleKiller(ck) {
+	// ─── renderDefensePanel ──────────────────────────────────────────────────────
+	// ALWAYS call this function through renderStats() → windowCycleKiller() and
+	// windowFairyDust(), which select the correct per-window objects based on
+	// activeTimeWindow. Direct calls with root-level accumulators are a bug.
+	// ─────────────────────────────────────────────────────────────────────────────
+	function renderDefensePanel(ck, fd) {
 		const ckContent = document.getElementById('cycle-killer-content');
 		if (!ckContent) return;
 		if (!ck) {
-			ckContent.innerHTML = '<div class="loading">No Cycle Killer telemetry recorded yet.</div>';
+			ckContent.innerHTML = '<div class="loading">No defense telemetry recorded yet.</div>';
 			return;
 		}
 
@@ -239,9 +283,11 @@
 		const avoidedGPUSeconds = ck.avoided_gpu_seconds || 0;
 		const stage1Heals = ck.stage1_local_heals || 0;
 		const stage2Escalations = ck.stage2_cloud_escalations || 0;
+		const kickstarts = ck.session_kickstarts || 0;
 		const healRate = ck.local_heal_success_rate_pct !== undefined
 			? ck.local_heal_success_rate_pct
 			: (totalInterventions > 0 ? (stage1Heals / totalInterventions) * 100 : 0);
+		const fairyTriggers = fd ? (fd.total_triggers || 0) : 0;
 
 		const gpuMinutes = (avoidedGPUSeconds / 60).toFixed(1);
 		const avoidedTokensStr = avoidedTokens >= 1000000
@@ -292,6 +338,16 @@
 					<div class="ck-value">${Math.round(healRate)}% <span class="ck-unit">(${stage1Heals}/${totalInterventions})</span></div>
 					<div class="ck-label">⚡ Stage 1 Local Heal Rate</div>
 					<div class="ck-sub">Steered with [SYSTEM OVERRIDE] @ $0.00</div>
+				</div>
+				<div class="ck-item kickstart-chip">
+					<div class="ck-value">${kickstarts} <span class="ck-unit">Sessions</span></div>
+					<div class="ck-label">🚀 Kickstart Escalations</div>
+					<div class="ck-sub">Tool-less sessions rescued via frontier reasoning injection</div>
+				</div>
+				<div class="ck-item fairy-chip">
+					<div class="ck-value">${fairyTriggers} <span class="ck-unit">Checkpoints</span></div>
+					<div class="ck-label">✨ Fairy Dust Injections</div>
+					<div class="ck-sub">Proactive thinking model checkpoints fired on write/turn 1</div>
 				</div>
 			</div>
 			<div class="ck-footer-row">
@@ -441,7 +497,7 @@
 			const isLocal = route.is_local ? 'badge-local' : 'badge-cloud';
 			const badgeText = route.is_local ? 'Local' : 'Cloud';
 			const fallbackBadge = route.is_fallback ? '<span class="badge badge-fallback">Fallback</span>' : '';
-			
+
 			let cycleBadge = '';
 			if (route.cycle_breaker_triggered) {
 				const reason = route.cycle_breaker_reason || 'runaway loop';
@@ -454,7 +510,14 @@
 			} else {
 				cycleBadge = `<span class="badge-cycle-none">--</span>`;
 			}
-			
+
+			const fairyBadge = route.fairy_dusted
+				? `<span class="badge badge-fairy" title="✨ Fairy Dust: Proactive thinking model checkpoint fired${route.fairy_dust_entry ? ' (' + route.fairy_dust_entry + ')' : ''}">✨ Fairy</span>`
+				: '';
+			const kickstartBadge = route.session_kickstarted
+				? `<span class="badge badge-kickstart" title="🚀 Kickstart: Tool-less session escalated to frontier reasoning model">🚀 Kick</span>`
+				: '';
+
 			return `
 				<tr>
 					<td>${new Date(route.timestamp).toLocaleTimeString()}</td>
@@ -463,7 +526,8 @@
 					<td>${(route.tokens || 0).toLocaleString()}</td>
 					<td>${(route.latency_ms || 0).toFixed(0)}ms</td>
 					<td>${cycleBadge}</td>
-					<td class="saved-val">+$${(route.cost_saved_usd || 0).toFixed(4)}</td>
+					<td>${fairyBadge}${kickstartBadge}</td>
+					<td class="saved-val">$${(route.cost_saved_usd || 0).toFixed(4)}</td>
 				</tr>
 			`;
 		}).join('');
@@ -478,6 +542,7 @@
 						<th>Tokens</th>
 						<th>Latency</th>
 						<th>Cycle Shield</th>
+						<th>Proactive</th>
 						<th>Saved</th>
 					</tr>
 				</thead>
@@ -487,8 +552,12 @@
 			</table>
 		`;
 
-		if (currentState.stats && currentState.stats.cycle_killer) {
-			renderCycleKiller(currentState.stats.cycle_killer);
+		// Re-render the full stats panel (which correctly picks the per-window CK
+		// and FD objects via windowCycleKiller/windowFairyDust). Do NOT call
+		// renderDefensePanel() directly here — that was the recurring bug that made
+		// Cycle Killer always show all-time totals whenever route data refreshed.
+		if (currentState.stats) {
+			renderStats(currentState.stats);
 		}
 	}
 

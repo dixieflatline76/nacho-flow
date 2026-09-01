@@ -11,7 +11,7 @@ func TestScanTrailingMessages_CleanHistory(t *testing.T) {
 		map[string]interface{}{"role": "user", "content": "Build me an app"},
 		map[string]interface{}{"role": "assistant", "content": "Sure, let me help."},
 	}
-	errors, progress := clf.scanTrailingMessages(messages)
+	errors, progress, _ := clf.scanTrailingMessages(messages)
 	if errors != 0 {
 		t.Errorf("expected 0 errors, got %d", errors)
 	}
@@ -26,7 +26,7 @@ func TestScanTrailingMessages_ZooCodeMissingTool(t *testing.T) {
 		map[string]interface{}{"role": "assistant", "content": "Let me think about this..."},
 		map[string]interface{}{"role": "user", "content": "[ERROR] You did not use a tool in your previous response! Please retry with a tool use."},
 	}
-	errors, progress := clf.scanTrailingMessages(messages)
+	errors, progress, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error, got %d", errors)
 	}
@@ -40,7 +40,7 @@ func TestScanTrailingMessages_SchemaParameterError(t *testing.T) {
 	messages := []interface{}{
 		map[string]interface{}{"role": "user", "content": "Missing value for required parameter 'follow_up'. Please retry with complete response."},
 	}
-	errors, _ := clf.scanTrailingMessages(messages)
+	errors, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error, got %d", errors)
 	}
@@ -53,7 +53,7 @@ func TestScanTrailingMessages_ConsecutiveErrors(t *testing.T) {
 		map[string]interface{}{"role": "user", "content": "[ERROR] You did not use a tool"},
 		map[string]interface{}{"role": "user", "content": "The tool execution failed"},
 	}
-	errors, _ := clf.scanTrailingMessages(messages)
+	errors, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 2 {
 		t.Errorf("expected 2 consecutive errors, got %d", errors)
 	}
@@ -66,7 +66,7 @@ func TestScanTrailingMessages_ToolProgressDetection(t *testing.T) {
 		map[string]interface{}{"role": "assistant", "content": "Writing file..."},
 		map[string]interface{}{"role": "tool", "content": "File written successfully"},
 	}
-	errors, progress := clf.scanTrailingMessages(messages)
+	errors, progress, _ := clf.scanTrailingMessages(messages)
 	if errors != 0 {
 		t.Errorf("expected 0 errors, got %d", errors)
 	}
@@ -80,7 +80,7 @@ func TestScanTrailingMessages_DiffMismatchError(t *testing.T) {
 	messages := []interface{}{
 		map[string]interface{}{"role": "user", "content": "<error_details>\nNo sufficiently similar match found (79% similar, needs 100%)\n</error_details>"},
 	}
-	errors, _ := clf.scanTrailingMessages(messages)
+	errors, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error, got %d", errors)
 	}
@@ -95,7 +95,7 @@ func TestScanTrailingMessages_ClineDiffEditToolRoleError(t *testing.T) {
 			"content": `{"query":"edit:c:\\project\\tsconfig.json","result":"","error":"Editor operation failed: Parameter ` + "`old_text`" + ` is required when editing an existing file without ` + "`insert_line`" + `","success":false}`,
 		},
 	}
-	errors, progress := clf.scanTrailingMessages(messages)
+	errors, progress, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error for Cline tool-role diff rejection, got %d", errors)
 	}
@@ -110,7 +110,7 @@ func TestScanTrailingMessages_ClineDiffEditUserRoleError(t *testing.T) {
 		map[string]interface{}{"role": "assistant", "content": "Editing file..."},
 		map[string]interface{}{"role": "user", "content": "Editor operation failed: Parameter `old_text` is required when editing an existing file"},
 	}
-	errors, _ := clf.scanTrailingMessages(messages)
+	errors, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error for Cline user-role diff rejection, got %d", errors)
 	}
@@ -125,7 +125,7 @@ func TestScanTrailingMessages_PlanModeIsNotAnErrorByDefault(t *testing.T) {
 			"content": "file modifications are blocked in plan mode",
 		},
 	}
-	errors, _ := clf.scanTrailingMessages(messages)
+	errors, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 0 {
 		t.Errorf("expected 0 errors for plan mode discussion, got %d", errors)
 	}
@@ -143,7 +143,7 @@ func TestScanTrailingMessages_CustomErrorSignatures(t *testing.T) {
 	messages := []interface{}{
 		map[string]interface{}{"role": "user", "content": "Warning: MY_LINTER_ERROR detected in file"},
 	}
-	errors, _ := clf.scanTrailingMessages(messages)
+	errors, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error with custom signature, got %d", errors)
 	}
@@ -175,7 +175,7 @@ func TestScanTrailingMessages_ConcurrentAccess(t *testing.T) {
 			messages := []interface{}{
 				map[string]interface{}{"role": "user", "content": "ERR_A happened"},
 			}
-			_, _ = clf.scanTrailingMessages(messages)
+			_, _, _ = clf.scanTrailingMessages(messages)
 		}()
 	}
 	wg.Wait()
@@ -190,7 +190,7 @@ func TestScanTrailingMessages_ClineToolSuccess(t *testing.T) {
 			"content": `{"query":"edit:package.json","result":"File created successfully at: package.json","success":true}`,
 		},
 	}
-	errors, progress := clf.scanTrailingMessages(messages)
+	errors, progress, _ := clf.scanTrailingMessages(messages)
 	if errors != 0 {
 		t.Errorf("expected 0 errors on successful tool execution, got %d", errors)
 	}

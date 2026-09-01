@@ -77,19 +77,25 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **Agentic Progress Awareness & Session Retry Tracking (`pkg/router/session.go`)**:
   - Computes an FNV-1a hash of the initial conversation prompt prefix to correlate prompt turns within a sliding 5-minute window.
   - **Tool Progress Gate (`hasToolProgress`)**: In multi-step autonomous agent loops (where the latest user prompt string remains identical across dozens of file reads/writes), the session tracker detects intermediate successful tool executions (`role: tool` / `tool_result`) and resets `RetriesCount = 0`, preventing false retry escalation.
-- **In-History Trailing Error Scanner (`pkg/router/classifier.go`)**:
+- **In-History Trailing Error Scanner & XML Tool Classifier (`pkg/router/classifier.go`)**:
   - Scans the trailing messages in conversation history for known client error signatures (`[ERROR] You did not use a tool`, `Missing value for required parameter`, `<error_details>`, `No sufficiently similar match found`, etc.).
   - Extracts consecutive error counts (`HistoryErrors`) and overrides `reqCtx.Retries`, triggering automatic rule-based tier escalation to DeepSeek R1 (Tier 3) or Claude Sonnet 5 (Tier 4) to self-heal without requiring custom client HTTP headers.
+  - **Cline XML Tool Call Detection Engine**: Scans raw assistant text content for embedded XML write tools (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`, etc.) from `kickstart_write_tools`, and maps subsequent user tool results to `HasToolProgress` and `HasWriteProgress` across OpenAI JSON, Anthropic JSON, and Cline XML formats.
 - **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities without underestimating payloads.
 - **Multimodal Detection**: Scans message blocks for `image_url` payloads and base64 strings (`HasImages`).
 - **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`), extracting declared interactive tools (`ask_followup_question`, `ask_question`).
 - **Scoped Keyword Extraction**: Extracts programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) **strictly from the clean prompt**, preventing historical multi-turn token pollution.
 
+### Stage 1.5: Proactive Quality Checkpointing ("Fairy Dust") & Cycle Killer Resuscitation (`pkg/router/session.go`)
+- **Fairy Dust Periodic Elevation**: Proactively triggers quality checkpoint reviews on frontier models (e.g., DeepSeek-R1, Claude 3.7 Sonnet) after every $N$ write tool actions, verifying complex edits before local execution resumes.
+- **Session Kickstart**: Detects semantic idle/planning loops where the agent stops issuing write/tool commands and injects explicit system nudges or escalates to default cloud tiers.
+
 ### Stage 2: AST-Compiled Rule Evaluation & Directive Dispatch (`pkg/strategy/expr_evaluator.go`)
 - **Directive Override Fast-Path**: If `ForcedTier` or `ForcedModel` is present, `SelectTier` directly resolves the target tier or transient model tier without evaluating AST expressions.
 - **$\mathcal{O}(1)$ Context Boundary Guard**: If a tier defines `max_context` and `Tokens > max_context`, the tier is skipped immediately without expression evaluation overhead.
 - **Bytecode Expression Engine**: Uses `github.com/expr-lang/expr` compiled bytecode expressions to evaluate 1..N tiers sequentially (*Top-to-Bottom: First Match Wins* in $< 0.6 \mu\text{s}$).
-- Supported context variables: `Tokens`, `HasImages`, `HasTools`, `Keywords`, `Retries`, `IsRetry`, `Model`.
+- Supported context variables: `Tokens`, `HasImages`, `HasTools`, `Keywords`, `Retries`, `IsRetry`, `Model`, `SessionKickstarted`, `SessionKickstartCount`, `HasToolProgress`, `HasWriteProgress`, `HistoryErrors`, `CoolingDownModels`.
+- **Spicy Directive Model Isolation (`when: "false"`)**: Tiers configured with `when: "false"` are skipped during AST tier selection, guaranteeing zero accidental routing to expensive models (e.g. Claude Opus 5), while keeping them accessible on-demand via `@nacho:model` / `X-Spicy-Model` and Fairy Dusting.
 
 ### Stage 3: Payload Sanitization & Model Rewriting (`pkg/router/sanitizer.go`)
 - **Directive Tag Stripping**: Strips all `@nacho:...` occurrences from string and multipart message arrays, collapsing duplicate whitespace.
@@ -99,7 +105,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 
 ### Stage 4: Circuit-Breaker-Aware Dispatch & Strict Fallback Bypass (`pkg/server/proxy.go`, `pkg/provider/circuit_breaker.go`)
 - Resolves the target provider from the `provider.Registry`.
-- **Escalation Budget & Anti-Runaway Protection**: When requests route to the `DefaultTier` (Frontier Powerhouse / Claude Sonnet 5), `RecordEscalation` enforces a hard ceiling of `MaxEscalationTurns = 3`. If an error proves unfixable after 3 consecutive frontier turns, the proxy automatically de-escalates to Tier 2 (Gemini Flash), capping worst-case failure costs at ~**$0.21**.
+- **Escalation Budget & Anti-Runaway Protection**: When requests route to the `DefaultTier` (Claude Sonnet 5), `RecordEscalation` enforces a hard ceiling of `MaxEscalationTurns = 3`. If an error proves unfixable after 3 consecutive frontier turns, the proxy automatically de-escalates to Tier 2 (Gemini Flash), capping worst-case failure costs at ~**$0.21**.
 - **Forced Directive Fallback Bypass**: If a user explicitly requested a tier or model via directive and its provider circuit breaker is OPEN, the proxy does **not** silently fall through to cloud; it immediately returns an OpenAI-wire-compliant zero-cost chat alert (`RenderCircuitBlocked`).
 - **Standard Routing Circuit Breaker**: For automatic rule evaluations, if `cb.AllowRequest()` fails, the proxy bypasses the primary provider with 0ms dial delay and immediately dispatches to the default fallback tier.
 - Using zero-allocation interface assertions:
@@ -112,8 +118,9 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **Delayed Header Pattern (Streaming)**: For SSE streams, the proxy holds off on writing `w.WriteHeader(200)` until peeking the first 4KB chunk via `NewStreamNormalizer`. If a local provider emits an immediate `data: [DONE]` stream with zero content, the stream is cleanly closed and transparently re-dispatched to the cloud fallback tier.
 - **Empty Content Fallback (Non-Streaming)**: If a local model returns a 200 OK with empty choices (`""`), the defective response is caught and the request is transparently re-routed to the fallback tier.
 
-### Stage 5b: Extended Reasoning Stream Normalization (`pkg/server/stream_normalizer.go`)
+### Stage 5b: Extended Reasoning & Usage Stream Normalization (`pkg/server/stream_normalizer.go`)
 - **SSE Stream Interception**: When `Content-Type: text/event-stream` is detected, `resp.Body` is wrapped with `NewStreamNormalizer`.
+- **Cache-Aware Usage Ingestion**: Ingests trailing SSE `usage` objects containing `prompt_tokens_details.cached_tokens` and upstream `cost` figures, capturing exact prompt cache discounts from providers like OpenRouter and DeepSeek.
 - **Wire-Speed Fast Filter**: `bytes.Contains(chunk, []byte("reasoning"))` evaluates in `< 4ns`, bypassing standard chat completion chunks with near-zero overhead.
 - **TCP Packet Boundary Framing**: Uses a pooled `bufio.Reader` (`sync.Pool`) to assemble complete `\n\n` SSE event boundaries, guaranteeing that TCP fragmentation never splits JSON payload boundaries.
 - **Thought-Stream State Machine**:
@@ -143,13 +150,35 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **Pre-`[DONE]` Stream Delta Injection (`stream_normalizer.go`)**: If upstream finishes without emitting native tool calls, the shield emits a synthetic `tool_calls` chunk with `finish_reason: "tool_calls"` immediately before streaming `data: [DONE]`.
 
 ### Stage 5e: 🎸 Cycle Killer: Two-Phase In-Flight Stream Defense (`pkg/router/shield/cycle_breaker.go`)
-- **The Problem ("Qu'est-ce que c'est?")**: Local models (e.g. 12B/14B QAT on ROCm) in complex agentic tool-calling sessions can get trapped in circular deliberation loops or generate 4-minute runaway prose monologues without calling tools. Post-turn defenses fail to stop mid-stream GPU burn.
-- **Dual-Trigger Detection Engine**:
-  1. **Sliding N-Gram Repetition Detector**: Tracks a rolling 6-word window using 64-bit FNV-1a hashing. If the same 6-word sequence repeats $\ge 3$ times, it trips in **< 3 seconds** (< 30 tokens).
-  2. **Prose Token Soft Ceiling**: Counts non-thinking, non-tool words against `max_prose_tokens` (default 800) during agentic turns (`HasTools == true`), while keeping `<think>` reasoning tags 100% exempt.
+- **The Problem ("Qu'est-ce que c'est?")**: LLM models in complex agentic tool-calling sessions can get trapped in circular deliberation loops or generate multi-minute runaway prose monologues without calling tools. Post-turn defenses fail to stop mid-stream compute and token burn.
+- **Provider-Agnostic, Config-Driven Architecture**: Fully configurable per-tier and globally in `config.yaml` across both Local GPU and Cloud models. Activation is governed strictly by YAML config rather than hardcoded provider checks.
+- **Multi-Lane Detection Engine**:
+  1. **Sliding N-Gram Repetition Detector**: Tracks rolling n-gram windows using 64-bit FNV-1a hashing across both prose and reasoning (`<think>`) streams. If a sequence repeats $\ge \text{threshold}$ times, it trips in **< 3 seconds** (< 30 tokens).
+  2. **Prose Token Soft Ceiling**: Counts non-thinking, non-tool words against `max_prose_tokens` (default 4096) during agentic turns (`HasTools == true`).
+  3. **Thinking Token Ceiling**: Monitors reasoning token depth against `max_thinking_tokens` (default 1500) with repetition validation.
 - **Two-Phase Stream Defense Architecture**:
-  - **Phase 1: Pre-Header Adaptive Defense (2KB Peek Buffer)**: If a loop or monologue budget breach occurs before HTTP headers are committed, Nacho Flow cleanly aborts the stream, appends an authoritative `[SYSTEM OVERRIDE]` prompt (*"You produced excessive reasoning without calling any tools. Stop planning. Execute immediately. Call the appropriate tool NOW with the correct arguments. Do not explain your reasoning."*), and re-dispatches synchronously to the same local model. Incurred cost remains **$0.00**. On repeated breach, it transparently fails over to Tier 2 (Gemini Flash Cloud).
-  - **Phase 2: Active Mid-Stream Circuit Severing**: During active HTTP chunk streaming, `proxy.go` checks for cycle violations **before** writing chunks to the client. Upon violation, it immediately severs the upstream GPU connection (`resp.Body.Close()`), swallows the degenerate repeating chunk, and emits a clean terminal SSE finish sequence (`finish_reason: "stop"` followed by `data: [DONE]`), saving 4+ minutes of GPU lockup and unblocking the downstream agent in $<2$ seconds.
+  - **Phase 1: Pre-Header Adaptive Defense (2KB Peek Buffer)**: If a loop or monologue budget breach occurs before HTTP headers are committed, Nacho Flow cleanly aborts the stream, appends an authoritative `[SYSTEM OVERRIDE]` prompt (*"You produced excessive reasoning without calling any tools. Stop planning. Execute immediately. Call the appropriate tool NOW with the correct arguments. Do not explain your reasoning."*), and re-dispatches synchronously. Incurred cost remains **$0.00** on local models. On repeated breach, it transparently fails over to the cloud default tier.
+  - **Phase 2: Active Mid-Stream Circuit Severing**: During active HTTP chunk streaming, `proxy.go` checks for cycle violations **before** writing chunks to the client. Upon violation, it immediately severs the upstream GPU/API connection (`resp.Body.Close()`), swallows the degenerate repeating chunk, and emits a clean terminal SSE finish sequence (`finish_reason: "stop"` followed by `data: [DONE]`), unblocking the downstream agent in $<2$ seconds.
+- **Auto-Escalation & Model Cooldown Integration**:
+  - **MinRetriesFloor (Retry Floor Preservation)**: When Cycle Killer severs a stream, `RecordCycleKill` sets `MinRetriesFloor = 3`. Even if the client resets/prunes context tokens (e.g. 120k $\rightarrow$ 15k tokens) and submits a new prompt hash, the floor prevents retries from resetting to 0, ensuring the immediate next turn auto-escalates to Tier 3 / Tier 4. The floor safely decays turn by turn.
+  - **Per-Session Model Cooldown**: Severed models are placed on a 2-minute session-scoped cooldown (`CoolingDownModels map[string]time.Time`). `strategy.ExprEvaluator.SelectTier` programmatically skips cooling-down models to avoid repeating deterministic reasoning loops on the same session.
+
+### Stage 5f: ⚡ Kickstart: Cross-Turn Session Resuscitation (`pkg/router/session.go`)
+- **The Problem**: Coding agents can get trapped in multi-turn read/plan loops (e.g. alternating `read_file` and `update_todo` across 60+ turns) without executing edits or commands. Because each turn produces valid, non-repeating tokens, stream-level n-gram detection cannot catch it.
+- **Stateful Turn Tracker**: Tracks `KickstartCount` within `SessionState` across consecutive request turns.
+- **Tool Progress Evaluation**: Reset to 0 whenever the agent executes productive state changes (`HasToolProgress`). When `kickstart_write_only: true` is configured, only write-class operations (`write_to_file`, `replace_in_file`, `execute_command`, or custom tools from `kickstart_write_tools`) count as progress (`HasWriteProgress`), preventing read-only / metadata operations (`read_file`, `update_todo`, `list_dir`) from resetting the resuscitation counter.
+- **Resuscitation Injection**: When `KickstartCount >= kickstart_threshold` (default 5, `0` disables), Nacho Flow injects `[SYSTEM OVERRIDE]` to force the agent to transition from planning to execution.
+
+### Stage 5g: 🔑 Clean Session Key & Ephemeral Port Normalization (`pkg/server/proxy.go`)
+- **The Problem**: Standard HTTP clients (Zoo Code, Roo Code, Python SDK) create fresh TCP connections per request/retry, resulting in changing ephemeral client ports (e.g., `:65143` $\rightarrow$ `:55732`). If `r.RemoteAddr` is used directly as `sessionKey`, every retry resets session state to Turn 0.
+- **Port-Stripped Session Normalization (`extractSessionKey`)**: Resolves session keys via `x-session-id`, `session-id`, `X-Forwarded-For`, `X-Real-IP`, or pure host IP extracted via `net.SplitHostPort(r.RemoteAddr)`, guaranteeing persistent retry tracking across multi-turn agent sessions.
+
+### Stage 5h: 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints (`pkg/router/session.go`, `pkg/server/proxy.go`)
+- **The Problem**: While low-cost models (Gemini Flash, local models) complete agent tasks at extreme speed and low cost, they can accumulate subtle syntax bugs, missing module extensions (e.g. Node 22 ESM `.js` imports), or architectural drift over long 40+ turn sessions without failing immediate syntax checks.
+- **Write-Progress State Accumulator**: `SessionTracker.RecordWriteProgress` tracks the total number of productive write turns (`WriteProgressCount`) across the session. Read-only turns do not increment the counter.
+- **Cadence & Candidate Evaluation**: When `reqCtx.HasWriteProgress == true`, the proxy evaluates configured `fairy_dust.entries`. An entry matches when `WriteProgressCount % entry.Frequency == 0` and the session has not exceeded `entry.MaxCount`.
+- **Priority-Based Candidate Winner**: When multiple checkpoints coincide (e.g. a 15-turn Tactical and a 40-turn Strategic review on turn 120), the highest-priority candidate is selected.
+- **Dynamic Tier Override & Prompt Injection**: The proxy overrides `targetTier` with the winning frontier model (e.g., Claude Sonnet 5 or Claude Opus 5) and injects the entry's authoritative checkpoint review prompt into the request payload.
 
 ### Stage 6: Telemetry Calibration & Lock-Free Pricing (`pkg/router/estimator.go`, `pkg/telemetry/pricing.go`)
 - **Estimator Dynamic Calibration**: If upstream returns `usage.prompt_tokens`, calibrates the local `TokenEstimator` ratio in real time using lock-free atomic pointer swaps.

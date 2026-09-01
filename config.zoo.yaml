@@ -1,13 +1,9 @@
 # =============================================================================
-# 🌮 NACHO FLOW: CLINE-OPTIMIZED CONFIGURATION
-# Tuned for Cline / Roo Code's diff-based edit architecture (SdkDiffEditCoordinator)
-#
-# KEY DIFFERENCES FROM DEFAULT (Zoo Code) CONFIG:
-#   - Lower local token threshold (10000 vs 16000) to escalate before diffs
-#   - Relaxed Cycle Killer prose/thinking limits for Cline's XML tool format
-#   - HasToolProgress guard prevents local routing once file edits begin
-#
-# USAGE: nacho-flow -config config.cline.yaml
+# 🌮 NACHO FLOW CONFIGURATION — ZOO CODE OPTIMIZED
+# Zoo Code uses OpenAI-compatible JSON function calling, which Gemma 4 handles
+# natively. Local GPU is the primary workhorse, cloud is pure fallback.
+# =============================================================================
+# USAGE: cp config.zoo.yaml config.yaml && kill -HUP $(pgrep nacho-flow)
 # =============================================================================
 
 port: 8000
@@ -16,19 +12,10 @@ port: 8000
 # 🔌 LLM PROVIDERS
 # =============================================================================
 providers:
-  # ---------------------------------------------------------------------------
-  # 1. Local GPU Provider (Ollama / vLLM / SGLang)
-  # - Cost: $0.00 / 1M Tokens (100% Free Local Compute)
-  # ---------------------------------------------------------------------------
   ollama:
     base_url: "http://127.0.0.1:11434"
     type: "local"
 
-  # ---------------------------------------------------------------------------
-  # 2. OpenRouter Cloud Gateway
-  # - Role: Global routing to 300+ frontier and open-weight cloud models.
-  # - Secret: Resolves ENV_OPENROUTER_API_KEY from environment.
-  # ---------------------------------------------------------------------------
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
@@ -78,52 +65,73 @@ agent_shield:
     - "Command not executed:"
 
 # =============================================================================
-# 🎸 CYCLE KILLER — CLINE-TUNED
-# Cline embeds tool calls as XML inside prose, so models legitimately produce
-# longer prose blocks before tool tags appear. These limits are relaxed vs
-# the Zoo Code defaults to avoid false-positive stream severing.
+# 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
+# In-Flight Stream Defense that murders infinite loops & monologue traps in <3s
 # =============================================================================
 cycle_killer:
-  enabled: true
-  max_prose_tokens: 6144       # Zoo Code default: 4096. Cline XML needs more room.
-  max_thinking_tokens: 2000    # Zoo Code default: 1500. Extra planning runway.
-  repetition_window: 6
-  repetition_threshold: 4      # Zoo Code default: 3. Cline XML is naturally repetitive.
-  thinking_repetition_threshold: 6  # Zoo Code default: 5.
-  max_retries: 1
-  # kickstart_threshold: 5        # ⚡ Kickstart (disabled for Cline:
-                                  # Cline rarely idles due to diff-based tool use)
-  kickstart_write_tools:            # Tools that count as "write progress" for Fairy Dust
+  enabled: true                     # Master switch for all in-flight stream defense
+  max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
+  max_thinking_tokens: 1500         # Max reasoning tokens before repetition enforcement kicks in
+  repetition_window: 6              # Sliding n-gram window size (words) for loop detection
+  repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
+  thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks (higher = more lenient)
+  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+  model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
+  retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
+  kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
+  kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
+  kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
+  kickstart_write_tools:            # Tools that count as "real progress" (read-only tools are ignored)
     - write_to_file
     - replace_in_file
+    - replace_file_content
+    - multi_replace_file_content
     - execute_command
+    - apply_diff
     - insert_code_block
     - create_file
+    - create_or_update_file
     - write_file
     - edit_file
-    - apply_diff
+    - delete_file
+    - patch_file
     - run_command
     - run_terminal_command
+    - terminal
     - bash
+    - exec
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
 # =============================================================================
+# KEY DIFFERENCE FROM CLINE CONFIG:
+# Zoo Code uses OpenAI JSON function calling → Gemma 4 handles it natively.
+# Gemma gets 3 retries (not 2) and a higher token ceiling because its tool
+# calls actually work here. Cloud tiers are pure escalation fallbacks.
+# =============================================================================
 tiers:
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (Devstral Small 24B) - 100% VRAM Offload
-  # Devstral handles Cline's XML tool format natively (vs Gemma = JSON function calling).
-  # Lower token ceiling (12k) for tighter VRAM on 16GB RX 6900 XT.
+  # ⚡ KICKSTART ESCALATION: Break read-only idle loops with a smarter model
+  # Switched to Gemini 3.7 Flash: ESM-correct, fast, handles 200k context.
+  # ---------------------------------------------------------------------------
+  - name: "Kickstart Escalation (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "SessionKickstarted && Retries < 3"
+
+  # ---------------------------------------------------------------------------
+  # TIER 1: Local GPU Workhorse (Gemma 4 12B QAT) - 100% VRAM Offload
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
-    model: "devstral-small:24b-small-2505-q4_K_M"
-    when: "Tokens < 12000 && Retries < 2"
+    model: "gemma4:12b-it-qat"
+    when: "Tokens < 16000 && Retries < 2"
+    strip_images: false
     max_context: 32000
 
   # ---------------------------------------------------------------------------
   # TIER 2: ESM Bridge & Cloud Fast (Gemini 3.7 Flash)
-  # Handles Turn 1 (~18k tokens), ESM project scaffolding, and early turns up to 100k
+  # Handles Turn 1, ESM project scaffolding, and early turns up to 100k
   # ---------------------------------------------------------------------------
   - name: "Tier 2: ESM Bridge (Gemini 3.7 Flash)"
     provider: "openrouter"
@@ -158,17 +166,14 @@ tiers:
 
 # =============================================================================
 # 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Claude Sonnet 5)
-# Sonnet at $3/$15 per 1M is the safety net. Even a 37-turn runaway costs ~$2.50
-# instead of $12.65 with Opus. Opus is still available via Fairy Dust & 🌶️ Spicy.
+# Sonnet at $3/$15 per 1M is the safety net. Opus is available via Fairy Dust
+# (Strategic Architecture Review, max 2/session) & 🌶️ Spicy directive only.
 # =============================================================================
 default_tier:
   name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
   provider: "openrouter"
   model: "anthropic/claude-sonnet-5"
   when: "true"
-
-
-
 
 # =============================================================================
 # FAIRY DUSTING - Proactive Frontier Quality Checkpoints

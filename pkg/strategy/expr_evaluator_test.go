@@ -299,6 +299,103 @@ func TestExprEvaluator_ForcedDirectives(t *testing.T) {
 	}
 }
 
+func TestExprEvaluator_KickstartEscalationTier(t *testing.T) {
+	tiers := []contract.Tier{
+		{
+			Name:     "Kickstart Escalation",
+			Model:    "deepseek/deepseek-v4-flash",
+			Provider: "openrouter",
+			When:     "SessionKickstarted && Retries < 3",
+		},
+		{
+			Name:     "Local GPU",
+			Model:    "gemma4:12b-it-qat",
+			Provider: "ollama",
+			When:     "Tokens < 16000 && Retries < 3",
+		},
+	}
+	defaultTier := contract.Tier{Name: "Default", Model: "sonnet", Provider: "openrouter"}
+
+	eval, err := NewExprEvaluator(tiers, defaultTier)
+	if err != nil {
+		t.Fatalf("Failed to compile tiers: %v", err)
+	}
+
+	// Normal turn: not kickstarted -> routes to Local GPU
+	res1, _ := eval.SelectTier(contract.RequestContext{Tokens: 5000, SessionKickstarted: false, Retries: 0})
+	if res1.Name != "Local GPU" {
+		t.Errorf("expected 'Local GPU', got %q", res1.Name)
+	}
+
+	// Kickstarted turn -> routes to Kickstart Escalation
+	res2, _ := eval.SelectTier(contract.RequestContext{Tokens: 5000, SessionKickstarted: true, Retries: 0})
+	if res2.Name != "Kickstart Escalation" {
+		t.Errorf("expected 'Kickstart Escalation', got %q", res2.Name)
+	}
+}
+
+func TestExprEvaluator_CoolingDownModels(t *testing.T) {
+	tiers := []contract.Tier{
+		{
+			Name:     "Tier 1: Local",
+			Model:    "gemma4:12b-it-qat",
+			Provider: "ollama",
+			When:     "Tokens < 16000 && Retries < 2",
+		},
+		{
+			Name:     "Tier 2: Fast Flash",
+			Model:    "deepseek/deepseek-v4-flash",
+			Provider: "openrouter",
+			When:     "Tokens < 64000 && Retries < 3",
+		},
+		{
+			Name:     "Tier 3: Workhorse Pro",
+			Model:    "deepseek/deepseek-chat",
+			Provider: "openrouter",
+			When:     "Tokens < 64000 && Retries < 5",
+		},
+	}
+	defaultTier := contract.Tier{
+		Name:     "Tier 4: Frontier Default",
+		Model:    "anthropic/claude-sonnet-5",
+		Provider: "openrouter",
+	}
+
+	eval, err := NewExprEvaluator(tiers, defaultTier)
+	if err != nil {
+		t.Fatalf("Failed to compile tiers: %v", err)
+	}
+
+	// 1. Normal turn at 30k tokens -> matches Tier 2 (Fast Flash)
+	req1 := contract.RequestContext{Tokens: 30000, Retries: 0}
+	res1, _ := eval.SelectTier(req1)
+	if res1.Name != "Tier 2: Fast Flash" {
+		t.Errorf("expected 'Tier 2: Fast Flash', got %q", res1.Name)
+	}
+
+	// 2. Turn with Tier 2 model in CoolingDownModels -> skips Tier 2, matches Tier 3
+	req2 := contract.RequestContext{
+		Tokens:            30000,
+		Retries:           0,
+		CoolingDownModels: []string{"deepseek/deepseek-v4-flash"},
+	}
+	res2, _ := eval.SelectTier(req2)
+	if res2.Name != "Tier 3: Workhorse Pro" {
+		t.Errorf("expected 'Tier 3: Workhorse Pro' when Tier 2 cooling down, got %q", res2.Name)
+	}
+
+	// 3. Turn with both Tier 2 and Tier 3 models cooling down -> falls back to Default
+	req3 := contract.RequestContext{
+		Tokens:            30000,
+		Retries:           0,
+		CoolingDownModels: []string{"deepseek/deepseek-v4-flash", "deepseek/deepseek-chat"},
+	}
+	res3, _ := eval.SelectTier(req3)
+	if res3.Name != "Tier 4: Frontier Default" {
+		t.Errorf("expected 'Tier 4: Frontier Default' when all matching tiers cooling down, got %q", res3.Name)
+	}
+}
+
 // BenchmarkExprEvaluator measures nanosecond tier evaluation speed.
 func BenchmarkExprEvaluator(b *testing.B) {
 	tiers := []contract.Tier{

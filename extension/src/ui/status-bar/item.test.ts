@@ -161,9 +161,15 @@ describe('StatusBarManager', () => {
       expect(mockStatusBarItem.tooltip.value).toContain('Today (Active 24h)');
     });
 
-    it('should update status bar text when switching to this_week and this_month', () => {
+    it('should update status bar text when switching to yesterday, this_week and this_month', () => {
       const stats = {
         windows: {
+          yesterday: {
+            cost_saved_usd: 5.5,
+            requests: 30,
+            tokens_total: 20000,
+            tokens_local: 17000
+          },
           this_week: {
             cost_saved_usd: 12.0,
             requests: 50,
@@ -180,6 +186,12 @@ describe('StatusBarManager', () => {
       };
 
       statusBarManager.updateStats(stats);
+
+      statusBarManager.setTimeWindow('yesterday');
+      expect(statusBarManager.getTimeWindow()).toBe('yesterday');
+      expect(mockStatusBarItem.text).toBe('🌮 $5.50 Saved Yesterday (85% Local)');
+      expect(mockStatusBarItem.tooltip.value).toContain('Yesterday (Prior 24h)');
+      expect(mockStatusBarItem.tooltip.value).toContain('[Yesterday](command:nacho-flow.setTimeWindowYesterday)');
 
       statusBarManager.setTimeWindow('this_week');
       expect(mockStatusBarItem.text).toBe('🌮 $12.00 Saved This Week (75% Local)');

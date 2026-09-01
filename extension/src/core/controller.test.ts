@@ -1397,6 +1397,7 @@ default_tier:
 
       // Test timeframe registered command handlers
       const setTodayCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowToday');
+      const setYesterdayCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowYesterday');
       const setWeekCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowWeek');
       const setMonthCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowMonth');
       const setAllTimeCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowAllTime');
@@ -1404,6 +1405,8 @@ default_tier:
       const setTimeWindowSpy = jest.spyOn(extensionController, 'setTimeWindow').mockResolvedValue(undefined);
       setTodayCall[1]();
       expect(setTimeWindowSpy).toHaveBeenCalledWith('today');
+      setYesterdayCall[1]();
+      expect(setTimeWindowSpy).toHaveBeenCalledWith('yesterday');
       setWeekCall[1]();
       expect(setTimeWindowSpy).toHaveBeenCalledWith('this_week');
       setMonthCall[1]();

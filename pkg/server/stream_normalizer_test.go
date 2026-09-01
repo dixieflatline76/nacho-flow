@@ -667,3 +667,45 @@ data: [DONE]
 		}
 	})
 }
+
+func TestStreamNormalizer_UsageExtraction_CacheAndCost(t *testing.T) {
+	rawSSE := `data: {"id":"gen-1","choices":[{"index":0,"delta":{"content":"Hello world"}}]}
+
+data: {"id":"gen-1","choices":[],"usage":{"prompt_tokens":50000,"completion_tokens":1000,"total_tokens":51000,"prompt_tokens_details":{"cached_tokens":35000},"cost":0.024}}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+
+	_, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	usage, ok := norm.GetUsage()
+	if !ok {
+		t.Fatalf("expected GetUsage() to return true, got false")
+	}
+	if usage.PromptTokens != 50000 {
+		t.Errorf("expected 50000 prompt tokens, got %d", usage.PromptTokens)
+	}
+	if usage.CompletionTokens != 1000 {
+		t.Errorf("expected 1000 completion tokens, got %d", usage.CompletionTokens)
+	}
+	if usage.TotalTokens != 51000 {
+		t.Errorf("expected 51000 total tokens, got %d", usage.TotalTokens)
+	}
+	if usage.PromptTokensDetails == nil {
+		t.Fatalf("expected PromptTokensDetails to be non-nil")
+	}
+	if usage.PromptTokensDetails.CachedTokens != 35000 {
+		t.Errorf("expected 35000 cached tokens, got %d", usage.PromptTokensDetails.CachedTokens)
+	}
+	if usage.Cost != 0.024 {
+		t.Errorf("expected 0.024 cost, got %f", usage.Cost)
+	}
+}
+

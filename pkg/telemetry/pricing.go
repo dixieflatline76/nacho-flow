@@ -279,7 +279,7 @@ func (o *PricingOracle) CalculateCost(provider, model string, promptTokens, comp
 }
 
 // CalculateFinancials computes dual financial telemetry: actual USD spent and estimated USD saved vs benchmark.
-func (o *PricingOracle) CalculateFinancials(provider, model string, isLocal bool, promptTokens, completionTokens int, baselineRatePerM float64) (costSpent float64, costSaved float64) {
+func (o *PricingOracle) CalculateFinancials(provider, model string, isLocal bool, promptTokens, completionTokens, cachedTokens int, upstreamCost float64, baselineRatePerM float64) (costSpent float64, costSaved float64) {
 	totalTokens := promptTokens + completionTokens
 	if totalTokens <= 0 {
 		return 0.0, 0.0
@@ -295,14 +295,38 @@ func (o *PricingOracle) CalculateFinancials(provider, model string, isLocal bool
 		return 0.0, baselineCost
 	}
 
+	// Priority 1: Upstream ground-truth cost from OpenRouter usage.cost
+	if upstreamCost > 0 {
+		costSpent = upstreamCost
+		if baselineCost > costSpent {
+			costSaved = baselineCost - costSpent
+		}
+		return costSpent, costSaved
+	}
+
 	pricing, found := o.GetPrice(provider, model)
 	if !found {
 		return 0.0, 0.0
 	}
 
-	costSpent = (float64(promptTokens)/contract.TokensPerMillion)*pricing.PromptCostPerMillion +
-		(float64(completionTokens)/contract.TokensPerMillion)*pricing.CompletionCostPerMillion
+	// Priority 2: Cache-aware calculation if cached tokens reported
+	uncachedPromptTokens := promptTokens - cachedTokens
+	if uncachedPromptTokens < 0 {
+		uncachedPromptTokens = 0
+	}
 
+	// Heuristic: cached tokens pay 20% of prompt rate (80% discount).
+	// Only two providers exist: Ollama (local=$0) and OpenRouter (cloud).
+	// OpenRouter reports usage.cost (handled above), so this is a safety fallback.
+	const cacheDiscountMultiplier = 0.20
+
+	promptCost := (float64(uncachedPromptTokens) / contract.TokensPerMillion) * pricing.PromptCostPerMillion
+	if cachedTokens > 0 {
+		promptCost += (float64(cachedTokens) / contract.TokensPerMillion) * pricing.PromptCostPerMillion * cacheDiscountMultiplier
+	}
+	completionCost := (float64(completionTokens) / contract.TokensPerMillion) * pricing.CompletionCostPerMillion
+
+	costSpent = promptCost + completionCost
 	if baselineCost > costSpent {
 		costSaved = baselineCost - costSpent
 	}

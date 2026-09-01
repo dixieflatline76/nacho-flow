@@ -20,6 +20,11 @@ type TierMetrics struct {
 	Fallbacks           int64 `json:"fallbacks"`
 }
 
+// FairyDustMetrics captures proactive quality checkpoint telemetry.
+type FairyDustMetrics struct {
+	TotalTriggers int64 `json:"total_triggers"`
+}
+
 // TimeWindowMetrics captures aggregated volume, financial, and defense telemetry for a discrete timeframe.
 type TimeWindowMetrics struct {
 	Requests         int64              `json:"requests"`
@@ -29,11 +34,13 @@ type TimeWindowMetrics struct {
 	CostSavedUSD     float64            `json:"cost_saved_usd"`
 	CostReductionPct float64            `json:"cost_reduction_pct"`
 	CycleKiller      CycleKillerMetrics `json:"cycle_killer"`
+	FairyDust        FairyDustMetrics   `json:"fairy_dust"`
 }
 
 // TimeWindowSnapshot holds pre-aggregated metrics across standard time horizons.
 type TimeWindowSnapshot struct {
 	Today     TimeWindowMetrics `json:"today"`
+	Yesterday TimeWindowMetrics `json:"yesterday"`
 	ThisWeek  TimeWindowMetrics `json:"this_week"`
 	ThisMonth TimeWindowMetrics `json:"this_month"`
 	AllTime   TimeWindowMetrics `json:"all_time"`
@@ -41,11 +48,12 @@ type TimeWindowSnapshot struct {
 
 // CycleKillerMetrics captures cumulative defense telemetry for loop-severing interventions.
 type CycleKillerMetrics struct {
-	TotalInterventions     int64   `json:"total_interventions"`
-	AvoidedRunawayTokens   int64   `json:"avoided_runaway_tokens"`
-	AvoidedGPUSeconds      int64   `json:"avoided_gpu_seconds"`
-	Stage1LocalHeals       int64   `json:"stage1_local_heals"`
-	Stage2CloudEscalations int64   `json:"stage2_cloud_escalations"`
+	TotalInterventions        int64   `json:"total_interventions"`
+	AvoidedRunawayTokens      int64   `json:"avoided_runaway_tokens"`
+	AvoidedGPUSeconds         int64   `json:"avoided_gpu_seconds"`
+	Stage1LocalHeals          int64   `json:"stage1_local_heals"`
+	Stage2CloudEscalations    int64   `json:"stage2_cloud_escalations"`
+	SessionKickstarts         int64   `json:"session_kickstarts"`
 	// LocalHealSuccessRatePct is computed on read in GetStats(), never stored to disk.
 	// It is included here solely for JSON serialization to the /v1/stats REST endpoint.
 	LocalHealSuccessRatePct float64 `json:"local_heal_success_rate_pct,omitempty"`
@@ -69,6 +77,7 @@ type StatsSnapshot struct {
 	EstimatedCostSavedUSD    float64                      `json:"estimated_cost_saved_usd"`
 	CostReductionPct         float64                      `json:"cost_reduction_pct"`
 	CycleKiller              CycleKillerMetrics           `json:"cycle_killer"`
+	FairyDust                FairyDustMetrics             `json:"fairy_dust"`
 	Windows                  TimeWindowSnapshot           `json:"windows"`
 	DailyBuckets             map[string]TimeWindowMetrics `json:"daily_buckets,omitempty"`
 }
@@ -100,6 +109,11 @@ type Observation struct {
 	CycleMaxNgramFreq         int
 	CycleThinkingTokens       int
 	CycleMaxThinkingNgramFreq int
+	SessionKickstarted        bool
+	CachedTokens              int
+	UpstreamCost              float64
+	FairyDusted               bool
+	FairyDustEntry            string
 	ObservedAt                time.Time
 }
 
@@ -203,6 +217,8 @@ func (s *StatsTracker) restoreWindowsFromBuckets(now time.Time) {
 	s.activeMonth = now.Format("2006-01")
 
 	s.stats.Windows.Today = s.stats.DailyBuckets[s.activeDay]
+	yesterdayKey := now.AddDate(0, 0, -1).Format("2006-01-02")
+	s.stats.Windows.Yesterday = s.stats.DailyBuckets[yesterdayKey]
 
 	weekday := int(now.Weekday())
 	if weekday == 0 { // Sunday
@@ -228,12 +244,48 @@ func (s *StatsTracker) restoreWindowsFromBuckets(now time.Time) {
 	weekMetrics.CostReductionPct = reductionPct(weekMetrics.CostSavedUSD, weekMetrics.CostSpentUSD)
 	monthMetrics.CostReductionPct = reductionPct(monthMetrics.CostSavedUSD, monthMetrics.CostSpentUSD)
 
-	// Legacy migration: if daily buckets did not track CycleKiller but global stats has interventions
-	if weekMetrics.CycleKiller.TotalInterventions == 0 && s.stats.CycleKiller.TotalInterventions > 0 {
-		weekMetrics.CycleKiller = s.stats.CycleKiller
+	// Legacy migration: if the loaded snapshot was written by an older daemon build that did
+	// not record cycle_killer inside daily buckets, all buckets will have zero CycleKiller
+	// while the root accumulator may be nonzero. In that case we distribute the root
+	// accumulator to all windows that had traffic. This is a one-time migration path;
+	// modern daemon builds always write cycle_killer into every bucket, so isLegacySnapshot
+	// will be false the next time the daemon saves and reloads stats.json.
+	isLegacySnapshot := s.stats.CycleKiller.TotalInterventions > 0
+	if isLegacySnapshot {
+		for _, b := range s.stats.DailyBuckets {
+			if b.CycleKiller.TotalInterventions > 0 {
+				isLegacySnapshot = false
+				break
+			}
+		}
 	}
-	if monthMetrics.CycleKiller.TotalInterventions == 0 && s.stats.CycleKiller.TotalInterventions > 0 {
-		monthMetrics.CycleKiller = s.stats.CycleKiller
+	if isLegacySnapshot {
+		// Backfill the daily bucket with the most requests so this migration
+		// becomes permanent after the next save/reload cycle. Without this,
+		// isLegacySnapshot stays true on every restart because all buckets remain zero.
+		var largestKey string
+		var largestReqs int64
+		for k, b := range s.stats.DailyBuckets {
+			if b.Requests > largestReqs {
+				largestReqs = b.Requests
+				largestKey = k
+			}
+		}
+		if largestKey != "" {
+			bucket := s.stats.DailyBuckets[largestKey]
+			bucket.CycleKiller = s.stats.CycleKiller
+			s.stats.DailyBuckets[largestKey] = bucket
+		}
+
+		if s.stats.Windows.Yesterday.Requests > 0 {
+			s.stats.Windows.Yesterday.CycleKiller = s.stats.CycleKiller
+		}
+		if weekMetrics.Requests > 0 {
+			weekMetrics.CycleKiller = s.stats.CycleKiller
+		}
+		if monthMetrics.Requests > 0 {
+			monthMetrics.CycleKiller = s.stats.CycleKiller
+		}
 	}
 
 	s.stats.Windows.ThisWeek = weekMetrics
@@ -249,6 +301,7 @@ func (s *StatsTracker) restoreWindowsFromBuckets(now time.Time) {
 		CostSavedUSD:     s.stats.EstimatedCostSavedUSD,
 		CostReductionPct: allPct,
 		CycleKiller:      s.stats.CycleKiller,
+		FairyDust:        s.stats.FairyDust,
 	}
 }
 
@@ -283,7 +336,11 @@ func (s *StatsTracker) updateWindowsLocked(obs Observation, observedAt time.Time
 		s.activeWeek = weekKey
 		s.activeMonth = monthKey
 		s.stats.Windows.Today = s.stats.DailyBuckets[dayKey]
+		yesterdayKey := observedAt.AddDate(0, 0, -1).Format("2006-01-02")
+		s.stats.Windows.Yesterday = s.stats.DailyBuckets[yesterdayKey]
 	} else if dayKey > s.activeDay {
+		yesterdayKey := observedAt.AddDate(0, 0, -1).Format("2006-01-02")
+		s.stats.Windows.Yesterday = s.stats.DailyBuckets[yesterdayKey]
 		s.activeDay = dayKey
 		s.stats.Windows.Today = s.stats.DailyBuckets[dayKey]
 
@@ -307,6 +364,13 @@ func (s *StatsTracker) updateWindowsLocked(obs Observation, observedAt time.Time
 	// Incremental O(1) accumulation on active horizons (0 loops, 0 heap allocations)
 	if dayKey == s.activeDay {
 		addToWindow(&s.stats.Windows.Today, obs, tokens, localTokens)
+	} else {
+		// If observation belongs to yesterday's bucket, maintain live Yesterday snapshot
+		if activeTime, err := time.Parse("2006-01-02", s.activeDay); err == nil {
+			if dayKey == activeTime.AddDate(0, 0, -1).Format("2006-01-02") {
+				s.stats.Windows.Yesterday = bucket
+			}
+		}
 	}
 	if weekKey == s.activeWeek {
 		addToWindow(&s.stats.Windows.ThisWeek, obs, tokens, localTokens)
@@ -339,6 +403,12 @@ func addToWindow(w *TimeWindowMetrics, obs Observation, tokens, localTokens int6
 			w.CycleKiller.Stage1LocalHeals++
 		}
 	}
+	if obs.SessionKickstarted {
+		w.CycleKiller.SessionKickstarts++
+	}
+	if obs.FairyDusted {
+		w.FairyDust.TotalTriggers++
+	}
 }
 
 func addBucketToWindow(w *TimeWindowMetrics, b TimeWindowMetrics) {
@@ -354,6 +424,8 @@ func addBucketToWindow(w *TimeWindowMetrics, b TimeWindowMetrics) {
 	w.CycleKiller.AvoidedGPUSeconds += b.CycleKiller.AvoidedGPUSeconds
 	w.CycleKiller.Stage1LocalHeals += b.CycleKiller.Stage1LocalHeals
 	w.CycleKiller.Stage2CloudEscalations += b.CycleKiller.Stage2CloudEscalations
+	w.CycleKiller.SessionKickstarts += b.CycleKiller.SessionKickstarts
+	w.FairyDust.TotalTriggers += b.FairyDust.TotalTriggers
 }
 
 func computeHealRate(ck *CycleKillerMetrics) {
@@ -429,6 +501,16 @@ func (s *StatsTracker) worker() {
 			}
 		}
 
+		// Kickstart telemetry accumulation
+		if obs.SessionKickstarted {
+			s.stats.CycleKiller.SessionKickstarts++
+		}
+
+		// Fairy Dust telemetry accumulation
+		if obs.FairyDusted {
+			s.stats.FairyDust.TotalTriggers++
+		}
+
 		s.updateWindowsLocked(obs, observedAt)
 		s.mu.Unlock()
 
@@ -460,6 +542,11 @@ func (s *StatsTracker) worker() {
 				CycleMaxNgramFreq:         obs.CycleMaxNgramFreq,
 				CycleThinkingTokens:       obs.CycleThinkingTokens,
 				CycleMaxThinkingNgramFreq: obs.CycleMaxThinkingNgramFreq,
+				SessionKickstarted:        obs.SessionKickstarted,
+				CachedTokens:              obs.CachedTokens,
+				UpstreamCost:              obs.UpstreamCost,
+				FairyDusted:               obs.FairyDusted,
+				FairyDustEntry:            obs.FairyDustEntry,
 			}
 			for _, sink := range *sinksPtr {
 				sink.Emit(record)
@@ -496,10 +583,18 @@ func (s *StatsTracker) Reset() {
 
 // RecalculateFromRecords rebuilds all cumulative and windowed stats from an array of TurnRecord entries.
 func (s *StatsTracker) RecalculateFromRecords(records []TurnRecord, oracle *PricingOracle, benchmarkCost float64) {
+	s.RecalculateFromRecordsAt(records, oracle, benchmarkCost, time.Now().UTC())
+}
+
+// RecalculateFromRecordsAt rebuilds all cumulative and windowed stats from an array of TurnRecord entries anchored at referenceTime.
+func (s *StatsTracker) RecalculateFromRecordsAt(records []TurnRecord, oracle *PricingOracle, benchmarkCost float64, referenceTime time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := referenceTime.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	s.stats = StatsSnapshot{
 		StartedAt:    now.Format(time.RFC3339),
 		DailyBuckets: make(map[string]TimeWindowMetrics),
@@ -548,7 +643,7 @@ func (s *StatsTracker) RecalculateFromRecords(records []TurnRecord, oracle *Pric
 				promptToks = rec.Tokens
 				compToks = 0
 			}
-			spent, saved := oracle.CalculateFinancials(rec.Provider, rec.TargetModel, rec.IsLocal, promptToks, compToks, benchmarkCost)
+			spent, saved := oracle.CalculateFinancials(rec.Provider, rec.TargetModel, rec.IsLocal, promptToks, compToks, rec.CachedTokens, rec.UpstreamCost, benchmarkCost)
 			costSpent = spent
 			costSaved = saved
 		}
@@ -571,6 +666,14 @@ func (s *StatsTracker) RecalculateFromRecords(records []TurnRecord, oracle *Pric
 				s.stats.CycleKiller.Stage1LocalHeals++
 			}
 		}
+		if rec.SessionKickstarted {
+			s.stats.CycleKiller.SessionKickstarts++
+		}
+
+		// FairyDust recalculation from historical records
+		if rec.FairyDusted {
+			s.stats.FairyDust.TotalTriggers++
+		}
 
 		obs := Observation{
 			TierName:              rec.SelectedTier,
@@ -582,10 +685,14 @@ func (s *StatsTracker) RecalculateFromRecords(records []TurnRecord, oracle *Pric
 			IsLocal:               rec.IsLocal,
 			IsFallback:            rec.IsFallback,
 			CycleBreakerTriggered: rec.CycleBreakerTriggered,
+			SessionKickstarted:    rec.SessionKickstarted,
+			FairyDusted:           rec.FairyDusted,
+			FairyDustEntry:        rec.FairyDustEntry,
 		}
 		s.updateWindowsLocked(obs, observedAt)
 	}
 
+	s.restoreWindowsFromBuckets(now)
 	s.stats.CostReductionPct = reductionPct(s.stats.EstimatedCostSavedUSD, s.stats.TotalCostSpentUSD)
 	s.stats.Windows.AllTime.CostReductionPct = s.stats.CostReductionPct
 }
@@ -598,6 +705,7 @@ func (s *StatsTracker) GetStats() StatsSnapshot {
 	// Compute derived Cycle Killer heal rate on read per window (never stored to disk)
 	computeHealRate(&snap.CycleKiller)
 	computeHealRate(&snap.Windows.Today.CycleKiller)
+	computeHealRate(&snap.Windows.Yesterday.CycleKiller)
 	computeHealRate(&snap.Windows.ThisWeek.CycleKiller)
 	computeHealRate(&snap.Windows.ThisMonth.CycleKiller)
 	computeHealRate(&snap.Windows.AllTime.CycleKiller)

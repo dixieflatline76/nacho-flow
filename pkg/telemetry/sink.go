@@ -30,6 +30,11 @@ type TurnRecord struct {
 	CycleMaxNgramFreq         int       `json:"cycle_max_ngram_freq,omitempty"`
 	CycleThinkingTokens       int       `json:"cycle_thinking_tokens,omitempty"`
 	CycleMaxThinkingNgramFreq int       `json:"cycle_max_thinking_ngram_freq,omitempty"`
+	SessionKickstarted        bool      `json:"session_kickstarted,omitempty"`
+	CachedTokens              int       `json:"cached_tokens,omitempty"`
+	UpstreamCost              float64   `json:"upstream_cost,omitempty"`
+	FairyDusted               bool      `json:"fairy_dusted,omitempty"`
+	FairyDustEntry            string    `json:"fairy_dust_entry,omitempty"`
 }
 
 // ObservationSink defines a decoupled consumer of observation events.

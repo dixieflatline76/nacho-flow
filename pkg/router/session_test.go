@@ -257,4 +257,370 @@ func TestSessionTracker_EscalationBudget(t *testing.T) {
 	if exhausted {
 		t.Errorf("After reset, escalation should NOT be exhausted")
 	}
+
+	// Empty session key and missing session key tests
+	if tracker.RecordEscalation("") {
+		t.Errorf("expected false for empty session key")
+	}
+	if tracker.RecordEscalation("non-existent-session-key") {
+		t.Errorf("expected false for non-existent session key")
+	}
+	tracker.ResetEscalation("")
+	tracker.ResetEscalation("non-existent-session-key")
+}
+
+func TestSessionTracker_KickstartDetection(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	threshold := 3
+
+	// Register a session first
+	tracker.RecordTurn("sess-kickstart", HashPrompt("test prompt"), false)
+
+	// Turns without tool progress should increment kickstart count
+	count, kickstarted := tracker.RecordKickstartState("sess-kickstart", false, threshold)
+	if count != 1 || kickstarted {
+		t.Errorf("turn 1: expected count=1 kickstarted=false, got count=%d kickstarted=%v", count, kickstarted)
+	}
+
+	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold)
+	if count != 2 || kickstarted {
+		t.Errorf("turn 2: expected count=2 kickstarted=false, got count=%d kickstarted=%v", count, kickstarted)
+	}
+
+	// Third turn hits the threshold -> Kickstart fires!
+	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold)
+	if count != 3 || !kickstarted {
+		t.Errorf("turn 3: expected count=3 kickstarted=true, got count=%d kickstarted=%v", count, kickstarted)
+	}
+
+	// Continues to indicate kickstart state
+	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold)
+	if count != 4 || !kickstarted {
+		t.Errorf("turn 4: expected count=4 kickstarted=true, got count=%d kickstarted=%v", count, kickstarted)
+	}
+}
+
+func TestSessionTracker_KickstartResetOnProgress(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	threshold := 3
+
+	tracker.RecordTurn("sess-reset", HashPrompt("prompt"), false)
+
+	// Accumulate 2 idle turns
+	tracker.RecordKickstartState("sess-reset", false, threshold)
+	tracker.RecordKickstartState("sess-reset", false, threshold)
+
+	// Tool progress resets the counter
+	count, kickstarted := tracker.RecordKickstartState("sess-reset", true, threshold)
+	if count != 0 || kickstarted {
+		t.Errorf("after progress: expected count=0 kickstarted=false, got count=%d kickstarted=%v", count, kickstarted)
+	}
+
+	// Kickstart count starts fresh
+	count, kickstarted = tracker.RecordKickstartState("sess-reset", false, threshold)
+	if count != 1 || kickstarted {
+		t.Errorf("after reset + no progress: expected count=1 kickstarted=false, got count=%d kickstarted=%v", count, kickstarted)
+	}
+}
+
+func TestSessionTracker_KickstartDisabledWhenThresholdZero(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+
+	tracker.RecordTurn("sess-disabled", HashPrompt("prompt"), false)
+
+	// Threshold of 0 means disabled
+	count, kickstarted := tracker.RecordKickstartState("sess-disabled", false, 0)
+	if count != 0 || kickstarted {
+		t.Errorf("threshold 0: expected disabled (count=0 kickstarted=false), got count=%d kickstarted=%v", count, kickstarted)
+	}
+
+	// Empty session key should also be a no-op
+	count, kickstarted = tracker.RecordKickstartState("", false, 3)
+	if count != 0 || kickstarted {
+		t.Errorf("empty key: expected disabled, got count=%d kickstarted=%v", count, kickstarted)
+	}
+}
+
+func TestSessionTracker_GetKickstartCount(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+
+	// Non-existent session
+	if got := tracker.GetKickstartCount("no-such"); got != 0 {
+		t.Errorf("expected 0 for non-existent session, got %d", got)
+	}
+
+	tracker.RecordTurn("sess-get", HashPrompt("p"), false)
+	tracker.RecordKickstartState("sess-get", false, 5)
+	tracker.RecordKickstartState("sess-get", false, 5)
+
+	if got := tracker.GetKickstartCount("sess-get"); got != 2 {
+		t.Errorf("expected kickstart count 2, got %d", got)
+	}
+}
+
+func TestSessionTracker_RecordCycleKill_MinRetriesFloor(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionKey := "sess-cycle-kill"
+
+	// 1. Initial turn
+	retries, isRetry := tracker.RecordTurn(sessionKey, HashPrompt("prompt 1"), false)
+	if retries != 0 || isRetry {
+		t.Fatalf("expected initial turn retries=0, got %d", retries)
+	}
+
+	// 2. Cycle Killer fires on this session
+	tracker.RecordCycleKill(sessionKey, "deepseek/deepseek-v4-flash", 2*time.Minute)
+
+	// 3. Client prunes context (distinct prompt hash), next turn arrives
+	retries, isRetry = tracker.RecordTurn(sessionKey, HashPrompt("pruned prompt 2"), false)
+	if retries != 3 || !isRetry {
+		t.Errorf("expected floor to force retries=3, isRetry=true after context reset; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// 4. Next turn decays floor from 3 to 2
+	retries, isRetry = tracker.RecordTurn(sessionKey, HashPrompt("pruned prompt 3"), false)
+	if retries != 2 || !isRetry {
+		t.Errorf("expected decayed floor retries=2; got retries=%d", retries)
+	}
+
+	// 5. Next turn decays floor from 2 to 1
+	retries, isRetry = tracker.RecordTurn(sessionKey, HashPrompt("pruned prompt 4"), false)
+	if retries != 1 || !isRetry {
+		t.Errorf("expected decayed floor retries=1; got retries=%d", retries)
+	}
+
+	// 6. Next turn decays floor to 0 (normal distinct turn)
+	retries, isRetry = tracker.RecordTurn(sessionKey, HashPrompt("pruned prompt 5"), false)
+	if retries != 0 || isRetry {
+		t.Errorf("expected decayed floor retries=0, isRetry=false; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// 7. Verify floor never underflows negative
+	retries, isRetry = tracker.RecordTurn(sessionKey, HashPrompt("pruned prompt 6"), false)
+	if retries != 0 || isRetry {
+		t.Errorf("expected floor to stay 0 without negative underflow; got retries=%d", retries)
+	}
+}
+
+func TestSessionTracker_CoolingDownModels(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionKey := "sess-cooldown"
+
+	// 1. Initially no models cooling down
+	if models := tracker.GetCoolingDownModels(sessionKey); len(models) != 0 {
+		t.Errorf("expected empty cooling down models initially, got %v", models)
+	}
+	if tracker.IsModelCoolingDown(sessionKey, "deepseek/deepseek-v4-flash") {
+		t.Errorf("expected false for IsModelCoolingDown initially")
+	}
+
+	// 2. Record cycle kill with short cooldown for testing
+	cooldown := 50 * time.Millisecond
+	tracker.RecordCycleKill(sessionKey, "deepseek/deepseek-v4-flash", cooldown)
+
+	// Verify model is now in cooldown
+	if !tracker.IsModelCoolingDown(sessionKey, "deepseek/deepseek-v4-flash") {
+		t.Errorf("expected model to be cooling down")
+	}
+	models := tracker.GetCoolingDownModels(sessionKey)
+	if len(models) != 1 || models[0] != "deepseek/deepseek-v4-flash" {
+		t.Errorf("expected [deepseek/deepseek-v4-flash], got %v", models)
+	}
+
+	// Unrelated model is not cooling down
+	if tracker.IsModelCoolingDown(sessionKey, "google/gemini-3.1-pro-preview") {
+		t.Errorf("expected unrelated model to not be cooling down")
+	}
+
+	// Unrelated session is isolated
+	if tracker.IsModelCoolingDown("sess-other", "deepseek/deepseek-v4-flash") {
+		t.Errorf("expected distinct session to not have cooldown")
+	}
+
+	// 3. Wait for cooldown to expire
+	time.Sleep(70 * time.Millisecond)
+
+	if tracker.IsModelCoolingDown(sessionKey, "deepseek/deepseek-v4-flash") {
+		t.Errorf("expected model cooldown to have expired")
+	}
+	if models := tracker.GetCoolingDownModels(sessionKey); len(models) != 0 {
+		t.Errorf("expected empty models list after expiration, got %v", models)
+	}
+}
+
+// --- Fairy Dust Tests ---
+
+func TestFairyDust_TriggersAtFrequency(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionKey := "sess-fairy-1"
+	tracker.RecordTurn(sessionKey, HashPrompt("prompt"), true)
+
+	const freq = 5
+	const maxPS = 3
+	entryName := "Tactical Code Review"
+
+	for i := 1; i < freq; i++ {
+		tracker.RecordWriteProgress(sessionKey, true)
+		_, triggered := tracker.CheckFairyDust(sessionKey, entryName, freq, maxPS)
+		if triggered {
+			t.Errorf("write turn %d: expected no trigger before frequency boundary", i)
+		}
+	}
+	wc := tracker.RecordWriteProgress(sessionKey, true)
+	count, triggered := tracker.CheckFairyDust(sessionKey, entryName, freq, maxPS)
+	if !triggered {
+		t.Errorf("expected trigger at write turn %d, got none", wc)
+	}
+	if count != 1 {
+		t.Errorf("expected invocation count=1, got %d", count)
+	}
+	for i := 6; i < freq*2; i++ {
+		tracker.RecordWriteProgress(sessionKey, true)
+		_, trig := tracker.CheckFairyDust(sessionKey, entryName, freq, maxPS)
+		if trig {
+			t.Errorf("write turn %d: unexpected trigger between frequency windows", i)
+		}
+	}
+	tracker.RecordWriteProgress(sessionKey, true)
+	count2, triggered2 := tracker.CheckFairyDust(sessionKey, entryName, freq, maxPS)
+	if !triggered2 {
+		t.Errorf("expected second trigger at write turn 10")
+	}
+	if count2 != 2 {
+		t.Errorf("expected invocation count=2, got %d", count2)
+	}
+}
+
+func TestFairyDust_MultipleEntries_IndependentTracking(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionKey := "sess-fairy-multi"
+	tracker.RecordTurn(sessionKey, HashPrompt("prompt"), true)
+
+	tactical := "Tactical Code Review"
+	strategic := "Strategic Architecture Review"
+
+	for i := 1; i <= 10; i++ {
+		tracker.RecordWriteProgress(sessionKey, true)
+		_, tTriggered := tracker.CheckFairyDust(sessionKey, tactical, 5, 10)
+		_, sTriggered := tracker.CheckFairyDust(sessionKey, strategic, 8, 10)
+		expectTactical := (i == 5 || i == 10)
+		if tTriggered != expectTactical {
+			t.Errorf("write turn %d: tactical triggered=%v, want=%v", i, tTriggered, expectTactical)
+		}
+		expectStrategic := (i == 8)
+		if sTriggered != expectStrategic {
+			t.Errorf("write turn %d: strategic triggered=%v, want=%v", i, sTriggered, expectStrategic)
+		}
+	}
+}
+
+func TestFairyDust_RespectsPerEntryMaxCap(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionKey := "sess-fairy-cap"
+	tracker.RecordTurn(sessionKey, HashPrompt("p"), true)
+
+	entryA := "Entry A"
+	entryB := "Entry B"
+	const freq = 2
+	const maxA = 2
+
+	aCount := 0
+	bCount := 0
+	for i := 1; i <= 10; i++ {
+		tracker.RecordWriteProgress(sessionKey, true)
+		if i%freq == 0 {
+			_, aTriggered := tracker.CheckFairyDust(sessionKey, entryA, freq, maxA)
+			_, bTriggered := tracker.CheckFairyDust(sessionKey, entryB, freq, 100)
+			if aTriggered {
+				aCount++
+			}
+			if bTriggered {
+				bCount++
+			}
+		}
+	}
+	if aCount != maxA {
+		t.Errorf("expected entry A to trigger exactly %d times (cap), got %d", maxA, aCount)
+	}
+	if bCount != 5 {
+		t.Errorf("expected entry B to trigger 5 times (uncapped), got %d", bCount)
+	}
+}
+
+func TestFairyDust_IgnoresReadOnlyTurns(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionKey := "sess-fairy-readonly"
+	tracker.RecordTurn(sessionKey, HashPrompt("p"), true)
+
+	for i := 0; i < 10; i++ {
+		wc := tracker.RecordWriteProgress(sessionKey, false)
+		if wc != 0 {
+			t.Errorf("read-only turn %d: expected WriteProgressCount=0, got %d", i, wc)
+		}
+		_, triggered := tracker.CheckFairyDust(sessionKey, "entry", 1, 10)
+		if triggered {
+			t.Errorf("read-only turn %d: unexpected trigger", i)
+		}
+	}
+}
+
+func TestFairyDust_ResetsOnSessionExpiry(t *testing.T) {
+	ttl := 50 * time.Millisecond
+	tracker := NewSessionTracker(ttl)
+	sessionKey := "sess-fairy-expiry"
+	tracker.RecordTurn(sessionKey, HashPrompt("p"), true)
+
+	for i := 0; i < 5; i++ {
+		tracker.RecordWriteProgress(sessionKey, true)
+	}
+	_, triggered := tracker.CheckFairyDust(sessionKey, "entry", 5, 10)
+	if !triggered {
+		t.Fatal("expected fairy dust to trigger at write turn 5")
+	}
+
+	time.Sleep(ttl + 20*time.Millisecond)
+	tracker.RecordTurn(sessionKey, HashPrompt("new-prompt"), false)
+
+	wc := tracker.RecordWriteProgress(sessionKey, false)
+	if wc != 0 {
+		t.Errorf("expected WriteProgressCount=0 after session expiry reset, got %d", wc)
+	}
+}
+
+func TestFairyDust_CollisionHighestPriorityWins(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionKey := "sess-fairy-collision"
+	tracker.RecordTurn(sessionKey, HashPrompt("p"), true)
+
+	sonnet := "Tactical Code Review"
+	opus := "Strategic Architecture Review"
+
+	for i := 0; i < 4; i++ {
+		tracker.RecordWriteProgress(sessionKey, true)
+	}
+
+	_, sonnetTriggered := tracker.CheckFairyDust(sessionKey, sonnet, 4, 10)
+	_, opusTriggered := tracker.CheckFairyDust(sessionKey, opus, 4, 10)
+
+	if !sonnetTriggered {
+		t.Error("expected sonnet to trigger at write turn 4")
+	}
+	if !opusTriggered {
+		t.Error("expected opus to trigger at write turn 4")
+	}
+
+	type candidate struct {
+		name     string
+		priority int
+	}
+	candidates := []candidate{{sonnet, 10}, {opus, 100}}
+	var winner candidate
+	for _, c := range candidates {
+		if winner.name == "" || c.priority > winner.priority {
+			winner = c
+		}
+	}
+	if winner.name != opus {
+		t.Errorf("expected opus (priority 100) to win collision, got %q", winner.name)
+	}
 }

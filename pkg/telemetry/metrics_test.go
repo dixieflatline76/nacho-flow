@@ -312,6 +312,57 @@ func TestStatsTracker_SinkEmissionWithCostSpent(t *testing.T) {
 	}
 }
 
+func TestStatsTracker_SinkEmission_FairyDustAndKickstart(t *testing.T) {
+	tracker := NewStatsTracker(10)
+	defer tracker.Close()
+
+	sink := &mockSink{}
+	tracker.AddSink(sink)
+
+	tracker.Record(Observation{
+		Tier:               3,
+		TierName:           "Tier 3: Cloud Reasoning",
+		Model:              "anthropic/claude-sonnet-5",
+		Provider:           "openrouter",
+		Tokens:             5000,
+		CostSpent:          0.015,
+		CostSaved:          0.005,
+		IsLocal:            false,
+		LatencyMs:          850.0,
+		StatusCode:         200,
+		SessionKickstarted: true,
+		FairyDusted:        true,
+		FairyDustEntry:     "Tactical Code Review",
+		CachedTokens:       1200,
+		UpstreamCost:       0.0145,
+	})
+	tracker.Flush()
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+
+	if len(sink.records) != 1 {
+		t.Fatalf("expected 1 emitted turn record, got %d", len(sink.records))
+	}
+	rec := sink.records[0]
+	if !rec.SessionKickstarted {
+		t.Errorf("expected SessionKickstarted true, got false")
+	}
+	if !rec.FairyDusted {
+		t.Errorf("expected FairyDusted true, got false")
+	}
+	if rec.FairyDustEntry != "Tactical Code Review" {
+		t.Errorf("expected FairyDustEntry 'Tactical Code Review', got %s", rec.FairyDustEntry)
+	}
+	if rec.CachedTokens != 1200 {
+		t.Errorf("expected CachedTokens 1200, got %d", rec.CachedTokens)
+	}
+	if rec.UpstreamCost != 0.0145 {
+		t.Errorf("expected UpstreamCost 0.0145, got %f", rec.UpstreamCost)
+	}
+}
+
+
 func TestStatsTracker_RollingBucketPruning(t *testing.T) {
 	tracker := NewStatsTracker(100)
 	defer tracker.Close()
@@ -844,3 +895,187 @@ func TestStatsTracker_CycleKiller_WeeklyMonthlyAggregation(t *testing.T) {
 	}
 }
 
+func TestStatsTracker_YesterdayTimeWindow(t *testing.T) {
+	now := time.Now().UTC()
+	todayTime := time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, time.UTC)
+	tomorrowTime := todayTime.AddDate(0, 0, 1)
+	yesterdayTime := todayTime.AddDate(0, 0, -1)
+	yesterdayLateTime := time.Date(yesterdayTime.Year(), yesterdayTime.Month(), yesterdayTime.Day(), 23, 59, 0, 0, time.UTC)
+	yesterdayKey := yesterdayTime.Format("2006-01-02")
+
+	// Seed with prior daily bucket for yesterdayKey (Yesterday)
+	initial := StatsSnapshot{
+		StartedAt: "2026-08-01T00:00:00Z",
+		DailyBuckets: map[string]TimeWindowMetrics{
+			yesterdayKey: {
+				Requests:         15,
+				TokensTotal:      75000,
+				TokensLocal:      60000,
+				CostSpentUSD:     0.25,
+				CostSavedUSD:     1.75,
+				CostReductionPct: 87.5,
+				CycleKiller: CycleKillerMetrics{
+					TotalInterventions:     3,
+					AvoidedRunawayTokens:   24000,
+					AvoidedGPUSeconds:      685,
+					Stage1LocalHeals:       2,
+					Stage2CloudEscalations: 1,
+				},
+			},
+		},
+	}
+
+	tracker := NewStatsTrackerWithInitialSnapshot(100, initial)
+	defer tracker.Close()
+
+	// 1. Check restoration from DailyBuckets on startup
+	stats := tracker.GetStats()
+	if stats.Windows.Yesterday.Requests != 15 {
+		t.Errorf("expected Yesterday.Requests == 15, got %d", stats.Windows.Yesterday.Requests)
+	}
+	if stats.Windows.Yesterday.TokensTotal != 75000 {
+		t.Errorf("expected Yesterday.TokensTotal == 75000, got %d", stats.Windows.Yesterday.TokensTotal)
+	}
+	if stats.Windows.Yesterday.CostSavedUSD != 1.75 {
+		t.Errorf("expected Yesterday.CostSavedUSD == 1.75, got %f", stats.Windows.Yesterday.CostSavedUSD)
+	}
+	if stats.Windows.Yesterday.CycleKiller.TotalInterventions != 3 {
+		t.Errorf("expected Yesterday.CycleKiller.TotalInterventions == 3, got %d", stats.Windows.Yesterday.CycleKiller.TotalInterventions)
+	}
+	if stats.Windows.Yesterday.CycleKiller.LocalHealSuccessRatePct < 66.0 || stats.Windows.Yesterday.CycleKiller.LocalHealSuccessRatePct > 67.0 {
+		t.Errorf("expected Yesterday.CycleKiller.LocalHealSuccessRatePct ~= 66.67, got %f", stats.Windows.Yesterday.CycleKiller.LocalHealSuccessRatePct)
+	}
+
+	// 2. Record new observation on Today (2026-08-31)
+	tracker.Record(Observation{
+		Tier:                  1,
+		Tokens:                5000,
+		CostSaved:             0.05,
+		IsLocal:               true,
+		ObservedAt:            todayTime,
+		CycleBreakerTriggered: true,
+	})
+	// Record a late observation arriving timestamped for Yesterday
+	tracker.Record(Observation{
+		Tier:       1,
+		Tokens:     1000,
+		CostSaved:  0.01,
+		IsLocal:    true,
+		ObservedAt: yesterdayLateTime,
+	})
+	tracker.Flush()
+
+	stats = tracker.GetStats()
+	// Yesterday must now reflect the 15 original + 1 late request = 16 requests
+	if stats.Windows.Yesterday.Requests != 16 {
+		t.Errorf("expected Yesterday.Requests to be 16 after late arrival, got %d", stats.Windows.Yesterday.Requests)
+	}
+	if stats.Windows.Yesterday.CycleKiller.TotalInterventions != 3 {
+		t.Errorf("expected Yesterday interventions to remain 3, got %d", stats.Windows.Yesterday.CycleKiller.TotalInterventions)
+	}
+	// Today must reflect the today observation (1 request)
+	if stats.Windows.Today.Requests != 1 {
+		t.Errorf("expected Today.Requests == 1, got %d", stats.Windows.Today.Requests)
+	}
+	if stats.Windows.Today.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected Today interventions == 1, got %d", stats.Windows.Today.CycleKiller.TotalInterventions)
+	}
+
+	// 3. Day rollover: simulate tomorrow (2026-09-01)
+	tracker.Record(Observation{
+		Tier:       2,
+		Tokens:     10000,
+		CostSpent:  0.02,
+		ObservedAt: tomorrowTime,
+	})
+	tracker.Flush()
+
+	stats = tracker.GetStats()
+	// On 2026-09-01, Yesterday should now be 2026-08-31 (1 request, 1 intervention)
+	if stats.Windows.Yesterday.Requests != 1 {
+		t.Errorf("expected Yesterday.Requests after rollover == 1, got %d", stats.Windows.Yesterday.Requests)
+	}
+	if stats.Windows.Yesterday.CycleKiller.TotalInterventions != 1 {
+		t.Errorf("expected Yesterday.CycleKiller.TotalInterventions after rollover == 1, got %d", stats.Windows.Yesterday.CycleKiller.TotalInterventions)
+	}
+	if stats.Windows.Today.Requests != 1 {
+		t.Errorf("expected Today.Requests on new day == 1, got %d", stats.Windows.Today.Requests)
+	}
+
+	// 4. Verify JSON marshaling includes yesterday
+	data, err := json.Marshal(stats)
+	if err != nil {
+		t.Fatalf("failed to marshal stats JSON: %v", err)
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	windows, ok := raw["windows"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing windows object in JSON")
+	}
+	if _, ok := windows["yesterday"]; !ok {
+		t.Errorf("missing yesterday window in JSON serialization: %v", string(data))
+	}
+}
+
+
+func TestStatsTracker_CycleKiller_LegacyMigrationBackfillsBuckets(t *testing.T) {
+	// Simulate a stats.json from the pre-fix build: root CycleKiller has data,
+	// but daily buckets have zero CycleKiller (the production bug scenario).
+	initial := StatsSnapshot{
+		StartedAt:     "2026-08-29T10:00:00Z",
+		TotalRequests: 100,
+		CycleKiller: CycleKillerMetrics{
+			TotalInterventions:   12,
+			AvoidedRunawayTokens: 96000,
+			AvoidedGPUSeconds:    2736,
+			Stage1LocalHeals:     12,
+		},
+		DailyBuckets: map[string]TimeWindowMetrics{
+			"2026-08-29": {Requests: 80, TokensTotal: 500000},
+			"2026-08-30": {Requests: 20, TokensTotal: 100000},
+		},
+	}
+
+	tracker := NewStatsTrackerWithInitialSnapshot(10, initial)
+	defer tracker.Close()
+	stats := tracker.GetStats()
+
+	// After migration, the largest bucket (Aug 29, 80 requests) should have CycleKiller data
+	b29 := stats.DailyBuckets["2026-08-29"]
+	if b29.CycleKiller.TotalInterventions != 12 {
+		t.Errorf("expected backfilled bucket 2026-08-29 TotalInterventions == 12, got %d",
+			b29.CycleKiller.TotalInterventions)
+	}
+	if b29.CycleKiller.Stage1LocalHeals != 12 {
+		t.Errorf("expected backfilled bucket Stage1LocalHeals == 12, got %d",
+			b29.CycleKiller.Stage1LocalHeals)
+	}
+
+	// Smaller bucket should NOT have been touched
+	b30 := stats.DailyBuckets["2026-08-30"]
+	if b30.CycleKiller.TotalInterventions != 0 {
+		t.Errorf("expected non-target bucket 2026-08-30 TotalInterventions == 0, got %d",
+			b30.CycleKiller.TotalInterventions)
+	}
+
+	// Verify the migration is permanent: serialize, deserialize, reload into new tracker
+	data, _ := json.MarshalIndent(stats, "", "  ")
+	var restored StatsSnapshot
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	tracker2 := NewStatsTrackerWithInitialSnapshot(10, restored)
+	defer tracker2.Close()
+	stats2 := tracker2.GetStats()
+
+	// After second load, isLegacySnapshot should be false (bucket has data)
+	// so the migration does NOT re-run, and bucket data stays correct
+	b29r := stats2.DailyBuckets["2026-08-29"]
+	if b29r.CycleKiller.TotalInterventions != 12 {
+		t.Errorf("expected persisted bucket 2026-08-29 TotalInterventions == 12 after reload, got %d",
+			b29r.CycleKiller.TotalInterventions)
+	}
+}

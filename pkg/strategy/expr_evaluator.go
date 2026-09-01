@@ -115,6 +115,11 @@ func (e *ExprEvaluator) SelectTier(reqCtx contract.RequestContext) (contract.Tie
 			continue
 		}
 
+		// Guard: If model is currently cooling down on this session from a cycle kill, skip tier
+		if reqCtx.IsModelCoolingDown(ct.tier.Model) {
+			continue
+		}
+
 		output, err := expr.Run(ct.program, reqCtx)
 		if err != nil {
 			// Log error or continue to next tier

@@ -51,11 +51,19 @@ type fastStreamChunk struct {
 	Usage             json.RawMessage    `json:"usage,omitempty"`
 }
 
-type StreamUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+// PromptTokensDetails captures per-category token breakdowns from upstream providers.
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
 }
+
+type StreamUsage struct {
+	PromptTokens        int                  `json:"prompt_tokens"`
+	CompletionTokens    int                  `json:"completion_tokens"`
+	TotalTokens         int                  `json:"total_tokens"`
+	PromptTokensDetails *PromptTokensDetails `json:"prompt_tokens_details,omitempty"`
+	Cost                float64              `json:"cost,omitempty"`
+}
+
 
 // StreamNormalizer wraps an upstream SSE response stream and normalizes reasoning tokens
 // (from DeepSeek-R1, OpenRouter, etc.) into standard <think>...</think> tags within delta.content.
