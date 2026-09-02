@@ -1187,10 +1187,8 @@ func (s *Server) recordTelemetry(
 		totalTokens = promptTokens + completionTokens
 	}
 
-	baselineRatePerM := contract.DefaultBenchmarkPricePerMillion
-	if baselinePricing, found := s.oracle.GetPrice("openrouter", contract.DefaultBenchmarkModel); found && baselinePricing.PromptCostPerMillion > 0 {
-		baselineRatePerM = baselinePricing.PromptCostPerMillion
-	}
+	// Baseline rates are resolved internally by PricingOracle.resolveBenchmarkRates().
+	const baselineRatePerM = 0.0
 
 	cachedTokens := 0
 	if usage.PromptTokensDetails != nil {

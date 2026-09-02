@@ -336,7 +336,8 @@ func TestPricingOracle_CalculateFinancials(t *testing.T) {
 
 	// 2. Local provider (100% free)
 	spent, saved = oracle.CalculateFinancials("ollama", "qwen", true, 10000, 2000, 0, 0.0, 3.0)
-	expectedSaved := (12000.0 / 1_000_000.0) * 3.0
+	// Baseline: (10000/1M)*$2.00 + (2000/1M)*$10.00 = $0.020 + $0.020 = $0.040
+	expectedSaved := (10000.0/1_000_000.0)*2.0 + (2000.0/1_000_000.0)*10.0
 	if fmt.Sprintf("%.6f", saved) != fmt.Sprintf("%.6f", expectedSaved) {
 		t.Errorf("expected %f saved for local, got %f", expectedSaved, saved)
 	}
@@ -358,14 +359,14 @@ func TestPricingOracle_CalculateFinancials(t *testing.T) {
 	// Prompt cost: (50,000 / 1M) * 0.30 = $0.015
 	// Completion cost: (1,000 / 1M) * 1.50 = $0.0015
 	// Total Spent: $0.0165
-	// Baseline (51,000 / 1M) * 3.00 = $0.153
-	// Saved: $0.153 - $0.0165 = $0.1365
+	// Baseline: (50000/1M)*$2.00 + (1000/1M)*$10.00 = $0.10 + $0.01 = $0.11
+	// Saved: $0.11 - $0.0165 = $0.0935
 	spent, saved = oracle.CalculateFinancials("openrouter", "qwen-coder", false, 50000, 1000, 0, 0.0, 3.0)
 	if fmt.Sprintf("%.4f", spent) != "0.0165" {
 		t.Errorf("expected 0.0165 spent, got %f", spent)
 	}
-	if fmt.Sprintf("%.4f", saved) != "0.1365" {
-		t.Errorf("expected 0.1365 saved, got %f", saved)
+	if fmt.Sprintf("%.4f", saved) != "0.0935" {
+		t.Errorf("expected 0.0935 saved, got %f", saved)
 	}
 
 	// 4. Upstream cost override (OpenRouter ground truth)
@@ -373,7 +374,8 @@ func TestPricingOracle_CalculateFinancials(t *testing.T) {
 	if fmt.Sprintf("%.4f", spent) != "0.0500" {
 		t.Errorf("upstream cost override: expected 0.0500 spent, got %f", spent)
 	}
-	expectedBaseline := (51000.0 / 1_000_000.0) * 3.0
+	// Baseline: (50000/1M)*$2.00 + (1000/1M)*$10.00 = $0.10 + $0.01 = $0.11
+	expectedBaseline := (50000.0/1_000_000.0)*2.0 + (1000.0/1_000_000.0)*10.0
 	expectedSavedUpstream := expectedBaseline - 0.05
 	if fmt.Sprintf("%.4f", saved) != fmt.Sprintf("%.4f", expectedSavedUpstream) {
 		t.Errorf("upstream cost override: expected %f saved, got %f", expectedSavedUpstream, saved)
@@ -384,14 +386,43 @@ func TestPricingOracle_CalculateFinancials(t *testing.T) {
 	//         cached   = 35000 @ $0.30/1M * 0.20 = $0.0021
 	// Completion: 1000 @ $1.50/1M = $0.0015
 	// Total spent: $0.0081
-	// Baseline (51,000 / 1M) * 3.00 = $0.153
-	// Saved: 0.153 - 0.0081 = 0.1449
+	// Baseline: (50000/1M)*$2.00 + (1000/1M)*$10.00 = $0.10 + $0.01 = $0.11
+	// Saved: $0.11 - $0.0081 = $0.1019
 	spent, saved = oracle.CalculateFinancials("openrouter", "qwen-coder", false, 50000, 1000, 35000, 0.0, 3.0)
 	if fmt.Sprintf("%.4f", spent) != "0.0081" {
 		t.Errorf("cache discount: expected 0.0081 spent, got %f", spent)
 	}
-	if fmt.Sprintf("%.4f", saved) != "0.1449" {
-		t.Errorf("cache discount: expected 0.1449 saved, got %f", saved)
+	if fmt.Sprintf("%.4f", saved) != "0.1019" {
+		t.Errorf("cache discount: expected 0.1019 saved, got %f", saved)
+	}
+
+	// 6. Live benchmark rates override snapshot defaults
+	benchProvider := &mockPricingProvider{
+		name: "openrouter",
+		prices: map[string]ModelMetadata{
+			"qwen-coder": {
+				ModelPricing: ModelPricing{PromptCostPerMillion: 0.30, CompletionCostPerMillion: 1.50},
+				ModelID:      "qwen-coder",
+			},
+			contract.DefaultBenchmarkModel: {
+				ModelPricing: ModelPricing{PromptCostPerMillion: 2.00, CompletionCostPerMillion: 10.00},
+				ModelID:      contract.DefaultBenchmarkModel,
+			},
+		},
+	}
+	oracleLive := NewPricingOracle()
+	oracleLive.RegisterProvider(benchProvider, 0)
+	_ = oracleLive.Sync(context.Background())
+
+	// 100k prompt + 10k completion routed to qwen-coder, upstream cost = $0.05
+	// Baseline (live rates): (100000/1M)*$2.00 + (10000/1M)*$10.00 = $0.20 + $0.10 = $0.30
+	// Saved: $0.30 - $0.05 = $0.25
+	spent, saved = oracleLive.CalculateFinancials("openrouter", "qwen-coder", false, 100000, 10000, 0, 0.05, 0.0)
+	if fmt.Sprintf("%.4f", spent) != "0.0500" {
+		t.Errorf("live benchmark: expected 0.0500 spent, got %f", spent)
+	}
+	if fmt.Sprintf("%.4f", saved) != "0.2500" {
+		t.Errorf("live benchmark: expected 0.2500 saved, got %f", saved)
 	}
 }
 

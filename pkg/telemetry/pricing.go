@@ -278,18 +278,42 @@ func (o *PricingOracle) CalculateCost(provider, model string, promptTokens, comp
 	return promptCost + completionCost
 }
 
+// resolveBenchmarkRates returns the prompt and completion per-million rates for the
+// benchmark model. It checks live OpenRouter pricing data first (populated by background
+// sync), and falls back to hardcoded snapshot constants if unavailable.
+func (o *PricingOracle) resolveBenchmarkRates() (promptRate, completionRate float64) {
+	if pricing, found := o.GetPrice(contract.ProviderOpenRouter, contract.DefaultBenchmarkModel); found {
+		if pricing.PromptCostPerMillion > 0 {
+			promptRate = pricing.PromptCostPerMillion
+		}
+		if pricing.CompletionCostPerMillion > 0 {
+			completionRate = pricing.CompletionCostPerMillion
+		}
+	}
+	if promptRate <= 0 {
+		promptRate = contract.DefaultBenchmarkPromptPricePerMillion
+	}
+	if completionRate <= 0 {
+		completionRate = contract.DefaultBenchmarkCompletionPricePerMillion
+	}
+	return
+}
+
 // CalculateFinancials computes dual financial telemetry: actual USD spent and estimated USD saved vs benchmark.
 func (o *PricingOracle) CalculateFinancials(provider, model string, isLocal bool, promptTokens, completionTokens, cachedTokens int, upstreamCost float64, baselineRatePerM float64) (costSpent float64, costSaved float64) {
+	// baselineRatePerM is deprecated; rates are resolved internally via resolveBenchmarkRates().
+	_ = baselineRatePerM
+
 	totalTokens := promptTokens + completionTokens
 	if totalTokens <= 0 {
 		return 0.0, 0.0
 	}
 
-	if baselineRatePerM <= 0 {
-		baselineRatePerM = contract.DefaultBenchmarkPricePerMillion
-	}
-
-	baselineCost := (float64(totalTokens) / contract.TokensPerMillion) * baselineRatePerM
+	// Resolve benchmark prompt & completion rates from live OpenRouter data,
+	// falling back to hardcoded snapshot if unavailable.
+	bPrompt, bCompletion := o.resolveBenchmarkRates()
+	baselineCost := (float64(promptTokens)/contract.TokensPerMillion)*bPrompt +
+		(float64(completionTokens)/contract.TokensPerMillion)*bCompletion
 
 	if isLocal {
 		return 0.0, baselineCost
