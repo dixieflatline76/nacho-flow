@@ -25,6 +25,7 @@ export class ExtensionController {
 	private telemetryPoller: TelemetryPoller | null = null;
 	private activeTimeWindow: string = 'all_time';
 	private routesRefreshInterval: RefreshIntervalSeconds = 60;
+	private activePreset: 'standard' | 'zoo' | 'cline' = 'standard';
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
@@ -37,6 +38,11 @@ export class ExtensionController {
 		// Load persisted preferences
 		this.activeTimeWindow = this.context.globalState?.get<string>('nachoFlow_timeWindow', 'all_time') || 'all_time';
 		this.statusBar.setTimeWindow(this.activeTimeWindow);
+		this.activePreset = this.context.globalState?.get<'standard' | 'zoo' | 'cline'>('nachoFlow_activePreset', 'standard') || 'standard';
+		this.statusBar.setActivePreset(this.activePreset);
+
+		// Ensure global preset templates are available
+		await this.ensureGlobalPresets();
 
 		const savedInterval = this.context.globalState?.get<number>('nachoFlow_routesRefreshInterval');
 		this.routesRefreshInterval = (typeof savedInterval !== 'undefined' ? savedInterval : 60) as RefreshIntervalSeconds;
@@ -52,15 +58,28 @@ export class ExtensionController {
 		// Register Activity Bar Sidebar View Provider
 		this.registerSidebarProvider();
 
-		// Auto-sync configuration to daemon when config is saved
+		// Auto-sync configuration to daemon when config is saved (preset-aware guard)
 		this.context.subscriptions.push(
 			vscode.workspace.onDidSaveTextDocument(async (doc) => {
-				const isConfigDoc = (this.activeConfigDocUri && doc.uri.toString() === this.activeConfigDocUri.toString()) ||
-					doc.fileName.endsWith('config.yaml');
-				if (isConfigDoc && this.restClient) {
+				if (!this.restClient) return;
+
+				// Map active preset to its expected filename
+				const presetFileMap: Record<string, string> = {
+					standard: 'config.yaml',
+					zoo: 'config.zoo.yaml',
+					cline: 'config.cline.yaml'
+				};
+				const activeFilename = presetFileMap[this.activePreset];
+
+				// Only auto-push if the saved file matches the active preset, or it was explicitly opened via Edit YAML
+				const isActivePresetFile = doc.fileName.replace(/\\/g, '/').endsWith('/' + activeFilename);
+				const isExplicitEditTarget = this.activeConfigDocUri &&
+					doc.uri.toString() === this.activeConfigDocUri.toString();
+
+				if (isActivePresetFile || isExplicitEditTarget) {
 					try {
 						await this.restClient.updateConfigYaml(doc.getText());
-						this.showTransientToast('🌮 Nacho Flow: Configuration updated and hot-reloaded!');
+						this.showTransientToast(`🌮 Nacho Flow: ${activeFilename} updated and hot-reloaded!`);
 						await this.loadDashboardData();
 						await this.syncSidebarState();
 					} catch (err: any) {
@@ -306,6 +325,16 @@ export class ExtensionController {
 					case 'openDashboard':
 						this.showDashboard();
 						break;
+					case 'hotSwapPreset': {
+						const presetId = message.presetId as 'standard' | 'zoo' | 'cline';
+						if (presetId) {
+							await this.hotSwapPreset(presetId);
+						}
+						break;
+					}
+					case 'editActivePreset':
+						await this.editActivePresetFile();
+						break;
 				}
 			}
 		);
@@ -414,13 +443,18 @@ export class ExtensionController {
 		const remoteUrl = this.authManager.getRemoteUrl();
 		const remoteToken = await this.authManager.getRemoteToken();
 
+		// Sync base URL and active preset to status bar
+		this.statusBar.setBaseUrl(baseUrl);
+		this.statusBar.setActivePreset(this.activePreset);
+
 		this.sidebarProvider.updateState({
 			engineMode,
 			remoteUrl,
 			token: remoteToken || '',
 			hasToken: !!token,
 			engineStatus,
-			providers
+			providers,
+			activePreset: this.activePreset
 		});
 	}
 
@@ -431,6 +465,10 @@ export class ExtensionController {
 		this.restClient = new RestClient(baseUrl, authToken);
 		this.sseClient = new SSEClient(baseUrl, authToken);
 		this.sseClient.connect();
+
+		// Sync base URL to status bar on client init
+		this.statusBar.setBaseUrl(baseUrl);
+		this.statusBar.setActivePreset(this.activePreset);
 		
 		// Setup SSE event handlers
 		this.setupSSEHandlers();
@@ -964,6 +1002,132 @@ export class ExtensionController {
 		}
 	}
 
+	private async ensureGlobalPresets(): Promise<void> {
+		if (!this.context.globalStorageUri || !this.context.extensionUri) return;
+		const presetsDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'presets');
+		try {
+			await vscode.workspace.fs.createDirectory(presetsDir);
+		} catch (_) {}
+
+		const presets = ['config.yaml', 'config.zoo.yaml', 'config.cline.yaml'];
+		for (const filename of presets) {
+			const targetUri = vscode.Uri.joinPath(presetsDir, filename);
+			try {
+				await vscode.workspace.fs.stat(targetUri);
+			} catch {
+				// File does not exist in global storage yet, copy from bundled presets
+				try {
+					const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'presets', filename);
+					const data = await vscode.workspace.fs.readFile(templateUri);
+					await vscode.workspace.fs.writeFile(targetUri, data);
+				} catch (err) {
+					console.error(`Failed to copy preset template ${filename}:`, err);
+				}
+			}
+		}
+	}
+
+	private async resolvePresetUri(presetId: 'standard' | 'zoo' | 'cline'): Promise<{ uri: vscode.Uri; isWorkspace: boolean }> {
+		const fileMap: Record<string, string> = {
+			standard: 'config.yaml',
+			zoo: 'config.zoo.yaml',
+			cline: 'config.cline.yaml'
+		};
+		const filename = fileMap[presetId] || 'config.yaml';
+
+		// 1. Check workspace folders first (workspace-level override)
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (workspaceFolders && workspaceFolders.length > 0) {
+			for (const folder of workspaceFolders) {
+				const wsPresetUri = vscode.Uri.joinPath(folder.uri, filename);
+				try {
+					await vscode.workspace.fs.stat(wsPresetUri);
+					return { uri: wsPresetUri, isWorkspace: true };
+				} catch (_) {}
+			}
+		}
+
+		// 2. Check globalStorageUri (persistent user presets across any workspace)
+		if (this.context.globalStorageUri) {
+			const globalPresetUri = vscode.Uri.joinPath(this.context.globalStorageUri, 'presets', filename);
+			try {
+				await vscode.workspace.fs.stat(globalPresetUri);
+				return { uri: globalPresetUri, isWorkspace: false };
+			} catch (_) {
+				await this.ensureGlobalPresets();
+				try {
+					await vscode.workspace.fs.stat(globalPresetUri);
+					return { uri: globalPresetUri, isWorkspace: false };
+				} catch (_) {}
+			}
+		}
+
+		// 3. Fallback to bundled template in extension resources
+		if (this.context.extensionUri) {
+			const bundledUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'presets', filename);
+			return { uri: bundledUri, isWorkspace: false };
+		}
+
+		// 4. Ultimate fallback to local path
+		return { uri: vscode.Uri.file(filename), isWorkspace: false };
+	}
+
+	private async hotSwapPreset(presetId: 'standard' | 'zoo' | 'cline'): Promise<void> {
+		const { uri: presetUri, isWorkspace } = await this.resolvePresetUri(presetId);
+		let yamlContent: string;
+
+		try {
+			const fileBytes = await vscode.workspace.fs.readFile(presetUri);
+			yamlContent = Buffer.from(fileBytes).toString('utf8');
+		} catch (err: any) {
+			vscode.window.showErrorMessage(
+				`Nacho Flow: Preset file "${presetUri.fsPath || presetUri.path}" could not be read: ${err.message || err}`
+			);
+			return;
+		}
+
+		// 2. Push to engine via API
+		if (!this.restClient) {
+			vscode.window.showErrorMessage('Nacho Flow: Not connected to engine — cannot hot-swap.');
+			return;
+		}
+
+		try {
+			await this.restClient.updateConfigYaml(yamlContent);
+		} catch (err: any) {
+			vscode.window.showErrorMessage(`Nacho Flow: Hot-swap failed: ${err.message || err}`);
+			return;
+		}
+
+		// 3. Persist active preset and update state
+		this.activePreset = presetId;
+		await this.context.globalState?.update('nachoFlow_activePreset', presetId);
+		this.statusBar.setActivePreset(this.activePreset);
+
+		// 4. Refresh UI
+		const presetLabels: Record<string, string> = {
+			standard: '🌮 Standard',
+			zoo: '🤖 Zoo Code',
+			cline: '🛠️ Cline'
+		};
+		const locationHint = isWorkspace ? ' (Workspace Override)' : '';
+		this.showTransientToast(`🌮 Switched to ${presetLabels[presetId]} routing preset${locationHint}!`);
+		await this.loadDashboardData();
+		await this.syncSidebarState();
+	}
+
+	private async editActivePresetFile(): Promise<void> {
+		await this.ensureGlobalPresets();
+		const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
+		try {
+			const doc = await vscode.workspace.openTextDocument(presetUri);
+			await vscode.window.showTextDocument(doc);
+			this.activeConfigDocUri = presetUri;
+		} catch (err: any) {
+			vscode.window.showErrorMessage(`Nacho Flow: Could not open preset file: ${err.message || err}`);
+		}
+	}
+
 	private async loadDashboardData(manual: boolean = false): Promise<void> {
 		if (!this.restClient || !this.dashboardPanel) return;
 		
@@ -1005,6 +1169,16 @@ export class ExtensionController {
 		try {
 			await this.syncSidebarState();
 		} catch (_) {}
+
+		// Push active preset label to dashboard
+		if (this.dashboardPanel) {
+			const presetLabels: Record<string, string> = {
+				standard: '🌮 Standard',
+				zoo: '🤖 Zoo Code',
+				cline: '🛠️ Cline'
+			};
+			this.dashboardPanel.updateActivePreset({ label: presetLabels[this.activePreset] || this.activePreset });
+		}
 
 		if (manual) {
 			this.showTransientToast('🔄 Nacho Flow: Telemetry & dashboard refreshed');

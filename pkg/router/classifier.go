@@ -185,7 +185,7 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	}
 
 	// 2.5 Scan trailing messages for error patterns and tool progress
-	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress = c.scanTrailingMessages(messages)
+	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasTestProgress = c.scanTrailingMessages(messages)
 
 	// 3. Approximate total token count using zero-allocation len(body) estimator
 	if hasNonEmptyContent || reqCtx.HasTools {
@@ -221,6 +221,45 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	return reqCtx, nil
 }
 
+// isTestOrDebugContent checks if text contains signals that indicate the agent is doing
+// legitimate test/debug work: running tests, reading compiler output, or analyzing failures.
+// This prevents kickstart from falsely flagging test/debug phases as "idle" turns.
+func isTestOrDebugContent(text string) bool {
+	lower := strings.ToLower(text)
+	testSignals := []string{
+		// Go test output
+		"--- fail:", "--- pass:", "fail\t", "ok  \t", "go test",
+		// Go compiler errors
+		"undefined:", "cannot use", "syntax error", "build failed",
+		"compilation failed", "does not implement", "too many arguments",
+		"not enough arguments", "declared and not used",
+		// Generic test frameworks (jest, pytest, mocha)
+		"tests:", "test suites", "passed, ", "failed, ",
+		"passed\n", "failed\n",
+	}
+	for _, sig := range testSignals {
+		if strings.Contains(lower, sig) {
+			return true
+		}
+	}
+	return false
+}
+
+// isTestFilePath checks if a tool call arguments string targets a test file.
+func isTestFilePath(arguments string) bool {
+	lower := strings.ToLower(arguments)
+	testSuffixes := []string{
+		"_test.go", "_test.py", "_test.ts", "_test.js",
+		".test.js", ".test.ts", ".spec.js", ".spec.ts",
+	}
+	for _, suffix := range testSuffixes {
+		if strings.Contains(lower, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 // isErrorText checks if a message text contains known error signatures or failure indicators.
 func isErrorText(text string, signatures []string) bool {
 	if strings.Contains(text, `"success":false`) || strings.Contains(text, `"success": false`) {
@@ -239,8 +278,9 @@ func isErrorText(text string, signatures []string) bool {
 
 // scanTrailingMessages inspects the last N messages in the conversation history
 // to detect: (a) consecutive trailing error turns, (b) successful tool progress,
-// and (c) write-specific tool progress (e.g. file writes, terminal executions).
-func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool, hasWriteProgress bool) {
+// (c) write-specific tool progress (e.g. file writes, terminal executions), and
+// (d) test/debug progress (running tests, compiler errors, reading test files).
+func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasTestProgress bool) {
 	signatures := c.GetErrorSignatures()
 	writeTools := c.GetKickstartWriteTools()
 
@@ -250,7 +290,8 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 		start = 0
 	}
 
-	// First pass: collect call IDs for write/execute tool invocations in assistant turns
+	// First pass: collect call IDs for write/execute tool invocations in assistant turns.
+	// Also detect test-file reads to set hasTestProgress early.
 	writeCallIDs := make(map[string]bool)
 	hasAnyWriteCall := false
 
@@ -271,8 +312,10 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 					}
 					id, _ := tcMap["id"].(string)
 					fnName := ""
+					fnArgs := ""
 					if fnMap, ok := tcMap["function"].(map[string]interface{}); ok {
 						fnName, _ = fnMap["name"].(string)
+						fnArgs, _ = fnMap["arguments"].(string)
 					}
 					if fnName == "" {
 						fnName, _ = tcMap["name"].(string)
@@ -283,6 +326,10 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 						}
 						hasAnyWriteCall = true
 					}
+					// Detect test file reads regardless of tool name
+					if !hasTestProgress && isTestFilePath(fnArgs) {
+						hasTestProgress = true
+					}
 				}
 			}
 			// Check legacy OpenAI function_call
@@ -290,6 +337,12 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 				fnName, _ := fnCall["name"].(string)
 				if writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
 					hasAnyWriteCall = true
+				}
+				if !hasTestProgress {
+					fnArgs, _ := fnCall["arguments"].(string)
+					if isTestFilePath(fnArgs) {
+						hasTestProgress = true
+					}
 				}
 			}
 			// Check Anthropic-style tool_use content blocks
@@ -308,6 +361,17 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 								writeCallIDs[id] = true
 							}
 							hasAnyWriteCall = true
+						}
+						// Detect test file reads in Anthropic tool_use input
+						if !hasTestProgress {
+							if inputMap, ok := partMap["input"].(map[string]interface{}); ok {
+								for _, v := range inputMap {
+									if s, ok := v.(string); ok && isTestFilePath(s) {
+										hasTestProgress = true
+										break
+									}
+								}
+							}
 						}
 					}
 				}
@@ -344,6 +408,13 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 					hasWriteProgress = true
 				} else if toolCallID == "" && hasAnyWriteCall {
 					hasWriteProgress = true
+				}
+			}
+			// Detect test/debug signals in tool result content (success OR error)
+			if !hasTestProgress {
+				text := extractAllTextFromContent(msgMap["content"])
+				if isTestOrDebugContent(text) {
+					hasTestProgress = true
 				}
 			}
 		}
@@ -407,7 +478,7 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 		}
 	}
 
-	return historyErrors, hasToolProgress, hasWriteProgress
+	return historyErrors, hasToolProgress, hasWriteProgress, hasTestProgress
 }
 
 // extractAllTextFromContent extracts all text from a content field,

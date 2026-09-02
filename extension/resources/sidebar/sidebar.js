@@ -8,7 +8,8 @@
 		ollamaStatus: { connected: false, models: [] },
 		hasOpenRouterKey: false,
 		remoteUrl: 'http://127.0.0.1:8000',
-		hasToken: false
+		hasToken: false,
+		activePreset: 'standard' // 'standard' | 'zoo' | 'cline'
 	};
 
 	// DOM Elements
@@ -73,6 +74,12 @@
 
 		// Update proxy copy endpoint
 		updateProxyEndpoint();
+
+		// Sync preset dropdown to persisted active preset
+		const presetSelector = document.getElementById('preset-selector');
+		if (presetSelector && state.activePreset) {
+			presetSelector.value = state.activePreset;
+		}
 
 		if (state.engineStatus) {
 			updateEngineStatus(state.engineStatus);
@@ -396,6 +403,22 @@
 
 	window.refreshAll = function() {
 		vscode.postMessage({ command: 'refreshAll' });
+	};
+
+	// Preset selector functions
+	window.onPresetChanged = function(presetId) {
+		// Preview only — actual swap happens on button click
+		state.activePreset = presetId;
+	};
+
+	window.hotSwapPreset = function() {
+		const presetSelector = document.getElementById('preset-selector');
+		const presetId = (presetSelector && presetSelector.value) || 'standard';
+		vscode.postMessage({ command: 'hotSwapPreset', presetId });
+	};
+
+	window.editActivePreset = function() {
+		vscode.postMessage({ command: 'editActivePreset' });
 	};
 
 	// Initialize

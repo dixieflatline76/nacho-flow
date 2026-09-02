@@ -277,24 +277,24 @@ func TestSessionTracker_KickstartDetection(t *testing.T) {
 	tracker.RecordTurn("sess-kickstart", HashPrompt("test prompt"), false)
 
 	// Turns without tool progress should increment kickstart count
-	count, kickstarted := tracker.RecordKickstartState("sess-kickstart", false, threshold)
+	count, kickstarted := tracker.RecordKickstartState("sess-kickstart", false, threshold, 0)
 	if count != 1 || kickstarted {
 		t.Errorf("turn 1: expected count=1 kickstarted=false, got count=%d kickstarted=%v", count, kickstarted)
 	}
 
-	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold)
+	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold, 0)
 	if count != 2 || kickstarted {
 		t.Errorf("turn 2: expected count=2 kickstarted=false, got count=%d kickstarted=%v", count, kickstarted)
 	}
 
 	// Third turn hits the threshold -> Kickstart fires!
-	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold)
+	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold, 0)
 	if count != 3 || !kickstarted {
 		t.Errorf("turn 3: expected count=3 kickstarted=true, got count=%d kickstarted=%v", count, kickstarted)
 	}
 
 	// Continues to indicate kickstart state
-	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold)
+	count, kickstarted = tracker.RecordKickstartState("sess-kickstart", false, threshold, 0)
 	if count != 4 || !kickstarted {
 		t.Errorf("turn 4: expected count=4 kickstarted=true, got count=%d kickstarted=%v", count, kickstarted)
 	}
@@ -307,17 +307,17 @@ func TestSessionTracker_KickstartResetOnProgress(t *testing.T) {
 	tracker.RecordTurn("sess-reset", HashPrompt("prompt"), false)
 
 	// Accumulate 2 idle turns
-	tracker.RecordKickstartState("sess-reset", false, threshold)
-	tracker.RecordKickstartState("sess-reset", false, threshold)
+	tracker.RecordKickstartState("sess-reset", false, threshold, 0)
+	tracker.RecordKickstartState("sess-reset", false, threshold, 0)
 
 	// Tool progress resets the counter
-	count, kickstarted := tracker.RecordKickstartState("sess-reset", true, threshold)
+	count, kickstarted := tracker.RecordKickstartState("sess-reset", true, threshold, 0)
 	if count != 0 || kickstarted {
 		t.Errorf("after progress: expected count=0 kickstarted=false, got count=%d kickstarted=%v", count, kickstarted)
 	}
 
 	// Kickstart count starts fresh
-	count, kickstarted = tracker.RecordKickstartState("sess-reset", false, threshold)
+	count, kickstarted = tracker.RecordKickstartState("sess-reset", false, threshold, 0)
 	if count != 1 || kickstarted {
 		t.Errorf("after reset + no progress: expected count=1 kickstarted=false, got count=%d kickstarted=%v", count, kickstarted)
 	}
@@ -329,15 +329,87 @@ func TestSessionTracker_KickstartDisabledWhenThresholdZero(t *testing.T) {
 	tracker.RecordTurn("sess-disabled", HashPrompt("prompt"), false)
 
 	// Threshold of 0 means disabled
-	count, kickstarted := tracker.RecordKickstartState("sess-disabled", false, 0)
+	count, kickstarted := tracker.RecordKickstartState("sess-disabled", false, 0, 0)
 	if count != 0 || kickstarted {
 		t.Errorf("threshold 0: expected disabled (count=0 kickstarted=false), got count=%d kickstarted=%v", count, kickstarted)
 	}
 
 	// Empty session key should also be a no-op
-	count, kickstarted = tracker.RecordKickstartState("", false, 3)
+	count, kickstarted = tracker.RecordKickstartState("", false, 3, 0)
 	if count != 0 || kickstarted {
 		t.Errorf("empty key: expected disabled, got count=%d kickstarted=%v", count, kickstarted)
+	}
+}
+
+func TestSessionTracker_KickstartCircuitBreaker(t *testing.T) {
+	// Circuit breaker: after 3 consecutive kickstart failures (wasKickstarted=true but no progress),
+	// isKickstarted returns false to suppress the override and prevent death spirals.
+	tracker := NewSessionTracker(5 * time.Minute)
+	threshold := 2
+
+	tracker.RecordTurn("sess-cb", HashPrompt("prompt"), false)
+
+	// Build up to the threshold — kickstart fires
+	tracker.RecordKickstartState("sess-cb", false, threshold, 0) // count=1, not kicked
+	count, kicked := tracker.RecordKickstartState("sess-cb", false, threshold, 0) // count=2, kicked
+	if count != 2 || !kicked {
+		t.Fatalf("setup: expected count=2 kicked=true, got count=%d kicked=%v", count, kicked)
+	}
+
+	// Notify that last turn was already kickstarted but model still produced no progress
+	tracker.RecordKickstartFailure("sess-cb") // failure 1
+	count, kicked = tracker.RecordKickstartState("sess-cb", false, threshold, 0)
+	if !kicked {
+		t.Errorf("failure 1: kickstart should still fire (1/3 failures), got kicked=%v", kicked)
+	}
+
+	tracker.RecordKickstartFailure("sess-cb") // failure 2
+	count, kicked = tracker.RecordKickstartState("sess-cb", false, threshold, 0)
+	if !kicked {
+		t.Errorf("failure 2: kickstart should still fire (2/3 failures), got kicked=%v", kicked)
+	}
+
+	tracker.RecordKickstartFailure("sess-cb") // failure 3 — circuit trips
+	count, kicked = tracker.RecordKickstartState("sess-cb", false, threshold, 0)
+	if kicked {
+		t.Errorf("failure 3: circuit breaker should suppress kickstart after 3 failures, got kicked=%v count=%d", kicked, count)
+	}
+}
+
+func TestSessionTracker_KickstartCircuitBreakerReset(t *testing.T) {
+	// After circuit breaker engages, tool progress should reset both count and failures.
+	tracker := NewSessionTracker(5 * time.Minute)
+	threshold := 2
+
+	tracker.RecordTurn("sess-cb-reset", HashPrompt("prompt"), false)
+
+	// Trip the circuit breaker
+	tracker.RecordKickstartState("sess-cb-reset", false, threshold, 0)
+	tracker.RecordKickstartState("sess-cb-reset", false, threshold, 0)
+	tracker.RecordKickstartFailure("sess-cb-reset")
+	tracker.RecordKickstartFailure("sess-cb-reset")
+	tracker.RecordKickstartFailure("sess-cb-reset")
+
+	// Verify circuit is tripped
+	_, kicked := tracker.RecordKickstartState("sess-cb-reset", false, threshold, 0)
+	if kicked {
+		t.Fatalf("setup: expected circuit breaker to suppress kickstart, got kicked=true")
+	}
+
+	// Now tool progress comes in — should reset everything
+	count, kicked := tracker.RecordKickstartState("sess-cb-reset", true, threshold, 0)
+	if count != 0 || kicked {
+		t.Errorf("progress: expected count=0 kicked=false after reset, got count=%d kicked=%v", count, kicked)
+	}
+
+	// Verify kickstart works again after reset (failures cleared)
+	tracker.RecordKickstartState("sess-cb-reset", false, threshold, 0)
+	tracker.RecordKickstartFailure("sess-cb-reset")
+	tracker.RecordKickstartFailure("sess-cb-reset")
+	// Only 2 failures — circuit should NOT trip yet
+	_, kickedAfterReset := tracker.RecordKickstartState("sess-cb-reset", false, threshold, 0)
+	if !kickedAfterReset {
+		t.Errorf("after reset: expected kickstart to fire normally after 2 failures (< 3), got kicked=false")
 	}
 }
 
@@ -350,8 +422,8 @@ func TestSessionTracker_GetKickstartCount(t *testing.T) {
 	}
 
 	tracker.RecordTurn("sess-get", HashPrompt("p"), false)
-	tracker.RecordKickstartState("sess-get", false, 5)
-	tracker.RecordKickstartState("sess-get", false, 5)
+	tracker.RecordKickstartState("sess-get", false, 5, 0)
+	tracker.RecordKickstartState("sess-get", false, 5, 0)
 
 	if got := tracker.GetKickstartCount("sess-get"); got != 2 {
 		t.Errorf("expected kickstart count 2, got %d", got)

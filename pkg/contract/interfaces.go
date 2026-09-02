@@ -18,6 +18,7 @@ type RequestContext struct {
 	IsRetry          bool     `json:"is_retry,omitempty"`
 	HasToolProgress  bool     `json:"has_tool_progress,omitempty"`
 	HasWriteProgress bool     `json:"has_write_progress,omitempty"`
+	HasTestProgress  bool     `json:"has_test_progress,omitempty"`
 	HistoryErrors          int      `json:"history_errors,omitempty"`
 	CycleRetries              int      `json:"cycle_retries,omitempty"`
 	CycleBreakerTriggered     bool     `json:"cycle_breaker_triggered,omitempty"`
@@ -94,6 +95,7 @@ type CycleBreakerConfig struct {
 	KickstartWriteTools         []string `yaml:"kickstart_write_tools,omitempty" json:"kickstart_write_tools,omitempty"`
 	KickstartPrompt             string   `yaml:"kickstart_prompt,omitempty" json:"kickstart_prompt,omitempty"`
 	KickstartMaxCount           int      `yaml:"kickstart_max_count,omitempty" json:"kickstart_max_count,omitempty"`
+	KickstartMaxFailures        int      `yaml:"kickstart_max_failures,omitempty" json:"kickstart_max_failures,omitempty"`
 	ModelCooldownSeconds        int      `yaml:"model_cooldown_seconds,omitempty" json:"model_cooldown_seconds,omitempty"`
 	RetryFloor                  int      `yaml:"retry_floor,omitempty" json:"retry_floor,omitempty"`
 }

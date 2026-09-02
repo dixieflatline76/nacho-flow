@@ -145,8 +145,25 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<!-- 2. Upstream Inference Engines -->
 	<div class="section-card">
 		<div class="section-header">
-			<span>⚡ 2. Upstream Inference Engines</span>
-			<button class="icon-link-btn" onclick="openConfigFile()" title="Open config.yaml in editor">📝 config.yaml</button>
+			<span>⚡ 2. Routing Configuration</span>
+			<button class="icon-link-btn" onclick="editActivePreset()" title="Open active preset YAML in editor">📝 Edit YAML</button>
+		</div>
+		<div class="section-body" style="padding-bottom: 4px;">
+			<!-- Routing Config Preset Selector -->
+			<div style="margin-bottom: 8px;">
+				<div class="partner-desc" style="margin-bottom: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7;">Active Routing Preset</div>
+				<div style="display: flex; gap: 6px; align-items: center;">
+					<select id="preset-selector" onchange="onPresetChanged(this.value)" style="flex: 1;">
+						<option value="standard">🌮 Standard</option>
+						<option value="zoo">🤖 Zoo Code</option>
+						<option value="cline">🛠️ Cline (XML-Native)</option>
+					</select>
+					<button class="btn btn-primary btn-compact" id="btn-hotswap" onclick="hotSwapPreset()" title="Push selected preset to the running engine">
+						<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></span>
+						Hot-Swap
+					</button>
+				</div>
+			</div>
 		</div>
 		<div id="providers-container" class="section-body">
 			<div class="partner-desc">Connecting to engine providers...</div>

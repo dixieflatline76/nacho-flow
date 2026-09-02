@@ -55,6 +55,7 @@ export class DashboardPanel {
 				<div class="header-title">
 					<h1>🌮 Nacho Flow Dashboard</h1>
 					<span class="version-tag">Smart Hybrid AI Gateway for Autonomous Coding Agents</span>
+					<span id="active-preset-badge" class="preset-badge">📋 🌮 Standard</span>
 				</div>
 			</div>
 			<div class="telemetry-bar-row">
@@ -191,6 +192,10 @@ export class DashboardPanel {
 
 	public setRoutesRefreshInterval(interval: number): void {
 		this.safePostMessage({ command: 'setRoutesRefreshInterval', data: { interval } });
+	}
+
+	public updateActivePreset(data: { label: string }): void {
+		this.safePostMessage({ command: 'updateActivePreset', data });
 	}
 
 	public get isVisible(): boolean {

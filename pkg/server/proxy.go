@@ -436,9 +436,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if kickstartThreshold > 0 {
 		kickstartProgress := reqCtx.HasToolProgress
 		if cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
-			kickstartProgress = reqCtx.HasWriteProgress
+			// Test/debug activity (running go test, reading *_test.go, compiler errors)
+			// is legitimate progress — do not kickstart during test phases.
+			kickstartProgress = reqCtx.HasWriteProgress || reqCtx.HasTestProgress
 		}
-		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold)
+		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold, cfg.CycleKiller.KickstartMaxFailures+cfg.CycleBreaker.KickstartMaxFailures)
 		if isKickstarted {
 			reqCtx.SessionKickstarted = true
 			reqCtx.SessionKickstartCount = kickstartCount
@@ -598,6 +600,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Int("retries", reqCtx.Retries),
 		slog.Bool("has_tool_progress", reqCtx.HasToolProgress),
 		slog.Bool("has_write_progress", reqCtx.HasWriteProgress),
+		slog.Bool("has_test_progress", reqCtx.HasTestProgress),
 		slog.Int("history_errors", reqCtx.HistoryErrors),
 		slog.Any("cooling_down_models", reqCtx.CoolingDownModels),
 		slog.String("user_agent", r.Header.Get("User-Agent")),
@@ -615,6 +618,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reqLogger.Info("Kickstart: injected prompt",
 			slog.Int("kickstart_count", reqCtx.SessionKickstartCount),
 		)
+		// Record this injection as a potential failure. If the model produces no tool
+		// calls this turn, the next request will have HistoryErrors > 0, and
+		// RecordKickstartFailure will have already incremented the circuit breaker counter.
+		// This prevents MODEL_NO_TOOLS_USED death spirals.
+		s.sessionTracker.RecordKickstartFailure(sessionKey)
 	}
 
 	// Fairy Dust: inject checkpoint prompt from winning entry
@@ -1187,10 +1195,8 @@ func (s *Server) recordTelemetry(
 		totalTokens = promptTokens + completionTokens
 	}
 
-	baselineRatePerM := contract.DefaultBenchmarkPricePerMillion
-	if baselinePricing, found := s.oracle.GetPrice("openrouter", contract.DefaultBenchmarkModel); found && baselinePricing.PromptCostPerMillion > 0 {
-		baselineRatePerM = baselinePricing.PromptCostPerMillion
-	}
+	// Baseline rates are resolved internally by PricingOracle.resolveBenchmarkRates().
+	const baselineRatePerM = 0.0
 
 	cachedTokens := 0
 	if usage.PromptTokensDetails != nil {

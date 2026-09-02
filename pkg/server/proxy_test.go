@@ -1659,10 +1659,10 @@ func TestProxy_StreamingUsage_DualRateCostAccounting(t *testing.T) {
 		t.Errorf("expected $0.0165 spent in tracker, got %f", stats.TotalCostSpentUSD)
 	}
 
-	// Expected baseline: (51000 / 1M) * 3.00 = $0.153
-	// Expected saved: 0.153 - 0.0165 = $0.1365
-	if fmt.Sprintf("%.4f", stats.EstimatedCostSavedUSD) != "0.1365" {
-		t.Errorf("expected $0.1365 saved in tracker, got %f", stats.EstimatedCostSavedUSD)
+	// Expected baseline: (50000/1M)*$2.00 + (1000/1M)*$10.00 = $0.10 + $0.01 = $0.11
+	// Expected saved: $0.11 - $0.0165 = $0.0935
+	if fmt.Sprintf("%.4f", stats.EstimatedCostSavedUSD) != "0.0935" {
+		t.Errorf("expected $0.0935 saved in tracker, got %f", stats.EstimatedCostSavedUSD)
 	}
 }
 

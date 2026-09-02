@@ -11,7 +11,7 @@ func TestScanTrailingMessages_CleanHistory(t *testing.T) {
 		map[string]interface{}{"role": "user", "content": "Build me an app"},
 		map[string]interface{}{"role": "assistant", "content": "Sure, let me help."},
 	}
-	errors, progress, _ := clf.scanTrailingMessages(messages)
+	errors, progress, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 0 {
 		t.Errorf("expected 0 errors, got %d", errors)
 	}
@@ -26,7 +26,7 @@ func TestScanTrailingMessages_ZooCodeMissingTool(t *testing.T) {
 		map[string]interface{}{"role": "assistant", "content": "Let me think about this..."},
 		map[string]interface{}{"role": "user", "content": "[ERROR] You did not use a tool in your previous response! Please retry with a tool use."},
 	}
-	errors, progress, _ := clf.scanTrailingMessages(messages)
+	errors, progress, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error, got %d", errors)
 	}
@@ -40,7 +40,7 @@ func TestScanTrailingMessages_SchemaParameterError(t *testing.T) {
 	messages := []interface{}{
 		map[string]interface{}{"role": "user", "content": "Missing value for required parameter 'follow_up'. Please retry with complete response."},
 	}
-	errors, _, _ := clf.scanTrailingMessages(messages)
+	errors, _, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error, got %d", errors)
 	}
@@ -53,7 +53,7 @@ func TestScanTrailingMessages_ConsecutiveErrors(t *testing.T) {
 		map[string]interface{}{"role": "user", "content": "[ERROR] You did not use a tool"},
 		map[string]interface{}{"role": "user", "content": "The tool execution failed"},
 	}
-	errors, _, _ := clf.scanTrailingMessages(messages)
+	errors, _, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 2 {
 		t.Errorf("expected 2 consecutive errors, got %d", errors)
 	}
@@ -66,7 +66,7 @@ func TestScanTrailingMessages_ToolProgressDetection(t *testing.T) {
 		map[string]interface{}{"role": "assistant", "content": "Writing file..."},
 		map[string]interface{}{"role": "tool", "content": "File written successfully"},
 	}
-	errors, progress, _ := clf.scanTrailingMessages(messages)
+	errors, progress, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 0 {
 		t.Errorf("expected 0 errors, got %d", errors)
 	}
@@ -80,7 +80,7 @@ func TestScanTrailingMessages_DiffMismatchError(t *testing.T) {
 	messages := []interface{}{
 		map[string]interface{}{"role": "user", "content": "<error_details>\nNo sufficiently similar match found (79% similar, needs 100%)\n</error_details>"},
 	}
-	errors, _, _ := clf.scanTrailingMessages(messages)
+	errors, _, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error, got %d", errors)
 	}
@@ -95,7 +95,7 @@ func TestScanTrailingMessages_ClineDiffEditToolRoleError(t *testing.T) {
 			"content": `{"query":"edit:c:\\project\\tsconfig.json","result":"","error":"Editor operation failed: Parameter ` + "`old_text`" + ` is required when editing an existing file without ` + "`insert_line`" + `","success":false}`,
 		},
 	}
-	errors, progress, _ := clf.scanTrailingMessages(messages)
+	errors, progress, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error for Cline tool-role diff rejection, got %d", errors)
 	}
@@ -110,7 +110,7 @@ func TestScanTrailingMessages_ClineDiffEditUserRoleError(t *testing.T) {
 		map[string]interface{}{"role": "assistant", "content": "Editing file..."},
 		map[string]interface{}{"role": "user", "content": "Editor operation failed: Parameter `old_text` is required when editing an existing file"},
 	}
-	errors, _, _ := clf.scanTrailingMessages(messages)
+	errors, _, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error for Cline user-role diff rejection, got %d", errors)
 	}
@@ -125,7 +125,7 @@ func TestScanTrailingMessages_PlanModeIsNotAnErrorByDefault(t *testing.T) {
 			"content": "file modifications are blocked in plan mode",
 		},
 	}
-	errors, _, _ := clf.scanTrailingMessages(messages)
+	errors, _, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 0 {
 		t.Errorf("expected 0 errors for plan mode discussion, got %d", errors)
 	}
@@ -143,7 +143,7 @@ func TestScanTrailingMessages_CustomErrorSignatures(t *testing.T) {
 	messages := []interface{}{
 		map[string]interface{}{"role": "user", "content": "Warning: MY_LINTER_ERROR detected in file"},
 	}
-	errors, _, _ := clf.scanTrailingMessages(messages)
+	errors, _, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 1 {
 		t.Errorf("expected 1 error with custom signature, got %d", errors)
 	}
@@ -175,7 +175,7 @@ func TestScanTrailingMessages_ConcurrentAccess(t *testing.T) {
 			messages := []interface{}{
 				map[string]interface{}{"role": "user", "content": "ERR_A happened"},
 			}
-			_, _, _ = clf.scanTrailingMessages(messages)
+			_, _, _, _ = clf.scanTrailingMessages(messages)
 		}()
 	}
 	wg.Wait()
@@ -190,7 +190,7 @@ func TestScanTrailingMessages_ClineToolSuccess(t *testing.T) {
 			"content": `{"query":"edit:package.json","result":"File created successfully at: package.json","success":true}`,
 		},
 	}
-	errors, progress, _ := clf.scanTrailingMessages(messages)
+	errors, progress, _, _ := clf.scanTrailingMessages(messages)
 	if errors != 0 {
 		t.Errorf("expected 0 errors on successful tool execution, got %d", errors)
 	}
@@ -199,3 +199,154 @@ func TestScanTrailingMessages_ClineToolSuccess(t *testing.T) {
 	}
 }
 
+// --- HasTestProgress tests ---
+
+func TestScanTrailingMessages_GoTestOutput(t *testing.T) {
+	clf := &RequestClassifier{}
+
+	// Simulate: assistant ran "go test ./..." and tool result contains Go test output
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-1",
+					"function": map[string]interface{}{
+						"name":      "execute_command",
+						"arguments": `{"command":"go test ./..."}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-1",
+			"content":      "ok  \tgithub.com/foo/bar/pkg/engine\t0.452s\n--- FAIL: TestDealCard (0.00s)\nFAIL\tgithub.com/foo/bar/pkg/cards\t0.123s",
+		},
+	}
+
+	_, _, _, testProgress := clf.scanTrailingMessages(messages)
+	if !testProgress {
+		t.Errorf("expected hasTestProgress=true when tool result contains Go test output (FAIL/ok), got false")
+	}
+}
+
+func TestScanTrailingMessages_CompilerErrors(t *testing.T) {
+	clf := &RequestClassifier{}
+
+	// Simulate: compiler error in tool result
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-2",
+					"function": map[string]interface{}{
+						"name":      "execute_command",
+						"arguments": `{"command":"go build ./..."}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-2",
+			"content":      "./pkg/engine/engine.go:45:2: undefined: CardSuit\n./pkg/engine/hand.go:12:15: cannot use deck (variable of type []Card) as type Deck",
+		},
+	}
+
+	_, _, _, testProgress := clf.scanTrailingMessages(messages)
+	if !testProgress {
+		t.Errorf("expected hasTestProgress=true when tool result contains compiler errors (undefined:, cannot use), got false")
+	}
+}
+
+func TestScanTrailingMessages_TestFileRead(t *testing.T) {
+	clf := &RequestClassifier{}
+
+	// Simulate: assistant reads a _test.go file
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-3",
+					"function": map[string]interface{}{
+						"name":      "read_file",
+						"arguments": `{"path":"pkg/oracle/oracle_test.go"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-3",
+			"content":      "package oracle\n\nimport \"testing\"\n\nfunc TestBasicStrategy(t *testing.T) {",
+		},
+	}
+
+	_, _, _, testProgress := clf.scanTrailingMessages(messages)
+	if !testProgress {
+		t.Errorf("expected hasTestProgress=true when assistant reads a _test.go file, got false")
+	}
+}
+
+func TestScanTrailingMessages_NormalReadNoTestProgress(t *testing.T) {
+	clf := &RequestClassifier{}
+
+	// Simulate: assistant reads a normal .go file — should NOT trigger test progress
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-4",
+					"function": map[string]interface{}{
+						"name":      "read_file",
+						"arguments": `{"path":"pkg/engine/engine.go"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-4",
+			"content":      "package engine\n\ntype Engine struct {\n\tDeck []Card\n}",
+		},
+	}
+
+	_, _, _, testProgress := clf.scanTrailingMessages(messages)
+	if testProgress {
+		t.Errorf("expected hasTestProgress=false when reading a normal .go file, got true (false positive)")
+	}
+}
+
+func TestScanTrailingMessages_JestOutput(t *testing.T) {
+	clf := &RequestClassifier{}
+
+	// Simulate: jest test output in tool result
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-5",
+					"function": map[string]interface{}{
+						"name":      "execute_command",
+						"arguments": `{"command":"npx jest --coverage"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-5",
+			"content":      "PASS src/blackjack.test.js\nTests: 12 passed, 12 total\nTest Suites: 1 passed, 1 total",
+		},
+	}
+
+	_, _, _, testProgress := clf.scanTrailingMessages(messages)
+	if !testProgress {
+		t.Errorf("expected hasTestProgress=true when tool result contains Jest output (Tests:), got false")
+	}
+}

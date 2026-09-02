@@ -17,6 +17,7 @@ type SessionState struct {
 	RetriesCount      int
 	EscalationCount   int
 	KickstartCount    int // consecutive turns without tool progress
+	KickstartFailures int // consecutive kickstart attempts that failed to produce tool calls
 	MinRetriesFloor   int // floor to maintain retry escalation across context resets
 	LastTurnTime      time.Time
 	PromptHash        uint64
@@ -251,11 +252,18 @@ func (st *SessionTracker) ShouldDebounceMeta(sessionKey, directive string, windo
 }
 
 // RecordKickstartState updates the kickstart counter based on whether the turn had tool progress.
-// If hasToolProgress is true, the kickstart counter is reset to 0.
-// Returns (kickstartCount, isKickstarted) where isKickstarted is true when kickstartCount >= kickstartThreshold.
-func (st *SessionTracker) RecordKickstartState(sessionKey string, hasToolProgress bool, kickstartThreshold int) (kickstartCount int, isKickstarted bool) {
+// If hasToolProgress is true, the kickstart counter and failure counter are reset to 0.
+// Returns (kickstartCount, isKickstarted) where isKickstarted is true when kickstartCount >= kickstartThreshold
+// AND the circuit breaker has not tripped (< maxFailures consecutive kickstart injection failures).
+// maxFailures <= 0 uses the DefaultMaxKickstartFailures constant.
+const DefaultMaxKickstartFailures = 3
+
+func (st *SessionTracker) RecordKickstartState(sessionKey string, hasToolProgress bool, kickstartThreshold int, maxFailures int) (kickstartCount int, isKickstarted bool) {
 	if sessionKey == "" || kickstartThreshold <= 0 {
 		return 0, false
+	}
+	if maxFailures <= 0 {
+		maxFailures = DefaultMaxKickstartFailures
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -267,10 +275,32 @@ func (st *SessionTracker) RecordKickstartState(sessionKey string, hasToolProgres
 
 	if hasToolProgress {
 		state.KickstartCount = 0
+		state.KickstartFailures = 0
 		return 0, false
 	}
+
+	// Circuit breaker: suppress injection after maxFailures consecutive kickstart failures
+	if state.KickstartFailures >= maxFailures {
+		return state.KickstartCount, false
+	}
+
 	state.KickstartCount++
 	return state.KickstartCount, state.KickstartCount >= kickstartThreshold
+}
+
+// RecordKickstartFailure records that a kickstart override was injected but the model
+// still produced no tool calls. After maxKickstartFailures, the circuit breaker suppresses
+// further injections to prevent MODEL_NO_TOOLS_USED death spirals.
+func (st *SessionTracker) RecordKickstartFailure(sessionKey string) {
+	if sessionKey == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state, exists := st.sessions[sessionKey]
+	if exists {
+		state.KickstartFailures++
+	}
 }
 
 // GetKickstartCount returns the current kickstart counter for sessionKey.
