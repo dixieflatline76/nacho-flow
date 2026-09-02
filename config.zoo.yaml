@@ -80,6 +80,7 @@ cycle_killer:
   retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
   kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
   kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
+  kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
   kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
   kickstart_write_tools:            # Tools that count as "real progress" (read-only tools are ignored)
     - write_to_file

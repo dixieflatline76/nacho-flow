@@ -95,6 +95,7 @@ type CycleBreakerConfig struct {
 	KickstartWriteTools         []string `yaml:"kickstart_write_tools,omitempty" json:"kickstart_write_tools,omitempty"`
 	KickstartPrompt             string   `yaml:"kickstart_prompt,omitempty" json:"kickstart_prompt,omitempty"`
 	KickstartMaxCount           int      `yaml:"kickstart_max_count,omitempty" json:"kickstart_max_count,omitempty"`
+	KickstartMaxFailures        int      `yaml:"kickstart_max_failures,omitempty" json:"kickstart_max_failures,omitempty"`
 	ModelCooldownSeconds        int      `yaml:"model_cooldown_seconds,omitempty" json:"model_cooldown_seconds,omitempty"`
 	RetryFloor                  int      `yaml:"retry_floor,omitempty" json:"retry_floor,omitempty"`
 }

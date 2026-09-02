@@ -440,7 +440,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// is legitimate progress — do not kickstart during test phases.
 			kickstartProgress = reqCtx.HasWriteProgress || reqCtx.HasTestProgress
 		}
-		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold)
+		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold, cfg.CycleKiller.KickstartMaxFailures+cfg.CycleBreaker.KickstartMaxFailures)
 		if isKickstarted {
 			reqCtx.SessionKickstarted = true
 			reqCtx.SessionKickstartCount = kickstartCount

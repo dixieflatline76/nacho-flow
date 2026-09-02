@@ -254,12 +254,16 @@ func (st *SessionTracker) ShouldDebounceMeta(sessionKey, directive string, windo
 // RecordKickstartState updates the kickstart counter based on whether the turn had tool progress.
 // If hasToolProgress is true, the kickstart counter and failure counter are reset to 0.
 // Returns (kickstartCount, isKickstarted) where isKickstarted is true when kickstartCount >= kickstartThreshold
-// AND the circuit breaker has not tripped (< 3 consecutive kickstart injection failures).
-const maxKickstartFailures = 3
+// AND the circuit breaker has not tripped (< maxFailures consecutive kickstart injection failures).
+// maxFailures <= 0 uses the DefaultMaxKickstartFailures constant.
+const DefaultMaxKickstartFailures = 3
 
-func (st *SessionTracker) RecordKickstartState(sessionKey string, hasToolProgress bool, kickstartThreshold int) (kickstartCount int, isKickstarted bool) {
+func (st *SessionTracker) RecordKickstartState(sessionKey string, hasToolProgress bool, kickstartThreshold int, maxFailures int) (kickstartCount int, isKickstarted bool) {
 	if sessionKey == "" || kickstartThreshold <= 0 {
 		return 0, false
+	}
+	if maxFailures <= 0 {
+		maxFailures = DefaultMaxKickstartFailures
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -275,8 +279,8 @@ func (st *SessionTracker) RecordKickstartState(sessionKey string, hasToolProgres
 		return 0, false
 	}
 
-	// Circuit breaker: suppress injection after maxKickstartFailures consecutive failures
-	if state.KickstartFailures >= maxKickstartFailures {
+	// Circuit breaker: suppress injection after maxFailures consecutive kickstart failures
+	if state.KickstartFailures >= maxFailures {
 		return state.KickstartCount, false
 	}
 
