@@ -1,0 +1,220 @@
+# =============================================================================
+# 🌮 NACHO FLOW: CLINE-OPTIMIZED CONFIGURATION
+# Tuned for Cline / Roo Code's diff-based edit architecture (SdkDiffEditCoordinator)
+#
+# KEY DIFFERENCES FROM DEFAULT (Zoo Code) CONFIG:
+#   - Lower local token threshold (10000 vs 16000) to escalate before diffs
+#   - Relaxed Cycle Killer prose/thinking limits for Cline's XML tool format
+#   - HasToolProgress guard prevents local routing once file edits begin
+#
+# USAGE: nacho-flow -config config.cline.yaml
+# =============================================================================
+
+port: 8000
+
+# =============================================================================
+# 🔌 LLM PROVIDERS
+# =============================================================================
+providers:
+  # ---------------------------------------------------------------------------
+  # 1. Local GPU Provider (Ollama / vLLM / SGLang)
+  # - Cost: $0.00 / 1M Tokens (100% Free Local Compute)
+  # ---------------------------------------------------------------------------
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
+
+  # ---------------------------------------------------------------------------
+  # 2. OpenRouter Cloud Gateway
+  # - Role: Global routing to 300+ frontier and open-weight cloud models.
+  # - Secret: Resolves ENV_OPENROUTER_API_KEY from environment.
+  # ---------------------------------------------------------------------------
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: "ENV_OPENROUTER_API_KEY"
+    type: "cloud"
+    headers:
+      HTTP-Referer: "https://github.com/dixieflatline76/nacho-flow"
+      X-Title: "nacho-flow"
+
+# =============================================================================
+# 🔥 HEATSEEKER LIVE MODEL DEALS
+# =============================================================================
+deals:
+  enabled: true
+  alert_threshold_pct: 30.0
+  min_coding_index: 40.0
+  require_tools: true
+
+# =============================================================================
+# 🛡️ AGENTIC TOOL FALLBACK SHIELD
+# =============================================================================
+agent_shield:
+  enabled: true
+  tail_buffer_bytes: 256
+  question_heuristics:
+    - "are you satisfied"
+    - "would you like"
+    - "should i"
+    - "do you approve"
+    - "please confirm"
+    - "let me know if"
+    - "how would you like to proceed"
+  mode_switch_heuristics:
+    - "switch to code mode"
+    - "switch to architect mode"
+    - "ready to implement"
+  error_signatures:
+    - "[ERROR] You did not use a tool"
+    - "Missing value for required parameter"
+    - "The tool execution failed"
+    - "<error_details>"
+    - "No sufficiently similar match found"
+    - "Command failed with exit code"
+    - "Please retry with complete response"
+    - "Editor operation failed"
+    - "Parameter `old_text` is required"
+    - "Parameter old_text is required"
+    - "Command not executed:"
+
+# =============================================================================
+# 🎸 CYCLE KILLER — CLINE-TUNED
+# Cline embeds tool calls as XML inside prose, so models legitimately produce
+# longer prose blocks before tool tags appear. These limits are relaxed vs
+# the Zoo Code defaults to avoid false-positive stream severing.
+# =============================================================================
+cycle_killer:
+  enabled: true
+  max_prose_tokens: 6144       # Zoo Code default: 4096. Cline XML needs more room.
+  max_thinking_tokens: 2000    # Zoo Code default: 1500. Extra planning runway.
+  repetition_window: 6
+  repetition_threshold: 4      # Zoo Code default: 3. Cline XML is naturally repetitive.
+  thinking_repetition_threshold: 6  # Zoo Code default: 5.
+  max_retries: 1
+  # kickstart_threshold: 5        # ⚡ Kickstart (disabled for Cline:
+                                  # Cline rarely idles due to diff-based tool use)
+  kickstart_write_tools:            # Tools that count as "write progress" for Fairy Dust
+    - write_to_file
+    - replace_in_file
+    - execute_command
+    - insert_code_block
+    - create_file
+    - write_file
+    - edit_file
+    - apply_diff
+    - run_command
+    - run_terminal_command
+    - bash
+
+# =============================================================================
+# 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
+# =============================================================================
+tiers:
+  # ---------------------------------------------------------------------------
+  # TIER 1: Local GPU Workhorse (Devstral Small 24B) - 100% VRAM Offload
+  # Devstral handles Cline's XML tool format natively (vs Gemma = JSON function calling).
+  # Lower token ceiling (12k) for tighter VRAM on 16GB RX 6900 XT.
+  # ---------------------------------------------------------------------------
+  - name: "Tier 1: Local GPU Workhorse"
+    provider: "ollama"
+    model: "devstral-small-2:24b"
+    when: "Tokens < 12000 && Retries < 2"
+    max_context: 32000
+
+  # ---------------------------------------------------------------------------
+  # TIER 2: Cloud Workhorse (Gemini 3.7 Flash)
+  # Primary cloud coding tier. Handles Turn 1 (~18k tokens) and all turns up to 100k.
+  # ---------------------------------------------------------------------------
+  - name: "Tier 2: Cloud Workhorse (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "Tokens < 100000 && Retries < 4"
+
+  # ---------------------------------------------------------------------------
+  # TIER 3: Large Context Synthesis (Gemini 3.1 Pro)
+  # ---------------------------------------------------------------------------
+  - name: "Tier 3: Large Context Synthesis (Gemini 3.1 Pro)"
+    provider: "openrouter"
+    model: "google/gemini-3.1-pro-preview"
+    when: "Retries < 6"
+
+  # ---------------------------------------------------------------------------
+  # TIER 4: Frontier Powerhouse (Claude Sonnet 5)
+  # ---------------------------------------------------------------------------
+  - name: "Tier 4: Frontier Powerhouse (Claude Sonnet 5)"
+    provider: "openrouter"
+    model: "anthropic/claude-sonnet-5"
+    when: "Retries < 8"
+
+  # ---------------------------------------------------------------------------
+  # TIER 5: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
+  # Opus is never auto-selected. Access via: X-Spicy-Model: anthropic/claude-opus-5
+  # Also invoked by Fairy Dusting (Strategic Architecture Review, max 2/session).
+  # ---------------------------------------------------------------------------
+  - name: "Tier 5: Opus On-Demand (Spicy Only)"
+    provider: "openrouter"
+    model: "anthropic/claude-opus-5"
+    when: "false"
+
+# =============================================================================
+# 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Claude Sonnet 5)
+# Sonnet at $3/$15 per 1M is the safety net. Even a 37-turn runaway costs ~$2.50
+# instead of $12.65 with Opus. Opus is still available via Fairy Dust & 🌶️ Spicy.
+# =============================================================================
+default_tier:
+  name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
+  provider: "openrouter"
+  model: "anthropic/claude-sonnet-5"
+  when: "true"
+
+
+
+
+# =============================================================================
+# FAIRY DUSTING - Proactive Frontier Quality Checkpoints
+# Periodically routes a turn to a frontier model for a layered quality review.
+# Multiple independent entries fire at their own cadence; highest priority wins
+# when two entries trigger on the same write-progress turn.
+# =============================================================================
+fairy_dust:
+  enabled: true
+  entries:
+    # -------------------------------------------------------------------------
+    # Tactical Code Review (Claude Sonnet 5)
+    # Frequent, cost-effective checks for concrete bugs, type errors, ESM issues.
+    # At frequency=15 with ~90 write turns per run -> fires ~6 times.
+    # -------------------------------------------------------------------------
+    - name: "Tactical Code Review"
+      model: "anthropic/claude-sonnet-5"
+      provider: "openrouter"
+      frequency: 15
+      max_per_session: 5
+      priority: 10
+      prompt: >
+        [QUALITY CHECKPOINT - Tactical Review] You are a senior code reviewer
+        consulted mid-flight. Analyze the current codebase for: (1) logic bugs
+        and incorrect calculations, (2) TypeScript/ESM compilation errors (missing
+        .js extensions, type mismatches, missing imports), (3) test failures or
+        broken assertions. Fix any issues immediately with tool calls. If
+        everything looks correct, confirm and continue the current task.
+
+    # -------------------------------------------------------------------------
+    # Strategic Architecture Review (Claude Opus 5)
+    # Rare, deep review of overall direction and requirement alignment.
+    # At frequency=40 with ~90 write turns per run -> fires ~2 times.
+    # -------------------------------------------------------------------------
+    - name: "Strategic Architecture Review"
+      model: "anthropic/claude-opus-5"
+      provider: "openrouter"
+      frequency: 40
+      max_per_session: 2
+      priority: 100
+      prompt: >
+        [QUALITY CHECKPOINT - Architecture Review] You are the lead architect
+        consulted for a strategic review. Evaluate: (1) Is the agent solving the
+        RIGHT problem? Compare current work against the original requirements.
+        (2) Is the overall architecture sound, or has it drifted into unnecessary
+        complexity? (3) Are there systemic issues (wrong patterns, missing
+        abstractions, repeated mistakes) that tactical fixes won't solve? If you
+        identify strategic drift, restructure the approach. If the trajectory is
+        correct, confirm the direction and continue.

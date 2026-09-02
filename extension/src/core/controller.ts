@@ -41,6 +41,9 @@ export class ExtensionController {
 		this.activePreset = this.context.globalState?.get<'standard' | 'zoo' | 'cline'>('nachoFlow_activePreset', 'standard') || 'standard';
 		this.statusBar.setActivePreset(this.activePreset);
 
+		// Ensure global preset templates are available
+		await this.ensureGlobalPresets();
+
 		const savedInterval = this.context.globalState?.get<number>('nachoFlow_routesRefreshInterval');
 		this.routesRefreshInterval = (typeof savedInterval !== 'undefined' ? savedInterval : 60) as RefreshIntervalSeconds;
 
@@ -999,31 +1002,86 @@ export class ExtensionController {
 		}
 	}
 
-	private async hotSwapPreset(presetId: 'standard' | 'zoo' | 'cline'): Promise<void> {
+	private async ensureGlobalPresets(): Promise<void> {
+		if (!this.context.globalStorageUri || !this.context.extensionUri) return;
+		const presetsDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'presets');
+		try {
+			await vscode.workspace.fs.createDirectory(presetsDir);
+		} catch (_) {}
+
+		const presets = ['config.yaml', 'config.zoo.yaml', 'config.cline.yaml'];
+		for (const filename of presets) {
+			const targetUri = vscode.Uri.joinPath(presetsDir, filename);
+			try {
+				await vscode.workspace.fs.stat(targetUri);
+			} catch {
+				// File does not exist in global storage yet, copy from bundled presets
+				try {
+					const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'presets', filename);
+					const data = await vscode.workspace.fs.readFile(templateUri);
+					await vscode.workspace.fs.writeFile(targetUri, data);
+				} catch (err) {
+					console.error(`Failed to copy preset template ${filename}:`, err);
+				}
+			}
+		}
+	}
+
+	private async resolvePresetUri(presetId: 'standard' | 'zoo' | 'cline'): Promise<{ uri: vscode.Uri; isWorkspace: boolean }> {
 		const fileMap: Record<string, string> = {
 			standard: 'config.yaml',
 			zoo: 'config.zoo.yaml',
 			cline: 'config.cline.yaml'
 		};
-		const filename = fileMap[presetId];
+		const filename = fileMap[presetId] || 'config.yaml';
 
-		// 1. Find the workspace file
+		// 1. Check workspace folders first (workspace-level override)
 		const workspaceFolders = vscode.workspace.workspaceFolders;
-		if (!workspaceFolders || workspaceFolders.length === 0) {
-			vscode.window.showErrorMessage('Nacho Flow: No workspace folder open — cannot locate preset files.');
-			return;
+		if (workspaceFolders && workspaceFolders.length > 0) {
+			for (const folder of workspaceFolders) {
+				const wsPresetUri = vscode.Uri.joinPath(folder.uri, filename);
+				try {
+					await vscode.workspace.fs.stat(wsPresetUri);
+					return { uri: wsPresetUri, isWorkspace: true };
+				} catch (_) {}
+			}
 		}
 
-		const presetUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filename);
+		// 2. Check globalStorageUri (persistent user presets across any workspace)
+		if (this.context.globalStorageUri) {
+			const globalPresetUri = vscode.Uri.joinPath(this.context.globalStorageUri, 'presets', filename);
+			try {
+				await vscode.workspace.fs.stat(globalPresetUri);
+				return { uri: globalPresetUri, isWorkspace: false };
+			} catch (_) {
+				await this.ensureGlobalPresets();
+				try {
+					await vscode.workspace.fs.stat(globalPresetUri);
+					return { uri: globalPresetUri, isWorkspace: false };
+				} catch (_) {}
+			}
+		}
+
+		// 3. Fallback to bundled template in extension resources
+		if (this.context.extensionUri) {
+			const bundledUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'presets', filename);
+			return { uri: bundledUri, isWorkspace: false };
+		}
+
+		// 4. Ultimate fallback to local path
+		return { uri: vscode.Uri.file(filename), isWorkspace: false };
+	}
+
+	private async hotSwapPreset(presetId: 'standard' | 'zoo' | 'cline'): Promise<void> {
+		const { uri: presetUri, isWorkspace } = await this.resolvePresetUri(presetId);
 		let yamlContent: string;
 
 		try {
 			const fileBytes = await vscode.workspace.fs.readFile(presetUri);
 			yamlContent = Buffer.from(fileBytes).toString('utf8');
-		} catch {
+		} catch (err: any) {
 			vscode.window.showErrorMessage(
-				`Nacho Flow: Preset file "${filename}" not found in workspace. ` +
-				`Expected at: ${presetUri.fsPath}`
+				`Nacho Flow: Preset file "${presetUri.fsPath || presetUri.path}" could not be read: ${err.message || err}`
 			);
 			return;
 		}
@@ -1052,28 +1110,21 @@ export class ExtensionController {
 			zoo: '🤖 Zoo Code',
 			cline: '🛠️ Cline'
 		};
-		this.showTransientToast(`🌮 Switched to ${presetLabels[presetId]} routing preset!`);
+		const locationHint = isWorkspace ? ' (Workspace Override)' : '';
+		this.showTransientToast(`🌮 Switched to ${presetLabels[presetId]} routing preset${locationHint}!`);
 		await this.loadDashboardData();
 		await this.syncSidebarState();
 	}
 
 	private async editActivePresetFile(): Promise<void> {
-		const fileMap: Record<string, string> = {
-			standard: 'config.yaml',
-			zoo: 'config.zoo.yaml',
-			cline: 'config.cline.yaml'
-		};
-		const filename = fileMap[this.activePreset];
-		const workspaceFolders = vscode.workspace.workspaceFolders;
-		if (!workspaceFolders) return;
-
-		const presetUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filename);
+		await this.ensureGlobalPresets();
+		const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
 		try {
 			const doc = await vscode.workspace.openTextDocument(presetUri);
 			await vscode.window.showTextDocument(doc);
 			this.activeConfigDocUri = presetUri;
-		} catch {
-			vscode.window.showErrorMessage(`Nacho Flow: Could not open ${filename}`);
+		} catch (err: any) {
+			vscode.window.showErrorMessage(`Nacho Flow: Could not open preset file: ${err.message || err}`);
 		}
 	}
 
