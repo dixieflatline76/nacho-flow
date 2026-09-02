@@ -77,7 +77,7 @@ agent_shield:
 cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
   max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
-  max_thinking_tokens: 1500         # Max reasoning tokens before repetition enforcement kicks in
+  max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
   repetition_window: 6              # Sliding n-gram window size (words) for loop detection
   repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
   thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks (higher = more lenient)

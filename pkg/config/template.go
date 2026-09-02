@@ -72,7 +72,7 @@ agent_shield:
 cycle_killer:
   enabled: true
   max_prose_tokens: 4096
-  max_thinking_tokens: 1500
+  max_thinking_tokens: 4096
   repetition_window: 6
   repetition_threshold: 3
   thinking_repetition_threshold: 5

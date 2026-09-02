@@ -86,7 +86,7 @@ agent_shield:
 cycle_killer:
   enabled: true
   max_prose_tokens: 6144       # Zoo Code default: 4096. Cline XML needs more room.
-  max_thinking_tokens: 2000    # Zoo Code default: 1500. Extra planning runway.
+  max_thinking_tokens: 4096    # Extended planning runway (4096 tokens).
   repetition_window: 6
   repetition_threshold: 4      # Zoo Code default: 3. Cline XML is naturally repetitive.
   thinking_repetition_threshold: 6  # Zoo Code default: 5.
