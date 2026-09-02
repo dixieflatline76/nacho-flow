@@ -18,6 +18,7 @@ type RequestContext struct {
 	IsRetry          bool     `json:"is_retry,omitempty"`
 	HasToolProgress  bool     `json:"has_tool_progress,omitempty"`
 	HasWriteProgress bool     `json:"has_write_progress,omitempty"`
+	HasTestProgress  bool     `json:"has_test_progress,omitempty"`
 	HistoryErrors          int      `json:"history_errors,omitempty"`
 	CycleRetries              int      `json:"cycle_retries,omitempty"`
 	CycleBreakerTriggered     bool     `json:"cycle_breaker_triggered,omitempty"`
