@@ -166,6 +166,14 @@ describe('DashboardPanel', () => {
       });
     });
 
+    it('should update active preset', () => {
+      dashboardPanel.updateActivePreset({ label: '🌮 Standard' });
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'updateActivePreset',
+        data: { label: '🌮 Standard' }
+      });
+    });
+
     it('should safely swallow error if postMessage throws when disposed', () => {
       mockWebviewPanel.webview.postMessage.mockImplementationOnce(() => {
         throw new Error('Webview is disposed');

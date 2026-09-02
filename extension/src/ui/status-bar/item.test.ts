@@ -201,6 +201,22 @@ describe('StatusBarManager', () => {
     });
   });
 
+  describe('setActivePreset and setBaseUrl', () => {
+    it('should set active preset and update status bar', () => {
+      statusBarManager.setActivePreset('cline');
+      expect((statusBarManager as any).activePreset).toBe('cline');
+      statusBarManager.setActivePreset('   ');
+      expect((statusBarManager as any).activePreset).toBe('cline');
+    });
+
+    it('should set base url and update status bar', () => {
+      statusBarManager.setBaseUrl('http://127.0.0.1:8000');
+      expect((statusBarManager as any).baseUrl).toBe('http://127.0.0.1:8000');
+      statusBarManager.setBaseUrl('   ');
+      expect((statusBarManager as any).baseUrl).toBe('http://127.0.0.1:8000');
+    });
+  });
+
   describe('dispose', () => {
     it('should dispose the status bar item', () => {
       statusBarManager.dispose();

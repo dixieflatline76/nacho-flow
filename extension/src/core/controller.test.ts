@@ -63,7 +63,8 @@ jest.mock('vscode', () => ({
     fs: {
       stat: jest.fn().mockRejectedValue(new Error('File not found')),
       createDirectory: jest.fn().mockResolvedValue(undefined),
-      writeFile: jest.fn().mockResolvedValue(undefined)
+      writeFile: jest.fn().mockResolvedValue(undefined),
+      readFile: jest.fn().mockResolvedValue(Buffer.from('port: 8000\n'))
     }
   },
   ConfigurationTarget: {
@@ -80,9 +81,15 @@ jest.mock('vscode', () => ({
       path: p,
       toString: () => p
     })),
-    joinPath: jest.fn().mockImplementation((...paths) => ({
-      path: paths.join('/')
-    }))
+    joinPath: jest.fn().mockImplementation((base: any, ...segments: string[]) => {
+      const basePath = base && base.path ? base.path : (base && base.fsPath ? base.fsPath : String(base));
+      const fullPath = (basePath + '/' + segments.join('/')).replace(/\/+/g, '/');
+      return {
+        path: fullPath,
+        fsPath: fullPath,
+        toString: () => fullPath
+      };
+    })
   },
   ViewColumn: {
     One: 1,
@@ -113,16 +120,24 @@ jest.mock('../ui/webview/dashboard', () => ({
     dispose: jest.fn()
   }))
 }));
-jest.mock('../ui/sidebar/sidebar-view-provider', () => ({
-  SidebarViewProvider: Object.assign(
-    jest.fn().mockImplementation(() => ({
-      updateState: jest.fn(),
-      updateEngineStatus: jest.fn(),
-      updateOllamaStatus: jest.fn()
-    })),
-    { viewType: 'nacho-flow.sidebarView' }
-  )
-}));
+jest.mock('../ui/sidebar/sidebar-view-provider', () => {
+  let lastMessageCallback: any;
+  const mockClass: any = Object.assign(
+    jest.fn().mockImplementation((_extensionUri: any, onMessage: any) => {
+      lastMessageCallback = onMessage;
+      return {
+        updateState: jest.fn(),
+        updateEngineStatus: jest.fn(),
+        updateOllamaStatus: jest.fn()
+      };
+    }),
+    {
+      viewType: 'nacho-flow.sidebarView',
+      getLastMessageCallback: () => lastMessageCallback
+    }
+  );
+  return { SidebarViewProvider: mockClass };
+});
 jest.mock('../ui/webview/routes-panel');
 jest.mock('../ui/webview/circuits-panel');
 jest.mock('../ui/webview/config-editor');
@@ -140,6 +155,13 @@ describe('ExtensionController', () => {
       subscriptions: [],
       extensionUri: {
         path: '/test/extension'
+      },
+      globalStorageUri: {
+        path: '/test/globalStorage'
+      },
+      globalState: {
+        get: jest.fn(),
+        update: jest.fn().mockResolvedValue(undefined)
       },
       secrets: {} as any
     } as any;
@@ -1549,6 +1571,245 @@ default_tier:
       (extensionController as any).telemetryPoller = null;
       (extensionController as any).startPeriodicUpdates();
       expect((extensionController as any).telemetryPoller).toBeDefined();
+    });
+  });
+
+  describe('Preset Management and Hot-Swapping', () => {
+    it('should ensure global presets are copied when not existing', async () => {
+      (vscode.workspace.fs.stat as jest.Mock)
+        .mockRejectedValueOnce(new Error('not found'))
+        .mockRejectedValueOnce(new Error('not found'))
+        .mockRejectedValueOnce(new Error('not found'));
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValue(Buffer.from('template data'));
+      (vscode.workspace.fs.writeFile as jest.Mock).mockResolvedValue(undefined);
+
+      await (extensionController as any).ensureGlobalPresets();
+
+      expect(vscode.workspace.fs.createDirectory).toHaveBeenCalled();
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledTimes(3);
+    });
+
+    it('should handle errors when copying global preset template', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      (vscode.workspace.fs.stat as jest.Mock).mockRejectedValueOnce(new Error('not found'));
+      (vscode.workspace.fs.readFile as jest.Mock).mockRejectedValueOnce(new Error('read failed'));
+
+      await (extensionController as any).ensureGlobalPresets();
+
+      expect(consoleSpy).toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+
+    it('should return early from ensureGlobalPresets if URIs are missing', async () => {
+      const origExt = (extensionController as any).context.extensionUri;
+      (extensionController as any).context.extensionUri = undefined;
+      await (extensionController as any).ensureGlobalPresets();
+      (extensionController as any).context.extensionUri = origExt;
+    });
+
+    it('should resolve preset from workspace folder if present', async () => {
+      (vscode.workspace as any).workspaceFolders = [
+        { uri: { path: '/workspace' } }
+      ];
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValueOnce({});
+
+      const res = await (extensionController as any).resolvePresetUri('cline');
+      expect(res.isWorkspace).toBe(true);
+      expect(res.uri.path).toContain('config.cline.yaml');
+    });
+
+    it('should resolve preset from global storage when workspace does not have it', async () => {
+      (vscode.workspace as any).workspaceFolders = [];
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValueOnce({});
+
+      const res = await (extensionController as any).resolvePresetUri('zoo');
+      expect(res.isWorkspace).toBe(false);
+      expect(res.uri.path).toContain('config.zoo.yaml');
+    });
+
+    it('should fallback to bundled presets if globalStorageUri is missing', async () => {
+      (vscode.workspace as any).workspaceFolders = [];
+      const origGlobal = (extensionController as any).context.globalStorageUri;
+      (extensionController as any).context.globalStorageUri = undefined;
+
+      const res = await (extensionController as any).resolvePresetUri('standard');
+      expect(res.isWorkspace).toBe(false);
+      expect(res.uri.path).toContain('resources/presets/config.yaml');
+
+      (extensionController as any).context.globalStorageUri = origGlobal;
+    });
+
+    it('should fallback to Uri.file if extensionUri is also missing', async () => {
+      (vscode.workspace as any).workspaceFolders = [];
+      const origGlobal = (extensionController as any).context.globalStorageUri;
+      const origExt = (extensionController as any).context.extensionUri;
+      (extensionController as any).context.globalStorageUri = undefined;
+      (extensionController as any).context.extensionUri = undefined;
+
+      const res = await (extensionController as any).resolvePresetUri('invalid' as any);
+      expect(res.isWorkspace).toBe(false);
+      expect(res.uri.path).toBe('config.yaml');
+
+      (extensionController as any).context.globalStorageUri = origGlobal;
+      (extensionController as any).context.extensionUri = origExt;
+    });
+
+    it('should hot-swap preset successfully', async () => {
+      const mockRestClient = {
+        updateConfigYaml: jest.fn().mockResolvedValue(undefined)
+      };
+      (extensionController as any).restClient = mockRestClient;
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValueOnce(Buffer.from('port: 8000\n'));
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+
+      const loadDashSpy = jest.spyOn(extensionController as any, 'loadDashboardData').mockResolvedValue(undefined);
+      const syncSidebarSpy = jest.spyOn(extensionController as any, 'syncSidebarState').mockResolvedValue(undefined);
+
+      await (extensionController as any).hotSwapPreset('cline');
+
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledWith('port: 8000\n');
+      expect((extensionController as any).activePreset).toBe('cline');
+      expect(loadDashSpy).toHaveBeenCalled();
+      expect(syncSidebarSpy).toHaveBeenCalled();
+    });
+
+    it('should show error when hot-swap fails to read file', async () => {
+      (vscode.workspace.fs.readFile as jest.Mock).mockRejectedValueOnce(new Error('Permission denied'));
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+
+      await (extensionController as any).hotSwapPreset('zoo');
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('could not be read')
+      );
+    });
+
+    it('should show error when hot-swap has no restClient', async () => {
+      (extensionController as any).restClient = null;
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValueOnce(Buffer.from('port: 8000\n'));
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+
+      await (extensionController as any).hotSwapPreset('standard');
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Not connected to engine')
+      );
+    });
+
+    it('should show error when updateConfigYaml throws during hot-swap', async () => {
+      const mockRestClient = {
+        updateConfigYaml: jest.fn().mockRejectedValueOnce(new Error('Invalid YAML'))
+      };
+      (extensionController as any).restClient = mockRestClient;
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValueOnce(Buffer.from('port: 8000\n'));
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+
+      await (extensionController as any).hotSwapPreset('zoo');
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Hot-swap failed: Invalid YAML')
+      );
+    });
+
+    it('should edit active preset file', async () => {
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      const mockDoc = { uri: { path: '/test/globalStorage/presets/config.yaml' } };
+      (vscode.workspace.openTextDocument as jest.Mock).mockResolvedValueOnce(mockDoc);
+
+      await (extensionController as any).editActivePresetFile();
+
+      expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
+      expect(vscode.window.showTextDocument).toHaveBeenCalledWith(mockDoc);
+      expect((extensionController as any).activeConfigDocUri).toBeDefined();
+    });
+
+    it('should handle error when editing active preset file', async () => {
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.openTextDocument as jest.Mock).mockRejectedValueOnce(new Error('Cannot open file'));
+
+      await (extensionController as any).editActivePresetFile();
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Could not open preset file: Cannot open file')
+      );
+    });
+
+    it('should handle onDidSaveTextDocument when active preset config is saved', async () => {
+      await extensionController.initialize();
+
+      const mockRestClient = {
+        updateConfigYaml: jest.fn().mockResolvedValue(undefined)
+      };
+      (extensionController as any).restClient = mockRestClient;
+      (extensionController as any).activePreset = 'standard';
+
+      // Find save callback registered during initialize()
+      const onSaveCall = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls[0];
+      const saveCallback = onSaveCall ? onSaveCall[0] : null;
+
+      expect(saveCallback).toBeDefined();
+
+      // Case 1: Active preset file matches
+      const matchingDoc = {
+        fileName: '/my/project/config.yaml',
+        uri: { toString: () => 'file:///my/project/config.yaml' },
+        getText: () => 'port: 8000\n'
+      };
+      await saveCallback(matchingDoc);
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledWith('port: 8000\n');
+
+      // Case 2: Unrelated file -> ignored
+      const unrelatedDoc = {
+        fileName: '/my/project/other.ts',
+        uri: { toString: () => 'file:///my/project/other.ts' },
+        getText: () => 'console.log();'
+      };
+      mockRestClient.updateConfigYaml.mockClear();
+      await saveCallback(unrelatedDoc);
+      expect(mockRestClient.updateConfigYaml).not.toHaveBeenCalled();
+
+      // Case 3: Explicit edit target matches activeConfigDocUri
+      (extensionController as any).activeConfigDocUri = { toString: () => 'file:///explicit/custom.yaml' };
+      const explicitDoc = {
+        fileName: '/explicit/custom.yaml',
+        uri: { toString: () => 'file:///explicit/custom.yaml' },
+        getText: () => 'port: 9000\n'
+      };
+      await saveCallback(explicitDoc);
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledWith('port: 9000\n');
+
+      // Case 4: updateConfigYaml throws error
+      mockRestClient.updateConfigYaml.mockRejectedValueOnce(new Error('Daemon unreachable'));
+      await saveCallback(matchingDoc);
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to update config: Daemon unreachable')
+      );
+
+      // Case 5: restClient is null -> returns early
+      (extensionController as any).restClient = null;
+      await saveCallback(matchingDoc);
+    });
+
+    it('should handle sidebar messages for hotSwapPreset and editActivePreset', async () => {
+      await extensionController.initialize();
+
+      const mockSidebarClass = require('../ui/sidebar/sidebar-view-provider').SidebarViewProvider;
+      const onMessage = mockSidebarClass.getLastMessageCallback();
+      expect(onMessage).toBeDefined();
+
+      const hotSwapSpy = jest.spyOn(extensionController as any, 'hotSwapPreset').mockResolvedValue(undefined);
+      const editPresetSpy = jest.spyOn(extensionController as any, 'editActivePresetFile').mockResolvedValue(undefined);
+      const showDashboardSpy = jest.spyOn(extensionController as any, 'showDashboard').mockReturnValue(undefined);
+
+      await onMessage({ command: 'hotSwapPreset', presetId: 'cline' });
+      expect(hotSwapSpy).toHaveBeenCalledWith('cline');
+
+      await onMessage({ command: 'editActivePreset' });
+      expect(editPresetSpy).toHaveBeenCalled();
+
+      await onMessage({ command: 'openDashboard' });
+      expect(showDashboardSpy).toHaveBeenCalled();
+
+      const mockRestClient = { resetCircuit: jest.fn().mockResolvedValue({}) };
+      (extensionController as any).restClient = mockRestClient;
+      await onMessage({ command: 'resetCircuits' });
+      expect(mockRestClient.resetCircuit).toHaveBeenCalled();
     });
   });
 });
