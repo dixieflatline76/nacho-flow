@@ -1,6 +1,7 @@
 # =============================================================================
-# 🌮 NACHO FLOW CONFIGURATION
-# Intelligent Semantic AI Gateway & Multi-Tier Cost Optimizer
+# 🌮 NACHO FLOW CONFIGURATION — ZOO CODE OPTIMIZED (2026 SUB-CENT TIER)
+# Zoo Code uses OpenAI-compatible JSON function calling.
+# Pipeline: Local GPU ($0) -> DeepSeek V4 Flash ($0.05/M) -> Gemini 3.7 Flash -> Sonnet 5
 # =============================================================================
 
 port: 8000
@@ -9,19 +10,10 @@ port: 8000
 # 🔌 LLM PROVIDERS
 # =============================================================================
 providers:
-  # ---------------------------------------------------------------------------
-  # 1. Local GPU Provider (Ollama / vLLM / SGLang)
-  # - Cost: $0.00 / 1M Tokens (100% Free Local Compute)
-  # ---------------------------------------------------------------------------
   ollama:
     base_url: "http://127.0.0.1:11434"
     type: "local"
 
-  # ---------------------------------------------------------------------------
-  # 2. OpenRouter Cloud Gateway
-  # - Role: Global routing to 300+ frontier and open-weight cloud models.
-  # - Secret: Resolves ENV_OPENROUTER_API_KEY from environment.
-  # ---------------------------------------------------------------------------
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
@@ -113,8 +105,7 @@ cycle_killer:
 # =============================================================================
 tiers:
   # ---------------------------------------------------------------------------
-  # ⚡ KICKSTART ESCALATION: Break read-only idle loops with a smarter model
-  # Switched to Gemini 3.7 Flash: ESM-correct, fast, handles 200k context.
+  # ⚡ KICKSTART ESCALATION: Break read-only idle loops with Gemini Flash
   # ---------------------------------------------------------------------------
   - name: "Kickstart Escalation (Gemini 3.7 Flash)"
     provider: "openrouter"
@@ -122,54 +113,60 @@ tiers:
     when: "SessionKickstarted && Retries < 3"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Free (Gemma 4 / Devstral)
+  # TIER 1: Local GPU Workhorse (100% Free VRAM Offload)
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
     model: "gemma4:12b-it-qat"
-    when: "Tokens < 16000 && Retries < 2"
+    when: "Tokens < 20000 && Retries < 2"
     strip_images: false
     max_context: 32000
 
   # ---------------------------------------------------------------------------
-  # TIER 2: Cloud Workhorse (Gemini 3.7 Flash)
-  # Primary cloud coding tier. Handles Turn 1 (~18k tokens) and all turns up to 100k.
+  # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus — $0.65 / $3.25 per 1M)
+  # Dense flagship coder: AST diff precision, ESM/TS compliance, post-compression resilience
   # ---------------------------------------------------------------------------
-  - name: "Tier 2: Cloud Workhorse (Gemini 3.7 Flash)"
+  - name: "Tier 2: Flagship Agent Coder (Qwen3 Coder Plus)"
+    provider: "openrouter"
+    model: "qwen/qwen3-coder-plus"
+    when: "Tokens < 160000 && Retries < 2"
+
+  # ---------------------------------------------------------------------------
+  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash — $0.75 / $3.75 per 1M)
+  # Takes over when Qwen fails a turn (Retries >= 2) or for deep context (>100k)
+  # ---------------------------------------------------------------------------
+  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.7-flash"
-    when: "Tokens < 100000 && Retries < 4"
+    when: "Tokens < 260000 && Retries < 5"
 
   # ---------------------------------------------------------------------------
-  # TIER 3: Large Context Synthesis (Gemini 3.1 Pro)
+  # TIER 4: Large Context Synthesis (Gemini 3.1 Pro)
   # ---------------------------------------------------------------------------
-  - name: "Tier 3: Large Context Synthesis (Gemini 3.1 Pro)"
+  - name: "Tier 4: Large Context Synthesis (Gemini 3.1 Pro)"
     provider: "openrouter"
     model: "google/gemini-3.1-pro-preview"
-    when: "Retries < 6"
+    when: "Retries < 7"
 
   # ---------------------------------------------------------------------------
-  # TIER 4: Frontier Powerhouse (Claude Sonnet 5)
+  # TIER 5: Frontier Powerhouse (Claude Sonnet 5 — $2.00/$10.00 per 1M)
   # ---------------------------------------------------------------------------
-  - name: "Tier 4: Frontier Powerhouse (Claude Sonnet 5)"
+  - name: "Tier 5: Frontier Powerhouse (Claude Sonnet 5)"
     provider: "openrouter"
     model: "anthropic/claude-sonnet-5"
-    when: "Retries < 8"
+    when: "Retries < 9"
 
   # ---------------------------------------------------------------------------
-  # TIER 5: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
-  # Opus is never auto-selected. Access via: X-Spicy-Model: anthropic/claude-opus-5
-  # Also invoked by Fairy Dusting (Strategic Architecture Review, max 2/session).
+  # TIER 6: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
+  # Access via: X-Spicy-Model: anthropic/claude-opus-5 or Fairy Dust Checkpoints
   # ---------------------------------------------------------------------------
-  - name: "Tier 5: Opus On-Demand (Spicy Only)"
+  - name: "Tier 6: Opus On-Demand (Spicy Only)"
     provider: "openrouter"
     model: "anthropic/claude-opus-5"
     when: "false"
 
 # =============================================================================
 # 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Claude Sonnet 5)
-# Sonnet at $3/$15 per 1M is the safety net. Opus is available via Fairy Dust
-# (Strategic Architecture Review, max 2/session) & 🌶️ Spicy directive only.
 # =============================================================================
 default_tier:
   name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
@@ -177,21 +174,13 @@ default_tier:
   model: "anthropic/claude-sonnet-5"
   when: "true"
 
-
 # =============================================================================
 # FAIRY DUSTING - Proactive Frontier Quality Checkpoints
-# Periodically routes a turn to a frontier model for a layered quality review.
-# Multiple independent entries fire at their own cadence; highest priority wins
-# when two entries trigger on the same write-progress turn.
 # =============================================================================
 fairy_dust:
   enabled: true
   entries:
-    # -------------------------------------------------------------------------
-    # Tactical Code Review (Claude Sonnet 5)
-    # Frequent, cost-effective checks for concrete bugs, type errors, ESM issues.
-    # At frequency=15 with ~90 write turns per run -> fires ~6 times.
-    # -------------------------------------------------------------------------
+    # Tactical Code Review (Claude Sonnet 5) — ADVERSARIAL BUG HUNTER
     - name: "Tactical Code Review"
       model: "anthropic/claude-sonnet-5"
       provider: "openrouter"
@@ -199,30 +188,51 @@ fairy_dust:
       max_per_session: 5
       priority: 10
       prompt: >
-        [QUALITY CHECKPOINT - Tactical Review] You are a senior code reviewer
-        consulted mid-flight. Analyze the current codebase for: (1) logic bugs
-        and incorrect calculations, (2) TypeScript/ESM compilation errors (missing
-        .js extensions, type mismatches, missing imports), (3) test failures or
-        broken assertions. Fix any issues immediately with tool calls. If
-        everything looks correct, confirm and continue the current task.
+        [ADVERSARIAL CODE REVIEW] You are a hostile senior reviewer whose job is
+        to FIND BUGS, not confirm correctness. Systematically check for:
+        (1) STUB FUNCTIONS: Methods that accept parameters but silently discard
+        them or return without doing meaningful work (e.g., an Insurance() that
+        never stores the bet). Flag any function where the implementation does
+        not match the contract implied by its signature and docstring.
+        (2) DEAD CODE & UNREACHABLE BRANCHES: Logic that can never execute due
+        to earlier returns, tautological conditions, or short-circuit evaluation.
+        (3) COPY-PASTE DUPLICATION: The same logic (e.g., hand value calculation,
+        soft-hand detection) reimplemented across multiple packages. If found,
+        refactor into a shared utility.
+        (4) OFF-BY-ONE & INDEX BUGS: Array index manipulation after splits,
+        insertions, or deletions. Verify loop bounds and slice operations.
+        (5) STATE MACHINE VIOLATIONS: Recursive state transitions where method A
+        calls method B which transitions state back through A. State machines
+        must be driven by callers, not by recursive internal calls.
+        (6) MISSING ERROR PROPAGATION: Errors caught but swallowed with _ or
+        ignored with empty catch blocks.
+        Fix every issue found with tool calls. Do NOT say "looks good" unless
+        you have verified every function body against its signature contract.
 
-    # -------------------------------------------------------------------------
-    # Strategic Architecture Review (Claude Opus 5)
-    # Rare, deep review of overall direction and requirement alignment.
-    # At frequency=40 with ~90 write turns per run -> fires ~2 times.
-    # -------------------------------------------------------------------------
+    # Strategic Architecture Review (Claude Opus 5) — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
       model: "anthropic/claude-opus-5"
       provider: "openrouter"
-      frequency: 40
-      max_per_session: 2
+      frequency: 60
+      max_per_session: 1
       priority: 100
       prompt: >
-        [QUALITY CHECKPOINT - Architecture Review] You are the lead architect
-        consulted for a strategic review. Evaluate: (1) Is the agent solving the
-        RIGHT problem? Compare current work against the original requirements.
-        (2) Is the overall architecture sound, or has it drifted into unnecessary
-        complexity? (3) Are there systemic issues (wrong patterns, missing
-        abstractions, repeated mistakes) that tactical fixes won't solve? If you
-        identify strategic drift, restructure the approach. If the trajectory is
-        correct, confirm the direction and continue.
+        [SPEC TRACEABILITY AUDIT] You are the QA lead performing a requirements
+        gap analysis. Your job is NOT to review code style — it is to verify
+        that every requirement in the original task prompt has been IMPLEMENTED
+        AND TESTED, not just stubbed. Perform these steps:
+        (1) EXTRACT REQUIREMENTS: Parse the original task/prompt into a numbered
+        checklist of concrete deliverables (e.g., "Monte Carlo simulation running
+        10,000+ hands", "Hi-Lo/KO/Omega II counting", ">= 90% test coverage").
+        (2) TRACE EACH REQUIREMENT: For each item, find the file(s) that implement
+        it. Verify the implementation is FUNCTIONAL, not a stub or no-op. If a
+        method exists but does nothing meaningful, mark it RED.
+        (3) CHECK TEST COVERAGE: For each requirement, verify a corresponding
+        test exists AND exercises the actual logic (not just the happy path).
+        If coverage is below the stated target, write the missing tests.
+        (4) VERIFY NUMERIC CLAIMS: If the spec requires specific outputs (e.g.,
+        house edge within expected range, correct payout ratios), run or trace
+        the calculations to confirm they produce correct results.
+        (5) REPORT: List each requirement as GREEN (implemented + tested),
+        YELLOW (implemented but untested), or RED (missing/stubbed). Fix all
+        RED items with tool calls before continuing.
