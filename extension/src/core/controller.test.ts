@@ -108,6 +108,7 @@ jest.mock('../ui/webview/dashboard', () => ({
     updateCircuits: jest.fn(),
     updateConfig: jest.fn(),
     updateOptimization: jest.fn(),
+    updateActivePreset: jest.fn(),
     onDidChangeViewState: jest.fn().mockReturnValue({ dispose: jest.fn() }),
     dispose: jest.fn()
   }))
@@ -264,7 +265,7 @@ describe('ExtensionController', () => {
       expect(mockRestClient.updateConfigYaml).toHaveBeenCalledWith('port: 8000');
       expect(loadDashboardSpy).toHaveBeenCalled();
       expect(vscode.window.withProgress).toHaveBeenCalledWith(
-        expect.objectContaining({ title: expect.stringContaining('Configuration updated') }),
+        expect.objectContaining({ title: expect.stringContaining('hot-reloaded') }),
         expect.any(Function)
       );
 
@@ -339,6 +340,7 @@ describe('ExtensionController', () => {
         updateRoutes: jest.fn(),
         updateCircuits: jest.fn(),
         updateConfig: jest.fn(),
+        updateActivePreset: jest.fn(),
         dispose: jest.fn()
       };
       const mockRestClient = {

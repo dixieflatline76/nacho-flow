@@ -130,10 +130,10 @@ tiers:
     max_context: 32000
 
   # ---------------------------------------------------------------------------
-  # TIER 2: ESM Bridge & Cloud Fast (Gemini 3.7 Flash)
-  # Handles Turn 1, ESM project scaffolding, and early turns up to 100k
+  # TIER 2: Cloud Workhorse (Gemini 3.7 Flash)
+  # Primary cloud coding tier. Handles Turn 1 (~18k tokens) and all turns up to 100k.
   # ---------------------------------------------------------------------------
-  - name: "Tier 2: ESM Bridge (Gemini 3.7 Flash)"
+  - name: "Tier 2: Cloud Workhorse (Gemini 3.7 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.7-flash"
     when: "Tokens < 100000 && Retries < 4"

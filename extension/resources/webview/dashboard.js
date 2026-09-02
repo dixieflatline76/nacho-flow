@@ -36,6 +36,9 @@
 					window.setRoutesRefreshInterval(message.data.interval, false);
 				}
 				break;
+			case 'updateActivePreset':
+				updateActivePreset(message.data);
+				break;
 		}
 	});
 
@@ -427,6 +430,13 @@
 				${dealCards}
 			</div>
 		`;
+	}
+
+	function updateActivePreset(data) {
+		const badge = document.getElementById('active-preset-badge');
+		if (badge && data && data.label) {
+			badge.textContent = '\ud83d\udccb ' + data.label;
+		}
 	}
 
 	function updateOptimization(optData) {

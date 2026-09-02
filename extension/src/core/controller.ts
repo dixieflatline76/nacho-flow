@@ -25,6 +25,7 @@ export class ExtensionController {
 	private telemetryPoller: TelemetryPoller | null = null;
 	private activeTimeWindow: string = 'all_time';
 	private routesRefreshInterval: RefreshIntervalSeconds = 60;
+	private activePreset: 'standard' | 'zoo' | 'cline' = 'standard';
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
@@ -37,6 +38,8 @@ export class ExtensionController {
 		// Load persisted preferences
 		this.activeTimeWindow = this.context.globalState?.get<string>('nachoFlow_timeWindow', 'all_time') || 'all_time';
 		this.statusBar.setTimeWindow(this.activeTimeWindow);
+		this.activePreset = this.context.globalState?.get<'standard' | 'zoo' | 'cline'>('nachoFlow_activePreset', 'standard') || 'standard';
+		this.statusBar.setActivePreset(this.activePreset);
 
 		const savedInterval = this.context.globalState?.get<number>('nachoFlow_routesRefreshInterval');
 		this.routesRefreshInterval = (typeof savedInterval !== 'undefined' ? savedInterval : 60) as RefreshIntervalSeconds;
@@ -52,15 +55,28 @@ export class ExtensionController {
 		// Register Activity Bar Sidebar View Provider
 		this.registerSidebarProvider();
 
-		// Auto-sync configuration to daemon when config is saved
+		// Auto-sync configuration to daemon when config is saved (preset-aware guard)
 		this.context.subscriptions.push(
 			vscode.workspace.onDidSaveTextDocument(async (doc) => {
-				const isConfigDoc = (this.activeConfigDocUri && doc.uri.toString() === this.activeConfigDocUri.toString()) ||
-					doc.fileName.endsWith('config.yaml');
-				if (isConfigDoc && this.restClient) {
+				if (!this.restClient) return;
+
+				// Map active preset to its expected filename
+				const presetFileMap: Record<string, string> = {
+					standard: 'config.yaml',
+					zoo: 'config.zoo.yaml',
+					cline: 'config.cline.yaml'
+				};
+				const activeFilename = presetFileMap[this.activePreset];
+
+				// Only auto-push if the saved file matches the active preset, or it was explicitly opened via Edit YAML
+				const isActivePresetFile = doc.fileName.replace(/\\/g, '/').endsWith('/' + activeFilename);
+				const isExplicitEditTarget = this.activeConfigDocUri &&
+					doc.uri.toString() === this.activeConfigDocUri.toString();
+
+				if (isActivePresetFile || isExplicitEditTarget) {
 					try {
 						await this.restClient.updateConfigYaml(doc.getText());
-						this.showTransientToast('🌮 Nacho Flow: Configuration updated and hot-reloaded!');
+						this.showTransientToast(`🌮 Nacho Flow: ${activeFilename} updated and hot-reloaded!`);
 						await this.loadDashboardData();
 						await this.syncSidebarState();
 					} catch (err: any) {
@@ -306,6 +322,16 @@ export class ExtensionController {
 					case 'openDashboard':
 						this.showDashboard();
 						break;
+					case 'hotSwapPreset': {
+						const presetId = message.presetId as 'standard' | 'zoo' | 'cline';
+						if (presetId) {
+							await this.hotSwapPreset(presetId);
+						}
+						break;
+					}
+					case 'editActivePreset':
+						await this.editActivePresetFile();
+						break;
 				}
 			}
 		);
@@ -414,13 +440,18 @@ export class ExtensionController {
 		const remoteUrl = this.authManager.getRemoteUrl();
 		const remoteToken = await this.authManager.getRemoteToken();
 
+		// Sync base URL and active preset to status bar
+		this.statusBar.setBaseUrl(baseUrl);
+		this.statusBar.setActivePreset(this.activePreset);
+
 		this.sidebarProvider.updateState({
 			engineMode,
 			remoteUrl,
 			token: remoteToken || '',
 			hasToken: !!token,
 			engineStatus,
-			providers
+			providers,
+			activePreset: this.activePreset
 		});
 	}
 
@@ -431,6 +462,10 @@ export class ExtensionController {
 		this.restClient = new RestClient(baseUrl, authToken);
 		this.sseClient = new SSEClient(baseUrl, authToken);
 		this.sseClient.connect();
+
+		// Sync base URL to status bar on client init
+		this.statusBar.setBaseUrl(baseUrl);
+		this.statusBar.setActivePreset(this.activePreset);
 		
 		// Setup SSE event handlers
 		this.setupSSEHandlers();
@@ -964,6 +999,84 @@ export class ExtensionController {
 		}
 	}
 
+	private async hotSwapPreset(presetId: 'standard' | 'zoo' | 'cline'): Promise<void> {
+		const fileMap: Record<string, string> = {
+			standard: 'config.yaml',
+			zoo: 'config.zoo.yaml',
+			cline: 'config.cline.yaml'
+		};
+		const filename = fileMap[presetId];
+
+		// 1. Find the workspace file
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (!workspaceFolders || workspaceFolders.length === 0) {
+			vscode.window.showErrorMessage('Nacho Flow: No workspace folder open — cannot locate preset files.');
+			return;
+		}
+
+		const presetUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filename);
+		let yamlContent: string;
+
+		try {
+			const fileBytes = await vscode.workspace.fs.readFile(presetUri);
+			yamlContent = Buffer.from(fileBytes).toString('utf8');
+		} catch {
+			vscode.window.showErrorMessage(
+				`Nacho Flow: Preset file "${filename}" not found in workspace. ` +
+				`Expected at: ${presetUri.fsPath}`
+			);
+			return;
+		}
+
+		// 2. Push to engine via API
+		if (!this.restClient) {
+			vscode.window.showErrorMessage('Nacho Flow: Not connected to engine — cannot hot-swap.');
+			return;
+		}
+
+		try {
+			await this.restClient.updateConfigYaml(yamlContent);
+		} catch (err: any) {
+			vscode.window.showErrorMessage(`Nacho Flow: Hot-swap failed: ${err.message || err}`);
+			return;
+		}
+
+		// 3. Persist active preset and update state
+		this.activePreset = presetId;
+		await this.context.globalState?.update('nachoFlow_activePreset', presetId);
+		this.statusBar.setActivePreset(this.activePreset);
+
+		// 4. Refresh UI
+		const presetLabels: Record<string, string> = {
+			standard: '🌮 Standard',
+			zoo: '🤖 Zoo Code',
+			cline: '🛠️ Cline'
+		};
+		this.showTransientToast(`🌮 Switched to ${presetLabels[presetId]} routing preset!`);
+		await this.loadDashboardData();
+		await this.syncSidebarState();
+	}
+
+	private async editActivePresetFile(): Promise<void> {
+		const fileMap: Record<string, string> = {
+			standard: 'config.yaml',
+			zoo: 'config.zoo.yaml',
+			cline: 'config.cline.yaml'
+		};
+		const filename = fileMap[this.activePreset];
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (!workspaceFolders) return;
+
+		const presetUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filename);
+		try {
+			const doc = await vscode.workspace.openTextDocument(presetUri);
+			await vscode.window.showTextDocument(doc);
+			this.activeConfigDocUri = presetUri;
+		} catch {
+			vscode.window.showErrorMessage(`Nacho Flow: Could not open ${filename}`);
+		}
+	}
+
 	private async loadDashboardData(manual: boolean = false): Promise<void> {
 		if (!this.restClient || !this.dashboardPanel) return;
 		
@@ -1005,6 +1118,16 @@ export class ExtensionController {
 		try {
 			await this.syncSidebarState();
 		} catch (_) {}
+
+		// Push active preset label to dashboard
+		if (this.dashboardPanel) {
+			const presetLabels: Record<string, string> = {
+				standard: '🌮 Standard',
+				zoo: '🤖 Zoo Code',
+				cline: '🛠️ Cline'
+			};
+			this.dashboardPanel.updateActivePreset({ label: presetLabels[this.activePreset] || this.activePreset });
+		}
 
 		if (manual) {
 			this.showTransientToast('🔄 Nacho Flow: Telemetry & dashboard refreshed');

@@ -193,6 +193,23 @@ input[type="password"]:focus {
 	border-color: var(--vscode-focusBorder, #007acc);
 }
 
+select {
+	flex: 1;
+	background: var(--vscode-input-background, #1e1e1e);
+	color: var(--vscode-input-foreground, #ccc);
+	border: 1px solid var(--vscode-input-border, #3c3c3c);
+	border-radius: 4px;
+	padding: 5px 8px;
+	font-size: 12px;
+	font-family: var(--vscode-font-family, sans-serif);
+	outline: none;
+	cursor: pointer;
+}
+
+select:focus {
+	border-color: var(--vscode-focusBorder, #007acc);
+}
+
 /* Buttons */
 .btn {
 	background: var(--vscode-button-background, #0e639c);

@@ -4,6 +4,14 @@ export class StatusBarManager {
 	private item: vscode.StatusBarItem;
 	private stats: any = null;
 	private timeWindow: string = 'all_time';
+	private baseUrl: string = 'http://127.0.0.1:8000';
+	private activePreset: string = 'standard';
+
+	private static readonly PRESET_LABELS: Record<string, string> = {
+		standard: '🌮 Standard',
+		zoo: '🤖 Zoo Code',
+		cline: '🛠️ Cline',
+	};
 
 	constructor() {
 		this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -18,6 +26,20 @@ export class StatusBarManager {
 
 	public getTimeWindow(): string {
 		return this.timeWindow;
+	}
+
+	public setBaseUrl(baseUrl: string): void {
+		if (baseUrl && baseUrl.trim() !== '') {
+			this.baseUrl = baseUrl.trim();
+			this.updateStatusBar();
+		}
+	}
+
+	public setActivePreset(preset: string): void {
+		if (preset && preset.trim() !== '') {
+			this.activePreset = preset.trim();
+			this.updateStatusBar();
+		}
 	}
 
 	public updateStats(stats: any): void {
@@ -135,6 +157,7 @@ export class StatusBarManager {
 		}
 
 		const m = metrics || this.extractMetricsForTimeWindow();
+		const presetLabel = StatusBarManager.PRESET_LABELS[this.activePreset] || this.activePreset;
 		
 		md.appendMarkdown(`**🌮 Nacho Flow** • Smart Hybrid AI Gateway\n\n`);
 		md.appendMarkdown(`🕒 **Timeframe**: ${m.timeframeTitle}\n\n`);
@@ -144,6 +167,7 @@ export class StatusBarManager {
 		md.appendMarkdown(`⚡ **Local GPU ($0.00)**: \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)*\n\n`);
 		md.appendMarkdown(`🪙 **Total Prompt Turns**: \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)*\n\n`);
 		md.appendMarkdown(`🛣️ **Routing Engine**: \`${this.getBaseUrl()}\`\n\n`);
+		md.appendMarkdown(`📋 **Active Preset**: \`${presetLabel}\`\n\n`);
 		md.appendMarkdown(`---\n\n`);
 		md.appendMarkdown(`Switch: [Today](command:nacho-flow.setTimeWindowToday) &nbsp;|&nbsp; [Yesterday](command:nacho-flow.setTimeWindowYesterday) &nbsp;|&nbsp; [This Week](command:nacho-flow.setTimeWindowWeek) &nbsp;|&nbsp; [This Month](command:nacho-flow.setTimeWindowMonth) &nbsp;|&nbsp; [All Time](command:nacho-flow.setTimeWindowAllTime)\n\n`);
 		md.appendMarkdown(`---\n\n`);
@@ -157,6 +181,6 @@ export class StatusBarManager {
 	}
 
 	private getBaseUrl(): string {
-		return vscode.workspace.getConfiguration('nachoFlow').get('daemonUrl', 'http://127.0.0.1:8000');
+		return this.baseUrl;
 	}
 }
