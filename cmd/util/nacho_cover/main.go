@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -27,22 +28,22 @@ type ExtensionCoverage struct {
 }
 
 var packageDescriptions = map[string]string{
-	"pkg/strategy":           "`expr` AST Routing Engine & Bytecode Evaluator",
-	"pkg/config":             "Atomic RCU Config Loader & Memento Watchdog",
-	"pkg/router/shield":      "Sliding Tail Buffer, Rule Engine & Tool Schema Adapters",
-	"pkg/provider":           "Upstream Inference Engine Registry & Endpoints",
-	"pkg/tuner":              "Autonomous AST Rule Synthesizer & Empirical Tuner",
-	"pkg/store":              "Stats Persistence & File Locking Engine",
-	"pkg/telemetry/curation": "Pricing Curation Manager & Model Catalog Cache",
-	"cmd/util/version_bump":  "Version Bump CLI Tool",
+	"pkg/strategy":            "`expr` AST Routing Engine & Bytecode Evaluator",
+	"pkg/config":              "Atomic RCU Config Loader & Memento Watchdog",
+	"pkg/router/shield":       "Sliding Tail Buffer, Rule Engine & Tool Schema Adapters",
+	"pkg/provider":            "Upstream Inference Engine Registry & Endpoints",
+	"pkg/tuner":               "Autonomous AST Rule Synthesizer & Empirical Tuner",
+	"pkg/store":               "Stats Persistence & File Locking Engine",
+	"pkg/telemetry/curation":  "Pricing Curation Manager & Model Catalog Cache",
+	"cmd/util/version_bump":   "Version Bump CLI Tool",
 	"cmd/util/nacho_releaser": "Releaser & WinGet Manifest Generator",
-	"cmd/util/gen_catalog":   "Catalog Cache Generator",
-	"pkg/telemetry":          "Ring Buffer, Dual Financial Telemetry & Stats Tracker",
-	"pkg/router":             "Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline",
-	"pkg/server":             "Reverse Proxy Director, SSE Stream Normalizer & Management API",
-	"cmd/nacho-flow":         "Main CLI Entrypoint, Subcommands & Daemon Init",
-	"pkg/safeio":             "Safe Bounded Directory Root I/O Operations",
-	"pkg/contract":           "Core Architectural Contracts, Request Context & Data Models",
+	"cmd/util/gen_catalog":    "Catalog Cache Generator",
+	"pkg/telemetry":           "Ring Buffer, Dual Financial Telemetry & Stats Tracker",
+	"pkg/router":              "Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline",
+	"pkg/server":              "Reverse Proxy Director, SSE Stream Normalizer & Management API",
+	"cmd/nacho-flow":          "Main CLI Entrypoint, Subcommands & Daemon Init",
+	"pkg/safeio":              "Safe Bounded Directory Root I/O Operations",
+	"pkg/contract":            "Core Architectural Contracts, Request Context & Data Models",
 }
 
 func replaceTagContent(doc, startTag, endTag, replacement string) string {
@@ -147,7 +148,9 @@ func parseJestCoverage(output string) (ExtensionCoverage, error) {
 }
 
 func updateTargetFile(path, goTable, extTable, summary string) error {
-	contentBytes, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	// #nosec G304 - path targets fixed documentation files within repository
+	contentBytes, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return err
 	}
@@ -157,7 +160,8 @@ func updateTargetFile(path, goTable, extTable, summary string) error {
 	content = replaceTagContent(content, "<!-- COVERAGE:EXTENSION_TABLE_START -->", "<!-- COVERAGE:EXTENSION_TABLE_END -->", extTable)
 	content = replaceTagContent(content, "<!-- COVERAGE:SUMMARY_START -->", "<!-- COVERAGE:SUMMARY_END -->", summary)
 
-	return os.WriteFile(path, []byte(content), 0644)
+	// #nosec G306, G703 - documentation markdown files require standard 0644 read/write
+	return os.WriteFile(cleanPath, []byte(content), 0644)
 }
 
 func runGoCoverage() ([]PackageCoverage, float64, error) {

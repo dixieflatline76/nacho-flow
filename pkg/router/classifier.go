@@ -32,8 +32,6 @@ var defaultAgentErrorSignatures = []string{
 	"Command not executed:",
 }
 
-
-
 // NewClassifier initializes a default RequestClassifier with an adaptive TokenEstimator.
 func NewClassifier() contract.Classifier {
 	return NewClassifierWithEstimator(NewTokenEstimator())
@@ -119,6 +117,27 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	if tools, ok := raw["tools"].([]interface{}); ok && len(tools) > 0 {
 		reqCtx.HasTools = true
 		reqCtx.InteractiveTool = ExtractSupportedInteractiveTool(tools)
+
+		// 1.1 Scan tools schema for write capability (kickstart plan-mode guard)
+		writeLookup := c.GetKickstartWriteTools()
+		if len(writeLookup) > 0 {
+			for _, t := range tools {
+				tMap, ok := t.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				var fnName string
+				if fnMap, ok := tMap["function"].(map[string]interface{}); ok {
+					fnName, _ = fnMap["name"].(string)
+				} else if n, ok := tMap["name"].(string); ok {
+					fnName = n
+				}
+				if writeLookup[strings.ToLower(strings.TrimSpace(fnName))] {
+					reqCtx.HasWriteCapability = true
+					break
+				}
+			}
+		}
 	}
 
 	// 2. Parse messages to extract prompt, keywords, image flags, and history errors

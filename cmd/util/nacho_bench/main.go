@@ -444,7 +444,9 @@ func parseMicroBenchOutput(out string) []MicroBenchResult {
 }
 
 func updateTargetDocFile(path, execSummary, stressTable, abTable, microTable, heroStats string) error {
-	contentBytes, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	// #nosec G304 - path targets fixed documentation files within repository
+	contentBytes, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return err
 	}
@@ -466,7 +468,8 @@ func updateTargetDocFile(path, execSummary, stressTable, abTable, microTable, he
 		content = replaceTagContent(content, "<!-- BENCHMARK:HERO_STATS_START -->", "<!-- BENCHMARK:HERO_STATS_END -->", heroStats)
 	}
 
-	return os.WriteFile(path, []byte(content), 0644)
+	// #nosec G306, G703 - documentation markdown files require standard 0644 read/write
+	return os.WriteFile(cleanPath, []byte(content), 0644)
 }
 
 func main() {

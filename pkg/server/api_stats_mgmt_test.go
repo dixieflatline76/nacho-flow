@@ -835,9 +835,6 @@ type plainWriter struct {
 	buf    bytes.Buffer
 }
 
-func (p *plainWriter) Header() http.Header { return p.header }
+func (p *plainWriter) Header() http.Header         { return p.header }
 func (p *plainWriter) Write(b []byte) (int, error) { return p.buf.Write(b) }
-func (p *plainWriter) WriteHeader(status int) { p.status = status }
-
-
-
+func (p *plainWriter) WriteHeader(status int)      { p.status = status }

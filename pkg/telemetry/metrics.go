@@ -48,12 +48,12 @@ type TimeWindowSnapshot struct {
 
 // CycleKillerMetrics captures cumulative defense telemetry for loop-severing interventions.
 type CycleKillerMetrics struct {
-	TotalInterventions        int64   `json:"total_interventions"`
-	AvoidedRunawayTokens      int64   `json:"avoided_runaway_tokens"`
-	AvoidedGPUSeconds         int64   `json:"avoided_gpu_seconds"`
-	Stage1LocalHeals          int64   `json:"stage1_local_heals"`
-	Stage2CloudEscalations    int64   `json:"stage2_cloud_escalations"`
-	SessionKickstarts         int64   `json:"session_kickstarts"`
+	TotalInterventions     int64 `json:"total_interventions"`
+	AvoidedRunawayTokens   int64 `json:"avoided_runaway_tokens"`
+	AvoidedGPUSeconds      int64 `json:"avoided_gpu_seconds"`
+	Stage1LocalHeals       int64 `json:"stage1_local_heals"`
+	Stage2CloudEscalations int64 `json:"stage2_cloud_escalations"`
+	SessionKickstarts      int64 `json:"session_kickstarts"`
 	// LocalHealSuccessRatePct is computed on read in GetStats(), never stored to disk.
 	// It is included here solely for JSON serialization to the /v1/stats REST endpoint.
 	LocalHealSuccessRatePct float64 `json:"local_heal_success_rate_pct,omitempty"`
@@ -84,25 +84,25 @@ type StatsSnapshot struct {
 
 // Observation encapsulates metrics captured from a single completed proxy request.
 type Observation struct {
-	Tier               int
-	TierName           string
-	Model              string
-	Provider           string
-	Tokens             int
-	CostSpent          float64
-	CostSaved          float64
-	IsLocal            bool
-	IsFallback         bool
-	IsExplicitOverride bool
-	LatencyMs          float64
-	Keywords           []string
-	HasImages          bool
-	HasTools           bool
-	StatusCode         int
-	IsRetry            bool
-	ForcedTier            string
-	ForcedModel           string
-	DirectiveUsed         string
+	Tier                      int
+	TierName                  string
+	Model                     string
+	Provider                  string
+	Tokens                    int
+	CostSpent                 float64
+	CostSaved                 float64
+	IsLocal                   bool
+	IsFallback                bool
+	IsExplicitOverride        bool
+	LatencyMs                 float64
+	Keywords                  []string
+	HasImages                 bool
+	HasTools                  bool
+	StatusCode                int
+	IsRetry                   bool
+	ForcedTier                string
+	ForcedModel               string
+	DirectiveUsed             string
 	CycleBreakerTriggered     bool
 	CycleBreakerReason        string
 	CycleProseTokens          int
@@ -518,24 +518,24 @@ func (s *StatsTracker) worker() {
 		sinksPtr := s.sinks.Load()
 		if sinksPtr != nil && len(*sinksPtr) > 0 {
 			record := TurnRecord{
-				Timestamp:     observedAt,
-				Tokens:        obs.Tokens,
-				HasImages:     obs.HasImages,
-				HasTools:      obs.HasTools,
-				Keywords:      obs.Keywords,
-				SelectedTier:  obs.TierName,
-				TargetModel:   obs.Model,
-				Provider:      obs.Provider,
-				IsLocal:       obs.IsLocal,
-				IsFallback:    obs.IsFallback,
-				LatencyMs:     obs.LatencyMs,
-				StatusCode:    obs.StatusCode,
-				IsRetry:       obs.IsRetry,
-				CostSavedUSD:  obs.CostSaved,
-				CostSpentUSD:  obs.CostSpent,
-				ForcedTier:            obs.ForcedTier,
-				ForcedModel:           obs.ForcedModel,
-				DirectiveUsed:         obs.DirectiveUsed,
+				Timestamp:                 observedAt,
+				Tokens:                    obs.Tokens,
+				HasImages:                 obs.HasImages,
+				HasTools:                  obs.HasTools,
+				Keywords:                  obs.Keywords,
+				SelectedTier:              obs.TierName,
+				TargetModel:               obs.Model,
+				Provider:                  obs.Provider,
+				IsLocal:                   obs.IsLocal,
+				IsFallback:                obs.IsFallback,
+				LatencyMs:                 obs.LatencyMs,
+				StatusCode:                obs.StatusCode,
+				IsRetry:                   obs.IsRetry,
+				CostSavedUSD:              obs.CostSaved,
+				CostSpentUSD:              obs.CostSpent,
+				ForcedTier:                obs.ForcedTier,
+				ForcedModel:               obs.ForcedModel,
+				DirectiveUsed:             obs.DirectiveUsed,
 				CycleBreakerTriggered:     obs.CycleBreakerTriggered,
 				CycleBreakerReason:        obs.CycleBreakerReason,
 				CycleProseTokens:          obs.CycleProseTokens,

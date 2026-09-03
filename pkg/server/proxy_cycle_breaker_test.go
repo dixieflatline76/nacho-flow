@@ -678,9 +678,9 @@ func TestProxy_Kickstart_WriteOnly_PromptInjection(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:            &enabled,
-			KickstartThreshold: 2,
-			KickstartWriteOnly: true,
+			Enabled:             &enabled,
+			KickstartThreshold:  2,
+			KickstartWriteOnly:  true,
 			KickstartWriteTools: []string{"write_to_file", "replace_in_file", "execute_command"},
 		},
 		Providers: map[string]contract.ProviderConfig{
@@ -798,11 +798,11 @@ func TestProxy_CycleBreaker_AutoEscalationAndCooldown(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
-			Enabled:                     &enabled,
-			MaxThinkingTokens:           10,
-			RepetitionWindow:            20,
-			RepetitionThreshold:         2,
-			MaxRetries:                  0, // sever immediately
+			Enabled:             &enabled,
+			MaxThinkingTokens:   10,
+			RepetitionWindow:    20,
+			RepetitionThreshold: 2,
+			MaxRetries:          0, // sever immediately
 		},
 		Tiers: []contract.Tier{
 			{
@@ -882,7 +882,3 @@ func TestProxy_CycleBreaker_AutoEscalationAndCooldown(t *testing.T) {
 		t.Errorf("Turn 2 expected auto-escalation to Tier 3 Pro, got: %s", tierHeader2)
 	}
 }
-
-
-
-

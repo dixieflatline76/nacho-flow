@@ -397,16 +397,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reqCtx.CleanPrompt = reqCtx.Prompt
 	}
 
-	// 2. Intercept local meta directives (@nacho:help, @nacho:tiers, @nacho:status, @nacho:deals, @nacho:<typo>)
+	sessionKey := extractSessionKey(r)
+	if s.sessionTracker == nil {
+		s.sessionTracker = router.NewSessionTracker(5 * time.Minute)
+	}
+
+	// 2. Intercept local meta directives (@nacho:help, @nacho:tiers, @nacho:status, @nacho:deals, @nacho:toggles, @nacho:reset, @nacho:<standalone_toggle>, @nacho:<typo>)
 	if reqCtx.IsMetaDirective {
 		isStream := strings.Contains(string(body), `"stream":true`) || strings.Contains(string(body), `"stream": true`)
 		env := MetaEnv{
-			Config:        s.GetConfig(),
-			Stats:         s.tracker,
-			Oracle:        s.oracle,
-			Providers:     s.GetRegistry(),
-			StartTime:     s.startTime,
-			DaemonVersion: contract.Version,
+			Config:         s.GetConfig(),
+			Stats:          s.tracker,
+			Oracle:         s.oracle,
+			Providers:      s.GetRegistry(),
+			StartTime:      s.startTime,
+			DaemonVersion:  contract.Version,
+			SessionTracker: s.sessionTracker,
+			SessionKey:     sessionKey,
 		}
 		if s.metaRegistry == nil {
 			s.metaRegistry = NewMetaRegistry()
@@ -415,13 +422,49 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2.5 Handle embedded session guardrail toggles
+	if reqCtx.CleanPrompt != reqCtx.Prompt {
+		info, _ := router.ExtractDirective(reqCtx.Prompt)
+		switch info.Directive {
+		case "kickstart-off":
+			s.sessionTracker.SetKickstartDisabled(sessionKey, true)
+		case "kickstart-on":
+			s.sessionTracker.SetKickstartDisabled(sessionKey, false)
+		case "cyclekiller-off":
+			s.sessionTracker.SetCycleKillerDisabled(sessionKey, true)
+		case "cyclekiller-on":
+			s.sessionTracker.SetCycleKillerDisabled(sessionKey, false)
+		case "shield-off":
+			s.sessionTracker.SetShieldDisabled(sessionKey, true)
+		case "shield-on":
+			s.sessionTracker.SetShieldDisabled(sessionKey, false)
+		case "raw-on":
+			s.sessionTracker.SetRawModeEnabled(sessionKey, true)
+		case "raw-off":
+			s.sessionTracker.SetRawModeEnabled(sessionKey, false)
+		case "fairydust-off":
+			s.sessionTracker.SetFairyDustDisabled(sessionKey, true)
+		case "fairydust-on":
+			s.sessionTracker.SetFairyDustDisabled(sessionKey, false)
+		}
+	}
+
+	// 2.6 Apply persisted session guardrails to request context
+	guardrails := s.sessionTracker.GetGuardrails(sessionKey)
+	reqCtx.NoKickstart = guardrails.KickstartDisabled
+	reqCtx.NoCycleKiller = guardrails.CycleKillerDisabled
+	reqCtx.NoShield = guardrails.ShieldDisabled
+	reqCtx.RawModeEnabled = guardrails.RawModeEnabled
+
+	if guardrails.RawModeEnabled {
+		reqCtx.Features = uint16(router.FeatureRawPassThrough)
+	} else if guardrails.ShieldDisabled {
+		reqCtx.Features = uint16(router.FeatureFlag(reqCtx.Features).MaskOut(router.FeatureShieldEnabled | router.FeatureShieldFollowup | router.FeatureShieldModeSwitch))
+	}
+
 	// 3. Track session retries for auto-escalation
-	sessionKey := extractSessionKey(r)
 	reqCtx.SessionKey = sessionKey
 	promptHash := router.HashPrompt(reqCtx.Prompt)
-	if s.sessionTracker == nil {
-		s.sessionTracker = router.NewSessionTracker(5 * time.Minute)
-	}
 
 	// Pass tool progress signal from classifier to session tracker
 	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash, reqCtx.HasToolProgress)
@@ -433,12 +476,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if kickstartThreshold == 0 && cfg.CycleBreaker.KickstartThreshold > 0 {
 		kickstartThreshold = cfg.CycleBreaker.KickstartThreshold
 	}
-	if kickstartThreshold > 0 {
+	if kickstartThreshold > 0 && !reqCtx.NoKickstart {
 		kickstartProgress := reqCtx.HasToolProgress
 		if cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
 			// Test/debug activity (running go test, reading *_test.go, compiler errors)
 			// is legitimate progress — do not kickstart during test phases.
 			kickstartProgress = reqCtx.HasWriteProgress || reqCtx.HasTestProgress
+		}
+		// Part A Guard: Auto-suspend when agent has tools but zero write tools (Plan Mode)
+		if (cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly) && reqCtx.HasTools && !reqCtx.HasWriteCapability {
+			kickstartProgress = true
 		}
 		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold, cfg.CycleKiller.KickstartMaxFailures+cfg.CycleBreaker.KickstartMaxFailures)
 		if isKickstarted {
@@ -468,14 +515,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Fairy Dust: periodic proactive frontier model quality checkpoints
 	fdCfg := cfg.FairyDust
-	if fdCfg.Enabled != nil && *fdCfg.Enabled && len(fdCfg.Entries) > 0 {
+	if fdCfg.Enabled != nil && *fdCfg.Enabled && len(fdCfg.Entries) > 0 && !guardrails.FairyDustDisabled {
 		// 1. Record write progress (single global counter, increments only on write turns)
 		writeCount := s.sessionTracker.RecordWriteProgress(sessionKey, reqCtx.HasWriteProgress)
 
 		// 2. Check each entry; collect the highest-priority candidate that triggers
 		type fdCandidate struct {
-			entry    contract.FairyDustEntry
-			count    int
+			entry contract.FairyDustEntry
+			count int
 		}
 		var winner *fdCandidate
 		if reqCtx.HasWriteProgress && writeCount > 0 {
@@ -841,7 +888,7 @@ func (s *Server) dispatchTier(
 			normalizer.SetShield(reqCtx.InteractiveTool, s.shieldMgr)
 		}
 		var cb *shield.CycleBreaker
-		if reqCtx.HasTools {
+		if reqCtx.HasTools && !reqCtx.NoCycleKiller {
 			cb = resolveCycleBreaker(targetTier, s.GetConfig())
 			if cb != nil && cb.IsEnabled() {
 				normalizer.SetCycleBreaker(cb)
@@ -1056,7 +1103,7 @@ func (s *Server) dispatchTier(
 						}
 					}
 
-					if len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" && reqCtx.HasTools && !isFallback {
+					if len(firstChoice.Message.ToolCalls) == 0 && firstChoice.Message.Content != "" && reqCtx.HasTools && !reqCtx.NoCycleKiller && !isFallback {
 						if cb := resolveCycleBreaker(targetTier, s.GetConfig()); cb != nil && cb.IsEnabled() {
 							if triggered, reason := cb.ProcessDelta(firstChoice.Message.Content, false); triggered {
 								reqCtx.CycleBreakerTriggered = true
@@ -1221,23 +1268,23 @@ func (s *Server) recordTelemetry(
 	}
 
 	s.tracker.Record(telemetry.Observation{
-		Tier:                  tierNum,
-		TierName:              targetTier.Name,
-		Model:                 targetTier.Model,
-		Provider:              targetTier.Provider,
-		Tokens:                totalTokens,
-		CostSpent:             costSpent,
-		CostSaved:             costSaved,
-		IsLocal:               isLocal,
-		IsFallback:            isFallback,
-		LatencyMs:             latency,
-		Keywords:              reqCtx.Keywords,
-		HasImages:             reqCtx.HasImages,
-		HasTools:              reqCtx.HasTools,
-		StatusCode:            statusCode,
-		IsRetry:               reqCtx.IsRetry,
-		ForcedTier:            reqCtx.ForcedTier,
-		ForcedModel:           reqCtx.ForcedModel,
+		Tier:                      tierNum,
+		TierName:                  targetTier.Name,
+		Model:                     targetTier.Model,
+		Provider:                  targetTier.Provider,
+		Tokens:                    totalTokens,
+		CostSpent:                 costSpent,
+		CostSaved:                 costSaved,
+		IsLocal:                   isLocal,
+		IsFallback:                isFallback,
+		LatencyMs:                 latency,
+		Keywords:                  reqCtx.Keywords,
+		HasImages:                 reqCtx.HasImages,
+		HasTools:                  reqCtx.HasTools,
+		StatusCode:                statusCode,
+		IsRetry:                   reqCtx.IsRetry,
+		ForcedTier:                reqCtx.ForcedTier,
+		ForcedModel:               reqCtx.ForcedModel,
 		DirectiveUsed:             reqCtx.MetaDirectiveRaw,
 		CycleBreakerTriggered:     reqCtx.CycleBreakerTriggered,
 		CycleBreakerReason:        reqCtx.CycleBreakerReason,

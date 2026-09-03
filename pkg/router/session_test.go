@@ -350,7 +350,7 @@ func TestSessionTracker_KickstartCircuitBreaker(t *testing.T) {
 	tracker.RecordTurn("sess-cb", HashPrompt("prompt"), false)
 
 	// Build up to the threshold — kickstart fires
-	tracker.RecordKickstartState("sess-cb", false, threshold, 0) // count=1, not kicked
+	tracker.RecordKickstartState("sess-cb", false, threshold, 0)                  // count=1, not kicked
 	count, kicked := tracker.RecordKickstartState("sess-cb", false, threshold, 0) // count=2, kicked
 	if count != 2 || !kicked {
 		t.Fatalf("setup: expected count=2 kicked=true, got count=%d kicked=%v", count, kicked)
@@ -695,4 +695,83 @@ func TestFairyDust_CollisionHighestPriorityWins(t *testing.T) {
 	if winner.name != opus {
 		t.Errorf("expected opus (priority 100) to win collision, got %q", winner.name)
 	}
+}
+
+func TestSessionTracker_GuardrailsAndReset(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	key := "sess-guardrails-test"
+
+	// 1. Non-existent and empty key return zero-value
+	if g := tracker.GetGuardrails(""); g != (SessionGuardrails{}) {
+		t.Errorf("expected zero-value for empty session key, got %+v", g)
+	}
+	if g := tracker.GetGuardrails("non-existent"); g != (SessionGuardrails{}) {
+		t.Errorf("expected zero-value for non-existent session key, got %+v", g)
+	}
+
+	// 2. Setting on non-existent creates and tracks guardrails safely
+	tracker.SetKickstartDisabled("pre-init", true)
+	if !tracker.GetGuardrails("pre-init").KickstartDisabled {
+		t.Error("expected KickstartDisabled=true for pre-initialized session")
+	}
+
+	// 3. Create session
+	tracker.RecordTurn(key, HashPrompt("prompt 1"), false)
+	gInit := tracker.GetGuardrails(key)
+	if gInit.KickstartDisabled || gInit.CycleKillerDisabled || gInit.ShieldDisabled || gInit.RawModeEnabled || gInit.FairyDustDisabled {
+		t.Errorf("expected all guardrails default to false, got %+v", gInit)
+	}
+
+	// 4. Toggle each guardrail
+	tracker.SetKickstartDisabled(key, true)
+	tracker.SetCycleKillerDisabled(key, true)
+	tracker.SetShieldDisabled(key, true)
+	tracker.SetRawModeEnabled(key, true)
+	tracker.SetFairyDustDisabled(key, true)
+
+	gActive := tracker.GetGuardrails(key)
+	if !gActive.KickstartDisabled || !gActive.CycleKillerDisabled || !gActive.ShieldDisabled || !gActive.RawModeEnabled || !gActive.FairyDustDisabled {
+		t.Errorf("expected all guardrails active, got %+v", gActive)
+	}
+
+	// 5. Untoggle individual guardrail
+	tracker.SetKickstartDisabled(key, false)
+	if tracker.GetGuardrails(key).KickstartDisabled {
+		t.Error("expected KickstartDisabled to be false after unsetting")
+	}
+
+	// 6. Reset session
+	tracker.RecordKickstartState(key, false, 5, 0)
+	tracker.RecordCycleKill(key, "test-model", 2*time.Minute)
+	tracker.RecordWriteProgress(key, true)
+
+	tracker.ResetSession(key)
+
+	gReset := tracker.GetGuardrails(key)
+	if gReset != (SessionGuardrails{}) {
+		t.Errorf("expected zero-value guardrails after ResetSession, got %+v", gReset)
+	}
+	if kc := tracker.GetKickstartCount(key); kc != 0 {
+		t.Errorf("expected kickstart count 0 after reset, got %d", kc)
+	}
+	if cd := tracker.GetCoolingDownModels(key); len(cd) != 0 {
+		t.Errorf("expected cooling down models empty after reset, got %+v", cd)
+	}
+	if wp := tracker.RecordWriteProgress(key, false); wp != 0 {
+		t.Errorf("expected write progress 0 after reset, got %d", wp)
+	}
+
+	// 7. ResetSession and Set* methods on empty or non-existent does not panic
+	tracker.ResetSession("")
+	tracker.ResetSession("no-such-key")
+
+	tracker.SetKickstartDisabled("", true)
+	tracker.SetCycleKillerDisabled("", true)
+	tracker.SetCycleKillerDisabled("non-existent", true)
+	tracker.SetShieldDisabled("", true)
+	tracker.SetShieldDisabled("non-existent", true)
+	tracker.SetRawModeEnabled("", true)
+	tracker.SetRawModeEnabled("non-existent", true)
+	tracker.SetFairyDustDisabled("", true)
+	tracker.SetFairyDustDisabled("non-existent", true)
 }

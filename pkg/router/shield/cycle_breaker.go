@@ -231,8 +231,8 @@ func (cb *CycleBreaker) addWord(word string) bool {
 	// Compute FNV-1a hash of the trailing N-gram window
 	h := fnv.New64a()
 	for i := wLen - cb.repetitionWindow; i < wLen; i++ {
-		h.Write([]byte(cb.words[i]))
-		h.Write([]byte{0}) // separator
+		_, _ = h.Write([]byte(cb.words[i]))
+		_, _ = h.Write([]byte{0}) // separator
 	}
 	hashVal := h.Sum64()
 
@@ -254,8 +254,8 @@ func (cb *CycleBreaker) addThinkingWord(word string) bool {
 
 	h := fnv.New64a()
 	for i := wLen - cb.repetitionWindow; i < wLen; i++ {
-		h.Write([]byte(cb.thinkingWords[i]))
-		h.Write([]byte{0}) // separator
+		_, _ = h.Write([]byte(cb.thinkingWords[i]))
+		_, _ = h.Write([]byte{0}) // separator
 	}
 	hashVal := h.Sum64()
 

@@ -212,12 +212,12 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
-| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.5%** |
+| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.6%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.8%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.6%** |
-| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.1%** |
+| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.3%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.2%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.1%** |
 | `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **14.3%** |
@@ -227,7 +227,7 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 <!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **14 / 14 Suites** | **191 / 191 (100%)** | **95.79% / 96.16% / 95.77%** |
+| **Extension Core & Webview Suite** | **14 / 14 Suites** | **209 / 209 (100%)** | **95.51% / 95.85% / 95.90%** |
 <!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---

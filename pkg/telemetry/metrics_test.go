@@ -362,7 +362,6 @@ func TestStatsTracker_SinkEmission_FairyDustAndKickstart(t *testing.T) {
 	}
 }
 
-
 func TestStatsTracker_RollingBucketPruning(t *testing.T) {
 	tracker := NewStatsTracker(100)
 	defer tracker.Close()
@@ -1019,7 +1018,6 @@ func TestStatsTracker_YesterdayTimeWindow(t *testing.T) {
 		t.Errorf("missing yesterday window in JSON serialization: %v", string(data))
 	}
 }
-
 
 func TestStatsTracker_CycleKiller_LegacyMigrationBackfillsBuckets(t *testing.T) {
 	// Simulate a stats.json from the pre-fix build: root CycleKiller has data,
