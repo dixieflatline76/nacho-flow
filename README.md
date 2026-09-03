@@ -83,12 +83,12 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **📐 Model Context Window Guard (`max_context`)**: Evaluates model physical context limits with O(1) pre-guards to prevent 400 Context Length Exceeded errors.
 * **🛡️ Agentic Tool Fallback Shield**: Sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
 * **🎸 Cycle Killer (In-Flight Stream Defense)**: Active dual-phase inference guard (*"Qu'est-ce que c'est?"*) tracking sliding N-gram windows (6-word window, 64-bit FNV-1a hash map) and non-tool prose budgets. Murders circular deliberation loops and runaway monologues in $<3$ seconds before they burn GPU compute, triggering local self-correction (`[SYSTEM OVERRIDE]` @ $0.00) or clean cloud failover.
-* **⚡ Kickstart Resuscitation**: Detects multi-turn read/plan idle loops across consecutive agent turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`), with write-only progress filtering (`kickstart_write_only: true`).
+* **⚡ Kickstart Resuscitation & Plan-Mode Guard**: Detects multi-turn read/plan idle loops across consecutive agent turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`), with write-only progress filtering (`kickstart_write_only: true`). Includes automatic **Tool Schema Guard** auto-suspending Kickstart during Plan Mode / pure exploration when declared tools lack write capabilities (`HasWriteCapability == false`).
 * **🧚 Fairy Dusting (Proactive Frontier Quality Checkpoints)**: Periodically and transparently routes turns to frontier models (Claude Sonnet 5, Claude Opus 5) on a configurable write-progress cadence (e.g. every 15 or 40 file writes) with injected audit directives to catch subtle syntax errors, missing ESM imports, and architectural drift before they cascade.
 * **💰 Prompt Cache-Aware Cost Engine**: Automatically ingests upstream provider prompt caching discounts (typically ~80% off prompt tokens from OpenRouter/DeepSeek/Anthropic) using a 3-tier priority oracle for dollar-accurate billing and ROI tracking.
 * **🛠️ Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Llama Python `<|python_tag|>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown code fences, and Ollama/Qwen Bare JSON) into standard OpenAI `tool_calls` JSON structures via a modular Strategy Pipeline, with native Cline XML tool detection (`<write_to_file>`, `<replace_in_file>`).
 * **🔒 Inbound Gateway Client Authentication**: Secures LAN and remote endpoints with optional Bearer token authentication while preserving a public `/health` endpoint.
-* **🌶️ HotSauce Directives (In-Prompt Routing)**: Splash heat onto any prompt turn to override routing (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) or query daemon metadata (`@nacho:help`, `@nacho:tiers`, `@nacho:status`, `@nacho:deals`) with < 7ns zero-alloc bailout, $0.00 cost, and strict fallback bypass.
+* **🌶️ Unified HotSauce Directive Control Plane**: Steer routing and session guardrails on-the-fly directly from your editor chat using `@nacho:` tags. Supports session toggles (`@nacho:kickstart-off/on`, `@nacho:cyclekiller-off/on`, `@nacho:shield-off/on`, `@nacho:raw-on/off`, `@nacho:fairydust-off/on`), live switch inspection (`@nacho:toggles`), session hard reset (`@nacho:reset`), and single-turn routing overrides (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`) with < 7ns zero-alloc bailout, $0.00 cost, and zero prompt leakage.
 * **🛡️ Cost-Safe Default Shield & Unrouted Tiers (`when: "false"`)**: Eliminates runaway frontier billing by placing Claude Sonnet 5 at the `default_tier` safety net while isolating expensive models (Claude Opus 5) behind `when: "false"` for on-demand Fairy Dusting and explicit `@nacho:model` use only.
 * **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Evaluates custom tier rules in `config.yaml` based on token estimates, tool calls, images, retries, and prompt keywords.
 * **🖼️ Historical Image Sanitization**: Automatically strips base64 `image_url` payloads from older turns when routing to text-only models.
@@ -199,7 +199,30 @@ default_tier:
 
 ---
 
-### 3. Running as a Background Daemon
+### 3. In-Chat Control Directives (`@nacho:`)
+
+Control routing rules, guardrails, and daemon telemetry directly from your editor chat without restarting the gateway:
+
+| Category | Directive | Example | Action |
+| :--- | :--- | :--- | :--- |
+| **Session Switches** | `@nacho:kickstart-off` / `on` | `@nacho:kickstart-off` | Suspend / resume Kickstart idle stall escalation |
+| | `@nacho:cyclekiller-off` / `on` | `@nacho:cyclekiller-off` | Suspend / resume Cycle Killer stream loop breaker |
+| | `@nacho:shield-off` / `on` | `@nacho:shield-off` | Suspend / resume synthetic tool-call synthesis |
+| | `@nacho:raw-on` / `off` | `@nacho:raw-on` | Enable / disable raw unadulterated SSE stream |
+| | `@nacho:fairydust-off` / `on` | `@nacho:fairydust-off` | Suspend / resume periodic frontier checkpoints |
+| **Inspection & Reset** | `@nacho:toggles` | `@nacho:toggles` | Display live session switches ($0.00 / 0 tokens) |
+| | `@nacho:status` | `@nacho:status` | Display daemon telemetry, spend & saved dollars |
+| | `@nacho:reset` | `@nacho:reset` | Hard reset turn counter & restore default switches |
+| **Single-Turn Overrides** | `@nacho:local` | `@nacho:local fix typo` | Force current turn to Local GPU ($0.00) |
+| | `@nacho:cloud` | `@nacho:cloud audit code`| Force current turn to Cloud Fallback tier |
+| | `@nacho:reasoning` | `@nacho:reasoning solve math`| Force current turn to DeepSeek-R1 / o1 |
+
+> [!TIP]
+> **Plan Mode Auto-Detection**: When your agent switches into Plan Mode (declaring zero write tools), Nacho Flow automatically detects `HasWriteCapability == false` and **suspends Kickstart idle escalation**—no manual toggles required!
+
+---
+
+### 4. Running as a Background Daemon
 
 To make Nacho Flow run continuously in the background (starts automatically on OS boot):
 
@@ -213,7 +236,7 @@ nacho-flow service start
 
 ---
 
-### 4. Connect Your IDE & Coding Agents
+### 5. Connect Your IDE & Coding Agents
 
 Nacho Flow exposes a standard OpenAI-compatible proxy endpoint on `http://localhost:8000/v1`. Since Nacho Flow dynamically routes and rewrites model IDs turn-by-turn based on your `config.yaml` tier rules, you can use `nacho-hybrid` (or any string) as your Model ID.
 

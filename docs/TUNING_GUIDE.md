@@ -42,6 +42,7 @@ flowchart TD
 | `Tokens` | `int` | Real-time adaptive estimated token count across all prompt messages | `Tokens < 16000` |
 | `HasImages` | `bool` | `true` if any message contains screenshots or image URLs | `HasImages == true` |
 | `HasTools` | `bool` | `true` if function/tool definitions or active tool calls are present | `HasTools == true` |
+| `HasWriteCapability` | `bool` | `true` if declared client tools contain at least one tool from `kickstart_write_tools`. Automatically `false` in Plan Mode / read-only exploration | `HasWriteCapability && Tokens < 16000` |
 | `Keywords` | `[]string` | Code keywords detected **strictly in the latest user prompt** | `any(Keywords, { # in ['deadlock', 'mutex'] })` |
 | `Retries` | `int` | Consecutive error count from in-history failures (`[ERROR]`, `<error_details>`) and identical prompt retries. Automatically resets to `0` when intermediate tools succeed (`role: tool`). | `Retries < 2` |
 | `IsRetry` | `bool` | `true` if this turn is an error recovery turn | `!IsRetry` |
@@ -553,6 +554,34 @@ In runaway error cascades or edge cases, routing must **never default to ultra-e
    ```
    This guarantees that automated routing never accidentally lands on Opus. Opus is accessible solely through **Fairy Dust strategic reviews** and **manual in-prompt `@nacho:model` / `X-Spicy-Model` overrides**.
 
+### 9.3 HotSauce Kickstart & Plan-Mode Tuning
+
+**Kickstart** detects semantic idle churn where an agent gets trapped in reading/planning loops without writing code:
+
+```yaml
+cycle_killer:
+  kickstart_threshold: 5        # Jolt after N idle turns without write tool progress
+  kickstart_max_count: 10       # Max kickstart escalations before default cloud failover
+  kickstart_max_failures: 3     # Suppress override after N consecutive failures
+  kickstart_write_only: true    # Only file writes/terminal executions reset the idle counter
+  kickstart_write_tools:        # Tools defining write capability
+    - write_to_file
+    - replace_in_file
+    - replace_file_content
+    - multi_replace_file_content
+    - execute_command
+```
+
+#### Automatic Plan-Mode Auto-Suspension:
+In pure investigation or planning phases (such as Cline/Zoo Code Plan Mode), the client only declares read/inspection tools (`view_file`, `list_dir`, `grep_search`). Nacho Flow automatically evaluates `HasWriteCapability == false` and **suspends Kickstart idle stall escalation**. The agent can read files and explore codebases across 50+ turns without premature `[SYSTEM OVERRIDE]` prompts.
+
+#### Dynamic Session Control Directives:
+If you want to manually disable or re-enable Kickstart or Cycle Killer mid-session without restarting the gateway:
+- `@nacho:kickstart-off` / `@nacho:kickstart-on`: Suspends or resumes Kickstart idle tracking for the active session.
+- `@nacho:cyclekiller-off` / `@nacho:cyclekiller-on`: Suspends or resumes Cycle Killer in-flight stream loop interruption.
+- `@nacho:toggles`: Inspects the active state of all session guardrails.
+- `@nacho:reset`: Resets session turns and restores all switches to configuration defaults.
+
 ---
 
 ## 10. Troubleshooting & FAQ
@@ -571,5 +600,13 @@ In runaway error cascades or edge cases, routing must **never default to ultra-e
 
 ### Q: How do I test a new rule before putting it in production?
 - You can override any turn on-the-fly directly from your chat prompt using **🌶️ HotSauce Directives** (`@nacho:local`, `@nacho:cloud`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) without modifying `config.yaml`.
+
+### Q: Why didn't Kickstart fire while my agent spent 15 turns reading code in Plan Mode?
+- This is intentional! Nacho Flow's **Tool Schema Guard** inspects the declared tools in each request. If the tool schema contains zero write tools (`HasWriteCapability == false`), Kickstart automatically suspends idle stall escalation so your agent can plan and investigate uninterrupted.
+
+### Q: How do I inspect or toggle session switches in my editor chat?
+- Type `@nacho:toggles` alone in your chat prompt for an instant zero-cost ($0.00 / 0 tokens) view of all session guardrails.
+- Type `@nacho:kickstart-off`, `@nacho:cyclekiller-off`, `@nacho:shield-off`, `@nacho:raw-on`, or `@nacho:reset` to change switches on the fly.
+
 
 

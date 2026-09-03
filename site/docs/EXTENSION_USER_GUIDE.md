@@ -47,6 +47,14 @@ Under **3. Coding Agents** in the sidebar:
 - Click **📋 Copy** next to `Model ID` (`nacho-hybrid`).
 - Paste into **Zoo Code**, **Cline**, or **Cursor** settings under OpenAI Compatible.
 
+### 4. Direct In-Chat Control (`@nacho:`)
+While chatting with your coding agent in Zoo Code, Cline, or Cursor, you can steer the gateway directly from your conversational prompt:
+- `@nacho:toggles`: View live session switches and guardrails ($0.00 / 0 tokens).
+- `@nacho:kickstart-off`: Temporarily disable Kickstart idle stall escalation.
+- `@nacho:cyclekiller-off`: Temporarily disable Cycle Killer stream loop interruption.
+- `@nacho:reset`: Hard reset the session turn counter and restore default guardrails.
+- `@nacho:local` / `@nacho:cloud`: Override routing for a single turn.
+
 ---
 
 ## 🛠️ Maintenance & Quick Actions

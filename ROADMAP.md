@@ -84,6 +84,9 @@ Bring the power of Nacho Flow directly inside the developer's primary workspace 
   - One-click **"Apply Recommendation"** button updating `config.yaml` with automated timestamped backup creation.
 - [x] **Agentic Tool Fallback Shield**:
   - Real-time zero-allocation sliding tail-buffer prose-to-tool auto-wrapping intercepting conversational plan/question turns from local models and synthesizing schema-compliant `ask_followup_question` tool payloads to eliminate 3-strike agent harness crashes in Zoo Code and Cline.
+- [x] **Kickstart Plan-Mode Guard & Unified Directive Control Plane**:
+  - Automatic tool schema classification (`HasWriteCapability == false`) auto-suspending Kickstart idle stall escalation during Plan Mode and pure exploration.
+  - Normalized, unified regex control plane (`@nacho:`) supporting session guardrails (`kickstart-off/on`, `cyclekiller-off/on`, `shield-off/on`, `raw-on/off`, `fairydust-off/on`), dedicated `@nacho:toggles` inspection, and session hard reset (`@nacho:reset`).
 - [x] **Daemon Lifecycle Automation & Structured Error Diagnostics**:
   - Auto-spawn daemon on VS Code startup and graceful supervised shutdown on IDE exit.
   - Structured error parsing on port collisions (`[FATAL:PORT_IN_USE:<port>]`) with 1-click `[📝 Open config.yaml]` resolution toasts.

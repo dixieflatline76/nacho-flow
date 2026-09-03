@@ -12,7 +12,7 @@ A lightweight, high-visibility UI companion for the **Nacho Flow** AI routing ga
 
 ### 🧭 Route History & Traffic Inspection
 - **Per-Turn Inspector**: View every recent routing decision with token counts, latency breakdown, matching tier, and retry counts.
-- **Modal Classification**: Inspect whether turns were routed via adaptive token bounds, code keywords, active tool calls, or in-prompt HotSauce directives (`@nacho:*`).
+- **Modal Classification & In-Chat Directives**: Inspect whether turns were routed via adaptive token bounds, code keywords, active tool calls, or in-prompt HotSauce directives (`@nacho:*`). Control session switches (`@nacho:kickstart-off`, `@nacho:toggles`, `@nacho:reset`) directly from chat.
 
 ### 🎛️ 1-Click Auto-Tuning Optimizer
 - **Empirical AST Synthesizer**: Run statistical odds-ratio optimization on your local `traffic.jsonl` logs directly from the webview dashboard.
