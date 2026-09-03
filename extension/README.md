@@ -1,7 +1,7 @@
 # 🌮 Nacho Flow: VS Code & Cursor Companion Extension
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Dashboard & Sidebar Control Hub" width="800" />
+  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Analytics Dashboard, Sidebar Control Hub, and Cline Pairing" width="800" />
 </p>
 
 <p align="center">
@@ -112,9 +112,9 @@ Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns 
 
 A lightweight widget in your VS Code Status Bar (bottom right):
 ```text
-🌮 $14.20 svd | 78% Local [Zoo Code]
+🌮 $45.81 Saved Today (2% Local)
 ```
-- **Hover Card**: Rich Markdown tooltip displaying active daemon status, version, active preset, today's spend/savings, and provider circuit breaker health.
+- **Hover Card**: Rich Markdown tooltip displaying active daemon status, active preset (`Cline`), today's spend/savings (`+$45.81 / 75% saved`), token volume, and quick links.
 - **Click QuickPick**: Opens a quick menu to open the dashboard, switch presets, start/stop/restart the engine, open `config.yaml`, or reset circuit breakers.
 
 ---
