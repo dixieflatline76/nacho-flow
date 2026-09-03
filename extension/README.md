@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/hero-mascot.png" alt="Nacho Flow Mascot" width="600" />
-</p>
-
 # 🌮 Nacho Flow: VS Code & Cursor Companion Extension
 
 <p align="center">
