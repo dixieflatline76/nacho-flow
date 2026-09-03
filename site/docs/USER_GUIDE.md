@@ -993,9 +993,9 @@ Two complementary ways to optimize your agent routing costs:
 
 **HotSauce Directives** allow developers and autonomous coding agents (Zoo Code, Cline, OpenCode, Cursor, Aider) to spice up prompt turns with instant routing overrides, session guardrail toggles, or daemon metadata inspection using zero-cost `@nacho:` tags.
 
-### 🎮 Unified Directive Control Plane
+### 🎮 In-Chat Directive Controls
 
-Nacho Flow evaluates directives using a single, unified regex grammar:
+Nacho Flow evaluates directives using regex grammar:
 ```regex
 (?i)@nacho:([a-zA-Z0-9_\-]+)(?:=(?:"([^"]+)"|([^\s]+)))?
 ```
@@ -1019,8 +1019,8 @@ Session guardrails persist across the active 5-minute sliding session window. Bo
 | `@nacho:fairydust-off` / `on` | `fairydust=off` / `on` | `on` | **Fairy Dust**: Suspends or re-enables periodic frontier quality checkpoints after $N$ write actions. |
 
 > [!TIP]
-> **Automatic Plan-Mode Guard (Zero-Config Protection)**:
-> You don't even need to remember `@nacho:kickstart-off` when switching your agent to Plan Mode! When Nacho Flow detects that the client declared tools (`HasTools == true`) but none of them have write capabilities (`HasWriteCapability == false`), it **automatically suspends Kickstart stall escalation**. Your agent can read files, grep code, and draft plans for 50+ consecutive turns with zero false `[SYSTEM OVERRIDE]` interruptions.
+> **Automatic Plan-Mode Protection (Zero-Config)**:
+> When Nacho Flow detects that the client declared tools (`HasTools == true`) but none of them have write capabilities (`HasWriteCapability == false`), it **automatically suspends Kickstart stall escalation**. Your agent can read files, grep code, and draft plans for 50+ consecutive turns with zero false `[SYSTEM OVERRIDE]` interruptions.
 
 ---
 

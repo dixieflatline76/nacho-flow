@@ -324,8 +324,8 @@ When extending Nacho Flow's control plane or guardrails, follow these architectu
    - `RequestContext` is the canonical request DTO.
    - Capability flags (`HasWriteCapability`) and session toggle overrides (`NoKickstart`, `NoCycleKiller`, `NoShield`, `RawModeEnabled`) must be declared on `RequestContext` to decouple router classification from server dispatch.
 
-2. **Unified Directive Grammar (`pkg/router/directive.go`)**:
-   - All `@nacho:` tags are parsed via a single unified regex engine:
+2. **Directive Grammar (`pkg/router/directive.go`)**:
+   - All `@nacho:` tags are parsed via regex:
      ```regex
      (?i)@nacho:([a-zA-Z0-9_\-]+)(?:=(?:"([^"]+)"|([^\s]+)))?
      ```

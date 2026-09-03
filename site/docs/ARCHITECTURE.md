@@ -64,10 +64,10 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - Requests with invalid or missing credentials receive an OpenAI-standard `401 Unauthorized` JSON payload (`invalid_api_key`).
 - Public health probes (`/health`, `/v1/health`) automatically bypass auth and return service status and version information.
 
-### Stage 1: Session Tracking, Unified Directive Interception & Context Classification (`pkg/router/session.go`, `pkg/router/classifier.go`, `pkg/router/directive.go`)
+### Stage 1: Session Tracking, Directive Interception & Context Classification (`pkg/router/session.go`, `pkg/router/classifier.go`, `pkg/router/directive.go`)
 - **In-Prompt Directive Fast Bailout**: Scans user prompts using Go SIMD byte search (`router.HasDirective`) in **< 7 nanoseconds** with **0 heap allocations**. If `@nacho:` is absent, classification proceeds with zero latency overhead.
-- **Unified Directive Control Plane Engine (`pkg/router/directive.go`)**:
-  - Evaluates directives using a single normalized regex grammar:
+- **HotSauce In-Prompt Directive Engine (`pkg/router/directive.go`)**:
+  - Evaluates directives using regex grammar:
     ```regex
     (?i)@nacho:([a-zA-Z0-9_\-]+)(?:=(?:"([^"]+)"|([^\s]+)))?
     ```
@@ -91,18 +91,18 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **In-History Trailing Error Scanner & Tool Capability Classifier (`pkg/router/classifier.go`)**:
   - Scans the trailing messages in conversation history for known client error signatures (`[ERROR] You did not use a tool`, `Missing value for required parameter`, `<error_details>`, `No sufficiently similar match found`, etc.).
   - Extracts consecutive error counts (`HistoryErrors`) and overrides `reqCtx.Retries`, triggering automatic rule-based tier escalation to DeepSeek R1 (Tier 3) or Claude Sonnet 5 (Tier 4) to self-heal without requiring custom client HTTP headers.
-  - **Tool Schema Guard (`HasWriteCapability`)**: Scans declared client tools in `reqCtx.Tools`. If tools are declared (`HasTools == true`) but none match configured `kickstart_write_tools`, `HasWriteCapability` is set to `false`. This accurately detects Plan Mode, Architect Mode, and pure investigation tasks.
+  - **Tool Capability Detection (`HasWriteCapability`)**: Scans declared client tools in `reqCtx.Tools`. If tools are declared (`HasTools == true`) but none match configured `kickstart_write_tools`, `HasWriteCapability` is set to `false`. This accurately detects Plan Mode, Architect Mode, and pure investigation tasks.
   - **Cline XML Tool Call Detection Engine**: Scans raw assistant text content for embedded XML write tools (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`, etc.) from `kickstart_write_tools`, and maps subsequent user tool results to `HasToolProgress` and `HasWriteProgress` across OpenAI JSON, Anthropic JSON, and Cline XML formats.
 - **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities without underestimating payloads.
 - **Multimodal Detection**: Scans message blocks for `image_url` payloads and base64 strings (`HasImages`).
 - **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`), extracting declared interactive tools (`ask_followup_question`, `ask_question`).
 - **Scoped Keyword Extraction**: Extracts programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) **strictly from the clean prompt**, preventing historical multi-turn token pollution.
 
-### Stage 1.5: Proactive Quality Checkpointing ("Fairy Dust") & Kickstart Plan-Mode Guard (`pkg/router/session.go`, `pkg/server/proxy.go`)
+### Stage 1.5: Proactive Quality Checkpointing ("Fairy Dust") & Kickstart Resuscitation (`pkg/router/session.go`, `pkg/server/proxy.go`)
 - **Fairy Dust Periodic Elevation**: Proactively triggers quality checkpoint reviews on frontier models (e.g., DeepSeek-R1, Claude 3.7 Sonnet) after every $N$ write tool actions, verifying complex edits before local execution resumes. Dynamically bypassed if `guardrails.FairyDustDisabled` is set.
-- **HotSauce Kickstart & Plan-Mode Auto-Suspension**:
+- **HotSauce Kickstart Resuscitation**:
   - Detects semantic idle/planning loops where the agent stops issuing write/tool commands and injects explicit system nudges or escalates to default cloud tiers.
-  - **Tool Schema Guard**: If `reqCtx.HasTools && !reqCtx.HasWriteCapability` (e.g., Cline/Zoo in Plan Mode with only `view_file` or `grep_search`), Kickstart idle stall escalation is automatically suspended. Agents explore and plan freely across unlimited turns with $0.00 cost and zero interruptions.
+  - **Plan Mode Protection**: If `reqCtx.HasTools && !reqCtx.HasWriteCapability` (e.g., Cline/Zoo in Plan Mode with only `view_file` or `grep_search`), Kickstart idle stall escalation is automatically suspended. Agents explore and plan freely across unlimited turns with $0.00 cost and zero interruptions.
   - **Session Toggle**: Kickstart can be manually toggled off for the entire session via `@nacho:kickstart-off` (or `@nacho:kickstart=off`).
 
 ### Stage 2: AST-Compiled Rule Evaluation & Directive Dispatch (`pkg/strategy/expr_evaluator.go`)
