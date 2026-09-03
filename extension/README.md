@@ -1,8 +1,8 @@
-# 🌮 Nacho Flow: VS Code & Cursor Companion Extension
-
 <p align="center">
-  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Analytics Dashboard, Sidebar Control Hub, and Cline Pairing" width="800" />
+  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/hero-mascot.png" alt="Nacho Flow Mascot" width="600" />
 </p>
+
+# 🌮 Nacho Flow: VS Code & Cursor Companion Extension
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow"><img src="https://img.shields.io/badge/VS%20Code%20Marketplace-v0.9.1-007ACC?logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace"></a>
@@ -16,6 +16,10 @@
 > Route routine prompt turns (log inspections, file searches, syntax fixes) to your **local workstation GPU ($0.00)** and automatically burst complex multi-file reasoning to **frontier cloud APIs** with 100% reasoning fidelity and up to **94.7% cost reduction**.
 
 The **Nacho Flow VS Code Companion Extension** delivers a high-visibility control hub, real-time financial telemetry dashboard, preset hot-swapper, and market deal scout for autonomous coding agents ([Zoo Code](https://github.com/zoocodeorganization/zoo-code), [Cline](https://github.com/cline/cline), [Cursor](https://www.cursor.com), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Continue](https://continue.dev)).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Analytics Dashboard, Sidebar Control Hub, and Cline Pairing" width="800" />
+</p>
 
 ---
 
@@ -35,7 +39,7 @@ Routine turns now run on your GPU for **$0.00**, while complex reasoning automat
 
 ---
 
-## 🌟 Key Features
+## ✨ Features
 
 ### 🎛️ 1. Sidebar Control Hub (Activity Bar)
 
