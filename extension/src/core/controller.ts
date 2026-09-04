@@ -48,7 +48,7 @@ export class ExtensionController {
 		this.routesRefreshInterval = (typeof savedInterval !== 'undefined' ? savedInterval : 60) as RefreshIntervalSeconds;
 
 		// Create Output Channel for live engine logs
-		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Routing Engine');
+		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Model Dispatcher');
 		this.context.subscriptions.push(this.outputChannel);
 		this.processManager = new ProcessManager(this.context.extensionUri, this.outputChannel);
 
@@ -211,7 +211,7 @@ export class ExtensionController {
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
-						this.showTransientToast('▶️ Nacho Flow: Starting Routing Engine...');
+						this.showTransientToast('▶️ Nacho Flow: Starting Model Dispatcher...');
 						const result = await this.processManager.start(daemonUrl);
 						if (!result.success && result.error) {
 							await this.handleEngineStartError(result);
@@ -231,7 +231,7 @@ export class ExtensionController {
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
-						this.showTransientToast('🔄 Nacho Flow: Restarting Routing Engine...');
+						this.showTransientToast('🔄 Nacho Flow: Restarting Model Dispatcher...');
 						const result = await this.processManager.restart(daemonUrl);
 						if (!result.success && result.error) {
 							await this.handleEngineStartError(result);
@@ -249,7 +249,7 @@ export class ExtensionController {
 							break;
 						}
 						await this.processManager.stop();
-						this.showTransientToast('⏹️ Nacho Flow: Routing Engine stopped');
+						this.showTransientToast('⏹️ Nacho Flow: Model Dispatcher stopped');
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ connected: false, error: 'Stopped by user' });
 						}
@@ -821,7 +821,7 @@ export class ExtensionController {
 				if (!fs.existsSync(targetDir)) {
 					fs.mkdirSync(targetDir, { recursive: true });
 				}
-				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Intelligent Semantic AI Gateway & Multi-Tier Cost Optimizer\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "local"\n\n  openrouter:\n    base_url: "https://openrouter.ai/api/v1"\n    type: "cloud"\n    api_key: "ENV_OPENROUTER_API_KEY"\n`;
+				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Agent Supervisor & Model Dispatcher\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "local"\n\n  openrouter:\n    base_url: "https://openrouter.ai/api/v1"\n    type: "cloud"\n    api_key: "ENV_OPENROUTER_API_KEY"\n`;
 				fs.writeFileSync(targetPath, starter, 'utf8');
 				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
 				this.activeConfigDocUri = doc.uri;
@@ -1226,7 +1226,7 @@ export class ExtensionController {
 					version: health?.version || 'Online'
 				});
 			}
-			this.showTransientToast(`🟢 Routing Engine (${targetUrl}) verified!`);
+			this.showTransientToast(`🟢 Model Dispatcher (${targetUrl}) verified!`);
 		} catch (err: any) {
 			if (this.sidebarProvider) {
 				this.sidebarProvider.updateEngineStatus({

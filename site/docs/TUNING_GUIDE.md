@@ -280,7 +280,7 @@ Different AI coding agents have fundamentally different tool-calling architectur
 | Config File | Optimized For | Key Trait |
 | :--- | :--- | :--- |
 | `config.yaml` | Zoo Code, Aider, OpenCode | `write_to_file` whole-file overwrites — local models handle this well |
-| `config.cline.yaml` | Cline, Roo Code | `replace_in_file` diff edits — requires exact `old_text` match, needs cloud precision |
+| `config.cline.yaml` | Cline | `replace_in_file` diff edits — requires exact `old_text` match, needs cloud precision |
 
 ### Why Cline Needs a Different Config
 
@@ -301,7 +301,7 @@ Cline's `SdkDiffEditCoordinator` requires the model to reproduce the **exact exi
 ### Usage
 
 ```bash
-# For Cline / Roo Code users:
+# For Cline users:
 nacho-flow -config config.cline.yaml
 
 # For Zoo Code / Aider / OpenCode users (default):
@@ -473,7 +473,7 @@ Different autonomous coding agents interact with LLMs using fundamentally differ
 
 ### 8.1 Architectural Differences
 
-| Dimension | Zoo Code / Roo Code | Cline |
+| Dimension | Zoo Code | Cline |
 | :--- | :--- | :--- |
 | **Tool Calling Protocol** | OpenAI JSON `tools` parameter | XML tags embedded in conversational prose (`<write_to_file>`) |
 | **Context Accumulation** | Compact sliding transcript + pruned tools | Full multi-turn conversation transcripts re-sent every turn |

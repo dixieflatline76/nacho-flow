@@ -486,8 +486,8 @@ func runMain(args []string, serviceRunner func(service.Service) error) error {
 
 	svcConfig := &service.Config{
 		Name:        "nacho-flow",
-		DisplayName: "Nacho Flow AI Gateway",
-		Description: "Ultra-fast hybrid LLM proxy for local GPUs and cloud APIs (spicebox.dev/nacho-flow)",
+		DisplayName: "Nacho Flow Agent Supervisor & Model Dispatcher",
+		Description: "Agent Supervisor & Model Dispatcher for coding agents (spicebox.dev/nacho-flow)",
 	}
 
 	prg := &program{}
@@ -525,7 +525,7 @@ func runDeals(args []string) error {
 	port := fs.Int("port", contract.DefaultServerPort, "Nacho Flow daemon port")
 	host := fs.String("host", contract.DefaultDaemonHost, "Nacho Flow daemon host")
 	asJSON := fs.Bool("json", false, "Output deals as raw JSON")
-	apiKey := fs.String("auth", "", "Gateway auth token (if required)")
+	apiKey := fs.String("auth", "", "Daemon auth token (if required)")
 
 	if err := fs.Parse(args); err != nil {
 		return err

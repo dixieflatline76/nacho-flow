@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🌮 Nacho Flow - Smart Hybrid AI Gateway for Autonomous Coding Agents</title>
-    <meta name="description" content="High-performance, zero-dependency OpenAI-compatible proxy gateway in Go. Routes agent prompt turns between local GPUs ($0.00) and cloud APIs. Measured 94.7% cost reduction with 100% reasoning fidelity.">
+    <title>🌮 Nacho Flow - Agent Supervisor &amp; Model Dispatcher</title>
+    <meta name="description" content="Agent Supervisor &amp; Model Dispatcher in Go. Runs routine turns on your local GPU for free, kicks your agent when it stalls reading files, and only spends money on Claude when things get hard.">
     
     <!-- Open Graph / Social Meta Tags -->
-    <meta property="og:title" content="Nacho Flow - Smart Hybrid AI Gateway for Autonomous Agents">
-    <meta property="og:description" content="Dynamically route prompt turns between local GPUs and cloud APIs. Measured 94.7% cost reduction with 100% reasoning fidelity.">
-    <meta property="og:image" content="https://spicebox.dev/nacho-flow/images/hero-mascot.png">
+    <meta property="og:title" content="Nacho Flow - Agent Supervisor &amp; Model Dispatcher">
+    <meta property="og:description" content="Runs simple turns on your GPU for free, kicks your agent when it gets stuck reading files, and only spends money on Claude when things get hard.">
+    <meta property="og:image" content="images/hero-mascot.png">
     <meta property="og:url" content="https://spicebox.dev/nacho-flow/">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -46,28 +46,28 @@
                             <span class="dropdown-icon">📖</span>
                             <div class="dropdown-text">
                                 <span class="dropdown-title">User Guide</span>
-                                <span class="dropdown-desc">CLI commands, config.yaml & agent setup</span>
+                                <span class="dropdown-desc">CLI commands, config.yaml &amp; agent setup</span>
                             </div>
                         </a>
                         <a href="docs.html?doc=extension_guide" class="dropdown-item">
                             <span class="dropdown-icon">🧩</span>
                             <div class="dropdown-text">
                                 <span class="dropdown-title">VS Code Extension</span>
-                                <span class="dropdown-desc">Live HUD, process manager & telemetry webview</span>
+                                <span class="dropdown-desc">Live HUD, process manager &amp; telemetry webview</span>
                             </div>
                         </a>
                         <a href="docs.html?doc=architecture" class="dropdown-item">
                             <span class="dropdown-icon">🏗️</span>
                             <div class="dropdown-text">
-                                <span class="dropdown-title">Architecture & System Design</span>
-                                <span class="dropdown-desc">Internal pipeline, DTOs & agentic shield</span>
+                                <span class="dropdown-title">Architecture &amp; System Design</span>
+                                <span class="dropdown-desc">Internal pipeline, DTOs &amp; agentic shield</span>
                             </div>
                         </a>
                         <a href="docs.html?doc=benchmarks" class="dropdown-item">
                             <span class="dropdown-icon">📊</span>
                             <div class="dropdown-text">
-                                <span class="dropdown-title">Benchmarks & Case Study</span>
-                                <span class="dropdown-desc">30k req/s stress test & empirical findings</span>
+                                <span class="dropdown-title">Benchmarks &amp; Case Study</span>
+                                <span class="dropdown-desc">30k req/s stress test &amp; empirical findings</span>
                             </div>
                         </a>
                         <a href="docs.html?doc=tuning_guide" class="dropdown-item">
@@ -75,6 +75,13 @@
                             <div class="dropdown-text">
                                 <span class="dropdown-title">Cost-Penalty Auto-Tuner</span>
                                 <span class="dropdown-desc">Automated AST cost-reduction heuristics</span>
+                            </div>
+                        </a>
+                        <a href="docs.html?doc=metrics_guide" class="dropdown-item">
+                            <span class="dropdown-icon">📊</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">Telemetry &amp; Metrics Guide</span>
+                                <span class="dropdown-desc">Financial engine, prompt caching &amp; fixtures</span>
                             </div>
                         </a>
                     </div>
@@ -97,7 +104,7 @@
         </div>
     </nav>
 
-    <!-- Hero Section -->
+    <!-- Hero Section (The Wallet Hook) -->
     <header class="hero">
         <div class="hero-badge">
             Open Source &nbsp;·&nbsp; Zero Dependencies &nbsp;·&nbsp; Written in Go
@@ -108,10 +115,10 @@
                 <source src="images/hero-animated.mp4?v=0.8.0" type="video/mp4">
             </video>
         </div>
-        <h1>You just paid $2.00 to ask your AI agent to check a log file.</h1>
-        <p class="subtitle">Route simple turns to your GPU ($0). Route hard turns to cloud. Stop the bleeding.</p>
+        <h1>Don't give up on local models and open-source coding agents just yet.</h1>
+        <p class="subtitle">Stop letting tools like Cline and Zoo Code burn your credit card on infinite loops.</p>
         <p class="explainer">
-            Autonomous agent harnesses (<strong>Zoo Code</strong>, <strong>Cline</strong>, <strong>OpenCode</strong>, <strong>Aider</strong>) re-send your entire project transcript, file maps, and terminal outputs with every prompt. <strong>Nacho Flow</strong> keeps routine inspections, syntax edits, and unit tests on your local GPU for <strong>$0.00</strong>, automatically escalating to Claude or DeepSeek only when reasoning context demands it.
+            Nacho Flow runs the simple stuff on your own GPU for free, kicks your agent when it gets stuck reading files, and only spends money on Claude when things get hard.
         </p>
 
         <div class="cta-group">
@@ -123,7 +130,7 @@
                 <span>VS Code Extension</span>
             </a>
             <a href="docs.html?doc=user_guide" class="btn-secondary">
-                <span>📖 Documentation Hub</span>
+                <span>📖 Documentation</span>
             </a>
             <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-secondary">
                 <span>⭐ Star on GitHub</span>
@@ -131,28 +138,24 @@
         </div>
     </header>
 
-    <!-- The Problem / Origin Story -->
-    <section class="story-section">
-        <h2 class="section-title">The Token Snowball Trap</h2>
-        <p class="section-subtitle">Why autonomous coding agents drain API balances so fast.</p>
-
-        <div class="story-grid">
-            <div class="story-card glass">
-                <div class="story-icon">❄️</div>
-                <h3>The Context Snowball</h3>
-                <p>An agent session starts at 2,000 tokens. By Turn 15, it re-transmits 45,000 tokens of file contents, tool outputs, and history with every single prompt—growing heavier with each turn.</p>
-            </div>
-
-            <div class="story-card glass">
-                <div class="story-icon">💸</div>
-                <h3>The $2.00 Trivial Turn</h3>
-                <p>A single routine turn—checking a typo, running a linter, or executing <code>git status</code>—costs $1.50–$3.00 at cloud rates because you're paying to process 45,000 tokens of accumulated context.</p>
-            </div>
-
-            <div class="story-card glass">
-                <div class="story-icon">🌮</div>
-                <h3>The Hybrid Edge Solution</h3>
-                <p>Nacho Flow evaluates prompt metadata in sub-millisecond Go. Routine turns stay local on your GPU for $0.00. Deep reasoning and large architectural changes automatically hand off to the cloud.</p>
+    <!-- The Bridge: The Autonomous Agent Trap -->
+    <section class="agent-trap-section">
+        <div class="agent-trap-container glass">
+            <div class="agent-trap-badge">THE REALITY GAP</div>
+            <h2 class="section-title" style="margin-bottom: 0.5rem; text-align: left;">The Autonomous Agent Trap</h2>
+            <p class="section-subtitle" style="text-align: left; margin-bottom: 1.5rem;">Why open-weight and cheap models fail outside of $200/mo proprietary setups.</p>
+            
+            <div class="agent-trap-body">
+                <p class="agent-trap-intro">Outside of expensive proprietary silos, running autonomous agents on open-weight or non-frontier models is an exercise in rage-quitting:</p>
+                <ul class="agent-trap-list">
+                    <li><span class="trap-bullet">🔄</span> <div><strong>Infinite Repetition:</strong> Models loop on the exact same failed edit 12 times in a row without making progress.</div></li>
+                    <li><span class="trap-bullet">⏳</span> <div><strong>Analysis Paralysis:</strong> Agents spin in 10-turn &ldquo;read-only planning loops&rdquo; without writing a single line of code.</div></li>
+                    <li><span class="trap-bullet">💥</span> <div><strong>Schema Breakage:</strong> Malformed tool calls and hallucinated parameters trigger 3-strike crashes that abort your session.</div></li>
+                    <li><span class="trap-bullet">💸</span> <div><strong>The Token Snowball:</strong> Context balloons by 50k tokens per turn, leaving you paying $15 for broken code.</div></li>
+                </ul>
+                <div class="agent-trap-punchline">
+                    <strong>Nacho Flow wraps local models in active runtime guardrails</strong> &mdash; giving open-weights models the discipline, reliability, and precision of frontier reasoning agents.
+                </div>
             </div>
         </div>
     </section>
@@ -199,6 +202,226 @@
         </div>
     </section>
 
+    <!-- Section 1: The Three Fixes -->
+    <section class="three-fixes-section" id="mechanisms">
+        <h2 class="section-title">Why Your Autonomous Agent Finally Works</h2>
+        <p class="section-subtitle">Three active runtime supervisors that eliminate the catastrophic failure modes of local models.</p>
+
+        <!-- Centered 16:9 Widescreen Video Terminal Frame -->
+        <div class="cycle-killer-video-container">
+            <div class="terminal-window">
+                <div class="terminal-header">
+                    <div class="terminal-dots">
+                        <span class="dot-red"></span>
+                        <span class="dot-yellow"></span>
+                        <span class="dot-green"></span>
+                    </div>
+                    <div class="terminal-title">🎸 cycle-killer-demo.mp4 — In-Flight Stream Breaker (&lt; 3s Loop Termination)</div>
+                    <div class="terminal-tag" style="color: #10b981; font-weight: 600; font-size: 0.75rem;">● 1280x720 NATIVE 16:9</div>
+                </div>
+                <div class="video-wrapper">
+                    <video id="cycle-killer-video" autoplay muted loop playsinline preload="auto">
+                        <source src="images/cycle-killer-demo.mp4" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+            </div>
+        </div>
+
+        <!-- The Three Fixes Mechanism Cards -->
+        <div class="three-fixes-grid">
+            <div class="fix-card glass">
+                <div class="fix-badge badge-killer">🎸 IN-FLIGHT STREAM BREAKER</div>
+                <h3>Cycle Killer</h3>
+                <p class="fix-superpower">Kills runaway philosophical rants that waste tokens (your money).</p>
+                <p class="fix-mechanism">
+                    Monitors the live token stream in real time. Terminates repetitive N-gram loops (<em>W=6, T=3</em>) and runaway prose in &lt;3s, cleanly self-healing the session at $0.00 with a steer prompt instead of throwing blunt HTTP 500 errors that crash your agent session.
+                </p>
+            </div>
+
+            <div class="fix-card glass">
+                <div class="fix-badge badge-kickstart">⚡ STALL RESUSCITATION ENGINE</div>
+                <h3>Kickstart</h3>
+                <p class="fix-superpower">Tells the AI to continue when the job is not yet done.</p>
+                <p class="fix-mechanism">
+                    Monitors consecutive non-write turns. Auto-suspends during exploration via <strong>extensible schema detection</strong> (<code>HasWriteCapability</code>), and jolts agents out of passive read/plan procrastination—bursting to a frontier model for a single turn to unstick execution, then handing control straight back to your local GPU.
+                </p>
+            </div>
+
+            <div class="fix-card glass">
+                <div class="fix-badge badge-fairydust">🧚 PROGRAMMABLE CHECKPOINTS</div>
+                <h3>Fairy Dust</h3>
+                <p class="fix-superpower">Intelligently sprinkles in help from the big-gun models you can't run all day.</p>
+                <p class="fix-mechanism">
+                    A programmable intervention harness. You define the cadence (every <em>N</em> writes), audit prompt, target model, and spend cap—deploying frontier reasoning models precisely when and where quality verification matters to catch silent <code>// TODO</code> stubs, logic deadlocks, and spec drift before errors compound.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 2: The Cost Engine & Multi-Target Topology -->
+    <section class="cost-engine-section" id="cost-engine">
+        <h2 class="section-title">The Cost Engine &amp; Multi-Target Topology</h2>
+        <p class="section-subtitle">70%–92% fleet savings backed by verified mathematics and multi-provider dispatch.</p>
+
+        <div class="cost-engine-grid">
+            <div class="cost-card glass">
+                <div class="cost-icon">🖥️☁️</div>
+                <div class="cost-header-tag">MULTI-TARGET TOPOLOGY</div>
+                <h3>True Hybrid Local GPU + Cloud Routing</h3>
+                <p>Orchestrate multiple local nodes (Ollama, vLLM), direct Claude subscriptions, and upstream aggregators (OpenRouter, Langdock) behind a single OpenAI-compatible <code>localhost:8000</code> endpoint.</p>
+            </div>
+
+            <div class="cost-card glass">
+                <div class="cost-icon">🔥</div>
+                <div class="cost-header-tag">AUTONOMOUS PRICE DISCOVERY</div>
+                <h3>Heat Seeker Spot Deal Scout</h3>
+                <p>Scans 300+ models in the background for underpriced capacity and flash subsidies. Automatically maps live deals into your active tier roles while you sleep.</p>
+            </div>
+
+            <div class="cost-card glass">
+                <div class="cost-icon">💰</div>
+                <div class="cost-header-tag">DOLLAR-ACCURATE ACCOUNTING</div>
+                <h3>Prompt Cache-Aware Cost Engine</h3>
+                <p>Ingests upstream provider prompt cache discounts (~80% off prompt tokens). Real mathematical cost tracking ensures your dashboard matches your actual invoice.</p>
+            </div>
+
+            <div class="cost-card glass">
+                <div class="cost-icon">🎛️</div>
+                <div class="cost-header-tag">GRID-SEARCH HEURISTICS</div>
+                <h3>Curated Intelligence &amp; Auto-Tuner CLI</h3>
+                <p>Embedded vetted model gallery with auto OTA GitHub updates. Run <code>nacho-flow tune</code> to grid-search your session logs and optimize routing rules without touching config files.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 3: Developer Control Plane -->
+    <section class="extension-section" id="control-plane">
+        <h2 class="section-title">Developer Control Plane</h2>
+        <p class="section-subtitle">Ergonomics &amp; total control inside your IDE — with zero CLI fuss.</p>
+
+        <!-- Glassmorphic Editor Preview Frame -->
+        <div class="extension-preview-frame">
+            <div class="extension-preview-header">
+                <div class="terminal-dots">
+                    <span class="dot-red"></span>
+                    <span class="dot-yellow"></span>
+                    <span class="dot-green"></span>
+                </div>
+                <div class="extension-preview-title">Visual Studio Code — Nacho Flow Dashboard &amp; Sidebar Hub</div>
+                <div class="extension-preview-badge">● LIVE SSE CONTROL PLANE</div>
+            </div>
+            <img src="images/vscode-extension-showcase.png?v=0.9.1" alt="Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub, and Cline Pairing" class="extension-preview-img" loading="lazy">
+        </div>
+
+        <div class="extension-grid">
+            <div class="extension-card glass">
+                <div class="extension-badge">ALL-IN-ONE VS CODE EXTENSION</div>
+                <h3>Carries the Engine Inside (Zero Go Setup)</h3>
+                <p>The companion extension bundles and supervises the native Go routing binary directly. 1-click start/stop, live daemon logs, and instant preset hot-swap (Standard / Zoo Code / Cline) with zero-downtime synchronization.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">🚀 Bundled Native Binary</span>
+                    <span class="ext-tag">⚡ Zero-Polling SSE HUD</span>
+                    <span class="ext-tag">📋 1-Click Preset Switcher</span>
+                </div>
+            </div>
+
+            <div class="extension-card glass">
+                <div class="extension-badge">🌶️ HOTSAUCE DIRECTIVES</div>
+                <h3>In-Prompt Stream Steering &amp; Bypass</h3>
+                <p>Override routing right inside your chat turn with zero token latency. Directives like <code>@nacho:local</code>, <code>@nacho:cloud</code>, <code>@nacho:kickstart-off</code>, <code>@nacho:toggles</code>, and <code>@nacho:reset</code> are stripped cleanly before upstream dispatch.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">🌶️ In-Band @nacho: Directives</span>
+                    <span class="ext-tag">🚦 Mid-Flight Guardrail Toggles</span>
+                    <span class="ext-tag">🛡️ 100% Raw Stream Bypass</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="docs.html?doc=extension_guide" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 8px;">
+                <span>📖 Read the VS Code Extension Guide →</span>
+            </a>
+        </div>
+    </section>
+
+        <!-- Section 4: Scaling to Engineering Teams: Fleet Governance Without the Drag -->
+    <section class="fleet-governance-section" id="fleet-governance">
+        <div class="fleet-badge">ROADMAP &bull; COMING SOON</div>
+        <h2 class="section-title">🏢 Scaling to Engineering Teams: Fleet Governance Without the Drag</h2>
+        <p class="section-subtitle">Centralized SaaS control plane in development for Phase 4. Early access available for scale-ups.</p>
+
+        <div class="fleet-governance-grid">
+            <div class="fleet-card glass">
+                <div class="fleet-card-header">
+                    <div class="fleet-icon">🛡️</div>
+                    <span class="roadmap-pill">Phase 4 Roadmap</span>
+                </div>
+                <h3>Team Runaway Circuit Breakers</h3>
+                <p>Hard spend limits and automated killswitches prevent developers from burning $500 overnight when an agent gets caught in an unmonitored test-debug loop.</p>
+            </div>
+
+            <div class="fleet-card glass">
+                <div class="fleet-card-header">
+                    <div class="fleet-icon">🔒</div>
+                    <span class="roadmap-pill">Phase 4 Roadmap</span>
+                </div>
+                <h3>Private GPU Fleet Offloading</h3>
+                <p>Route routine codebase indexing and file inspections to internal on-prem vLLM/Ollama clusters, keeping proprietary source code off public APIs.</p>
+            </div>
+
+            <div class="fleet-card glass">
+                <div class="fleet-card-header">
+                    <div class="fleet-icon">📊</div>
+                    <span class="roadmap-pill">Phase 4 Roadmap</span>
+                </div>
+                <h3>Squad Spend Caps &amp; Quotas</h3>
+                <p>Allocate developer AI budgets by squad (Core, Frontend, Data) without locking engineers out of their favorite IDE agents.</p>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="docs.html?doc=roadmap" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 8px;">
+                <span>🗺️ View Full Architectural Roadmap &amp; Early Access →</span>
+            </a>
+        </div>
+    </section>
+
+    <!-- Architectural Trust Bar (Under the Hood Specs) -->
+    <section class="trust-specs-section">
+        <h2 class="section-title">Under the Hood: Engine Specifications</h2>
+        <p class="section-subtitle">Written in pure Go with zero external dependencies. Wire-speed proxying with sub-millisecond overhead.</p>
+
+        <div class="arch-trust-bar-container">
+            <div class="arch-trust-bar glass">
+                <div class="trust-item">
+                    <div class="trust-top"><span class="trust-icon">⚡</span> <span class="trust-val">&lt; 0.18ms</span></div>
+                    <div class="trust-lbl">Go Core Latency</div>
+                </div>
+                <div class="trust-item">
+                    <div class="trust-top"><span class="trust-icon">🚀</span> <span class="trust-val">31,424+</span></div>
+                    <div class="trust-lbl">Peak Req / Sec</div>
+                </div>
+                <div class="trust-item">
+                    <div class="trust-top"><span class="trust-icon">🛠️</span> <span class="trust-val">Universal</span></div>
+                    <div class="trust-lbl">Tool Normalization</div>
+                </div>
+                <div class="trust-item">
+                    <div class="trust-top"><span class="trust-icon">🛡️</span> <span class="trust-val">Zero-Crash</span></div>
+                    <div class="trust-lbl">Stream Healing</div>
+                </div>
+                <div class="trust-item">
+                    <div class="trust-top"><span class="trust-icon">📏</span> <span class="trust-val">Context</span></div>
+                    <div class="trust-lbl">Boundary Guards</div>
+                </div>
+                <div class="trust-item">
+                    <div class="trust-top"><span class="trust-icon">📐</span> <span class="trust-val">O(1)</span></div>
+                    <div class="trust-lbl">Physical Limit Guards</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Live Terminal Simulation Showcase -->
     <section class="showcase">
         <div class="terminal-window">
@@ -209,7 +432,7 @@
                     <span class="dot-green"></span>
                 </div>
                 <div class="terminal-title">nacho-flow proxy daemon (localhost:8000)</div>
-                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● LIVE 32,450 req/s</div>
+                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● PEAK 31,424 req/s</div>
             </div>
             <div class="terminal-body">
                 <div class="term-line">
@@ -228,178 +451,15 @@
                     <span class="term-msg">Turn 3 (Tokens: 24,100, Tools: ['edit_file']) ➔ <span class="term-highlight">openrouter/qwen3-coder-480b</span> <span class="tag-cache">89.4% KV CACHE HIT</span></span>
                 </div>
                 <div class="term-line">
+                    <span class="term-time">19:42:50</span>
+                    <span class="term-tag tag-reason">FAIRY DUST</span>
+                    <span class="term-msg">Turn 15 (WriteProgress: 15) ➔ <span class="term-highlight">anthropic/claude-sonnet-5</span> (✨ Tactical Code Review #1 injected)</span>
+                </div>
+                <div class="term-line">
                     <span class="term-time">19:43:01</span>
-                    <span class="term-tag tag-local">HEAT SEEKER</span>
-                    <span class="term-msg">Heat Seeker: <span class="term-highlight">gemini-2.5-flash-lite</span> surfaced at <strong style="color:#10b981;">$0.10/1M</strong> (replaces tier_1_vision at 96.7% savings)</span>
+                    <span class="term-tag tag-local">CYCLE KILLER</span>
+                    <span class="term-msg">Turn 22 (Repetition: W=6, T=3) ➔ <span class="term-highlight">[SYSTEM OVERRIDE]</span> stream terminated &lt;3s (self-healed at <strong style="color:#10b981;">$0.00</strong>)</span>
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- VS Code Companion Extension Showcase -->
-    <section class="extension-section">
-        <h2 class="section-title">Visual Control Plane for VS Code</h2>
-        <p class="section-subtitle">Real-time cost telemetry, visual route inspector, and one-click agent setup inside your editor.</p>
-
-        <!-- Glassmorphic Editor Preview Frame -->
-        <div class="extension-preview-frame">
-            <div class="extension-preview-header">
-                <div class="terminal-dots">
-                    <span class="dot-red"></span>
-                    <span class="dot-yellow"></span>
-                    <span class="dot-green"></span>
-                </div>
-                <div class="extension-preview-title">Visual Studio Code — Nacho Flow Dashboard &amp; Sidebar Hub</div>
-                <div class="extension-preview-badge">● LIVE SSE CONTROL PLANE</div>
-            </div>
-            <img src="images/vscode-extension-showcase.png?v=0.9.1" alt="Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub, and Cline Pairing" class="extension-preview-img" loading="lazy">
-        </div>
-
-        <div class="extension-grid">
-            <div class="extension-card glass">
-                <div class="extension-badge">SIDEBAR CONTROL HUB</div>
-                <h3>1-Click Local Engine & Agent Setup</h3>
-                <p>Start, stop, and stream local daemon logs with zero CLI fuss. Detects local Ollama/vLLM models and provides instant copy helpers for Zoo Code, Cline, and Cursor.</p>
-                <div class="extension-tags">
-                    <span class="ext-tag">🚀 3-Tier Binary Resolver</span>
-                    <span class="ext-tag">🔒 Isolated Remote Credentials</span>
-                    <span class="ext-tag">📋 1-Click Agent Setup</span>
-                </div>
-            </div>
-
-            <div class="extension-card glass">
-                <div class="extension-badge">REAL-TIME DASHBOARD</div>
-                <h3>Live Route Inspector & Circuit Breakers</h3>
-                <p>Zero-polling SSE stream tracks your active token volume and cumulative savings. Inspect the last 500 LLM requests in memory with 0ms disk overhead.</p>
-                <div class="extension-tags">
-                    <span class="ext-tag">⚡ 0ms In-Memory Ring Buffer</span>
-                    <span class="ext-tag">🚦 Interactive Circuit Breakers</span>
-                    <span class="ext-tag">🔥 Heat Seeker Live Deals</span>
-                </div>
-            </div>
-        </div>
-
-        <div style="text-align: center; margin-top: 2rem;">
-            <a href="docs.html?doc=extension_guide" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 8px;">
-                <span>📖 Read the VS Code Extension Guide →</span>
-            </a>
-        </div>
-    </section>
-
-    <!-- 3-Step Narrative -->
-    <section class="how-it-works">
-        <h2 class="section-title">How Nacho Flow Works</h2>
-        <p class="section-subtitle">Deterministic control over every prompt turn in 3 simple steps.</p>
-
-        <div class="steps-grid">
-            <div class="step-card glass">
-                <div class="step-num">1</div>
-                <h3>Point Your Agent Harness</h3>
-                <p>Change your API Base URL to <code>http://localhost:8000/v1</code> in Zoo Code, OpenCode, Aider, or Cline. Nacho Flow speaks standard OpenAI API wire format.</p>
-            </div>
-
-            <div class="step-card glass">
-                <div class="step-num">2</div>
-                <h3>Set Policy in 10 Lines of YAML</h3>
-                <p>Define simple routing rules in <code>config.yaml</code> using token bounds (<code>Tokens < 8000</code>), turn retries (<code>Retries < 2</code>), or domain keywords (<code>deadlock</code>, <code>architecture</code>).</p>
-            </div>
-
-            <div class="step-card glass">
-                <div class="step-num">3</div>
-                <h3>Enjoy $0.00 Local Turns</h3>
-                <p>Routine iterative turns stay on your workstation GPU for free, with automatic seamless escalation to flagship cloud models when reasoning demands it.</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- 3x3 Feature Matrix -->
-    <section class="features-section">
-        <h2 class="section-title">Engineered for Autonomous Coding</h2>
-        <p class="section-subtitle">Production-hardened resilience tested across 350,000+ requests.</p>
-
-        <div class="features-grid">
-            <div class="feature-card glass">
-                <div class="feature-icon">⚡</div>
-                <h3>&lt; 0.18ms Low Latency Core</h3>
-                <p>Handles 32,450+ req/s with lock-free atomic RCU router state and pre-pooled HTTP transports.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🔥</div>
-                <h3>Heat Seeker</h3>
-                <p>Drop-in tier replacements, automatically discovered. Maps market price drops directly to your active tier roles.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🏛️</div>
-                <h3>3-Tier Curated Intelligence (OTA)</h3>
-                <p>Embedded verified model gallery with automatic Over-The-Air GitHub semver updates and fallback capability classification.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🧠</div>
-                <h3>Reasoning Stream Normalizer</h3>
-                <p>Intercepts thinking tokens from DeepSeek-R1, QwQ, Qwen 2.5, and Claude, converting them into standard <code>&lt;think&gt;</code> tags on the fly.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🚦</div>
-                <h3>Local Circuit Breaker & 0ms Failover</h3>
-                <p>Detects when local Ollama/vLLM hangs or runs out of VRAM, immediately diverting turns to cloud with zero dial delay.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🔄</div>
-                <h3>Retry-Based Auto-Escalation</h3>
-                <p>Tracks session retries in a sliding 5-min TTL. If an agent loops on a local model, Nacho Flow escalates to Claude on Turn Retry 2.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">📏</div>
-                <h3>Adaptive Token EMA Calibrator</h3>
-                <p>Dynamically recalibrates character-to-token ratios using Exponential Moving Average to prevent context undercounting on code.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🛡️</div>
-                <h3>Delayed SSE Header Quality Guard</h3>
-                <p>Holds back <code>HTTP 200</code> headers on streams until peeking valid data, enabling cloud failover on empty or broken local payloads.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🛡️</div>
-                <h3>Agentic Tool Fallback Shield</h3>
-                <p>Sliding tail-buffer analysis (4.67ns, 0 allocs) detects conversational plans/questions from local models in Zoo Code/Cline and synthesizes <code>ask_followup_question</code> tool calls to eliminate 3-strike crashes.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🛠️</div>
-                <h3>Universal Tool Calling Normalizer</h3>
-                <p>Converts 8 tool-calling format families (Hermes, Mistral, Llama 3, Claude XML, ReAct) into standard OpenAI <code>tool_calls</code> JSON.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🎛️</div>
-                <h3>Cost-Penalty Auto-Tuner CLI</h3>
-                <p>Run <code>nacho-flow tune</code> to perform statistical odds-ratio grid search on your historical logs and generate optimal rules.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🌶️</div>
-                <h3>HotSauce Directives (In-Prompt Routing)</h3>
-                <p>Splash heat onto prompt turns to override routing (<code>@nacho:local</code>, <code>@nacho:cloud</code>, <code>@nacho:reasoning</code>, <code>@nacho:tier="..."</code>) or query daemon metadata (<code>@nacho:help</code>, <code>@nacho:tiers</code>, <code>@nacho:deals</code>) with &lt; 7ns zero-alloc bailout and zero LLM cost.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">📐</div>
-                <h3>Context Window Boundary Guard</h3>
-                <p>O(1) pre-guard checks model physical context limits, preventing 400 Context Length Exceeded errors before they happen.</p>
-            </div>
-
-            <div class="feature-card glass">
-                <div class="feature-icon">🧩</div>
-                <h3>Real-Time IDE Control & Live Telemetry</h3>
-                <p>Powers the official VS Code extension with zero-polling SSE live metrics, real-time financial telemetry, and instant daemon controls.</p>
             </div>
         </div>
     </section>
@@ -442,7 +502,7 @@
 
     <!-- IDE Quickstart Matrix -->
     <section class="ide-section">
-        <h2 class="section-title">Plug & Play Agent Integrations</h2>
+        <h2 class="section-title">Plug &amp; Play Agent Integrations</h2>
         <p class="section-subtitle">Works out of the box with your favorite tools.</p>
 
         <div class="ide-card glass">
@@ -478,7 +538,7 @@ Model ID: nacho-hybrid</code></pre>
                 <a href="privacy.html">Privacy</a>
             </div>
             <div style="color:var(--text-muted); font-size:0.85rem;">
-                GNU AGPL-3.0 & Commercial Dual-License © 2026 Karl Kwong / <a href="https://spicebox.dev" style="color:var(--text-muted); text-decoration:underline;">Spicebox</a>
+                GNU AGPL-3.0 &amp; Commercial Dual-License © 2026 Karl Kwong / <a href="https://spicebox.dev" style="color:var(--text-muted); text-decoration:underline;">Spicebox</a>
             </div>
         </div>
     </footer>
@@ -495,7 +555,6 @@ Model ID: nacho-hybrid</code></pre>
 
         const ideConfigs = {
             zoocode: `# In Zoo Code / Cline Provider Settings:\nProvider: OpenAI Compatible\nBase URL: http://127.0.0.1:8000/v1\nAPI Key:  sk-nacho-secret-key\nModel ID: nacho-hybrid`,
-            roocode: `# In Zoo Code / Cline Provider Settings:\nProvider: OpenAI Compatible\nBase URL: http://127.0.0.1:8000/v1\nAPI Key:  sk-nacho-secret-key\nModel ID: nacho-hybrid`,
             opencode: `# Run OpenCode in terminal:\nexport OPENAI_BASE_URL="http://127.0.0.1:8000/v1"\nexport OPENAI_API_KEY="sk-nacho-secret-key"\nopencode --model openai/nacho-hybrid`,
             aider: `# Run Aider in terminal:\nexport OPENAI_API_BASE="http://127.0.0.1:8000/v1"\nexport OPENAI_API_KEY="sk-nacho-secret-key"\naider --model openai/nacho-hybrid`,
             cursor: `# In Cursor Settings -> Models:\nOpenAI API Base: http://localhost:8000/v1\nOpenAI API Key:  sk-nacho-secret-key\nCustom Model:    nacho-hybrid`,

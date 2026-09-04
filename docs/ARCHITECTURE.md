@@ -161,7 +161,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **The Problem**: Rigid agent harnesses (Zoo Code, Cline) enforce a 0-turn error policy (`"You did not use a tool!"`). Local models answering questions or mode proposals in prose trigger 3-strike task abortions.
 - **Zero-Allocation Tail Buffer (`tail_buffer.go`)**: Maintains a 256-byte circular ring buffer across streaming responses using `sync.Pool` recycling.
 - **Rule Engine & Heuristic Guards (`rule_engine.go`)**: Evaluates prose endings in $4.67\text{ ns}$ for question marks (`?`), approval heuristics (*"Are you satisfied"*, *"Would you like"*), or mode switches (*"switch to code mode"*).
-- **Universal Dual-Schema Strategy Synthesis (`strategy.go`)**: Generates compliant tool calls for `ask_followup_question`, `ask_question`, or `switch_mode`. Emits both `follow_up: [...]` (Zoo Code / Roo Code) and `options: [...]` (Cline) simultaneously to satisfy all extension schema validators without error loops.
+- **Universal Dual-Schema Strategy Synthesis (`strategy.go`)**: Generates compliant tool calls for `ask_followup_question`, `ask_question`, or `switch_mode`. Emits both `follow_up: [...]` (Zoo Code) and `options: [...]` (Cline) simultaneously to satisfy all extension schema validators without error loops.
 - **Pre-`[DONE]` Stream Delta Injection (`stream_normalizer.go`)**: If upstream finishes without emitting native tool calls, the shield emits a synthetic `tool_calls` chunk with `finish_reason: "tool_calls"` immediately before streaming `data: [DONE]`.
 
 ### Stage 5e: 🎸 Cycle Killer: Two-Phase In-Flight Stream Defense (`pkg/router/shield/cycle_breaker.go`)
@@ -185,7 +185,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **Resuscitation Injection**: When `KickstartCount >= kickstart_threshold` (default 5, `0` disables), Nacho Flow injects `[SYSTEM OVERRIDE]` to force the agent to transition from planning to execution.
 
 ### Stage 5g: 🔑 Clean Session Key & Ephemeral Port Normalization (`pkg/server/proxy.go`)
-- **The Problem**: Standard HTTP clients (Zoo Code, Roo Code, Python SDK) create fresh TCP connections per request/retry, resulting in changing ephemeral client ports (e.g., `:65143` $\rightarrow$ `:55732`). If `r.RemoteAddr` is used directly as `sessionKey`, every retry resets session state to Turn 0.
+- **The Problem**: Standard HTTP clients (Zoo Code, Cline, Python SDK) create fresh TCP connections per request/retry, resulting in changing ephemeral client ports (e.g., `:65143` $\rightarrow$ `:55732`). If `r.RemoteAddr` is used directly as `sessionKey`, every retry resets session state to Turn 0.
 - **Port-Stripped Session Normalization (`extractSessionKey`)**: Resolves session keys via `x-session-id`, `session-id`, `X-Forwarded-For`, `X-Real-IP`, or pure host IP extracted via `net.SplitHostPort(r.RemoteAddr)`, guaranteeing persistent retry tracking across multi-turn agent sessions.
 
 ### Stage 5h: 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints (`pkg/router/session.go`, `pkg/server/proxy.go`)

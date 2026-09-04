@@ -54,7 +54,7 @@ export class DashboardPanel {
 			<div class="header-brand-row">
 				<div class="header-title">
 					<h1>🌮 Nacho Flow Dashboard</h1>
-					<span class="version-tag">Smart Hybrid AI Gateway for Autonomous Coding Agents</span>
+					<span class="version-tag">Agent Supervisor & Model Dispatcher</span>
 					<span id="active-preset-badge" class="preset-badge">📋 🌮 Standard</span>
 				</div>
 			</div>
@@ -97,7 +97,7 @@ export class DashboardPanel {
 			</div>
 
 			<div class="panel cycle-killer-panel">
-				<h2>🛡️ Cycle Killer (Qu'est-ce que c'est?): Loop Defense & Proactive Rescue</h2>
+				<h2>🎸 Cycle Killer (Qu'est-ce que c'est?): In-Flight Stream Breaker</h2>
 				<div id="cycle-killer-content">Loading defense telemetry...</div>
 			</div>
 

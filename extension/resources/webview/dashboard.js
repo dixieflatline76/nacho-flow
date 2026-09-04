@@ -344,13 +344,13 @@
 				</div>
 				<div class="ck-item kickstart-chip">
 					<div class="ck-value">${kickstarts} <span class="ck-unit">Sessions</span></div>
-					<div class="ck-label">🚀 Kickstart Escalations</div>
-					<div class="ck-sub">Tool-less sessions rescued via frontier reasoning injection</div>
+					<div class="ck-label">⚡ Kickstart Resuscitations</div>
+					<div class="ck-sub">Stalled sessions rescued out of passive read/plan procrastination</div>
 				</div>
 				<div class="ck-item fairy-chip">
 					<div class="ck-value">${fairyTriggers} <span class="ck-unit">Checkpoints</span></div>
-					<div class="ck-label">✨ Fairy Dust Injections</div>
-					<div class="ck-sub">Proactive thinking model checkpoints fired on write/turn 1</div>
+					<div class="ck-label">🧚 Fairy Dust Checkpoints</div>
+					<div class="ck-sub">Cadenced milestone checkpoints on productive file writes</div>
 				</div>
 			</div>
 			<div class="ck-footer-row">

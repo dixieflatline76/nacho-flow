@@ -12,7 +12,7 @@
 
 Autonomous AI coding agents across IDE extensions (**Zoo Code**, **Cline**) and CLI terminal harnesses (**OpenCode**, **Aider**) operate via iterative feedback loops where accumulated conversational history, project file maps, terminal outputs, and diagnostics are re-transmitted on every single turn. This architectural pattern induces a severe **"Context Snowball"**, causing routine turn costs (e.g., inspecting a log, checking a syntax definition, or executing `git status`) to cost upwards of $2.00–$3.00 per prompt at frontier cloud rates.
 
-This whitepaper presents an empirical, head-to-head A/B case study evaluating **Nacho Flow**—a high-performance, deterministic semantic AI gateway built in pure Go. We tasked Zoo Code with implementing a non-trivial, multi-file software engineering feature in a TypeScript/VS Code extension repository under two hybrid routing configurations:
+This whitepaper presents an empirical, head-to-head A/B case study evaluating **Nacho Flow**—a high-performance, deterministic agent supervisor and model dispatcher built in pure Go. We tasked Zoo Code with implementing a non-trivial, multi-file software engineering feature in a TypeScript/VS Code extension repository under two hybrid routing configurations:
 1. **Run A (Cost-Optimized Hybrid)**: Local GPU offload (`gemma4:12b-it-qat` on AMD ROCm) + Cloud Fast Coder (`qwen/qwen3-coder`).
 2. **Run B (Reasoning-Optimized Hybrid)**: Local GPU offload (`gemma4:12b-it-qat` on AMD ROCm) + Cloud Frontier Reasoning (`google/gemini-3.7-flash` with Extended Thinking).
 
@@ -44,8 +44,8 @@ By Turn 20, an agent asking for a 2-line typo fix re-submits over 60,000 tokens 
 - **Pure Local Routing ($0.00)**: Running 100% on local hardware (Ollama, vLLM, llama.cpp) eliminates API costs. However, local open-weight models (7B–14B parameters) suffer from **context dilution**, failing to adhere to complex JSON tool call schemas or correctly synthesize multi-file state machines once context exceeds 16k–24k tokens.
 - **Pure Cloud Routing ($$$$)**: Routing 100% of turns to Claude Sonnet or GPT-4o ensures high reasoning fidelity but results in massive economic inefficiency, paying frontier rates for trivial file searches and linter reads.
 
-### 1.3 The Hybrid Edge Gateway Hypothesis
-A deterministic, low-latency edge gateway can evaluate incoming prompt context in real-time ($< 0.2\text{ms}$), routing early exploration, file inspections, and routine unit tests to workstation GPUs for **$0.00**, while automatically escalating to frontier cloud models only when prompt tokens accumulate, complex keywords appear, or local retries indicate friction.
+### 1.3 The Agent Supervisor & Model Dispatcher Hypothesis
+A deterministic, low-latency agent supervisor and model dispatcher can evaluate incoming prompt context in real-time ($< 0.2\text{ms}$), routing early exploration, file inspections, and routine unit tests to workstation GPUs for **$0.00**, while automatically escalating to frontier cloud models only when prompt tokens accumulate, complex keywords appear, or local retries indicate friction.
 
 ### 1.4 The Hidden Cost: Total Cost of Ownership (TCO) & Failure Recovery
 Industry analysis overwhelmingly fixates on raw cost-per-million-tokens. However, in agentic software engineering, token cost is only one component of the economic equation:
@@ -400,7 +400,7 @@ To rigorously stress-test autonomous coding agents beyond toy scripts and isolat
 > - **Interactive CLI**: ASCII card rendering, counting practice mode, and real-time advisor.  
 > - **Quality Standard**: Go modules, standard package layout (`cmd/`, `internal/`, `pkg/`), and comprehensive unit tests.
 
-This workload was executed across multiple independent benchmark runs using both **Zoo Code** (VS Code extension with OpenAI-compatible JSON function calling) and **Cline / Roo Code** (VS Code extension with diff-based XML tool calling) routed through the Nacho Flow gateway.
+This workload was executed across multiple independent benchmark runs using both **Zoo Code** (VS Code extension with OpenAI-compatible JSON function calling) and **Cline** (VS Code extension with diff-based XML tool calling) routed through the Nacho Flow gateway.
 
 ---
 

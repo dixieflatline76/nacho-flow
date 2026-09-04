@@ -1240,7 +1240,7 @@ func TestProxy_SessionRetry_AutoEscalatesToCloud(t *testing.T) {
 	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
 	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
 
-	sessionHeader := "roo-session-test-42"
+	sessionHeader := "opencode-session-test-42"
 	promptBody := `{"model":"nacho-hybrid","messages":[{"role":"user","content":"Fix this bug in main.go"}]}`
 
 	// Turn 0: Fresh (Retries: 0) -> Local

@@ -21,10 +21,10 @@ The **Nacho Flow VS Code Companion Extension** delivers a high-visibility contro
 
 ## ⚡ 60-Second Quickstart (Zero CLI Required)
 
-The extension **bundles the native high-performance Go routing binary directly**. You do not need Go installed or any command-line setup:
+The extension **bundles the native high-performance Go dispatch binary directly**. You do not need Go installed or any command-line setup:
 
 1. **Open the Nacho Flow Sidebar**: Click the **🌮 Nacho Flow** icon in the VS Code Activity Bar (left sidebar).
-2. **Launch the Engine**: Under **1. Routing Engine**, click **`▶ Start`**. The status chip turns `🟢 Engine Online`.
+2. **Launch the Engine**: Under **1. Model Dispatcher**, click **`▶ Start`**. The status chip turns `🟢 Engine Online`.
 3. **Configure Your Agent**: Under **3. Coding Agents**, click **`📋 Copy`** next to:
    - **Base URL**: `http://127.0.0.1:8000/v1`
    - **Model ID**: `nacho-hybrid`
@@ -39,7 +39,7 @@ Routine turns now run on your GPU for **$0.00**, while complex reasoning automat
 
 ### 🎛️ 1. Sidebar Control Hub (Activity Bar)
 
-Manage your hybrid routing gateway directly from your editor sidebar without obscuring your code:
+Manage your agent supervisor and model dispatcher directly from your editor sidebar without obscuring your code:
 
 - **Local vs. Remote Gateway**:
   - **This Machine**: 1-click `▶ Start`, `⏹ Stop`, `🔄 Restart`, and interactive streaming `📄 Logs` for the bundled native Go engine.
@@ -75,14 +75,13 @@ A mission-control flight instrument webview providing total visibility into your
 
 Nacho Flow wraps open-weight and non-frontier models in active runtime guardrails, eliminating the common agent failure loops:
 
-- 🎸 **Cycle Killer (In-Flight Loop Defense)**:
-  - Murders circular deliberation loops and runaway monologues in $<3$ seconds before they burn GPU compute or drain your wallet.
-  - Visualizes murdied loops, avoided runaway GPU minutes, and local self-healing rate ($0.00 recovery via `[SYSTEM OVERRIDE]` prompts).
-- ⚡ **Kickstart Resuscitation**:
-  - Shocks agents out of lazy read-only planning spirals back into active file edits and terminal commands.
-  - **Automatic Plan-Mode Protection**: Intelligently suspends stall escalation when the agent enters Plan Mode (when declared tools lack write capabilities), allowing uninterrupted exploration.
-- 🧚 **Fairy Dusting (Frontier Quality Checkpoints)**:
-  - Tracks productive file writes and periodically routes turns to frontier models (Claude Sonnet 5, Claude Opus 5) to audit syntax and architectural integrity before errors cascade.
+- 🎸 **Cycle Killer (In-Flight Stream Breaker)**:
+  - Monitors the live token stream in real time. Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
+  - Visualizes intercepted loops, avoided runaway GPU minutes, and local self-healing rate ($0.00 recovery via `[SYSTEM OVERRIDE]` prompts).
+- ⚡ **Kickstart (Stall Resuscitation Engine)**:
+  - Monitors consecutive non-write turns. Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), and jolts agents out of passive read/plan procrastination when implementation stalls.
+- 🧚 **Fairy Dust (Programmable Milestone Checkpoints)**:
+  - A cadenced intervention engine. You control the trigger interval (every $N$ writes), the model, the audit prompt, and the spend cap—deploying frontier reasoning models precisely when and where quality verification matters.
 
 ---
 

@@ -1,6 +1,6 @@
 # =============================================================================
 # 🌮 NACHO FLOW: CLINE-OPTIMIZED CONFIGURATION
-# Tuned for Cline / Roo Code's diff-based edit architecture (SdkDiffEditCoordinator)
+# Tuned for Cline's diff-based edit architecture (SdkDiffEditCoordinator)
 #
 # KEY DIFFERENCES FROM ZOO CODE CONFIG:
 #   - Local Tier 1 uses Devstral Small 24B (handles Cline's XML tool format natively)

@@ -76,9 +76,9 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		<div id="engine-status-chip" class="status-chip chip-gray">⚪ Engine Offline (Click ▶️ Start)</div>
 	</div>
 
-	<!-- 1. Routing Engine Host -->
+	<!-- 1. Model Dispatcher Host -->
 	<div class="section-card">
-		<div class="section-header">🌐 1. Routing Engine</div>
+		<div class="section-header">🌐 1. Model Dispatcher</div>
 		<div class="section-body">
 			<div class="radio-group">
 				<label class="radio-label">

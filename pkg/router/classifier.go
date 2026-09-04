@@ -17,7 +17,7 @@ type RequestClassifier struct {
 }
 
 // defaultAgentErrorSignatures are fallback error patterns injected by agent clients
-// (Zoo Code, Cline, Roo Code) when no custom error_signatures are specified in config.yaml.
+// (Cline, Zoo Code, OpenCode) when no custom error_signatures are specified in config.yaml.
 var defaultAgentErrorSignatures = []string{
 	"[ERROR] You did not use a tool",
 	"Missing value for required parameter",

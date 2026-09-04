@@ -101,7 +101,7 @@
 			if (btnEngineStop) btnEngineStop.style.display = 'inline-flex';
 		} else if (status.starting) {
 			engineStatusChip.classList.add('chip-gray');
-			engineStatusChip.textContent = '⚡ Starting Routing Engine...';
+			engineStatusChip.textContent = '⚡ Starting Model Dispatcher...';
 			if (btnEngineStart) btnEngineStart.style.display = 'none';
 			if (btnEngineStop) btnEngineStop.style.display = 'none';
 		} else if (status.testing) {
@@ -341,7 +341,7 @@
 		const text = proxyEndpointText ? proxyEndpointText.textContent : 'http://127.0.0.1:8000/v1';
 		vscode.postMessage({ command: 'copyToClipboard', text, label: 'Zoo Code Proxy Endpoint' });
 	};
-	window.copyRooEndpoint = window.copyZooEndpoint;
+	window.copyOpenCodeEndpoint = window.copyZooEndpoint;
 
 	window.copyOllamaCommand = function(modelName) {
 		let model = modelName;

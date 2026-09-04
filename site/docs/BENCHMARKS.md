@@ -15,6 +15,11 @@ This document details the performance characteristics, load-testing methodology,
 - **Real-World Complex Workloads**: Maintains **~30,000+ req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization.
 <!-- BENCHMARK:EXECUTIVE_SUMMARY_END -->
 
+> [!TIP]
+> **Deep-Dive Technical Whitepapers**:
+> - 📄 **[Systems Architecture & Zero-Allocation Whitepaper](PERFORMANCE_WHITEPAPER.md)**: Explains the low-level systems engineering (SIMD byte filters, AOT bytecode VM, lock-free RCU, and ring-buffer streaming surgery) that enables deep inspection in $<0.2\text{ms}$ compared to LiteLLM and Bifrost.
+> - 🔬 **[A/B Benchmark Case Study Whitepaper](BENCHMARKS_AB_CASE_STUDY.md)**: Full empirical 4-run developer case study documenting $94.7\%$ spend reduction and local hardware ROI.
+
 ---
 
 ## 2. Test Environment

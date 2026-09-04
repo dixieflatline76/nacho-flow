@@ -7,7 +7,7 @@ package config
 // auto-initialized when nacho-flow boots on a clean environment without an existing config.yaml.
 const DefaultStarterConfigTemplate = `# =============================================================================
 # 🌮 NACHO FLOW CONFIGURATION
-# Intelligent Semantic AI Gateway & Multi-Tier Cost Optimizer
+# Agent Supervisor & Model Dispatcher
 # =============================================================================
 
 port: 8000

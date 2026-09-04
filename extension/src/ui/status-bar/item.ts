@@ -152,21 +152,21 @@ export class StatusBarManager {
 		md.supportThemeIcons = true;
 
 		if (!this.stats) {
-			md.appendMarkdown('**🌮 Nacho Flow** • Smart Hybrid AI Gateway');
+			md.appendMarkdown('**🌮 Nacho Flow** • Agent Supervisor & Model Dispatcher');
 			return md;
 		}
 
 		const m = metrics || this.extractMetricsForTimeWindow();
 		const presetLabel = StatusBarManager.PRESET_LABELS[this.activePreset] || this.activePreset;
 		
-		md.appendMarkdown(`**🌮 Nacho Flow** • Smart Hybrid AI Gateway\n\n`);
+		md.appendMarkdown(`**🌮 Nacho Flow** • Agent Supervisor & Model Dispatcher\n\n`);
 		md.appendMarkdown(`🕒 **Timeframe**: ${m.timeframeTitle}\n\n`);
 		md.appendMarkdown(`---\n\n`);
 		md.appendMarkdown(`💵 **Est. Cost Saved**: \`+$${m.savedUSD.toFixed(2)}\` *(${Math.round(m.reductionPct)}% saved)*\n\n`);
 		md.appendMarkdown(`📉 **Cloud API Spend**: \`$${m.spentUSD.toFixed(2)}\`\n\n`);
 		md.appendMarkdown(`⚡ **Local GPU ($0.00)**: \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)*\n\n`);
 		md.appendMarkdown(`🪙 **Total Prompt Turns**: \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)*\n\n`);
-		md.appendMarkdown(`🛣️ **Routing Engine**: \`${this.getBaseUrl()}\`\n\n`);
+		md.appendMarkdown(`🛣️ **Model Dispatcher**: \`${this.getBaseUrl()}\`\n\n`);
 		md.appendMarkdown(`📋 **Active Preset**: \`${presetLabel}\`\n\n`);
 		md.appendMarkdown(`---\n\n`);
 		md.appendMarkdown(`Switch: [Today](command:nacho-flow.setTimeWindowToday) &nbsp;|&nbsp; [Yesterday](command:nacho-flow.setTimeWindowYesterday) &nbsp;|&nbsp; [This Week](command:nacho-flow.setTimeWindowWeek) &nbsp;|&nbsp; [This Month](command:nacho-flow.setTimeWindowMonth) &nbsp;|&nbsp; [All Time](command:nacho-flow.setTimeWindowAllTime)\n\n`);

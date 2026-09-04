@@ -1,6 +1,6 @@
 # 🧩 Nacho Flow: VS Code Companion Extension Guide
 
-The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-latency control hub and analytics dashboard for your hybrid AI routing gateway. It bridges local GPU inference ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and flagship cloud APIs ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Anthropic](https://www.anthropic.com)) directly inside VS Code and Cursor.
+The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-latency control hub and analytics dashboard for your agent supervisor and model dispatcher. It bridges local GPU inference ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and flagship cloud APIs ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Anthropic](https://www.anthropic.com)) directly inside VS Code and Cursor.
 
 ![Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub and Cline Pairing](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/images/vscode-extension-showcase.png)
 
@@ -11,7 +11,7 @@ The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-
 1. [Architectural Doctrine: The Thin Client](#1-architectural-doctrine-the-thin-client)
 2. [Installation & Quick Start](#2-installation--quick-start)
 3. [Sidebar Control Hub (Activity Bar)](#3-sidebar-control-hub-activity-bar)
-   - [3.1 Routing Engine Lifecycle (Local vs. Remote Server)](#31-routing-engine-lifecycle-local-vs-remote-server)
+   - [3.1 Model Dispatcher Lifecycle (Local vs. Remote Server)](#31-model-dispatcher-lifecycle-local-vs-remote-server)
    - [3.2 Routing Presets & 1-Click Hot-Swap (Standard, Zoo Code, Cline)](#32-routing-presets--1-click-hot-swap-standard-zoo-code-cline)
    - [3.3 Coding Agent Pairing (Zoo Code, Cline, Cursor, Aider)](#33-coding-agent-pairing-zoo-code-cline-cursor-aider)
    - [3.4 Maintenance & System Operations](#34-maintenance--system-operations)
@@ -65,12 +65,12 @@ In the sidebar under **3. Coding Agents**, click the **📋 Copy** buttons to co
 
 The sidebar provides immediate visibility and one-click controls without obscuring your editor workspace:
 
-### 3.1 Routing Engine Lifecycle (Local vs. Remote Server)
+### 3.1 Model Dispatcher Lifecycle (Local vs. Remote Server)
 
 The extension lets you toggle seamlessly between running a local workstation instance or connecting to a shared team gateway:
 
 ```text
-[🌐 1. Routing Engine]
+[🌐 1. Model Dispatcher]
   (•) This Machine      ( ) Remote Server
   [▶ Start] [⏹ Stop] [🔄 Restart] [📄 Logs]
 ```
@@ -106,7 +106,7 @@ Different autonomous coding agents produce vastly different prompt and tool stru
 | Preset | Target File | Ideal For | Key Tuning Characteristics |
 | :--- | :--- | :--- | :--- |
 | **🌮 Standard** | `config.yaml` | General use, Aider, Cursor, Continue | Balanced context limits (16k local), standard prose token ceilings, standard tool detection. |
-| **🤖 Zoo Code** | `config.zoo.yaml` | Zoo Code (Roo Code fork) | Strict OpenAI JSON tool calling, tighter prose limits (800 words), aggressive Cycle Killer loop murder. |
+| **🤖 Zoo Code** | `config.zoo.yaml` | Zoo Code | Strict OpenAI JSON tool calling, tighter prose limits (800 words), aggressive Cycle Killer loop murder. |
 | **🛠️ Cline (XML-Native)** | `config.cline.yaml` | Cline, Claude Dev | Relaxed prose ceilings (`max_prose_tokens: 6144`) so Cline's verbose XML conversational preambles (`<write_to_file>`, `<replace_in_file>`) are never prematurely cut off. |
 
 #### 1-Click Hot-Swap (`⚡ Hot-Swap`):

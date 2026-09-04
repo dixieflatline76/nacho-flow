@@ -35,8 +35,8 @@ func (s *AskFollowupStrategy) ToolName() string {
 }
 
 func (s *AskFollowupStrategy) SynthesizeArgs(content string) (string, error) {
-	// Build a universal payload compatible with ALL agent clients:
-	// - Zoo Code / Roo Code require "follow_up" array of {text, mode} objects
+	// Build a universal payload compatible with agent clients:
+	// - Zoo Code requires "follow_up" array of {text, mode} objects
 	// - Cline requires "options" array of strings
 	// By including BOTH fields, the payload satisfies every client's schema validator.
 	type followUpOption struct {
@@ -60,7 +60,7 @@ func (s *AskFollowupStrategy) SynthesizeArgs(content string) (string, error) {
 	return string(b), err
 }
 
-// ModeSwitchStrategy handles Cline/Roo mode switching: {"mode_slug": "code", "reason": "..."}
+// ModeSwitchStrategy handles Cline mode switching: {"mode_slug": "code", "reason": "..."}
 type ModeSwitchStrategy struct {
 	BaseStrategy
 	Name string // "switch_mode"

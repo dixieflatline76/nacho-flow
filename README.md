@@ -16,11 +16,10 @@
   <a href="https://github.com/dixieflatline76/nacho-flow/pkgs/container/nacho-flow"><img src="https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white" alt="Docker GHCR"></a>
 </p>
 
-> **You just paid $2.00 to ask your AI agent to check a log file. There's a better way.**
->
-> A fast, zero-dependency hybrid AI gateway that routes agent prompt turns between **local GPUs ($0.00)** and **cloud APIs (up to 94.7% cost reduction)** with 100% reasoning fidelity.
+> **Don't give up on local models and open-source coding agents just yet.**
+> Stop letting tools like Cline and Zoo Code burn your credit card on infinite loops. Nacho Flow runs the simple stuff on your own GPU for free, kicks your agent when it gets stuck reading files, and only spends money on Claude when things get hard.
 
-**Nacho Flow** is an OpenAI-compatible proxy built in pure Go. It sits between autonomous coding agents ([Zoo Code](https://github.com/zoocodeorganization/zoo-code), [Cline](https://github.com/cline/cline), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)). Includes an integrated **VS Code Companion Extension** with real-time cost telemetry, visual route inspector, and one-click agent setup.
+**Nacho Flow** is an agent supervisor and model dispatcher built in pure Go. It sits between autonomous coding agents ([Cline](https://github.com/cline/cline), [Zoo Code](https://github.com/zoocodeorganization/zoo-code), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://www.cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **cloud endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)). Includes an integrated **VS Code Companion Extension** with real-time cost telemetry, visual route inspector, and one-click agent setup.
 
 🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)  
 Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
@@ -54,9 +53,9 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 
 ## 🥊 Nacho Flow vs. Cloud-Only Routers (e.g. OpenRouter Auto, LiteLLM)
 
-| Dimension | Cloud Routers (e.g. `openrouter/auto`) | Nacho Flow (Hybrid Edge Gateway) |
+| Dimension | Cloud Routers (e.g. `openrouter/auto`) | Nacho Flow (Agent Supervisor & Model Dispatcher) |
 | :--- | :--- | :--- |
-| **Routing Domain** | **Cloud-to-Cloud only** (100% paid). | **Hybrid Edge Gateway** (Local GPU $\leftrightarrow$ Cloud APIs). |
+| **Routing Domain** | **Cloud-to-Cloud only** (100% paid). | **Hybrid Dispatch** (Local GPU $\leftrightarrow$ Cloud APIs). |
 | **Cost Floor** | **$0.00 is impossible**. Every prompt incurs cloud fees. | **$0.00 for routine turns** on local hardware. |
 | **Hardware Utilization** | Completely ignores your local GPU / NPU. | Maximizes local VRAM on early turns before context limits are reached. |
 | **Routing Logic** | Black-box trailing 7-day community spend. | **Deterministic AST Bytecode Rules** (`Tokens`, `Retries`, `Keywords`). |
@@ -71,7 +70,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 
 ## ✨ Key Features
 
-* **⚡ High-Throughput Core**: Adds < 0.18 ms (180.8 µs) routing overhead and sustains 32,000+ req/s using lock-free atomic RCU state and pooled HTTP transports.
+* **⚡ High-Throughput Core**: Adds < 0.19 ms routing overhead and sustains 31,400+ req/s (peak 31,424 req/s) using lock-free atomic RCU state and pooled HTTP transports.
 * **🔥 "Heat Seeker" Live Model Deals & Curated Gallery**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
 * **🏛️ 3-Tier Curated Intelligence & OTA Sync**: Pre-packages verified SWE-bench & tool reliability scores (`//go:embed models.json`) with automatic Over-The-Air GitHub semver updates.
 * **🧩 Real-Time IDE Control & Live Telemetry**: Powers the official VS Code Companion Extension with zero-polling SSE live metrics, real-time cost savings graphs, active route inspection, and seamless daemon lifecycle controls.
@@ -82,9 +81,9 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **🛡️ Response Quality Validation & Delayed Headers**: Peeks initial SSE stream chunks before committing `HTTP 200` headers to enable transparent cloud failover if a local model returns an empty payload or unexpected termination.
 * **📐 Model Context Window Guard (`max_context`)**: Evaluates model physical context limits with O(1) pre-guards to prevent 400 Context Length Exceeded errors.
 * **🛡️ Agentic Tool Fallback Shield**: Sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
-* **🎸 Cycle Killer (In-Flight Stream Defense)**: Active dual-phase inference guard (*"Qu'est-ce que c'est?"*) tracking sliding N-gram windows (6-word window, 64-bit FNV-1a hash map) and non-tool prose budgets. Murders circular deliberation loops and runaway monologues in $<3$ seconds before they burn GPU compute, triggering local self-correction (`[SYSTEM OVERRIDE]` @ $0.00) or clean cloud failover.
-* **⚡ Kickstart Resuscitation**: Detects multi-turn read/plan idle loops across consecutive agent turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`), with write-only progress filtering (`kickstart_write_only: true`). Automatically suspends idle escalation during Plan Mode or pure exploration when the agent's active tools lack write capabilities.
-* **🧚 Fairy Dusting (Proactive Frontier Quality Checkpoints)**: Periodically and transparently routes turns to frontier models (Claude Sonnet 5, Claude Opus 5) on a configurable write-progress cadence (e.g. every 15 or 40 file writes) with injected audit directives to catch subtle syntax errors, missing ESM imports, and architectural drift before they cascade.
+* **🎸 Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream in real time (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
+* **⚡ Kickstart (Stall Resuscitation Engine)**: Monitors consecutive non-write turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`). Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), jolting agents out of passive read/plan procrastination when implementation stalls.
+* **🧚 Fairy Dust (Programmable Milestone Checkpoints)**: A cadenced intervention engine. You control the trigger interval (every $N$ writes), the model, the audit prompt, and the spend cap—deploying frontier reasoning models precisely when and where quality verification matters.
 * **💰 Prompt Cache-Aware Cost Engine**: Automatically ingests upstream provider prompt caching discounts (typically ~80% off prompt tokens from OpenRouter/DeepSeek/Anthropic) using a 3-tier priority oracle for dollar-accurate billing and ROI tracking.
 * **🛠️ Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Llama Python `<|python_tag|>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown code fences, and Ollama/Qwen Bare JSON) into standard OpenAI `tool_calls` JSON structures via a modular Strategy Pipeline, with native Cline XML tool detection (`<write_to_file>`, `<replace_in_file>`).
 * **🔒 Inbound Gateway Client Authentication**: Secures LAN and remote endpoints with optional Bearer token authentication while preserving a public `/health` endpoint.
@@ -305,7 +304,9 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 - **[VS Code Companion Extension Guide](docs/EXTENSION_USER_GUIDE.md)**: Sidebar control hub, status bar widget, route inspector, and agent setup.
 - **[Product & Commercial Roadmap](ROADMAP.md)**: Open-source data plane, IDE extension, fleet protocol, and SaaS control plane.
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
-- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**30,800+ req/s, 350k requests up to 1,000 workers**) on AMD Ryzen hardware.
+- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**31,400+ req/s, 350k requests up to 1,000 workers**) on AMD Ryzen hardware.
+- **[Systems Performance Whitepaper](docs/PERFORMANCE_WHITEPAPER.md)**: Zero-allocation systems architecture deep dive, comparing wire-speed agent supervision against LiteLLM and Bifrost.
+- **[A/B Benchmark Case Study Whitepaper](docs/BENCHMARKS_AB_CASE_STUDY.md)**: Empirical developer study proving $94.7\%$ cost reduction using local GPU routing.
 - **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules.
 - **[User Guide](docs/USER_GUIDE.md)**: Full configuration reference, custom `expr` tier rules, OS service setup, and IDE walkthroughs.
 - **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Development prerequisites, TDD workflow, plugin extension guide, and benchmarking.

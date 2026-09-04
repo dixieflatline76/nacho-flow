@@ -23,7 +23,7 @@ func TestAskFollowupStrategy_SynthesizesCompliantSchema(t *testing.T) {
 		t.Errorf("Expected question field, got %v", payload["question"])
 	}
 
-	// Verify "follow_up" array (Zoo Code / Roo Code compatibility)
+	// Verify "follow_up" array (Zoo Code / Cline compatibility)
 	followUp, ok := payload["follow_up"].([]interface{})
 	if !ok || len(followUp) < 2 {
 		t.Fatalf("Expected follow_up array with 2+ items, got %v", payload["follow_up"])

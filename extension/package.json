@@ -1,7 +1,7 @@
 {
   "name": "nacho-flow",
   "displayName": "Nacho Flow",
-  "description": "VS Code extension for the Nacho Flow AI routing gateway - Real-time cost visibility, route inspection, and circuit breaker management",
+  "description": "VS Code extension for Nacho Flow - Agent Supervisor & Model Dispatcher. Real-time cost visibility, route inspection, and runtime guardrails",
   "version": "0.9.1",
   "publisher": "dixieflatline76",
   "license": "MIT",
