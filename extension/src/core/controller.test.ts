@@ -1813,5 +1813,80 @@ default_tier:
       await onMessage({ command: 'resetCircuits' });
       expect(mockRestClient.resetCircuit).toHaveBeenCalled();
     });
+
+    it('should exercise getStandardConfigPaths across all platforms and edge cases', () => {
+      const origPlatform = process.platform;
+      const origAppData = process.env.APPDATA;
+      try {
+        delete process.env.APPDATA;
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        const winPathsFallback = extensionController.getStandardConfigPaths();
+        expect(winPathsFallback.length).toBeGreaterThan(0);
+
+        process.env.APPDATA = '/test/appdata';
+        const winPaths = extensionController.getStandardConfigPaths();
+        expect(winPaths.length).toBeGreaterThan(0);
+
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+        const darwinPaths = extensionController.getStandardConfigPaths();
+        expect(darwinPaths.length).toBe(3);
+
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        const linuxPaths = extensionController.getStandardConfigPaths();
+        expect(linuxPaths.length).toBe(2);
+      } finally {
+        Object.defineProperty(process, 'platform', { value: origPlatform });
+        if (origAppData !== undefined) {
+          process.env.APPDATA = origAppData;
+        } else {
+          delete process.env.APPDATA;
+        }
+      }
+    });
+
+    it('should cover additional branches in dashboard lifecycle and error handling', async () => {
+      // 1. handleEngineStartError when success: true or error is missing
+      await (extensionController as any).handleEngineStartError({ success: true });
+      await (extensionController as any).handleEngineStartError({ success: false });
+
+      // 2. handleEngineStartError with other parsed error type
+      const showErrSpy = jest.spyOn(vscode.window, 'showErrorMessage');
+      await (extensionController as any).handleEngineStartError({
+        success: false,
+        error: 'Generic error',
+        parsedError: { type: 'BINARY_MISSING' as any, message: 'Binary not found' }
+      });
+      expect(showErrSpy).toHaveBeenCalledWith('Generic error');
+
+      // 3. refreshDeals manual with dashboardPanel null
+      (extensionController as any).dashboardPanel = null;
+      (extensionController as any).restClient = {
+        getDeals: jest.fn().mockResolvedValue({ deals: [{ id: 'd1' }] })
+      };
+      const showDashSpy = jest.spyOn(extensionController as any, 'showDashboard').mockReturnValue(undefined);
+      await extensionController.refreshDeals(true);
+      expect(showDashSpy).toHaveBeenCalled();
+
+      // 4. replaceTierRuleInYaml with root-level non-tier key
+      const sampleYaml = `
+tiers:
+  - name: "Tier 1"
+    when: "Tokens < 100"
+other_key:
+  foo: bar
+`;
+      const modified = extensionController.replaceTierRuleInYaml(sampleYaml, "Tier 1", "Tokens < 500");
+      expect(modified).toContain('"Tokens < 500"');
+
+      // 5. applyOptimization without target_tier_name or synthesized_rule
+      const warnSpy = jest.spyOn(vscode.window, 'showWarningMessage');
+      await extensionController.applyOptimization({ target_tier_name: '' });
+      expect(warnSpy).toHaveBeenCalledWith('Nacho Flow: No optimization policy available to apply');
+
+      // 6. applyOptimization when rule cannot be located
+      (extensionController as any).restClient.getConfigYaml = jest.fn().mockResolvedValue(`tiers:\n  - name: "Different"\n    when: "true"\n`);
+      await extensionController.applyOptimization({ target_tier_name: 'Target', synthesized_rule: 'rule' });
+      expect(warnSpy).toHaveBeenCalledWith('Nacho Flow: Could not locate rule for tier "Target" in config YAML');
+    });
   });
 });

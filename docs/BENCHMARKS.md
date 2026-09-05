@@ -232,7 +232,7 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 <!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **14 / 14 Suites** | **210 / 210 (100%)** | **95.31% / 95.63% / 95.96%** |
+| **Extension Core & Webview Suite** | **14 / 14 Suites** | **212 / 212 (100%)** | **96.22% / 96.56% / 95.96%** |
 <!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---
