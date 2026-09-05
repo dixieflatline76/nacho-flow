@@ -39,17 +39,23 @@ func TestDirectiveConstantsAndPath(t *testing.T) {
 	origXDG := os.Getenv("XDG_CONFIG_HOME")
 	origHome := os.Getenv("HOME")
 	origUserProfile := os.Getenv("USERPROFILE")
+	origDirectiveFile := os.Getenv("NACHO_DIRECTIVE_FILE")
+	origNachoConfig := os.Getenv("NACHO_CONFIG_DIR")
 	defer func() {
 		os.Setenv("APPDATA", origConfigDir)
 		os.Setenv("XDG_CONFIG_HOME", origXDG)
 		os.Setenv("HOME", origHome)
 		os.Setenv("USERPROFILE", origUserProfile)
+		os.Setenv("NACHO_DIRECTIVE_FILE", origDirectiveFile)
+		os.Setenv("NACHO_CONFIG_DIR", origNachoConfig)
 	}()
 
 	os.Unsetenv("APPDATA")
 	os.Unsetenv("XDG_CONFIG_HOME")
 	os.Unsetenv("HOME")
 	os.Unsetenv("USERPROFILE")
+	os.Unsetenv("NACHO_DIRECTIVE_FILE")
+	os.Unsetenv("NACHO_CONFIG_DIR")
 
 	fallbackPath, err := contract.GetDirectiveFilePath()
 	if err != nil {
@@ -59,15 +65,27 @@ func TestDirectiveConstantsAndPath(t *testing.T) {
 		t.Fatalf("unexpected fallbackPath: %s", fallbackPath)
 	}
 
-	// Test MkdirAll error by setting APPDATA to an existing file
+	// Test custom NACHO_DIRECTIVE_FILE override
+	customPath := filepath.Join(t.TempDir(), "custom-dir", "custom-directive.json")
+	os.Setenv("NACHO_DIRECTIVE_FILE", customPath)
+	resPath, err := contract.GetDirectiveFilePath()
+	if err != nil {
+		t.Fatalf("GetDirectiveFilePath with NACHO_DIRECTIVE_FILE failed: %v", err)
+	}
+	if resPath != customPath {
+		t.Fatalf("expected customPath %s, got %s", customPath, resPath)
+	}
+	os.Unsetenv("NACHO_DIRECTIVE_FILE")
+
+	// Test MkdirAll error by setting NACHO_CONFIG_DIR to an existing file
 	tempFile, tfErr := os.CreateTemp("", "nacho_file_blocker_*")
 	if tfErr == nil {
 		defer os.Remove(tempFile.Name())
 		tempFile.Close()
-		os.Setenv("APPDATA", tempFile.Name())
+		os.Setenv("NACHO_CONFIG_DIR", tempFile.Name())
 		_, err = contract.GetDirectiveFilePath()
 		if err == nil {
-			t.Errorf("expected error when APPDATA is a regular file")
+			t.Errorf("expected error when NACHO_CONFIG_DIR is a regular file")
 		}
 	}
 }

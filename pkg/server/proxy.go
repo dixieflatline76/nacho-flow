@@ -53,6 +53,7 @@ type Server struct {
 	watchdogMu     sync.Mutex
 	watchdogActive bool
 	watchdogErrors atomic.Int32
+	directivePath  string
 	exitFunc       func(code int)
 }
 
@@ -113,6 +114,11 @@ func (s *Server) SetTrafficLogPath(path string) {
 // SetExitFunc overrides the process exit function (primarily for testing).
 func (s *Server) SetExitFunc(fn func(code int)) {
 	s.exitFunc = fn
+}
+
+// SetDirectivePath sets a custom path for the cold startup directive file (primarily for testing).
+func (s *Server) SetDirectivePath(path string) {
+	s.directivePath = path
 }
 
 func (s *Server) armWatchdog(memento *runtimeState, duration time.Duration) {

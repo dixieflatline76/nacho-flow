@@ -69,8 +69,15 @@ func (s *Server) handleAPIDirective(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) getDirectiveFilePath() (string, error) {
+	if s.directivePath != "" {
+		return s.directivePath, nil
+	}
+	return contract.GetDirectiveFilePath()
+}
+
 func (s *Server) handlePurgeAllLogsDirective(w http.ResponseWriter, req DirectiveRequest) {
-	directivePath, err := contract.GetDirectiveFilePath()
+	directivePath, err := s.getDirectiveFilePath()
 	if err != nil {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -83,10 +90,15 @@ func (s *Server) handlePurgeAllLogsDirective(w http.ResponseWriter, req Directiv
 	statsPath := ""
 	if s.diskStore != nil && s.diskStore.FilePath() != "" {
 		statsPath = s.diskStore.FilePath()
+	} else if s.directivePath != "" {
+		statsPath = filepath.Join(filepath.Dir(s.directivePath), contract.DefaultStatsFileName)
 	} else {
-		userConfigDir, _ := os.UserConfigDir()
+		userConfigDir := os.Getenv("NACHO_CONFIG_DIR")
 		if userConfigDir == "" {
-			userConfigDir = "."
+			userConfigDir, _ = os.UserConfigDir()
+			if userConfigDir == "" {
+				userConfigDir = "."
+			}
 		}
 		statsPath = filepath.Join(userConfigDir, contract.AppName, contract.DefaultStatsFileName)
 	}

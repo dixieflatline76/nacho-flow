@@ -210,29 +210,29 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 <!-- COVERAGE:GO_TABLE_START -->
 | Package / Subsystem | Primary Responsibility | Statement Coverage |
 | :--- | :--- | :--- |
-| `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **100.0%** |
 | `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **99.5%** |
 | `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **99.4%** |
 | `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **98.0%** |
+| `pkg/store` | Stats Persistence & File Locking Engine | **97.1%** |
 | `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
-| `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
 | `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.6%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.8%** |
 | `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.6%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.2%** |
+| `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **95.5%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.4%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
-| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.0%** |
+| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.1%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
 #### VS Code Companion Extension Coverage:
 <!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **14 / 14 Suites** | **210 / 210 (100%)** | **95.49% / 95.82% / 95.96%** |
+| **Extension Core & Webview Suite** | **14 / 14 Suites** | **210 / 210 (100%)** | **95.31% / 95.63% / 95.96%** |
 <!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---

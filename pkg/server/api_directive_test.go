@@ -70,13 +70,20 @@ func TestAPI_Directive_Unknown_Action(t *testing.T) {
 	}
 }
 
+func setupTestConfigDir(t *testing.T, baseDir string) {
+	t.Helper()
+	t.Setenv("APPDATA", baseDir)
+	t.Setenv("XDG_CONFIG_HOME", baseDir)
+	t.Setenv("HOME", baseDir)
+	t.Setenv("USERPROFILE", baseDir)
+	t.Setenv("NACHO_CONFIG_DIR", baseDir)
+}
+
 func TestAPI_Directive_PurgeAllLogs(t *testing.T) {
 	srv, _, _ := setupTestServer(t)
 
 	tempDir := t.TempDir()
-	origAppData := os.Getenv("APPDATA")
-	defer os.Setenv("APPDATA", origAppData)
-	os.Setenv("APPDATA", tempDir)
+	setupTestConfigDir(t, tempDir)
 
 	exitChan := make(chan int, 1)
 	srv.SetExitFunc(func(code int) {
@@ -222,9 +229,7 @@ func TestAPI_Directive_PurgeAllLogs_WithDiskStore(t *testing.T) {
 	srv, _, _ := setupTestServer(t)
 
 	tempDir := t.TempDir()
-	origAppData := os.Getenv("APPDATA")
-	defer os.Setenv("APPDATA", origAppData)
-	os.Setenv("APPDATA", tempDir)
+	setupTestConfigDir(t, tempDir)
 
 	mockStorePath := filepath.Join(tempDir, "custom_stats.json")
 	mockStore, err := store.NewDiskStore(mockStorePath)
@@ -250,9 +255,14 @@ func TestAPI_Directive_PurgeAllLogs_WithDiskStore(t *testing.T) {
 
 	// Verify on-disk stats path matches mockStorePath
 	directiveFile := filepath.Join(tempDir, contract.AppName, contract.DefaultDirectiveFileName)
-	data, _ := os.ReadFile(directiveFile)
+	data, err := os.ReadFile(directiveFile)
+	if err != nil {
+		t.Fatalf("failed to read written directive file: %v", err)
+	}
 	var onDisk map[string]interface{}
-	_ = json.Unmarshal(data, &onDisk)
+	if err := json.Unmarshal(data, &onDisk); err != nil {
+		t.Fatalf("failed to parse written directive JSON: %v", err)
+	}
 	targets, _ := onDisk["targets"].(map[string]interface{})
 	if targets["stats_path"] != filepath.Clean(mockStorePath) {
 		t.Errorf("expected stats_path '%s', got '%v'", filepath.Clean(mockStorePath), targets["stats_path"])
@@ -268,9 +278,7 @@ func TestAPI_Directive_PurgeAllLogs_PathError(t *testing.T) {
 	defer os.Remove(tempFile.Name())
 	tempFile.Close()
 
-	origAppData := os.Getenv("APPDATA")
-	defer os.Setenv("APPDATA", origAppData)
-	os.Setenv("APPDATA", tempFile.Name())
+	setupTestConfigDir(t, tempFile.Name())
 
 	req := httptest.NewRequest(http.MethodPost, contract.PathAPIDirective, bytes.NewReader([]byte(`{"action":"PURGE_ALL_LOGS"}`)))
 	req.Header.Set(contract.HeaderAuthorization, contract.AuthSchemeBearer+"test-secret-token")
@@ -366,9 +374,7 @@ func TestAPI_Directive_PurgeAllLogs_DefaultStatsPathFallback(t *testing.T) {
 	srv.SetDiskStore(nil)
 
 	tempDir := t.TempDir()
-	origAppData := os.Getenv("APPDATA")
-	defer os.Setenv("APPDATA", origAppData)
-	os.Setenv("APPDATA", tempDir)
+	setupTestConfigDir(t, tempDir)
 
 	exitChan := make(chan int, 1)
 	srv.SetExitFunc(func(code int) {
@@ -395,15 +401,14 @@ func TestAPI_Directive_PurgeAllLogs_MkdirFailure(t *testing.T) {
 	srv, _, _ := setupTestServer(t)
 
 	tempDir := t.TempDir()
-	origAppData := os.Getenv("APPDATA")
-	defer os.Setenv("APPDATA", origAppData)
-	os.Setenv("APPDATA", tempDir)
-
-	// Create a regular file blocking the directory creation
-	blockerFile := filepath.Join(tempDir, contract.AppName)
+	blockerFile := filepath.Join(tempDir, "blocker_file")
 	if err := os.WriteFile(blockerFile, []byte("blocker"), 0600); err != nil {
 		t.Fatalf("failed to create blocker file: %v", err)
 	}
+
+	// Set custom directive path whose parent directory cannot be created because a file blocks it
+	blockedDirectivePath := filepath.Join(blockerFile, "child_dir", "directive.json")
+	srv.SetDirectivePath(blockedDirectivePath)
 
 	req := httptest.NewRequest(http.MethodPost, contract.PathAPIDirective, bytes.NewReader([]byte(`{"action":"PURGE_ALL_LOGS"}`)))
 	req.Header.Set(contract.HeaderAuthorization, contract.AuthSchemeBearer+"test-secret-token")
@@ -419,15 +424,13 @@ func TestAPI_Directive_PurgeAllLogs_RenameFailure(t *testing.T) {
 	srv, _, _ := setupTestServer(t)
 
 	tempDir := t.TempDir()
-	origAppData := os.Getenv("APPDATA")
-	defer os.Setenv("APPDATA", origAppData)
-	os.Setenv("APPDATA", tempDir)
-
 	// Pre-create directivePath as a directory containing a child file to force rename error
-	destDir := filepath.Join(tempDir, contract.AppName, contract.DefaultDirectiveFileName)
+	destDir := filepath.Join(tempDir, "directive_dir_blocker")
 	if err := os.MkdirAll(filepath.Join(destDir, "child"), 0750); err != nil {
 		t.Fatalf("failed to create dir blocker: %v", err)
 	}
+
+	srv.SetDirectivePath(destDir)
 
 	req := httptest.NewRequest(http.MethodPost, contract.PathAPIDirective, bytes.NewReader([]byte(`{"action":"PURGE_ALL_LOGS"}`)))
 	req.Header.Set(contract.HeaderAuthorization, contract.AuthSchemeBearer+"test-secret-token")

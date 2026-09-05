@@ -66,6 +66,7 @@ func setupTestServer(t *testing.T) (*Server, *telemetry.RingBufferSink, *telemet
 	sanitizer := router.NewSanitizer()
 
 	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, reg, nil)
+	srv.SetExitFunc(func(code int) {})
 
 	ringBuffer := telemetry.NewRingBufferSink(10)
 	tracker.AddSink(ringBuffer)
