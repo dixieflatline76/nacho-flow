@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 )
 
@@ -354,6 +355,21 @@ func BenchmarkSSE_NonReasoning_ZeroAlloc(b *testing.B) {
 		norm := NewStreamNormalizer(r)
 		_, _ = io.Copy(io.Discard, norm)
 		_ = norm.Close()
+	}
+}
+
+func BenchmarkSSE_ProcessLine_NonReasoning(b *testing.B) {
+	rawLine := []byte("data: {\"id\":\"bench-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Fast token\"}}]}\n")
+	norm := &StreamNormalizer{
+		outBuf:   &bytes.Buffer{},
+		features: uint16(router.FeatureDefaultAll),
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		norm.outBuf.Reset()
+		norm.processLine(rawLine)
 	}
 }
 
@@ -706,5 +722,58 @@ data: [DONE]
 	}
 	if usage.Cost != 0.024 {
 		t.Errorf("expected 0.024 cost, got %f", usage.Cost)
+	}
+}
+
+func TestStreamNormalizer_ExtractContentFast(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		want    string
+	}{
+		{
+			name:    "standard compact content",
+			payload: `{"choices":[{"delta":{"content":"Hello world"}}]}`,
+			want:    "Hello world",
+		},
+		{
+			name:    "content with space after colon",
+			payload: `{"choices":[{"delta":{"content": "With spaces"}}]}`,
+			want:    "With spaces",
+		},
+		{
+			name:    "content with escaped quotes and backslashes",
+			payload: `{"choices":[{"delta":{"content":"Line 1\\n\"quoted\" text"}}]}`,
+			want:    `Line 1\\n\"quoted\" text`,
+		},
+		{
+			name:    "empty content",
+			payload: `{"choices":[{"delta":{"content":""}}]}`,
+			want:    "",
+		},
+		{
+			name:    "null content",
+			payload: `{"choices":[{"delta":{"content":null}}]}`,
+			want:    "",
+		},
+		{
+			name:    "missing content field",
+			payload: `{"choices":[{"delta":{"role":"assistant"}}]}`,
+			want:    "",
+		},
+		{
+			name:    "malformed payload",
+			payload: `invalid json payload`,
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractContentFast([]byte(tt.payload))
+			if got != tt.want {
+				t.Errorf("extractContentFast(%s) = %q, want %q", tt.payload, got, tt.want)
+			}
+		})
 	}
 }

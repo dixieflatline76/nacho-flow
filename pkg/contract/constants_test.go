@@ -104,4 +104,3 @@ func TestGetUserConfigDir(t *testing.T) {
 		}
 	})
 }
-

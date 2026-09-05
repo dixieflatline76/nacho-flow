@@ -7,7 +7,7 @@ This document details the performance characteristics, load-testing methodology,
 ## 1. Executive Summary
 
 <!-- BENCHMARK:EXECUTIVE_SUMMARY_START -->
-- **Peak Throughput**: **30,284 requests/second** under full production authentication and tool normalization load.
+- **Peak Throughput**: **28,994 requests/second** under full production authentication and tool normalization load.
 - **Pipeline Latency**: **~0.19 ms** raw pass-through overhead per request (**~0.22 ms** with full multi-model tool-call normalization).
 - **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
 - **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
@@ -69,11 +69,11 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 <!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **26688.1 req/s** | 2.00 ms | 7.65 ms | 90.1 MB |
-| **100 workers** | 50,000 | **100.0%** | **23891.2 req/s** | 3.01 ms | 20.23 ms | 76.8 MB |
-| **250 workers** | 75,000 | **100.0%** | **30284.2 req/s** | 7.58 ms | 26.14 ms | 92.5 MB |
-| **500 workers** | 100,000 | **100.0%** | **26268.6 req/s** | 15.28 ms | 62.58 ms | 159.5 MB |
-| **1000 workers** | 100,000 | **100.0%** | **26837.5 req/s** | 30.24 ms | 99.08 ms | 182.7 MB |
+| **50 workers** | 25,000 | **100.0%** | **28189.0 req/s** | 1.77 ms | 7.09 ms | 75.1 MB |
+| **100 workers** | 50,000 | **100.0%** | **23480.6 req/s** | 3.09 ms | 18.18 ms | 138.3 MB |
+| **250 workers** | 75,000 | **100.0%** | **25735.2 req/s** | 8.21 ms | 38.35 ms | 164.0 MB |
+| **500 workers** | 100,000 | **100.0%** | **23273.3 req/s** | 16.96 ms | 89.91 ms | 222.6 MB |
+| **1000 workers** | 100,000 | **100.0%** | **25169.2 req/s** | 36.88 ms | 77.37 ms | 122.2 MB |
 <!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
@@ -92,10 +92,10 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 <!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 28772.5 req/s | 28320.1 req/s | **-1.6%** | **+0.00 ms** (0.00ms vs 0.00ms) | -0.12 ms |
-| **50 workers** | 30075.5 req/s | 29280.1 req/s | **-2.6%** | **+0.00 ms** (2.01ms vs 2.01ms) | +0.53 ms |
-| **100 workers** | 29588.5 req/s | 28741.4 req/s | **-2.9%** | **+0.21 ms** (2.44ms vs 2.65ms) | +0.02 ms |
-| **200 workers** | 29149.0 req/s | 29281.2 req/s | **+0.5%** | **+0.04 ms** (5.98ms vs 6.02ms) | +0.58 ms |
+| **25 workers** | 28711.2 req/s | 28994.6 req/s | **+1.0%** | **+0.00 ms** (0.51ms vs 0.51ms) | +0.56 ms |
+| **50 workers** | 30459.4 req/s | 28618.1 req/s | **-6.0%** | **-0.12 ms** (2.00ms vs 1.88ms) | +1.50 ms |
+| **100 workers** | 26920.9 req/s | 26540.8 req/s | **-1.4%** | **+0.43 ms** (2.61ms vs 3.04ms) | -2.23 ms |
+| **200 workers** | 28225.9 req/s | 26118.2 req/s | **-7.5%** | **+0.48 ms** (5.99ms vs 6.47ms) | +1.25 ms |
 <!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 
@@ -221,11 +221,11 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.8%** |
-| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.6%** |
 | `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.5%** |
 | `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **95.5%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.0%** |
+| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **90.7%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
 #### VS Code Companion Extension Coverage:

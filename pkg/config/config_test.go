@@ -528,4 +528,3 @@ default_tier:
 		t.Errorf("Expected port 9123 loaded from NACHO_CONFIG_DIR, got %d", cfg.Port)
 	}
 }
-

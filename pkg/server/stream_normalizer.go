@@ -278,7 +278,7 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		if idx := bytes.Index(payload, []byte("\"content\":")); idx != -1 {
 			s.emittedCompletionChars += len(payload) - idx
 		}
-		if contentStr := payloadContent(payload); contentStr != "" {
+		if contentStr := extractContentFast(payload); contentStr != "" {
 			if s.tailBuffer != nil {
 				s.tailBuffer.Append([]byte(contentStr))
 				s.proseAccumulator.WriteString(contentStr)
@@ -418,6 +418,36 @@ func (s *StreamNormalizer) processLine(line []byte) {
 	}
 
 	s.outBuf.Write(line)
+}
+
+// extractContentFast extracts the delta content string from an SSE chunk without json.Unmarshal.
+// Looks for `"content":` and scans until closing quote, properly skipping escaped quotes.
+func extractContentFast(payload []byte) string {
+	marker := []byte(`"content":`)
+	idx := bytes.Index(payload, marker)
+	if idx == -1 {
+		return ""
+	}
+	i := idx + len(marker)
+	for i < len(payload) && (payload[i] == ' ' || payload[i] == '\t') {
+		i++
+	}
+	if i >= len(payload) || payload[i] != '"' {
+		return ""
+	}
+	i++
+	start := i
+	for i < len(payload) {
+		if payload[i] == '\\' {
+			i += 2
+			continue
+		}
+		if payload[i] == '"' {
+			return string(payload[start:i])
+		}
+		i++
+	}
+	return ""
 }
 
 func payloadContent(payload []byte) string {

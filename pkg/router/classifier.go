@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -14,6 +15,7 @@ type RequestClassifier struct {
 	estimator           *TokenEstimator
 	errorSignatures     []string
 	kickstartWriteTools []string
+	writeToolsLookup    atomic.Pointer[map[string]bool]
 }
 
 // defaultAgentErrorSignatures are fallback error patterns injected by agent clients
@@ -66,9 +68,7 @@ func (c *RequestClassifier) GetErrorSignatures() []string {
 	if len(c.errorSignatures) == 0 {
 		return defaultAgentErrorSignatures
 	}
-	res := make([]string, len(c.errorSignatures))
-	copy(res, c.errorSignatures)
-	return res
+	return c.errorSignatures
 }
 
 // SetKickstartWriteTools configures custom write-tool names from config.yaml.
@@ -77,23 +77,28 @@ func (c *RequestClassifier) SetKickstartWriteTools(tools []string) {
 	defer c.mu.Unlock()
 	if len(tools) == 0 {
 		c.kickstartWriteTools = nil
+		c.writeToolsLookup.Store(nil)
 		return
 	}
 	c.kickstartWriteTools = make([]string, len(tools))
 	copy(c.kickstartWriteTools, tools)
+
+	lookup := make(map[string]bool, len(tools))
+	for _, t := range tools {
+		lookup[strings.ToLower(strings.TrimSpace(t))] = true
+	}
+	c.writeToolsLookup.Store(&lookup)
 }
 
 // GetKickstartWriteTools returns the configured write-tool names as a lookup map.
 // Returns an empty map if no tools are configured — kickstart_write_only will
 // effectively never detect write progress unless the list is specified in config.
 func (c *RequestClassifier) GetKickstartWriteTools() map[string]bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	lookup := make(map[string]bool, len(c.kickstartWriteTools))
-	for _, t := range c.kickstartWriteTools {
-		lookup[strings.ToLower(strings.TrimSpace(t))] = true
+	ptr := c.writeToolsLookup.Load()
+	if ptr == nil {
+		return nil
 	}
-	return lookup
+	return *ptr
 }
 
 // GetEstimator returns the active TokenEstimator instance for dynamic calibration.
@@ -104,45 +109,123 @@ func (c *RequestClassifier) GetEstimator() *TokenEstimator {
 	return c.estimator
 }
 
+type classifyPayload struct {
+	Messages []classifyMessage    `json:"messages"`
+	Tools    []classifyToolSchema `json:"tools,omitempty"`
+}
+
+type classifyMessage struct {
+	Role       string             `json:"role"`
+	Content    classifyContent    `json:"content"`
+	ToolCalls  []classifyToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string             `json:"tool_call_id,omitempty"`
+}
+
+func (m *classifyMessage) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || data[0] != '{' {
+		return nil
+	}
+	type rawMsg classifyMessage
+	return json.Unmarshal(data, (*rawMsg)(m))
+}
+
+type classifyContent struct {
+	Text  string
+	Parts []classifyContentPart
+}
+
+func (c *classifyContent) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if data[0] == '"' {
+		return json.Unmarshal(data, &c.Text)
+	}
+	if data[0] == '[' {
+		return json.Unmarshal(data, &c.Parts)
+	}
+	return nil
+}
+
+type classifyContentPart struct {
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	IsError   bool   `json:"is_error,omitempty"`
+}
+
+func (p *classifyContentPart) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || data[0] != '{' {
+		return nil
+	}
+	type rawPart classifyContentPart
+	return json.Unmarshal(data, (*rawPart)(p))
+}
+
+type classifyToolCall struct {
+	ID       string              `json:"id"`
+	Type     string              `json:"type,omitempty"`
+	Name     string              `json:"name,omitempty"`
+	Function *classifyToolCallFn `json:"function,omitempty"`
+}
+
+type classifyToolCallFn struct {
+	Name string `json:"name"`
+}
+
+type classifyToolSchema struct {
+	Type     string                `json:"type,omitempty"`
+	Name     string                `json:"name,omitempty"`
+	Function *classifyToolSchemaFn `json:"function,omitempty"`
+}
+
+func (t *classifyToolSchema) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || data[0] != '{' {
+		return nil
+	}
+	type rawTool classifyToolSchema
+	return json.Unmarshal(data, (*rawTool)(t))
+}
+
+type classifyToolSchemaFn struct {
+	Name string `json:"name"`
+}
+
 // Classify extracts token count, tools presence, image presence, and prompt keywords from request JSON.
 func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, error) {
 	reqCtx := contract.RequestContext{}
 
-	var raw map[string]interface{}
-	if err := json.Unmarshal(body, &raw); err != nil {
+	var payload classifyPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return reqCtx, err
 	}
 
 	// 1. Check tools and extract supported interactive tool for agent fallback shield
-	if tools, ok := raw["tools"].([]interface{}); ok && len(tools) > 0 {
+	if len(payload.Tools) > 0 {
 		reqCtx.HasTools = true
-		reqCtx.InteractiveTool = ExtractSupportedInteractiveTool(tools)
-
-		// 1.1 Scan tools schema for write capability (kickstart plan-mode guard)
 		writeLookup := c.GetKickstartWriteTools()
-		if len(writeLookup) > 0 {
-			for _, t := range tools {
-				tMap, ok := t.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				var fnName string
-				if fnMap, ok := tMap["function"].(map[string]interface{}); ok {
-					fnName, _ = fnMap["name"].(string)
-				} else if n, ok := tMap["name"].(string); ok {
-					fnName = n
-				}
-				if writeLookup[strings.ToLower(strings.TrimSpace(fnName))] {
-					reqCtx.HasWriteCapability = true
-					break
-				}
+
+		for _, t := range payload.Tools {
+			fnName := t.Name
+			if t.Function != nil && t.Function.Name != "" {
+				fnName = t.Function.Name
+			}
+
+			lower := strings.ToLower(fnName)
+			if reqCtx.InteractiveTool == "" && (lower == "ask_followup_question" || lower == "ask_question" || lower == "user_prompt" || lower == "interactive_input") {
+				reqCtx.InteractiveTool = fnName
+			}
+
+			if !reqCtx.HasWriteCapability && writeLookup != nil && writeLookup[strings.ToLower(strings.TrimSpace(fnName))] {
+				reqCtx.HasWriteCapability = true
 			}
 		}
 	}
 
 	// 2. Parse messages to extract prompt, keywords, image flags, and history errors
-	messages, ok := raw["messages"].([]interface{})
-	if !ok || len(messages) == 0 {
+	if len(payload.Messages) == 0 {
 		return reqCtx, nil
 	}
 
@@ -150,53 +233,28 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	var fallbackText strings.Builder
 	hasNonEmptyContent := false
 
-	for _, m := range messages {
-		msgMap, ok := m.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		role, _ := msgMap["role"].(string)
-		content, hasContent := msgMap["content"]
-		if !hasContent {
-			continue
-		}
-
-		// Handle text string content
-		if strContent, ok := content.(string); ok {
-			if strContent != "" {
-				hasNonEmptyContent = true
-			}
-			fallbackText.WriteString(strContent)
+	for _, msg := range payload.Messages {
+		if msg.Content.Text != "" {
+			hasNonEmptyContent = true
+			fallbackText.WriteString(msg.Content.Text)
 			fallbackText.WriteString(" ")
-			if role == "user" {
-				latestUserPrompt = strContent
+			if msg.Role == "user" {
+				latestUserPrompt = msg.Content.Text
 			}
-			continue
 		}
 
-		// Handle array content (multimodal / multi-part)
-		if parts, ok := content.([]interface{}); ok {
-			for _, part := range parts {
-				partMap, ok := part.(map[string]interface{})
-				if !ok {
-					continue
-				}
-
-				partType, _ := partMap["type"].(string)
-				switch partType {
-				case "image_url":
-					reqCtx.HasImages = true
+		for _, part := range msg.Content.Parts {
+			switch part.Type {
+			case "image_url":
+				reqCtx.HasImages = true
+				hasNonEmptyContent = true
+			case "text":
+				if part.Text != "" {
 					hasNonEmptyContent = true
-				case "text":
-					textStr, _ := partMap["text"].(string)
-					if textStr != "" {
-						hasNonEmptyContent = true
-					}
-					fallbackText.WriteString(textStr)
+					fallbackText.WriteString(part.Text)
 					fallbackText.WriteString(" ")
-					if role == "user" {
-						latestUserPrompt = textStr
+					if msg.Role == "user" {
+						latestUserPrompt = part.Text
 					}
 				}
 			}
@@ -204,7 +262,7 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	}
 
 	// 2.5 Scan trailing messages for error patterns and tool progress
-	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasTestPass, reqCtx.HasTestFail = c.scanTrailingMessages(messages)
+	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasTestPass, reqCtx.HasTestFail = c.scanTrailingTyped(payload.Messages)
 	reqCtx.HasTestProgress = reqCtx.HasTestPass && !reqCtx.HasTestFail
 
 	// 3. Approximate total token count using zero-allocation len(body) estimator
@@ -239,6 +297,143 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	reqCtx.Keywords = extractKeywords(keywordSource)
 
 	return reqCtx, nil
+}
+
+func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasTestPass bool, hasTestFail bool) {
+	signatures := c.GetErrorSignatures()
+	writeTools := c.GetKickstartWriteTools()
+
+	start := len(messages) - 8
+	if start < 0 {
+		start = 0
+	}
+
+	var stackIDs [8]string
+	writeCallIDs := stackIDs[:0]
+	hasAnyWriteCall := false
+
+	// Pass 1: assistant tool calls
+	for i := start; i < len(messages); i++ {
+		msg := messages[i]
+		if msg.Role == "assistant" {
+			for _, tc := range msg.ToolCalls {
+				fnName := tc.Name
+				if tc.Function != nil && tc.Function.Name != "" {
+					fnName = tc.Function.Name
+				}
+				if writeTools != nil && writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
+					if tc.ID != "" {
+						writeCallIDs = append(writeCallIDs, tc.ID)
+					}
+					hasAnyWriteCall = true
+				}
+			}
+			for _, p := range msg.Content.Parts {
+				if p.Type == "tool_use" {
+					if writeTools != nil && writeTools[strings.ToLower(strings.TrimSpace(p.Name))] {
+						if p.ID != "" {
+							writeCallIDs = append(writeCallIDs, p.ID)
+						}
+						hasAnyWriteCall = true
+					}
+				}
+			}
+			if msg.Content.Text != "" && len(writeTools) > 0 {
+				lowerText := strings.ToLower(msg.Content.Text)
+				for toolName := range writeTools {
+					if strings.Contains(lowerText, "<"+toolName+">") {
+						hasAnyWriteCall = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Pass 2: tool results
+	for i := start; i < len(messages); i++ {
+		msg := messages[i]
+		if msg.Role == "tool" {
+			text := msg.Content.Text
+			if text == "" && len(msg.Content.Parts) > 0 {
+				var sb strings.Builder
+				for _, p := range msg.Content.Parts {
+					if p.Text != "" {
+						sb.WriteString(p.Text)
+						sb.WriteString(" ")
+					}
+				}
+				text = sb.String()
+			}
+			if !isErrorText(text, signatures) {
+				hasToolProgress = true
+				if msg.ToolCallID != "" && writeCallIDsContains(writeCallIDs, msg.ToolCallID) {
+					hasWriteProgress = true
+				} else if msg.ToolCallID == "" && hasAnyWriteCall {
+					hasWriteProgress = true
+				}
+			}
+			p, f := detectTestSignals(text)
+			if p {
+				hasTestPass = true
+			}
+			if f {
+				hasTestFail = true
+			}
+		}
+		// Anthropic tool_result parts
+		for _, part := range msg.Content.Parts {
+			if part.Type == "tool_result" {
+				text := part.Text
+				if !part.IsError {
+					if !isErrorText(text, signatures) {
+						hasToolProgress = true
+						if part.ToolUseID != "" && writeCallIDsContains(writeCallIDs, part.ToolUseID) {
+							hasWriteProgress = true
+						} else if part.ToolUseID == "" && hasAnyWriteCall {
+							hasWriteProgress = true
+						}
+					}
+				}
+				p, f := detectTestSignals(text)
+				if p {
+					hasTestPass = true
+				}
+				if f {
+					hasTestFail = true
+				}
+			}
+		}
+	}
+
+	// Pass 3: trailing consecutive error turns
+	for i := len(messages) - 1; i >= start; i-- {
+		msg := messages[i]
+		if msg.Role == "tool" {
+			text := msg.Content.Text
+			if text == "" && len(msg.Content.Parts) > 0 {
+				var sb strings.Builder
+				for _, p := range msg.Content.Parts {
+					if p.Text != "" {
+						sb.WriteString(p.Text)
+						sb.WriteString(" ")
+					}
+				}
+				text = sb.String()
+			}
+			if isErrorText(text, signatures) {
+				historyErrors++
+			} else {
+				break
+			}
+		} else if msg.Role == "assistant" {
+			continue
+		} else {
+			break
+		}
+	}
+
+	return historyErrors, hasToolProgress, hasWriteProgress, hasTestPass, hasTestFail
 }
 
 var (
@@ -362,7 +557,9 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 	}
 
 	// First pass: collect call IDs for write/execute tool invocations in assistant turns.
-	writeCallIDs := make(map[string]bool)
+	// Hybrid stack/heap: zero allocs for ≤8 IDs (common case), transparent heap spillover on overflow.
+	var stackIDs [8]string
+	writeCallIDs := stackIDs[:0]
 	hasAnyWriteCall := false
 
 	for i := start; i < len(messages); i++ {
@@ -390,7 +587,7 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 					}
 					if writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
 						if id != "" {
-							writeCallIDs[id] = true
+							writeCallIDs = append(writeCallIDs, id)
 						}
 						hasAnyWriteCall = true
 					}
@@ -416,7 +613,7 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 						name, _ := partMap["name"].(string)
 						if writeTools[strings.ToLower(strings.TrimSpace(name))] {
 							if id != "" {
-								writeCallIDs[id] = true
+								writeCallIDs = append(writeCallIDs, id)
 							}
 							hasAnyWriteCall = true
 						}
@@ -451,7 +648,7 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 			if !isErrorText(text, signatures) {
 				hasToolProgress = true
 				toolCallID, _ := msgMap["tool_call_id"].(string)
-				if toolCallID != "" && writeCallIDs[toolCallID] {
+				if toolCallID != "" && writeCallIDsContains(writeCallIDs, toolCallID) {
 					hasWriteProgress = true
 				} else if toolCallID == "" && hasAnyWriteCall {
 					hasWriteProgress = true
@@ -482,7 +679,7 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 						if !isErrorText(text, signatures) {
 							hasToolProgress = true
 							toolUseID, _ := partMap["tool_use_id"].(string)
-							if toolUseID != "" && writeCallIDs[toolUseID] {
+							if toolUseID != "" && writeCallIDsContains(writeCallIDs, toolUseID) {
 								hasWriteProgress = true
 							} else if toolUseID == "" && hasAnyWriteCall {
 								hasWriteProgress = true
@@ -608,4 +805,15 @@ func ExtractSupportedInteractiveTool(tools []interface{}) string {
 		}
 	}
 	return ""
+}
+
+// writeCallIDsContains checks if a tool call ID exists in the write call ID slice.
+// Linear scan over ≤8 items on the stack is faster than map hashing.
+func writeCallIDsContains(ids []string, target string) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
 }

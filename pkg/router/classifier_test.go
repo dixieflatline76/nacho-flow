@@ -1,9 +1,12 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestEstimateTokensEmptyAndNull(t *testing.T) {
@@ -518,6 +521,190 @@ func TestClassify_HasWriteCapability(t *testing.T) {
 	ctx4, _ := c2.Classify([]byte(codePayload))
 	if ctx4.HasWriteCapability {
 		t.Error("expected HasWriteCapability=false when write tools map is empty")
+	}
+}
+
+// TestClassifier_Phase1B_OverflowParallelWriteCalls tests that more than 8 parallel tool calls
+// do not get silently dropped and hasWriteProgress correctly evaluates to true.
+func TestClassifier_Phase1B_OverflowParallelWriteCalls(t *testing.T) {
+	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c.SetKickstartWriteTools([]string{"write_to_file", "execute_command"})
+
+	// Assistant issues 12 parallel write calls (call_1 to call_12)
+	assistantCalls := []map[string]interface{}{}
+	for i := 1; i <= 12; i++ {
+		assistantCalls = append(assistantCalls, map[string]interface{}{
+			"id":   fmt.Sprintf("call_%d", i),
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "write_to_file",
+			},
+		})
+	}
+
+	// Tool responses only respond to call_9 through call_12 (beyond the first 8)
+	messages := []map[string]interface{}{
+		{
+			"role":       "assistant",
+			"tool_calls": assistantCalls,
+		},
+		{
+			"role":         "tool",
+			"tool_call_id": "call_11",
+			"content":      "File successfully written",
+		},
+	}
+
+	payload := map[string]interface{}{
+		"messages": messages,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, err := c.Classify(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !ctx.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true for call_11 response even when >8 calls were issued, got false")
+	}
+	if !ctx.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true, got false")
+	}
+}
+
+// TestClassifier_Phase1A_ConcurrentWriteToolsAccess tests lock-free reads while write tools reload concurrently.
+func TestClassifier_Phase1A_ConcurrentWriteToolsAccess(t *testing.T) {
+	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c.SetKickstartWriteTools([]string{"write_to_file", "replace_in_file"})
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Reader goroutines
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					lookup := c.GetKickstartWriteTools()
+					_ = lookup["write_to_file"]
+				}
+			}
+		}()
+	}
+
+	// Writer goroutine simulating dynamic config reload
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			if i%2 == 0 {
+				c.SetKickstartWriteTools([]string{"write_to_file", "execute_command", "git_commit"})
+			} else {
+				c.SetKickstartWriteTools([]string{"read_file", "list_dir"})
+			}
+			time.Sleep(1 * time.Millisecond)
+		}
+	}()
+
+	time.Sleep(60 * time.Millisecond)
+	close(done)
+	wg.Wait()
+}
+
+// TestClassifier_Phase3_LongConversationDeferredScanning tests a 60-turn conversation
+// to verify deferred trailing message parsing correctly extracts prompt, error signatures,
+// and tool signals while only inspecting the last 8 messages.
+func TestClassifier_Phase3_LongConversationDeferredScanning(t *testing.T) {
+	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c.SetKickstartWriteTools([]string{"write_to_file", "execute_command"})
+
+	var messages []map[string]interface{}
+	// Turns 1 to 56: generic history
+	for i := 1; i <= 56; i++ {
+		role := "user"
+		if i%2 == 0 {
+			role = "assistant"
+		}
+		messages = append(messages, map[string]interface{}{
+			"role":    role,
+			"content": fmt.Sprintf("historical turn %d", i),
+		})
+	}
+
+	// Turn 57: assistant issues write_to_file
+	messages = append(messages, map[string]interface{}{
+		"role": "assistant",
+		"tool_calls": []map[string]interface{}{
+			{
+				"id":   "call_write_57",
+				"type": "function",
+				"function": map[string]interface{}{
+					"name": "write_to_file",
+				},
+			},
+		},
+	})
+
+	// Turn 58: tool returns a test failure
+	messages = append(messages, map[string]interface{}{
+		"role":         "tool",
+		"tool_call_id": "call_write_57",
+		"content":      "--- FAIL: TestRouterIntegration (0.05s)",
+	})
+
+	// Turn 59: assistant responds acknowledging error
+	messages = append(messages, map[string]interface{}{
+		"role":    "assistant",
+		"content": "The test failed with an assertion error.",
+	})
+
+	// Turn 60: user prompt
+	messages = append(messages, map[string]interface{}{
+		"role":    "user",
+		"content": "Fix the failure in TestRouterIntegration",
+	})
+
+	payload := map[string]interface{}{
+		"messages": messages,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, err := c.Classify(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ctx.Prompt != "Fix the failure in TestRouterIntegration" {
+		t.Errorf("unexpected Prompt: %q", ctx.Prompt)
+	}
+	if !ctx.HasTestFail {
+		t.Errorf("expected HasTestFail=true, got false")
+	}
+	if ctx.HasTestPass {
+		t.Errorf("expected HasTestPass=false, got true")
+	}
+	if ctx.HasTestProgress {
+		t.Errorf("expected HasTestProgress=false when tests fail, got true")
+	}
+	if !ctx.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true from call_write_57, got false")
+	}
+	if !ctx.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true, got false")
 	}
 }
 
