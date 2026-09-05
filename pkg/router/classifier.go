@@ -204,7 +204,8 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	}
 
 	// 2.5 Scan trailing messages for error patterns and tool progress
-	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasTestProgress = c.scanTrailingMessages(messages)
+	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasTestPass, reqCtx.HasTestFail = c.scanTrailingMessages(messages)
+	reqCtx.HasTestProgress = reqCtx.HasTestPass && !reqCtx.HasTestFail
 
 	// 3. Approximate total token count using zero-allocation len(body) estimator
 	if hasNonEmptyContent || reqCtx.HasTools {
@@ -240,43 +241,94 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	return reqCtx, nil
 }
 
-// isTestOrDebugContent checks if text contains signals that indicate the agent is doing
-// legitimate test/debug work: running tests, reading compiler output, or analyzing failures.
-// This prevents kickstart from falsely flagging test/debug phases as "idle" turns.
-func isTestOrDebugContent(text string) bool {
-	lower := strings.ToLower(text)
-	testSignals := []string{
-		// Go test output
-		"--- fail:", "--- pass:", "fail\t", "ok  \t", "go test",
-		// Go compiler errors
+var (
+	testFailSignatures = []string{
+		// Go test failure signatures
+		"--- FAIL:", "FAIL\t", "FAIL\n",
+		// Go compiler & linker errors
 		"undefined:", "cannot use", "syntax error", "build failed",
 		"compilation failed", "does not implement", "too many arguments",
 		"not enough arguments", "declared and not used",
-		// Generic test frameworks (jest, pytest, mocha)
-		"tests:", "test suites", "passed, ", "failed, ",
-		"passed\n", "failed\n",
+		// Jest / Vitest / Mocha
+		"FAIL ",
+		// Pytest / Unittest
+		"=== FAILURES ===", "FAILED ", "FAIL: test_", "Traceback (most recent call last):",
+		// Cargo / Rust
+		"test result: FAILED", "error[E",
+		// General CLI exit failure
+		"Command failed with exit code", "exit status 1", "exit status 2",
 	}
-	for _, sig := range testSignals {
-		if strings.Contains(lower, sig) {
+
+	testPassSignatures = []string{
+		// Go test pass signatures
+		"--- PASS:", "ok  \t", "\tok\t", "PASS\n",
+		// Jest / Vitest
+		"PASS ", "passed, ", "passed\n", "0 failed",
+		// Pytest
+		"=== 1 passed", "=== 2 passed", " passed in ",
+		// Cargo
+		"test result: ok",
+	}
+)
+
+// isFailingTestOutput checks if text contains actual test/build failure indicators.
+// It specifically distinguishes "0 failed" (a passing summary) from actual failures (e.g. "1 failed", "build failed").
+func isFailingTestOutput(text string) bool {
+	for _, sig := range testFailSignatures {
+		if strings.Contains(text, sig) {
 			return true
 		}
 	}
+
+	// Inspect occurrences of "failed" to catch framework summaries (e.g. "1 failed", "10 failed", "build failed")
+	// while ignoring "0 failed".
+	remaining := text
+	for {
+		idx := strings.Index(remaining, "failed")
+		if idx == -1 {
+			break
+		}
+
+		// Look backwards from idx for the preceding word / number
+		j := idx - 1
+		for j >= 0 && (remaining[j] == ' ' || remaining[j] == '\t') {
+			j--
+		}
+
+		if j >= 0 && remaining[j] >= '0' && remaining[j] <= '9' {
+			// Extract all consecutive digits backwards
+			digitEnd := j + 1
+			for j >= 0 && remaining[j] >= '0' && remaining[j] <= '9' {
+				j--
+			}
+			digits := remaining[j+1 : digitEnd]
+			if digits != "0" {
+				return true // e.g. "1 failed", "10 failed"
+			}
+			// If digits == "0", this specific occurrence is "0 failed"
+		} else {
+			// Non-digit preceding "failed", e.g. "tests failed", "run failed", "build failed"
+			return true
+		}
+
+		remaining = remaining[idx+len("failed"):]
+	}
+
 	return false
 }
 
-// isTestFilePath checks if a tool call arguments string targets a test file.
-func isTestFilePath(arguments string) bool {
-	lower := strings.ToLower(arguments)
-	testSuffixes := []string{
-		"_test.go", "_test.py", "_test.ts", "_test.js",
-		".test.js", ".test.ts", ".spec.js", ".spec.ts",
-	}
-	for _, suffix := range testSuffixes {
-		if strings.Contains(lower, suffix) {
-			return true
+// detectTestSignals scans tool result text for test and compiler output.
+// Operates directly on the immutable string using SIMD strings.Contains without heap allocations.
+// Both pass and fail are evaluated independently to prevent short-circuit false negatives on mixed runs.
+func detectTestSignals(text string) (pass bool, fail bool) {
+	fail = isFailingTestOutput(text)
+	for _, sig := range testPassSignatures {
+		if strings.Contains(text, sig) {
+			pass = true
+			break
 		}
 	}
-	return false
+	return pass, fail
 }
 
 // isErrorText checks if a message text contains known error signatures or failure indicators.
@@ -299,7 +351,7 @@ func isErrorText(text string, signatures []string) bool {
 // to detect: (a) consecutive trailing error turns, (b) successful tool progress,
 // (c) write-specific tool progress (e.g. file writes, terminal executions), and
 // (d) test/debug progress (running tests, compiler errors, reading test files).
-func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasTestProgress bool) {
+func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasTestPass bool, hasTestFail bool) {
 	signatures := c.GetErrorSignatures()
 	writeTools := c.GetKickstartWriteTools()
 
@@ -310,7 +362,6 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 	}
 
 	// First pass: collect call IDs for write/execute tool invocations in assistant turns.
-	// Also detect test-file reads to set hasTestProgress early.
 	writeCallIDs := make(map[string]bool)
 	hasAnyWriteCall := false
 
@@ -331,10 +382,8 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 					}
 					id, _ := tcMap["id"].(string)
 					fnName := ""
-					fnArgs := ""
 					if fnMap, ok := tcMap["function"].(map[string]interface{}); ok {
 						fnName, _ = fnMap["name"].(string)
-						fnArgs, _ = fnMap["arguments"].(string)
 					}
 					if fnName == "" {
 						fnName, _ = tcMap["name"].(string)
@@ -345,10 +394,6 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 						}
 						hasAnyWriteCall = true
 					}
-					// Detect test file reads regardless of tool name
-					if !hasTestProgress && isTestFilePath(fnArgs) {
-						hasTestProgress = true
-					}
 				}
 			}
 			// Check legacy OpenAI function_call
@@ -356,12 +401,6 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 				fnName, _ := fnCall["name"].(string)
 				if writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
 					hasAnyWriteCall = true
-				}
-				if !hasTestProgress {
-					fnArgs, _ := fnCall["arguments"].(string)
-					if isTestFilePath(fnArgs) {
-						hasTestProgress = true
-					}
 				}
 			}
 			// Check Anthropic-style tool_use content blocks
@@ -380,17 +419,6 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 								writeCallIDs[id] = true
 							}
 							hasAnyWriteCall = true
-						}
-						// Detect test file reads in Anthropic tool_use input
-						if !hasTestProgress {
-							if inputMap, ok := partMap["input"].(map[string]interface{}); ok {
-								for _, v := range inputMap {
-									if s, ok := v.(string); ok && isTestFilePath(s) {
-										hasTestProgress = true
-										break
-									}
-								}
-							}
 						}
 					}
 				}
@@ -429,12 +457,13 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 					hasWriteProgress = true
 				}
 			}
-			// Detect test/debug signals in tool result content (success OR error)
-			if !hasTestProgress {
-				text := extractAllTextFromContent(msgMap["content"])
-				if isTestOrDebugContent(text) {
-					hasTestProgress = true
-				}
+			// Detect test signals independently (success OR error)
+			p, f := detectTestSignals(text)
+			if p {
+				hasTestPass = true
+			}
+			if f {
+				hasTestFail = true
 			}
 		}
 
@@ -447,9 +476,9 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 				}
 				partType, _ := partMap["type"].(string)
 				if partType == "tool_result" {
+					text := extractAllTextFromContent(partMap["content"])
 					isError, _ := partMap["is_error"].(bool)
 					if !isError {
-						text := extractAllTextFromContent(partMap["content"])
 						if !isErrorText(text, signatures) {
 							hasToolProgress = true
 							toolUseID, _ := partMap["tool_use_id"].(string)
@@ -459,6 +488,13 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 								hasWriteProgress = true
 							}
 						}
+					}
+					p, f := detectTestSignals(text)
+					if p {
+						hasTestPass = true
+					}
+					if f {
+						hasTestFail = true
 					}
 				}
 			}
@@ -471,6 +507,13 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 			if !isErrorText(text, signatures) {
 				hasToolProgress = true
 				hasWriteProgress = true
+			}
+			p, f := detectTestSignals(text)
+			if p {
+				hasTestPass = true
+			}
+			if f {
+				hasTestFail = true
 			}
 		}
 	}
@@ -497,7 +540,7 @@ func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (histor
 		}
 	}
 
-	return historyErrors, hasToolProgress, hasWriteProgress, hasTestProgress
+	return historyErrors, hasToolProgress, hasWriteProgress, hasTestPass, hasTestFail
 }
 
 // extractAllTextFromContent extracts all text from a content field,

@@ -570,17 +570,22 @@ export class ExtensionController {
 			},
 			() => {
 				this.dashboardPanel = null;
+				if (this.telemetryPoller && this.routesRefreshInterval > 0) {
+					this.telemetryPoller.resume(false);
+				}
 			}
 		);
 		this.context.subscriptions.push(this.dashboardPanel);
 		
-		// Wire webview visibility observer to pause/resume poller
+		// Wire webview visibility observer to refresh telemetry when dashboard tab gains focus
 		if (this.dashboardPanel && typeof this.dashboardPanel.onDidChangeViewState === 'function') {
 			this.dashboardPanel.onDidChangeViewState((e) => {
 				if (e.webviewPanel.visible) {
-					this.telemetryPoller?.resume(true);
-				} else {
-					this.telemetryPoller?.pause();
+					if (this.telemetryPoller && typeof this.telemetryPoller.executeTick === 'function') {
+						void this.telemetryPoller.executeTick();
+					} else {
+						void this.loadDashboardData();
+					}
 				}
 			});
 		}
@@ -611,6 +616,9 @@ export class ExtensionController {
 		}
 		if (this.telemetryPoller) {
 			this.telemetryPoller.setIntervalSeconds(this.routesRefreshInterval);
+			if (this.routesRefreshInterval > 0) {
+				this.telemetryPoller.resume(true);
+			}
 		}
 		if (notifyDashboard && this.dashboardPanel) {
 			this.dashboardPanel.setRoutesRefreshInterval(this.routesRefreshInterval);
@@ -1133,8 +1141,11 @@ export class ExtensionController {
 		
 		try {
 			const stats = await this.restClient.getStats();
-			if (stats && this.dashboardPanel) {
-				this.dashboardPanel.updateStats(stats);
+			if (stats) {
+				this.statusBar.updateStats(stats);
+				if (this.dashboardPanel) {
+					this.dashboardPanel.updateStats(stats);
+				}
 			}
 		} catch (_) {}
 
@@ -1314,7 +1325,8 @@ export class ExtensionController {
 			const statsPromise = typeof this.restClient.getStats === 'function'
 				? Promise.resolve().then(() => this.restClient!.getStats()).catch(() => null)
 				: Promise.resolve(null);
-			const routesPromise = (this.dashboardPanel && typeof this.restClient.getRoutes === 'function')
+			const isDashboardVisible = !!(this.dashboardPanel && (typeof this.dashboardPanel.isVisible === 'undefined' || this.dashboardPanel.isVisible));
+			const routesPromise = (isDashboardVisible && typeof this.restClient.getRoutes === 'function')
 				? Promise.resolve().then(() => this.restClient!.getRoutes(10)).catch(() => null)
 				: Promise.resolve(null);
 

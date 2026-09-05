@@ -488,8 +488,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if kickstartThreshold > 0 && !reqCtx.NoKickstart {
 		kickstartProgress := reqCtx.HasToolProgress
 		if cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
-			// Test/debug activity (running go test, reading *_test.go, compiler errors)
-			// is legitimate progress — do not kickstart during test phases.
+			// Legitimate progress requires concrete write activity OR a clean passing test suite.
+			// Failing tests require code edits to fix and do NOT prevent kickstart accumulation.
 			kickstartProgress = reqCtx.HasWriteProgress || reqCtx.HasTestProgress
 		}
 		// Part A Guard: Auto-suspend when agent has tools but zero write tools (Plan Mode)
@@ -504,6 +504,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				slog.Int("kickstart_count", kickstartCount),
 				slog.Int("kickstart_threshold", kickstartThreshold),
 				slog.Bool("write_only", cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly),
+				slog.Bool("has_test_pass", reqCtx.HasTestPass),
+				slog.Bool("has_test_fail", reqCtx.HasTestFail),
 				slog.String("session_key", sessionKey),
 			)
 		}
@@ -657,6 +659,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Bool("has_tool_progress", reqCtx.HasToolProgress),
 		slog.Bool("has_write_progress", reqCtx.HasWriteProgress),
 		slog.Bool("has_test_progress", reqCtx.HasTestProgress),
+		slog.Bool("has_test_pass", reqCtx.HasTestPass),
+		slog.Bool("has_test_fail", reqCtx.HasTestFail),
 		slog.Int("history_errors", reqCtx.HistoryErrors),
 		slog.Any("cooling_down_models", reqCtx.CoolingDownModels),
 		slog.String("user_agent", r.Header.Get("User-Agent")),

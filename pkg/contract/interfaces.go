@@ -19,6 +19,8 @@ type RequestContext struct {
 	HasToolProgress           bool     `json:"has_tool_progress,omitempty"`
 	HasWriteProgress          bool     `json:"has_write_progress,omitempty"`
 	HasTestProgress           bool     `json:"has_test_progress,omitempty"`
+	HasTestPass               bool     `json:"has_test_pass,omitempty"`
+	HasTestFail               bool     `json:"has_test_fail,omitempty"`
 	HasWriteCapability        bool     `json:"has_write_capability,omitempty"`
 	NoKickstart               bool     `json:"no_kickstart,omitempty"`
 	NoCycleKiller             bool     `json:"no_cycle_killer,omitempty"`

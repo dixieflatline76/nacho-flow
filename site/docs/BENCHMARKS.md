@@ -222,7 +222,7 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.8%** |
-| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.3%** |
+| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.6%** |
 | `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.2%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.0%** |

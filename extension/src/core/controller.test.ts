@@ -1496,6 +1496,7 @@ default_tier:
         setIntervalSeconds: jest.fn(),
         pause: jest.fn(),
         resume: jest.fn(),
+        executeTick: jest.fn(),
         dispose: jest.fn()
       };
       (extensionController as any).telemetryPoller = pollerMock;
@@ -1506,15 +1507,16 @@ default_tier:
       await extensionController.setRoutesRefreshInterval(15, true);
       expect(mockGlobalState.update).toHaveBeenCalledWith('nachoFlow_routesRefreshInterval', 15);
       expect(pollerMock.setIntervalSeconds).toHaveBeenCalledWith(15);
+      expect(pollerMock.resume).toHaveBeenCalledWith(true);
       expect(mockDashboard.setRoutesRefreshInterval).toHaveBeenCalledWith(15);
 
       // Trigger visibility change
       if (viewStateListener) {
         viewStateListener({ webviewPanel: { visible: true } });
-        expect(pollerMock.resume).toHaveBeenCalledWith(true);
+        expect(pollerMock.executeTick).toHaveBeenCalled();
 
         viewStateListener({ webviewPanel: { visible: false } });
-        expect(pollerMock.pause).toHaveBeenCalled();
+        expect(pollerMock.pause).not.toHaveBeenCalled();
       }
 
       // Test webview message for setRoutesRefreshInterval and openSettings
