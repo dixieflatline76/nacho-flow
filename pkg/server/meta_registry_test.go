@@ -441,3 +441,242 @@ func TestProxy_DirectivesDisabledByConfig(t *testing.T) {
 		t.Errorf("expected regular response when directives disabled, got: %s", rec.Body.String())
 	}
 }
+
+func TestMetaRegistry_TogglesAndReset(t *testing.T) {
+	reg := NewMetaRegistry()
+	tracker := router.NewSessionTracker(5 * time.Minute)
+	sessionKey := "test-meta-toggles"
+	tracker.RecordTurn(sessionKey, router.HashPrompt("init"), false)
+
+	env := MetaEnv{
+		SessionTracker: tracker,
+		SessionKey:     sessionKey,
+	}
+
+	// 1. Initial toggles state
+	out, err := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "toggles"}, env)
+	if err != nil {
+		t.Fatalf("toggles command failed: %v", err)
+	}
+	if !strings.Contains(out, "Session Toggles & Guardrails") {
+		t.Errorf("expected header, got: %s", out)
+	}
+	if !strings.Contains(out, "HotSauce Kickstart") || !strings.Contains(out, "Cycle Killer") {
+		t.Errorf("expected guardrail names, got: %s", out)
+	}
+
+	// 2. Standalone Kickstart toggle
+	kOff, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "kickstart-off"}, env)
+	if !strings.Contains(kOff, "Kickstart Suspended") {
+		t.Errorf("expected Kickstart Suspended, got: %s", kOff)
+	}
+	if !tracker.GetGuardrails(sessionKey).KickstartDisabled {
+		t.Error("expected KickstartDisabled=true")
+	}
+
+	kOn, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "kickstart-on"}, env)
+	if !strings.Contains(kOn, "Kickstart Active") {
+		t.Errorf("expected Kickstart Active, got: %s", kOn)
+	}
+	if tracker.GetGuardrails(sessionKey).KickstartDisabled {
+		t.Error("expected KickstartDisabled=false")
+	}
+
+	// 3. Standalone Cycle Killer toggle
+	ckOff, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "cyclekiller-off"}, env)
+	if !strings.Contains(ckOff, "Cycle Killer Disabled") {
+		t.Errorf("expected Cycle Killer Disabled, got: %s", ckOff)
+	}
+	if !tracker.GetGuardrails(sessionKey).CycleKillerDisabled {
+		t.Error("expected CycleKillerDisabled=true")
+	}
+
+	ckOn, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "cyclekiller-on"}, env)
+	if !strings.Contains(ckOn, "Cycle Killer Active") {
+		t.Errorf("expected Cycle Killer Active, got: %s", ckOn)
+	}
+	if tracker.GetGuardrails(sessionKey).CycleKillerDisabled {
+		t.Error("expected CycleKillerDisabled=false")
+	}
+
+	// 4. Standalone Shield toggle
+	sOff, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "shield-off"}, env)
+	if !strings.Contains(sOff, "Fallback Shield Disabled") {
+		t.Errorf("expected Shield Disabled, got: %s", sOff)
+	}
+	if !tracker.GetGuardrails(sessionKey).ShieldDisabled {
+		t.Error("expected ShieldDisabled=true")
+	}
+
+	sOn, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "shield-on"}, env)
+	if !strings.Contains(sOn, "Fallback Shield Active") {
+		t.Errorf("expected Shield Active, got: %s", sOn)
+	}
+	if tracker.GetGuardrails(sessionKey).ShieldDisabled {
+		t.Error("expected ShieldDisabled=false")
+	}
+
+	// 5. Standalone Raw toggle
+	rOn, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "raw-on"}, env)
+	if !strings.Contains(rOn, "Raw Pass-Through Active") {
+		t.Errorf("expected Raw Active, got: %s", rOn)
+	}
+	if !tracker.GetGuardrails(sessionKey).RawModeEnabled {
+		t.Error("expected RawModeEnabled=true")
+	}
+
+	rOff, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "raw-off"}, env)
+	if !strings.Contains(rOff, "Raw Pass-Through Disabled") {
+		t.Errorf("expected Raw Disabled, got: %s", rOff)
+	}
+	if tracker.GetGuardrails(sessionKey).RawModeEnabled {
+		t.Error("expected RawModeEnabled=false")
+	}
+
+	// 6. Standalone Fairy Dust toggle
+	fdOff, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "fairydust-off"}, env)
+	if !strings.Contains(fdOff, "Fairy Dusting Disabled") {
+		t.Errorf("expected Fairy Dust Disabled, got: %s", fdOff)
+	}
+	if !tracker.GetGuardrails(sessionKey).FairyDustDisabled {
+		t.Error("expected FairyDustDisabled=true")
+	}
+
+	fdOn, _ := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "fairydust-on"}, env)
+	if !strings.Contains(fdOn, "Fairy Dusting Active") {
+		t.Errorf("expected Fairy Dust Active, got: %s", fdOn)
+	}
+	if tracker.GetGuardrails(sessionKey).FairyDustDisabled {
+		t.Error("expected FairyDustDisabled=false")
+	}
+
+	// 7. Reset session
+	tracker.SetKickstartDisabled(sessionKey, true)
+	tracker.SetCycleKillerDisabled(sessionKey, true)
+	resetOut, err := reg.Execute(context.Background(), contract.RequestContext{MetaDirective: "reset"}, env)
+	if err != nil {
+		t.Fatalf("reset command failed: %v", err)
+	}
+	if !strings.Contains(resetOut, "Session Reset") {
+		t.Errorf("expected Session Reset header, got: %s", resetOut)
+	}
+	if tracker.GetGuardrails(sessionKey) != (router.SessionGuardrails{}) {
+		t.Errorf("expected guardrails cleared after reset, got %+v", tracker.GetGuardrails(sessionKey))
+	}
+}
+
+func TestMetaCommands_Metadata(t *testing.T) {
+	reg := NewMetaRegistry()
+	for name, cmd := range reg.commands {
+		if cmd.Name() == "" {
+			t.Errorf("expected non-empty Name() for command %s", name)
+		}
+		if cmd.Description() == "" {
+			t.Errorf("expected non-empty Description() for command %s", name)
+		}
+	}
+}
+
+func TestProxy_SessionGuardrailsAndKickstartAutoSuspend(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"I investigated the codebase."}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	enabled := true
+	writeOnly := true
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"local_p": {BaseURL: mockUpstream.URL, Type: "local"},
+			"cloud_p": {BaseURL: mockUpstream.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier 1: Local", Model: "local-model", Provider: "local_p"},
+		},
+		DefaultTier: contract.Tier{Name: "Tier 2: Cloud", Model: "cloud-model", Provider: "cloud_p"},
+		CycleKiller: contract.CycleBreakerConfig{
+			Enabled:             &enabled,
+			KickstartThreshold:  2,
+			KickstartWriteOnly:  writeOnly,
+			KickstartWriteTools: []string{"write_to_file", "replace_in_file"},
+		},
+	}
+
+	reg := provider.NewRegistryFromConfig(cfg)
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	classifier := router.NewClassifier()
+	if c, ok := classifier.(*router.RequestClassifier); ok {
+		c.SetKickstartWriteTools([]string{"write_to_file", "replace_in_file"})
+	}
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, router.NewSanitizer(), nil, nil, reg, nil)
+
+	// 1. Send Plan Mode turn (tools present but no write tools)
+	// Even after 3 turns with no write progress, kickstart should be auto-suspended!
+	planPayload := `{"model":"local-model","messages":[{"role":"user","content":"explore auth architecture"}],"tools":[{"function":{"name":"read_file"}}]}`
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader([]byte(planPayload)))
+		req.Header.Set("x-session-id", "sess-plan-mode-test")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("turn %d failed with code %d", i+1, rec.Code)
+		}
+	}
+	// Kickstart count should NOT be 3 (should be 0 or suspended)
+	if srv.sessionTracker.GetKickstartCount("sess-plan-mode-test") > 1 {
+		t.Errorf("expected Kickstart count <= 1 in Plan Mode, got %d", srv.sessionTracker.GetKickstartCount("sess-plan-mode-test"))
+	}
+
+	// 2. Embedded @nacho:kickstart-off directive
+	embeddedPayload := `{"model":"local-model","messages":[{"role":"user","content":"@nacho:kickstart-off check system health"}]}`
+	req2 := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader([]byte(embeddedPayload)))
+	req2.Header.Set("x-session-id", "sess-toggle-embedded")
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("failed with code %d", rec2.Code)
+	}
+	if !srv.sessionTracker.GetGuardrails("sess-toggle-embedded").KickstartDisabled {
+		t.Error("expected KickstartDisabled=true after embedded directive")
+	}
+
+	// 3. Embedded @nacho:cyclekiller-off directive
+	embeddedCK := `{"model":"local-model","messages":[{"role":"user","content":"@nacho:cyclekiller-off batch refactor"}]}`
+	req3 := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader([]byte(embeddedCK)))
+	req3.Header.Set("x-session-id", "sess-toggle-ck")
+	rec3 := httptest.NewRecorder()
+	srv.ServeHTTP(rec3, req3)
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("failed with code %d", rec3.Code)
+	}
+	if !srv.sessionTracker.GetGuardrails("sess-toggle-ck").CycleKillerDisabled {
+		t.Error("expected CycleKillerDisabled=true after embedded directive")
+	}
+
+	// 4. Standalone @nacho:toggles returns 200 with guardrails markdown
+	togglesReq := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader([]byte(`{"model":"nacho-auto","messages":[{"role":"user","content":"@nacho:toggles"}]}`)))
+	togglesReq.Header.Set("x-session-id", "sess-toggle-embedded")
+	recToggles := httptest.NewRecorder()
+	srv.ServeHTTP(recToggles, togglesReq)
+	if recToggles.Code != http.StatusOK {
+		t.Fatalf("expected 200 for @nacho:toggles, got %d", recToggles.Code)
+	}
+	if !strings.Contains(recToggles.Body.String(), "HotSauce Kickstart") {
+		t.Errorf("expected toggles markdown, got: %s", recToggles.Body.String())
+	}
+
+	// 5. Standalone @nacho:reset returns 200 and resets guardrails
+	resetReq := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader([]byte(`{"model":"nacho-auto","messages":[{"role":"user","content":"@nacho:reset"}]}`)))
+	resetReq.Header.Set("x-session-id", "sess-toggle-embedded")
+	recReset := httptest.NewRecorder()
+	srv.ServeHTTP(recReset, resetReq)
+	if recReset.Code != http.StatusOK {
+		t.Fatalf("expected 200 for @nacho:reset, got %d", recReset.Code)
+	}
+	if srv.sessionTracker.GetGuardrails("sess-toggle-embedded").KickstartDisabled {
+		t.Error("expected KickstartDisabled=false after reset")
+	}
+}

@@ -16,12 +16,14 @@ import (
 
 // MetaEnv provides access to runtime configuration and daemon telemetry for meta directives.
 type MetaEnv struct {
-	Config        *contract.Config
-	Stats         *telemetry.StatsTracker
-	Oracle        *telemetry.PricingOracle
-	Providers     *provider.Registry
-	StartTime     time.Time
-	DaemonVersion string
+	Config         *contract.Config
+	Stats          *telemetry.StatsTracker
+	Oracle         *telemetry.PricingOracle
+	Providers      *provider.Registry
+	StartTime      time.Time
+	DaemonVersion  string
+	SessionTracker *router.SessionTracker
+	SessionKey     string
 }
 
 // MetaCommand defines the strategy interface for a local zero-cost chat directive.
@@ -48,6 +50,29 @@ func NewMetaRegistry() *MetaRegistry {
 	reg.Register(&TiersCommandHandler{})
 	reg.Register(&StatusCommandHandler{})
 	reg.Register(&DealsCommandHandler{})
+	reg.Register(&TogglesCommandHandler{})
+	reg.Register(&ResetCommandHandler{})
+
+	// Aliases
+	togglesCmd := &TogglesCommandHandler{}
+	reg.commands["guardrails"] = togglesCmd
+	reg.commands["guardrail"] = togglesCmd
+	reg.commands["features"] = togglesCmd
+	reg.commands["feature"] = togglesCmd
+	reg.commands["toggle"] = togglesCmd
+	reg.commands["clear"] = &ResetCommandHandler{}
+
+	// Standalone toggle commands
+	reg.commands["kickstart-off"] = &KickstartOffCommandHandler{}
+	reg.commands["kickstart-on"] = &KickstartOnCommandHandler{}
+	reg.commands["cyclekiller-off"] = &CycleKillerOffCommandHandler{}
+	reg.commands["cyclekiller-on"] = &CycleKillerOnCommandHandler{}
+	reg.commands["shield-off"] = &ShieldOffCommandHandler{}
+	reg.commands["shield-on"] = &ShieldOnCommandHandler{}
+	reg.commands["raw-on"] = &RawOnCommandHandler{}
+	reg.commands["raw-off"] = &RawOffCommandHandler{}
+	reg.commands["fairydust-off"] = &FairyDustOffCommandHandler{}
+	reg.commands["fairydust-on"] = &FairyDustOnCommandHandler{}
 
 	return reg
 }
@@ -247,13 +272,222 @@ func (d *DealsCommandHandler) Execute(ctx context.Context, reqCtx contract.Reque
 	return sb.String(), nil
 }
 
+// TogglesCommandHandler renders active session guardrails and toggles.
+type TogglesCommandHandler struct{}
+
+func (t *TogglesCommandHandler) Name() string { return "toggles" }
+func (t *TogglesCommandHandler) Description() string {
+	return "View active session guardrails and toggles"
+}
+func (t *TogglesCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	var g router.SessionGuardrails
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		g = env.SessionTracker.GetGuardrails(env.SessionKey)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("🌮 **Nacho Flow Session Toggles & Guardrails**\n\n")
+
+	// 1. Kickstart
+	if g.KickstartDisabled {
+		sb.WriteString("• **HotSauce Kickstart**: ⏸️ OFF (Stall auto-escalation disabled)\n")
+	} else {
+		sb.WriteString("• **HotSauce Kickstart**: 🟢 ON  (Auto-suspends in read-only / plan mode)\n")
+	}
+	sb.WriteString("  ↳ Control: `@nacho:kickstart-off` | `@nacho:kickstart-on`\n\n")
+
+	// 2. Cycle Killer
+	if g.CycleKillerDisabled {
+		sb.WriteString("• **Cycle Killer**:       ⏸️ OFF (Infinite loop aborts disabled)\n")
+	} else {
+		sb.WriteString("• **Cycle Killer**:       🟢 ON  (Aborts infinite loops & stream repetition)\n")
+	}
+	sb.WriteString("  ↳ Control: `@nacho:cyclekiller-off` | `@nacho:cyclekiller-on`\n\n")
+
+	// 3. Fallback Shield
+	if g.ShieldDisabled {
+		sb.WriteString("• **Fallback Shield**:    ⏸️ OFF (Trailing text questions stream as prose)\n")
+	} else {
+		sb.WriteString("• **Fallback Shield**:    🟢 ON  (Synthesizes tool calls for trailing text)\n")
+	}
+	sb.WriteString("  ↳ Control: `@nacho:shield-off` | `@nacho:shield-on`\n\n")
+
+	// 4. Raw Pass-Through
+	if g.RawModeEnabled {
+		sb.WriteString("• **Raw Pass-Through**:   🟢 ON  (Normalizers and formatters bypassed)\n")
+	} else {
+		sb.WriteString("• **Raw Pass-Through**:   ⚪ OFF (Normalizers and formatting active)\n")
+	}
+	sb.WriteString("  ↳ Control: `@nacho:raw-on` | `@nacho:raw-off`\n\n")
+
+	// 5. Fairy Dusting
+	if g.FairyDustDisabled {
+		sb.WriteString("• **Fairy Dusting**:      ⏸️ OFF (Strategic review escalation disabled)\n")
+	} else {
+		sb.WriteString("• **Fairy Dusting**:      🟢 ON  (Strategic model escalation enabled)\n")
+	}
+	sb.WriteString("  ↳ Control: `@nacho:fairydust-off` | `@nacho:fairydust-on`\n\n")
+
+	sb.WriteString("*Tip: Use `@nacho:reset` to restore all session toggles to defaults.*")
+	return sb.String(), nil
+}
+
+// ResetCommandHandler resets session retry counters, cooldowns, and guardrails.
+type ResetCommandHandler struct{}
+
+func (r *ResetCommandHandler) Name() string { return "reset" }
+func (r *ResetCommandHandler) Description() string {
+	return "Reset session counters and restore default toggles"
+}
+func (r *ResetCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.ResetSession(env.SessionKey)
+	}
+	return "🔄 **Session Reset**\n\nAll session retry counters, model cooldowns, and guardrail toggles have been reset to defaults.", nil
+}
+
+// Standalone toggle command handlers
+type KickstartOffCommandHandler struct{}
+
+func (k *KickstartOffCommandHandler) Name() string { return "kickstart-off" }
+func (k *KickstartOffCommandHandler) Description() string {
+	return "Suspend Kickstart stalled-turn detection"
+}
+func (k *KickstartOffCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetKickstartDisabled(env.SessionKey, true)
+	}
+	return "🌮 **Kickstart Suspended**\n\nStalled-turn detection is now paused for this session. Use `@nacho:kickstart-on` to resume.", nil
+}
+
+type KickstartOnCommandHandler struct{}
+
+func (k *KickstartOnCommandHandler) Name() string { return "kickstart-on" }
+func (k *KickstartOnCommandHandler) Description() string {
+	return "Re-enable Kickstart stalled-turn detection"
+}
+func (k *KickstartOnCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetKickstartDisabled(env.SessionKey, false)
+	}
+	return "🌮 **Kickstart Active**\n\nStalled-turn detection is now re-enabled for this session.", nil
+}
+
+type CycleKillerOffCommandHandler struct{}
+
+func (c *CycleKillerOffCommandHandler) Name() string { return "cyclekiller-off" }
+func (c *CycleKillerOffCommandHandler) Description() string {
+	return "Suspend Cycle Killer infinite loop aborts"
+}
+func (c *CycleKillerOffCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetCycleKillerDisabled(env.SessionKey, true)
+	}
+	return "🌮 **Cycle Killer Disabled**\n\nRepetitive loop and stream runaway defense is paused for this session. Use `@nacho:cyclekiller-on` to resume.", nil
+}
+
+type CycleKillerOnCommandHandler struct{}
+
+func (c *CycleKillerOnCommandHandler) Name() string { return "cyclekiller-on" }
+func (c *CycleKillerOnCommandHandler) Description() string {
+	return "Re-enable Cycle Killer infinite loop aborts"
+}
+func (c *CycleKillerOnCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetCycleKillerDisabled(env.SessionKey, false)
+	}
+	return "🌮 **Cycle Killer Active**\n\nRepetitive loop and stream runaway defense is active.", nil
+}
+
+type ShieldOffCommandHandler struct{}
+
+func (s *ShieldOffCommandHandler) Name() string { return "shield-off" }
+func (s *ShieldOffCommandHandler) Description() string {
+	return "Disable Fallback Shield interactive tool synthesis"
+}
+func (s *ShieldOffCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetShieldDisabled(env.SessionKey, true)
+	}
+	return "🌮 **Fallback Shield Disabled**\n\nInteractive tool call synthesis is paused. Responses with trailing questions will stream as plain text.", nil
+}
+
+type ShieldOnCommandHandler struct{}
+
+func (s *ShieldOnCommandHandler) Name() string { return "shield-on" }
+func (s *ShieldOnCommandHandler) Description() string {
+	return "Re-enable Fallback Shield interactive tool synthesis"
+}
+func (s *ShieldOnCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetShieldDisabled(env.SessionKey, false)
+	}
+	return "🌮 **Fallback Shield Active**\n\nInteractive tool call synthesis is active.", nil
+}
+
+type RawOnCommandHandler struct{}
+
+func (r *RawOnCommandHandler) Name() string        { return "raw-on" }
+func (r *RawOnCommandHandler) Description() string { return "Enable Raw Pass-Through mode" }
+func (r *RawOnCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetRawModeEnabled(env.SessionKey, true)
+	}
+	return "🌮 **Raw Pass-Through Active**\n\nStream normalizers and formatters are bypassed for this session.", nil
+}
+
+type RawOffCommandHandler struct{}
+
+func (r *RawOffCommandHandler) Name() string        { return "raw-off" }
+func (r *RawOffCommandHandler) Description() string { return "Disable Raw Pass-Through mode" }
+func (r *RawOffCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetRawModeEnabled(env.SessionKey, false)
+	}
+	return "🌮 **Raw Pass-Through Disabled**\n\nStream normalizers and formatters are active.", nil
+}
+
+type FairyDustOffCommandHandler struct{}
+
+func (f *FairyDustOffCommandHandler) Name() string { return "fairydust-off" }
+func (f *FairyDustOffCommandHandler) Description() string {
+	return "Suspend Fairy Dust strategic model escalations"
+}
+func (f *FairyDustOffCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetFairyDustDisabled(env.SessionKey, true)
+	}
+	return "🌮 **Fairy Dusting Disabled**\n\nStrategic model escalations are paused for this session.", nil
+}
+
+type FairyDustOnCommandHandler struct{}
+
+func (f *FairyDustOnCommandHandler) Name() string { return "fairydust-on" }
+func (f *FairyDustOnCommandHandler) Description() string {
+	return "Re-enable Fairy Dust strategic model escalations"
+}
+func (f *FairyDustOnCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
+	if env.SessionTracker != nil && env.SessionKey != "" {
+		env.SessionTracker.SetFairyDustDisabled(env.SessionKey, false)
+	}
+	return "🌮 **Fairy Dusting Active**\n\nStrategic model escalations are active.", nil
+}
+
 // UnknownCommandHandler formats a friendly suggestion for unrecognized directives.
 type UnknownCommandHandler struct {
 	registry *MetaRegistry
 }
 
 func (u *UnknownCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
-	candidates := []string{"local", "cloud", "frontier", "reasoning", "help", "tiers", "status", "deals"}
+	candidates := []string{
+		"local", "cloud", "frontier", "reasoning",
+		"help", "tiers", "status", "deals", "toggles", "reset",
+		"kickstart-off", "kickstart-on",
+		"cyclekiller-off", "cyclekiller-on",
+		"shield-off", "shield-on",
+		"raw-on", "raw-off",
+		"fairydust-off", "fairydust-on",
+	}
 	for _, cmd := range u.registry.commandList {
 		candidates = append(candidates, cmd.Name())
 	}

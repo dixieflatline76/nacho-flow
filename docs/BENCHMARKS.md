@@ -7,13 +7,18 @@ This document details the performance characteristics, load-testing methodology,
 ## 1. Executive Summary
 
 <!-- BENCHMARK:EXECUTIVE_SUMMARY_START -->
-- **Peak Throughput**: **31,424 requests/second** under full production authentication and tool normalization load.
+- **Peak Throughput**: **30,284 requests/second** under full production authentication and tool normalization load.
 - **Pipeline Latency**: **~0.19 ms** raw pass-through overhead per request (**~0.22 ms** with full multi-model tool-call normalization).
 - **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
 - **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
 - **Telemetry & Model Deals Integrity**: Lock-free atomic pricing metadata map and asynchronous stats tracking operate with **zero race conditions** and **zero data drops**.
 - **Real-World Complex Workloads**: Maintains **~30,000+ req/s** with active Inbound Bearer Authentication and real-time Multi-Model Tool-Call Normalization.
 <!-- BENCHMARK:EXECUTIVE_SUMMARY_END -->
+
+> [!TIP]
+> **Deep-Dive Technical Whitepapers**:
+> - 📄 **[Systems Architecture & Zero-Allocation Whitepaper](PERFORMANCE_WHITEPAPER.md)**: Explains the low-level systems engineering (SIMD byte filters, AOT bytecode VM, lock-free RCU, and ring-buffer streaming surgery) that enables deep inspection in $<0.2\text{ms}$ compared to LiteLLM and Bifrost.
+> - 🔬 **[A/B Benchmark Case Study Whitepaper](BENCHMARKS_AB_CASE_STUDY.md)**: Full empirical 4-run developer case study documenting $94.7\%$ spend reduction and local hardware ROI.
 
 ---
 
@@ -64,11 +69,11 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 <!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **29511.3 req/s** | 1.93 ms | 6.43 ms | 72.5 MB |
-| **100 workers** | 50,000 | **100.0%** | **28861.9 req/s** | 2.58 ms | 15.20 ms | 122.4 MB |
-| **250 workers** | 75,000 | **100.0%** | **30186.8 req/s** | 7.52 ms | 29.39 ms | 129.5 MB |
-| **500 workers** | 100,000 | **100.0%** | **29250.8 req/s** | 14.99 ms | 46.72 ms | 129.2 MB |
-| **1000 workers** | 100,000 | **100.0%** | **21419.3 req/s** | 32.05 ms | 149.68 ms | 194.1 MB |
+| **50 workers** | 25,000 | **100.0%** | **26688.1 req/s** | 2.00 ms | 7.65 ms | 90.1 MB |
+| **100 workers** | 50,000 | **100.0%** | **23891.2 req/s** | 3.01 ms | 20.23 ms | 76.8 MB |
+| **250 workers** | 75,000 | **100.0%** | **30284.2 req/s** | 7.58 ms | 26.14 ms | 92.5 MB |
+| **500 workers** | 100,000 | **100.0%** | **26268.6 req/s** | 15.28 ms | 62.58 ms | 159.5 MB |
+| **1000 workers** | 100,000 | **100.0%** | **26837.5 req/s** | 30.24 ms | 99.08 ms | 182.7 MB |
 <!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
@@ -87,10 +92,10 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 <!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 29306.0 req/s | 21276.6 req/s | **-27.4%** | **+1.00 ms** (0.00ms vs 1.00ms) | +5.01 ms |
-| **50 workers** | 30529.6 req/s | 29788.3 req/s | **-2.4%** | **+0.33 ms** (1.66ms vs 1.99ms) | +0.63 ms |
-| **100 workers** | 28941.9 req/s | 31424.1 req/s | **+8.6%** | **-0.03 ms** (2.72ms vs 2.69ms) | -3.95 ms |
-| **200 workers** | 30370.1 req/s | 29973.3 req/s | **-1.3%** | **+0.21 ms** (5.70ms vs 5.91ms) | +2.19 ms |
+| **25 workers** | 28772.5 req/s | 28320.1 req/s | **-1.6%** | **+0.00 ms** (0.00ms vs 0.00ms) | -0.12 ms |
+| **50 workers** | 30075.5 req/s | 29280.1 req/s | **-2.6%** | **+0.00 ms** (2.01ms vs 2.01ms) | +0.53 ms |
+| **100 workers** | 29588.5 req/s | 28741.4 req/s | **-2.9%** | **+0.21 ms** (2.44ms vs 2.65ms) | +0.02 ms |
+| **200 workers** | 29149.0 req/s | 29281.2 req/s | **+0.5%** | **+0.04 ms** (5.98ms vs 6.02ms) | +0.58 ms |
 <!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 
@@ -212,22 +217,22 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
-| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.5%** |
+| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.6%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.8%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.6%** |
-| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.1%** |
+| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.6%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.5%** |
+| `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **95.5%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
-| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.1%** |
-| `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **14.3%** |
+| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.0%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
 #### VS Code Companion Extension Coverage:
 <!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **14 / 14 Suites** | **191 / 191 (100%)** | **95.79% / 96.16% / 95.77%** |
+| **Extension Core & Webview Suite** | **14 / 14 Suites** | **212 / 212 (100%)** | **96.22% / 96.56% / 95.96%** |
 <!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---

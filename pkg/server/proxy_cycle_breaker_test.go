@@ -678,9 +678,9 @@ func TestProxy_Kickstart_WriteOnly_PromptInjection(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:            &enabled,
-			KickstartThreshold: 2,
-			KickstartWriteOnly: true,
+			Enabled:             &enabled,
+			KickstartThreshold:  2,
+			KickstartWriteOnly:  true,
 			KickstartWriteTools: []string{"write_to_file", "replace_in_file", "execute_command"},
 		},
 		Providers: map[string]contract.ProviderConfig{
@@ -772,6 +772,285 @@ func TestProxy_Kickstart_WriteOnly_PromptInjection(t *testing.T) {
 	}
 }
 
+func TestProxy_Kickstart_FailingTestDoesNotResetKickstart(t *testing.T) {
+	var capturedBodies []string
+
+	mockLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		capturedBodies = append(capturedBodies, string(bodyBytes))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Thinking..."}}]}`))
+	}))
+	defer mockLocal.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		CycleKiller: contract.CycleBreakerConfig{
+			Enabled:             &enabled,
+			KickstartThreshold:  2,
+			KickstartWriteOnly:  true,
+			KickstartWriteTools: []string{"write_to_file", "replace_in_file"},
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"local_gpu": {
+				BaseURL: mockLocal.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Local GPU",
+				Model:    "gemma4:12b",
+				Provider: "local_gpu",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	sessionID := "test-kickstart-failtest-sess"
+
+	// Turn 1: execute_command runs tests that FAIL -> HasTestFail=true, HasWriteProgress=false
+	// Failing tests do NOT count as progress, so kickstart count increments to 1.
+	reqPayload1 := `{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Run tests"},
+			{"role": "assistant", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "execute_command", "arguments": "{\"command\":\"go test ./...\"}"}}]},
+			{"role": "tool", "tool_call_id": "c1", "content": "--- FAIL: TestDealCard (0.01s)\nFAIL\nFAIL\tpkg/cards\t0.02s"}
+		]
+	}`
+	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload1))
+	req1.Header.Set("X-Session-ID", sessionID)
+	rec1 := httptest.NewRecorder()
+	srv.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("Turn 1 failed: %d", rec1.Code)
+	}
+
+	// Turn 2: read_file -> HasWriteProgress=false, HasTestProgress=false.
+	// Kickstart accumulator reaches threshold (2) -> Kickstart fires!
+	reqPayload2 := `{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Inspect file"},
+			{"role": "assistant", "tool_calls": [{"id": "c2", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\":\"cards.go\"}"}}]},
+			{"role": "tool", "tool_call_id": "c2", "content": "package cards\n\ntype Card struct{}"}
+		]
+	}`
+	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload2))
+	req2.Header.Set("X-Session-ID", sessionID)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("Turn 2 failed: %d", rec2.Code)
+	}
+
+	if strings.Contains(capturedBodies[0], "[SYSTEM OVERRIDE]") {
+		t.Errorf("Turn 1 should NOT have injected override")
+	}
+	if !strings.Contains(capturedBodies[1], "[SYSTEM OVERRIDE]") {
+		t.Errorf("Turn 2 MUST have injected override because failing tests do not grant immunity, got: %s", capturedBodies[1])
+	}
+}
+
+func TestProxy_Kickstart_PassingTestResetsKickstart(t *testing.T) {
+	var capturedBodies []string
+
+	mockLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		capturedBodies = append(capturedBodies, string(bodyBytes))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Thinking..."}}]}`))
+	}))
+	defer mockLocal.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		CycleKiller: contract.CycleBreakerConfig{
+			Enabled:             &enabled,
+			KickstartThreshold:  2,
+			KickstartWriteOnly:  true,
+			KickstartWriteTools: []string{"write_to_file"},
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"local_gpu": {
+				BaseURL: mockLocal.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Local GPU",
+				Model:    "gemma4:12b",
+				Provider: "local_gpu",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	sessionID := "test-kickstart-passtest-sess"
+
+	// Turn 1: read_file -> KickstartCount becomes 1
+	reqPayload1 := `{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Read file"},
+			{"role": "assistant", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "read_file"}}]},
+			{"role": "tool", "tool_call_id": "c1", "content": "package main"}
+		]
+	}`
+	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload1))
+	req1.Header.Set("X-Session-ID", sessionID)
+	rec1 := httptest.NewRecorder()
+	srv.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("Turn 1 failed: %d", rec1.Code)
+	}
+
+	// Turn 2: execute_command running clean PASS tests -> HasTestPass=true, HasTestFail=false -> Resets KickstartCount to 0!
+	reqPayload2 := `{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Run tests"},
+			{"role": "assistant", "tool_calls": [{"id": "c2", "type": "function", "function": {"name": "execute_command"}}]},
+			{"role": "tool", "tool_call_id": "c2", "content": "--- PASS: TestMain (0.01s)\nPASS\nok  \tpkg/main\t0.02s"}
+		]
+	}`
+	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload2))
+	req2.Header.Set("X-Session-ID", sessionID)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("Turn 2 failed: %d", rec2.Code)
+	}
+
+	// Turn 2 must NOT fire kickstart because clean test pass is milestone progress
+	if strings.Contains(capturedBodies[1], "[SYSTEM OVERRIDE]") {
+		t.Errorf("Turn 2 with passing tests should NOT have injected override, got: %s", capturedBodies[1])
+	}
+
+	// Turn 3: read_file -> count becomes 1 (not 3), so does not trigger threshold of 2
+	reqPayload3 := `{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Read file again"},
+			{"role": "assistant", "tool_calls": [{"id": "c3", "type": "function", "function": {"name": "read_file"}}]},
+			{"role": "tool", "tool_call_id": "c3", "content": "package main"}
+		]
+	}`
+	req3 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload3))
+	req3.Header.Set("X-Session-ID", sessionID)
+	rec3 := httptest.NewRecorder()
+	srv.ServeHTTP(rec3, req3)
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("Turn 3 failed: %d", rec3.Code)
+	}
+
+	if strings.Contains(capturedBodies[2], "[SYSTEM OVERRIDE]") {
+		t.Errorf("Turn 3 should NOT have injected override (count should be 1, threshold is 2), got: %s", capturedBodies[2])
+	}
+}
+
+func TestProxy_Kickstart_ReadingTestFileDoesNotResetKickstart(t *testing.T) {
+	var capturedBodies []string
+
+	mockLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		capturedBodies = append(capturedBodies, string(bodyBytes))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Thinking..."}}]}`))
+	}))
+	defer mockLocal.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		CycleKiller: contract.CycleBreakerConfig{
+			Enabled:             &enabled,
+			KickstartThreshold:  2,
+			KickstartWriteOnly:  true,
+			KickstartWriteTools: []string{"write_to_file"},
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"local_gpu": {
+				BaseURL: mockLocal.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Local GPU",
+				Model:    "gemma4:12b",
+				Provider: "local_gpu",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	sessionID := "test-kickstart-readtestfile-sess"
+
+	// Turn 1: read_file on oracle_test.go -> HasWriteProgress=false, HasTestProgress=false -> KickstartCount = 1
+	reqPayload1 := `{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Read test file"},
+			{"role": "assistant", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\":\"oracle_test.go\"}"}}]},
+			{"role": "tool", "tool_call_id": "c1", "content": "package oracle\n\nimport \"testing\""}
+		]
+	}`
+	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload1))
+	req1.Header.Set("X-Session-ID", sessionID)
+	rec1 := httptest.NewRecorder()
+	srv.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("Turn 1 failed: %d", rec1.Code)
+	}
+
+	// Turn 2: read_file on solver_test.go -> HasWriteProgress=false, HasTestProgress=false -> KickstartCount = 2 -> FIRES!
+	reqPayload2 := `{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Read test file 2"},
+			{"role": "assistant", "tool_calls": [{"id": "c2", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\":\"solver_test.go\"}"}}]},
+			{"role": "tool", "tool_call_id": "c2", "content": "package solver\n\nimport \"testing\""}
+		]
+	}`
+	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload2))
+	req2.Header.Set("X-Session-ID", sessionID)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("Turn 2 failed: %d", rec2.Code)
+	}
+
+	if !strings.Contains(capturedBodies[1], "[SYSTEM OVERRIDE]") {
+		t.Errorf("Turn 2 expected injected [SYSTEM OVERRIDE] because reading test files must not grant write immunity, got: %s", capturedBodies[1])
+	}
+}
+
 func TestProxy_CycleBreaker_AutoEscalationAndCooldown(t *testing.T) {
 	// Mock Flash server: loops thinking monologue
 	mockFlash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -798,11 +1077,11 @@ func TestProxy_CycleBreaker_AutoEscalationAndCooldown(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
-			Enabled:                     &enabled,
-			MaxThinkingTokens:           10,
-			RepetitionWindow:            20,
-			RepetitionThreshold:         2,
-			MaxRetries:                  0, // sever immediately
+			Enabled:             &enabled,
+			MaxThinkingTokens:   10,
+			RepetitionWindow:    20,
+			RepetitionThreshold: 2,
+			MaxRetries:          0, // sever immediately
 		},
 		Tiers: []contract.Tier{
 			{
@@ -882,7 +1161,3 @@ func TestProxy_CycleBreaker_AutoEscalationAndCooldown(t *testing.T) {
 		t.Errorf("Turn 2 expected auto-escalation to Tier 3 Pro, got: %s", tierHeader2)
 	}
 }
-
-
-
-

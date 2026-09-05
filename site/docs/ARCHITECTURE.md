@@ -66,35 +66,50 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 
 ### Stage 1: Session Tracking, Directive Interception & Context Classification (`pkg/router/session.go`, `pkg/router/classifier.go`, `pkg/router/directive.go`)
 - **In-Prompt Directive Fast Bailout**: Scans user prompts using Go SIMD byte search (`router.HasDirective`) in **< 7 nanoseconds** with **0 heap allocations**. If `@nacho:` is absent, classification proceeds with zero latency overhead.
-- **Directive Resolution & Sanitization**:
-  - Routing overrides (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) extract the target tier/model.
-  - Meta directives (`@nacho:help`, `@nacho:tiers`, `@nacho:status`, `@nacho:deals`, `@nacho:<typo>`) are flagged for zero-cost daemon interception.
-  - Directives are stripped from `reqCtx.CleanPrompt` and conversation message payloads before any upstream transmission, leaving user prompts pristine.
+- **HotSauce In-Prompt Directive Engine (`pkg/router/directive.go`)**:
+  - Evaluates directives using regex grammar:
+    ```regex
+    (?i)@nacho:([a-zA-Z0-9_\-]+)(?:=(?:"([^"]+)"|([^\s]+)))?
+    ```
+  - **Session Guardrail Toggles**: Session switches (`kickstart-off/on`, `cyclekiller-off/on`, `shield-off/on`, `raw-on/off`, `fairydust-off/on`, or key-value forms `kickstart=off`, `cyclekiller=off`) update the active session's persistent `SessionGuardrails` across the 5-minute sliding window.
+  - **Routing Overrides**: Single-turn overrides (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) extract the target tier/model for that specific turn.
+  - **Standalone vs. Embedded Execution**:
+    - *Standalone Directives* (`clean == ""`): Directives submitted alone in chat are flagged as `IsMeta = true` and executed in-process by the Meta Registry, returning instant zero-cost local responses ($0.00 / 0ms) with zero upstream model dispatch.
+    - *Embedded Directives* (`clean != ""`): Directives embedded alongside prompts mutate session state or routing rules, and are cleanly stripped from `reqCtx.CleanPrompt` and conversation message payloads to leave user prompts pristine.
 - **Meta Command Strategy Registry (`pkg/server/meta_registry.go`)**:
-  - Meta queries bypass upstream LLMs entirely ($0.00 cost, 0 tokens) and are handled in-process by strategy handlers (`MetaCommandHandler`).
+  - Meta queries bypass upstream LLMs entirely ($0.00 cost, 0 tokens) and are handled in-process by strategy handlers (`MetaCommandHandler`):
+    - `@nacho:status`: Strictly displays daemon telemetry (uptime, requests, financial savings, active circuits).
+    - `@nacho:toggles` (aliases: `guardrails`, `features`): Displays live session guardrail switches and their states.
+    - `@nacho:reset` (alias: `clear`): Executes a session hard reset, wiping turn history, retry counts, and resetting guardrail switches to defaults.
+    - `@nacho:help`, `@nacho:tiers`, `@nacho:deals`: Operational assistance and spot market inspection.
   - Serialized via `JSONMetaPresenter` (OpenAI `chat.completion`) or `SSEMetaPresenter` (OpenAI `chat.completion.chunk` event streams).
   - Integrated with Levenshtein typo suggestion and sliding-window anti-abuse debounce.
-- **Agentic Progress Awareness & Session Retry Tracking (`pkg/router/session.go`)**:
+- **Agentic Progress Awareness & Session Guardrails (`pkg/router/session.go`)**:
   - Computes an FNV-1a hash of the initial conversation prompt prefix to correlate prompt turns within a sliding 5-minute window.
+  - **SessionGuardrails**: Thread-safe per-session configuration store (`KickstartDisabled`, `CycleKillerDisabled`, `ShieldDisabled`, `RawModeEnabled`, `FairyDustDisabled`) initialized early upon first contact (`getOrCreateState`) and wiped cleanly on `@nacho:reset`.
   - **Tool Progress Gate (`hasToolProgress`)**: In multi-step autonomous agent loops (where the latest user prompt string remains identical across dozens of file reads/writes), the session tracker detects intermediate successful tool executions (`role: tool` / `tool_result`) and resets `RetriesCount = 0`, preventing false retry escalation.
-- **In-History Trailing Error Scanner & XML Tool Classifier (`pkg/router/classifier.go`)**:
+- **In-History Trailing Error Scanner & Tool Capability Classifier (`pkg/router/classifier.go`)**:
   - Scans the trailing messages in conversation history for known client error signatures (`[ERROR] You did not use a tool`, `Missing value for required parameter`, `<error_details>`, `No sufficiently similar match found`, etc.).
   - Extracts consecutive error counts (`HistoryErrors`) and overrides `reqCtx.Retries`, triggering automatic rule-based tier escalation to DeepSeek R1 (Tier 3) or Claude Sonnet 5 (Tier 4) to self-heal without requiring custom client HTTP headers.
+  - **Tool Capability Detection (`HasWriteCapability`)**: Scans declared client tools in `reqCtx.Tools`. If tools are declared (`HasTools == true`) but none match configured `kickstart_write_tools`, `HasWriteCapability` is set to `false`. This accurately detects Plan Mode, Architect Mode, and pure investigation tasks.
   - **Cline XML Tool Call Detection Engine**: Scans raw assistant text content for embedded XML write tools (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`, etc.) from `kickstart_write_tools`, and maps subsequent user tool results to `HasToolProgress` and `HasWriteProgress` across OpenAI JSON, Anthropic JSON, and Cline XML formats.
 - **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities without underestimating payloads.
 - **Multimodal Detection**: Scans message blocks for `image_url` payloads and base64 strings (`HasImages`).
 - **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`), extracting declared interactive tools (`ask_followup_question`, `ask_question`).
 - **Scoped Keyword Extraction**: Extracts programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) **strictly from the clean prompt**, preventing historical multi-turn token pollution.
 
-### Stage 1.5: Proactive Quality Checkpointing ("Fairy Dust") & Cycle Killer Resuscitation (`pkg/router/session.go`)
-- **Fairy Dust Periodic Elevation**: Proactively triggers quality checkpoint reviews on frontier models (e.g., DeepSeek-R1, Claude 3.7 Sonnet) after every $N$ write tool actions, verifying complex edits before local execution resumes.
-- **Session Kickstart**: Detects semantic idle/planning loops where the agent stops issuing write/tool commands and injects explicit system nudges or escalates to default cloud tiers.
+### Stage 1.5: Proactive Quality Checkpointing ("Fairy Dust") & Kickstart Resuscitation (`pkg/router/session.go`, `pkg/server/proxy.go`)
+- **Fairy Dust Periodic Elevation**: Proactively triggers quality checkpoint reviews on frontier models (e.g., DeepSeek-R1, Claude 3.7 Sonnet) after every $N$ write tool actions, verifying complex edits before local execution resumes. Dynamically bypassed if `guardrails.FairyDustDisabled` is set.
+- **HotSauce Kickstart Resuscitation**:
+  - Detects semantic idle/planning loops where the agent stops issuing write/tool commands and injects explicit system nudges or escalates to default cloud tiers.
+  - **Plan Mode Protection**: If `reqCtx.HasTools && !reqCtx.HasWriteCapability` (e.g., Cline/Zoo in Plan Mode with only `view_file` or `grep_search`), Kickstart idle stall escalation is automatically suspended. Agents explore and plan freely across unlimited turns with $0.00 cost and zero interruptions.
+  - **Session Toggle**: Kickstart can be manually toggled off for the entire session via `@nacho:kickstart-off` (or `@nacho:kickstart=off`).
 
 ### Stage 2: AST-Compiled Rule Evaluation & Directive Dispatch (`pkg/strategy/expr_evaluator.go`)
 - **Directive Override Fast-Path**: If `ForcedTier` or `ForcedModel` is present, `SelectTier` directly resolves the target tier or transient model tier without evaluating AST expressions.
 - **$\mathcal{O}(1)$ Context Boundary Guard**: If a tier defines `max_context` and `Tokens > max_context`, the tier is skipped immediately without expression evaluation overhead.
 - **Bytecode Expression Engine**: Uses `github.com/expr-lang/expr` compiled bytecode expressions to evaluate 1..N tiers sequentially (*Top-to-Bottom: First Match Wins* in $< 0.6 \mu\text{s}$).
-- Supported context variables: `Tokens`, `HasImages`, `HasTools`, `Keywords`, `Retries`, `IsRetry`, `Model`, `SessionKickstarted`, `SessionKickstartCount`, `HasToolProgress`, `HasWriteProgress`, `HistoryErrors`, `CoolingDownModels`.
+- Supported context variables: `Tokens`, `HasImages`, `HasTools`, `HasWriteCapability`, `Keywords`, `Retries`, `IsRetry`, `Model`, `SessionKickstarted`, `SessionKickstartCount`, `HasToolProgress`, `HasWriteProgress`, `HistoryErrors`, `CoolingDownModels`.
 - **Spicy Directive Model Isolation (`when: "false"`)**: Tiers configured with `when: "false"` are skipped during AST tier selection, guaranteeing zero accidental routing to expensive models (e.g. Claude Opus 5), while keeping them accessible on-demand via `@nacho:model` / `X-Spicy-Model` and Fairy Dusting.
 
 ### Stage 3: Payload Sanitization & Model Rewriting (`pkg/router/sanitizer.go`)
@@ -146,7 +161,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **The Problem**: Rigid agent harnesses (Zoo Code, Cline) enforce a 0-turn error policy (`"You did not use a tool!"`). Local models answering questions or mode proposals in prose trigger 3-strike task abortions.
 - **Zero-Allocation Tail Buffer (`tail_buffer.go`)**: Maintains a 256-byte circular ring buffer across streaming responses using `sync.Pool` recycling.
 - **Rule Engine & Heuristic Guards (`rule_engine.go`)**: Evaluates prose endings in $4.67\text{ ns}$ for question marks (`?`), approval heuristics (*"Are you satisfied"*, *"Would you like"*), or mode switches (*"switch to code mode"*).
-- **Universal Dual-Schema Strategy Synthesis (`strategy.go`)**: Generates compliant tool calls for `ask_followup_question`, `ask_question`, or `switch_mode`. Emits both `follow_up: [...]` (Zoo Code / Roo Code) and `options: [...]` (Cline) simultaneously to satisfy all extension schema validators without error loops.
+- **Universal Dual-Schema Strategy Synthesis (`strategy.go`)**: Generates compliant tool calls for `ask_followup_question`, `ask_question`, or `switch_mode`. Emits both `follow_up: [...]` (Zoo Code) and `options: [...]` (Cline) simultaneously to satisfy all extension schema validators without error loops.
 - **Pre-`[DONE]` Stream Delta Injection (`stream_normalizer.go`)**: If upstream finishes without emitting native tool calls, the shield emits a synthetic `tool_calls` chunk with `finish_reason: "tool_calls"` immediately before streaming `data: [DONE]`.
 
 ### Stage 5e: 🎸 Cycle Killer: Two-Phase In-Flight Stream Defense (`pkg/router/shield/cycle_breaker.go`)
@@ -170,7 +185,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **Resuscitation Injection**: When `KickstartCount >= kickstart_threshold` (default 5, `0` disables), Nacho Flow injects `[SYSTEM OVERRIDE]` to force the agent to transition from planning to execution.
 
 ### Stage 5g: 🔑 Clean Session Key & Ephemeral Port Normalization (`pkg/server/proxy.go`)
-- **The Problem**: Standard HTTP clients (Zoo Code, Roo Code, Python SDK) create fresh TCP connections per request/retry, resulting in changing ephemeral client ports (e.g., `:65143` $\rightarrow$ `:55732`). If `r.RemoteAddr` is used directly as `sessionKey`, every retry resets session state to Turn 0.
+- **The Problem**: Standard HTTP clients (Zoo Code, Cline, Python SDK) create fresh TCP connections per request/retry, resulting in changing ephemeral client ports (e.g., `:65143` $\rightarrow$ `:55732`). If `r.RemoteAddr` is used directly as `sessionKey`, every retry resets session state to Turn 0.
 - **Port-Stripped Session Normalization (`extractSessionKey`)**: Resolves session keys via `x-session-id`, `session-id`, `X-Forwarded-For`, `X-Real-IP`, or pure host IP extracted via `net.SplitHostPort(r.RemoteAddr)`, guaranteeing persistent retry tracking across multi-turn agent sessions.
 
 ### Stage 5h: 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints (`pkg/router/session.go`, `pkg/server/proxy.go`)

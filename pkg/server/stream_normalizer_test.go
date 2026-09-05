@@ -708,4 +708,3 @@ data: [DONE]
 		t.Errorf("expected 0.024 cost, got %f", usage.Cost)
 	}
 }
-

@@ -195,5 +195,3 @@ func TestSafeBoundedDir_ConstructorAndEdgeCases(t *testing.T) {
 		t.Errorf("expected error in AtomicWrite when target is a non-empty directory")
 	}
 }
-
-

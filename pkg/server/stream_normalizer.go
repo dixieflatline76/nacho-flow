@@ -64,7 +64,6 @@ type StreamUsage struct {
 	Cost                float64              `json:"cost,omitempty"`
 }
 
-
 // StreamNormalizer wraps an upstream SSE response stream and normalizes reasoning tokens
 // (from DeepSeek-R1, OpenRouter, etc.) into standard <think>...</think> tags within delta.content.
 // It also intercepts the upstream usage object emitted at stream completion and enforces the Agentic Tool Fallback Shield.

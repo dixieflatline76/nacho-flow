@@ -311,12 +311,12 @@ func TestScanTrailingMessages_WriteProgress(t *testing.T) {
 	configuredTools := []string{"write_to_file", "replace_in_file", "execute_command", "apply_diff"}
 
 	tests := []struct {
-		name                 string
-		customTools          []string
-		body                 string
-		wantToolProgress     bool
-		wantWriteProgress    bool
-		wantHistoryErrors    int
+		name              string
+		customTools       []string
+		body              string
+		wantToolProgress  bool
+		wantWriteProgress bool
+		wantHistoryErrors int
 	}{
 		{
 			name: "OpenAI format: write_to_file tool call and response",
@@ -397,7 +397,7 @@ func TestScanTrailingMessages_WriteProgress(t *testing.T) {
 			wantHistoryErrors: 0,
 		},
 		{
-			name: "Custom write tools: custom_build tool recognized, write_to_file ignored",
+			name:        "Custom write tools: custom_build tool recognized, write_to_file ignored",
 			customTools: []string{"custom_build"},
 			body: `{
 				"messages": [
@@ -410,7 +410,7 @@ func TestScanTrailingMessages_WriteProgress(t *testing.T) {
 			wantHistoryErrors: 0,
 		},
 		{
-			name: "Custom write tools: write_to_file not recognized when custom list active",
+			name:        "Custom write tools: write_to_file not recognized when custom list active",
 			customTools: []string{"custom_build"},
 			body: `{
 				"messages": [
@@ -459,6 +459,65 @@ func TestScanTrailingMessages_WriteProgress(t *testing.T) {
 				t.Errorf("HistoryErrors = %d, want %d", ctx.HistoryErrors, tc.wantHistoryErrors)
 			}
 		})
+	}
+}
+
+func TestClassify_HasWriteCapability(t *testing.T) {
+	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c.SetKickstartWriteTools([]string{"write_to_file", "replace_in_file", "execute_command"})
+
+	// Plan Mode: only read tools -> HasWriteCapability = false
+	planPayload := `{"messages":[{"role":"user","content":"investigate auth"}],"tools":[{"function":{"name":"read_file"}},{"function":{"name":"list_dir"}},{"function":{"name":"ask_followup_question"}}]}`
+	ctx, err := c.Classify([]byte(planPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx.HasWriteCapability {
+		t.Error("expected HasWriteCapability=false for read-only tools (Plan Mode)")
+	}
+	if !ctx.HasTools {
+		t.Error("expected HasTools=true")
+	}
+
+	// Code Mode: includes write tools -> HasWriteCapability = true
+	codePayload := `{"messages":[{"role":"user","content":"fix bug"}],"tools":[{"function":{"name":"read_file"}},{"function":{"name":"write_to_file"}},{"function":{"name":"execute_command"}}]}`
+	ctx2, err := c.Classify([]byte(codePayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ctx2.HasWriteCapability {
+		t.Error("expected HasWriteCapability=true when write_to_file is in tools")
+	}
+
+	// Code Mode with tools as {"name": "..."} instead of {"function": {"name": "..."}}
+	flatToolPayload := `{"messages":[{"role":"user","content":"fix bug"}],"tools":[{"name":"replace_in_file"}]}`
+	ctxFlat, err := c.Classify([]byte(flatToolPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ctxFlat.HasWriteCapability {
+		t.Error("expected HasWriteCapability=true for flat tool object")
+	}
+
+	// No tools at all -> HasWriteCapability = false, HasTools = false
+	noToolsPayload := `{"messages":[{"role":"user","content":"hello"}]}`
+	ctx3, err := c.Classify([]byte(noToolsPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx3.HasWriteCapability {
+		t.Error("expected HasWriteCapability=false when no tools present")
+	}
+	if ctx3.HasTools {
+		t.Error("expected HasTools=false when no tools present")
+	}
+
+	// Empty write tools config -> HasWriteCapability stays false (default builtins or empty)
+	c2 := &RequestClassifier{estimator: NewTokenEstimator()}
+	c2.SetKickstartWriteTools([]string{})
+	ctx4, _ := c2.Classify([]byte(codePayload))
+	if ctx4.HasWriteCapability {
+		t.Error("expected HasWriteCapability=false when write tools map is empty")
 	}
 }
 

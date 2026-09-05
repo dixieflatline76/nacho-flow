@@ -7,19 +7,26 @@ import (
 
 // RequestContext represents the parsed metrics and metadata of an incoming OpenAI API request turn.
 type RequestContext struct {
-	Tokens           int      `json:"tokens"`
-	HasImages        bool     `json:"has_images"`
-	HasTools         bool     `json:"has_tools"`
-	InteractiveTool  string   `json:"interactive_tool,omitempty"`
-	Keywords         []string `json:"keywords"`
-	Prompt           string   `json:"prompt"`
-	CleanPrompt      string   `json:"clean_prompt,omitempty"`
-	Retries          int      `json:"retries,omitempty"`
-	IsRetry          bool     `json:"is_retry,omitempty"`
-	HasToolProgress  bool     `json:"has_tool_progress,omitempty"`
-	HasWriteProgress bool     `json:"has_write_progress,omitempty"`
-	HasTestProgress  bool     `json:"has_test_progress,omitempty"`
-	HistoryErrors          int      `json:"history_errors,omitempty"`
+	Tokens                    int      `json:"tokens"`
+	HasImages                 bool     `json:"has_images"`
+	HasTools                  bool     `json:"has_tools"`
+	InteractiveTool           string   `json:"interactive_tool,omitempty"`
+	Keywords                  []string `json:"keywords"`
+	Prompt                    string   `json:"prompt"`
+	CleanPrompt               string   `json:"clean_prompt,omitempty"`
+	Retries                   int      `json:"retries,omitempty"`
+	IsRetry                   bool     `json:"is_retry,omitempty"`
+	HasToolProgress           bool     `json:"has_tool_progress,omitempty"`
+	HasWriteProgress          bool     `json:"has_write_progress,omitempty"`
+	HasTestProgress           bool     `json:"has_test_progress,omitempty"`
+	HasTestPass               bool     `json:"has_test_pass,omitempty"`
+	HasTestFail               bool     `json:"has_test_fail,omitempty"`
+	HasWriteCapability        bool     `json:"has_write_capability,omitempty"`
+	NoKickstart               bool     `json:"no_kickstart,omitempty"`
+	NoCycleKiller             bool     `json:"no_cycle_killer,omitempty"`
+	NoShield                  bool     `json:"no_shield,omitempty"`
+	RawModeEnabled            bool     `json:"raw_mode_enabled,omitempty"`
+	HistoryErrors             int      `json:"history_errors,omitempty"`
 	CycleRetries              int      `json:"cycle_retries,omitempty"`
 	CycleBreakerTriggered     bool     `json:"cycle_breaker_triggered,omitempty"`
 	CycleBreakerReason        string   `json:"cycle_breaker_reason,omitempty"`
@@ -32,14 +39,14 @@ type RequestContext struct {
 	SessionKey                string   `json:"session_key,omitempty"`
 	CoolingDownModels         []string `json:"cooling_down_models,omitempty"`
 	ForcedTier                string   `json:"forced_tier,omitempty"`
-	ForcedModel      string   `json:"forced_model,omitempty"`
-	IsMetaDirective  bool     `json:"is_meta_directive,omitempty"`
-	MetaDirective    string   `json:"meta_directive,omitempty"`
-	MetaDirectiveRaw string   `json:"meta_directive_raw,omitempty"`
-	Features         uint16   `json:"features,omitempty"`
-	FairyDusted      bool     `json:"fairy_dusted,omitempty"`
-	FairyDustEntry   string   `json:"fairy_dust_entry,omitempty"`
-	FairyDustCount   int      `json:"fairy_dust_count,omitempty"`
+	ForcedModel               string   `json:"forced_model,omitempty"`
+	IsMetaDirective           bool     `json:"is_meta_directive,omitempty"`
+	MetaDirective             string   `json:"meta_directive,omitempty"`
+	MetaDirectiveRaw          string   `json:"meta_directive_raw,omitempty"`
+	Features                  uint16   `json:"features,omitempty"`
+	FairyDusted               bool     `json:"fairy_dusted,omitempty"`
+	FairyDustEntry            string   `json:"fairy_dust_entry,omitempty"`
+	FairyDustCount            int      `json:"fairy_dust_count,omitempty"`
 }
 
 // IsModelCoolingDown returns true if the specified model is currently cooling down on this session.

@@ -76,9 +76,9 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		<div id="engine-status-chip" class="status-chip chip-gray">⚪ Engine Offline (Click ▶️ Start)</div>
 	</div>
 
-	<!-- 1. Routing Engine Host -->
+	<!-- 1. Model Dispatcher Host -->
 	<div class="section-card">
-		<div class="section-header">🌐 1. Routing Engine</div>
+		<div class="section-header">🌐 1. Model Dispatcher</div>
 		<div class="section-body">
 			<div class="radio-group">
 				<label class="radio-label">
@@ -234,7 +234,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 			</button>
 			<button class="btn btn-danger" onclick="confirmResetStats()">
 				<span class="brand-logo-svg" style="width: 14px; height: 14px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></span>
-				Reset All Stats to $0.00
+				Purge All Logs & Reset Stats
 			</button>
 		</div>
 	</div>
@@ -283,11 +283,11 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<!-- Danger Reset Confirmation Modal -->
 	<div id="danger-modal" class="modal-overlay" style="display: none;">
 		<div class="modal-content">
-			<h3 style="color: var(--error-color);">⚠️ Reset Telemetry</h3>
-			<p style="font-size: 11px; margin-bottom: 12px;">Reset all cost counters and token telemetry to $0.00? This cannot be undone.</p>
+			<h3 style="color: var(--error-color);">⚠️ Purge All Logs & Reset Telemetry</h3>
+			<p style="font-size: 11px; margin-bottom: 12px;">Archive active logs (*.bak.YYYYMMDD-HHMMSS) and reset stats to $0.00? The engine will momentarily restart to perform cold file rotation. This cannot be undone.</p>
 			<div class="btn-row">
 				<button class="btn btn-secondary btn-compact" onclick="closeDangerModal()">Cancel</button>
-				<button class="btn btn-danger btn-compact" onclick="executeResetStats()">Reset All Stats</button>
+				<button class="btn btn-danger btn-compact" onclick="executeResetStats()">Purge All Logs</button>
 			</div>
 		</div>
 	</div>

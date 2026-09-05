@@ -120,4 +120,3 @@ func TestJSONReporter_Render_Error(t *testing.T) {
 		t.Errorf("expected error writing to errWriter, got nil")
 	}
 }
-

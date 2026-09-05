@@ -244,7 +244,7 @@ default_tier:
   when: "true"
 
 # 🛡️ Agentic Tool Fallback Shield
-# Intercepts conversational plans & questions from local models in Zoo Code / Cline / Roo Code
+# Intercepts conversational plans & questions from local models in Zoo Code / Cline
 # and auto-synthesizes schema-compliant tool calls (supporting both follow_up and options arrays)
 # to prevent 3-strike deadlocks across all extensions.
 agent_shield:
@@ -321,7 +321,7 @@ fairy_dust:
 By default, Nacho Flow acts as an intelligent proxy that actively optimizes and sanitizes LLM streams:
 1. **Universal Tool Normalizer**: Converts 8 raw tool formats (Hermes XML, Mistral arrays, bare JSON, Markdown fences) into OpenAI-standard `tool_calls`.
 2. **Reasoning Stream Formatter**: Formats raw `<|im_start|>think` and `<thinking>` streams into `<think>...</think>` tags for IDE UI accordions.
-3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline / Roo Code and synthesizes dual-schema `ask_followup_question` / `ask_question` tool calls to prevent agent deadlocks.
+3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline and synthesizes dual-schema `ask_followup_question` / `ask_question` tool calls to prevent agent deadlocks.
 4. **Anti-Runaway Escalation Budget**: Caps consecutive frontier tier executions at `MaxEscalationTurns = 3` before automatically de-escalating to cloud workhorse tiers.
 
 However, different workflows and engineering personas require different levels of proxy intervention. Nacho Flow provides granular controls to selectively tune or completely bypass these transformations.
@@ -982,20 +982,51 @@ curl -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8000/api/v1/dea
 
 ### 🔥 Heat Seeker & 🌶️ HotSauce Directives
 
-Two ways to optimize your routing costs:
+Two complementary ways to optimize your agent routing costs:
 
 - **Heat Seeker** runs autonomously in the background, continuously scanning 300+ models for underpriced capacity. When it finds a deal meeting your thresholds, it surfaces it as a one-click tier substitution.
-- **HotSauce Directives** let you manually override routing on any turn by adding `@nacho:local`, `@nacho:cloud`, or `@nacho:reasoning` to your prompt.
+- **HotSauce Directives** let you steer routing, inspect daemon telemetry, or toggle session guardrails on-the-fly by typing `@nacho:...` directly into your chat or editor prompt.
 
-> **Together: Heat Seeker finds the fire. HotSauce lets you pour it on.**
+> **Together: Heat Seeker finds the fire. HotSauce lets you control it.**
 
 ---
 
-**HotSauce Directives** allow developers and autonomous coding agents (Claude Code, Cursor, Cline, Zoo Code, Aider, OpenCode) to manually spice up prompt turns with instant routing overrides or inspect daemon metadata dynamically directly from conversational prompts using zero-cost `@nacho:` tags.
+**HotSauce Directives** allow developers and autonomous coding agents (Zoo Code, Cline, OpenCode, Cursor, Aider) to spice up prompt turns with instant routing overrides, session guardrail toggles, or daemon metadata inspection using zero-cost `@nacho:` tags.
 
-### 🔥 Heat Levels (Routing Overrides)
+### 🎮 In-Chat Directive Controls
 
-Splash any HotSauce directive into your prompt to override automatic rule evaluation for a single turn:
+Nacho Flow evaluates directives using regex grammar:
+```regex
+(?i)@nacho:([a-zA-Z0-9_\-]+)(?:=(?:"([^"]+)"|([^\s]+)))?
+```
+
+Directives operate in two seamless modes:
+1. **Standalone Commands** (submitted alone in chat, e.g. `@nacho:toggles` or `@nacho:kickstart-off`): Executed in-process by the daemon with **$0.00 cost**, **0 upstream tokens**, and instant local Markdown responses.
+2. **Embedded Modifiers** (included alongside a prompt, e.g. `@nacho:cloud fix this architecture`): Modifies the routing tier or session state, and is **cleanly stripped** before reaching upstream LLMs so the model never sees directive syntax.
+
+---
+
+### 🛡️ Session Guardrail Toggles (Persistent Switches)
+
+Session guardrails persist across the active 5-minute sliding session window. Both hyphenated (`@nacho:<feature>-off`) and key-value (`@nacho:<feature>=off`) syntax are supported:
+
+| Directive | Key-Value Alias | Default | Behavior |
+| :--- | :--- | :--- | :--- |
+| `@nacho:kickstart-off` / `on` | `kickstart=off` / `on` | `on` | **HotSauce Kickstart**: Suspends or re-enables idle stall escalation and `[SYSTEM OVERRIDE]` prompts. |
+| `@nacho:cyclekiller-off` / `on` | `cyclekiller=off` / `on` | `on` | **Cycle Killer**: Suspends or re-enables in-flight stream loop detection and monologue interruption. |
+| `@nacho:shield-off` / `on` | `shield=off` / `on` | `on` | **Agentic Shield**: Disables or re-enables synthetic `ask_followup_question` tool synthesis on trailing prose. |
+| `@nacho:raw-on` / `off` | `raw=on` / `off` | `off` | **Raw Stream Mode**: Enables or disables 100% unadulterated upstream SSE stream pass-through. |
+| `@nacho:fairydust-off` / `on` | `fairydust=off` / `on` | `on` | **Fairy Dust**: Suspends or re-enables periodic frontier quality checkpoints after $N$ write actions. |
+
+> [!TIP]
+> **Automatic Plan-Mode Protection (Zero-Config)**:
+> When Nacho Flow detects that the client declared tools (`HasTools == true`) but none of them have write capabilities (`HasWriteCapability == false`), it **automatically suspends Kickstart stall escalation**. Your agent can read files, grep code, and draft plans for 50+ consecutive turns with zero false `[SYSTEM OVERRIDE]` interruptions.
+
+---
+
+### 🔥 Heat Levels (Per-Turn Routing Overrides)
+
+Splash any heat-level directive into your prompt to override automatic AST rule evaluation for that specific prompt turn:
 
 | Directive | Heat Level | Behavior | Example |
 | :--- | :--- | :--- | :--- |
@@ -1005,31 +1036,27 @@ Splash any HotSauce directive into your prompt to override automatic rule evalua
 | `@nacho:reasoning` | 🔥 **Inferno** | Forces routing to your deep reasoning tier (DeepSeek-R1 / o1). | `@nacho:reasoning prove why this algorithm is O(N log N)` |
 | `@nacho:tier="<Name>"` | 🌶️ **Custom** | Forces routing to a specific named tier from `config.yaml`. | `@nacho:tier="Tier 1: Local ROCm" quick fix` |
 | `@nacho:model="<ID>"` | 🌶️ **Chef's Special** | Directs request straight to a specific model ID across any configured provider. | `@nacho:model="deepseek/deepseek-r1" solve this concurrency race` |
-| `@nacho:raw` | 🛡️ **Raw Pass-Through** | Bypasses all stream normalizers, reasoning wrappers, and agentic fallback shield. | `@nacho:raw inspect raw stream tokens` |
-| `@nacho:no-shield` | 🛡️ **Shield Bypass** | Bypasses synthetic tool-call synthesis on trailing questions/plans. | `@nacho:no-shield ask me follow-up questions in text` |
-
-#### Architectural Guarantees:
-1. **Clean Upstream Forwarding**: All `@nacho:` tags are automatically stripped and whitespace is collapsed before the prompt reaches upstream LLMs. The model never sees the directive.
-2. **Zero Proxy Regression**: Detection uses SIMD fast bailout (`strings.Contains`), taking `< 7 ns` and `0 bytes` heap allocation for standard prompts.
-3. **Strict Circuit Alert (Fallback Bypass)**: If you force `@nacho:local` and your local GPU/Ollama instance is offline (Circuit Breaker: OPEN), Nacho Flow does **not** silently fall through to an expensive cloud model. Instead, it instantly returns an OpenAI wire-compliant zero-cost chat alert explaining that the local provider is down and how to resolve it.
 
 ---
 
-### Zero-Cost Meta Commands
+### ⚡ Zero-Cost Meta & Inspection Commands
 
-Meta directives are executed entirely in-process by the daemon and return instantly with **$0.00** LLM cost and **0 upstream tokens consumed**:
+Meta directives execute entirely in-process and return instant local responses with **$0.00 LLM cost** and **0 upstream tokens consumed**:
 
-| Directive | Output | Description |
+| Directive | Aliases | Description |
 | :--- | :--- | :--- |
-| `@nacho:help` | Markdown Quick-Start Guide | Displays all available HotSauce directives, heat levels, and active daemon version. |
-| `@nacho:tiers` | Active Tier Catalog | Lists all configured routing tiers, models, and providers currently loaded from `config.yaml`. |
-| `@nacho:status` | Daemon Telemetry & Health | Live uptime, circuit breaker states, token volume, and total dollars saved vs spent. |
-| `@nacho:deals` | Heat Seeker Spot Deals | Real-time spot market flash discounts and promotional pricing from pricing oracles. |
+| `@nacho:status` | — | **Daemon Telemetry**: Displays live uptime, request counts, financial savings, and active provider circuit states. |
+| `@nacho:toggles` | `guardrails`, `features` | **Active Switches**: Inspects live session guardrail switches (`Kickstart`, `Cycle Killer`, `Shield`, `Raw Mode`, `Fairy Dust`). |
+| `@nacho:reset` | `clear` | **Session Hard Reset**: Resets session turn counter, consecutive error streak, and restores all guardrail toggles to defaults. |
+| `@nacho:help` | — | **Quick Reference**: Displays available directives, syntax cheatsheet, and daemon version. |
+| `@nacho:tiers` | — | **Active Catalog**: Lists all configured routing tiers, models, and providers currently active from `config.yaml`. |
+| `@nacho:deals` | — | **Heat Seeker Deals**: Displays real-time spot market discounts and promotional pricing from pricing oracles. |
 
 #### Client Compatibility & Anti-Abuse:
 - **Universal Wire Format**: Works seamlessly with streaming (`stream: true` SSE chunks) and non-streaming (`chat.completion` JSON) clients.
-- **Levenshtein Typo Matcher**: Unrecognized tags like `@nacho:helpp` or `@nacho:statuss` return an instant helper message: *"Did you mean `@nacho:help`?"*.
+- **Levenshtein Typo Matcher**: Unrecognized tags like `@nacho:toggels` or `@nacho:statuss` return an instant helper message: *"Did you mean `@nacho:toggles`?"*.
 - **Anti-Abuse Debounce**: Rapid repeated meta queries within 2 seconds receive a lightweight cached acknowledgment to prevent agent loops.
+- **Strict Circuit Alert (Fallback Bypass)**: If you force `@nacho:local` and your local GPU/Ollama instance is offline (Circuit Breaker: OPEN), Nacho Flow does **not** silently fall through to an expensive cloud model. It instantly returns a clear zero-cost chat alert explaining that the local provider is down and how to resolve it.
 
 ---
 
@@ -1110,6 +1137,20 @@ Content-Type: application/json
 {"provider": "openrouter"}
 ```
 Closes a tripped circuit breaker to immediately resume traffic to that upstream provider.
+
+#### 5. Unified Command Directives
+```http
+POST /api/v1/directive
+Authorization: Bearer <auth-token>
+Content-Type: application/json
+
+{"action": "PURGE_ALL_LOGS"}
+```
+Dispatches administrative directives:
+- **`PURGE_ALL_LOGS`**: Rotates active logs (`traffic.jsonl`, `router.log`) to timestamped backups (`*.bak.YYYYMMDD-HHMMSS`), resets `stats.json`, and triggers a clean daemon restart for cold file handling.
+- **`RESET_CIRCUITS`**: Immediately closes tripped provider circuits in-process.
+- **`RECALCULATE_STATS`**: Re-aggregates telemetry stats from the current `traffic.jsonl`.
+
 
 ---
 

@@ -21,8 +21,8 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 		pathsToTry = append(pathsToTry, contract.DefaultConfigFileName, "./"+contract.DefaultConfigFileName)
 
 		// Cross-platform user config directory
-		userConfigDir, err := os.UserConfigDir()
-		if err == nil {
+		userConfigDir, err := contract.GetUserConfigDir()
+		if err == nil && userConfigDir != "" {
 			pathsToTry = append(pathsToTry, filepath.Join(userConfigDir, contract.AppName, contract.DefaultConfigFileName))
 		}
 	}
@@ -51,7 +51,7 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 		data = []byte(DefaultStarterConfigTemplate)
 		loadedPath = "embedded:default"
 
-		if uDir, uErr := os.UserConfigDir(); uErr == nil {
+		if uDir, uErr := contract.GetUserConfigDir(); uErr == nil && uDir != "" {
 			targetDir := filepath.Join(uDir, contract.AppName)
 			targetFile := filepath.Join(targetDir, contract.DefaultConfigFileName)
 			if mkErr := os.MkdirAll(targetDir, 0750); mkErr == nil {

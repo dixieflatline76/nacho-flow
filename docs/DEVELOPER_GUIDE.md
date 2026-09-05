@@ -316,6 +316,34 @@ Every LLM completion processed by the reverse proxy emits a structured `TurnReco
    - Per-window objects live in `stats.windows.<window>.*` (`today`, `yesterday`, `this_week`, `this_month`, `all_time`).
    - Extension webview renderers must **NEVER** read directly from root objects when window tabs are active. Always select through window helper functions (`windowCycleKiller`, `windowFairyDust`).
 
+### 10.6 Extending Directives, Session Guardrails & Tool Schema Guards
+
+When extending Nacho Flow's control plane or guardrails, follow these architectural conventions:
+
+1. **Contract Layer (`pkg/contract/interfaces.go`)**:
+   - `RequestContext` is the canonical request DTO.
+   - Capability flags (`HasWriteCapability`) and session toggle overrides (`NoKickstart`, `NoCycleKiller`, `NoShield`, `RawModeEnabled`) must be declared on `RequestContext` to decouple router classification from server dispatch.
+
+2. **Directive Grammar (`pkg/router/directive.go`)**:
+   - All `@nacho:` tags are parsed via regex:
+     ```regex
+     (?i)@nacho:([a-zA-Z0-9_\-]+)(?:=(?:"([^"]+)"|([^\s]+)))?
+     ```
+   - Suffixes like `-off` and `-on` are canonicalized to lowercase action names and normalized boolean states.
+   - When a directive is submitted alone in chat (`clean == ""`), it is flagged as `IsMeta = true`, routing to the Meta Registry for zero-cost ($0.00 / 0 tokens) instant execution.
+   - When embedded with prompt text (`clean != ""`), the directive is stripped cleanly before upstream transmission.
+
+3. **Session Guardrails Store (`pkg/router/session.go`)**:
+   - `SessionGuardrails` holds active session switches (`KickstartDisabled`, `CycleKillerDisabled`, etc.).
+   - Always use `getOrCreateState(sessionKey)` when mutating guardrails so that toggles configured on turn 1 persist even before `RecordTurn()` is called.
+   - `ResetSession(sessionKey)` provides a thread-safe wipe of turn history, retries, and resets guardrail switches to defaults.
+
+4. **Meta Command Registry (`pkg/server/meta_registry.go`)**:
+   - Keep `@nacho:status` strictly focused on daemon telemetry (uptime, requests, spend, savings, circuits).
+   - Session switches live in `@nacho:toggles` (aliases: `guardrails`, `features`).
+   - Session resets are handled by `@nacho:reset` (alias: `clear`).
+   - All meta command handlers receive `MetaEnv` with access to `SessionTracker`, `SessionKey`, and active providers.
+
 For comprehensive architectural deep-dives, pricing math formulas, window rollover mechanics, and storage formats, refer to the **[Telemetry & Metrics Developer Guide](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/METRICS_DEVELOPER_GUIDE.md)**.
 
 ---

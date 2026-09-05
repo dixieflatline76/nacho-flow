@@ -20,8 +20,8 @@ type DiskStore struct {
 // NewDiskStore creates a DiskStore targeting the specified file path.
 func NewDiskStore(filePath string) (*DiskStore, error) {
 	if filePath == "" {
-		userConfigDir, _ := os.UserConfigDir()
-		if userConfigDir == "" {
+		userConfigDir, err := contract.GetUserConfigDir()
+		if err != nil || userConfigDir == "" {
 			userConfigDir = "."
 		}
 		filePath = filepath.Join(userConfigDir, contract.AppName, contract.DefaultStatsFileName)

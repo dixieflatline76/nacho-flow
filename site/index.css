@@ -1411,3 +1411,437 @@ footer {
         display: inline-flex;
     }
 }
+
+
+/* ==========================================================================
+   The Autonomous Agent Trap Section
+   ========================================================================== */
+.agent-trap-section {
+    padding: 3rem 2rem;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.agent-trap-container {
+    padding: 2.5rem 3rem;
+    border-radius: 16px;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    background: radial-gradient(circle at 50% 0%, rgba(239, 68, 68, 0.08) 0%, rgba(15, 17, 24, 0.95) 75%);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.agent-trap-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+}
+
+.agent-trap-intro {
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+}
+
+.agent-trap-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.agent-trap-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    font-size: 0.98rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.trap-bullet {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+
+.agent-trap-punchline {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 1.5rem;
+    font-size: 1.08rem;
+    color: var(--cyan);
+    line-height: 1.6;
+}
+
+/* ==========================================================================
+   Section 1: The Three Fixes & Native 16:9 Video Bezel
+   ========================================================================== */
+.three-fixes-section {
+    padding: 4rem 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.cycle-killer-video-container {
+    max-width: 900px;
+    margin: 2.5rem auto 3rem auto;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 30px rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.cycle-killer-video-container .terminal-window {
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    max-width: 100%;
+}
+
+.cycle-killer-video-container .video-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+}
+
+.cycle-killer-video-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.three-fixes-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.fix-card {
+    padding: 2rem;
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.fix-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--border-hover);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.fix-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    padding: 0.2rem 0.55rem;
+    border-radius: 8px;
+    width: fit-content;
+    margin-bottom: 1rem;
+}
+
+.badge-killer {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.badge-kickstart {
+    color: #fbbf24;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-fairydust {
+    color: #c084fc;
+    background: rgba(168, 85, 247, 0.12);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.fix-card h3 {
+    font-size: 1.35rem;
+    margin-bottom: 0.5rem;
+    color: #fff;
+}
+
+.fix-superpower {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--accent-color);
+    margin-bottom: 1rem;
+    line-height: 1.4;
+}
+
+.fix-mechanism {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* ==========================================================================
+   Section 2: The Cost Engine & Multi-Target Topology (2x2 Grid)
+   ========================================================================== */
+.cost-engine-section {
+    padding: 4rem 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.cost-engine-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+    margin-top: 2.5rem;
+}
+
+.cost-card {
+    padding: 2.2rem;
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.25s ease;
+}
+
+.cost-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--border-hover);
+}
+
+.cost-icon {
+    font-size: 2rem;
+    margin-bottom: 0.8rem;
+}
+
+.cost-header-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: var(--cyan);
+    margin-bottom: 0.5rem;
+}
+
+.cost-card h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+    color: #fff;
+}
+
+.cost-card p {
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* ==========================================================================
+   Section 4: Fleet Governance Grid
+   ========================================================================== */
+.fleet-governance-section {
+    padding: 4rem 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.fleet-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--accent-color);
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    letter-spacing: 1px;
+    margin-bottom: 0.75rem;
+}
+
+.fleet-governance-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin-top: 2.5rem;
+    text-align: left;
+}
+
+.fleet-card {
+    padding: 2rem;
+    border-radius: 14px;
+    border-top: 2px solid var(--accent-color);
+    transition: transform 0.25s ease, border-color 0.25s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.fleet-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent-hover);
+}
+
+.fleet-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.8rem;
+}
+
+.fleet-icon {
+    font-size: 1.8rem;
+}
+
+.roadmap-pill {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--cyan);
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 0.18rem 0.55rem;
+    border-radius: 10px;
+    letter-spacing: 0.5px;
+}
+
+.fleet-card h3 {
+    font-size: 1.15rem;
+    margin-bottom: 0.6rem;
+    color: #fff;
+}
+
+.fleet-card p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+/* ==========================================================================
+   Architectural Trust Bar (Rock-Solid Grid)
+   ========================================================================== */
+.arch-trust-bar-container {
+    max-width: 1200px;
+    margin: 2.5rem auto 3.5rem auto;
+    padding: 0 2rem;
+}
+
+.arch-trust-bar {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: rgba(15, 17, 24, 0.85);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.trust-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0.5rem 0.25rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.trust-item:last-child {
+    border-right: none;
+}
+
+.trust-top {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.25rem;
+}
+
+.trust-icon {
+    font-size: 1.1rem;
+}
+
+.trust-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    color: var(--cyan);
+    font-size: 0.95rem;
+    letter-spacing: -0.3px;
+}
+
+.trust-lbl {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+}
+
+/* Responsive Overrides */
+@media (max-width: 1024px) {
+    .three-fixes-grid,
+    .fleet-governance-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .arch-trust-bar {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.25rem 0.75rem;
+        padding: 1.5rem;
+    }
+    .trust-item {
+        border-right: none;
+        padding: 0.5rem;
+    }
+    .trust-item:nth-child(1),
+    .trust-item:nth-child(2) {
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .trust-item:nth-child(4),
+    .trust-item:nth-child(5) {
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+}
+
+@media (max-width: 768px) {
+    .three-fixes-grid,
+    .cost-engine-grid,
+    .fleet-governance-grid {
+        grid-template-columns: 1fr;
+    }
+    .agent-trap-container {
+        padding: 1.75rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .arch-trust-bar {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1.25rem 0.5rem;
+        padding: 1.25rem;
+    }
+    .trust-item {
+        border-right: none !important;
+        padding: 0.4rem;
+    }
+    .trust-item:nth-child(odd) {
+        border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+    }
+}
+
+
+.trust-specs-section {
+    padding: 3rem 2rem 1rem 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    text-align: center;
+}
+.trust-specs-section .section-title {
+    margin-bottom: 0.5rem;
+}
+.trust-specs-section .section-subtitle {
+    margin-bottom: 2rem;
+}

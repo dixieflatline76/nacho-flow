@@ -56,7 +56,7 @@ log_error() {
 print_banner() {
     echo -e "${CYAN}${BOLD}"
     echo "  🌮 Nacho Flow Universal Installer"
-    echo "  High-Performance OpenAI-Compatible Hybrid AI Gateway"
+    echo "  Agent Supervisor & Model Dispatcher"
     echo -e "${NC}"
 }
 

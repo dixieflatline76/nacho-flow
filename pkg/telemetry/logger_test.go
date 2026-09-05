@@ -252,4 +252,3 @@ func TestLogger_MultiHandler_CompleteCoverage(t *testing.T) {
 		t.Errorf("expected nil error from nopCloser.Close, got %v", err)
 	}
 }
-

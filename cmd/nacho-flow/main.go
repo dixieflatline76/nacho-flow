@@ -135,6 +135,9 @@ func parseLogLevel(lvl string) slog.Level {
 }
 
 func (p *program) run(s service.Service) error {
+	// 0. Execute any pending cold startup directives before initializing loggers or stores
+	_ = executeStartupDirectives("")
+
 	// Initialize Smart Logger based on Interactive vs Daemon mode
 	var svcLogger service.Logger
 	if s != nil {
@@ -275,6 +278,12 @@ func (p *program) run(s service.Service) error {
 	srvHandler := server.NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, reg, appLogger)
 	srvHandler.SetRingBuffer(ringBuffer)
 	srvHandler.SetEventBroker(eventBroker)
+	if diskStore != nil {
+		srvHandler.SetDiskStore(diskStore)
+	}
+	if trafficLogger != nil {
+		srvHandler.SetTrafficLogPath(trafficLogger.FilePath())
+	}
 	activeConfigPath := contract.DefaultConfigFileName
 	if *configPathFlag != "" {
 		activeConfigPath = *configPathFlag
@@ -486,8 +495,8 @@ func runMain(args []string, serviceRunner func(service.Service) error) error {
 
 	svcConfig := &service.Config{
 		Name:        "nacho-flow",
-		DisplayName: "Nacho Flow AI Gateway",
-		Description: "Ultra-fast hybrid LLM proxy for local GPUs and cloud APIs (spicebox.dev/nacho-flow)",
+		DisplayName: "Nacho Flow Agent Supervisor & Model Dispatcher",
+		Description: "Agent Supervisor & Model Dispatcher for coding agents (spicebox.dev/nacho-flow)",
 	}
 
 	prg := &program{}
@@ -525,7 +534,7 @@ func runDeals(args []string) error {
 	port := fs.Int("port", contract.DefaultServerPort, "Nacho Flow daemon port")
 	host := fs.String("host", contract.DefaultDaemonHost, "Nacho Flow daemon host")
 	asJSON := fs.Bool("json", false, "Output deals as raw JSON")
-	apiKey := fs.String("auth", "", "Gateway auth token (if required)")
+	apiKey := fs.String("auth", "", "Daemon auth token (if required)")
 
 	if err := fs.Parse(args); err != nil {
 		return err

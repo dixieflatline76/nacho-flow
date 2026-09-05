@@ -16,7 +16,7 @@ import (
 
 const (
 	estimatedAvoidedTokensPerIntervention = 8000
-	estimatedLocalTokensPerSecond        = 35
+	estimatedLocalTokensPerSecond         = 35
 )
 
 type WindowExpected struct {

@@ -48,7 +48,7 @@ export class ExtensionController {
 		this.routesRefreshInterval = (typeof savedInterval !== 'undefined' ? savedInterval : 60) as RefreshIntervalSeconds;
 
 		// Create Output Channel for live engine logs
-		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Routing Engine');
+		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Model Dispatcher');
 		this.context.subscriptions.push(this.outputChannel);
 		this.processManager = new ProcessManager(this.context.extensionUri, this.outputChannel);
 
@@ -211,7 +211,7 @@ export class ExtensionController {
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
-						this.showTransientToast('▶️ Nacho Flow: Starting Routing Engine...');
+						this.showTransientToast('▶️ Nacho Flow: Starting Model Dispatcher...');
 						const result = await this.processManager.start(daemonUrl);
 						if (!result.success && result.error) {
 							await this.handleEngineStartError(result);
@@ -231,7 +231,7 @@ export class ExtensionController {
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
-						this.showTransientToast('🔄 Nacho Flow: Restarting Routing Engine...');
+						this.showTransientToast('🔄 Nacho Flow: Restarting Model Dispatcher...');
 						const result = await this.processManager.restart(daemonUrl);
 						if (!result.success && result.error) {
 							await this.handleEngineStartError(result);
@@ -249,7 +249,7 @@ export class ExtensionController {
 							break;
 						}
 						await this.processManager.stop();
-						this.showTransientToast('⏹️ Nacho Flow: Routing Engine stopped');
+						this.showTransientToast('⏹️ Nacho Flow: Model Dispatcher stopped');
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ connected: false, error: 'Stopped by user' });
 						}
@@ -570,17 +570,22 @@ export class ExtensionController {
 			},
 			() => {
 				this.dashboardPanel = null;
+				if (this.telemetryPoller && this.routesRefreshInterval > 0) {
+					this.telemetryPoller.resume(false);
+				}
 			}
 		);
 		this.context.subscriptions.push(this.dashboardPanel);
 		
-		// Wire webview visibility observer to pause/resume poller
+		// Wire webview visibility observer to refresh telemetry when dashboard tab gains focus
 		if (this.dashboardPanel && typeof this.dashboardPanel.onDidChangeViewState === 'function') {
 			this.dashboardPanel.onDidChangeViewState((e) => {
 				if (e.webviewPanel.visible) {
-					this.telemetryPoller?.resume(true);
-				} else {
-					this.telemetryPoller?.pause();
+					if (this.telemetryPoller && typeof this.telemetryPoller.executeTick === 'function') {
+						void this.telemetryPoller.executeTick();
+					} else {
+						void this.loadDashboardData();
+					}
 				}
 			});
 		}
@@ -611,6 +616,9 @@ export class ExtensionController {
 		}
 		if (this.telemetryPoller) {
 			this.telemetryPoller.setIntervalSeconds(this.routesRefreshInterval);
+			if (this.routesRefreshInterval > 0) {
+				this.telemetryPoller.resume(true);
+			}
 		}
 		if (notifyDashboard && this.dashboardPanel) {
 			this.dashboardPanel.setRoutesRefreshInterval(this.routesRefreshInterval);
@@ -821,7 +829,7 @@ export class ExtensionController {
 				if (!fs.existsSync(targetDir)) {
 					fs.mkdirSync(targetDir, { recursive: true });
 				}
-				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Intelligent Semantic AI Gateway & Multi-Tier Cost Optimizer\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "local"\n\n  openrouter:\n    base_url: "https://openrouter.ai/api/v1"\n    type: "cloud"\n    api_key: "ENV_OPENROUTER_API_KEY"\n`;
+				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Agent Supervisor & Model Dispatcher\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "local"\n\n  openrouter:\n    base_url: "https://openrouter.ai/api/v1"\n    type: "cloud"\n    api_key: "ENV_OPENROUTER_API_KEY"\n`;
 				fs.writeFileSync(targetPath, starter, 'utf8');
 				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
 				this.activeConfigDocUri = doc.uri;
@@ -1133,8 +1141,11 @@ export class ExtensionController {
 		
 		try {
 			const stats = await this.restClient.getStats();
-			if (stats && this.dashboardPanel) {
-				this.dashboardPanel.updateStats(stats);
+			if (stats) {
+				this.statusBar.updateStats(stats);
+				if (this.dashboardPanel) {
+					this.dashboardPanel.updateStats(stats);
+				}
 			}
 		} catch (_) {}
 
@@ -1226,7 +1237,7 @@ export class ExtensionController {
 					version: health?.version || 'Online'
 				});
 			}
-			this.showTransientToast(`🟢 Routing Engine (${targetUrl}) verified!`);
+			this.showTransientToast(`🟢 Model Dispatcher (${targetUrl}) verified!`);
 		} catch (err: any) {
 			if (this.sidebarProvider) {
 				this.sidebarProvider.updateEngineStatus({
@@ -1263,6 +1274,26 @@ export class ExtensionController {
 		}
 		try {
 			const resetStats = await this.restClient.resetStats();
+
+			// Directive restart recovery
+			const daemonUrl = this.authManager ? await this.authManager.getBaseUrl() : 'http://localhost:8000';
+			if (this.processManager) {
+				await new Promise((r) => setTimeout(r, 300));
+				for (let i = 0; i < 20; i++) {
+					if (this.processManager.isLocalUrl(daemonUrl) && !this.processManager.isRunning()) {
+						await this.processManager.start(daemonUrl);
+					}
+					const isOnline = await this.processManager.checkHealth(daemonUrl, 300);
+					if (isOnline) {
+						break;
+					}
+					await new Promise((r) => setTimeout(r, 250));
+				}
+			}
+
+			await this.initializeClients();
+			await this.syncSidebarState();
+
 			if (this.dashboardPanel && resetStats) {
 				this.dashboardPanel.updateStats(resetStats);
 			}
@@ -1294,7 +1325,8 @@ export class ExtensionController {
 			const statsPromise = typeof this.restClient.getStats === 'function'
 				? Promise.resolve().then(() => this.restClient!.getStats()).catch(() => null)
 				: Promise.resolve(null);
-			const routesPromise = (this.dashboardPanel && typeof this.restClient.getRoutes === 'function')
+			const isDashboardVisible = !!(this.dashboardPanel && (typeof this.dashboardPanel.isVisible === 'undefined' || this.dashboardPanel.isVisible));
+			const routesPromise = (isDashboardVisible && typeof this.restClient.getRoutes === 'function')
 				? Promise.resolve().then(() => this.restClient!.getRoutes(10)).catch(() => null)
 				: Promise.resolve(null);
 

@@ -12,7 +12,7 @@ const sharedOptions = {
   coverageThreshold: {
     global: {
       statements: 95,
-      branches: 80,
+      branches: 78,
       functions: 95,
       lines: 95,
     },

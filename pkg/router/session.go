@@ -12,20 +12,30 @@ const (
 	MaxTrackedSessions   = 10000
 )
 
+// SessionGuardrails stores session-scoped behavioral overrides.
+type SessionGuardrails struct {
+	KickstartDisabled   bool
+	CycleKillerDisabled bool
+	ShieldDisabled      bool
+	RawModeEnabled      bool
+	FairyDustDisabled   bool
+}
+
 // SessionState tracks the retry count, prompt hash, and last activity timestamp of a session.
 type SessionState struct {
-	RetriesCount      int
-	EscalationCount   int
-	KickstartCount    int // consecutive turns without tool progress
-	KickstartFailures int // consecutive kickstart attempts that failed to produce tool calls
-	MinRetriesFloor   int // floor to maintain retry escalation across context resets
-	LastTurnTime      time.Time
-	PromptHash        uint64
-	LastMetaDirective string
-	LastMetaTime      time.Time
-	CoolingDownModels map[string]time.Time // model -> cooldown expiration
-	WriteProgressCount int            // total write-progress turns in this session
-	FairyDustCounts    map[string]int // per-entry invocation counts (entry.Name -> count)
+	RetriesCount       int
+	EscalationCount    int
+	KickstartCount     int // consecutive turns without tool progress
+	KickstartFailures  int // consecutive kickstart attempts that failed to produce tool calls
+	MinRetriesFloor    int // floor to maintain retry escalation across context resets
+	LastTurnTime       time.Time
+	PromptHash         uint64
+	LastMetaDirective  string
+	LastMetaTime       time.Time
+	CoolingDownModels  map[string]time.Time // model -> cooldown expiration
+	WriteProgressCount int                  // total write-progress turns in this session
+	FairyDustCounts    map[string]int       // per-entry invocation counts (entry.Name -> count)
+	Guardrails         SessionGuardrails
 }
 
 // SessionTracker tracks consecutive turn retries per session without leaking background goroutines.
@@ -458,4 +468,108 @@ func (st *SessionTracker) CheckFairyDust(sessionKey, entryName string, frequency
 
 	state.FairyDustCounts[entryName]++
 	return state.FairyDustCounts[entryName], true
+}
+
+// GetGuardrails returns a copy of the active session guardrails.
+func (st *SessionTracker) GetGuardrails(sessionKey string) SessionGuardrails {
+	if sessionKey == "" {
+		return SessionGuardrails{}
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	state, exists := st.sessions[sessionKey]
+	if !exists {
+		return SessionGuardrails{}
+	}
+	return state.Guardrails
+}
+
+func (st *SessionTracker) getOrCreateState(sessionKey string) *SessionState {
+	state, exists := st.sessions[sessionKey]
+	if !exists {
+		now := time.Now()
+		st.evictExpiredOrOldest(now)
+		state = &SessionState{
+			LastTurnTime: now,
+		}
+		st.sessions[sessionKey] = state
+	}
+	return state
+}
+
+// SetKickstartDisabled updates the KickstartDisabled guardrail state.
+func (st *SessionTracker) SetKickstartDisabled(sessionKey string, disabled bool) {
+	if sessionKey == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state := st.getOrCreateState(sessionKey)
+	state.Guardrails.KickstartDisabled = disabled
+}
+
+// SetCycleKillerDisabled updates the CycleKillerDisabled guardrail state.
+func (st *SessionTracker) SetCycleKillerDisabled(sessionKey string, disabled bool) {
+	if sessionKey == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state := st.getOrCreateState(sessionKey)
+	state.Guardrails.CycleKillerDisabled = disabled
+}
+
+// SetShieldDisabled updates the ShieldDisabled guardrail state.
+func (st *SessionTracker) SetShieldDisabled(sessionKey string, disabled bool) {
+	if sessionKey == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state := st.getOrCreateState(sessionKey)
+	state.Guardrails.ShieldDisabled = disabled
+}
+
+// SetRawModeEnabled updates the RawModeEnabled guardrail state.
+func (st *SessionTracker) SetRawModeEnabled(sessionKey string, enabled bool) {
+	if sessionKey == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state := st.getOrCreateState(sessionKey)
+	state.Guardrails.RawModeEnabled = enabled
+}
+
+// SetFairyDustDisabled updates the FairyDustDisabled guardrail state.
+func (st *SessionTracker) SetFairyDustDisabled(sessionKey string, disabled bool) {
+	if sessionKey == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state := st.getOrCreateState(sessionKey)
+	state.Guardrails.FairyDustDisabled = disabled
+}
+
+// ResetSession resets all retry counters, cooldowns, write progress, and guardrails to zero values.
+func (st *SessionTracker) ResetSession(sessionKey string) {
+	if sessionKey == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state, exists := st.sessions[sessionKey]
+	if !exists {
+		return
+	}
+	state.RetriesCount = 0
+	state.EscalationCount = 0
+	state.KickstartCount = 0
+	state.KickstartFailures = 0
+	state.MinRetriesFloor = 0
+	state.CoolingDownModels = nil
+	state.WriteProgressCount = 0
+	state.FairyDustCounts = nil
+	state.Guardrails = SessionGuardrails{}
 }

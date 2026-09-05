@@ -6,7 +6,7 @@ This suite provides standardized, reproducible agentic benchmarks designed to ev
 
 ## 🎯 Purpose & Methodology
 
-When testing coding agents (e.g., **Zoo Code**, **Roo Code**, **Cline**) routed through Nacho Flow, synthetic micro-benchmarks do not capture real-world friction. This suite exercises:
+When testing coding agents (e.g., **Zoo Code**, **Cline**, **OpenCode**) routed through Nacho Flow, synthetic micro-benchmarks do not capture real-world friction. This suite exercises:
 1. **Architect Mode Planning**: Triggers conversational tools (`ask_followup_question`, `ask_question`) and stresses Agent Shield fallback heuristics.
 2. **Multi-File Code Generation**: Stresses Tool Normalizer parsing and streaming delta transformations across modern toolchains.
 3. **TDD & Test Iteration**: Compiles and runs test suites, intentionally provoking error-fix cycles that test **in-history retry detection** and **cloud escalation**.
