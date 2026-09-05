@@ -110,12 +110,9 @@ func executePurgeAllLogs(targets DirectiveTargets) {
 	// 2. Remove/purge stats.json
 	statsPath := targets.StatsPath
 	if statsPath == "" {
-		userConfigDir := os.Getenv("NACHO_CONFIG_DIR")
-		if userConfigDir == "" {
-			userConfigDir, _ = os.UserConfigDir()
-			if userConfigDir == "" {
-				userConfigDir = "."
-			}
+		userConfigDir, err := contract.GetUserConfigDir()
+		if err != nil || userConfigDir == "" {
+			userConfigDir = "."
 		}
 		statsPath = filepath.Join(userConfigDir, contract.AppName, contract.DefaultStatsFileName)
 	}

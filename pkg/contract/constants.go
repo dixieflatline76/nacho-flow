@@ -119,6 +119,14 @@ const (
 	DirectiveActionRecalculateStats = "RECALCULATE_STATS"
 )
 
+// GetUserConfigDir returns NACHO_CONFIG_DIR if set, otherwise falls back to os.UserConfigDir().
+func GetUserConfigDir() (string, error) {
+	if custom := os.Getenv("NACHO_CONFIG_DIR"); custom != "" {
+		return custom, nil
+	}
+	return os.UserConfigDir()
+}
+
 // GetDirectiveFilePath returns the absolute path to the directive file
 // in the user's config directory, matching the storage convention of stats.json.
 func GetDirectiveFilePath() (string, error) {
@@ -129,13 +137,9 @@ func GetDirectiveFilePath() (string, error) {
 		}
 		return custom, nil
 	}
-	userConfigDir := os.Getenv("NACHO_CONFIG_DIR")
-	if userConfigDir == "" {
-		var err error
-		userConfigDir, err = os.UserConfigDir()
-		if err != nil || userConfigDir == "" {
-			userConfigDir = "."
-		}
+	userConfigDir, err := GetUserConfigDir()
+	if err != nil || userConfigDir == "" {
+		userConfigDir = "."
 	}
 	dir := filepath.Join(userConfigDir, AppName)
 	if mkErr := os.MkdirAll(dir, 0750); mkErr != nil {
@@ -143,7 +147,6 @@ func GetDirectiveFilePath() (string, error) {
 	}
 	return filepath.Join(dir, DefaultDirectiveFileName), nil
 }
-
 
 // Runtime fallback defaults.
 const (

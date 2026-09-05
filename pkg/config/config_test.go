@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
 // Test 1.1: Structured providers parsing
@@ -353,6 +355,7 @@ providers:
 // Test 1.12: Auto-bootstrap creates default starter config when no config exists
 func TestConfig_AutoBootstrap_CleanEnvironment(t *testing.T) {
 	tempDir := t.TempDir()
+	t.Setenv("NACHO_CONFIG_DIR", tempDir)
 	t.Setenv("APPDATA", tempDir)
 	t.Setenv("XDG_CONFIG_HOME", tempDir)
 	t.Setenv("HOME", tempDir)
@@ -403,14 +406,15 @@ func TestConfig_AutoBootstrap_CleanEnvironment(t *testing.T) {
 // Test 1.13: Auto-bootstrap does not overwrite existing configuration
 func TestConfig_AutoBootstrap_ExistingConfigUntouched(t *testing.T) {
 	tempDir := t.TempDir()
+	t.Setenv("NACHO_CONFIG_DIR", tempDir)
 	t.Setenv("APPDATA", tempDir)
 	t.Setenv("XDG_CONFIG_HOME", tempDir)
 	t.Setenv("HOME", tempDir)
 	t.Setenv("USERPROFILE", tempDir)
 
-	userConfig, err := os.UserConfigDir()
+	userConfig, err := contract.GetUserConfigDir()
 	if err != nil {
-		t.Fatalf("UserConfigDir failed: %v", err)
+		t.Fatalf("GetUserConfigDir failed: %v", err)
 	}
 
 	configDir := filepath.Join(userConfig, "nacho-flow")
@@ -479,3 +483,49 @@ func TestConfig_ExplicitCustomPath_MissingFails(t *testing.T) {
 		t.Errorf("Missing custom config should not have been created on disk")
 	}
 }
+
+// Test 1.15: NACHO_CONFIG_DIR override directs config discovery to custom directory
+func TestConfig_NachoConfigDirOverride(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("NACHO_CONFIG_DIR", tempDir)
+
+	configDir := filepath.Join(tempDir, contract.AppName)
+	if err := os.MkdirAll(configDir, 0750); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	configPath := filepath.Join(configDir, contract.DefaultConfigFileName)
+	customContent := `
+port: 9123
+providers:
+  test_prov:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+default_tier:
+  name: "Fallback"
+  model: "test-model"
+  provider: "test_prov"
+`
+	if err := os.WriteFile(configPath, []byte(customContent), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Change working dir to empty temp dir so local ./config.yaml doesn't exist
+	emptyDir := t.TempDir()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(emptyDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	cfg, err := LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Port != 9123 {
+		t.Errorf("Expected port 9123 loaded from NACHO_CONFIG_DIR, got %d", cfg.Port)
+	}
+}
+

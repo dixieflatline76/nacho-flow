@@ -26,66 +26,82 @@ func TestDirectiveConstantsAndPath(t *testing.T) {
 		t.Fatalf("unexpected DirectiveActionRecalculateStats: %s", contract.DirectiveActionRecalculateStats)
 	}
 
-	path, err := contract.GetDirectiveFilePath()
-	if err != nil {
-		t.Fatalf("GetDirectiveFilePath failed: %v", err)
-	}
-	if !strings.HasSuffix(path, filepath.Join(contract.AppName, contract.DefaultDirectiveFileName)) {
-		t.Fatalf("GetDirectiveFilePath() = %s, expected suffix %s", path, filepath.Join(contract.AppName, contract.DefaultDirectiveFileName))
-	}
+	t.Run("DefaultSuffix", func(t *testing.T) {
+		path, err := contract.GetDirectiveFilePath()
+		if err != nil {
+			t.Fatalf("GetDirectiveFilePath failed: %v", err)
+		}
+		if !strings.HasSuffix(path, filepath.Join(contract.AppName, contract.DefaultDirectiveFileName)) {
+			t.Fatalf("GetDirectiveFilePath() = %s, expected suffix %s", path, filepath.Join(contract.AppName, contract.DefaultDirectiveFileName))
+		}
+	})
 
-	// Test fallback when user config dir is empty/unavailable
-	origConfigDir := os.Getenv("APPDATA")
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	origHome := os.Getenv("HOME")
-	origUserProfile := os.Getenv("USERPROFILE")
-	origDirectiveFile := os.Getenv("NACHO_DIRECTIVE_FILE")
-	origNachoConfig := os.Getenv("NACHO_CONFIG_DIR")
-	defer func() {
-		os.Setenv("APPDATA", origConfigDir)
-		os.Setenv("XDG_CONFIG_HOME", origXDG)
-		os.Setenv("HOME", origHome)
-		os.Setenv("USERPROFILE", origUserProfile)
-		os.Setenv("NACHO_DIRECTIVE_FILE", origDirectiveFile)
-		os.Setenv("NACHO_CONFIG_DIR", origNachoConfig)
-	}()
+	t.Run("FallbackWhenConfigDirEmpty", func(t *testing.T) {
+		t.Setenv("APPDATA", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "")
+		t.Setenv("USERPROFILE", "")
+		t.Setenv("NACHO_DIRECTIVE_FILE", "")
+		t.Setenv("NACHO_CONFIG_DIR", "")
 
-	os.Unsetenv("APPDATA")
-	os.Unsetenv("XDG_CONFIG_HOME")
-	os.Unsetenv("HOME")
-	os.Unsetenv("USERPROFILE")
-	os.Unsetenv("NACHO_DIRECTIVE_FILE")
-	os.Unsetenv("NACHO_CONFIG_DIR")
+		fallbackPath, err := contract.GetDirectiveFilePath()
+		if err != nil {
+			t.Fatalf("GetDirectiveFilePath fallback failed: %v", err)
+		}
+		if !strings.HasSuffix(fallbackPath, filepath.Join(contract.AppName, contract.DefaultDirectiveFileName)) {
+			t.Fatalf("unexpected fallbackPath: %s", fallbackPath)
+		}
+	})
 
-	fallbackPath, err := contract.GetDirectiveFilePath()
-	if err != nil {
-		t.Fatalf("GetDirectiveFilePath fallback failed: %v", err)
-	}
-	if !strings.HasSuffix(fallbackPath, filepath.Join(contract.AppName, contract.DefaultDirectiveFileName)) {
-		t.Fatalf("unexpected fallbackPath: %s", fallbackPath)
-	}
+	t.Run("CustomDirectiveFileOverride", func(t *testing.T) {
+		customPath := filepath.Join(t.TempDir(), "custom-dir", "custom-directive.json")
+		t.Setenv("NACHO_DIRECTIVE_FILE", customPath)
+		resPath, err := contract.GetDirectiveFilePath()
+		if err != nil {
+			t.Fatalf("GetDirectiveFilePath with NACHO_DIRECTIVE_FILE failed: %v", err)
+		}
+		if resPath != customPath {
+			t.Fatalf("expected customPath %s, got %s", customPath, resPath)
+		}
+	})
 
-	// Test custom NACHO_DIRECTIVE_FILE override
-	customPath := filepath.Join(t.TempDir(), "custom-dir", "custom-directive.json")
-	os.Setenv("NACHO_DIRECTIVE_FILE", customPath)
-	resPath, err := contract.GetDirectiveFilePath()
-	if err != nil {
-		t.Fatalf("GetDirectiveFilePath with NACHO_DIRECTIVE_FILE failed: %v", err)
-	}
-	if resPath != customPath {
-		t.Fatalf("expected customPath %s, got %s", customPath, resPath)
-	}
-	os.Unsetenv("NACHO_DIRECTIVE_FILE")
-
-	// Test MkdirAll error by setting NACHO_CONFIG_DIR to an existing file
-	tempFile, tfErr := os.CreateTemp("", "nacho_file_blocker_*")
-	if tfErr == nil {
-		defer os.Remove(tempFile.Name())
-		tempFile.Close()
-		os.Setenv("NACHO_CONFIG_DIR", tempFile.Name())
-		_, err = contract.GetDirectiveFilePath()
+	t.Run("MkdirAllError", func(t *testing.T) {
+		tempDir := t.TempDir()
+		blockerFile := filepath.Join(tempDir, "blocker_file")
+		if err := os.WriteFile(blockerFile, []byte("blocker"), 0600); err != nil {
+			t.Fatalf("failed to create blocker file: %v", err)
+		}
+		t.Setenv("NACHO_CONFIG_DIR", blockerFile)
+		_, err := contract.GetDirectiveFilePath()
 		if err == nil {
 			t.Errorf("expected error when NACHO_CONFIG_DIR is a regular file")
 		}
-	}
+	})
 }
+
+func TestGetUserConfigDir(t *testing.T) {
+	t.Run("NachoConfigDirEnvSet", func(t *testing.T) {
+		tempDir := t.TempDir()
+		t.Setenv("NACHO_CONFIG_DIR", tempDir)
+		dir, err := contract.GetUserConfigDir()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dir != tempDir {
+			t.Fatalf("expected %s, got %s", tempDir, dir)
+		}
+	})
+
+	t.Run("FallbackToOSUserConfigDir", func(t *testing.T) {
+		t.Setenv("NACHO_CONFIG_DIR", "")
+		dir, err := contract.GetUserConfigDir()
+		expectedDir, expectedErr := os.UserConfigDir()
+		if (err != nil) != (expectedErr != nil) {
+			t.Fatalf("expected error match, got err=%v, expectedErr=%v", err, expectedErr)
+		}
+		if dir != expectedDir {
+			t.Fatalf("expected %s, got %s", expectedDir, dir)
+		}
+	})
+}
+

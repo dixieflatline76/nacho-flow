@@ -93,12 +93,9 @@ func (s *Server) handlePurgeAllLogsDirective(w http.ResponseWriter, req Directiv
 	} else if s.directivePath != "" {
 		statsPath = filepath.Join(filepath.Dir(s.directivePath), contract.DefaultStatsFileName)
 	} else {
-		userConfigDir := os.Getenv("NACHO_CONFIG_DIR")
-		if userConfigDir == "" {
-			userConfigDir, _ = os.UserConfigDir()
-			if userConfigDir == "" {
-				userConfigDir = "."
-			}
+		userConfigDir, err := contract.GetUserConfigDir()
+		if err != nil || userConfigDir == "" {
+			userConfigDir = "."
 		}
 		statsPath = filepath.Join(userConfigDir, contract.AppName, contract.DefaultStatsFileName)
 	}
