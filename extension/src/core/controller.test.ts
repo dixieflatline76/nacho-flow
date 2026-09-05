@@ -1067,7 +1067,7 @@ default_tier:
         expect.objectContaining({ title: expect.stringContaining('reset to $0.00') }),
         expect.any(Function)
       );
-    });
+    }, 15000);
 
     it('should handle runOptimizer and refreshDeals error branches', async () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});

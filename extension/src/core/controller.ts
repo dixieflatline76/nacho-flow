@@ -1263,6 +1263,26 @@ export class ExtensionController {
 		}
 		try {
 			const resetStats = await this.restClient.resetStats();
+
+			// Directive restart recovery
+			const daemonUrl = this.authManager ? await this.authManager.getBaseUrl() : 'http://localhost:8000';
+			if (this.processManager) {
+				await new Promise((r) => setTimeout(r, 300));
+				for (let i = 0; i < 20; i++) {
+					if (this.processManager.isLocalUrl(daemonUrl) && !this.processManager.isRunning()) {
+						await this.processManager.start(daemonUrl);
+					}
+					const isOnline = await this.processManager.checkHealth(daemonUrl, 300);
+					if (isOnline) {
+						break;
+					}
+					await new Promise((r) => setTimeout(r, 250));
+				}
+			}
+
+			await this.initializeClients();
+			await this.syncSidebarState();
+
 			if (this.dashboardPanel && resetStats) {
 				this.dashboardPanel.updateStats(resetStats);
 			}

@@ -1138,6 +1138,20 @@ Content-Type: application/json
 ```
 Closes a tripped circuit breaker to immediately resume traffic to that upstream provider.
 
+#### 5. Unified Command Directives
+```http
+POST /api/v1/directive
+Authorization: Bearer <auth-token>
+Content-Type: application/json
+
+{"action": "PURGE_ALL_LOGS"}
+```
+Dispatches administrative directives:
+- **`PURGE_ALL_LOGS`**: Rotates active logs (`traffic.jsonl`, `router.log`) to timestamped backups (`*.bak.YYYYMMDD-HHMMSS`), resets `stats.json`, and triggers a clean daemon restart for cold file handling.
+- **`RESET_CIRCUITS`**: Immediately closes tripped provider circuits in-process.
+- **`RECALCULATE_STATS`**: Re-aggregates telemetry stats from the current `traffic.jsonl`.
+
+
 ---
 
 ### 10.3 Markdown Diff Sanitizer

@@ -135,6 +135,9 @@ func parseLogLevel(lvl string) slog.Level {
 }
 
 func (p *program) run(s service.Service) error {
+	// 0. Execute any pending cold startup directives before initializing loggers or stores
+	_ = executeStartupDirectives("")
+
 	// Initialize Smart Logger based on Interactive vs Daemon mode
 	var svcLogger service.Logger
 	if s != nil {
@@ -275,6 +278,12 @@ func (p *program) run(s service.Service) error {
 	srvHandler := server.NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, reg, appLogger)
 	srvHandler.SetRingBuffer(ringBuffer)
 	srvHandler.SetEventBroker(eventBroker)
+	if diskStore != nil {
+		srvHandler.SetDiskStore(diskStore)
+	}
+	if trafficLogger != nil {
+		srvHandler.SetTrafficLogPath(trafficLogger.FilePath())
+	}
 	activeConfigPath := contract.DefaultConfigFileName
 	if *configPathFlag != "" {
 		activeConfigPath = *configPathFlag

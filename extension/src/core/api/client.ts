@@ -161,11 +161,23 @@ export class RestClient {
         return this.request('/api/v1/deals');
     }
 
-    // Reset stats endpoint
-    public async resetStats(): Promise<any> {
-        return this.request('/api/v1/stats/reset', {
-            method: 'POST'
+    // Send administrative command directive
+    public async sendDirective(action: string, payload?: any): Promise<{
+        status: string;
+        action: string;
+        requires_restart: boolean;
+        message?: string;
+        details?: any;
+    }> {
+        return this.request('/api/v1/directive', {
+            method: 'POST',
+            body: JSON.stringify({ action, payload })
         });
+    }
+
+    // Reset stats endpoint (dispatches PURGE_ALL_LOGS directive)
+    public async resetStats(): Promise<any> {
+        return this.sendDirective('PURGE_ALL_LOGS');
     }
 
     // Recalculate stats endpoint

@@ -53,6 +53,7 @@ type Server struct {
 	watchdogMu     sync.Mutex
 	watchdogActive bool
 	watchdogErrors atomic.Int32
+	exitFunc       func(code int)
 }
 
 // GetConfig returns the current active configuration atomically.
@@ -107,6 +108,11 @@ func (s *Server) SetDiskStore(ds *store.DiskStore) {
 // SetTrafficLogPath sets the path to the traffic.jsonl log.
 func (s *Server) SetTrafficLogPath(path string) {
 	s.trafficLogPath = path
+}
+
+// SetExitFunc overrides the process exit function (primarily for testing).
+func (s *Server) SetExitFunc(fn func(code int)) {
+	s.exitFunc = fn
 }
 
 func (s *Server) armWatchdog(memento *runtimeState, duration time.Duration) {
@@ -334,6 +340,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		case contract.PathAPIStatsRecalculate:
 			s.handleAPIStatsRecalculate(w, r)
+			return
+		case contract.PathAPIDirective:
+			s.handleAPIDirective(w, r)
 			return
 		default:
 			http.Error(w, "Not found", http.StatusNotFound)

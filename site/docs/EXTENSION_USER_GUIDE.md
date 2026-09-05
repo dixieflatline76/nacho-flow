@@ -159,7 +159,7 @@ The **4. Maintenance & Operations** card provides immediate recovery tools:
 
 - **`Recalculate Stats from Logs`**: Replays `traffic.jsonl` from disk to reconstruct historical token volumes and counterfactual cost savings after manual log modifications.
 - **`Reset Circuit Breakers`**: If your local Ollama or vLLM instance crashed, ran out of VRAM, or was restarted, Nacho Flow trips the local circuit breaker to protect agent turns. Once your local engine is back up, click this button to instantly restore traffic to your GPU without restarting the gateway.
-- **`Reset All Stats to $0.00`**: Clears cumulative statistics and resets all financial counters to zero.
+- **`Purge All Logs & Reset Stats`**: Archives active traffic and router logs to `*.bak.YYYYMMDD-HHMMSS`, clears cumulative statistics, and resets all financial counters to $0.00 via cold boot restart.
 
 ---
 

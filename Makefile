@@ -2,7 +2,7 @@ VERSION := $(shell sh -c "cat version.txt" 2> /dev/null || cmd /c "type version.
 BINARY_NAME=nacho-flow
 LDFLAGS_COMMON := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build test test-race test-cover test-extension build-extension package-extension fmt vet lint check ci bench tune tune-apply bump-patch bump-minor bump-major build-win-amd64 build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-all clean
+.PHONY: all build test test-race test-cover test-extension build-extension package-extension fmt vet lint check ci bench bench-sync cover-sync test-sync docs doc tune tune-apply bump-patch bump-minor bump-major build-win-amd64 build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-all clean
 
 all: check build
 
@@ -78,6 +78,11 @@ test-sync:
 	@echo "Running race tests & syncing coverage..."
 	go test -race ./...
 	go run ./cmd/util/nacho_cover
+
+docs: cover-sync bench-sync
+	@echo "Documentation, benchmarks, and coverage fully synchronized!"
+
+doc: docs
 
 tune:
 	@echo "Running advisory route tuner..."

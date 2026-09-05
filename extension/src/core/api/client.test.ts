@@ -313,9 +313,27 @@ describe('RestClient', () => {
     });
   });
 
+  describe('sendDirective', () => {
+    it('should make a POST request to /api/v1/directive with action and payload', async () => {
+      const mockResponse = { status: 'acknowledged', action: 'PURGE_ALL_LOGS', requires_restart: true };
+      mockHttpRequest(mockResponse, 200);
+
+      const result = await restClient.sendDirective('PURGE_ALL_LOGS', { reason: 'test' });
+
+      expect(result).toEqual(mockResponse);
+      expect(http.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/api/v1/directive',
+          method: 'POST'
+        }),
+        expect.any(Function)
+      );
+    });
+  });
+
   describe('resetStats', () => {
-    it('should make a POST request to /api/v1/stats/reset', async () => {
-      const mockResponse = { status: 'ok', message: 'Stats reset' };
+    it('should dispatch PURGE_ALL_LOGS directive to /api/v1/directive', async () => {
+      const mockResponse = { status: 'acknowledged', action: 'PURGE_ALL_LOGS', requires_restart: true };
       mockHttpRequest(mockResponse, 200);
 
       const result = await restClient.resetStats();
@@ -323,7 +341,7 @@ describe('RestClient', () => {
       expect(result).toEqual(mockResponse);
       expect(http.request).toHaveBeenCalledWith(
         expect.objectContaining({
-          path: '/api/v1/stats/reset',
+          path: '/api/v1/directive',
           method: 'POST'
         }),
         expect.any(Function)

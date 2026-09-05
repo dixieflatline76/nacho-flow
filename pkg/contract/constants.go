@@ -3,6 +3,11 @@
 
 package contract
 
+import (
+	"os"
+	"path/filepath"
+)
+
 // Application metadata constants.
 const (
 	AppName = "nacho-flow"
@@ -50,6 +55,7 @@ const (
 	PathAPIDeals            = "/api/v1/deals"
 	PathAPIStatsReset       = "/api/v1/stats/reset"
 	PathAPIStatsRecalculate = "/api/v1/stats/recalculate"
+	PathAPIDirective        = "/api/v1/directive"
 )
 
 // Provider names and API endpoint defaults.
@@ -101,9 +107,31 @@ const (
 	DefaultStatsFileName      = "stats.json"
 	DefaultTrafficLogFileName = "traffic.jsonl"
 	DefaultRouterLogFileName  = "router.log"
+	DefaultDirectiveFileName  = "directive.json"
 	EnvVarPrefix              = "ENV_"
 	GlobalAuthTokenEnv        = "NACHO_AUTH_TOKEN"
 )
+
+// Directive action constants for unified command control plane.
+const (
+	DirectiveActionPurgeAllLogs     = "PURGE_ALL_LOGS"
+	DirectiveActionResetCircuits    = "RESET_CIRCUITS"
+	DirectiveActionRecalculateStats = "RECALCULATE_STATS"
+)
+
+// GetDirectiveFilePath returns the absolute path to the directive file
+// in the user's config directory, matching the storage convention of stats.json.
+func GetDirectiveFilePath() (string, error) {
+	userConfigDir, err := os.UserConfigDir()
+	if err != nil || userConfigDir == "" {
+		userConfigDir = "."
+	}
+	dir := filepath.Join(userConfigDir, AppName)
+	if mkErr := os.MkdirAll(dir, 0750); mkErr != nil {
+		return "", mkErr
+	}
+	return filepath.Join(dir, DefaultDirectiveFileName), nil
+}
 
 // Runtime fallback defaults.
 const (

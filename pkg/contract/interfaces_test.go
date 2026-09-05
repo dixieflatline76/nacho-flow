@@ -42,3 +42,26 @@ func TestProviderConfig_IsLocal(t *testing.T) {
 		})
 	}
 }
+
+func TestRequestContext_IsModelCoolingDown(t *testing.T) {
+	rc := contract.RequestContext{
+		CoolingDownModels: []string{"openai/gpt-4o", "anthropic/claude-3-5-sonnet"},
+	}
+
+	if rc.IsModelCoolingDown("") {
+		t.Errorf("expected empty model to not be cooling down")
+	}
+
+	emptyRC := contract.RequestContext{}
+	if emptyRC.IsModelCoolingDown("openai/gpt-4o") {
+		t.Errorf("expected model to not be cooling down on empty RC")
+	}
+
+	if !rc.IsModelCoolingDown("OPENAI/GPT-4O") {
+		t.Errorf("expected case-insensitive match for cooling down model")
+	}
+
+	if rc.IsModelCoolingDown("google/gemini-pro") {
+		t.Errorf("expected non-cooling down model to return false")
+	}
+}
