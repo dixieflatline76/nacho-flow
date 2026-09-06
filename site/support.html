@@ -163,11 +163,92 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // Mobile nav drawer, backdrop and accordion controller
             const toggle = document.getElementById('mobile-toggle');
             const links = document.getElementById('nav-links');
+            const dropdown = document.querySelector('.nav-dropdown');
+            const dropdownTrigger = document.querySelector('.dropdown-trigger');
+
+            let backdrop = document.getElementById('mobile-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.id = 'mobile-backdrop';
+                backdrop.className = 'mobile-backdrop';
+                document.body.appendChild(backdrop);
+            }
+
+            function openMobileMenu() {
+                if (!links || !toggle) return;
+                links.classList.add('open');
+                toggle.classList.add('active');
+                toggle.setAttribute('aria-expanded', 'true');
+                if (backdrop) backdrop.classList.add('active');
+                document.body.classList.add('menu-locked');
+            }
+
+            function closeMobileMenu() {
+                if (!links || !toggle) return;
+                links.classList.remove('open');
+                toggle.classList.remove('active');
+                toggle.setAttribute('aria-expanded', 'false');
+                if (backdrop) backdrop.classList.remove('active');
+                document.body.classList.remove('menu-locked');
+                if (dropdown) {
+                    dropdown.classList.remove('expanded');
+                    if (dropdownTrigger) dropdownTrigger.setAttribute('aria-expanded', 'false');
+                }
+            }
+
             if (toggle && links) {
-                toggle.addEventListener('click', () => {
-                    links.classList.toggle('open');
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (links.classList.contains('open')) {
+                        closeMobileMenu();
+                    } else {
+                        openMobileMenu();
+                    }
+                });
+            }
+
+            if (backdrop) {
+                backdrop.addEventListener('click', closeMobileMenu);
+            }
+
+            if (dropdownTrigger && dropdown) {
+                dropdownTrigger.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isExpanded = dropdown.classList.toggle('expanded');
+                    dropdownTrigger.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+                });
+            }
+
+            document.addEventListener('click', (e) => {
+                if (links && links.classList.contains('open')) {
+                    if (!links.contains(e.target) && !toggle.contains(e.target)) {
+                        closeMobileMenu();
+                    }
+                } else if (dropdown && dropdown.classList.contains('expanded')) {
+                    if (!dropdown.contains(e.target)) {
+                        dropdown.classList.remove('expanded');
+                        if (dropdownTrigger) dropdownTrigger.setAttribute('aria-expanded', 'false');
+                    }
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeMobileMenu();
+                }
+            });
+
+            if (links) {
+                links.querySelectorAll('a').forEach(link => {
+                    link.addEventListener('click', () => {
+                        if (window.innerWidth <= 900) {
+                            closeMobileMenu();
+                        }
+                    });
                 });
             }
         });
