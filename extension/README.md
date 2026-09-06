@@ -73,7 +73,7 @@ A mission-control flight instrument webview providing total visibility into your
 
 ### 🛡️ 3. "The Three Fixes" Live Defense Telemetry
 
-Nacho Flow wraps open-weight and non-frontier models in active runtime guardrails, eliminating the common agent failure loops:
+Nacho Flow supervises local and cloud open-weight models in real time, eliminating common agent failure loops:
 
 - 🎸 **Cycle Killer (In-Flight Stream Breaker)**:
   - Monitors the live token stream in real time. Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
