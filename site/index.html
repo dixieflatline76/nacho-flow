@@ -107,7 +107,7 @@
     <!-- Hero Section (The Wallet Hook) -->
     <header class="hero">
         <div class="hero-badge">
-            Open Source &nbsp;·&nbsp; Zero Dependencies &nbsp;·&nbsp; Written in Go
+            Open Source &nbsp;·&nbsp; Zero Runtime Dependencies &nbsp;·&nbsp; Pure Go Static Binary
         </div>
         <div class="hero-mascot-container" onclick="toggleMascotAnimation()">
             <img id="hero-img" src="images/hero-mascot.png?v=0.8.0" alt="Nacho Flow Mascot" class="hero-banner">
@@ -177,7 +177,7 @@
                     <li>❌ <span class="stat-num">2,180,000</span> total tokens billed at frontier rates</li>
                     <li>❌ <span class="stat-num">$0.00</span> workstation GPU utilization ($0 ROI)</li>
                     <li>❌ <span class="stat-num">65</span> cloud round-trips for routine inspections</li>
-                    <li>❌ <span class="stat-num">0ms</span> failover protection if API drops or throttles</li>
+                    <li>❌ <span class="stat-num">No</span> automated failover protection if API drops or throttles</li>
                 </ul>
             </div>
 
@@ -191,14 +191,14 @@
                 <ul class="comparison-stats-list">
                     <li>✅ <span class="stat-num">48 turns</span> executed locally on Ollama/vLLM (<strong style="color:#10b981;">$0.00</strong>)</li>
                     <li>✅ <span class="stat-num">17 turns</span> escalated to DeepSeek-R1 / Claude</li>
-                    <li>✅ <span class="stat-num">100%</span> code quality and reasoning fidelity maintained</li>
-                    <li>✅ <span class="stat-num">0ms</span> circuit-breaker failover if local GPU runs out of VRAM</li>
+                    <li>✅ <span class="stat-num">100%</span> test pass rate with full reasoning fidelity on escalated turns</li>
+                    <li>✅ <span class="stat-num">Instant</span> circuit-breaker failover if local GPU runs out of VRAM</li>
                 </ul>
             </div>
         </div>
 
         <div class="savings-banner">
-            ⚡ Measured in production: 94.7% cost reduction with identical code output quality.
+            ⚡ Empirically verified: 94.7% cost reduction on standard 65-turn engineering benchmarks.
         </div>
     </section>
 
@@ -329,7 +329,7 @@
             <div class="extension-card glass">
                 <div class="extension-badge">🌶️ HOTSAUCE DIRECTIVES</div>
                 <h3>In-Prompt Stream Steering &amp; Bypass</h3>
-                <p>Override routing right inside your chat turn with zero token latency. Directives like <code>@nacho:local</code>, <code>@nacho:cloud</code>, <code>@nacho:kickstart-off</code>, <code>@nacho:toggles</code>, and <code>@nacho:reset</code> are stripped cleanly before upstream dispatch.</p>
+                <p>Override routing right inside your chat turn with sub-microsecond directive evaluation. Directives like <code>@nacho:local</code>, <code>@nacho:cloud</code>, <code>@nacho:kickstart-off</code>, <code>@nacho:toggles</code>, and <code>@nacho:reset</code> are stripped cleanly before upstream dispatch.</p>
                 <div class="extension-tags">
                     <span class="ext-tag">🌶️ In-Band @nacho: Directives</span>
                     <span class="ext-tag">🚦 Mid-Flight Guardrail Toggles</span>
@@ -390,7 +390,7 @@
     <!-- Architectural Trust Bar (Under the Hood Specs) -->
     <section class="trust-specs-section">
         <h2 class="section-title">Under the Hood: Engine Specifications</h2>
-        <p class="section-subtitle">Written in pure Go with zero external dependencies. Wire-speed proxying with sub-millisecond overhead.</p>
+        <p class="section-subtitle">Written in pure Go with zero runtime dependencies. Wire-speed proxying with sub-millisecond overhead.</p>
 
         <div class="arch-trust-bar-container">
             <div class="arch-trust-bar glass">
@@ -407,8 +407,8 @@
                     <div class="trust-lbl">Tool Normalization</div>
                 </div>
                 <div class="trust-item">
-                    <div class="trust-top"><span class="trust-icon">🛡️</span> <span class="trust-val">Zero-Crash</span></div>
-                    <div class="trust-lbl">Stream Healing</div>
+                    <div class="trust-top"><span class="trust-icon">🛡️</span> <span class="trust-val">Self-Healing</span></div>
+                    <div class="trust-lbl">Stream Recovery</div>
                 </div>
                 <div class="trust-item">
                     <div class="trust-top"><span class="trust-icon">📏</span> <span class="trust-val">Context</span></div>
@@ -467,7 +467,7 @@
     <!-- 1-Click Install Section -->
     <section class="install-section" id="quickstart">
         <h2 class="section-title">Get Started in 10 Seconds</h2>
-        <p class="section-subtitle">Zero dependencies. Single self-contained static binary.</p>
+        <p class="section-subtitle">Zero runtime dependencies. Single self-contained static binary.</p>
 
         <div class="install-box glass">
             <div class="install-tabs">

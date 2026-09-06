@@ -145,7 +145,7 @@ func (h *HelpCommandHandler) Description() string {
 func (h *HelpCommandHandler) Execute(ctx context.Context, reqCtx contract.RequestContext, env MetaEnv) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("🌶️ **Nacho Flow: HotSauce Directives**\n\n")
-	sb.WriteString("Splash a directive tag onto any prompt to override routing or query gateway metadata ($0.00 / 0ms):\n\n")
+	sb.WriteString("Splash a directive tag onto any prompt to override routing or query gateway metadata ($0.00 / sub-millisecond local response):\n\n")
 
 	sb.WriteString("**Heat Levels (Routing Overrides):**\n")
 	sb.WriteString("• `@nacho:local` — 🟢 Mild: Force routing to local GPU ($0.00)\n")

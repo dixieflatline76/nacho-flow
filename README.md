@@ -47,7 +47,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 | **Local GPU Turns ($0.00)** | 0 turns (0% hardware ROI) | **48 turns** (Ollama / vLLM) | Max workstation GPU utilization |
 | **Cloud Escalation Turns** | 65 turns (100% paid) | **17 turns** (DeepSeek-R1 / Claude) | 100% reasoning fidelity preserved |
 | **Total Tokens Billed** | 2,180,000 tokens | 410,000 tokens | **81.2% fewer tokens sent to cloud** |
-| **Failover Protection** | 0ms / None (Fails on API errors) | **Automatic Circuit Breaker & 0ms failover** | Zero broken agent loops |
+| **Failover Protection** | None (Fails on API errors) | **Automatic Circuit Breaker & sub-millisecond failover** | Zero broken agent loops |
 
 ---
 
@@ -75,7 +75,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **🏛️ 3-Tier Curated Intelligence & OTA Sync**: Pre-packages verified SWE-bench & tool reliability scores (`//go:embed models.json`) with automatic Over-The-Air GitHub semver updates.
 * **🧩 Real-Time IDE Control & Live Telemetry**: Powers the official VS Code Companion Extension with zero-polling SSE live metrics, real-time cost savings graphs, active route inspection, and seamless daemon lifecycle controls.
 * **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
-* **🚦 Local Provider Circuit Breaker**: Detects consecutive local connection or 5xx failures and fast-fails directly to cloud fallback tiers with 0ms dial delay.
+* **🚦 Local Provider Circuit Breaker**: Detects consecutive local connection or 5xx failures and fast-fails directly to cloud fallback tiers with sub-millisecond in-memory dispatch.
 * **🔄 Retry-Based Auto-Escalation**: Tracks session turn retries with a sliding 5-minute TTL, allowing routing rules to automatically escalate to cloud models when local attempts fail (`Retries < 2`).
 * **📏 Code-Aware Adaptive Token Estimator**: Dynamically corrects token calculations for dense code diffs, markdown, and structured JSON so agent harnesses never suffer premature tier escalations or unexpected context overflows.
 * **🛡️ Response Quality Validation & Delayed Headers**: Peeks initial SSE stream chunks before committing `HTTP 200` headers to enable transparent cloud failover if a local model returns an empty payload or unexpected termination.
@@ -87,7 +87,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **💰 Prompt Cache-Aware Cost Engine**: Automatically ingests upstream provider prompt caching discounts (typically ~80% off prompt tokens from OpenRouter/DeepSeek/Anthropic) using a 3-tier priority oracle for dollar-accurate billing and ROI tracking.
 * **🛠️ Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Llama Python `<|python_tag|>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown code fences, and Ollama/Qwen Bare JSON) into standard OpenAI `tool_calls` JSON structures via a modular Strategy Pipeline, with native Cline XML tool detection (`<write_to_file>`, `<replace_in_file>`).
 * **🔒 Inbound Gateway Client Authentication**: Secures LAN and remote endpoints with optional Bearer token authentication while preserving a public `/health` endpoint.
-* **🌶️ HotSauce In-Chat Directives**: Steer routing tiers and session guardrails on-the-fly directly from your editor chat using `@nacho:` tags. Supports session toggles (`@nacho:kickstart-off/on`, `@nacho:cyclekiller-off/on`, `@nacho:shield-off/on`, `@nacho:raw-on/off`, `@nacho:fairydust-off/on`), live switch inspection (`@nacho:toggles`), session reset (`@nacho:reset`), and single-turn routing overrides (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`) with < 7ns zero-alloc bailout, $0.00 cost, and zero prompt leakage.
+* **🌶️ HotSauce In-Chat Directives**: Steer routing tiers and session guardrails on-the-fly directly from your editor chat using `@nacho:` tags. Supports session toggles (`@nacho:kickstart-off/on`, `@nacho:cyclekiller-off/on`, `@nacho:shield-off/on`, `@nacho:raw-on/off`, `@nacho:fairydust-off/on`), live switch inspection (`@nacho:toggles`), session reset (`@nacho:reset`), and single-turn routing overrides (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`) with sub-microsecond zero-alloc bailout, $0.00 cost, and zero prompt leakage.
 * **🛡️ Cost-Safe Default Shield & Unrouted Tiers (`when: "false"`)**: Eliminates runaway frontier billing by placing Claude Sonnet 5 at the `default_tier` safety net while isolating expensive models (Claude Opus 5) behind `when: "false"` for on-demand Fairy Dusting and explicit `@nacho:model` use only.
 * **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Evaluates custom tier rules in `config.yaml` based on token estimates, tool calls, images, retries, and prompt keywords.
 * **🖼️ Historical Image Sanitization**: Automatically strips base64 `image_url` payloads from older turns when routing to text-only models.
@@ -97,7 +97,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.0% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 * **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
-* **📦 Zero Dependencies**: Single static binary with zero CGO or Python requirements (`CGO_ENABLED=0`).
+* **📦 Zero Runtime Dependencies**: Single static binary with zero CGO, Node, or Python runtime requirements (`CGO_ENABLED=0`).
 
 ---
 
@@ -305,7 +305,7 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 - **[Product & Commercial Roadmap](ROADMAP.md)**: Open-source data plane, IDE extension, fleet protocol, and SaaS control plane.
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
 - **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->28,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware.
-- **[Systems Performance Whitepaper](docs/PERFORMANCE_WHITEPAPER.md)**: Zero-allocation systems architecture deep dive, comparing wire-speed agent supervision against LiteLLM and Bifrost.
+- **[Systems Performance Whitepaper](docs/PERFORMANCE_WHITEPAPER.md)**: Near-zero allocation systems architecture deep dive, detailing wire-speed streaming fast paths compared to LiteLLM and Bifrost.
 - **[A/B Benchmark Case Study Whitepaper](docs/BENCHMARKS_AB_CASE_STUDY.md)**: Empirical developer study proving $94.7\%$ cost reduction using local GPU routing.
 - **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules.
 - **[User Guide](docs/USER_GUIDE.md)**: Full configuration reference, custom `expr` tier rules, OS service setup, and IDE walkthroughs.

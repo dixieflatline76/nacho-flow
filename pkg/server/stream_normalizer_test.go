@@ -356,7 +356,7 @@ data: [DONE]
 	}
 }
 
-func BenchmarkSSE_NonReasoning_ZeroAlloc(b *testing.B) {
+func BenchmarkSSE_NonReasoning_FastPath(b *testing.B) {
 	rawSSE := []byte(`data: {"id":"bench-1","choices":[{"index":0,"delta":{"content":"Fast token"}}]}
 
 `)

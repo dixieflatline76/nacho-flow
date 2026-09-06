@@ -19,7 +19,7 @@ type DirectiveInfo struct {
 	Arg         string // Argument value for tier="..." or model="..."
 	ForcedTier  string // Resolved forced tier identifier
 	ForcedModel string // Resolved forced model ID
-	IsMeta      bool   // True if this directive is handled locally ($0.00 / 0ms)
+	IsMeta      bool   // True if this directive is handled locally ($0.00 / sub-millisecond local response)
 	Raw         string // The raw matching token (e.g. "@nacho:fast")
 }
 
@@ -192,7 +192,7 @@ func ExtractDirective(prompt string) (DirectiveInfo, string) {
 	}
 
 	// Standalone toggle check: if clean is empty (the prompt was solely the directive),
-	// mark toggles as meta directives for instant local ($0.00 / 0ms) acknowledgment.
+	// mark toggles as meta directives for instant local ($0.00 / sub-millisecond) acknowledgment.
 	if clean == "" && !info.IsMeta {
 		switch info.Directive {
 		case "kickstart-off", "kickstart-on",

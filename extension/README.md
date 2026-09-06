@@ -93,7 +93,7 @@ Heat Seeker continuously scans 300+ cloud models on OpenRouter, discovering flas
 - **1-Click Tier Adoption (`⚡ Adopt`)**:
   1. Click **`⚡ Adopt`** on any discovered deal card.
   2. A VS Code QuickPick modal appears with your active tiers; recommended target tiers are marked with a **`⭐`**.
-  3. Select the tier to replace. The extension creates an automatic timestamped backup (`config.yaml.bak_<timestamp>`), updates the YAML while preserving all comments, and hot-swaps the new model into the running gateway with **0ms interruption**!
+  3. Select the tier to replace. The extension creates an automatic timestamped backup (`config.yaml.bak_<timestamp>`), updates the YAML while preserving all comments, and hot-swaps the new model into the running gateway with **zero downtime**!
 - **1-Click Copy Model ID**: Copy model IDs to your clipboard for instant prompt turn overrides (`@nacho:model="..."`).
 
 ---

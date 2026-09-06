@@ -17,7 +17,7 @@ This document details the performance characteristics, load-testing methodology,
 
 > [!TIP]
 > **Deep-Dive Technical Whitepapers**:
-> - 📄 **[Systems Architecture & Zero-Allocation Whitepaper](PERFORMANCE_WHITEPAPER.md)**: Explains the low-level systems engineering (SIMD byte filters, AOT bytecode VM, lock-free RCU, and ring-buffer streaming surgery) that enables deep inspection in $<0.2\text{ms}$ compared to LiteLLM and Bifrost.
+> - 📄 **[Near-Zero Allocation Hot Paths & Wire-Speed Systems Whitepaper](PERFORMANCE_WHITEPAPER.md)**: Explains the low-level systems engineering (SIMD byte filters, AOT bytecode VM, lock-free RCU, and ring-buffer streaming surgery) that enables deep inspection in $<0.2\text{ms}$ compared to LiteLLM and Bifrost.
 > - 🔬 **[A/B Benchmark Case Study Whitepaper](BENCHMARKS_AB_CASE_STUDY.md)**: Full empirical 4-run developer case study documenting $94.7\%$ spend reduction and local hardware ROI.
 
 ---
@@ -146,7 +146,7 @@ $ go test -bench=BenchmarkSSE -benchmem -benchtime=3s ./pkg/server/...
 ```
 
 ```text
-BenchmarkSSE_NonReasoning_ZeroAlloc-16      6,468,288       591.5 ns/op      305 B/op      5 allocs/op
+BenchmarkSSE_NonReasoning_FastPath-16       6,468,288       591.5 ns/op      305 B/op      5 allocs/op
 BenchmarkSSE_ReasoningTransform-16            831,742     3,667.0 ns/op    1,305 B/op     21 allocs/op
 ```
 

@@ -407,7 +407,7 @@ func TestExtractDirective_UnifiedGrammar(t *testing.T) {
 		{"raw invalid val", "@nacho:raw=invalid test", "unknown", "test", true},
 		{"fairydust invalid val", "@nacho:fairydust=invalid test", "unknown", "test", true},
 
-		// Toggles - standalone without user prompt (IsMeta = true for local 0ms acknowledgment)
+		// Toggles - standalone without user prompt (IsMeta = true for instant local acknowledgment)
 		{"standalone kickstart-off", "@nacho:kickstart-off", "kickstart-off", "", true},
 		{"standalone kickstart-on", "@nacho:kickstart-on", "kickstart-on", "", true},
 		{"standalone cyclekiller-off", "@nacho:cyclekiller-off", "cyclekiller-off", "", true},
