@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Karl Kwong / Spicebox. Licensed under AGPL-3.0.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package server
 
 import (
@@ -23,7 +26,88 @@ var (
 			return bufio.NewReaderSize(nil, 64*1024)
 		},
 	}
+
+	// tagReplacer performs single-pass canonicalization and stripping of model-specific
+	// reasoning delimiters and chat template artifacts (Qwen, Claude, Gemma).
+	tagReplacer = strings.NewReplacer(
+		// Longest/most specific canonical think open tags first
+		"<|channel|>thought", "<think>",
+		"<|channel>thought", "<think>",
+		"<channel|thought>", "<think>",
+		"<channel|thought", "<think>",
+		"<|im_start|>think", "<think>",
+		"<|im_start|>thought", "<think>",
+		"<thinking>", "<think>",
+		// Canonical think close tags
+		"</thinking>", "</think>",
+		"</thought>", "</think>",
+		"<|im_end|>", "</think>",
+		// Specific call prefixes
+		"<|call:", "",
+		"<call:", "",
+		// Stripped turn/channel delimiters (longer first)
+		"<channel|>", "",
+		"<|channel|>", "",
+		"<|channel>", "",
+		"<channel|", "",
+		"<|channel|", "",
+		"<channel>", "",
+		"</channel>", "",
+		"<start_of_turn>", "",
+		"<end_of_turn>", "",
+	)
+
+	// reasoningByteMarkers are byte signatures that indicate potential reasoning content
+	// or model chat template delimiters requiring full chunk parsing rather than fast-path line passthrough.
+	reasoningByteMarkers = [][]byte{
+		[]byte("reasoning_content"),
+		[]byte("\"reasoning\""),
+		[]byte("\"reason\""),
+		// Delimiters (both raw and escaped)
+		[]byte("<think>"),
+		[]byte("</think>"),
+		[]byte("<thinking>"),
+		[]byte("</thinking>"),
+		[]byte("</thought>"),
+		[]byte("<|im_start|>"),
+		[]byte("<|im_end|>"),
+		[]byte("<start_of_turn>"),
+		[]byte("<end_of_turn>"),
+		[]byte("start_of_turn"),
+		[]byte("end_of_turn"),
+		[]byte("<channel"),
+		[]byte("channel|"),
+		[]byte("|channel"),
+		// JSON / HTML unicode escaped delimiters (\u003c / \u003C / \u003e)
+		[]byte(`\u003cthink`),
+		[]byte(`\u003Cthink`),
+		[]byte(`\u003c/think`),
+		[]byte(`\u003C/think`),
+		[]byte(`\u003cthinking`),
+		[]byte(`\u003Cthinking`),
+		[]byte(`\u003c/thinking`),
+		[]byte(`\u003C/thinking`),
+		[]byte(`\u003c/thought`),
+		[]byte(`\u003C/thought`),
+		[]byte(`\u003c|im_start`),
+		[]byte(`\u003C|im_start`),
+		[]byte(`\u003c|im_end`),
+		[]byte(`\u003C|im_end`),
+		[]byte(`\u003cchannel`),
+		[]byte(`\u003Cchannel`),
+		[]byte(`\u003c|channel`),
+		[]byte(`\u003C|channel`),
+	}
 )
+
+func hasAnyReasoningMarker(payload []byte) bool {
+	for _, marker := range reasoningByteMarkers {
+		if bytes.Contains(payload, marker) {
+			return true
+		}
+	}
+	return false
+}
 
 type fastDelta struct {
 	Role             string          `json:"role,omitempty"`
@@ -56,6 +140,7 @@ type PromptTokensDetails struct {
 	CachedTokens int `json:"cached_tokens"`
 }
 
+// StreamUsage records token usage metrics captured from streaming chunks or estimated via fallback.
 type StreamUsage struct {
 	PromptTokens        int                  `json:"prompt_tokens"`
 	CompletionTokens    int                  `json:"completion_tokens"`
@@ -64,16 +149,15 @@ type StreamUsage struct {
 	Cost                float64              `json:"cost,omitempty"`
 }
 
-// StreamNormalizer wraps an upstream SSE response stream and normalizes reasoning tokens
-// (from DeepSeek-R1, OpenRouter, etc.) into standard <think>...</think> tags within delta.content.
-// It also intercepts the upstream usage object emitted at stream completion and enforces the Agentic Tool Fallback Shield.
+// StreamNormalizer wraps an upstream SSE response stream, canonicalizes reasoning tokens
+// into standard delta.reasoning_content, intercepts token usage, and enforces the Agentic Tool Fallback Shield.
 type StreamNormalizer struct {
 	upstream               io.ReadCloser
 	reader                 *bufio.Reader
 	outBuf                 *bytes.Buffer
 	inThinking             bool
 	inStructuredReasoning  bool
-	alreadyTagged          bool
+	alreadyTagged          bool // Preserved for backward test compatibility
 	closed                 bool
 	eofReached             bool
 	capturedUsage          StreamUsage
@@ -88,6 +172,7 @@ type StreamNormalizer struct {
 	cycleViolated          bool
 	cycleViolationReason   string
 	features               uint16
+	pendingTagClosing      bool
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -124,7 +209,7 @@ func (s *StreamNormalizer) SetCycleBreaker(cb *shield.CycleBreaker) {
 	s.cycleBreaker = cb
 }
 
-// CheckCycleViolation reports whether the stream triggered a cycle breaker violation (repetition loop or monologue budget).
+// CheckCycleViolation reports whether the stream triggered a cycle breaker violation.
 func (s *StreamNormalizer) CheckCycleViolation() (bool, string) {
 	return s.cycleViolated, s.cycleViolationReason
 }
@@ -142,10 +227,8 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 		if readErr != nil {
 			if readErr == io.EOF {
 				s.eofReached = true
-				if s.inThinking {
-					s.inThinking = false
-					s.outBuf.WriteString("data: {\"choices\":[{\"delta\":{\"content\":\"\\n</think>\\n\\n\"}}]}\n\n")
-				}
+				s.inThinking = false
+				s.inStructuredReasoning = false
 			} else {
 				return 0, readErr
 			}
@@ -163,291 +246,267 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 	return 0, nil
 }
 
-func marshalNoEscapeHTML(v any) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return nil, err
-	}
-	return bytes.TrimRight(buf.Bytes(), "\n"), nil
-}
-
+// processLine frames, inspects, and routes an individual SSE stream line.
 func (s *StreamNormalizer) processLine(line []byte) {
 	trimmed := bytes.TrimRight(line, "\r\n")
 
 	// Raw pass-through fast path
-	if s.features == uint16(router.FeatureRawPassThrough) {
-		s.outBuf.Write(line)
-		return
-	}
-
-	// Pass comments, empty lines, and non-data lines directly through
-	if !bytes.HasPrefix(trimmed, []byte("data: ")) {
+	if s.features == uint16(router.FeatureRawPassThrough) || !bytes.HasPrefix(trimmed, []byte("data: ")) {
 		s.outBuf.Write(line)
 		return
 	}
 
 	payload := bytes.TrimPrefix(trimmed, []byte("data: "))
 	if bytes.Equal(payload, []byte("[DONE]")) {
-		if s.inThinking {
-			s.inThinking = false
-			s.outBuf.WriteString("data: {\"choices\":[{\"delta\":{\"content\":\"\\n</think>\\n\\n\"}}]}\n\n")
-		}
-
-		shieldEnabled := (s.features & uint16(router.FeatureShieldEnabled)) != 0
-		// Agentic Shield: Terminal synthetic tool call evaluation if 0 native tools emitted
-		if shieldEnabled && !s.hasNativeTools && s.interactiveTool != "" && s.shieldMgr != nil && s.tailBuffer != nil {
-			if matched, _ := s.shieldMgr.RuleEngine().Evaluate(s.tailBuffer.Bytes()); matched {
-				if synthCall, ok := s.shieldMgr.EvaluateAndSynthesize(s.proseAccumulator.String(), s.interactiveTool); ok && synthCall != nil {
-					// 1. Emit synthetic tool_calls delta chunk
-					deltaJSON, _ := json.Marshal(map[string]interface{}{
-						"choices": []map[string]interface{}{
-							{
-								"index": 0,
-								"delta": map[string]interface{}{
-									"tool_calls": []interface{}{
-										map[string]interface{}{
-											"index": 0,
-											"id":    synthCall.ID,
-											"type":  synthCall.Type,
-											"function": map[string]string{
-												"name":      synthCall.Function.Name,
-												"arguments": synthCall.Function.Arguments,
-											},
-										},
-									},
-								},
-							},
-						},
-					})
-					s.outBuf.WriteString("data: ")
-					s.outBuf.Write(deltaJSON)
-					s.outBuf.WriteString("\n\n")
-
-					// 2. Emit finish_reason chunk
-					finishJSON, _ := json.Marshal(map[string]interface{}{
-						"choices": []map[string]interface{}{
-							{
-								"index":         0,
-								"delta":         map[string]interface{}{},
-								"finish_reason": "tool_calls",
-							},
-						},
-					})
-					s.outBuf.WriteString("data: ")
-					s.outBuf.Write(finishJSON)
-					s.outBuf.WriteString("\n\n")
-				}
-			}
-		}
-
-		s.outBuf.Write(line)
+		s.handleDone(line)
 		return
 	}
 
-	// Check if chunk contains native tool calls
 	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
 		s.hasNativeTools = true
 	}
 
-	// Intercept usage block if present (e.g. OpenRouter / OpenAI final streaming chunk)
 	if bytes.Contains(payload, []byte("\"usage\"")) {
-		var rawChunk struct {
-			Usage *StreamUsage `json:"usage,omitempty"`
-		}
-		if json.Unmarshal(payload, &rawChunk) == nil && rawChunk.Usage != nil && (rawChunk.Usage.PromptTokens > 0 || rawChunk.Usage.CompletionTokens > 0 || rawChunk.Usage.TotalTokens > 0) {
-			s.capturedUsage = *rawChunk.Usage
-			s.hasUsage = true
-		}
+		s.captureUsage(payload)
 	}
 
-	// Fast path: if chunk has no reasoning markers and no think tag, check if transition needed
-	hasReasoningMarker := bytes.Contains(payload, []byte("reasoning_content")) ||
-		bytes.Contains(payload, []byte("\"reasoning\"")) ||
-		bytes.Contains(payload, []byte("\"reason\"")) ||
-		bytes.Contains(payload, []byte("<|im_start|>think")) ||
-		bytes.Contains(payload, []byte("<|im_start|>thought")) ||
-		bytes.Contains(payload, []byte("<|channel>thought")) ||
-		bytes.Contains(payload, []byte("</thought>")) ||
-		bytes.Contains(payload, []byte("<thinking>")) ||
-		bytes.Contains(payload, []byte("</thinking>")) ||
-		bytes.Contains(payload, []byte("<|im_end|>"))
-
-	if !hasReasoningMarker && !s.inThinking && !bytes.Contains(payload, []byte("<think>")) {
-		if idx := bytes.Index(payload, []byte("\"content\":")); idx != -1 {
-			s.emittedCompletionChars += len(payload) - idx
-		}
-		if contentStr := extractContentFast(payload); contentStr != "" {
-			if s.tailBuffer != nil {
-				s.tailBuffer.Append([]byte(contentStr))
-				s.proseAccumulator.WriteString(contentStr)
-			}
-			if s.cycleBreaker != nil && !s.cycleViolated {
-				if triggered, reason := s.cycleBreaker.ProcessDelta(contentStr, false); triggered {
-					s.cycleViolated = true
-					s.cycleViolationReason = reason
-				}
-			}
-		}
-		s.outBuf.Write(line)
+	// Fast path: if outside reasoning, no pending tag to close, and no markers detected, pass line through directly
+	if !s.inThinking && !s.pendingTagClosing && !hasAnyReasoningMarker(payload) {
+		s.fastPassProse(line, payload)
 		return
 	}
 
+	s.processChunkLine(line, payload)
+}
+
+// fastPassProse handles prose chunks that require no JSON transformations.
+func (s *StreamNormalizer) fastPassProse(line, payload []byte) {
+	if contentStr := payloadContent(payload); contentStr != "" {
+		s.recordProse(contentStr)
+	}
+	s.outBuf.Write(line)
+}
+
+// processChunkLine parses a JSON streaming chunk and canonicalizes reasoning vs content deltas.
+func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 	var chunk fastStreamChunk
 	if err := json.Unmarshal(payload, &chunk); err != nil || len(chunk.Choices) == 0 {
-		// If not valid JSON, pass raw line through
 		s.outBuf.Write(line)
 		return
 	}
 
 	choice := &chunk.Choices[0]
-	reasoningText := choice.Delta.ReasoningContent
-	if reasoningText == "" {
-		reasoningText = choice.Delta.Reasoning
-	}
-	if reasoningText == "" {
-		reasoningText = choice.Delta.Reason
-	}
+	reasoningText := s.resolveReasoningField(&choice.Delta)
 
 	if reasoningText != "" {
-		s.emittedCompletionChars += len(reasoningText)
-		// Model is emitting reasoning tokens
-		sanitized := strings.ReplaceAll(reasoningText, "</think>", "&lt;/think&gt;")
-		choice.Delta.ReasoningContent = ""
+		s.inThinking = true
+		s.inStructuredReasoning = true
+		choice.Delta.ReasoningContent = reasoningText
 		choice.Delta.Reasoning = ""
 		choice.Delta.Reason = ""
 
-		if !s.inThinking && !s.alreadyTagged {
-			s.inThinking = true
-			s.inStructuredReasoning = true
-			choice.Delta.Content = "<think>\n" + sanitized
-			s.alreadyTagged = true
-		} else {
-			choice.Delta.Content = sanitized
+		s.recordReasoning(reasoningText)
+		if choice.Delta.Content != "" {
+			s.recordProse(choice.Delta.Content)
 		}
 
-		if s.cycleBreaker != nil && !s.cycleViolated {
-			if triggered, reason := s.cycleBreaker.ProcessDelta(sanitized, true); triggered {
-				s.cycleViolated = true
-				s.cycleViolationReason = reason
-			}
-		}
+		s.emitChunk(chunk)
+		return
+	}
 
-		if newPayload, err := marshalNoEscapeHTML(chunk); err == nil {
-			s.outBuf.WriteString("data: ")
-			s.outBuf.Write(newPayload)
-			s.outBuf.WriteString("\n\n")
-			return
-		}
-	} else if choice.Delta.Content != "" {
-		s.emittedCompletionChars += len(choice.Delta.Content)
-		// Normalize text-embedded reasoning tags (Qwen, Claude-style thinking tags)
-		content := choice.Delta.Content
-		if strings.Contains(content, "<|im_start|>think") {
-			content = strings.ReplaceAll(content, "<|im_start|>think", "<think>")
-			s.alreadyTagged = true
-		}
-		if strings.Contains(content, "<|im_start|>thought") {
-			content = strings.ReplaceAll(content, "<|im_start|>thought", "<think>")
-			s.alreadyTagged = true
-		}
-		if strings.Contains(content, "<|channel>thought") {
-			content = strings.ReplaceAll(content, "<|channel>thought", "<think>")
-			s.alreadyTagged = true
-		}
-		if strings.Contains(content, "<thinking>") {
-			content = strings.ReplaceAll(content, "<thinking>", "<think>")
-			s.alreadyTagged = true
-		}
-		if strings.Contains(content, "</thinking>") {
-			content = strings.ReplaceAll(content, "</thinking>", "</think>")
-		}
-		if strings.Contains(content, "</thought>") {
-			content = strings.ReplaceAll(content, "</thought>", "</think>")
-		}
-		if strings.Contains(content, "<|im_end|>") {
-			content = strings.ReplaceAll(content, "<|im_end|>", "</think>")
-		}
-		choice.Delta.Content = content
-
-		if strings.Contains(choice.Delta.Content, "<think>") {
-			s.inThinking = true
-			s.alreadyTagged = true
-		}
-
-		if s.inStructuredReasoning {
-			// Transition from structured reasoning (reasoning_content) to final answer, tool call, or finish
-			s.inStructuredReasoning = false
-			s.inThinking = false
-			choice.Delta.Content = "\n</think>\n\n" + choice.Delta.Content
-
-			if newPayload, err := marshalNoEscapeHTML(chunk); err == nil {
-				s.outBuf.WriteString("data: ")
-				s.outBuf.Write(newPayload)
-				s.outBuf.WriteString("\n\n")
-				return
-			}
-		}
-
-		isThinkingDelta := s.inThinking
-		if strings.Contains(choice.Delta.Content, "</think>") {
-			s.inThinking = false
-		}
-
-		if s.tailBuffer != nil && !isThinkingDelta {
-			s.tailBuffer.Append([]byte(choice.Delta.Content))
-			s.proseAccumulator.WriteString(choice.Delta.Content)
-		}
-
-		if s.cycleBreaker != nil && !s.cycleViolated {
-			if triggered, reason := s.cycleBreaker.ProcessDelta(choice.Delta.Content, isThinkingDelta); triggered {
-				s.cycleViolated = true
-				s.cycleViolationReason = reason
-			}
-		}
-
-		if choice.Delta.Content != payloadContent(payload) {
-			if newPayload, err := marshalNoEscapeHTML(chunk); err == nil {
-				s.outBuf.WriteString("data: ")
-				s.outBuf.Write(newPayload)
-				s.outBuf.WriteString("\n\n")
-				return
-			}
-		}
+	if choice.Delta.Content != "" {
+		s.normalizeContentDelta(choice)
+		s.emitChunk(chunk)
+		return
 	}
 
 	s.outBuf.Write(line)
 }
 
-// extractContentFast extracts the delta content string from an SSE chunk without json.Unmarshal.
-// Looks for `"content":` and scans until closing quote, properly skipping escaped quotes.
+// resolveReasoningField extracts reasoning text from any provider-specific field.
+func (s *StreamNormalizer) resolveReasoningField(delta *fastDelta) string {
+	if delta.ReasoningContent != "" {
+		return delta.ReasoningContent
+	}
+	if delta.Reasoning != "" {
+		return delta.Reasoning
+	}
+	return delta.Reason
+}
+
+// normalizeContentDelta extracts text-embedded think tags into reasoning_content.
+func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
+	if s.inStructuredReasoning {
+		s.inStructuredReasoning = false
+		s.inThinking = false
+	}
+
+	raw := choice.Delta.Content
+	if s.pendingTagClosing {
+		s.pendingTagClosing = false
+		if strings.HasPrefix(raw, ">") {
+			raw = strings.TrimPrefix(raw, ">")
+		}
+	}
+
+	if strings.HasSuffix(raw, "<channel|") || strings.HasSuffix(raw, "<|channel|") || strings.HasSuffix(raw, "<|channel") {
+		s.pendingTagClosing = true
+	}
+
+	content := tagReplacer.Replace(raw)
+	var reasoningDelta string
+	var proseDelta string
+
+	if s.inThinking {
+		if strings.Contains(content, "</think>") {
+			parts := strings.SplitN(content, "</think>", 2)
+			reasoningDelta = parts[0]
+			proseDelta = parts[1]
+			s.inThinking = false
+		} else {
+			reasoningDelta = content
+		}
+	} else if strings.Contains(content, "<think>") {
+		parts := strings.SplitN(content, "<think>", 2)
+		prefix := parts[0]
+		after := parts[1]
+		if strings.Contains(after, "</think>") {
+			subParts := strings.SplitN(after, "</think>", 2)
+			reasoningDelta = subParts[0]
+			proseDelta = prefix + subParts[1]
+			s.inThinking = false
+		} else {
+			reasoningDelta = after
+			proseDelta = prefix
+			s.inThinking = true
+		}
+	} else {
+		proseDelta = content
+	}
+
+	choice.Delta.ReasoningContent = reasoningDelta
+	choice.Delta.Content = proseDelta
+	choice.Delta.Reasoning = ""
+	choice.Delta.Reason = ""
+
+	s.recordReasoning(reasoningDelta)
+	s.recordProse(proseDelta)
+}
+
+// emitChunk serializes and writes a modified SSE chunk into the output buffer.
+func (s *StreamNormalizer) emitChunk(chunk fastStreamChunk) {
+	if newPayload, err := marshalNoEscapeHTML(chunk); err == nil {
+		s.outBuf.WriteString("data: ")
+		s.outBuf.Write(newPayload)
+		s.outBuf.WriteString("\n\n")
+	}
+}
+
+// handleDone finalizes the stream on [DONE] and synthesizes an agent tool call if required.
+func (s *StreamNormalizer) handleDone(doneLine []byte) {
+	s.inThinking = false
+	s.inStructuredReasoning = false
+	s.pendingTagClosing = false
+
+	shieldEnabled := (s.features & uint16(router.FeatureShieldEnabled)) != 0
+	if shieldEnabled && !s.hasNativeTools && s.interactiveTool != "" && s.shieldMgr != nil && s.tailBuffer != nil {
+		if matched, _ := s.shieldMgr.RuleEngine().Evaluate(s.tailBuffer.Bytes()); matched {
+			if synthCall, ok := s.shieldMgr.EvaluateAndSynthesize(s.proseAccumulator.String(), s.interactiveTool); ok && synthCall != nil {
+				s.emitSyntheticToolCall(synthCall)
+			}
+		}
+	}
+
+	s.outBuf.Write(doneLine)
+}
+
+// emitSyntheticToolCall injects synthetic tool_calls and finish_reason SSE chunks.
+func (s *StreamNormalizer) emitSyntheticToolCall(synthCall *shield.RawToolCall) {
+	deltaJSON, _ := json.Marshal(map[string]any{
+		"choices": []map[string]any{
+			{
+				"index": 0,
+				"delta": map[string]any{
+					"tool_calls": []any{
+						map[string]any{
+							"index": 0,
+							"id":    synthCall.ID,
+							"type":  synthCall.Type,
+							"function": map[string]string{
+								"name":      synthCall.Function.Name,
+								"arguments": synthCall.Function.Arguments,
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+	s.outBuf.WriteString("data: ")
+	s.outBuf.Write(deltaJSON)
+	s.outBuf.WriteString("\n\n")
+
+	finishJSON, _ := json.Marshal(map[string]any{
+		"choices": []map[string]any{
+			{
+				"index":         0,
+				"delta":         map[string]any{},
+				"finish_reason": "tool_calls",
+			},
+		},
+	})
+	s.outBuf.WriteString("data: ")
+	s.outBuf.Write(finishJSON)
+	s.outBuf.WriteString("\n\n")
+}
+
+// captureUsage extracts upstream usage metadata from the stream chunk.
+func (s *StreamNormalizer) captureUsage(payload []byte) {
+	var rawChunk struct {
+		Usage *StreamUsage `json:"usage,omitempty"`
+	}
+	if json.Unmarshal(payload, &rawChunk) == nil && rawChunk.Usage != nil &&
+		(rawChunk.Usage.PromptTokens > 0 || rawChunk.Usage.CompletionTokens > 0 || rawChunk.Usage.TotalTokens > 0) {
+		s.capturedUsage = *rawChunk.Usage
+		s.hasUsage = true
+	}
+}
+
+// recordReasoning feeds reasoning tokens into character counting and the cycle breaker.
+func (s *StreamNormalizer) recordReasoning(text string) {
+	if text == "" {
+		return
+	}
+	s.emittedCompletionChars += len(text)
+	if s.cycleBreaker != nil && !s.cycleViolated {
+		if triggered, reason := s.cycleBreaker.ProcessDelta(text, true); triggered {
+			s.cycleViolated = true
+			s.cycleViolationReason = reason
+		}
+	}
+}
+
+// recordProse feeds prose tokens into buffers, character counting, and the cycle breaker.
+func (s *StreamNormalizer) recordProse(text string) {
+	if text == "" {
+		return
+	}
+	s.emittedCompletionChars += len(text)
+	if s.tailBuffer != nil {
+		s.tailBuffer.Append([]byte(text))
+		s.proseAccumulator.WriteString(text)
+	}
+	if s.cycleBreaker != nil && !s.cycleViolated {
+		if triggered, reason := s.cycleBreaker.ProcessDelta(text, false); triggered {
+			s.cycleViolated = true
+			s.cycleViolationReason = reason
+		}
+	}
+}
+
+// extractContentFast delegates to payloadContent to ensure full JSON unescaping without data corruption.
 func extractContentFast(payload []byte) string {
-	marker := []byte(`"content":`)
-	idx := bytes.Index(payload, marker)
-	if idx == -1 {
-		return ""
-	}
-	i := idx + len(marker)
-	for i < len(payload) && (payload[i] == ' ' || payload[i] == '\t') {
-		i++
-	}
-	if i >= len(payload) || payload[i] != '"' {
-		return ""
-	}
-	i++
-	start := i
-	for i < len(payload) {
-		if payload[i] == '\\' {
-			i += 2
-			continue
-		}
-		if payload[i] == '"' {
-			return string(payload[start:i])
-		}
-		i++
-	}
-	return ""
+	return payloadContent(payload)
 }
 
 func payloadContent(payload []byte) string {
@@ -458,7 +517,17 @@ func payloadContent(payload []byte) string {
 	return ""
 }
 
-// Close closes the underlying stream and returns buffers to the pools.
+func marshalNoEscapeHTML(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
+// Close closes the underlying stream and returns pooled buffers.
 func (s *StreamNormalizer) Close() error {
 	if s.closed {
 		return nil

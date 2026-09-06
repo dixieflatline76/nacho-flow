@@ -985,8 +985,11 @@ func TestProxy_LiveSSE_ReasoningStreamNormalization(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "<think>") || !strings.Contains(body, "</think>") {
-		t.Errorf("expected <think> and </think> in live SSE proxy output, got:\n%s", body)
+	if !strings.Contains(body, "\"reasoning_content\":\"Live thinking...\"") {
+		t.Errorf("expected reasoning_content in live SSE proxy output, got:\n%s", body)
+	}
+	if strings.Contains(body, "<think>") || strings.Contains(body, "</think>") {
+		t.Errorf("unexpected think tags leaked into live SSE proxy output, got:\n%s", body)
 	}
 	if !strings.Contains(body, "Live final answer.") {
 		t.Errorf("expected final answer in live SSE proxy output, got:\n%s", body)

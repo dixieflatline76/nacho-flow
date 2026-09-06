@@ -67,11 +67,14 @@ data: [DONE]
 	}
 
 	result := string(out)
-	if !strings.Contains(result, "<think>\\nStep 1: Analyzing issue") && !strings.Contains(result, "<think>\nStep 1: Analyzing issue") {
-		t.Errorf("expected <think> opening tag, got:\n%s", result)
+	if !strings.Contains(result, "\"reasoning_content\":\"Step 1: Analyzing issue\\n\"") {
+		t.Errorf("expected reasoning_content step 1, got:\n%s", result)
 	}
-	if !strings.Contains(result, "</think>") {
-		t.Errorf("expected </think> closing tag, got:\n%s", result)
+	if !strings.Contains(result, "\"reasoning_content\":\"Step 2: Solution found\"") {
+		t.Errorf("expected reasoning_content step 2, got:\n%s", result)
+	}
+	if strings.Contains(result, "<think>") || strings.Contains(result, "</think>") {
+		t.Errorf("did not expect raw <think> tags in content, got:\n%s", result)
 	}
 	if !strings.Contains(result, "Here is the fixed code:") {
 		t.Errorf("expected final answer content, got:\n%s", result)
@@ -99,11 +102,11 @@ data: [DONE]
 	}
 
 	result := string(out)
-	if !strings.Contains(result, "<think>") {
-		t.Errorf("expected <think> tag for OpenRouter reasoning, got:\n%s", result)
+	if !strings.Contains(result, "\"reasoning_content\":\"Thinking via OpenRouter...\"") {
+		t.Errorf("expected reasoning_content for OpenRouter reasoning, got:\n%s", result)
 	}
-	if !strings.Contains(result, "</think>") {
-		t.Errorf("expected </think> tag for OpenRouter reasoning, got:\n%s", result)
+	if strings.Contains(result, "<think>") || strings.Contains(result, "</think>") {
+		t.Errorf("did not expect <think> tags for OpenRouter reasoning, got:\n%s", result)
 	}
 	if !strings.Contains(result, "Done thinking!") {
 		t.Errorf("expected final content, got:\n%s", result)
@@ -129,9 +132,11 @@ data: [DONE]
 	}
 
 	result := string(out)
-	// Must NOT contain double think tags like <think><think>
-	if strings.Contains(result, "<think><think>") || strings.Count(result, "<think>") > 1 {
-		t.Errorf("detected double-wrapping of native <think> tag:\n%s", result)
+	if !strings.Contains(result, "Analyzing local model") {
+		t.Errorf("expected reasoning text extracted, got:\n%s", result)
+	}
+	if strings.Contains(result, "<think>") || strings.Contains(result, "</think>") {
+		t.Errorf("detected unextracted <think> tag in content:\n%s", result)
 	}
 	if !strings.Contains(result, "Final answer") {
 		t.Errorf("expected final answer, got:\n%s", result)
@@ -182,8 +187,11 @@ data: [DONE]
 	}
 
 	result := string(out)
-	if !strings.Contains(result, "<think>") || !strings.Contains(result, "</think>") {
-		t.Errorf("expected think tags closed before tool call, got:\n%s", result)
+	if !strings.Contains(result, "Deciding to invoke grep tool") {
+		t.Errorf("expected reasoning text preserved, got:\n%s", result)
+	}
+	if strings.Contains(result, "<think>") || strings.Contains(result, "</think>") {
+		t.Errorf("unexpected think tags in content, got:\n%s", result)
 	}
 	if !strings.Contains(result, "call_123") || !strings.Contains(result, "grep") {
 		t.Errorf("expected tool_calls preserved intact, got:\n%s", result)
@@ -208,12 +216,11 @@ data: [DONE]
 	}
 
 	result := string(out)
-	// Internal literal </think> inside reasoning should be escaped to &lt;/think&gt;
-	if strings.Contains(result, "Explain XML: </think>") {
-		t.Errorf("literal </think> inside reasoning should be sanitized, got:\n%s", result)
+	if !strings.Contains(result, "Explain XML: </think> is a tag") {
+		t.Errorf("literal XML inside reasoning should be preserved in reasoning_content, got:\n%s", result)
 	}
-	if !strings.Contains(result, "&lt;/think&gt;") {
-		t.Errorf("expected &lt;/think&gt; sanitized text, got:\n%s", result)
+	if strings.Contains(result, "<think>") {
+		t.Errorf("unexpected <think> tag in result, got:\n%s", result)
 	}
 }
 
@@ -238,8 +245,11 @@ data: [DONE]
 	}
 
 	result := string(out)
-	if !strings.Contains(result, "<think>") || !strings.Contains(result, "</think>") {
-		t.Errorf("fragmented read lost think tags:\n%s", result)
+	if !strings.Contains(result, "Thinking fragment by fragment...") {
+		t.Errorf("fragmented read lost reasoning text:\n%s", result)
+	}
+	if strings.Contains(result, "<think>") || strings.Contains(result, "</think>") {
+		t.Errorf("fragmented read leaked think tags into content:\n%s", result)
 	}
 	if !strings.Contains(result, "Final fragmented answer.") {
 		t.Errorf("fragmented read corrupted content:\n%s", result)
@@ -260,11 +270,11 @@ func TestStreamNormalizer_AbruptEOF_TerminalTagClosing(t *testing.T) {
 	}
 
 	result := string(out)
-	if !strings.Contains(result, "<think>") {
-		t.Errorf("expected <think> tag, got:\n%s", result)
+	if !strings.Contains(result, "Thinking mid-stream...") {
+		t.Errorf("expected reasoning text on abrupt EOF, got:\n%s", result)
 	}
-	if !strings.Contains(result, "</think>") {
-		t.Errorf("expected </think> closed on abrupt EOF, got:\n%s", result)
+	if strings.Contains(result, "<think>") || strings.Contains(result, "</think>") {
+		t.Errorf("unexpected think tags on abrupt EOF, got:\n%s", result)
 	}
 }
 
@@ -324,8 +334,11 @@ data: [DONE]
 				return
 			}
 			res := string(out)
-			if !strings.Contains(res, "<think>") || !strings.Contains(res, fmt.Sprintf("Answer #%d", id)) {
+			if !strings.Contains(res, fmt.Sprintf("Thinking #%d", id)) || !strings.Contains(res, fmt.Sprintf("Answer #%d", id)) {
 				t.Errorf("stream #%d unexpected result:\n%s", id, res)
+			}
+			if strings.Contains(res, "<think>") {
+				t.Errorf("stream #%d leaked <think> tag into output:\n%s", id, res)
 			}
 		}(i)
 	}
@@ -431,8 +444,11 @@ data: {"id":"gen-reason","choices":[{"index":0,"delta":{"content":"Final answer"
 	reasonNorm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawReasonSSE)))
 	out, _ := io.ReadAll(reasonNorm)
 	_ = reasonNorm.Close()
-	if !strings.Contains(string(out), "<think>") {
-		t.Errorf("expected <think> tag for reason field, got:\n%s", string(out))
+	if !strings.Contains(string(out), "Thinking step...") {
+		t.Errorf("expected reasoning text for reason field, got:\n%s", string(out))
+	}
+	if strings.Contains(string(out), "<think>") {
+		t.Errorf("unexpected <think> tag for reason field, got:\n%s", string(out))
 	}
 
 	// 5. marshalNoEscapeHTML error branch
@@ -484,14 +500,14 @@ data: [DONE]
 	}
 
 	result := string(out)
-	if strings.Contains(result, "<|im_start|>think") {
-		t.Errorf("expected <|im_start|>think to be replaced with <think>, got:\n%s", result)
+	if strings.Contains(result, "<|im_start|>think") || strings.Contains(result, "<|im_end|>") {
+		t.Errorf("expected special tags stripped, got:\n%s", result)
 	}
-	if !strings.Contains(result, "<think>") {
-		t.Errorf("expected <think> tag in normalized output, got:\n%s", result)
+	if strings.Contains(result, "<think>") || strings.Contains(result, "</think>") {
+		t.Errorf("expected think tags converted to reasoning_content, not kept in content, got:\n%s", result)
 	}
-	if !strings.Contains(result, "</think>") {
-		t.Errorf("expected </think> tag in normalized output, got:\n%s", result)
+	if !strings.Contains(result, "Analyzing problem with Qwen") {
+		t.Errorf("expected reasoning text preserved in reasoning_content, got:\n%s", result)
 	}
 	if !strings.Contains(result, "Here is the answer") {
 		t.Errorf("expected final answer text, got:\n%s", result)
@@ -519,8 +535,11 @@ data: [DONE]
 	if strings.Contains(result, "<thinking>") || strings.Contains(result, "</thinking>") {
 		t.Errorf("expected <thinking> / </thinking> tags to be normalized, got:\n%s", result)
 	}
-	if !strings.Contains(result, "<think>") || !strings.Contains(result, "</think>") {
-		t.Errorf("expected standard <think>...</think> tags, got:\n%s", result)
+	if strings.Contains(result, "<think>") || strings.Contains(result, "</think>") {
+		t.Errorf("expected standard think tags converted to reasoning_content, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Claude-style reasoning step") {
+		t.Errorf("expected reasoning text preserved, got:\n%s", result)
 	}
 	if !strings.Contains(result, "Final response text") {
 		t.Errorf("expected final response text, got:\n%s", result)
@@ -744,7 +763,12 @@ func TestStreamNormalizer_ExtractContentFast(t *testing.T) {
 		{
 			name:    "content with escaped quotes and backslashes",
 			payload: `{"choices":[{"delta":{"content":"Line 1\\n\"quoted\" text"}}]}`,
-			want:    `Line 1\\n\"quoted\" text`,
+			want:    "Line 1\\n\"quoted\" text",
+		},
+		{
+			name:    "content with escaped newline",
+			payload: `{"choices":[{"delta":{"content":"Line 1\nLine 2"}}]}`,
+			want:    "Line 1\nLine 2",
 		},
 		{
 			name:    "empty content",
@@ -777,3 +801,70 @@ func TestStreamNormalizer_ExtractContentFast(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamNormalizer_Ollama_UnicodeEscaped_ChannelTag(t *testing.T) {
+	// Ollama encodes <channel|> using standard Go json.Marshal HTML-escaping: \u003cchannel|\u003e
+	rawSSE := "data: {\"choices\":[{\"delta\":{\"content\":\"I will combine the models and solvers appropriately.\\n\\u003cchannel|\\u003e\"}}]}\n\ndata: [DONE]\n\n"
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if strings.Contains(result, "channel|") || strings.Contains(result, "<channel|>") || strings.Contains(result, "\\u003cchannel|") {
+		t.Fatalf("expected channel tag to be stripped, got:\n%s", result)
+	}
+	if !strings.Contains(result, "I will combine the models and solvers appropriately.") {
+		t.Fatalf("expected prose content to be preserved, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_Split_ChannelTag_Across_Chunks(t *testing.T) {
+	// Delimiter split across two SSE chunks: <channel| in chunk 1, > in chunk 2
+	rawSSE := "data: {\"choices\":[{\"delta\":{\"content\":\"Starting solver...\\n<channel|\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\">\"}}]}\n\ndata: [DONE]\n\n"
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if strings.Contains(result, "<channel|>") || strings.Contains(result, "<channel|") || strings.Contains(result, ">") {
+		t.Fatalf("expected split channel tag to be completely eliminated without leaking >, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Starting solver...") {
+		t.Fatalf("expected prose content to be preserved, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_RawChannelTag_PrecedingToolCall(t *testing.T) {
+	// Exact scenario from user screenshot: prose ending in <channel|> right before tool invocation
+	rawSSE := "data: {\"choices\":[{\"delta\":{\"content\":\"Let's start with BacktrackingSolver. I will combine the models and solvers appropriately.\\n<channel|>\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"write_to_file\",\"arguments\":\"{\\\"file\\\":\\\"models.go\\\"}\"}}]}}]}\n\ndata: [DONE]\n\n"
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if strings.Contains(result, "<channel|>") || strings.Contains(result, "channel|") {
+		t.Fatalf("channel tag leaked into SSE output:\n%s", result)
+	}
+	if !strings.Contains(result, "Let's start with BacktrackingSolver.") {
+		t.Fatalf("prose content missing from output:\n%s", result)
+	}
+	if !strings.Contains(result, "write_to_file") {
+		t.Fatalf("tool call missing from output:\n%s", result)
+	}
+}
+

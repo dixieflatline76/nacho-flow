@@ -1014,12 +1014,17 @@ func (s *Server) dispatchTier(
 					)
 					reqCtx.CycleBreakerTriggered = true
 					reqCtx.CycleBreakerReason = reason
+					cooldown, floor := s.resolveCycleKillParams()
 					if s.sessionTracker != nil {
-						cooldown, floor := s.resolveCycleKillParams()
 						s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
 					}
 					_ = normalizer.Close()
+
+					noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
+					escapedNotice, _ := json.Marshal(noticeText)
+					noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
 					finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+					_, _ = w.Write([]byte(noticeChunk))
 					_, _ = w.Write([]byte(finishChunk))
 					if flusher, ok := w.(http.Flusher); ok {
 						flusher.Flush()
@@ -1471,6 +1476,21 @@ func (s *Server) resolveCycleKillParams() (time.Duration, int) {
 		floor = 3
 	}
 	return cooldown, floor
+}
+
+func formatCycleKillReason(reason string) string {
+	switch reason {
+	case "ngram_repetition_loop_detected":
+		return "repetitive prose loop detected"
+	case "thinking_repetition_loop_detected":
+		return "repetitive reasoning loop detected"
+	case "prose_budget_exceeded_with_repetition":
+		return "prose token budget exceeded with repetition"
+	case "thinking_budget_exceeded_with_repetition":
+		return "thinking token budget exceeded with repetition"
+	default:
+		return strings.ReplaceAll(reason, "_", " ")
+	}
 }
 
 func injectCorrectionPrompt(body []byte, prompt string) []byte {

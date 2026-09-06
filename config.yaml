@@ -100,6 +100,8 @@ cycle_killer:
     - terminal
     - bash
     - exec
+    - editor
+    - run_commands
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)

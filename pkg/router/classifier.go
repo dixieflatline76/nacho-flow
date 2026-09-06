@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -103,6 +104,15 @@ func (c *RequestClassifier) GetKickstartWriteTools() map[string]bool {
 
 // GetEstimator returns the active TokenEstimator instance for dynamic calibration.
 func (c *RequestClassifier) GetEstimator() *TokenEstimator {
+	c.mu.RLock()
+	if c.estimator != nil {
+		defer c.mu.RUnlock()
+		return c.estimator
+	}
+	c.mu.RUnlock()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.estimator == nil {
 		c.estimator = NewTokenEstimator()
 	}
@@ -115,10 +125,11 @@ type classifyPayload struct {
 }
 
 type classifyMessage struct {
-	Role       string             `json:"role"`
-	Content    classifyContent    `json:"content"`
-	ToolCalls  []classifyToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string             `json:"tool_call_id,omitempty"`
+	Role         string              `json:"role"`
+	Content      classifyContent     `json:"content"`
+	ToolCalls    []classifyToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID   string              `json:"tool_call_id,omitempty"`
+	FunctionCall *classifyToolCallFn `json:"function_call,omitempty"`
 }
 
 func (m *classifyMessage) UnmarshalJSON(data []byte) error {
@@ -127,6 +138,28 @@ func (m *classifyMessage) UnmarshalJSON(data []byte) error {
 	}
 	type rawMsg classifyMessage
 	return json.Unmarshal(data, (*rawMsg)(m))
+}
+
+func (m *classifyMessage) Text() string {
+	if m.Content.Text != "" {
+		return m.Content.Text
+	}
+	if len(m.Content.Parts) == 0 {
+		return ""
+	}
+	if len(m.Content.Parts) == 1 {
+		return m.Content.Parts[0].Text
+	}
+	var sb strings.Builder
+	for _, p := range m.Content.Parts {
+		if p.Text != "" {
+			if sb.Len() > 0 {
+				sb.WriteString(" ")
+			}
+			sb.WriteString(p.Text)
+		}
+	}
+	return sb.String()
 }
 
 type classifyContent struct {
@@ -148,12 +181,13 @@ func (c *classifyContent) UnmarshalJSON(data []byte) error {
 }
 
 type classifyContentPart struct {
-	Type      string `json:"type"`
-	Text      string `json:"text,omitempty"`
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	ToolUseID string `json:"tool_use_id,omitempty"`
-	IsError   bool   `json:"is_error,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	ToolUseID string          `json:"tool_use_id,omitempty"`
+	IsError   bool            `json:"is_error,omitempty"`
+	Content   json.RawMessage `json:"content,omitempty"`
 }
 
 func (p *classifyContentPart) UnmarshalJSON(data []byte) error {
@@ -161,7 +195,49 @@ func (p *classifyContentPart) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	type rawPart classifyContentPart
-	return json.Unmarshal(data, (*rawPart)(p))
+	if err := json.Unmarshal(data, (*rawPart)(p)); err != nil {
+		return err
+	}
+	if len(p.Content) > 0 {
+		trimmed := bytes.TrimSpace(p.Content)
+		if len(trimmed) > 0 {
+			if trimmed[0] == '"' {
+				var s string
+				if err := json.Unmarshal(trimmed, &s); err == nil {
+					if p.Text == "" {
+						p.Text = s
+					} else {
+						p.Text = p.Text + " " + s
+					}
+				}
+			} else if trimmed[0] == '[' {
+				var blocks []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}
+				if err := json.Unmarshal(trimmed, &blocks); err == nil {
+					var sb strings.Builder
+					for _, b := range blocks {
+						if b.Text != "" {
+							if sb.Len() > 0 {
+								sb.WriteString(" ")
+							}
+							sb.WriteString(b.Text)
+						}
+					}
+					if sb.Len() > 0 {
+						if p.Text == "" {
+							p.Text = sb.String()
+						} else {
+							p.Text = p.Text + " " + sb.String()
+						}
+					}
+				}
+			}
+		}
+		p.Content = nil
+	}
+	return nil
 }
 
 type classifyToolCall struct {
@@ -328,6 +404,11 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 					hasAnyWriteCall = true
 				}
 			}
+			if msg.FunctionCall != nil && msg.FunctionCall.Name != "" {
+				if writeTools != nil && writeTools[strings.ToLower(strings.TrimSpace(msg.FunctionCall.Name))] {
+					hasAnyWriteCall = true
+				}
+			}
 			for _, p := range msg.Content.Parts {
 				if p.Type == "tool_use" {
 					if writeTools != nil && writeTools[strings.ToLower(strings.TrimSpace(p.Name))] {
@@ -338,10 +419,11 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 					}
 				}
 			}
-			if msg.Content.Text != "" && len(writeTools) > 0 {
-				lowerText := strings.ToLower(msg.Content.Text)
+			assistantText := msg.Text()
+			if assistantText != "" && len(writeTools) > 0 {
+				lowerText := strings.ToLower(assistantText)
 				for toolName := range writeTools {
-					if strings.Contains(lowerText, "<"+toolName+">") {
+					if containsXMLToolTag(lowerText, toolName) {
 						hasAnyWriteCall = true
 						break
 					}
@@ -354,17 +436,7 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 	for i := start; i < len(messages); i++ {
 		msg := messages[i]
 		if msg.Role == "tool" {
-			text := msg.Content.Text
-			if text == "" && len(msg.Content.Parts) > 0 {
-				var sb strings.Builder
-				for _, p := range msg.Content.Parts {
-					if p.Text != "" {
-						sb.WriteString(p.Text)
-						sb.WriteString(" ")
-					}
-				}
-				text = sb.String()
-			}
+			text := msg.Text()
 			if !isErrorText(text, signatures) {
 				hasToolProgress = true
 				if msg.ToolCallID != "" && writeCallIDsContains(writeCallIDs, msg.ToolCallID) {
@@ -404,36 +476,73 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 				}
 			}
 		}
+		// Cline-style: user message following an assistant with XML tool calls.
+		// In Cline's protocol, every user message after a tool call IS the tool result.
+		if msg.Role == "user" && hasAnyWriteCall {
+			text := msg.Text()
+			if !isErrorText(text, signatures) {
+				hasToolProgress = true
+				hasWriteProgress = true
+			}
+			p, f := detectTestSignals(text)
+			if p {
+				hasTestPass = true
+			}
+			if f {
+				hasTestFail = true
+			}
+		}
 	}
 
-	// Pass 3: trailing consecutive error turns
+	// Pass 3: trailing consecutive error turns (from the end, backwards)
 	for i := len(messages) - 1; i >= start; i-- {
 		msg := messages[i]
-		if msg.Role == "tool" {
-			text := msg.Content.Text
-			if text == "" && len(msg.Content.Parts) > 0 {
-				var sb strings.Builder
-				for _, p := range msg.Content.Parts {
-					if p.Text != "" {
-						sb.WriteString(p.Text)
-						sb.WriteString(" ")
-					}
-				}
-				text = sb.String()
-			}
-			if isErrorText(text, signatures) {
-				historyErrors++
-			} else {
-				break
-			}
-		} else if msg.Role == "assistant" {
+		if msg.Role != "user" && msg.Role != "tool" {
+			// Skip assistant or other turns in backwards scan
 			continue
+		}
+
+		text := msg.Text()
+		isErr := isErrorText(text, signatures)
+		if !isErr {
+			for _, part := range msg.Content.Parts {
+				if part.Type == "tool_result" && part.IsError {
+					isErr = true
+					break
+				}
+			}
+		}
+
+		if isErr {
+			historyErrors++
 		} else {
+			// Break consecutive error chain on a non-error message
 			break
 		}
 	}
 
 	return historyErrors, hasToolProgress, hasWriteProgress, hasTestPass, hasTestFail
+}
+
+// containsXMLToolTag checks whether text contains an XML tool tag (e.g. <write_to_file> or <write_to_file )
+func containsXMLToolTag(text, toolName string) bool {
+	prefix := "<" + toolName
+	idx := 0
+	for {
+		pos := strings.Index(text[idx:], prefix)
+		if pos == -1 {
+			return false
+		}
+		matchStart := idx + pos
+		after := matchStart + len(prefix)
+		if after < len(text) {
+			b := text[after]
+			if b == '>' || b == ' ' || b == '\n' || b == '\r' || b == '\t' || b == '/' {
+				return true
+			}
+		}
+		idx = matchStart + 1
+	}
 }
 
 var (
@@ -540,231 +649,6 @@ func isErrorText(text string, signatures []string) bool {
 		}
 	}
 	return false
-}
-
-// scanTrailingMessages inspects the last N messages in the conversation history
-// to detect: (a) consecutive trailing error turns, (b) successful tool progress,
-// (c) write-specific tool progress (e.g. file writes, terminal executions), and
-// (d) test/debug progress (running tests, compiler errors, reading test files).
-func (c *RequestClassifier) scanTrailingMessages(messages []interface{}) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasTestPass bool, hasTestFail bool) {
-	signatures := c.GetErrorSignatures()
-	writeTools := c.GetKickstartWriteTools()
-
-	// Scan backwards from the end, up to 8 messages to capture assistant calls + tool responses
-	start := len(messages) - 8
-	if start < 0 {
-		start = 0
-	}
-
-	// First pass: collect call IDs for write/execute tool invocations in assistant turns.
-	// Hybrid stack/heap: zero allocs for ≤8 IDs (common case), transparent heap spillover on overflow.
-	var stackIDs [8]string
-	writeCallIDs := stackIDs[:0]
-	hasAnyWriteCall := false
-
-	for i := start; i < len(messages); i++ {
-		msgMap, ok := messages[i].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		role, _ := msgMap["role"].(string)
-
-		if role == "assistant" {
-			// Check OpenAI-style tool_calls
-			if toolCalls, ok := msgMap["tool_calls"].([]interface{}); ok {
-				for _, tc := range toolCalls {
-					tcMap, ok := tc.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					id, _ := tcMap["id"].(string)
-					fnName := ""
-					if fnMap, ok := tcMap["function"].(map[string]interface{}); ok {
-						fnName, _ = fnMap["name"].(string)
-					}
-					if fnName == "" {
-						fnName, _ = tcMap["name"].(string)
-					}
-					if writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
-						if id != "" {
-							writeCallIDs = append(writeCallIDs, id)
-						}
-						hasAnyWriteCall = true
-					}
-				}
-			}
-			// Check legacy OpenAI function_call
-			if fnCall, ok := msgMap["function_call"].(map[string]interface{}); ok {
-				fnName, _ := fnCall["name"].(string)
-				if writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
-					hasAnyWriteCall = true
-				}
-			}
-			// Check Anthropic-style tool_use content blocks
-			if parts, ok := msgMap["content"].([]interface{}); ok {
-				for _, part := range parts {
-					partMap, ok := part.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					partType, _ := partMap["type"].(string)
-					if partType == "tool_use" {
-						id, _ := partMap["id"].(string)
-						name, _ := partMap["name"].(string)
-						if writeTools[strings.ToLower(strings.TrimSpace(name))] {
-							if id != "" {
-								writeCallIDs = append(writeCallIDs, id)
-							}
-							hasAnyWriteCall = true
-						}
-					}
-				}
-			}
-			// Check Cline-style XML tool calls embedded in text content
-			// Cline models emit <write_to_file>, <replace_in_file>, etc. as XML tags in prose
-			if textContent, ok := msgMap["content"].(string); ok && len(writeTools) > 0 {
-				lowerText := strings.ToLower(textContent)
-				for toolName := range writeTools {
-					if strings.Contains(lowerText, "<"+toolName+">") {
-						hasAnyWriteCall = true
-						break
-					}
-				}
-			}
-		}
-	}
-
-	// Second pass: detect tool progress and write-specific progress on tool results
-	for i := start; i < len(messages); i++ {
-		msgMap, ok := messages[i].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		role, _ := msgMap["role"].(string)
-
-		// Check OpenAI-style role: tool
-		if role == "tool" {
-			text := extractAllTextFromContent(msgMap["content"])
-			if !isErrorText(text, signatures) {
-				hasToolProgress = true
-				toolCallID, _ := msgMap["tool_call_id"].(string)
-				if toolCallID != "" && writeCallIDsContains(writeCallIDs, toolCallID) {
-					hasWriteProgress = true
-				} else if toolCallID == "" && hasAnyWriteCall {
-					hasWriteProgress = true
-				}
-			}
-			// Detect test signals independently (success OR error)
-			p, f := detectTestSignals(text)
-			if p {
-				hasTestPass = true
-			}
-			if f {
-				hasTestFail = true
-			}
-		}
-
-		// Check Anthropic-style multi-part content with tool_result type
-		if parts, ok := msgMap["content"].([]interface{}); ok {
-			for _, part := range parts {
-				partMap, ok := part.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				partType, _ := partMap["type"].(string)
-				if partType == "tool_result" {
-					text := extractAllTextFromContent(partMap["content"])
-					isError, _ := partMap["is_error"].(bool)
-					if !isError {
-						if !isErrorText(text, signatures) {
-							hasToolProgress = true
-							toolUseID, _ := partMap["tool_use_id"].(string)
-							if toolUseID != "" && writeCallIDsContains(writeCallIDs, toolUseID) {
-								hasWriteProgress = true
-							} else if toolUseID == "" && hasAnyWriteCall {
-								hasWriteProgress = true
-							}
-						}
-					}
-					p, f := detectTestSignals(text)
-					if p {
-						hasTestPass = true
-					}
-					if f {
-						hasTestFail = true
-					}
-				}
-			}
-		}
-
-		// Check Cline-style: user message following an assistant with XML tool calls.
-		// In Cline's protocol, every user message after a tool call IS the tool result.
-		if role == "user" && hasAnyWriteCall {
-			text := extractAllTextFromContent(msgMap["content"])
-			if !isErrorText(text, signatures) {
-				hasToolProgress = true
-				hasWriteProgress = true
-			}
-			p, f := detectTestSignals(text)
-			if p {
-				hasTestPass = true
-			}
-			if f {
-				hasTestFail = true
-			}
-		}
-	}
-
-	// Third pass: count consecutive trailing errors (from the end, backwards)
-	for i := len(messages) - 1; i >= start; i-- {
-		msgMap, ok := messages[i].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		role, _ := msgMap["role"].(string)
-
-		// User and tool role messages carry error feedback from agent clients
-		if role != "user" && role != "tool" {
-			continue
-		}
-
-		text := extractAllTextFromContent(msgMap["content"])
-		if isErrorText(text, signatures) {
-			historyErrors++
-		} else {
-			// Break consecutive error chain on a non-error message
-			break
-		}
-	}
-
-	return historyErrors, hasToolProgress, hasWriteProgress, hasTestPass, hasTestFail
-}
-
-// extractAllTextFromContent extracts all text from a content field,
-// handling both plain string and multi-part array formats.
-func extractAllTextFromContent(content interface{}) string {
-	if s, ok := content.(string); ok {
-		return s
-	}
-	if parts, ok := content.([]interface{}); ok {
-		var sb strings.Builder
-		for _, part := range parts {
-			partMap, ok := part.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if text, ok := partMap["text"].(string); ok {
-				sb.WriteString(text)
-				sb.WriteString(" ")
-			}
-			if contentStr, ok := partMap["content"].(string); ok {
-				sb.WriteString(contentStr)
-				sb.WriteString(" ")
-			}
-		}
-		return sb.String()
-	}
-	return ""
 }
 
 func extractKeywords(text string) []string {
