@@ -70,34 +70,37 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 
 ## ✨ Key Features
 
-* **⚡ High-Throughput Core**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->28,000+ req/s (peak 28,966 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU state and pooled HTTP transports.
-* **🔥 "Heat Seeker" Live Model Deals & Curated Gallery**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
-* **🏛️ 3-Tier Curated Intelligence & OTA Sync**: Pre-packages verified SWE-bench & tool reliability scores (`//go:embed models.json`) with automatic Over-The-Air GitHub semver updates.
-* **🧩 Real-Time IDE Control & Live Telemetry**: Powers the official VS Code Companion Extension with zero-polling SSE live metrics, real-time cost savings graphs, active route inspection, and seamless daemon lifecycle controls.
-* **🧠 Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
-* **🚦 Local Provider Circuit Breaker**: Detects consecutive local connection or 5xx failures and fast-fails directly to cloud fallback tiers with sub-millisecond in-memory dispatch.
-* **🔄 Retry-Based Auto-Escalation**: Tracks session turn retries with a sliding 5-minute TTL, allowing routing rules to automatically escalate to cloud models when local attempts fail (`Retries < 2`).
-* **📏 Code-Aware Adaptive Token Estimator**: Dynamically corrects token calculations for dense code diffs, markdown, and structured JSON so agent harnesses never suffer premature tier escalations or unexpected context overflows.
-* **🛡️ Response Quality Validation & Delayed Headers**: Peeks initial SSE stream chunks before committing `HTTP 200` headers to enable transparent cloud failover if a local model returns an empty payload or unexpected termination.
-* **📐 Model Context Window Guard (`max_context`)**: Evaluates model physical context limits with O(1) pre-guards to prevent 400 Context Length Exceeded errors.
-* **🛡️ Agentic Tool Fallback Shield**: Sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
-* **🎸 Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream in real time (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
-* **⚡ Kickstart (Stall Resuscitation Engine)**: Monitors consecutive non-write turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`). Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), jolting agents out of passive read/plan procrastination when implementation stalls.
-* **🧚 Fairy Dust (Programmable Milestone Checkpoints)**: A cadenced intervention engine. You control the trigger interval (every $N$ writes), the model, the audit prompt, and the spend cap—deploying frontier reasoning models precisely when and where quality verification matters.
-* **💰 Prompt Cache-Aware Cost Engine**: Automatically ingests upstream provider prompt caching discounts (typically ~80% off prompt tokens from OpenRouter/DeepSeek/Anthropic) using a 3-tier priority oracle for dollar-accurate billing and ROI tracking.
-* **🛠️ Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Llama Python `<|python_tag|>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown code fences, and Ollama/Qwen Bare JSON) into standard OpenAI `tool_calls` JSON structures via a modular Strategy Pipeline, with native Cline XML tool detection (`<write_to_file>`, `<replace_in_file>`).
-* **🔒 Inbound Gateway Client Authentication**: Secures LAN and remote endpoints with optional Bearer token authentication while preserving a public `/health` endpoint.
-* **🌶️ HotSauce In-Chat Directives**: Steer routing tiers and session guardrails on-the-fly directly from your editor chat using `@nacho:` tags. Supports session toggles (`@nacho:kickstart-off/on`, `@nacho:cyclekiller-off/on`, `@nacho:shield-off/on`, `@nacho:raw-on/off`, `@nacho:fairydust-off/on`), live switch inspection (`@nacho:toggles`), session reset (`@nacho:reset`), and single-turn routing overrides (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`) with sub-microsecond zero-alloc bailout, $0.00 cost, and zero prompt leakage.
-* **🛡️ Cost-Safe Default Shield & Unrouted Tiers (`when: "false"`)**: Eliminates runaway frontier billing by placing Claude Sonnet 5 at the `default_tier` safety net while isolating expensive models (Claude Opus 5) behind `when: "false"` for on-demand Fairy Dusting and explicit `@nacho:model` use only.
-* **🎯 Dynamic Expression Tiers (`expr-lang/expr`)**: Evaluates custom tier rules in `config.yaml` based on token estimates, tool calls, images, retries, and prompt keywords.
-* **🖼️ Historical Image Sanitization**: Automatically strips base64 `image_url` payloads from older turns when routing to text-only models.
-* **🏷️ Dynamic Version Reporting**: Exposes build version across `/health`, `/v1/health`, and CLI (`nacho-flow version`, `-v`).
-* **💾 Persistent Telemetry Store**: Saves cumulative token counts and estimated cost metrics to disk (`~/.config/nacho-flow/stats.json`).
+### 🛡️ 1. Active Agent Guardrails & Loop Defense
+* **Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream in real time (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
+* **Kickstart (Stall Resuscitation Engine)**: Detects consecutive non-write turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`). Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), jolting agents out of passive read/plan procrastination when implementation stalls.
+* **Agentic Tool Fallback Shield**: Sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
+* **Smarter Test-Loop Breaker**: Detects when an agent is repeatedly running failing tests without editing code, requiring concrete file write modifications to break idle accumulation.
+* **Fairy Dust (Programmable Milestone Checkpoints)**: A cadenced intervention engine. Deploy frontier reasoning models (e.g. Claude Opus) precisely every $N$ writes for quality verification without continuous frontier spend.
+
+### ⚡ 2. High-Throughput Core & Streaming Normalization
+* **Zero-Overhead Core**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->28,000+ req/s (peak 28,966 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU state, stack-allocated buffers, and pooled HTTP transports.
+* **Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON.
+* **Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
+* **Streaming Delimiter Defense**: Prevents `<channel|>` and unicode-escaped delimiter leakage across streaming SSE chunk boundaries.
+* **Response Quality Validation & Delayed Headers**: Peeks initial SSE stream chunks before committing `HTTP 200` headers to enable transparent cloud failover if a local model returns an empty payload or unexpected termination.
+
+### 🎯 3. Dynamic Model Routing & Cost Engine
+* **Dynamic Expression Tiers (`expr-lang/expr`)**: Evaluates custom tier rules in `config.yaml` based on token estimates, tool calls, images, retries, and prompt keywords.
+* **Automatic Multimodal Vision Routing**: Inspects incoming payloads for images or screenshots and deterministically routes them to vision-capable model tiers.
+* **Cost-Safe Default Shield & Unrouted Tiers**: Eliminates runaway frontier billing by placing Claude Sonnet at the safety net while isolating expensive models (Claude Opus) behind `when: "false"` for on-demand checkpoints only.
+* **Prompt Cache-Aware Cost Engine**: Automatically ingests upstream provider prompt caching discounts (~80% off prompt tokens from OpenRouter/DeepSeek/Anthropic) using a 3-tier priority oracle for dollar-accurate billing and ROI tracking.
+* **"Heat Seeker" Live Model Deals**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
+* **Local Circuit Breakers & Retries**: Tracks consecutive connection/5xx failures and auto-escalates to cloud fallback tiers with sub-millisecond in-memory dispatch.
+
+### 🕹️ 4. Developer Control Plane & IDE Integration
+* **HotSauce In-Chat Directives (`@nacho:...`)**: Steer routing tiers and session guardrails on-the-fly directly from your editor chat (`@nacho:local`, `@nacho:cloud`, `@nacho:reasoning`, `@nacho:kickstart-off`, `@nacho:reset`).
+* **Official VS Code Companion Extension**: Powers zero-polling SSE background telemetry, live cost savings graphs, active route inspection, and daemon lifecycle controls.
+* **Safe Log Rotation & Cold Maintenance**: Rotates large `traffic.jsonl` and `router.log` files to timestamped `.bak` archives and resets stats directly from the VS Code sidebar without file locking issues.
+* **Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 <!-- COVERAGE:SUMMARY_START -->
 * **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (96.3% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
-* **🖥️ Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
-* **📦 Zero Runtime Dependencies**: Single static binary with zero CGO, Node, or Python runtime requirements (`CGO_ENABLED=0`).
+* **Zero Runtime Dependencies**: Single static binary with zero CGO, Node, or Python runtime requirements (`CGO_ENABLED=0`).
 
 ---
 
