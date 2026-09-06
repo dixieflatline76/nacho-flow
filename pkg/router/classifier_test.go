@@ -1,9 +1,12 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestEstimateTokensEmptyAndNull(t *testing.T) {
@@ -259,30 +262,38 @@ func TestClassifier_InteractiveToolExtraction(t *testing.T) {
 	}
 }
 
-func TestClassifier_ExtractAllTextFromContent_Types(t *testing.T) {
-	// 1. Plain string
-	if s := extractAllTextFromContent("hello world"); s != "hello world" {
+func TestClassifier_MessageTextExtraction_Types(t *testing.T) {
+	// 1. Plain string content
+	m1 := classifyMessage{
+		Role:    "user",
+		Content: classifyContent{Text: "hello world"},
+	}
+	if s := m1.Text(); s != "hello world" {
 		t.Errorf("expected 'hello world', got %q", s)
 	}
 
-	// 2. Multi-part array with text and content keys
-	parts := []interface{}{
-		map[string]interface{}{"text": "first part"},
-		map[string]interface{}{"content": "second part"},
-		"not-a-map",
-		map[string]interface{}{"other_key": 123},
+	// 2. Multi-part array with text parts and tool_result content
+	partJSON := []byte(`{"type": "tool_result", "content": [{"type": "text", "text": "result part"}]}`)
+	var part classifyContentPart
+	if err := json.Unmarshal(partJSON, &part); err != nil {
+		t.Fatalf("failed to unmarshal content part: %v", err)
 	}
-	extracted := extractAllTextFromContent(parts)
-	if !strings.Contains(extracted, "first part") || !strings.Contains(extracted, "second part") {
-		t.Errorf("expected multi-part extraction, got %q", extracted)
+	if part.Text != "result part" {
+		t.Errorf("expected 'result part', got %q", part.Text)
 	}
 
-	// 3. Unsupported types
-	if s := extractAllTextFromContent(12345); s != "" {
-		t.Errorf("expected empty string for int, got %q", s)
+	m2 := classifyMessage{
+		Role: "user",
+		Content: classifyContent{
+			Parts: []classifyContentPart{
+				{Type: "text", Text: "first part"},
+				part,
+			},
+		},
 	}
-	if s := extractAllTextFromContent(nil); s != "" {
-		t.Errorf("expected empty string for nil, got %q", s)
+	extracted := m2.Text()
+	if !strings.Contains(extracted, "first part") || !strings.Contains(extracted, "result part") {
+		t.Errorf("expected multi-part extraction, got %q", extracted)
 	}
 }
 
@@ -521,6 +532,190 @@ func TestClassify_HasWriteCapability(t *testing.T) {
 	}
 }
 
+// TestClassifier_Phase1B_OverflowParallelWriteCalls tests that more than 8 parallel tool calls
+// do not get silently dropped and hasWriteProgress correctly evaluates to true.
+func TestClassifier_Phase1B_OverflowParallelWriteCalls(t *testing.T) {
+	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c.SetKickstartWriteTools([]string{"write_to_file", "execute_command"})
+
+	// Assistant issues 12 parallel write calls (call_1 to call_12)
+	assistantCalls := []map[string]interface{}{}
+	for i := 1; i <= 12; i++ {
+		assistantCalls = append(assistantCalls, map[string]interface{}{
+			"id":   fmt.Sprintf("call_%d", i),
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "write_to_file",
+			},
+		})
+	}
+
+	// Tool responses only respond to call_9 through call_12 (beyond the first 8)
+	messages := []map[string]interface{}{
+		{
+			"role":       "assistant",
+			"tool_calls": assistantCalls,
+		},
+		{
+			"role":         "tool",
+			"tool_call_id": "call_11",
+			"content":      "File successfully written",
+		},
+	}
+
+	payload := map[string]interface{}{
+		"messages": messages,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, err := c.Classify(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !ctx.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true for call_11 response even when >8 calls were issued, got false")
+	}
+	if !ctx.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true, got false")
+	}
+}
+
+// TestClassifier_Phase1A_ConcurrentWriteToolsAccess tests lock-free reads while write tools reload concurrently.
+func TestClassifier_Phase1A_ConcurrentWriteToolsAccess(t *testing.T) {
+	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c.SetKickstartWriteTools([]string{"write_to_file", "replace_in_file"})
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Reader goroutines
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					lookup := c.GetKickstartWriteTools()
+					_ = lookup["write_to_file"]
+				}
+			}
+		}()
+	}
+
+	// Writer goroutine simulating dynamic config reload
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			if i%2 == 0 {
+				c.SetKickstartWriteTools([]string{"write_to_file", "execute_command", "git_commit"})
+			} else {
+				c.SetKickstartWriteTools([]string{"read_file", "list_dir"})
+			}
+			time.Sleep(1 * time.Millisecond)
+		}
+	}()
+
+	time.Sleep(60 * time.Millisecond)
+	close(done)
+	wg.Wait()
+}
+
+// TestClassifier_Phase3_LongConversationDeferredScanning tests a 60-turn conversation
+// to verify deferred trailing message parsing correctly extracts prompt, error signatures,
+// and tool signals while only inspecting the last 8 messages.
+func TestClassifier_Phase3_LongConversationDeferredScanning(t *testing.T) {
+	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c.SetKickstartWriteTools([]string{"write_to_file", "execute_command"})
+
+	var messages []map[string]interface{}
+	// Turns 1 to 56: generic history
+	for i := 1; i <= 56; i++ {
+		role := "user"
+		if i%2 == 0 {
+			role = "assistant"
+		}
+		messages = append(messages, map[string]interface{}{
+			"role":    role,
+			"content": fmt.Sprintf("historical turn %d", i),
+		})
+	}
+
+	// Turn 57: assistant issues write_to_file
+	messages = append(messages, map[string]interface{}{
+		"role": "assistant",
+		"tool_calls": []map[string]interface{}{
+			{
+				"id":   "call_write_57",
+				"type": "function",
+				"function": map[string]interface{}{
+					"name": "write_to_file",
+				},
+			},
+		},
+	})
+
+	// Turn 58: tool returns a test failure
+	messages = append(messages, map[string]interface{}{
+		"role":         "tool",
+		"tool_call_id": "call_write_57",
+		"content":      "--- FAIL: TestRouterIntegration (0.05s)",
+	})
+
+	// Turn 59: assistant responds acknowledging error
+	messages = append(messages, map[string]interface{}{
+		"role":    "assistant",
+		"content": "The test failed with an assertion error.",
+	})
+
+	// Turn 60: user prompt
+	messages = append(messages, map[string]interface{}{
+		"role":    "user",
+		"content": "Fix the failure in TestRouterIntegration",
+	})
+
+	payload := map[string]interface{}{
+		"messages": messages,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, err := c.Classify(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ctx.Prompt != "Fix the failure in TestRouterIntegration" {
+		t.Errorf("unexpected Prompt: %q", ctx.Prompt)
+	}
+	if !ctx.HasTestFail {
+		t.Errorf("expected HasTestFail=true, got false")
+	}
+	if ctx.HasTestPass {
+		t.Errorf("expected HasTestPass=false, got true")
+	}
+	if ctx.HasTestProgress {
+		t.Errorf("expected HasTestProgress=false when tests fail, got true")
+	}
+	if !ctx.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true from call_write_57, got false")
+	}
+	if !ctx.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true, got false")
+	}
+}
+
 // BenchmarkClassifier measures request parsing and keyword extraction speed per operation.
 func BenchmarkClassifier(b *testing.B) {
 	classifier := NewClassifier()
@@ -536,6 +731,246 @@ func BenchmarkClassifier(b *testing.B) {
 					{"type": "image_url", "image_url": {"url": "http://example.com/img.png"}}
 				]
 			}
+		]
+	}`)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _ = classifier.Classify(jsonBody)
+	}
+}
+
+func TestClassify_ClineProtocol_WriteProgress(t *testing.T) {
+	c := NewClassifier()
+	if rc, ok := c.(interface{ SetKickstartWriteTools([]string) }); ok {
+		rc.SetKickstartWriteTools([]string{"write_to_file", "replace_in_file", "execute_command"})
+	}
+
+	payload := []byte(`{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Please implement the feature"},
+			{"role": "assistant", "content": "I am editing the code:\n<write_to_file>\n<path>foo.go</path>\n<content>package foo</content>\n</write_to_file>"},
+			{"role": "user", "content": "[write_to_file for 'foo.go'] Result: File successfully written."}
+		]
+	}`)
+
+	req, err := c.Classify(payload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if !req.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true for Cline write result")
+	}
+	if !req.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true for Cline write result")
+	}
+}
+
+func TestClassify_ClineProtocol_ReadStall(t *testing.T) {
+	c := NewClassifier()
+	if rc, ok := c.(interface{ SetKickstartWriteTools([]string) }); ok {
+		rc.SetKickstartWriteTools([]string{"write_to_file", "replace_in_file", "execute_command"})
+	}
+
+	payload := []byte(`{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Please fix bug"},
+			{"role": "assistant", "content": "Let me read the file:\n<read_file>\n<path>foo.go</path>\n</read_file>"},
+			{"role": "user", "content": "[read_file for 'foo.go'] Result: package main"}
+		]
+	}`)
+
+	req, err := c.Classify(payload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	// Per old behavior, read_file is not a write tool, so no tool/write progress is granted on user result
+	if req.HasToolProgress {
+		t.Errorf("expected HasToolProgress=false on Cline read stall to permit Kickstart accumulation")
+	}
+	if req.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=false on Cline read stall")
+	}
+}
+
+func TestClassify_AnthropicProtocol_StringContent(t *testing.T) {
+	c := NewClassifier()
+	if rc, ok := c.(interface{ SetKickstartWriteTools([]string) }); ok {
+		rc.SetKickstartWriteTools([]string{"execute_command"})
+	}
+
+	payload := []byte(`{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": [{"type": "text", "text": "Run the tests"}]},
+			{"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "execute_command", "input": {"command": "go test"}}]},
+			{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "--- FAIL: TestFoo (0.01s)\nFAIL\nexit status 1"}]}
+		]
+	}`)
+
+	req, err := c.Classify(payload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if !req.HasTestFail {
+		t.Errorf("expected HasTestFail=true from Anthropic tool_result string content")
+	}
+	if req.HasTestPass {
+		t.Errorf("expected HasTestPass=false")
+	}
+	if req.HasTestProgress {
+		t.Errorf("expected HasTestProgress=false when test fails")
+	}
+}
+
+func TestClassify_AnthropicProtocol_ArrayContent(t *testing.T) {
+	c := NewClassifier()
+	if rc, ok := c.(interface{ SetKickstartWriteTools([]string) }); ok {
+		rc.SetKickstartWriteTools([]string{"execute_command"})
+	}
+
+	payload := []byte(`{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": [{"type": "text", "text": "Run the tests"}]},
+			{"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_2", "name": "execute_command", "input": {"command": "go test"}}]},
+			{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_2", "content": [{"type": "text", "text": "--- PASS: TestFoo (0.01s)\nPASS\nok  \tpkg/foo\t0.02s"}]}]}
+		]
+	}`)
+
+	req, err := c.Classify(payload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if !req.HasTestPass {
+		t.Errorf("expected HasTestPass=true from Anthropic tool_result array content")
+	}
+	if req.HasTestFail {
+		t.Errorf("expected HasTestFail=false")
+	}
+	if !req.HasTestProgress {
+		t.Errorf("expected HasTestProgress=true on clean passing test run")
+	}
+	if !req.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true from execute_command tool_use")
+	}
+}
+
+func TestClassify_AnthropicProtocol_IsError(t *testing.T) {
+	c := NewClassifier()
+
+	payload := []byte(`{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": "Read file"},
+			{"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_3", "name": "read_file", "input": {"path": "foo"}}]},
+			{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_3", "content": "File does not exist", "is_error": true}]}
+		]
+	}`)
+
+	req, err := c.Classify(payload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if req.HistoryErrors != 1 {
+		t.Errorf("expected HistoryErrors=1 from is_error=true tool_result, got %d", req.HistoryErrors)
+	}
+}
+
+func TestClassify_ConsecutiveUserErrors(t *testing.T) {
+	c := NewClassifier()
+
+	payload := []byte(`{
+		"model": "nacho-hybrid",
+		"messages": [
+			{"role": "user", "content": "Initial prompt"},
+			{"role": "assistant", "content": "Working..."},
+			{"role": "user", "content": "[ERROR] You did not use a tool"},
+			{"role": "assistant", "content": "Let me try again..."},
+			{"role": "user", "content": "The tool execution failed"}
+		]
+	}`)
+
+	req, err := c.Classify(payload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if req.HistoryErrors != 2 {
+		t.Errorf("expected HistoryErrors=2 for consecutive user error turns, got %d", req.HistoryErrors)
+	}
+}
+
+func TestClassify_LegacyFunctionCall(t *testing.T) {
+	c := NewClassifier()
+	if rc, ok := c.(interface{ SetKickstartWriteTools([]string) }); ok {
+		rc.SetKickstartWriteTools([]string{"write_to_file"})
+	}
+
+	payload := []byte(`{
+		"model": "gpt-3.5-turbo-0613",
+		"messages": [
+			{"role": "user", "content": "Write code"},
+			{"role": "assistant", "content": null, "function_call": {"name": "write_to_file", "arguments": "{\"path\":\"main.go\"}"}},
+			{"role": "tool", "content": "File written"}
+		]
+	}`)
+
+	req, err := c.Classify(payload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if !req.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true for legacy function_call")
+	}
+	if !req.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true for legacy function_call with write tool")
+	}
+}
+
+func TestClassify_MultiPartAssistantXML(t *testing.T) {
+	c := NewClassifier()
+	if rc, ok := c.(interface{ SetKickstartWriteTools([]string) }); ok {
+		rc.SetKickstartWriteTools([]string{"replace_in_file"})
+	}
+
+	payload := []byte(`{
+		"model": "claude-3-7-sonnet",
+		"messages": [
+			{"role": "user", "content": "Fix the function"},
+			{"role": "assistant", "content": [
+				{"type": "text", "text": "Here is the fix:\n<replace_in_file path=\"foo.go\">\n<diff>...</diff>\n</replace_in_file>"}
+			]},
+			{"role": "user", "content": "[replace_in_file for 'foo.go'] Success"}
+		]
+	}`)
+
+	req, err := c.Classify(payload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if !req.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true")
+	}
+	if !req.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true from multi-part assistant XML tag")
+	}
+}
+
+func BenchmarkClassify_MultiTurn_ZeroAlloc(b *testing.B) {
+	classifier := NewClassifier()
+	if rc, ok := classifier.(interface{ SetKickstartWriteTools([]string) }); ok {
+		rc.SetKickstartWriteTools([]string{"write_to_file", "execute_command"})
+	}
+
+	jsonBody := []byte(`{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": "Run tests"},
+			{"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "execute_command", "input": {"command": "go test"}}]},
+			{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "--- PASS: TestOk (0.01s)\nPASS"}]}
 		]
 	}`)
 

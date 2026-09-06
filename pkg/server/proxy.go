@@ -212,6 +212,10 @@ func NewServerWithTelemetryAndRegistry(
 	if oracle == nil {
 		oracle = telemetry.NewPricingOracle()
 	}
+	for i := range cfg.Tiers {
+		ResolveTierVision(&cfg.Tiers[i], oracle)
+	}
+	ResolveTierVision(&cfg.DefaultTier, oracle)
 	if tracker == nil {
 		tracker = telemetry.NewStatsTracker(1000)
 	}
@@ -772,6 +776,36 @@ func resolveFeatureFlags(reqCtx contract.RequestContext, targetTier contract.Tie
 	return flags
 }
 
+// ResolveTierVision determines whether a tier's model supports multimodal image inputs.
+// Priority order:
+// 1. If StripImages is true -> ResolvedHasVision = false (explicit stripping always wins).
+// 2. If HasVision is explicitly specified in YAML (*bool) -> use that value.
+// 3. If PricingOracle metadata reports SupportsVision -> use that.
+// 4. Fallback for canonical frontier multimodal families (gemini, claude, gpt-4o, *-vl) when uncataloged/offline.
+// 5. Default to false (safe text-only mode).
+func ResolveTierVision(t *contract.Tier, oracle *telemetry.PricingOracle) {
+	if t.StripImages {
+		t.ResolvedHasVision = false
+		return
+	}
+	if t.HasVision != nil {
+		t.ResolvedHasVision = *t.HasVision
+		return
+	}
+	if oracle != nil {
+		if meta, ok := oracle.GetModelMetadata(t.Provider, t.Model); ok {
+			t.ResolvedHasVision = meta.SupportsVision
+			return
+		}
+	}
+	m := strings.ToLower(t.Model)
+	if strings.Contains(m, "gemini") || strings.Contains(m, "claude") || strings.Contains(m, "gpt-4o") || strings.Contains(m, "-vl") {
+		t.ResolvedHasVision = true
+		return
+	}
+	t.ResolvedHasVision = false
+}
+
 func (s *Server) dispatchTier(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -828,7 +862,8 @@ func (s *Server) dispatchTier(
 		}
 	}
 
-	hasVision := strings.Contains(strings.ToLower(targetTier.Model), "vision") || strings.Contains(strings.ToLower(targetTier.Model), "flash") || targetTier.Provider == "openrouter"
+	ResolveTierVision(&targetTier, s.oracle)
+	hasVision := targetTier.ResolvedHasVision
 	if targetTier.StripImages {
 		hasVision = false
 	}
@@ -1014,12 +1049,17 @@ func (s *Server) dispatchTier(
 					)
 					reqCtx.CycleBreakerTriggered = true
 					reqCtx.CycleBreakerReason = reason
+					cooldown, floor := s.resolveCycleKillParams()
 					if s.sessionTracker != nil {
-						cooldown, floor := s.resolveCycleKillParams()
 						s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
 					}
 					_ = normalizer.Close()
+
+					noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
+					escapedNotice, _ := json.Marshal(noticeText)
+					noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
 					finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+					_, _ = w.Write([]byte(noticeChunk))
 					_, _ = w.Write([]byte(finishChunk))
 					if flusher, ok := w.(http.Flusher); ok {
 						flusher.Flush()
@@ -1471,6 +1511,21 @@ func (s *Server) resolveCycleKillParams() (time.Duration, int) {
 		floor = 3
 	}
 	return cooldown, floor
+}
+
+func formatCycleKillReason(reason string) string {
+	switch reason {
+	case "ngram_repetition_loop_detected":
+		return "repetitive prose loop detected"
+	case "thinking_repetition_loop_detected":
+		return "repetitive reasoning loop detected"
+	case "prose_budget_exceeded_with_repetition":
+		return "prose token budget exceeded with repetition"
+	case "thinking_budget_exceeded_with_repetition":
+		return "thinking token budget exceeded with repetition"
+	default:
+		return strings.ReplaceAll(reason, "_", " ")
+	}
 }
 
 func injectCorrectionPrompt(body []byte, prompt string) []byte {

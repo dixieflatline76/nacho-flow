@@ -7,7 +7,7 @@ This document details the performance characteristics, load-testing methodology,
 ## 1. Executive Summary
 
 <!-- BENCHMARK:EXECUTIVE_SUMMARY_START -->
-- **Peak Throughput**: **30,284 requests/second** under full production authentication and tool normalization load.
+- **Peak Throughput**: **28,966 requests/second** under full production authentication and tool normalization load.
 - **Pipeline Latency**: **~0.19 ms** raw pass-through overhead per request (**~0.22 ms** with full multi-model tool-call normalization).
 - **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
 - **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
@@ -17,7 +17,7 @@ This document details the performance characteristics, load-testing methodology,
 
 > [!TIP]
 > **Deep-Dive Technical Whitepapers**:
-> - 📄 **[Systems Architecture & Zero-Allocation Whitepaper](PERFORMANCE_WHITEPAPER.md)**: Explains the low-level systems engineering (SIMD byte filters, AOT bytecode VM, lock-free RCU, and ring-buffer streaming surgery) that enables deep inspection in $<0.2\text{ms}$ compared to LiteLLM and Bifrost.
+> - 📄 **[Near-Zero Allocation Hot Paths & Wire-Speed Systems Whitepaper](PERFORMANCE_WHITEPAPER.md)**: Explains the low-level systems engineering (SIMD byte filters, AOT bytecode VM, lock-free RCU, and ring-buffer streaming surgery) that enables deep inspection in $<0.2\text{ms}$ compared to LiteLLM and Bifrost.
 > - 🔬 **[A/B Benchmark Case Study Whitepaper](BENCHMARKS_AB_CASE_STUDY.md)**: Full empirical 4-run developer case study documenting $94.7\%$ spend reduction and local hardware ROI.
 
 ---
@@ -69,11 +69,11 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 <!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **26688.1 req/s** | 2.00 ms | 7.65 ms | 90.1 MB |
-| **100 workers** | 50,000 | **100.0%** | **23891.2 req/s** | 3.01 ms | 20.23 ms | 76.8 MB |
-| **250 workers** | 75,000 | **100.0%** | **30284.2 req/s** | 7.58 ms | 26.14 ms | 92.5 MB |
-| **500 workers** | 100,000 | **100.0%** | **26268.6 req/s** | 15.28 ms | 62.58 ms | 159.5 MB |
-| **1000 workers** | 100,000 | **100.0%** | **26837.5 req/s** | 30.24 ms | 99.08 ms | 182.7 MB |
+| **50 workers** | 25,000 | **100.0%** | **25048.0 req/s** | 1.61 ms | 9.16 ms | 95.3 MB |
+| **100 workers** | 50,000 | **100.0%** | **24452.5 req/s** | 3.00 ms | 20.09 ms | 96.6 MB |
+| **250 workers** | 75,000 | **100.0%** | **28881.6 req/s** | 7.80 ms | 27.32 ms | 155.1 MB |
+| **500 workers** | 100,000 | **100.0%** | **26115.7 req/s** | 14.20 ms | 59.79 ms | 145.8 MB |
+| **1000 workers** | 100,000 | **100.0%** | **26217.5 req/s** | 36.36 ms | 63.76 ms | 165.4 MB |
 <!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
@@ -92,10 +92,10 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 <!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 28772.5 req/s | 28320.1 req/s | **-1.6%** | **+0.00 ms** (0.00ms vs 0.00ms) | -0.12 ms |
-| **50 workers** | 30075.5 req/s | 29280.1 req/s | **-2.6%** | **+0.00 ms** (2.01ms vs 2.01ms) | +0.53 ms |
-| **100 workers** | 29588.5 req/s | 28741.4 req/s | **-2.9%** | **+0.21 ms** (2.44ms vs 2.65ms) | +0.02 ms |
-| **200 workers** | 29149.0 req/s | 29281.2 req/s | **+0.5%** | **+0.04 ms** (5.98ms vs 6.02ms) | +0.58 ms |
+| **25 workers** | 27084.1 req/s | 27389.4 req/s | **+1.1%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.15 ms |
+| **50 workers** | 28166.4 req/s | 28966.4 req/s | **+2.8%** | **+0.08 ms** (1.28ms vs 1.36ms) | -0.29 ms |
+| **100 workers** | 27697.9 req/s | 25807.4 req/s | **-6.8%** | **+0.01 ms** (3.00ms vs 3.01ms) | +1.65 ms |
+| **200 workers** | 29370.5 req/s | 26960.1 req/s | **-8.2%** | **+0.52 ms** (5.97ms vs 6.49ms) | +4.85 ms |
 <!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 
@@ -146,7 +146,7 @@ $ go test -bench=BenchmarkSSE -benchmem -benchtime=3s ./pkg/server/...
 ```
 
 ```text
-BenchmarkSSE_NonReasoning_ZeroAlloc-16      6,468,288       591.5 ns/op      305 B/op      5 allocs/op
+BenchmarkSSE_NonReasoning_FastPath-16       6,468,288       591.5 ns/op      305 B/op      5 allocs/op
 BenchmarkSSE_ReasoningTransform-16            831,742     3,667.0 ns/op    1,305 B/op     21 allocs/op
 ```
 
@@ -210,8 +210,8 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 <!-- COVERAGE:GO_TABLE_START -->
 | Package / Subsystem | Primary Responsibility | Statement Coverage |
 | :--- | :--- | :--- |
-| `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **99.5%** |
 | `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **99.4%** |
+| `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **99.1%** |
 | `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **98.0%** |
 | `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
@@ -220,9 +220,9 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.6%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
+| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.9%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.8%** |
-| `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.6%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.5%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.6%** |
 | `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **95.5%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.0%** |

@@ -138,7 +138,7 @@ export class DashboardPanel {
 					<div id="deals-content">Loading live deals from OpenRouter...</div>
 				</div>
 				<div class="panel circuits-panel">
-					<h2>🔌 Provider Circuit Breakers & 0ms Failover</h2>
+					<h2>🔌 Provider Circuit Breakers & Sub-Millisecond Failover</h2>
 					<div id="circuits-content">Loading...</div>
 				</div>
 				<div class="panel config-panel">

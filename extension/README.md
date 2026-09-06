@@ -73,7 +73,7 @@ A mission-control flight instrument webview providing total visibility into your
 
 ### 🛡️ 3. "The Three Fixes" Live Defense Telemetry
 
-Nacho Flow wraps open-weight and non-frontier models in active runtime guardrails, eliminating the common agent failure loops:
+Nacho Flow supervises local and cloud open-weight models in real time, eliminating common agent failure loops:
 
 - 🎸 **Cycle Killer (In-Flight Stream Breaker)**:
   - Monitors the live token stream in real time. Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
@@ -93,7 +93,7 @@ Heat Seeker continuously scans 300+ cloud models on OpenRouter, discovering flas
 - **1-Click Tier Adoption (`⚡ Adopt`)**:
   1. Click **`⚡ Adopt`** on any discovered deal card.
   2. A VS Code QuickPick modal appears with your active tiers; recommended target tiers are marked with a **`⭐`**.
-  3. Select the tier to replace. The extension creates an automatic timestamped backup (`config.yaml.bak_<timestamp>`), updates the YAML while preserving all comments, and hot-swaps the new model into the running gateway with **0ms interruption**!
+  3. Select the tier to replace. The extension creates an automatic timestamped backup (`config.yaml.bak_<timestamp>`), updates the YAML while preserving all comments, and hot-swaps the new model into the running gateway with **zero downtime**!
 - **1-Click Copy Model ID**: Copy model IDs to your clipboard for instant prompt turn overrides (`@nacho:model="..."`).
 
 ---

@@ -1,6 +1,6 @@
-# 📄 Architectural Whitepaper: Zero-Allocation Systems Architecture & Wire-Speed Agent Supervision
+# 📄 Architectural Whitepaper: Near-Zero Allocation Hot Paths & Wire-Speed Agent Supervision
 
-**How Nacho Flow Delivers Deep Semantic Payload Inspection, Live AST Evaluation, and In-Flight Stream Healing in $< 0.2\text{ms}$ with <!-- BENCHMARK:WHITEPAPER_SUBTITLE_START -->$30,000+\text{ req/s}$<!-- BENCHMARK:WHITEPAPER_SUBTITLE_END --> Throughput.**
+**How Nacho Flow Delivers Deep Semantic Payload Inspection, Live AST Evaluation, and In-Flight Stream Healing in $< 0.2\text{ms}$ with <!-- BENCHMARK:WHITEPAPER_SUBTITLE_START -->$28,000+\text{ req/s}$<!-- BENCHMARK:WHITEPAPER_SUBTITLE_END --> Throughput.**
 
 *Author: Karl Kwong / Dixieflatline76*  
 *Target Engine: Nacho Flow Core Engine (Pure Go, Static Binary, Zero CGO)*  
@@ -20,7 +20,7 @@ Indeed, popular enterprise gateways like **LiteLLM** add **$8.0\text{--}25.0\tex
 Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 - **Raw Pass-Through Proxy Latency**: **$0.184\text{ ms}$** ($184.7\,\mu\text{s}$)
 - **Full Deep-Inspection Latency** (Bearer Auth + AST Rules + Multi-Model Normalization): **$0.205\text{ ms}$** ($205.9\,\mu\text{s}$)
-- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,284\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
+- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$28,966\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
 - **Idle Memory Footprint**: **$< 25\text{ MB}$** (peaking under $111\text{ MB}$ at $500$ simultaneous client streams).
 
 ```
@@ -34,7 +34,7 @@ Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-This whitepaper resolves this "paradox" by dissecting the low-level systems engineering decisions behind Nacho Flow: **why traditional gateways are slow**, **the trade-offs of blind forward proxies**, and **how zero-allocation byte filters, pre-compiled bytecode VMs, lock-free RCU pointers, and ring-buffered streaming surgery allow Nacho Flow to execute deep agent supervision at wire speed.**
+This whitepaper resolves this "paradox" by dissecting the low-level systems engineering decisions behind Nacho Flow: **why traditional gateways are slow**, **the trade-offs of blind forward proxies**, and **how zero-allocation streaming fast paths, pre-compiled bytecode VMs, lock-free RCU pointers, and ring-buffered streaming surgery allow Nacho Flow to execute deep agent supervision at wire speed.**
 
 ---
 
@@ -97,27 +97,27 @@ Nacho Flow’s engineering objective was therefore: **perform full semantic supe
 
 ---
 
-## 4. The 5 Zero-Allocation Systems Pillars
+## 4. The 5 Wire-Speed Systems Pillars
 
 Nacho Flow achieves wire-speed execution through five low-level architectural patterns implemented across its codebase:
 
 ```mermaid
 flowchart TD
-    Req[Incoming HTTP Request] --> P1[Pillar 1: SIMD Zero-Allocation Pre-Filter<br/><i>56 - 76 ns / 0 B/op</i>]
+    Req[Incoming HTTP Request] --> P1[Pillar 1: SIMD Pre-Filter & Stack Slices<br/><i>56 - 76 ns / 0 B/op</i>]
     P1 -->|No Markers| Pass[Fast Bypass to Transport]
     P1 -->|Candidate Found| P2[Pillar 2: AOT Compiled AST Bytecode VM<br/><i>685 ns / Register Stack</i>]
     P2 --> P3[Pillar 3: Lock-Free Atomic RCU State<br/><i>< 40 ns / atomic.Pointer</i>]
     P3 --> Outbound[Pooled HTTP/2 Upstream Transport]
     Outbound --> Stream[Streaming SSE Response]
     Stream --> P4[Pillar 4: 256B Circular Ring Buffer & FNV-1a<br/><i>245 ns / sync.Pool</i>]
-    Stream --> P5[Pillar 5: In-Flight SSE Stream Surgery<br/><i>2.3 µs / Zero Alloc Chunks</i>]
+    Stream --> P5[Pillar 5: In-Flight SSE Stream Surgery<br/><i>Zero-Alloc Prose Fast Path / < 2.5 µs Chunks</i>]
     P4 --> Client[IDE Coding Agent]
     P5 --> Client
 ```
 
 ---
 
-### Pillar 1: Zero-Allocation Byte Pre-Filtering (56–76 Nanoseconds)
+### Pillar 1: Zero-Allocation Byte Pre-Filtering & Hybrid Stack Slices (56–76 Nanoseconds)
 
 Rather than deserializing the incoming JSON payload to check for tool calls, markdown fences, or HotSauce directives, Nacho Flow executes a **fast-path byte scan directly against the raw byte buffer**.
 
@@ -307,10 +307,10 @@ type fastStreamChunk struct {
 
 #### Micro-Benchmark Result:
 ```text
-BenchmarkSSE_NonReasoning_ZeroAlloc-16    511,203    2,323 ns/op    1,010 B/op    17 allocs/op
+BenchmarkSSE_NonReasoning_FastPath-16     511,203    2,323 ns/op    1,010 B/op    17 allocs/op
 BenchmarkSSE_ReasoningTransform-16        398,913    2,955 ns/op    1,354 B/op    21 allocs/op
 ```
-Stream transformation adds only **$2.3\text{--}2.9\,\mu\text{s}$** per SSE packet, sustaining over **$400,000\text{ chunks/sec}$** per core.
+Stream transformation adds only **$2.3\text{--}2.9\,\mu\text{s}$** per SSE packet, sustaining over **$400,000\text{ chunks/sec}$** per core. In the dominant streaming case (pure prose tokens, representing ~95%+ of generation), `fastPassProse` streams raw slices directly with **literal 0 heap allocations**.
 
 ---
 
@@ -323,11 +323,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$26688.1\text{ req/s}$** | $2.00\text{ ms}$ | $7.65\text{ ms}$ | $90.1\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$23891.2\text{ req/s}$** | $3.01\text{ ms}$ | $20.23\text{ ms}$ | $76.8\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$30284.2\text{ req/s}$** | $7.58\text{ ms}$ | $26.14\text{ ms}$ | $92.5\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$26268.6\text{ req/s}$** | $15.28\text{ ms}$ | $62.58\text{ ms}$ | $159.5\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$26837.5\text{ req/s}$** | $30.24\text{ ms}$ | $99.08\text{ ms}$ | $182.7\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$25048.0\text{ req/s}$** | $1.61\text{ ms}$ | $9.16\text{ ms}$ | $95.3\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$24452.5\text{ req/s}$** | $3.00\text{ ms}$ | $20.09\text{ ms}$ | $96.6\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$28881.6\text{ req/s}$** | $7.80\text{ ms}$ | $27.32\text{ ms}$ | $155.1\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$26115.7\text{ req/s}$** | $14.20\text{ ms}$ | $59.79\text{ ms}$ | $145.8\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$26217.5\text{ req/s}$** | $36.36\text{ ms}$ | $63.76\text{ ms}$ | $165.4\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 ### Nanosecond Micro-Benchmark Suite
@@ -341,7 +341,7 @@ The figures below represent the empirical measurements captured across isolated 
 | **AST Evaluator** | `BenchmarkExprEvaluator` | **$685.2\text{ ns}$** | $824\text{ B/op}$ | 10 allocs |
 | **Hermes XML Parser** | `BenchmarkNormalize_HermesXML` | **$2,640.0\text{ ns}$** | $1,328\text{ B/op}$ | 27 allocs |
 | **DeepSeek R1 Normalizer**| `BenchmarkNormalize_DeepSeekR1` | **$3,908.0\text{ ns}$** | $1,801\text{ B/op}$ | 35 allocs |
-| **SSE Stream Chunk** | `BenchmarkSSE_NonReasoning_ZeroAlloc` | **$2,323.0\text{ ns}$** | $1,010\text{ B/op}$ | 17 allocs |
+| **SSE Stream Chunk** | `BenchmarkSSE_NonReasoning_FastPath` | **$2,323.0\text{ ns}$** | $1,010\text{ B/op}$ | 17 allocs |
 | **End-to-End Raw Proxy** | `BenchmarkProxy_RawPassThrough` | **$184.7\,\mu\text{s}$** | $24.4\text{ KB/op}$ | 303 allocs |
 | **End-to-End Normalized**| `BenchmarkProxy_ToolNormalization` | **$205.9\,\mu\text{s}$** | $30.7\text{ KB/op}$ | 406 allocs |
 

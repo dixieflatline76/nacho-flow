@@ -16,7 +16,13 @@ const (
 	defaultRepetitionThreshold         = 3
 	defaultThinkingRepetitionThreshold = 5
 	defaultMaxRetries                  = 1
+	defaultMaxLoopDistance             = 48
 )
+
+type ngramOccurrence struct {
+	consecutiveCount int
+	lastWordIdx      int
+}
 
 // CycleBreaker monitors in-flight streaming deltas across isolated thinking and prose lanes
 // to detect and break infinite circular reasoning loops and runaway prose monologues in real-time.
@@ -34,6 +40,7 @@ type CycleBreaker struct {
 	// Prose lane state
 	words        []string
 	ngramCounts  map[uint64]int
+	ngramHistory map[uint64]ngramOccurrence
 	proseTokens  int
 	maxNgramFreq int
 	pendingWord  strings.Builder
@@ -41,6 +48,7 @@ type CycleBreaker struct {
 	// Thinking lane state (isolated)
 	thinkingWords        []string
 	thinkingNgramCounts  map[uint64]int
+	thinkingNgramHistory map[uint64]ngramOccurrence
 	thinkingTokens       int
 	maxThinkingNgramFreq int
 	thinkingPendingWord  strings.Builder
@@ -58,8 +66,10 @@ func NewCycleBreaker(cfg *contract.CycleBreakerConfig) *CycleBreaker {
 		maxRetries:                  defaultMaxRetries,
 		correctionPrompt:            contract.CycleBreakerDefaultCorrectionPrompt,
 		ngramCounts:                 make(map[uint64]int),
+		ngramHistory:                make(map[uint64]ngramOccurrence),
 		words:                       make([]string, 0, 128),
 		thinkingNgramCounts:         make(map[uint64]int),
+		thinkingNgramHistory:        make(map[uint64]ngramOccurrence),
 		thinkingWords:               make([]string, 0, 128),
 	}
 
@@ -148,12 +158,14 @@ func (cb *CycleBreaker) Reset() {
 	defer cb.mu.Unlock()
 	cb.words = cb.words[:0]
 	cb.ngramCounts = make(map[uint64]int)
+	cb.ngramHistory = make(map[uint64]ngramOccurrence)
 	cb.proseTokens = 0
 	cb.maxNgramFreq = 0
 	cb.pendingWord.Reset()
 
 	cb.thinkingWords = cb.thinkingWords[:0]
 	cb.thinkingNgramCounts = make(map[uint64]int)
+	cb.thinkingNgramHistory = make(map[uint64]ngramOccurrence)
 	cb.thinkingTokens = 0
 	cb.maxThinkingNgramFreq = 0
 	cb.thinkingPendingWord.Reset()
@@ -220,6 +232,8 @@ func (cb *CycleBreaker) ProcessDelta(content string, isThinking bool) (triggered
 }
 
 // addWord appends a word and updates the sliding prose N-gram frequency table.
+// Enforces a locality check: to trigger an ngram repetition loop, repetitions must
+// occur within tight proximity (<= defaultMaxLoopDistance words apart from previous occurrence).
 func (cb *CycleBreaker) addWord(word string) bool {
 	cb.words = append(cb.words, word)
 	wLen := len(cb.words)
@@ -240,10 +254,37 @@ func (cb *CycleBreaker) addWord(word string) bool {
 	if cb.ngramCounts[hashVal] > cb.maxNgramFreq {
 		cb.maxNgramFreq = cb.ngramCounts[hashVal]
 	}
-	return cb.ngramCounts[hashVal] >= cb.repetitionThreshold
+
+	consecutive := 1
+	if prev, exists := cb.ngramHistory[hashVal]; exists {
+		dist := wLen - prev.lastWordIdx
+		if dist <= cb.maxLoopDistance() {
+			consecutive = prev.consecutiveCount + 1
+		}
+	}
+	cb.ngramHistory[hashVal] = ngramOccurrence{
+		consecutiveCount: consecutive,
+		lastWordIdx:      wLen,
+	}
+
+	return consecutive >= cb.repetitionThreshold
+}
+
+// maxLoopDistance returns the maximum distance between successive occurrences
+// to be considered part of the same repetition loop.
+// During the early runway (< 512 prose tokens), we require a tight loop (<= 24 words)
+// so that valid algorithmic explanations, multi-case proofs, and bullet points
+// are never killed at 125 tokens. Once past the runway, a wider distance (<= 48 words) is permitted.
+func (cb *CycleBreaker) maxLoopDistance() int {
+	if cb.proseTokens < 512 {
+		return 24
+	}
+	return defaultMaxLoopDistance
 }
 
 // addThinkingWord appends a word and updates the sliding thinking N-gram frequency table.
+// Enforces a locality check: to trigger a thinking repetition loop, repetitions must
+// occur within tight proximity (<= maxThinkingLoopDistance words apart from previous occurrence).
 func (cb *CycleBreaker) addThinkingWord(word string) bool {
 	cb.thinkingWords = append(cb.thinkingWords, word)
 	wLen := len(cb.thinkingWords)
@@ -263,5 +304,25 @@ func (cb *CycleBreaker) addThinkingWord(word string) bool {
 	if cb.thinkingNgramCounts[hashVal] > cb.maxThinkingNgramFreq {
 		cb.maxThinkingNgramFreq = cb.thinkingNgramCounts[hashVal]
 	}
-	return cb.thinkingNgramCounts[hashVal] >= cb.thinkingRepetitionThreshold
+
+	consecutive := 1
+	if prev, exists := cb.thinkingNgramHistory[hashVal]; exists {
+		dist := wLen - prev.lastWordIdx
+		if dist <= cb.maxThinkingLoopDistance() {
+			consecutive = prev.consecutiveCount + 1
+		}
+	}
+	cb.thinkingNgramHistory[hashVal] = ngramOccurrence{
+		consecutiveCount: consecutive,
+		lastWordIdx:      wLen,
+	}
+
+	return consecutive >= cb.thinkingRepetitionThreshold
+}
+
+func (cb *CycleBreaker) maxThinkingLoopDistance() int {
+	if cb.thinkingTokens < 512 {
+		return 24
+	}
+	return defaultMaxLoopDistance
 }

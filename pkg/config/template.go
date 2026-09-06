@@ -86,6 +86,22 @@ cycle_killer:
 # =============================================================================
 tiers:
   # ---------------------------------------------------------------------------
+  # ⚡ KICKSTART ESCALATION: Break read-only idle loops with Gemini Flash
+  # ---------------------------------------------------------------------------
+  - name: "Kickstart Escalation (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "SessionKickstarted && Retries < 3"
+
+  # ---------------------------------------------------------------------------
+  # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
+  # ---------------------------------------------------------------------------
+  - name: "Tier: Multimodal Vision (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "HasImages && Retries < 2"
+
+  # ---------------------------------------------------------------------------
   # TIER 1: Local GPU Free (Gemma 4 12B QAT) - $0.00 Cost
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Free (Gemma 4 12B QAT)"

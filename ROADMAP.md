@@ -57,7 +57,7 @@ gantt
 The core technical routing engine is fully operational, thoroughly tested, and distributed across major operating systems.
 
 - [x] **Wire-Speed RCU Routing Engine**: Sub-millisecond routing overhead utilizing pre-compiled AST expressions (`expr-lang/expr`).
-- [x] **Universal Tool Normalizer**: Real-time conversion across 8 open-source tool call format families (Hermes XML, Mistral bracketed JSON, Llama 3 functions, Llama 3.1 Python tags, Claude XML invoke, ReAct single/multi-line, Markdown code fences, and Bare JSON completions) via a zero-allocation Strategy Pipeline.
+- [x] **Universal Tool Normalizer**: Real-time conversion across 8 open-source tool call format families (Hermes XML, Mistral bracketed JSON, Llama 3 functions, Llama 3.1 Python tags, Claude XML invoke, ReAct single/multi-line, Markdown code fences, and Bare JSON completions) via an in-flight Strategy Pipeline with zero-alloc prose fast paths.
 - [x] **Lock-Free Pricing Oracle**: Atomic thread-safe pricing sync from OpenRouter API calculating real-time USD cost differentials.
 - [x] **Cost-Penalty Auto-Tuner (`pkg/tuner`)**: Empirical turn-record replay analyzing context thresholds and domain friction keywords with automated backup creation.
 - [ ] **Global Multi-Tier Decision List Induction (v2 Tuner)**: Advanced combinatorial optimizer synthesizing full $N$-tier decision lists simultaneously with precedence conflict resolution and shadow-route prevention.

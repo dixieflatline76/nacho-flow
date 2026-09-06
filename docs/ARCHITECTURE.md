@@ -21,7 +21,7 @@ flowchart TD
         Auth["1. Inbound Auth & Session Tracker (5m Sliding TTL)"]:::core
         Classifier["2. Scoped Classifier & Adaptive Token EMA Estimator"]:::core
         Evaluator["3. AST Bytecode Rule Engine & Context Window Guards"]:::core
-        CircuitBreaker["4. Local Circuit Breaker & 0ms Failover Dispatcher"]:::core
+        CircuitBreaker["4. Local Circuit Breaker & Sub-Millisecond Failover Dispatcher"]:::core
         
         Auth --> Classifier --> Evaluator --> CircuitBreaker
     end
@@ -74,7 +74,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
   - **Session Guardrail Toggles**: Session switches (`kickstart-off/on`, `cyclekiller-off/on`, `shield-off/on`, `raw-on/off`, `fairydust-off/on`, or key-value forms `kickstart=off`, `cyclekiller=off`) update the active session's persistent `SessionGuardrails` across the 5-minute sliding window.
   - **Routing Overrides**: Single-turn overrides (`@nacho:local`, `@nacho:cloud`, `@nacho:frontier`, `@nacho:reasoning`, `@nacho:tier="..."`, `@nacho:model="..."`) extract the target tier/model for that specific turn.
   - **Standalone vs. Embedded Execution**:
-    - *Standalone Directives* (`clean == ""`): Directives submitted alone in chat are flagged as `IsMeta = true` and executed in-process by the Meta Registry, returning instant zero-cost local responses ($0.00 / 0ms) with zero upstream model dispatch.
+    - *Standalone Directives* (`clean == ""`): Directives submitted alone in chat are flagged as `IsMeta = true` and executed in-process by the Meta Registry, returning instant zero-cost local responses ($0.00 / sub-millisecond local response) with zero upstream model dispatch.
     - *Embedded Directives* (`clean != ""`): Directives embedded alongside prompts mutate session state or routing rules, and are cleanly stripped from `reqCtx.CleanPrompt` and conversation message payloads to leave user prompts pristine.
 - **Meta Command Strategy Registry (`pkg/server/meta_registry.go`)**:
   - Meta queries bypass upstream LLMs entirely ($0.00 cost, 0 tokens) and are handled in-process by strategy handlers (`MetaCommandHandler`):
@@ -122,12 +122,12 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - Resolves the target provider from the `provider.Registry`.
 - **Escalation Budget & Anti-Runaway Protection**: When requests route to the `DefaultTier` (Claude Sonnet 5), `RecordEscalation` enforces a hard ceiling of `MaxEscalationTurns = 3`. If an error proves unfixable after 3 consecutive frontier turns, the proxy automatically de-escalates to Tier 2 (Gemini Flash), capping worst-case failure costs at ~**$0.21**.
 - **Forced Directive Fallback Bypass**: If a user explicitly requested a tier or model via directive and its provider circuit breaker is OPEN, the proxy does **not** silently fall through to cloud; it immediately returns an OpenAI-wire-compliant zero-cost chat alert (`RenderCircuitBlocked`).
-- **Standard Routing Circuit Breaker**: For automatic rule evaluations, if `cb.AllowRequest()` fails, the proxy bypasses the primary provider with 0ms dial delay and immediately dispatches to the default fallback tier.
+- **Standard Routing Circuit Breaker**: For automatic rule evaluations, if `cb.AllowRequest()` fails, the proxy bypasses the primary provider with sub-millisecond in-memory dispatch and immediately dispatches to the default fallback tier.
 - Using zero-allocation interface assertions:
   - If provider implements `AuthProvider`: Injects `Authorization: Bearer <API_KEY>`.
   - If provider implements `HeaderProvider`: Injects custom headers (`HTTP-Referer`, `X-Title`, `X-Custom-Org`).
   - If provider is local (`Type: "local"`): Inbound client auth headers are stripped so local inference engines (Ollama, llama.cpp) do not reject requests.
-- Uses a shared `http.Transport` with connection pooling (`MaxIdleConns: 10000`, `MaxIdleConnsPerHost: 2000`) to guarantee zero OS socket exhaustion under massive concurrency.
+- Uses a shared `http.Transport` with connection pooling (`MaxIdleConns: 10000`, `MaxIdleConnsPerHost: 2000`) to drastically mitigate OS socket exhaustion and TIME_WAIT connection buildup under massive concurrency.
 
 ### Stage 5: Response Quality Validation & Delayed Header Fallback (`pkg/server/proxy.go`)
 - **Delayed Header Pattern (Streaming)**: For SSE streams, the proxy holds off on writing `w.WriteHeader(200)` until peeking the first 4KB chunk via `NewStreamNormalizer`. If a local provider emits an immediate `data: [DONE]` stream with zero content, the stream is cleanly closed and transparently re-dispatched to the cloud fallback tier.
@@ -356,7 +356,7 @@ flowchart TD
         direction TB
         MgmtAPI["Control Plane IPC (/v1/mgmt/*)"]:::daemon
         EventBroker["SSE Real-Time Pub/Sub Event Broker (/v1/events)"]:::daemon
-        RingBuffer["In-Memory Ring Buffer Sink (Last 500 Turns, 0ms Disk IO)"]:::daemon
+        RingBuffer["In-Memory Ring Buffer Sink (Last 500 Turns, Zero Disk I/O In-Memory Ring Buffer)"]:::daemon
         ProxyEngine["Proxy Director & 8-Format Tool Normalizer"]:::daemon
     end
 

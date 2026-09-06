@@ -459,6 +459,11 @@ func TestProxy_CycleBreaker_Phase2_MidStreamSevering(t *testing.T) {
 	if !strings.Contains(body, `"finish_reason":"stop"`) {
 		t.Errorf("Expected body to contain finish_reason stop chunk, got: %s", body)
 	}
+
+	// Must contain inline explanatory Cycle Killer banner with HotSauce directives
+	if !strings.Contains(body, "🌮 **Nacho Flow • Loop Detected**") || !strings.Contains(body, "@nacho:frontier") {
+		t.Errorf("Expected body to contain friendly notification banner with HotSauce directives, got: %s", body)
+	}
 }
 
 func TestProxy_CycleBreaker_ThinkingRunawaySevering(t *testing.T) {
@@ -540,6 +545,11 @@ func TestProxy_CycleBreaker_ThinkingRunawaySevering(t *testing.T) {
 	// Must have severed upstream and emitted finish_reason: "stop"
 	if !strings.Contains(body, `"finish_reason":"stop"`) {
 		t.Errorf("Expected body to contain finish_reason stop chunk, got: %s", body)
+	}
+
+	// Must contain inline explanatory Cycle Killer banner with HotSauce directives
+	if !strings.Contains(body, "🌮 **Nacho Flow • Loop Detected**") || !strings.Contains(body, "@nacho:frontier") {
+		t.Errorf("Expected body to contain friendly notification banner with HotSauce directives, got: %s", body)
 	}
 }
 

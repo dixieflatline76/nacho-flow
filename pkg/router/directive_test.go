@@ -297,6 +297,30 @@ func TestScanDirectives_FeatureFlags(t *testing.T) {
 			checkHas:    FeatureToolNormalizer,
 			checkNotHas: FeatureShieldEnabled,
 		},
+		{
+			name:        "@nacho:raw at end of prompt with multiple spaces",
+			prompt:      "optimize this loop    @nacho:raw   ",
+			wantFlags:   FeatureRawPassThrough,
+			wantClean:   "optimize this loop",
+			checkHas:    0,
+			checkNotHas: FeatureShieldEnabled,
+		},
+		{
+			name:        "@nacho:shield-off in middle of prompt",
+			prompt:      "please @nacho:shield-off review the architecture",
+			wantFlags:   FeatureDefaultAll.MaskOut(FeatureShieldEnabled | FeatureShieldFollowup | FeatureShieldModeSwitch),
+			wantClean:   "please review the architecture",
+			checkHas:    FeatureToolNormalizer,
+			checkNotHas: FeatureShieldEnabled,
+		},
+		{
+			name:        "directive with quoted value stripped cleanly",
+			prompt:      `@nacho:tier="Special GPU" execute the test`,
+			wantFlags:   FeatureDefaultAll,
+			wantClean:   "execute the test",
+			checkHas:    FeatureDefaultAll,
+			checkNotHas: 0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -383,7 +407,7 @@ func TestExtractDirective_UnifiedGrammar(t *testing.T) {
 		{"raw invalid val", "@nacho:raw=invalid test", "unknown", "test", true},
 		{"fairydust invalid val", "@nacho:fairydust=invalid test", "unknown", "test", true},
 
-		// Toggles - standalone without user prompt (IsMeta = true for local 0ms acknowledgment)
+		// Toggles - standalone without user prompt (IsMeta = true for instant local acknowledgment)
 		{"standalone kickstart-off", "@nacho:kickstart-off", "kickstart-off", "", true},
 		{"standalone kickstart-on", "@nacho:kickstart-on", "kickstart-on", "", true},
 		{"standalone cyclekiller-off", "@nacho:cyclekiller-off", "cyclekiller-off", "", true},

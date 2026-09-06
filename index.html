@@ -107,7 +107,7 @@
     <!-- Hero Section (The Wallet Hook) -->
     <header class="hero">
         <div class="hero-badge">
-            Open Source &nbsp;·&nbsp; Zero Dependencies &nbsp;·&nbsp; Written in Go
+            Open Source &nbsp;·&nbsp; Zero Runtime Dependencies &nbsp;·&nbsp; Pure Go Static Binary
         </div>
         <div class="hero-mascot-container" onclick="toggleMascotAnimation()">
             <img id="hero-img" src="images/hero-mascot.png?v=0.8.0" alt="Nacho Flow Mascot" class="hero-banner">
@@ -141,20 +141,69 @@
     <!-- The Bridge: The Autonomous Agent Trap -->
     <section class="agent-trap-section">
         <div class="agent-trap-container glass">
-            <div class="agent-trap-badge">THE REALITY GAP</div>
-            <h2 class="section-title" style="margin-bottom: 0.5rem; text-align: left;">The Autonomous Agent Trap</h2>
-            <p class="section-subtitle" style="text-align: left; margin-bottom: 1.5rem;">Why open-weight and cheap models fail outside of $200/mo proprietary setups.</p>
+            <div class="agent-trap-header">
+                <div class="agent-trap-badge">
+                    <span class="badge-dot"></span>
+                    <span>THE REALITY GAP</span>
+                </div>
+                <h2 class="agent-trap-title">The Autonomous Agent Trap</h2>
+                <p class="agent-trap-subtitle">Why open-weight and cheap models fail outside of $200/mo proprietary silos.</p>
+            </div>
             
             <div class="agent-trap-body">
-                <p class="agent-trap-intro">Outside of expensive proprietary silos, running autonomous agents on open-weight or non-frontier models is an exercise in rage-quitting:</p>
-                <ul class="agent-trap-list">
-                    <li><span class="trap-bullet">🔄</span> <div><strong>Infinite Repetition:</strong> Models loop on the exact same failed edit 12 times in a row without making progress.</div></li>
-                    <li><span class="trap-bullet">⏳</span> <div><strong>Analysis Paralysis:</strong> Agents spin in 10-turn &ldquo;read-only planning loops&rdquo; without writing a single line of code.</div></li>
-                    <li><span class="trap-bullet">💥</span> <div><strong>Schema Breakage:</strong> Malformed tool calls and hallucinated parameters trigger 3-strike crashes that abort your session.</div></li>
-                    <li><span class="trap-bullet">💸</span> <div><strong>The Token Snowball:</strong> Context balloons by 50k tokens per turn, leaving you paying $15 for broken code.</div></li>
-                </ul>
+                <p class="agent-trap-intro">Outside of expensive closed ecosystems, running coding agents like Cline and Zoo Code on open weights quickly turns into an exercise in frustration:</p>
+                
+                <div class="trap-grid">
+                    <div class="trap-card">
+                        <div class="trap-icon-box">🔄</div>
+                        <div class="trap-content">
+                            <div class="trap-card-header">
+                                <h3 class="trap-title">Infinite Repetition</h3>
+                                <span class="trap-tag">Stream Loop</span>
+                            </div>
+                            <p class="trap-desc">Models loop on the exact same failed edit 12 times in a row without making real file progress.</p>
+                        </div>
+                    </div>
+                    <div class="trap-card">
+                        <div class="trap-icon-box">⏳</div>
+                        <div class="trap-content">
+                            <div class="trap-card-header">
+                                <h3 class="trap-title">Analysis Paralysis</h3>
+                                <span class="trap-tag">Idle Burn</span>
+                            </div>
+                            <p class="trap-desc">Agents spin in 10-turn &ldquo;read-only planning loops&rdquo; without writing a single line of code.</p>
+                        </div>
+                    </div>
+                    <div class="trap-card">
+                        <div class="trap-icon-box">💥</div>
+                        <div class="trap-content">
+                            <div class="trap-card-header">
+                                <h3 class="trap-title">Schema Breakage</h3>
+                                <span class="trap-tag">3-Strike Crash</span>
+                            </div>
+                            <p class="trap-desc">Malformed tool calls and hallucinated parameters trigger 3-strike crashes that abort your session.</p>
+                        </div>
+                    </div>
+                    <div class="trap-card">
+                        <div class="trap-icon-box">💸</div>
+                        <div class="trap-content">
+                            <div class="trap-card-header">
+                                <h3 class="trap-title">The Token Snowball</h3>
+                                <span class="trap-tag">Context Bleed</span>
+                            </div>
+                            <p class="trap-desc">Context balloons by 50k tokens per turn, leaving you paying $15 for broken, abandoned code.</p>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="agent-trap-punchline">
-                    <strong>Nacho Flow wraps local models in active runtime guardrails</strong> &mdash; giving open-weights models the discipline, reliability, and precision of frontier reasoning agents.
+                    <div class="punchline-badge">
+                        <span class="punchline-icon">🛡️</span>
+                        <span class="punchline-label">THE SOLUTION</span>
+                    </div>
+                    <div class="punchline-text">
+                        <strong>Nacho Flow actively supervises your local and cloud open-weight models</strong> &mdash; severing repetition loops mid-stream, kickstarting idle agents, and auto-escalating to Claude only when a turn fails.
+                    </div>
                 </div>
             </div>
         </div>
@@ -177,7 +226,7 @@
                     <li>❌ <span class="stat-num">2,180,000</span> total tokens billed at frontier rates</li>
                     <li>❌ <span class="stat-num">$0.00</span> workstation GPU utilization ($0 ROI)</li>
                     <li>❌ <span class="stat-num">65</span> cloud round-trips for routine inspections</li>
-                    <li>❌ <span class="stat-num">0ms</span> failover protection if API drops or throttles</li>
+                    <li>❌ <span class="stat-num">No</span> automated failover protection if API drops or throttles</li>
                 </ul>
             </div>
 
@@ -191,14 +240,14 @@
                 <ul class="comparison-stats-list">
                     <li>✅ <span class="stat-num">48 turns</span> executed locally on Ollama/vLLM (<strong style="color:#10b981;">$0.00</strong>)</li>
                     <li>✅ <span class="stat-num">17 turns</span> escalated to DeepSeek-R1 / Claude</li>
-                    <li>✅ <span class="stat-num">100%</span> code quality and reasoning fidelity maintained</li>
-                    <li>✅ <span class="stat-num">0ms</span> circuit-breaker failover if local GPU runs out of VRAM</li>
+                    <li>✅ <span class="stat-num">100%</span> test pass rate with full reasoning fidelity on escalated turns</li>
+                    <li>✅ <span class="stat-num">Instant</span> circuit-breaker failover if local GPU runs out of VRAM</li>
                 </ul>
             </div>
         </div>
 
         <div class="savings-banner">
-            ⚡ Measured in production: 94.7% cost reduction with identical code output quality.
+            ⚡ Empirically verified: 94.7% cost reduction on standard 65-turn engineering benchmarks.
         </div>
     </section>
 
@@ -207,24 +256,13 @@
         <h2 class="section-title">Why Your Autonomous Agent Finally Works</h2>
         <p class="section-subtitle">Three active runtime supervisors that eliminate the catastrophic failure modes of local models.</p>
 
-        <!-- Centered 16:9 Widescreen Video Terminal Frame -->
+        <!-- Centered 16:9 Widescreen Video Showcase -->
         <div class="cycle-killer-video-container">
-            <div class="terminal-window">
-                <div class="terminal-header">
-                    <div class="terminal-dots">
-                        <span class="dot-red"></span>
-                        <span class="dot-yellow"></span>
-                        <span class="dot-green"></span>
-                    </div>
-                    <div class="terminal-title">🎸 cycle-killer-demo.mp4 — In-Flight Stream Breaker (&lt; 3s Loop Termination)</div>
-                    <div class="terminal-tag" style="color: #10b981; font-weight: 600; font-size: 0.75rem;">● 1280x720 NATIVE 16:9</div>
-                </div>
-                <div class="video-wrapper">
-                    <video id="cycle-killer-video" autoplay muted loop playsinline preload="auto">
-                        <source src="images/cycle-killer-demo.mp4" type="video/mp4">
-                        Your browser does not support the video tag.
-                    </video>
-                </div>
+            <div class="video-wrapper">
+                <video id="cycle-killer-video" autoplay muted loop playsinline preload="auto">
+                    <source src="images/cycle-killer-demo.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
             </div>
         </div>
 
@@ -259,38 +297,38 @@
         </div>
     </section>
 
-    <!-- Section 2: The Cost Engine & Multi-Target Topology -->
+    <!-- Section 2: Cost Tracking & Multi-Provider Routing -->
     <section class="cost-engine-section" id="cost-engine">
-        <h2 class="section-title">The Cost Engine &amp; Multi-Target Topology</h2>
-        <p class="section-subtitle">70%–92% fleet savings backed by verified mathematics and multi-provider dispatch.</p>
+        <h2 class="section-title">Cost Tracking &amp; Multi-Provider Routing</h2>
+        <p class="section-subtitle">Cut agent API spend by 70%–92% with cache-aware accounting, local GPU offloading, and spot pricing.</p>
 
         <div class="cost-engine-grid">
             <div class="cost-card glass">
                 <div class="cost-icon">🖥️☁️</div>
-                <div class="cost-header-tag">MULTI-TARGET TOPOLOGY</div>
-                <h3>True Hybrid Local GPU + Cloud Routing</h3>
-                <p>Orchestrate multiple local nodes (Ollama, vLLM), direct Claude subscriptions, and upstream aggregators (OpenRouter, Langdock) behind a single OpenAI-compatible <code>localhost:8000</code> endpoint.</p>
+                <div class="cost-header-tag">HYBRID ROUTING</div>
+                <h3>Local GPU &amp; Cloud Provider Routing</h3>
+                <p>Route requests dynamically between local inference (Ollama, vLLM), direct provider keys (Anthropic), and cloud aggregators (OpenRouter) behind a single OpenAI-compatible <code>localhost:8000</code> proxy.</p>
             </div>
 
             <div class="cost-card glass">
                 <div class="cost-icon">🔥</div>
-                <div class="cost-header-tag">AUTONOMOUS PRICE DISCOVERY</div>
-                <h3>Heat Seeker Spot Deal Scout</h3>
-                <p>Scans 300+ models in the background for underpriced capacity and flash subsidies. Automatically maps live deals into your active tier roles while you sleep.</p>
+                <div class="cost-header-tag">SPOT PRICING</div>
+                <h3>Heat Seeker: Real-Time Model Deals</h3>
+                <p>Continuously queries provider pricing catalogs for temporary price cuts, discounted throughput, and free trial models, surfacing drop-in tier replacements based on live pricing.</p>
             </div>
 
             <div class="cost-card glass">
                 <div class="cost-icon">💰</div>
-                <div class="cost-header-tag">DOLLAR-ACCURATE ACCOUNTING</div>
-                <h3>Prompt Cache-Aware Cost Engine</h3>
-                <p>Ingests upstream provider prompt cache discounts (~80% off prompt tokens). Real mathematical cost tracking ensures your dashboard matches your actual invoice.</p>
+                <div class="cost-header-tag">TOKEN ACCOUNTING</div>
+                <h3>Prompt Cache &amp; Exact Cost Tracking</h3>
+                <p>Tracks input, output, cache-read, and cache-write tokens at exact provider rates (accounting for up to 90% prompt cache discounts) so your session stats match your actual invoice.</p>
             </div>
 
             <div class="cost-card glass">
                 <div class="cost-icon">🎛️</div>
-                <div class="cost-header-tag">GRID-SEARCH HEURISTICS</div>
-                <h3>Curated Intelligence &amp; Auto-Tuner CLI</h3>
-                <p>Embedded vetted model gallery with auto OTA GitHub updates. Run <code>nacho-flow tune</code> to grid-search your session logs and optimize routing rules without touching config files.</p>
+                <div class="cost-header-tag">OFFLINE OPTIMIZATION</div>
+                <h3>Vetted Model Catalog &amp; Auto-Tuner CLI</h3>
+                <p>Includes a benchmarked catalog of coding models with automated catalog updates. Run <code>nacho-flow tune</code> to simulate routing rules against your historical session logs and optimize cost without manual guesswork.</p>
             </div>
         </div>
     </section>
@@ -329,7 +367,7 @@
             <div class="extension-card glass">
                 <div class="extension-badge">🌶️ HOTSAUCE DIRECTIVES</div>
                 <h3>In-Prompt Stream Steering &amp; Bypass</h3>
-                <p>Override routing right inside your chat turn with zero token latency. Directives like <code>@nacho:local</code>, <code>@nacho:cloud</code>, <code>@nacho:kickstart-off</code>, <code>@nacho:toggles</code>, and <code>@nacho:reset</code> are stripped cleanly before upstream dispatch.</p>
+                <p>Override routing right inside your chat turn with sub-microsecond directive evaluation. Directives like <code>@nacho:local</code>, <code>@nacho:cloud</code>, <code>@nacho:kickstart-off</code>, <code>@nacho:toggles</code>, and <code>@nacho:reset</code> are stripped cleanly before upstream dispatch.</p>
                 <div class="extension-tags">
                     <span class="ext-tag">🌶️ In-Band @nacho: Directives</span>
                     <span class="ext-tag">🚦 Mid-Flight Guardrail Toggles</span>
@@ -390,7 +428,7 @@
     <!-- Architectural Trust Bar (Under the Hood Specs) -->
     <section class="trust-specs-section">
         <h2 class="section-title">Under the Hood: Engine Specifications</h2>
-        <p class="section-subtitle">Written in pure Go with zero external dependencies. Wire-speed proxying with sub-millisecond overhead.</p>
+        <p class="section-subtitle">Written in pure Go with zero runtime dependencies. Wire-speed proxying with sub-millisecond overhead.</p>
 
         <div class="arch-trust-bar-container">
             <div class="arch-trust-bar glass">
@@ -399,7 +437,7 @@
                     <div class="trust-lbl">Go Core Latency</div>
                 </div>
                 <div class="trust-item">
-                    <div class="trust-top"><span class="trust-icon">🚀</span> <span class="trust-val"><!-- BENCHMARK:PEAK_VAL_START -->30,284+<!-- BENCHMARK:PEAK_VAL_END --></span></div>
+                    <div class="trust-top"><span class="trust-icon">🚀</span> <span class="trust-val"><!-- BENCHMARK:PEAK_VAL_START -->28,966+<!-- BENCHMARK:PEAK_VAL_END --></span></div>
                     <div class="trust-lbl">Peak Req / Sec</div>
                 </div>
                 <div class="trust-item">
@@ -407,8 +445,8 @@
                     <div class="trust-lbl">Tool Normalization</div>
                 </div>
                 <div class="trust-item">
-                    <div class="trust-top"><span class="trust-icon">🛡️</span> <span class="trust-val">Zero-Crash</span></div>
-                    <div class="trust-lbl">Stream Healing</div>
+                    <div class="trust-top"><span class="trust-icon">🛡️</span> <span class="trust-val">Self-Healing</span></div>
+                    <div class="trust-lbl">Stream Recovery</div>
                 </div>
                 <div class="trust-item">
                     <div class="trust-top"><span class="trust-icon">📏</span> <span class="trust-val">Context</span></div>
@@ -432,7 +470,7 @@
                     <span class="dot-green"></span>
                 </div>
                 <div class="terminal-title">nacho-flow proxy daemon (localhost:8000)</div>
-                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● PEAK <!-- BENCHMARK:TERMINAL_PEAK_START -->30,284<!-- BENCHMARK:TERMINAL_PEAK_END --> req/s</div>
+                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● PEAK <!-- BENCHMARK:TERMINAL_PEAK_START -->28,966<!-- BENCHMARK:TERMINAL_PEAK_END --> req/s</div>
             </div>
             <div class="terminal-body">
                 <div class="term-line">
@@ -467,7 +505,7 @@
     <!-- 1-Click Install Section -->
     <section class="install-section" id="quickstart">
         <h2 class="section-title">Get Started in 10 Seconds</h2>
-        <p class="section-subtitle">Zero dependencies. Single self-contained static binary.</p>
+        <p class="section-subtitle">Zero runtime dependencies. Single self-contained static binary.</p>
 
         <div class="install-box glass">
             <div class="install-tabs">
@@ -635,12 +673,96 @@ Model ID: nacho-hybrid</code></pre>
                 });
             }
 
-            // Mobile nav drawer toggle
+            // Mobile nav drawer, backdrop and accordion controller
             const toggle = document.getElementById('mobile-toggle');
             const links = document.getElementById('nav-links');
+            const dropdown = document.querySelector('.nav-dropdown');
+            const dropdownTrigger = document.querySelector('.dropdown-trigger');
+
+            // Ensure mobile backdrop exists
+            let backdrop = document.getElementById('mobile-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.id = 'mobile-backdrop';
+                backdrop.className = 'mobile-backdrop';
+                document.body.appendChild(backdrop);
+            }
+
+            function openMobileMenu() {
+                if (!links || !toggle) return;
+                links.classList.add('open');
+                toggle.classList.add('active');
+                toggle.setAttribute('aria-expanded', 'true');
+                if (backdrop) backdrop.classList.add('active');
+                document.body.classList.add('menu-locked');
+            }
+
+            function closeMobileMenu() {
+                if (!links || !toggle) return;
+                links.classList.remove('open');
+                toggle.classList.remove('active');
+                toggle.setAttribute('aria-expanded', 'false');
+                if (backdrop) backdrop.classList.remove('active');
+                document.body.classList.remove('menu-locked');
+                if (dropdown) {
+                    dropdown.classList.remove('expanded');
+                    if (dropdownTrigger) dropdownTrigger.setAttribute('aria-expanded', 'false');
+                }
+            }
+
             if (toggle && links) {
-                toggle.addEventListener('click', () => {
-                    links.classList.toggle('open');
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (links.classList.contains('open')) {
+                        closeMobileMenu();
+                    } else {
+                        openMobileMenu();
+                    }
+                });
+            }
+
+            if (backdrop) {
+                backdrop.addEventListener('click', closeMobileMenu);
+            }
+
+            if (dropdownTrigger && dropdown) {
+                dropdownTrigger.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isExpanded = dropdown.classList.toggle('expanded');
+                    dropdownTrigger.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+                });
+            }
+
+            // Close mobile menu when clicking outside
+            document.addEventListener('click', (e) => {
+                if (links && links.classList.contains('open')) {
+                    if (!links.contains(e.target) && !toggle.contains(e.target)) {
+                        closeMobileMenu();
+                    }
+                } else if (dropdown && dropdown.classList.contains('expanded')) {
+                    if (!dropdown.contains(e.target)) {
+                        dropdown.classList.remove('expanded');
+                        if (dropdownTrigger) dropdownTrigger.setAttribute('aria-expanded', 'false');
+                    }
+                }
+            });
+
+            // Close on escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeMobileMenu();
+                }
+            });
+
+            // Close mobile menu when clicking any nav link
+            if (links) {
+                links.querySelectorAll('a').forEach(link => {
+                    link.addEventListener('click', () => {
+                        if (window.innerWidth <= 900) {
+                            closeMobileMenu();
+                        }
+                    });
                 });
             }
         });

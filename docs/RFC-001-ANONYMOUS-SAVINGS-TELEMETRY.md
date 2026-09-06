@@ -124,7 +124,7 @@ When the milestone is activated, the website badge in `site/index.html` transiti
 
 ```html
 <div class="hero-badge">
-    Open Source · Zero Dependencies · Written in Go
+    Open Source · Zero Runtime Dependencies · Pure Go Static Binary
 </div>
 ```
 

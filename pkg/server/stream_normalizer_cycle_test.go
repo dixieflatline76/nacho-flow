@@ -137,14 +137,14 @@ func TestStreamNormalizer_Gemma4_ChannelThought_Normalization(t *testing.T) {
 	}
 
 	result := string(out)
-	if !strings.Contains(result, "<think>") {
-		t.Fatalf("expected <think> tag in normalized output, got:\n%s", result)
+	if !strings.Contains(result, "\"reasoning_content\":\"\\nReasoning about the problem...\\n\"") {
+		t.Fatalf("expected reasoning_content in normalized output, got:\n%s", result)
 	}
-	if !strings.Contains(result, "</think>") {
-		t.Fatalf("expected </think> tag in normalized output, got:\n%s", result)
+	if !strings.Contains(result, "Here is the answer.") {
+		t.Fatalf("expected answer content in normalized output, got:\n%s", result)
 	}
-	if strings.Contains(result, "<|channel>thought") || strings.Contains(result, "</thought>") {
-		t.Fatalf("raw Gemma 4 channel tags should be stripped/normalized, got:\n%s", result)
+	if strings.Contains(result, "<|channel>thought") || strings.Contains(result, "</thought>") || strings.Contains(result, "<think>") {
+		t.Fatalf("raw channel tags and think tags should not leak into content, got:\n%s", result)
 	}
 }
 

@@ -595,7 +595,7 @@ If you want to manually disable or re-enable Kickstart or Cycle Killer mid-sessi
   ```
 
 ### Q: What happens if Ollama or my local GPU runs out of VRAM or crashes?
-- **Zero Broken Loops**: Nacho Flow's built-in **Circuit Breaker** detects the connection failure or defective empty response and immediately re-routes the prompt to your configured `default_tier` (Cloud Fallback) with **0ms dial delay**.
+- **Zero Broken Loops**: Nacho Flow's built-in **Circuit Breaker** detects the connection failure or defective empty response and immediately re-routes the prompt to your configured `default_tier` (Cloud Fallback) with **instant in-memory failover**.
 - **Exception**: If you explicitly forced `@nacho:local` via a HotSauce directive, Nacho Flow respects your strict override and returns a zero-cost chat alert instead of billing your credit card.
 
 ### Q: How do I test a new rule before putting it in production?

@@ -23,6 +23,7 @@ logs/
 stats.json
 *.tmp.*
 config.tmp.*.yaml
+scratch/
 
 # Configuration backups & environment
 .env

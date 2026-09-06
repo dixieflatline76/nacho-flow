@@ -290,3 +290,68 @@ func TestCycleBreaker_ResetClearsBothLanes(t *testing.T) {
 		}
 	}
 }
+
+func TestCycleBreaker_LocalityGuard_DistantRepetitionsDoNotTrigger(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxProseTokens:      4000,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	phrase := "if we have a queen at "
+
+	// Occurrence 1
+	triggered, reason := cb.ProcessDelta(phrase, false)
+	if triggered {
+		t.Fatalf("unexpected trigger on occurrence 1: %s", reason)
+	}
+
+	// 60 unique words in between (> defaultMaxLoopDistance of 48)
+	for i := 0; i < 60; i++ {
+		cb.ProcessDelta(fmt.Sprintf("uniqueContextWordA%d ", i), false)
+	}
+
+	// Occurrence 2
+	triggered, reason = cb.ProcessDelta(phrase, false)
+	if triggered {
+		t.Fatalf("unexpected trigger on occurrence 2: %s", reason)
+	}
+
+	// Another 60 unique words in between
+	for i := 0; i < 60; i++ {
+		cb.ProcessDelta(fmt.Sprintf("uniqueContextWordB%d ", i), false)
+	}
+
+	// Occurrence 3 - In old global map, this triggered at count=3 even though separated by 120 words!
+	// With locality check, distance > 48 resets consecutive count, so it must NOT trigger!
+	triggered, reason = cb.ProcessDelta(phrase, false)
+	if triggered {
+		t.Fatalf("expected locality guard to prevent trigger on distant repetition, got %s", reason)
+	}
+}
+
+func TestCycleBreaker_NQueensAlgorithmicProse(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxProseTokens:      4000,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// Exact pattern from N-Queens solver explanation where the model analyses separate board placements
+	sections := []string{
+		"If we have a queen at row zero column zero then the entire diagonal is attacked. Let us continue exploring the remaining possibilities across the chessboard systematically to find all valid non-attacking configurations.\n\n",
+		"Next scenario to consider: If we have a queen at row one column two then column attacks are avoided. We can safely branch to row three and evaluate whether the remaining squares are defensible.\n\n",
+		"Finally in the third iteration: If we have a queen at row two column four we observe an intersection along the negative diagonal, forcing a backtrack.\n\n",
+	}
+
+	for i, s := range sections {
+		triggered, reason := cb.ProcessDelta(s, false)
+		if triggered {
+			t.Fatalf("N-Queens algorithmic explanation triggered cycle breaker at section %d: %s", i+1, reason)
+		}
+	}
+}

@@ -19,7 +19,7 @@ type DirectiveInfo struct {
 	Arg         string // Argument value for tier="..." or model="..."
 	ForcedTier  string // Resolved forced tier identifier
 	ForcedModel string // Resolved forced model ID
-	IsMeta      bool   // True if this directive is handled locally ($0.00 / 0ms)
+	IsMeta      bool   // True if this directive is handled locally ($0.00 / sub-millisecond local response)
 	Raw         string // The raw matching token (e.g. "@nacho:fast")
 }
 
@@ -192,7 +192,7 @@ func ExtractDirective(prompt string) (DirectiveInfo, string) {
 	}
 
 	// Standalone toggle check: if clean is empty (the prompt was solely the directive),
-	// mark toggles as meta directives for instant local ($0.00 / 0ms) acknowledgment.
+	// mark toggles as meta directives for instant local ($0.00 / sub-millisecond) acknowledgment.
 	if clean == "" && !info.IsMeta {
 		switch info.Directive {
 		case "kickstart-off", "kickstart-on",
@@ -216,17 +216,124 @@ func ScanDirectives(prompt string) (FeatureFlag, string) {
 	}
 
 	flags := FeatureDefaultAll
-	lower := strings.ToLower(prompt)
 
-	if strings.Contains(lower, "@nacho:raw") {
+	if containsFoldASCII(prompt, "@nacho:raw") {
 		flags = FeatureRawPassThrough
-	} else if strings.Contains(lower, "@nacho:no-shield") || strings.Contains(lower, "@nacho:noshield") ||
-		strings.Contains(lower, "@nacho:shield-off") || strings.Contains(lower, "@nacho:shield=off") {
+	} else if containsFoldASCII(prompt, "@nacho:no-shield") || containsFoldASCII(prompt, "@nacho:noshield") ||
+		containsFoldASCII(prompt, "@nacho:shield-off") || containsFoldASCII(prompt, "@nacho:shield=off") {
 		flags = flags.MaskOut(FeatureShieldEnabled | FeatureShieldFollowup | FeatureShieldModeSwitch)
 	}
 
-	clean := StripDirective(prompt)
+	clean := stripDirectiveManual(prompt)
 	return flags, clean
+}
+
+// containsFoldASCII performs a case-insensitive substring search for ASCII-only needles.
+// Zero heap allocations — operates on the string's backing bytes directly.
+func containsFoldASCII(haystack, needle string) bool {
+	nLen := len(needle)
+	if nLen > len(haystack) {
+		return false
+	}
+	for i := 0; i <= len(haystack)-nLen; i++ {
+		match := true
+		for j := 0; j < nLen; j++ {
+			hc := haystack[i+j]
+			nc := needle[j]
+			if hc >= 'A' && hc <= 'Z' {
+				hc += 'a' - 'A'
+			}
+			if nc >= 'A' && nc <= 'Z' {
+				nc += 'a' - 'A'
+			}
+			if hc != nc {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+// stripDirectiveManual removes all @nacho:... tokens using a zero-copy byte scanner.
+// Handles bare directives (@nacho:raw) and key-values (@nacho:tier="My Tier").
+func stripDirectiveManual(text string) string {
+	if text == "" {
+		return text
+	}
+
+	hasAt := false
+	for i := 0; i < len(text); i++ {
+		if text[i] == '@' {
+			hasAt = true
+			break
+		}
+	}
+	if !hasAt {
+		return text
+	}
+
+	var stackBuf [512]byte
+	var buf []byte
+	if len(text) <= len(stackBuf) {
+		buf = stackBuf[:0]
+	} else {
+		buf = make([]byte, 0, len(text))
+	}
+
+	prefixLen := len(DirectivePrefix) // len("@nacho:") = 7
+	i := 0
+	lastWasSpace := true
+
+	for i < len(text) {
+		if text[i] == '@' && i+prefixLen <= len(text) && containsFoldASCII(text[i:i+prefixLen], DirectivePrefix) {
+			j := i + prefixLen
+			for j < len(text) && (text[j] >= 'a' && text[j] <= 'z' || text[j] >= 'A' && text[j] <= 'Z' ||
+				text[j] >= '0' && text[j] <= '9' || text[j] == '-' || text[j] == '_') {
+				j++
+			}
+			if j < len(text) && text[j] == '=' {
+				j++
+				if j < len(text) && text[j] == '"' {
+					j++
+					for j < len(text) && text[j] != '"' {
+						j++
+					}
+					if j < len(text) {
+						j++
+					}
+				} else {
+					for j < len(text) && text[j] != ' ' && text[j] != '\t' && text[j] != '\n' && text[j] != '\r' {
+						j++
+					}
+				}
+			}
+			i = j
+			continue
+		}
+
+		if text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r' {
+			if !lastWasSpace {
+				buf = append(buf, ' ')
+				lastWasSpace = true
+			}
+			i++
+			continue
+		}
+
+		buf = append(buf, text[i])
+		lastWasSpace = false
+		i++
+	}
+
+	if len(buf) > 0 && buf[len(buf)-1] == ' ' {
+		buf = buf[:len(buf)-1]
+	}
+
+	return string(buf)
 }
 
 // StripDirective removes all @nacho:... directives and collapses excess whitespace.

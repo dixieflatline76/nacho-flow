@@ -131,7 +131,8 @@ func GetUserConfigDir() (string, error) {
 // in the user's config directory, matching the storage convention of stats.json.
 func GetDirectiveFilePath() (string, error) {
 	if custom := os.Getenv("NACHO_DIRECTIVE_FILE"); custom != "" {
-		dir := filepath.Dir(custom)
+		dir := filepath.Clean(filepath.Dir(custom))
+		// #nosec G703 - directory path derived from explicit user-configured environment variable
 		if mkErr := os.MkdirAll(dir, 0750); mkErr != nil {
 			return "", mkErr
 		}

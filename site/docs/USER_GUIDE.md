@@ -499,14 +499,14 @@ Nacho Flow evaluates tiers sequentially from **top to bottom**. The **first tier
 3. **Retry-Based Auto-Escalation**:  
    If a local model generates malformed code or hallucinates, coding agents retry. Nacho Flow tracks session retry counts (keyed by prompt prefix hash with sliding 5-min TTL) so routing expressions like `Retries < 2` automatically escalate the turn to cloud models, breaking failure loops.
 4. **Local Provider Circuit Breaker**:  
-   Monitors local provider errors (connection refused, timeouts, 5xx). After consecutive failures, the circuit breaker opens for 20 seconds, fast-failing local attempts in 0ms and routing directly to cloud fallback without client-visible errors.
+   Monitors local provider errors (connection refused, timeouts, 5xx). After consecutive failures, the circuit breaker opens for 20 seconds, fast-failing local attempts with sub-millisecond in-memory redirection and routing directly to cloud fallback without client-visible errors.
 5. **Delayed Header / Quality Fallback**:  
    For streaming SSE requests, Nacho Flow delays sending `200 OK` until peeking the first data chunk. If the local model returns empty choices or immediate `data: [DONE]`, Nacho Flow transparently cancels the local attempt and streams from the default fallback tier.
 
 ### 🛠️ Universal Multi-Model Tool-Calling Normalizer
 Open-source models (e.g. Qwen 2.5, Mistral, Llama 3.1, Hermes) often return tool calls formatted inside markdown code fences or specialized XML tags rather than native OpenAI `tool_calls` structures.
 
-Nacho Flow includes a **zero-alloc lexical bracket balancer** that automatically detects and converts 7 format families on the fly:
+Nacho Flow includes an **in-flight lexical bracket balancer & tool normalizer** that automatically detects and converts 7 format families on the fly:
 1. **Hermes / Nous / Qwen ChatML**: `<tool_call>{"name":"...","arguments":{...}}</tool_call>`
 2. **Mistral / Mixtral**: `[TOOL_CALLS] [{"name":"...","arguments":{...}}]`
 3. **Llama 3 Tags**: `<function=name>{"param":"value"}</function>`
