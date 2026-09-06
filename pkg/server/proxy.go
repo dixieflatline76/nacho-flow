@@ -212,6 +212,10 @@ func NewServerWithTelemetryAndRegistry(
 	if oracle == nil {
 		oracle = telemetry.NewPricingOracle()
 	}
+	for i := range cfg.Tiers {
+		ResolveTierVision(&cfg.Tiers[i], oracle)
+	}
+	ResolveTierVision(&cfg.DefaultTier, oracle)
 	if tracker == nil {
 		tracker = telemetry.NewStatsTracker(1000)
 	}
@@ -772,6 +776,36 @@ func resolveFeatureFlags(reqCtx contract.RequestContext, targetTier contract.Tie
 	return flags
 }
 
+// ResolveTierVision determines whether a tier's model supports multimodal image inputs.
+// Priority order:
+// 1. If StripImages is true -> ResolvedHasVision = false (explicit stripping always wins).
+// 2. If HasVision is explicitly specified in YAML (*bool) -> use that value.
+// 3. If PricingOracle metadata reports SupportsVision -> use that.
+// 4. Fallback for canonical frontier multimodal families (gemini, claude, gpt-4o, *-vl) when uncataloged/offline.
+// 5. Default to false (safe text-only mode).
+func ResolveTierVision(t *contract.Tier, oracle *telemetry.PricingOracle) {
+	if t.StripImages {
+		t.ResolvedHasVision = false
+		return
+	}
+	if t.HasVision != nil {
+		t.ResolvedHasVision = *t.HasVision
+		return
+	}
+	if oracle != nil {
+		if meta, ok := oracle.GetModelMetadata(t.Provider, t.Model); ok {
+			t.ResolvedHasVision = meta.SupportsVision
+			return
+		}
+	}
+	m := strings.ToLower(t.Model)
+	if strings.Contains(m, "gemini") || strings.Contains(m, "claude") || strings.Contains(m, "gpt-4o") || strings.Contains(m, "-vl") {
+		t.ResolvedHasVision = true
+		return
+	}
+	t.ResolvedHasVision = false
+}
+
 func (s *Server) dispatchTier(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -828,7 +862,8 @@ func (s *Server) dispatchTier(
 		}
 	}
 
-	hasVision := strings.Contains(strings.ToLower(targetTier.Model), "vision") || strings.Contains(strings.ToLower(targetTier.Model), "flash") || targetTier.Provider == "openrouter"
+	ResolveTierVision(&targetTier, s.oracle)
+	hasVision := targetTier.ResolvedHasVision
 	if targetTier.StripImages {
 		hasVision = false
 	}

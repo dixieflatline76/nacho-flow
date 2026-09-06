@@ -132,6 +132,14 @@ tiers:
     when: "SessionKickstarted && Retries < 3"
 
   # ---------------------------------------------------------------------------
+  # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
+  # ---------------------------------------------------------------------------
+  - name: "Tier: Multimodal Vision (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "HasImages && Retries < 2"
+
+  # ---------------------------------------------------------------------------
   # TIER 1: Local GPU Workhorse (Devstral Small 24B) - 100% VRAM Offload
   # Devstral handles Cline's XML tool format natively (vs Gemma = JSON function calling).
   # Lower token ceiling (12k) for tighter VRAM on 16GB RX 6900 XT.

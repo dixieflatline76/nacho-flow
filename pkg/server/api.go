@@ -307,6 +307,12 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 		return "", err
 	}
 
+	// 2b. Resolve multimodal vision capabilities for each tier
+	for i := range merged.Tiers {
+		ResolveTierVision(&merged.Tiers[i], s.oracle)
+	}
+	ResolveTierVision(&merged.DefaultTier, s.oracle)
+
 	// 3. Pre-compile AST expr rules to verify syntax
 	newEval, err := strategy.NewExprEvaluator(merged.Tiers, merged.DefaultTier, merged.Providers)
 	if err != nil {

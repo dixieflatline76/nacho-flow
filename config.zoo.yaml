@@ -115,6 +115,14 @@ tiers:
     when: "SessionKickstarted && Retries < 3"
 
   # ---------------------------------------------------------------------------
+  # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
+  # ---------------------------------------------------------------------------
+  - name: "Tier: Multimodal Vision (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "HasImages && Retries < 2"
+
+  # ---------------------------------------------------------------------------
   # TIER 1: Local GPU Workhorse (100% Free VRAM Offload)
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"

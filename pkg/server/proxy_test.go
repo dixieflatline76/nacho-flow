@@ -2052,3 +2052,111 @@ func TestStreamNormalizer_Features_RawPassThrough(t *testing.T) {
 		t.Fatalf("expected raw pass-through without <think> tags, got: %s", string(out))
 	}
 }
+
+func TestResolveTierVision(t *testing.T) {
+	bTrue := true
+	bFalse := false
+	oracle := telemetry.NewPricingOracle()
+
+	tests := []struct {
+		name     string
+		tier     contract.Tier
+		expected bool
+	}{
+		{
+			name: "explicit has_vision = true in YAML",
+			tier: contract.Tier{
+				Model:     "custom/my-text-model",
+				HasVision: &bTrue,
+			},
+			expected: true,
+		},
+		{
+			name: "explicit has_vision = false in YAML overrides model name",
+			tier: contract.Tier{
+				Model:     "google/gemini-3.7-flash",
+				HasVision: &bFalse,
+			},
+			expected: false,
+		},
+		{
+			name: "strip_images = true forces false even with has_vision = true",
+			tier: contract.Tier{
+				Model:       "google/gemini-3.7-flash",
+				HasVision:   &bTrue,
+				StripImages: true,
+			},
+			expected: false,
+		},
+		{
+			name: "gemini family automatically inferred as vision",
+			tier: contract.Tier{
+				Model: "google/gemini-2.5-pro",
+			},
+			expected: true,
+		},
+		{
+			name: "claude family automatically inferred as vision",
+			tier: contract.Tier{
+				Model: "anthropic/claude-sonnet-5",
+			},
+			expected: true,
+		},
+		{
+			name: "gpt-4o family automatically inferred as vision",
+			tier: contract.Tier{
+				Model: "openai/gpt-4o-mini",
+			},
+			expected: true,
+		},
+		{
+			name: "vl family automatically inferred as vision",
+			tier: contract.Tier{
+				Model: "qwen/qwen-2.5-vl-72b",
+			},
+			expected: true,
+		},
+		{
+			name: "qwen coder plus has no vision",
+			tier: contract.Tier{
+				Model:    "qwen/qwen3-coder-plus",
+				Provider: "openrouter",
+			},
+			expected: false,
+		},
+		{
+			name: "deepseek r1 has no vision",
+			tier: contract.Tier{
+				Model:    "deepseek/deepseek-r1",
+				Provider: "openrouter",
+			},
+			expected: false,
+		},
+		{
+			name: "random model with word flash is NOT assumed to have vision",
+			tier: contract.Tier{
+				Model:    "mistral/mistral-flash-code",
+				Provider: "openrouter",
+			},
+			expected: false,
+		},
+		{
+			name: "unknown model defaults safely to false",
+			tier: contract.Tier{
+				Model:    "unknown/local-model:7b",
+				Provider: "ollama",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tierCopy := tc.tier
+			ResolveTierVision(&tierCopy, oracle)
+			if tierCopy.ResolvedHasVision != tc.expected {
+				t.Errorf("ResolveTierVision(%s) = %v; want %v", tc.tier.Model, tierCopy.ResolvedHasVision, tc.expected)
+			}
+		})
+	}
+}
