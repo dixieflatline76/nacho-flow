@@ -327,7 +327,7 @@ nav {
 
 /* Hero Section */
 .hero {
-    padding: 140px 2rem 50px;
+    padding: 140px 2rem 15px;
     text-align: center;
     position: relative;
     background: radial-gradient(circle at 50% 20%, rgba(245, 158, 11, 0.12) 0%, transparent 60%);
@@ -419,7 +419,7 @@ h1 {
     justify-content: center;
     gap: 1rem;
     flex-wrap: wrap;
-    margin-bottom: 3.5rem;
+    margin-bottom: 1.25rem;
 }
 
 .btn-primary {
@@ -1414,71 +1414,234 @@ footer {
 
 
 /* ==========================================================================
-   The Autonomous Agent Trap Section
+   The Autonomous Agent Trap Section (The Reality Gap)
    ========================================================================== */
 .agent-trap-section {
-    padding: 3rem 2rem;
-    max-width: 1000px;
+    padding: 1rem 2rem 3.5rem;
+    max-width: 1060px;
     margin: 0 auto;
 }
 
 .agent-trap-container {
-    padding: 2.5rem 3rem;
-    border-radius: 16px;
-    border: 1px solid rgba(239, 68, 68, 0.25);
-    background: radial-gradient(circle at 50% 0%, rgba(239, 68, 68, 0.08) 0%, rgba(15, 17, 24, 0.95) 75%);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    padding: 2.8rem 3rem;
+    border-radius: 24px;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    background: radial-gradient(130% 100% at 50% 0%, rgba(239, 68, 68, 0.12) 0%, rgba(24, 18, 26, 0.78) 40%, rgba(13, 15, 22, 0.96) 100%);
+    box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 45px rgba(239, 68, 68, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    transition: all 0.3s ease;
+}
+
+.agent-trap-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 15%;
+    right: 15%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(239, 68, 68, 0.8), rgba(245, 158, 11, 0.5), transparent);
+}
+
+.agent-trap-header {
+    margin-bottom: 1.8rem;
 }
 
 .agent-trap-badge {
-    display: inline-block;
-    font-size: 0.72rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.74rem;
     font-weight: 700;
-    color: #ef4444;
-    background: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    padding: 0.2rem 0.6rem;
-    border-radius: 12px;
-    letter-spacing: 1px;
-    margin-bottom: 1rem;
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    padding: 0.32rem 0.85rem;
+    border-radius: 30px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.15);
+}
+
+.badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ef4444;
+    box-shadow: 0 0 8px #ef4444;
+    animation: pulseRed 2s infinite;
+}
+
+@keyframes pulseRed {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.agent-trap-title {
+    font-size: clamp(1.85rem, 3.5vw, 2.4rem);
+    font-weight: 800;
+    letter-spacing: -1px;
+    line-height: 1.2;
+    margin: 0.9rem 0 0.4rem;
+    background: linear-gradient(180deg, #ffffff 45%, #fda4af 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.agent-trap-subtitle {
+    font-size: 1.05rem;
+    color: #94a3b8;
+    line-height: 1.6;
+    margin: 0;
 }
 
 .agent-trap-intro {
-    font-size: 1.1rem;
-    color: var(--text-primary);
-    margin-bottom: 1.5rem;
+    font-size: 1.05rem;
+    color: #cbd5e1;
+    margin-bottom: 1.6rem;
     line-height: 1.6;
 }
 
-.agent-trap-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+.trap-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
     margin-bottom: 2rem;
 }
 
-.agent-trap-list li {
+.trap-card {
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.35rem 1.4rem;
     display: flex;
+    gap: 1.1rem;
     align-items: flex-start;
-    gap: 0.75rem;
-    font-size: 0.98rem;
-    color: var(--text-secondary);
-    line-height: 1.5;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    overflow: hidden;
 }
 
-.trap-bullet {
-    font-size: 1.1rem;
+.trap-card:hover {
+    transform: translateY(-3px);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+    border-color: rgba(239, 68, 68, 0.35);
+    box-shadow: 0 14px 30px -8px rgba(0, 0, 0, 0.6), 0 0 20px rgba(239, 68, 68, 0.08);
+}
+
+.trap-icon-box {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
     flex-shrink: 0;
-    margin-top: 0.1rem;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
+}
+
+.trap-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.trap-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.trap-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #f8fafc;
+    margin: 0;
+}
+
+.trap-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 0.18rem 0.55rem;
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.28);
+    white-space: nowrap;
+}
+
+.trap-desc {
+    font-size: 0.91rem;
+    color: #94a3b8;
+    line-height: 1.55;
+    margin: 0;
 }
 
 .agent-trap-punchline {
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    padding-top: 1.5rem;
-    font-size: 1.08rem;
-    color: var(--cyan);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(14, 165, 233, 0.06) 100%);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: 18px;
+    padding: 1.35rem 1.8rem;
+    display: flex;
+    align-items: center;
+    gap: 1.4rem;
+    box-shadow: 0 15px 35px -10px rgba(0, 0, 0, 0.5), 0 0 30px rgba(16, 185, 129, 0.1);
+    backdrop-filter: blur(12px);
+}
+
+.punchline-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    padding: 0.35rem 0.85rem;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: #34d399;
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.punchline-icon {
+    font-size: 1rem;
+}
+
+.punchline-text {
+    font-size: 1.02rem;
     line-height: 1.6;
+    color: #e2e8f0;
+}
+
+.punchline-text strong {
+    color: #6ee7b7;
+    font-weight: 700;
+}
+
+@media (max-width: 900px) {
+    .trap-grid {
+        grid-template-columns: 1fr;
+    }
+    .agent-trap-container {
+        padding: 2rem 1.8rem;
+    }
+    .agent-trap-punchline {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.8rem;
+    }
 }
 
 /* ==========================================================================
