@@ -20,7 +20,7 @@ Indeed, popular enterprise gateways like **LiteLLM** add **$8.0\text{--}25.0\tex
 Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 - **Raw Pass-Through Proxy Latency**: **$0.184\text{ ms}$** ($184.7\,\mu\text{s}$)
 - **Full Deep-Inspection Latency** (Bearer Auth + AST Rules + Multi-Model Normalization): **$0.205\text{ ms}$** ($205.9\,\mu\text{s}$)
-- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$28,995\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
+- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$28,966\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
 - **Idle Memory Footprint**: **$< 25\text{ MB}$** (peaking under $111\text{ MB}$ at $500$ simultaneous client streams).
 
 ```
@@ -323,11 +323,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$28189.0\text{ req/s}$** | $1.77\text{ ms}$ | $7.09\text{ ms}$ | $75.1\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$23480.6\text{ req/s}$** | $3.09\text{ ms}$ | $18.18\text{ ms}$ | $138.3\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$25735.2\text{ req/s}$** | $8.21\text{ ms}$ | $38.35\text{ ms}$ | $164.0\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$23273.3\text{ req/s}$** | $16.96\text{ ms}$ | $89.91\text{ ms}$ | $222.6\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$25169.2\text{ req/s}$** | $36.88\text{ ms}$ | $77.37\text{ ms}$ | $122.2\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$25048.0\text{ req/s}$** | $1.61\text{ ms}$ | $9.16\text{ ms}$ | $95.3\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$24452.5\text{ req/s}$** | $3.00\text{ ms}$ | $20.09\text{ ms}$ | $96.6\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$28881.6\text{ req/s}$** | $7.80\text{ ms}$ | $27.32\text{ ms}$ | $155.1\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$26115.7\text{ req/s}$** | $14.20\text{ ms}$ | $59.79\text{ ms}$ | $145.8\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$26217.5\text{ req/s}$** | $36.36\text{ ms}$ | $63.76\text{ ms}$ | $165.4\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 ### Nanosecond Micro-Benchmark Suite
