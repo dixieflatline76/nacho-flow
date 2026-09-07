@@ -15,6 +15,10 @@ Nacho Flow is an open-source, high-performance agent supervisor and model dispat
   * Eliminated redundant reload loops when updating settings from the dashboard or extension.
   * Improved configuration file path resolution across varied project roots and multi-folder workspaces.
 
+* **Win32 Metadata & Loopback Security:**
+  * **Win32 PE Resource Embedding**: The Windows binary now embeds standard PE `VERSIONINFO` metadata with Publisher set to `Spicebox` (matching [spicebox.dev](https://spicebox.dev)), eliminating the "Publisher: Unknown" label in Windows security prompts.
+  * **Default Loopback (127.0.0.1)**: Switched default daemon bind address from `0.0.0.0` to `127.0.0.1` (local machine only) to eliminate Windows Defender Firewall prompts on initial launch, while retaining `-host 0.0.0.0` and `host` in `config.yaml` for LAN sharing.
+
 * **Documentation & Web Navigation:**
   * Full audit across all guides and whitepapers—zero broken anchors or missing links.
   * Polished the documentation viewer with smooth scrolling and responsive navigation dropdowns.
