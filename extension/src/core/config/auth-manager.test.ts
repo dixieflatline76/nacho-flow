@@ -53,6 +53,16 @@ describe('AuthManager', () => {
       expect(authManager.getEngineMode()).toBe('remote');
       expect(mockGlobalState.update).toHaveBeenCalledWith('nacho-flow.engine-mode', 'remote');
     });
+
+    it('should get and set isLocalEngineRunning', async () => {
+      expect(authManager.isLocalEngineRunning()).toBe(false);
+      await authManager.setLocalEngineRunning(true);
+      expect(authManager.isLocalEngineRunning()).toBe(true);
+      expect(mockGlobalState.update).toHaveBeenCalledWith('nacho-flow.local-engine-running', true);
+      await authManager.setLocalEngineRunning(false);
+      expect(authManager.isLocalEngineRunning()).toBe(false);
+      expect(mockGlobalState.update).toHaveBeenCalledWith('nacho-flow.local-engine-running', false);
+    });
   });
 
   describe('remoteUrl', () => {

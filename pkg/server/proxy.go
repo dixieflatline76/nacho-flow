@@ -48,6 +48,7 @@ type Server struct {
 	diskStore      *store.DiskStore
 	trafficLogPath string
 	configPath     string
+	lastDiskWriteUnixNano atomic.Int64
 	startTime      time.Time
 	mementoState   *runtimeState
 	watchdogMu     sync.Mutex
@@ -81,7 +82,7 @@ func (s *Server) GetRegistry() *provider.Registry {
 	return nil
 }
 
-// SetRingBuffer attaches a ring buffer sink for /api/v1/routes.
+// SetRingBuffer attaches a ring buffer sink to the server.
 func (s *Server) SetRingBuffer(rb *telemetry.RingBufferSink) {
 	s.ringBuffer = rb
 }
@@ -94,6 +95,16 @@ func (s *Server) SetEventBroker(eb *telemetry.EventBroker) {
 // SetConfigPath sets the path to config.yaml on disk.
 func (s *Server) SetConfigPath(path string) {
 	s.configPath = path
+}
+
+// SetLastDiskWriteUnixNano records the unix nanosecond timestamp when the server wrote config to disk.
+func (s *Server) SetLastDiskWriteUnixNano(nano int64) {
+	s.lastDiskWriteUnixNano.Store(nano)
+}
+
+// GetLastDiskWriteUnixNano returns the unix nanosecond timestamp when the server last wrote config to disk.
+func (s *Server) GetLastDiskWriteUnixNano() int64 {
+	return s.lastDiskWriteUnixNano.Load()
 }
 
 // SetTuner sets the optimizer for /api/v1/tune.

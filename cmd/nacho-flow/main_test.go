@@ -923,8 +923,28 @@ providers:
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	// Modify config file
+	// 1. Trigger skip reload by simulating server's own ApplyConfig write timestamp
 	time.Sleep(100 * time.Millisecond)
+	cfgSkip := `
+port: 59970
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
+`
+	_ = os.WriteFile(cfgPath, []byte(cfgSkip), 0600)
+	if fi, err := os.Stat(cfgPath); err == nil {
+		p.mu.Lock()
+		if p.server != nil {
+			if srvH, ok := p.server.Handler.(interface{ SetLastDiskWriteUnixNano(int64) }); ok {
+				srvH.SetLastDiskWriteUnixNano(fi.ModTime().UnixNano())
+			}
+		}
+		p.mu.Unlock()
+	}
+	time.Sleep(1200 * time.Millisecond)
+
+	// 2. Modify config file normally to trigger successful hot reload
 	cfg2 := `
 port: 59970
 providers:
@@ -935,8 +955,18 @@ providers:
     base_url: "https://openrouter.ai/api/v1"
     type: "cloud"
 `
+	p.mu.Lock()
+	if p.server != nil {
+		if srvH, ok := p.server.Handler.(interface{ SetLastDiskWriteUnixNano(int64) }); ok {
+			srvH.SetLastDiskWriteUnixNano(0)
+		}
+	}
+	p.mu.Unlock()
 	_ = os.WriteFile(cfgPath, []byte(cfg2), 0600)
-	// Give the watcher ticker a cycle
+	time.Sleep(1200 * time.Millisecond)
+
+	// 3. Write invalid YAML to trigger error path in hot-reload
+	_ = os.WriteFile(cfgPath, []byte("invalid: yaml: ["), 0600)
 	time.Sleep(1200 * time.Millisecond)
 
 	_ = p.Stop(mock)
@@ -1041,3 +1071,131 @@ tiers:
 		t.Errorf("expected isAddressInUse to be true for runErr: %v", runErr)
 	}
 }
+
+func TestAsyncRun_NilSlogAndError(t *testing.T) {
+	origInteractive := serviceInteractiveFunc
+	serviceInteractiveFunc = func() bool { return true }
+	defer func() { serviceInteractiveFunc = origInteractive }()
+
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatalf("failed to listen on port: %v", err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfgContent := fmt.Sprintf(`
+port: %d
+providers:
+  p:
+    type: cloud
+    base_url: http://127.0.0.1:1234
+default_tier:
+  provider: p
+  model: m
+tiers:
+  - name: t
+    provider: p
+    model: m
+`, port)
+	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
+
+	*configPathFlag = cfgPath
+	defer func() { *configPathFlag = "" }()
+
+	exitCh := make(chan struct{})
+	p := &program{
+		onExit: exitCh,
+		slog:   nil, // explicitly nil to cover lines 98-102
+	}
+	mock := &mockService{}
+
+	go p.asyncRun(mock)
+
+	select {
+	case <-exitCh:
+		// Succeeded in completing asyncRun with nil slog
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for asyncRun to exit")
+	}
+}
+
+func TestRun_RecentRoutesHydration(t *testing.T) {
+	origInteractive := serviceInteractiveFunc
+	serviceInteractiveFunc = func() bool { return true }
+	defer func() { serviceInteractiveFunc = origInteractive }()
+
+	tmpDir := t.TempDir()
+	t.Setenv("NACHO_CONFIG_DIR", tmpDir)
+
+	// Pre-create traffic.jsonl with a valid TurnRecord to exercise hydration loop
+	trafficPath := filepath.Join(tmpDir, "traffic.jsonl")
+	recordJSON := `{"request_id":"req-1","model":"test-model","input_tokens":10,"output_tokens":20,"latency_ms":5,"status":200,"tier_name":"test-tier","provider_name":"test-prov","total_cost_usd":0.001}` + "\n"
+	if err := os.WriteFile(trafficPath, []byte(recordJSON), 0600); err != nil {
+		t.Fatalf("failed to write traffic.jsonl: %v", err)
+	}
+
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatalf("failed to listen on port: %v", err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfgContent := fmt.Sprintf(`
+port: %d
+providers:
+  p:
+    type: cloud
+    base_url: http://127.0.0.1:1234
+default_tier:
+  provider: p
+  model: m
+tiers:
+  - name: t
+    provider: p
+    model: m
+`, port)
+	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
+
+	*configPathFlag = cfgPath
+	defer func() { *configPathFlag = "" }()
+
+	p := &program{}
+	mock := &mockService{}
+
+	// Calling run will trigger traffic log opening and ReadRecords hydration before port collision
+	_ = p.run(mock)
+}
+
+func TestFetchDeals_DecodeError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{invalid-json"))
+	}))
+	defer ts.Close()
+
+	_, err := fetchDeals(ts.URL, "test-api-key")
+	if err == nil {
+		t.Fatal("expected error from malformed JSON response, got nil")
+	}
+}
+
+func TestExecuteStartupDirectives_MalformedJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	directiveFile := filepath.Join(tmpDir, "directive.json")
+	_ = os.WriteFile(directiveFile, []byte("{invalid-json-directive"), 0600)
+
+	err := executeStartupDirectives(directiveFile)
+	if err != nil {
+		t.Fatalf("expected nil error on malformed directive (never halts boot), got: %v", err)
+	}
+	if _, err := os.Stat(directiveFile); !os.IsNotExist(err) {
+		t.Fatalf("expected malformed directive file to be wiped, but it still exists")
+	}
+}
+

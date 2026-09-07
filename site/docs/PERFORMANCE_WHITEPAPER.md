@@ -1,6 +1,6 @@
 # 📄 Architectural Whitepaper: Near-Zero Allocation Hot Paths & Wire-Speed Agent Supervision
 
-**How Nacho Flow Delivers Deep Semantic Payload Inspection, Live AST Evaluation, and In-Flight Stream Healing in $< 0.2\text{ms}$ with <!-- BENCHMARK:WHITEPAPER_SUBTITLE_START -->$28,000+\text{ req/s}$<!-- BENCHMARK:WHITEPAPER_SUBTITLE_END --> Throughput.**
+**How Nacho Flow Delivers Deep Semantic Payload Inspection, Live AST Evaluation, and In-Flight Stream Healing in $< 0.2\text{ms}$ with <!-- BENCHMARK:WHITEPAPER_SUBTITLE_START -->$30,000+\text{ req/s}$<!-- BENCHMARK:WHITEPAPER_SUBTITLE_END --> Throughput.**
 
 *Author: Karl Kwong / Dixieflatline76*  
 *Target Engine: Nacho Flow Core Engine (Pure Go, Static Binary, Zero CGO)*  
@@ -20,7 +20,7 @@ Indeed, popular enterprise gateways like **LiteLLM** add **$8.0\text{--}25.0\tex
 Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 - **Raw Pass-Through Proxy Latency**: **$0.184\text{ ms}$** ($184.7\,\mu\text{s}$)
 - **Full Deep-Inspection Latency** (Bearer Auth + AST Rules + Multi-Model Normalization): **$0.205\text{ ms}$** ($205.9\,\mu\text{s}$)
-- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$28,966\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
+- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,284\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
 - **Idle Memory Footprint**: **$< 25\text{ MB}$** (peaking under $111\text{ MB}$ at $500$ simultaneous client streams).
 
 ```
@@ -121,7 +121,7 @@ flowchart TD
 
 Rather than deserializing the incoming JSON payload to check for tool calls, markdown fences, or HotSauce directives, Nacho Flow executes a **fast-path byte scan directly against the raw byte buffer**.
 
-In [`pkg/router/tool_normalizer.go:L47-L55`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/router/tool_normalizer.go#L47-L55):
+In [`pkg/router/tool_normalizer.go:L47-L55`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/router/tool_normalizer.go#L47-L55):
 
 ```go
 // Normalize runs content through the prioritized parser pipeline.
@@ -146,7 +146,7 @@ func (p *NormalizerPipeline) Normalize(content string) (string, []RawToolCall, b
 #### Why This Is Fast:
 `strings.IndexByte` in Go compiles down to assembly using CPU vector instructions (`VPCMPEQB` / `PCMPISTRI` on x86_64, `NEON` on ARM64). A $20\text{ KB}$ string can be checked for structural characters in **$76.05\text{ ns}$ with $0\text{ B/op}$ heap allocation**. For standard prose turns, the tool normalizer exits in less than a tenth of a microsecond.
 
-Similarly, in-prompt directive scanning ([`pkg/router/directive.go:L26-L40`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/router/directive.go#L26-L40)) checks for `@nacho:` in **$56.95\text{ ns}$** without invoking regular expressions unless an `@` symbol is actually present.
+Similarly, in-prompt directive scanning ([`pkg/router/directive.go:L26-L40`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/router/directive.go#L26-L40)) checks for `@nacho:` in **$56.95\text{ ns}$** without invoking regular expressions unless an `@` symbol is actually present.
 
 ---
 
@@ -156,7 +156,7 @@ Traditional dynamic proxies evaluate routing rules via runtime scripting, regex 
 
 Nacho Flow uses an ahead-of-time (AOT) compiled bytecode engine based on `expr`. When `config.yaml` is loaded or hot-reloaded via Memento watchdog, all routing conditions (`Tokens < 8000 && Retries < 2`) are compiled into a compact bytecode program:
 
-In [`pkg/strategy/expr_evaluator.go:L25-L42`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/strategy/expr_evaluator.go#L25-L42):
+In [`pkg/strategy/expr_evaluator.go:L25-L42`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/strategy/expr_evaluator.go#L25-L42):
 
 ```go
 // NewExprEvaluator compiles all tier expressions in advance for nanosecond execution.
@@ -181,7 +181,7 @@ func NewExprEvaluator(tiers []contract.Tier, defaultTier contract.Tier, provider
 }
 ```
 
-At request time ([`pkg/strategy/expr_evaluator.go:L112-L130`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/strategy/expr_evaluator.go#L112-L130)):
+At request time ([`pkg/strategy/expr_evaluator.go:L112-L130`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/strategy/expr_evaluator.go#L112-L130)):
 
 ```go
 output, err := expr.Run(ct.program, reqCtx)
@@ -201,7 +201,7 @@ The **Cycle Killer** and **Agentic Tool Fallback Shield** must inspect what the 
 
 Nacho Flow accomplishes this using a **pooled, fixed-capacity circular ring buffer**:
 
-In [`pkg/router/shield/tail_buffer.go:L7-L59`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/router/shield/tail_buffer.go#L7-L59):
+In [`pkg/router/shield/tail_buffer.go:L7-L59`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/router/shield/tail_buffer.go#L7-L59):
 
 ```go
 var defaultTailBufferPool = sync.Pool{
@@ -225,7 +225,7 @@ func (tb *TailBuffer) Append(data []byte) {
 }
 ```
 
-To detect infinite loops across sliding word windows, the Cycle Killer hashes 6-word sequences using 64-bit Fowler–Noll–Vo (FNV-1a) non-cryptographic hashing in [`pkg/router/shield/cycle_breaker.go:L246-L267`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/router/shield/cycle_breaker.go#L246-L267):
+To detect infinite loops across sliding word windows, the Cycle Killer hashes 6-word sequences using 64-bit Fowler–Noll–Vo (FNV-1a) non-cryptographic hashing in [`pkg/router/shield/cycle_breaker.go:L246-L267`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/router/shield/cycle_breaker.go#L246-L267):
 
 ```go
 h := fnv.New64a()
@@ -252,7 +252,7 @@ Gateways that track pricing, deal discovery, and active configuration typically 
 
 Nacho Flow uses **Read-Copy-Update (RCU)** semantics backed by `sync/atomic.Pointer`:
 
-In [`pkg/telemetry/pricing.go:L50-L54`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry/pricing.go#L50-L54):
+In [`pkg/telemetry/pricing.go:L50-L54`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/pricing.go#L50-L54):
 
 ```go
 type PricingOracle struct {
@@ -263,12 +263,12 @@ type PricingOracle struct {
 }
 ```
 
-On background updates ([`pkg/telemetry/pricing.go:L164-L193`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry/pricing.go#L164-L193)):
+On background updates ([`pkg/telemetry/pricing.go:L164-L193`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/pricing.go#L164-L193)):
 1. A background goroutine creates a clone of the map.
 2. Applies the new pricing updates.
 3. Performs a single atomic hardware pointer swap (`o.metadataMap.Store(&mergedMap)`).
 
-On the critical request path ([`pkg/telemetry/pricing.go:L236-L245`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry/pricing.go#L236-L245)):
+On the critical request path ([`pkg/telemetry/pricing.go:L236-L245`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/pricing.go#L236-L245)):
 
 ```go
 func (o *PricingOracle) GetModelMetadata(provider, model string) (ModelMetadata, bool) {
@@ -291,7 +291,7 @@ When streaming SSE chunks from DeepSeek-R1 or Qwen models, the proxy must interc
 
 Instead of unmarshaling the entire JSON chunk structure, Nacho Flow uses `sync.Pool` allocated buffers and maps only the delta payload while using `json.RawMessage` to ignore logprobs and fingerprints:
 
-In [`pkg/server/stream_normalizer.go:L15-L53`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/server/stream_normalizer.go#L15-L53):
+In [`pkg/server/stream_normalizer.go:L15-L53`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/server/stream_normalizer.go#L15-L53):
 
 ```go
 var bufPool = sync.Pool{
@@ -323,11 +323,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$25048.0\text{ req/s}$** | $1.61\text{ ms}$ | $9.16\text{ ms}$ | $95.3\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$24452.5\text{ req/s}$** | $3.00\text{ ms}$ | $20.09\text{ ms}$ | $96.6\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$28881.6\text{ req/s}$** | $7.80\text{ ms}$ | $27.32\text{ ms}$ | $155.1\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$26115.7\text{ req/s}$** | $14.20\text{ ms}$ | $59.79\text{ ms}$ | $145.8\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$26217.5\text{ req/s}$** | $36.36\text{ ms}$ | $63.76\text{ ms}$ | $165.4\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$25188.8\text{ req/s}$** | $2.01\text{ ms}$ | $9.35\text{ ms}$ | $85.9\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$21151.8\text{ req/s}$** | $3.74\text{ ms}$ | $20.03\text{ ms}$ | $137.5\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$26641.2\text{ req/s}$** | $8.03\text{ ms}$ | $33.15\text{ ms}$ | $83.4\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$25111.0\text{ req/s}$** | $15.66\text{ ms}$ | $71.17\text{ ms}$ | $222.0\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$26128.8\text{ req/s}$** | $37.13\text{ ms}$ | $65.48\text{ ms}$ | $205.8\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 ### Nanosecond Micro-Benchmark Suite

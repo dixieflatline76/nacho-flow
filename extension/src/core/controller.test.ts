@@ -1149,6 +1149,7 @@ default_tier:
       // Mock processManager
       const mockProcMgr = {
         isLocalUrl: jest.fn().mockReturnValue(true),
+        isRunning: jest.fn().mockReturnValue(true),
         start: jest.fn().mockResolvedValue({ success: true }),
         restart: jest.fn().mockResolvedValue({ success: true }),
         stop: jest.fn().mockResolvedValue(true),
@@ -1887,6 +1888,265 @@ other_key:
       (extensionController as any).restClient.getConfigYaml = jest.fn().mockResolvedValue(`tiers:\n  - name: "Different"\n    when: "true"\n`);
       await extensionController.applyOptimization({ target_tier_name: 'Target', synthesized_rule: 'rule' });
       expect(warnSpy).toHaveBeenCalledWith('Nacho Flow: Could not locate rule for tier "Target" in config YAML');
+    });
+  });
+
+  describe('Engine Isolation & Auto-Resume', () => {
+    it('should auto-resume local daemon on initialize when in local mode and isLocalEngineRunning is true', async () => {
+      const mockAuth = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        getRemoteUrl: jest.fn().mockReturnValue('http://192.168.0.205:8000'),
+        getRemoteToken: jest.fn().mockResolvedValue(null)
+      };
+      (extensionController as any).authManager = mockAuth;
+      const startSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        start: startSpy,
+        isRunning: jest.fn().mockReturnValue(false),
+        isLocalUrl: jest.fn().mockReturnValue(true),
+        stop: jest.fn().mockResolvedValue(true)
+      };
+
+      await extensionController.initialize();
+      expect(startSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', expect.any(String));
+    });
+
+    it('should not auto-resume when isLocalEngineRunning is false or mode is remote', async () => {
+      const mockAuth = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(false),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        getRemoteUrl: jest.fn().mockReturnValue('http://192.168.0.205:8000'),
+        getRemoteToken: jest.fn().mockResolvedValue(null)
+      };
+      (extensionController as any).authManager = mockAuth;
+      const startSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        start: startSpy,
+        isRunning: jest.fn().mockReturnValue(false),
+        isLocalUrl: jest.fn().mockReturnValue(true)
+      };
+
+      await extensionController.initialize();
+      expect(startSpy).not.toHaveBeenCalled();
+
+      // Remote mode
+      mockAuth.getEngineMode.mockReturnValue('remote');
+      mockAuth.isLocalEngineRunning.mockReturnValue(true);
+      await extensionController.initialize();
+      expect(startSpy).not.toHaveBeenCalled();
+    });
+
+    it('should terminate local engine process when switching to remote without wiping isLocalEngineRunning intent', async () => {
+      const stopSpy = jest.fn().mockResolvedValue(true);
+      const setRunningSpy = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).processManager = {
+        stop: stopSpy,
+        isRunning: jest.fn().mockReturnValue(true),
+        isLocalUrl: jest.fn().mockReturnValue(true)
+      };
+      (extensionController as any).authManager = {
+        setEngineMode: jest.fn().mockResolvedValue(undefined),
+        getEngineMode: jest.fn().mockReturnValue('remote'),
+        setLocalEngineRunning: setRunningSpy,
+        getBaseUrl: jest.fn().mockResolvedValue('http://192.168.0.205:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        getRemoteUrl: jest.fn().mockReturnValue('http://192.168.0.205:8000'),
+        getRemoteToken: jest.fn().mockResolvedValue(null),
+        setRemoteUrl: jest.fn().mockResolvedValue(undefined),
+        setRemoteToken: jest.fn().mockResolvedValue(undefined)
+      };
+      (extensionController as any).restClient = {
+        getHealth: jest.fn().mockResolvedValue({ version: '1.0.0' }),
+        getConfig: jest.fn().mockResolvedValue({}),
+        getCircuits: jest.fn().mockResolvedValue({ circuits: [] })
+      };
+
+      // Via handleSaveSettings
+      await (extensionController as any).handleSaveSettings('http://192.168.0.205:8000', 'token');
+      expect(stopSpy).toHaveBeenCalled();
+      expect(setRunningSpy).not.toHaveBeenCalled();
+    });
+
+    it('should auto-resume local engine when switching back to local mode if it was previously running', async () => {
+      const startSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        start: startSpy,
+        isRunning: jest.fn().mockReturnValue(false),
+        isLocalUrl: jest.fn().mockReturnValue(true)
+      };
+      (extensionController as any).authManager = {
+        setEngineMode: jest.fn().mockResolvedValue(undefined),
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        getRemoteUrl: jest.fn().mockReturnValue(''),
+        getRemoteToken: jest.fn().mockResolvedValue(null)
+      };
+      (extensionController as any).outputChannel = { appendLine: jest.fn() };
+      (extensionController as any).resolvePresetUri = jest.fn().mockResolvedValue({ uri: { fsPath: '/mock/config.yaml' } });
+      (extensionController as any).activePreset = 'standard';
+      (extensionController as any).restClient = {
+        getHealth: jest.fn().mockResolvedValue({ version: '1.0.0' }),
+        getConfig: jest.fn().mockResolvedValue({}),
+        getCircuits: jest.fn().mockResolvedValue({ circuits: [] })
+      };
+
+      (extensionController as any).registerSidebarProvider();
+      const mockSidebarClass = require('../ui/sidebar/sidebar-view-provider').SidebarViewProvider;
+      const sidebarHandler = mockSidebarClass.getLastMessageCallback();
+
+      expect(sidebarHandler).toBeDefined();
+      await sidebarHandler({ command: 'setEngineMode', mode: 'local' });
+
+      expect(startSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', '/mock/config.yaml');
+    });
+
+    it('should not auto-resume local engine when switching to local mode if local engine was stopped by user', async () => {
+      const startSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        start: startSpy,
+        isRunning: jest.fn().mockReturnValue(false),
+        isLocalUrl: jest.fn().mockReturnValue(true)
+      };
+      (extensionController as any).authManager = {
+        setEngineMode: jest.fn().mockResolvedValue(undefined),
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(false),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        getRemoteUrl: jest.fn().mockReturnValue(''),
+        getRemoteToken: jest.fn().mockResolvedValue(null)
+      };
+      (extensionController as any).outputChannel = { appendLine: jest.fn() };
+      (extensionController as any).restClient = {
+        getHealth: jest.fn().mockRejectedValue(new Error('Offline')),
+        getConfig: jest.fn().mockResolvedValue({}),
+        getCircuits: jest.fn().mockResolvedValue({ circuits: [] })
+      };
+
+      (extensionController as any).registerSidebarProvider();
+      const mockSidebarClass = require('../ui/sidebar/sidebar-view-provider').SidebarViewProvider;
+      const sidebarHandler = mockSidebarClass.getLastMessageCallback();
+
+      expect(sidebarHandler).toBeDefined();
+      await sidebarHandler({ command: 'setEngineMode', mode: 'local' });
+
+      expect(startSpy).not.toHaveBeenCalled();
+    });
+
+    it('should track isLocalEngineRunning on startEngine and stopEngine', async () => {
+      const setRunningSpy = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).outputChannel = { show: jest.fn(), appendLine: jest.fn() };
+      (extensionController as any).authManager = {
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        getRemoteUrl: jest.fn().mockReturnValue(''),
+        getRemoteToken: jest.fn().mockResolvedValue(null),
+        setLocalEngineRunning: setRunningSpy
+      };
+      (extensionController as any).processManager = {
+        isLocalUrl: jest.fn().mockReturnValue(true),
+        start: jest.fn().mockResolvedValue({ success: true }),
+        restart: jest.fn().mockResolvedValue({ success: true }),
+        stop: jest.fn().mockResolvedValue(true),
+        isRunning: jest.fn().mockReturnValue(true)
+      };
+
+      (extensionController as any).registerSidebarProvider();
+      const mockSidebarClass = require('../ui/sidebar/sidebar-view-provider').SidebarViewProvider;
+      const sidebarHandler = mockSidebarClass.getLastMessageCallback();
+
+      expect(sidebarHandler).toBeDefined();
+      await sidebarHandler({ command: 'startEngine' });
+      expect(setRunningSpy).toHaveBeenCalledWith(true);
+
+      setRunningSpy.mockClear();
+      await sidebarHandler({ command: 'stopEngine' });
+      expect(setRunningSpy).toHaveBeenCalledWith(false);
+    });
+
+    it('should ignore onDidSaveTextDocument in local mode if engine is not running', async () => {
+      (extensionController as any).outputChannel = { show: jest.fn(), appendLine: jest.fn() };
+      const mockUpdateYaml = jest.fn().mockResolvedValue({});
+      (extensionController as any).restClient = {
+        updateConfigYaml: mockUpdateYaml
+      };
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(false),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        getRemoteUrl: jest.fn().mockReturnValue(''),
+        getRemoteToken: jest.fn().mockResolvedValue(null)
+      };
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false),
+        isLocalUrl: jest.fn().mockReturnValue(true)
+      };
+
+      await extensionController.initialize();
+
+      const saveHandlers = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      expect(saveHandlers.length).toBeGreaterThan(0);
+      const handler = saveHandlers[saveHandlers.length - 1][0];
+      await handler({ fileName: '/path/to/config.yaml', getText: () => 'port: 8000', uri: { toString: () => 'uri' } });
+      expect(mockUpdateYaml).not.toHaveBeenCalled();
+    });
+
+    it('should log and not throw when auto-resuming local engine fails', async () => {
+      const appendLineSpy = jest.fn();
+      (extensionController as any).outputChannel = { appendLine: appendLineSpy };
+      (extensionController as any).processManager = {
+        start: jest.fn().mockResolvedValue({ success: false, error: 'Port 8000 already in use' }),
+        isRunning: jest.fn().mockReturnValue(false),
+        isLocalUrl: jest.fn().mockReturnValue(true)
+      };
+      (extensionController as any).authManager = {
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+      };
+      (extensionController as any).resolvePresetUri = jest.fn().mockResolvedValue({ uri: { fsPath: '/mock/config.yaml' } });
+      (extensionController as any).activePreset = 'standard';
+
+      await expect((extensionController as any).resumeLocalEngine()).resolves.toBeUndefined();
+      expect(appendLineSpy).toHaveBeenCalledWith(expect.stringContaining('Auto-resume failed: Port 8000 already in use'));
+    });
+
+    it('should safely return early without throwing if processManager is null in resumeLocalEngine', async () => {
+      (extensionController as any).processManager = null;
+      (extensionController as any).authManager = {
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+      };
+
+      await expect((extensionController as any).resumeLocalEngine()).resolves.toBeUndefined();
+    });
+
+    it('should handle SSE initialization error gracefully', async () => {
+      const appendLineSpy = jest.fn();
+      (extensionController as any).outputChannel = { appendLine: appendLineSpy };
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('remote'),
+        getBaseUrl: jest.fn().mockResolvedValue('http://192.168.0.205:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+      };
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true)
+      };
+      (SSEClient as unknown as jest.Mock).mockImplementationOnce(() => {
+        throw new Error('SSE connect boom');
+      });
+
+      await (extensionController as any).initializeClients();
+      expect((extensionController as any).sseClient).toBeNull();
+      expect(appendLineSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to initialize SSE client: SSE connect boom'));
     });
   });
 });

@@ -2,7 +2,7 @@
 
 The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-latency control hub and analytics dashboard for your agent supervisor and model dispatcher. It bridges local GPU inference ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and flagship cloud APIs ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Anthropic](https://www.anthropic.com)) directly inside VS Code and Cursor.
 
-![Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub and Cline Pairing](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/images/vscode-extension-showcase.png)
+![Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub and Cline Pairing](images/vscode-extension-showcase.png)
 
 ---
 
@@ -88,6 +88,11 @@ For developers hosting Nacho Flow on a dedicated GPU server, home lab workstatio
 3. Enter your **Bearer Auth Token** if inbound authentication is enabled in the server's `config.yaml` (use the eye icon to toggle visibility).
 4. Click **`⚡ Test`** to perform an instant pre-flight ping.
 5. Click **`💾 Save Remote Server`** to persist your remote configuration.
+
+> [!TIP]
+> **Persistent Engine Isolation & Auto-Resume**:
+> - **State Persistence**: The running state of the local engine is remembered across VS Code restarts. If the engine was running when you closed VS Code, it will automatically resume on next startup (controlled by `nachoFlow.autoStartDaemon`).
+> - **Resource Isolation**: Switching from "This Machine" to "Remote Server" automatically stops the local daemon to free ports and local GPU resources, while safely preserving your local run intent so that switching back to "This Machine" seamlessly resumes the engine.
 
 ---
 
@@ -378,13 +383,16 @@ Configure extension behaviors in VS Code Settings (`Ctrl+,` $\rightarrow$ search
 
 ```json
 {
+  // Operating mode: "local" runs the embedded daemon; "remote" connects to an external gateway
+  "nachoFlow.engineMode": "local",
+
   // Endpoint URL of the active gateway daemon (supports local or remote Tailscale/LAN URLs)
   "nachoFlow.daemonUrl": "http://127.0.0.1:8000",
 
   // Optional Bearer Auth Token if connecting to a protected remote gateway
   "nachoFlow.authToken": "",
 
-  // Automatically spawn and supervise the local nacho-flow binary on VS Code launch
+  // Automatically resume the bundled local binary on VS Code launch if previously running
   "nachoFlow.autoStartDaemon": true,
 
   // Display real-time cost savings and local routing percentage in the status bar

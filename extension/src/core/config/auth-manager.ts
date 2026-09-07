@@ -5,6 +5,7 @@ export class AuthManager {
 	private static readonly REMOTE_AUTH_KEY = 'nacho-flow.remote-auth-token';
 	private static readonly REMOTE_URL_KEY = 'nacho-flow.remote-url';
 	private static readonly ENGINE_MODE_KEY = 'nacho-flow.engine-mode';
+	private static readonly LOCAL_ENGINE_RUNNING_KEY = 'nacho-flow.local-engine-running';
 	private context: vscode.ExtensionContext;
 
 	constructor(context: vscode.ExtensionContext) {
@@ -17,6 +18,14 @@ export class AuthManager {
 
 	public async setEngineMode(mode: 'local' | 'remote'): Promise<void> {
 		await this.context.globalState?.update(AuthManager.ENGINE_MODE_KEY, mode);
+	}
+
+	public isLocalEngineRunning(): boolean {
+		return this.context.globalState?.get<boolean>(AuthManager.LOCAL_ENGINE_RUNNING_KEY, false) ?? false;
+	}
+
+	public async setLocalEngineRunning(running: boolean): Promise<void> {
+		await this.context.globalState?.update(AuthManager.LOCAL_ENGINE_RUNNING_KEY, running);
 	}
 
 	public getRemoteUrl(): string {

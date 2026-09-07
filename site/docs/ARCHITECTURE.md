@@ -337,7 +337,7 @@ Nacho Flow employs a tri-channel distribution model:
 
 ## 9. VS Code Companion Extension & Management Control Plane Architecture
 
-Nacho Flow includes an integrated VS Code companion extension designed under the strict **Thin-Client Doctrine** (for full protocol DTOs and state machines, see the [VS Code Extension Technical Specification](file:///docs/VSCODE_EXTENSION_SPEC.md)):
+Nacho Flow includes an integrated VS Code companion extension designed under the strict **Thin-Client Doctrine** (for full protocol DTOs and state machines, see the [VS Code Companion Extension Guide](EXTENSION_USER_GUIDE.md)):
 
 ```mermaid
 flowchart TD

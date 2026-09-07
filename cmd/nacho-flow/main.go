@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -288,6 +289,9 @@ func (p *program) run(s service.Service) error {
 	if *configPathFlag != "" {
 		activeConfigPath = *configPathFlag
 	}
+	if abs, err := filepath.Abs(activeConfigPath); err == nil {
+		activeConfigPath = abs
+	}
 	srvHandler.SetConfigPath(activeConfigPath)
 
 	// Automatic zero-downtime background file watcher for config.yaml changes
@@ -307,6 +311,14 @@ func (p *program) run(s service.Service) error {
 				stat, err := os.Stat(cfgFile)
 				if err == nil {
 					if !lastMod.IsZero() && stat.ModTime().After(lastMod) {
+						// Skip reload if modification was made by the server's own ApplyConfig write
+						lastWriteNano := srvHandler.GetLastDiskWriteUnixNano()
+						modNano := stat.ModTime().UnixNano()
+						if lastWriteNano > 0 && (modNano == lastWriteNano || (modNano >= lastWriteNano && modNano-lastWriteNano < int64(100*time.Millisecond))) {
+							lastMod = stat.ModTime()
+							continue
+						}
+
 						lastMod = stat.ModTime()
 						appLogger.Info("🌮 Detected disk modification to config.yaml, hot-reloading...", slog.String("path", cfgFile))
 						if reloadErr := srvHandler.ReloadConfigFromDisk(); reloadErr != nil {

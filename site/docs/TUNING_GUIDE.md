@@ -331,7 +331,7 @@ You don't need to restart the server or edit `config.yaml` to test how a model b
 Nacho Flow strips the directive and routes the turn directly to the requested tier, allowing you to test candidate rules in real time.
 
 ### 🔍 Live Route Inspector (VS Code Webview)
-If you use the [VS Code Companion Extension](file:///docs/EXTENSION_USER_GUIDE.md), open the **Nacho Flow Dashboard** (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`). The **Live Route Inspector** displays a real-time table of your last 500 LLM requests with:
+If you use the [VS Code Companion Extension](EXTENSION_USER_GUIDE.md), open the **Nacho Flow Dashboard** (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`). The **Live Route Inspector** displays a real-time table of your last 500 LLM requests with:
 * Exact prompt token count
 * Matched routing tier and rule reason
 * Turn latency (ms)
@@ -415,9 +415,9 @@ nacho-flow tune --apply
 ```
 
 > [!TIP]
-> **1-Click Auto-Tuning in VS Code**: You can also trigger the empirical optimizer, review recommended rule diffs, and hot-reload `config.yaml` with one click directly from the **Nacho Flow Analytics Dashboard** webview inside the [VS Code Companion Extension](file:///docs/EXTENSION_USER_GUIDE.md).
+> **1-Click Auto-Tuning in VS Code**: You can also trigger the empirical optimizer, review recommended rule diffs, and hot-reload `config.yaml` with one click directly from the **Nacho Flow Analytics Dashboard** webview inside the [VS Code Companion Extension](EXTENSION_USER_GUIDE.md).
 
-![Nacho Flow VS Code Auto-Tuner UI Recommendation Banner](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/images/vscode-autotuner-showcase.png)
+![Nacho Flow VS Code Auto-Tuner UI Recommendation Banner](images/vscode-autotuner-showcase.png)
 
 ---
 

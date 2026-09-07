@@ -8,8 +8,8 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 1. [Installation & Setup](#1-installation--setup)
 2. [Configuration Reference (`config.yaml`)](#2-configuration-reference-configyaml)
 3. [Writing Custom Routing Tiers (`expr` Rules)](#3-writing-custom-routing-tiers-expr-rules)
-4. [Running Modes (Interactive vs. OS Service)](#4-running-modes-interactive-vs-os-service)
-5. [IDE & Agent Integrations](#5-ide--agent-integrations)
+4. [Running Modes & OS Background Service Installation](#4-running-modes--os-background-service-installation)
+5. [IDE & Agent Integrations (Local & Multi-Device LAN)](#5-ide--agent-integrations-local--multi-device-lan)
 6. [Monitoring, Telemetry & Stats API](#6-monitoring-telemetry--stats-api)
 7. [Autonomous Rule Auto-Tuning (`nacho-flow tune`)](#7-autonomous-rule-auto-tuning-nacho-flow-tune)
 8. [🔥 Heat Seeker: Live Model Deals & Discount Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-live-model-deals--discount-scout-nacho-flow-deals--nacho-flow-heat-seek)
@@ -889,7 +889,7 @@ nacho-flow tune --apply
    Restart or reload nacho-flow to activate changes.
 ```
 
-For comprehensive rule syntax, context variables, and recipes, see the full [Rule & Tier Tuning Guide](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/TUNING_GUIDE.md).
+For comprehensive rule syntax, context variables, and recipes, see the full [Rule & Tier Tuning Guide](TUNING_GUIDE.md).
 
 ---
 
@@ -1096,7 +1096,7 @@ The **Nacho Flow VS Code Extension** delivers full lifecycle management, visual 
    - **Configuration Editor**: Hot-reload `config.yaml` with syntax validation.
    - **Autonomous Auto-Tuning Trigger**: Run `nacho-flow tune` empirical optimization directly from the webview.
 
-For complete extension setup and features, see the [VS Code Companion Extension Guide](file:///docs/EXTENSION_USER_GUIDE.md).
+For complete extension setup and features, see the [VS Code Companion Extension Guide](EXTENSION_USER_GUIDE.md).
 
 ---
 

@@ -344,7 +344,7 @@ When extending Nacho Flow's control plane or guardrails, follow these architectu
    - Session resets are handled by `@nacho:reset` (alias: `clear`).
    - All meta command handlers receive `MetaEnv` with access to `SessionTracker`, `SessionKey`, and active providers.
 
-For comprehensive architectural deep-dives, pricing math formulas, window rollover mechanics, and storage formats, refer to the **[Telemetry & Metrics Developer Guide](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/METRICS_DEVELOPER_GUIDE.md)**.
+For comprehensive architectural deep-dives, pricing math formulas, window rollover mechanics, and storage formats, refer to the **[Telemetry & Metrics Developer Guide](METRICS_DEVELOPER_GUIDE.md)**.
 
 ---
 

@@ -1,7 +1,7 @@
 # 📊 Nacho Flow — Telemetry & Metrics Developer Guide
 
 **Audience:** Core engine developers, contributors, and AI pair-programming agents  
-**Package Path:** [`pkg/telemetry`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry)  
+**Package Path:** [`pkg/telemetry`](https://github.com/dixieflatline76/nacho-flow/tree/main/pkg/telemetry)  
 **Status:** Living Engineering Standard (v0.8.4+)
 
 ---
@@ -11,7 +11,7 @@
 1. [Architectural Overview & Concurrency Model](#1-architectural-overview--concurrency-model)
 2. [Dual Financial Accounting Engine](#2-dual-financial-accounting-engine)
 3. [Pre-Aggregated Time Window Horizons](#3-pre-aggregated-time-window-horizons)
-4. [Cycle Killer Defense Telemetry](#4-cycle-killer-defense-telemetry)
+4. [Defense Telemetry: Cycle Killer & Fairy Dust](#4-defense-telemetry-cycle-killer--fairy-dust)
 5. [Persistence, State Hydration & Historical Replay](#5-persistence-state-hydration--historical-replay)
 6. [Mandatory Protocol: Adding New Metrics & Fixture Generation](#6-mandatory-protocol-adding-new-metrics--fixture-generation)
 
@@ -238,11 +238,11 @@ flowchart LR
 ```
 
 ### Step 1: Update the Data Models & Aggregation
-- Update `TimeWindowMetrics`, `StatsSnapshot`, or `TurnRecord` in [`pkg/telemetry/metrics.go`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry/metrics.go) or [`pkg/telemetry/sink.go`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry/sink.go).
+- Update `TimeWindowMetrics`, `StatsSnapshot`, or `TurnRecord` in [`pkg/telemetry/metrics.go`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/metrics.go) or [`pkg/telemetry/sink.go`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/sink.go).
 - Update `addToWindow()`, `addBucketToWindow()`, and `restoreWindowsFromBuckets()`.
 
 ### Step 2: Update the Deterministic Generator
-- Open [`pkg/telemetry/testdata/gen_fixtures.go`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry/testdata/gen_fixtures.go).
+- Open [`pkg/telemetry/testdata/gen_fixtures.go`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/testdata/gen_fixtures.go).
 - Add the new field to `WindowExpected` and ensure `addRecordToExpected()` calculates the ground truth using the exact same formula.
 
 ### Step 3: Regenerate Static Fixtures
@@ -259,7 +259,7 @@ make test-fixtures
 # and full race tests:
 make test-race
 ```
-Verify that `TestStatsTracker_HistoricalFixtures` and `TestStatsTracker_LegacyMigration_Fixtures` in [`pkg/telemetry/metrics_fixtures_test.go`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry/metrics_fixtures_test.go) pass cleanly with zero tolerance errors.
+Verify that `TestStatsTracker_HistoricalFixtures` and `TestStatsTracker_LegacyMigration_Fixtures` in [`pkg/telemetry/metrics_fixtures_test.go`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/metrics_fixtures_test.go) pass cleanly with zero tolerance errors.
 
 ### Step 5: Synchronize Documentation & Coverage
 Run the documentation coverage synchronizer:

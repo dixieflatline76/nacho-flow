@@ -1413,6 +1413,7 @@ footer {
     border-bottom: 2px solid transparent;
     border-image: linear-gradient(90deg, #f59e0b, rgba(245, 158, 11, 0.2), transparent) 1;
     color: #fff;
+    scroll-margin-top: 100px;
 }
 
 .markdown-body h2 {
@@ -1432,6 +1433,20 @@ footer {
     color: #f1f5f9;
     margin: 2rem 0 0.8rem;
     scroll-margin-top: 100px;
+}
+
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6,
+.anchor-target {
+    scroll-margin-top: 100px;
+}
+
+.anchor-target {
+    display: block;
+    position: relative;
+    visibility: hidden;
+    height: 0;
 }
 
 .markdown-body p {
