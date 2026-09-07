@@ -132,7 +132,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && node esbuild.config.js",
     "compile": "tsc -p ./",
     "watch": "tsc -w -p ./",
     "package": "vsce package",
@@ -156,7 +156,5 @@
     "ts-jest": "^29.4.12",
     "typescript": "^5.0.0"
   },
-  "dependencies": {
-    "eventsource": "^2.0.2"
-  }
+  "dependencies": {}
 }
