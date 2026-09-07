@@ -384,6 +384,32 @@ providers:
 	}
 }
 
+// Test 1.11c: NACHO_HOST env variable resolved when host is omitted
+func TestConfig_EnvHostResolution(t *testing.T) {
+	t.Setenv("NACHO_HOST", "192.168.1.50")
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 8000
+providers:
+  local:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Host != "192.168.1.50" {
+		t.Errorf("Expected host from NACHO_HOST '192.168.1.50', got %s", cfg.Host)
+	}
+}
+
 // Test 1.12: Auto-bootstrap creates default starter config when no config exists
 func TestConfig_AutoBootstrap_CleanEnvironment(t *testing.T) {
 	tempDir := t.TempDir()

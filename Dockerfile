@@ -47,4 +47,4 @@ EXPOSE 8000
 # Run as unprivileged nonroot user (UID 65532)
 USER nonroot:nonroot
 
-ENTRYPOINT ["/usr/local/bin/nacho-flow", "-config", "/config/config.yaml"]
+ENTRYPOINT ["/usr/local/bin/nacho-flow", "-config", "/config/config.yaml", "-host", "0.0.0.0"]
