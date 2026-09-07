@@ -320,12 +320,14 @@ func pushWingetManifests(ctx context.Context, client *github.Client, version, wi
 	}
 	baseSHA := baseRef.Object.GetSHA()
 
-	_, _ = client.Git.DeleteRef(ctx, repoOwner, wingetRepo, "refs/heads/"+branchName)
-	newRef := &github.Reference{
-		Ref:    github.String("refs/heads/" + branchName),
-		Object: &github.GitObject{SHA: github.String(baseSHA)},
+	_, _, getRefErr := client.Git.GetRef(ctx, repoOwner, wingetRepo, "refs/heads/"+branchName)
+	if getRefErr != nil {
+		newRef := &github.Reference{
+			Ref:    github.String("refs/heads/" + branchName),
+			Object: &github.GitObject{SHA: github.String(baseSHA)},
+		}
+		_, _, _ = client.Git.CreateRef(ctx, repoOwner, wingetRepo, newRef)
 	}
-	_, _, _ = client.Git.CreateRef(ctx, repoOwner, wingetRepo, newRef)
 
 	var treeEntries []*github.TreeEntry
 	for _, f := range files {
