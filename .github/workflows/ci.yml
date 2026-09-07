@@ -296,30 +296,6 @@ jobs:
           NACHO_RELEASER_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           SKIP_DISTRIBUTION: ${{ github.event.release.prerelease }}
 
-      - name: Set up Node.js
-        if: env.VSCE_PAT != ''
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-
-      - name: Publish to VS Code Marketplace
-        if: env.VSCE_PAT != ''
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
-        run: |
-          VERSION=$(cat version.txt | tr -d '\r\n')
-          PRE_FLAG=""
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            PRE_FLAG="--pre-release"
-          fi
-          for target in win32-x64 darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
-            echo "Publishing VS Code Extension for $target..."
-            npx @vscode/vsce publish $PRE_FLAG --packagePath "dist/nacho-flow-${VERSION}-${target}.vsix" -p "$VSCE_PAT" || echo "Warning: failed or already published for $target"
-          done
-
   distribute-release:
     name: Distribute (Prerelease Promotion to Latest)
     runs-on: windows-latest
@@ -350,6 +326,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           WINGET_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           SKIP_DISTRIBUTION: "false"
+
+      - name: Set up Node.js
+        if: env.VSCE_PAT != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $version = (Get-Content version.txt).Trim()
+          $targets = @("win32-x64", "darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64")
+          foreach ($target in $targets) {
+            Write-Host "Publishing VS Code Extension for $target..."
+            npx @vscode/vsce publish --packagePath "dist\nacho-flow-$version-$target.vsix" -p "$env:VSCE_PAT"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Publishing for $target returned exit code $LASTEXITCODE (may already exist)."
+            }
+          }
 
   publish-docker:
     name: Publish Multi-Arch Docker Image (GHCR)
