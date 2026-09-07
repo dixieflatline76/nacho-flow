@@ -317,7 +317,7 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 
 ## 🌮 Support Nacho Flow
 
-Nacho Flow is 100% free and open source. It was born out of sheer engineering frustration while building [**Spice**](https://spicebox.dev/), when autonomous coding agents kept burning hundreds of dollars in API credits on runaway loops and planning stalls.
+Nacho Flow is 100% free and open source for individual developers and open-source projects. It was born out of sheer engineering frustration while building [**Spice**](https://spicebox.dev/), when autonomous coding agents kept burning hundreds of dollars in API credits on runaway loops and planning stalls.
 
 If Nacho Flow saved your sanity, your workflow, or your API bill:
 * **Don't buy me a coffee.** Instead, consider grabbing a copy of **Spice** on the [**Mac App Store**](https://apps.apple.com/us/app/spice-wallpaper-manager/id6760980759?mt=12) or [**Microsoft Store**](https://apps.microsoft.com/detail/9NPBQ3C91WPF) (or leaving it a 5-star review). You get a beautiful, native desktop utility in return, and it directly funds continued open-source development.
