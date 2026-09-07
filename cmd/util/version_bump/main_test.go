@@ -378,6 +378,16 @@ func TestDefaultRunners(t *testing.T) {
 		t.Errorf("expected error running invalid git command")
 	}
 
+	// defaultWinresRunner error and success paths
+	_, _ = defaultWinresRunner("nonexistent-file.json", "out")
+	tmpDir := t.TempDir()
+	outPrefix := filepath.Join(tmpDir, "rsrc")
+	if files, wErr := defaultWinresRunner(filepath.Join("..", "..", "nacho-flow", "winres", "winres.json"), outPrefix); wErr == nil {
+		for _, f := range files {
+			_ = os.Remove(f)
+		}
+	}
+
 	// updateSiteVersion, updatePackageJSON, and updateChangelog error paths on invalid files
 	v := Version{Major: 1, Minor: 0, Patch: 0}
 	if err := updateSiteVersion("/nonexistent_dir_12345/index.html", v); err == nil {
@@ -442,5 +452,130 @@ func TestRunWithRunners_WriteFileError(t *testing.T) {
 	}
 	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", "", tagPushErrGit, mockOut); err == nil {
 		t.Fatal("expected error on tag push failure")
+	}
+}
+
+func TestUpdateWinresVersion(t *testing.T) {
+	tmpDir := t.TempDir()
+	winresPath := filepath.Join(tmpDir, "winres.json")
+
+	content := `{
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "identity": {
+          "name": "Spicebox.NachoFlow",
+          "version": "1.0.2.0"
+        }
+      }
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0409": {
+        "fixed": {
+          "file_version": "1.0.2.0",
+          "product_version": "1.0.2.0"
+        },
+        "info": {
+          "0409": {
+            "FileVersion": "1.0.2.0",
+            "ProductVersion": "1.0.2.0"
+          }
+        }
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(winresPath, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to write test winres.json: %v", err)
+	}
+
+	v := Version{Major: 1, Minor: 1, Patch: 0}
+	if err := updateWinresVersion(winresPath, v); err != nil {
+		t.Fatalf("updateWinresVersion failed: %v", err)
+	}
+
+	data, err := os.ReadFile(winresPath)
+	if err != nil {
+		t.Fatalf("failed to read updated winres.json: %v", err)
+	}
+	updatedStr := string(data)
+	if !strings.Contains(updatedStr, `"version": "1.1.0.0"`) {
+		t.Errorf("expected identity version 1.1.0.0, got: %s", updatedStr)
+	}
+	if !strings.Contains(updatedStr, `"file_version": "1.1.0.0"`) {
+		t.Errorf("expected file_version 1.1.0.0, got: %s", updatedStr)
+	}
+	if !strings.Contains(updatedStr, `"product_version": "1.1.0.0"`) {
+		t.Errorf("expected product_version 1.1.0.0, got: %s", updatedStr)
+	}
+	if !strings.Contains(updatedStr, `"FileVersion": "1.1.0.0"`) {
+		t.Errorf("expected FileVersion 1.1.0.0, got: %s", updatedStr)
+	}
+	if !strings.Contains(updatedStr, `"ProductVersion": "1.1.0.0"`) {
+		t.Errorf("expected ProductVersion 1.1.0.0, got: %s", updatedStr)
+	}
+
+	// Nonexistent file error path
+	if err := updateWinresVersion(filepath.Join(tmpDir, "nonexistent.json"), v); err == nil {
+		t.Errorf("expected error on nonexistent winres.json")
+	}
+}
+
+func TestRunWithRunners_WithWinres(t *testing.T) {
+	tmpDir := t.TempDir()
+	versionFile := filepath.Join(tmpDir, "version.txt")
+	winresDir := filepath.Join(tmpDir, "cmd", "nacho-flow", "winres")
+	_ = os.MkdirAll(winresDir, 0750)
+	winresPath := filepath.Join(winresDir, "winres.json")
+
+	_ = os.WriteFile(versionFile, []byte("1.0.2\n"), 0600)
+	_ = os.WriteFile(winresPath, []byte(`{"version":"1.0.2.0"}`), 0600)
+
+	origWinresPath := winresJSONPath
+	origWinresRunner := winresRunner
+	defer func() {
+		winresJSONPath = origWinresPath
+		winresRunner = origWinresRunner
+	}()
+
+	winresJSONPath = winresPath
+	dummySyso := filepath.Join(tmpDir, "cmd", "nacho-flow", "rsrc_windows_amd64.syso")
+	_ = os.WriteFile(dummySyso, []byte("fake-syso"), 0600)
+
+	winresRunner = func(inJson, outPrefix string) ([]string, error) {
+		return []string{dummySyso}, nil
+	}
+
+	var committedFiles []string
+	mockGit := func(args ...string) error {
+		if len(args) > 0 && args[0] == "add" {
+			committedFiles = append(committedFiles, args[1:]...)
+		}
+		return nil
+	}
+	mockOut := func(args ...string) (string, error) { return "main", nil }
+
+	err := runWithRunners([]string{"cmd", "patch"}, versionFile, "", "", "", "", mockGit, mockOut)
+	if err != nil {
+		t.Fatalf("expected success with winres, got: %v", err)
+	}
+
+	foundWinres := false
+	foundSyso := false
+	for _, f := range committedFiles {
+		if f == winresPath {
+			foundWinres = true
+		}
+		if f == dummySyso {
+			foundSyso = true
+		}
+	}
+	if !foundWinres {
+		t.Errorf("expected winres.json to be committed")
+	}
+	if !foundSyso {
+		t.Errorf("expected syso file to be committed")
 	}
 }

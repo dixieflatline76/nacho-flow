@@ -71,6 +71,9 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	if cfg.Port == 0 {
 		cfg.Port = contract.DefaultServerPort
 	}
+	if cfg.Host == "" {
+		cfg.Host = contract.DefaultDaemonHost
+	}
 
 	// Resolve ENV variables for auth_token
 	if strings.HasPrefix(cfg.AuthToken, contract.EnvVarPrefix) {

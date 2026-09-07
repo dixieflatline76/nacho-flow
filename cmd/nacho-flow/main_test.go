@@ -334,6 +334,66 @@ default_tier:
 	*configPathFlag = ""
 }
 
+func TestProgram_Run_HostOverrideAndConfigFallback(t *testing.T) {
+	origInteractive := serviceInteractiveFunc
+	serviceInteractiveFunc = func() bool { return false }
+	defer func() { serviceInteractiveFunc = origInteractive }()
+
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	cfgContent := `
+port: 59982
+host: "127.0.0.1"
+providers:
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
+tiers:
+  - name: "Cloud"
+    provider: "openrouter"
+    when: "Tokens < 8000"
+default_tier:
+  name: "Fallback"
+  provider: "openrouter"
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	*configPathFlag = cfgPath
+	*hostFlag = "127.0.0.1"
+	*portFlag = 59982
+	defer func() {
+		*hostFlag = ""
+		*portFlag = 0
+		*configPathFlag = ""
+	}()
+
+	p := &program{}
+	mock := &mockService{}
+	if err := p.Start(mock); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	ready := false
+	for i := 0; i < 20; i++ {
+		time.Sleep(50 * time.Millisecond)
+		resp, err := http.Get("http://127.0.0.1:59982/api/v1/info")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			_ = resp.Body.Close()
+			ready = true
+			break
+		}
+	}
+	if !ready {
+		t.Fatalf("HTTP server failed to start within timeout")
+	}
+
+	if err := p.Stop(mock); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+}
+
 func TestMain_Flags(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
@@ -1029,7 +1089,7 @@ func TestProgram_Run_PortInUse(t *testing.T) {
 	serviceInteractiveFunc = func() bool { return false }
 	defer func() { serviceInteractiveFunc = origInteractive }()
 
-	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen on port: %v", err)
 	}
@@ -1077,7 +1137,7 @@ func TestAsyncRun_NilSlogAndError(t *testing.T) {
 	serviceInteractiveFunc = func() bool { return true }
 	defer func() { serviceInteractiveFunc = origInteractive }()
 
-	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen on port: %v", err)
 	}
@@ -1137,7 +1197,7 @@ func TestRun_RecentRoutesHydration(t *testing.T) {
 		t.Fatalf("failed to write traffic.jsonl: %v", err)
 	}
 
-	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen on port: %v", err)
 	}

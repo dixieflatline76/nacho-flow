@@ -130,6 +130,7 @@ Copy and save this as `config.yaml` to get started immediately:
 
 ```yaml
 port: 8000
+host: "127.0.0.1" # Default: 127.0.0.1 (local machine only). Use "0.0.0.0" for LAN access.
 
 providers:
   # Local GPU (Free turns)
@@ -167,6 +168,9 @@ For advanced setups featuring multiple cloud providers, reasoning keyword rules,
 ```yaml
 # Port to listen on (Default: 8000)
 port: 8000
+
+# Network host address to bind to (Default: "127.0.0.1" for local isolation; set "0.0.0.0" for LAN access)
+host: "127.0.0.1"
 
 # Inbound Gateway Authentication (Optional: Secures gateway on LAN / 0.0.0.0)
 auth_token: "sk-nacho-gateway-token"
