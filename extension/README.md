@@ -1,7 +1,7 @@
 # 🌮 Nacho Flow: VS Code & Cursor Companion Extension
 
 <p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow"><img src="https://img.shields.io/badge/VS%20Code%20Marketplace-v0.9.1-007ACC?logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow"><img src="https://img.shields.io/github/v/release/dixieflatline76/nacho-flow?color=007ACC&label=VS%20Code%20Marketplace&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace"></a>
   <a href="https://github.com/dixieflatline76/nacho-flow"><img src="https://img.shields.io/badge/Platform-VS%20Code%20%7C%20Cursor-blue" alt="Platform: VS Code | Cursor"></a>
   <a href="https://github.com/dixieflatline76/nacho-flow"><img src="https://img.shields.io/github/stars/dixieflatline76/nacho-flow?style=social" alt="GitHub Stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
