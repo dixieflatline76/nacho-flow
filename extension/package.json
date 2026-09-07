@@ -127,6 +127,20 @@
           "type": "string",
           "default": "",
           "description": "Optional Bearer Auth Token for connecting to a protected Nacho Flow daemon"
+        },
+        "nachoFlow.engineMode": {
+          "type": "string",
+          "enum": [
+            "local",
+            "remote"
+          ],
+          "default": "local",
+          "description": "Engine mode: 'local' for This Machine daemon or 'remote' for Remote Server"
+        },
+        "nachoFlow.autoStartDaemon": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically restart the local engine on VS Code launch if it was running when VS Code closed"
         }
       }
     }

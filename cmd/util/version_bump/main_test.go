@@ -167,11 +167,13 @@ func TestRunWithRunners_Success(t *testing.T) {
 	siteFile := filepath.Join(tmpDir, "index.html")
 	pkgJsonFile := filepath.Join(tmpDir, "package.json")
 	pkgLockFile := filepath.Join(tmpDir, "package-lock.json")
+	changelogFile := filepath.Join(tmpDir, "CHANGELOG.md")
 
 	_ = os.WriteFile(versionFile, []byte("0.5.2\n"), 0600)
 	_ = os.WriteFile(siteFile, []byte(`<span class="logo-badge logo-badge-version" id="version-badge">v0.5.2</span>`), 0600)
 	_ = os.WriteFile(pkgJsonFile, []byte(`{"name": "nacho-flow", "version": "0.5.2"}`), 0600)
 	_ = os.WriteFile(pkgLockFile, []byte(`{"name": "nacho-flow", "version": "0.5.2"}`), 0600)
+	_ = os.WriteFile(changelogFile, []byte("# Change Log\n\n## [Unreleased]\n\n### Added\n- Test feature\n"), 0600)
 
 	var gitCalls [][]string
 	mockGit := func(args ...string) error {
@@ -186,7 +188,7 @@ func TestRunWithRunners_Success(t *testing.T) {
 		return "", nil
 	}
 
-	err := runWithRunners([]string{"cmd", "-type=minor"}, versionFile, siteFile, pkgJsonFile, pkgLockFile, mockGit, mockOut)
+	err := runWithRunners([]string{"cmd", "-type=minor"}, versionFile, siteFile, pkgJsonFile, pkgLockFile, changelogFile, mockGit, mockOut)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
@@ -208,6 +210,15 @@ func TestRunWithRunners_Success(t *testing.T) {
 	if err != nil || !strings.Contains(string(pkgContent), `"version": "0.6.0"`) {
 		t.Fatalf("package.json not updated properly: %s", string(pkgContent))
 	}
+
+	// Verify CHANGELOG.md updated to 0.6.0
+	clContent, err := os.ReadFile(changelogFile)
+	if err != nil || !strings.Contains(string(clContent), "## [0.6.0] - ") {
+		t.Fatalf("CHANGELOG.md not updated properly: %s", string(clContent))
+	}
+	if !strings.Contains(string(clContent), "## [Unreleased]") {
+		t.Fatalf("CHANGELOG.md missing [Unreleased] header: %s", string(clContent))
+	}
 }
 
 func TestRunWithRunners_Errors(t *testing.T) {
@@ -220,13 +231,13 @@ func TestRunWithRunners_Errors(t *testing.T) {
 	mockOut := func(args ...string) (string, error) { return "main", nil }
 
 	// 1. Missing args
-	if err := runWithRunners([]string{"cmd"}, versionFile, siteFile, "", "", mockGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd"}, versionFile, siteFile, "", "", "", mockGit, mockOut); err == nil {
 		t.Fatal("expected error on missing bump type")
 	}
 
 	// 2. Branch error
 	branchErrOut := func(args ...string) (string, error) { return "", errors.New("branch failure") }
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", mockGit, branchErrOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", "", mockGit, branchErrOut); err == nil {
 		t.Fatal("expected error on branch failure")
 	}
 
@@ -238,7 +249,7 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		return nil
 	}
 	featureBranchOut := func(args ...string) (string, error) { return "feature", nil }
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", checkoutErrGit, featureBranchOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", "", checkoutErrGit, featureBranchOut); err == nil {
 		t.Fatal("expected error on checkout failure")
 	}
 
@@ -249,17 +260,17 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", pullErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", "", pullErrGit, mockOut); err == nil {
 		t.Fatal("expected error on pull failure")
 	}
 
 	// 5. Version file read error
-	if err := runWithRunners([]string{"cmd", "patch"}, filepath.Join(tmpDir, "missing.txt"), siteFile, "", "", mockGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, filepath.Join(tmpDir, "missing.txt"), siteFile, "", "", "", mockGit, mockOut); err == nil {
 		t.Fatal("expected error on missing version file")
 	}
 
 	// 6. Invalid bump type
-	if err := runWithRunners([]string{"cmd", "invalid-type"}, versionFile, siteFile, "", "", mockGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "invalid-type"}, versionFile, siteFile, "", "", "", mockGit, mockOut); err == nil {
 		t.Fatal("expected error on invalid bump type")
 	}
 
@@ -270,7 +281,7 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", commitErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", "", commitErrGit, mockOut); err == nil {
 		t.Fatal("expected error on commit failure")
 	}
 
@@ -281,7 +292,7 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", tagErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", "", tagErrGit, mockOut); err == nil {
 		t.Fatal("expected error on tag failure")
 	}
 
@@ -292,8 +303,67 @@ func TestRunWithRunners_Errors(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", pushErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", "", pushErrGit, mockOut); err == nil {
 		t.Fatal("expected error on push failure")
+	}
+}
+
+func TestUpdateChangelog(t *testing.T) {
+	tmpDir := t.TempDir()
+	changelogPath := filepath.Join(tmpDir, "CHANGELOG.md")
+
+	initial := `# Change Log
+
+## [Unreleased]
+
+### Added
+- Feature A
+`
+	if err := os.WriteFile(changelogPath, []byte(initial), 0600); err != nil {
+		t.Fatalf("failed to write test changelog: %v", err)
+	}
+
+	v := Version{Major: 1, Minor: 1, Patch: 0}
+	if err := updateChangelog(changelogPath, v); err != nil {
+		t.Fatalf("updateChangelog failed: %v", err)
+	}
+
+	data, err := os.ReadFile(changelogPath)
+	if err != nil {
+		t.Fatalf("failed to read changelog: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "## [1.1.0] - ") {
+		t.Fatalf("expected version header for 1.1.0, got: %s", content)
+	}
+	if !strings.Contains(content, "## [Unreleased]") {
+		t.Fatalf("expected Unreleased header retained, got: %s", content)
+	}
+
+	// Idempotency check: running again with the same version should not duplicate
+	if err := updateChangelog(changelogPath, v); err != nil {
+		t.Fatalf("second updateChangelog failed: %v", err)
+	}
+	data2, _ := os.ReadFile(changelogPath)
+	if strings.Count(string(data2), "## [1.1.0] - ") != 1 {
+		t.Fatalf("expected exactly 1 instance of 1.1.0 header, got: %s", string(data2))
+	}
+
+	// Fallback check: when ## [Unreleased] is missing
+	noUnreleasedPath := filepath.Join(tmpDir, "CHANGELOG_NO_UNRELEASED.md")
+	_ = os.WriteFile(noUnreleasedPath, []byte("# Change Log\n\n## [1.0.0] - 2026-09-01\n"), 0600)
+	v2 := Version{Major: 1, Minor: 2, Patch: 0}
+	if err := updateChangelog(noUnreleasedPath, v2); err != nil {
+		t.Fatalf("updateChangelog without Unreleased failed: %v", err)
+	}
+	data3, _ := os.ReadFile(noUnreleasedPath)
+	if !strings.Contains(string(data3), "## [1.2.0] - ") || !strings.Contains(string(data3), "## [Unreleased]") {
+		t.Fatalf("expected fallback insertion for 1.2.0, got: %s", string(data3))
+	}
+
+	// Error check: missing file
+	if err := updateChangelog(filepath.Join(tmpDir, "nonexistent.md"), v); err == nil {
+		t.Fatal("expected error on nonexistent file")
 	}
 }
 
@@ -308,13 +378,16 @@ func TestDefaultRunners(t *testing.T) {
 		t.Errorf("expected error running invalid git command")
 	}
 
-	// updateSiteVersion and updatePackageJSON error paths on invalid files
+	// updateSiteVersion, updatePackageJSON, and updateChangelog error paths on invalid files
 	v := Version{Major: 1, Minor: 0, Patch: 0}
 	if err := updateSiteVersion("/nonexistent_dir_12345/index.html", v); err == nil {
 		t.Errorf("expected error updating nonexistent site file")
 	}
 	if err := updatePackageJSON("/nonexistent_dir_12345/package.json", v); err == nil {
 		t.Errorf("expected error updating nonexistent package file")
+	}
+	if err := updateChangelog("/nonexistent_dir_12345/CHANGELOG.md", v); err == nil {
+		t.Errorf("expected error updating nonexistent changelog file")
 	}
 }
 
@@ -356,7 +429,7 @@ func TestRunWithRunners_WriteFileError(t *testing.T) {
 
 	// Trigger write failure
 	writeErrFile := filepath.Join(tmpDir, "nonexistent_dir", "version.txt")
-	if err := runWithRunners([]string{"cmd", "patch"}, writeErrFile, siteFile, "", "", mockGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, writeErrFile, siteFile, "", "", "", mockGit, mockOut); err == nil {
 		t.Fatal("expected error on write failure or read failure")
 	}
 
@@ -367,7 +440,7 @@ func TestRunWithRunners_WriteFileError(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", tagPushErrGit, mockOut); err == nil {
+	if err := runWithRunners([]string{"cmd", "patch"}, versionFile, siteFile, "", "", "", tagPushErrGit, mockOut); err == nil {
 		t.Fatal("expected error on tag push failure")
 	}
 }

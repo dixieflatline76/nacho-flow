@@ -60,7 +60,27 @@ export class RestClient {
                             reject(new Error(`Failed to parse JSON response: ${parseError}`));
                         }
                     } else {
-                        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage || data}`));
+                        let errorMessage = '';
+                        if (data && data.trim()) {
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.error && typeof parsed.error === 'object' && parsed.error.message) {
+                                    errorMessage = parsed.error.message;
+                                } else if (parsed.error && typeof parsed.error === 'string') {
+                                    errorMessage = parsed.error;
+                                } else if (parsed.message && typeof parsed.message === 'string') {
+                                    errorMessage = parsed.message;
+                                } else {
+                                    errorMessage = data.trim();
+                                }
+                            } catch {
+                                errorMessage = data.trim();
+                            }
+                        }
+                        if (!errorMessage) {
+                            errorMessage = res.statusMessage || 'Unknown error';
+                        }
+                        reject(new Error(`HTTP ${res.statusCode}: ${errorMessage}`));
                     }
                 });
             });

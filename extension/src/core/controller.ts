@@ -49,8 +49,9 @@ export class ExtensionController {
 
 		// Create Output Channel for live engine logs
 		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Model Dispatcher');
-		this.context.subscriptions.push(this.outputChannel);
-		this.processManager = new ProcessManager(this.context.extensionUri, this.outputChannel);
+		if (!this.processManager) {
+			this.processManager = new ProcessManager(this.context.extensionUri, this.outputChannel);
+		}
 
 		// Register commands
 		this.registerCommands();
@@ -62,6 +63,10 @@ export class ExtensionController {
 		this.context.subscriptions.push(
 			vscode.workspace.onDidSaveTextDocument(async (doc) => {
 				if (!this.restClient) return;
+
+				if (this.isLocalEngineOffline()) {
+					return;
+				}
 
 				// Map active preset to its expected filename
 				const presetFileMap: Record<string, string> = {
@@ -79,7 +84,7 @@ export class ExtensionController {
 				if (isActivePresetFile || isExplicitEditTarget) {
 					try {
 						await this.restClient.updateConfigYaml(doc.getText());
-						this.showTransientToast(`🌮 Nacho Flow: ${activeFilename} updated and hot-reloaded!`);
+						this.showTransientToast(`🌮 Nacho Flow: ${activeFilename || 'Configuration'} updated and hot-reloaded!`);
 						await this.loadDashboardData();
 						await this.syncSidebarState();
 					} catch (err: any) {
@@ -88,6 +93,12 @@ export class ExtensionController {
 				}
 			})
 		);
+
+		// Auto-resume local daemon if in local mode and it was previously running
+		const engineMode = this.authManager.getEngineMode();
+		if (engineMode === 'local') {
+			await this.resumeLocalEngine();
+		}
 
 		// Initialize clients
 		await this.initializeClients();
@@ -195,6 +206,15 @@ export class ExtensionController {
 					case 'setEngineMode': {
 						const mode = message.mode === 'remote' ? 'remote' : 'local';
 						await this.authManager.setEngineMode(mode);
+						if (mode === 'remote') {
+							// Stop local process if active, but do NOT clear isLocalEngineRunning intent
+							// so that returning to local mode can seamlessly auto-resume.
+							if (this.processManager?.isRunning()) {
+								await this.processManager.stop();
+							}
+						} else {
+							await this.resumeLocalEngine();
+						}
 						await this.initializeClients();
 						await this.syncSidebarState();
 						await this.updateStats();
@@ -212,8 +232,12 @@ export class ExtensionController {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
 						this.showTransientToast('▶️ Nacho Flow: Starting Model Dispatcher...');
-						const result = await this.processManager.start(daemonUrl);
-						if (!result.success && result.error) {
+						const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
+						const configPath = presetUri.fsPath;
+						const result = await this.processManager.start(daemonUrl, configPath);
+						if (result.success) {
+							await this.authManager.setLocalEngineRunning(true);
+						} else if (result.error) {
 							await this.handleEngineStartError(result);
 						}
 						await this.initializeClients();
@@ -232,8 +256,12 @@ export class ExtensionController {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
 						this.showTransientToast('🔄 Nacho Flow: Restarting Model Dispatcher...');
-						const result = await this.processManager.restart(daemonUrl);
-						if (!result.success && result.error) {
+						const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
+						const configPath = presetUri.fsPath;
+						const result = await this.processManager.restart(daemonUrl, configPath);
+						if (result.success) {
+							await this.authManager.setLocalEngineRunning(true);
+						} else if (result.error) {
 							await this.handleEngineStartError(result);
 						}
 						await this.initializeClients();
@@ -249,6 +277,7 @@ export class ExtensionController {
 							break;
 						}
 						await this.processManager.stop();
+						await this.authManager.setLocalEngineRunning(false);
 						this.showTransientToast('⏹️ Nacho Flow: Model Dispatcher stopped');
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ connected: false, error: 'Stopped by user' });
@@ -347,11 +376,34 @@ export class ExtensionController {
 		);
 	}
 
+	private isLocalEngineOffline(): boolean {
+		return this.authManager.getEngineMode() === 'local' && (!this.processManager || !this.processManager.isRunning());
+	}
+
+	private async resumeLocalEngine(): Promise<void> {
+		const autoStartConfig = vscode.workspace.getConfiguration('nachoFlow').get<boolean>('autoStartDaemon', true);
+		if (!autoStartConfig || !this.authManager.isLocalEngineRunning() || !this.processManager || this.processManager.isRunning()) {
+			return;
+		}
+		const daemonUrl = await this.authManager.getBaseUrl();
+		if (!this.processManager.isLocalUrl(daemonUrl)) {
+			return;
+		}
+		const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
+		const configPath = presetUri.fsPath;
+		this.outputChannel?.appendLine(`[Controller] Auto-resuming local engine with preset '${this.activePreset}' at ${configPath}`);
+		const result = await this.processManager.start(daemonUrl, configPath);
+		// Note: isLocalEngineRunning is already true (precondition checked above); no need to re-persist on success.
+		if (!result.success && result.error) {
+			this.outputChannel?.appendLine(`[Controller] Auto-resume failed: ${result.error}`);
+		}
+	}
+
 	public async syncSidebarState(): Promise<void> {
 		if (!this.sidebarProvider) return;
 
+		const engineMode = this.authManager.getEngineMode();
 		const baseUrl = await this.authManager.getBaseUrl();
-		const isRemote = baseUrl !== 'http://127.0.0.1:8000' && baseUrl !== 'http://localhost:8000';
 		const token = await this.authManager.getAuthToken();
 
 		let engineStatus: any = { connected: false, version: '', error: 'Offline' };
@@ -439,7 +491,6 @@ export class ExtensionController {
 			} catch (_) {}
 		}
 
-		const engineMode = this.authManager.getEngineMode();
 		const remoteUrl = this.authManager.getRemoteUrl();
 		const remoteToken = await this.authManager.getRemoteToken();
 
@@ -459,19 +510,33 @@ export class ExtensionController {
 	}
 
 	private async initializeClients(): Promise<void> {
+		if (this.sseClient) {
+			this.sseClient.disconnect();
+			this.sseClient = null;
+		}
+
 		const baseUrl = await this.authManager.getBaseUrl();
 		const authToken = await this.authManager.getAuthToken();
 		
 		this.restClient = new RestClient(baseUrl, authToken);
-		this.sseClient = new SSEClient(baseUrl, authToken);
-		this.sseClient.connect();
+
+		// In local mode, connect SSE only if local daemon is running
+		if (!this.isLocalEngineOffline()) {
+			try {
+				this.sseClient = new SSEClient(baseUrl, authToken);
+				this.sseClient.connect();
+				this.setupSSEHandlers();
+			} catch (err: any) {
+				this.outputChannel?.appendLine(`[Controller] Failed to initialize SSE client: ${err.message || err}`);
+				this.sseClient = null;
+			}
+		} else {
+			this.sseClient = null;
+		}
 
 		// Sync base URL to status bar on client init
 		this.statusBar.setBaseUrl(baseUrl);
 		this.statusBar.setActivePreset(this.activePreset);
-		
-		// Setup SSE event handlers
-		this.setupSSEHandlers();
 	}
 
 	private setupSSEHandlers(): void {
@@ -1139,6 +1204,11 @@ export class ExtensionController {
 	private async loadDashboardData(manual: boolean = false): Promise<void> {
 		if (!this.restClient || !this.dashboardPanel) return;
 		
+		if (this.isLocalEngineOffline()) {
+			await this.syncSidebarState();
+			return;
+		}
+
 		try {
 			const stats = await this.restClient.getStats();
 			if (stats) {
@@ -1205,6 +1275,11 @@ export class ExtensionController {
 				await this.authManager.setRemoteToken(token.trim());
 			}
 			await this.authManager.setEngineMode('remote');
+			// Stop local process if active, but do NOT clear isLocalEngineRunning intent
+			// so that returning to local mode can seamlessly auto-resume.
+			if (this.processManager?.isRunning()) {
+				await this.processManager.stop();
+			}
 			await this.initializeClients();
 			this.showTransientToast('🌮 Nacho Flow: Remote server settings saved!');
 			await this.handleTestConnection(url, token);
@@ -1320,6 +1395,14 @@ export class ExtensionController {
 
 	private async pollTelemetry(): Promise<void> {
 		if (!this.restClient) return;
+
+		if (this.isLocalEngineOffline()) {
+			this.statusBar.updateStats(null);
+			if (this.dashboardPanel) {
+				this.dashboardPanel.updateStats(null);
+			}
+			return;
+		}
 
 		try {
 			const statsPromise = typeof this.restClient.getStats === 'function'

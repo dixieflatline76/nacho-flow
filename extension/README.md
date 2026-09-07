@@ -174,9 +174,10 @@ Configure extension behaviors in VS Code Settings (`Ctrl+,` $\rightarrow$ search
 
 | Setting | Default | Description |
 | :--- | :--- | :--- |
+| `nachoFlow.engineMode` | `"local"` | Operating mode: `'local'` runs the embedded daemon; `'remote'` connects to an external gateway. |
 | `nachoFlow.daemonUrl` | `http://127.0.0.1:8000` | HTTP endpoint URL of the active gateway daemon (supports LAN / Tailscale). |
 | `nachoFlow.authToken` | `""` | Optional Bearer Auth Token if connecting to a protected remote gateway. |
-| `nachoFlow.autoStartDaemon` | `true` | Automatically spawn and supervise the bundled local binary on VS Code launch. |
+| `nachoFlow.autoStartDaemon` | `true` | Automatically resume the bundled local binary on VS Code launch if previously running. |
 | `nachoFlow.showStatusBar` | `true` | Display real-time cost savings and local routing percentage in the status bar. |
 
 ---

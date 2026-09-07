@@ -1,6 +1,7 @@
 import * as child_process from 'child_process';
 import * as fs from 'fs';
 import * as http from 'http';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
@@ -268,10 +269,21 @@ export class ProcessManager {
 		this.outputChannel.appendLine(`[ProcessManager] Launching: ${launchConfig.command} ${args.join(' ')}`);
 
 		try {
+			let safeCwd = launchConfig.cwd;
+			if (!safeCwd && configPath) {
+				safeCwd = path.dirname(configPath);
+			}
+			if (!safeCwd && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+				safeCwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
+			}
+			if (!safeCwd) {
+				safeCwd = os.homedir();
+			}
+
 			const child = child_process.spawn(launchConfig.command, args, {
 				detached: false,
 				stdio: ['ignore', 'pipe', 'pipe'],
-				cwd: launchConfig.cwd || process.cwd()
+				cwd: safeCwd
 			});
 
 			this.childProcess = child;

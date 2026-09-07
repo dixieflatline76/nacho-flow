@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -340,7 +341,14 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 			}
 
 			if len(yamlBytes) > 0 {
-				_ = sbd.AtomicWrite(configFile, yamlBytes, 0600)
+				if writeErr := sbd.AtomicWrite(configFile, yamlBytes, 0600); writeErr != nil {
+					return "", fmt.Errorf("failed to write config to disk: %w", writeErr)
+				}
+				if stat, err := os.Stat(s.configPath); err == nil {
+					s.SetLastDiskWriteUnixNano(stat.ModTime().UnixNano())
+				} else {
+					s.SetLastDiskWriteUnixNano(time.Now().UnixNano())
+				}
 			}
 		}
 	}

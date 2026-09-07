@@ -79,6 +79,13 @@
                                 <span class="dropdown-desc">Automated AST cost-reduction heuristics</span>
                             </div>
                         </a>
+                        <a href="docs.html?doc=metrics_guide" class="dropdown-item">
+                            <span class="dropdown-icon">📊</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">Telemetry & Metrics Guide</span>
+                                <span class="dropdown-desc">Financial engine, prompt caching & fixtures</span>
+                            </div>
+                        </a>
                     </div>
                 </div>
 
@@ -129,6 +136,9 @@
                 <div class="doc-nav-item" id="nav-developer_guide" onclick="loadDoc('developer_guide', true)">
                     <span>💻</span> Developer & TDD Guide
                 </div>
+                <div class="doc-nav-item" id="nav-metrics_guide" onclick="loadDoc('metrics_guide', true)">
+                    <span>📊</span> Telemetry & Metrics
+                </div>
                 <div class="doc-nav-item" id="nav-roadmap" onclick="loadDoc('roadmap', true)">
                     <span>🗺️</span> Product Roadmap
                 </div>
@@ -176,17 +186,200 @@
             'performance_whitepaper': { path: 'docs/PERFORMANCE_WHITEPAPER.md', fallback: '../docs/PERFORMANCE_WHITEPAPER.md', title: 'Systems Performance Whitepaper - Nacho Flow' },
             'tuning_guide': { path: 'docs/TUNING_GUIDE.md', fallback: '../docs/TUNING_GUIDE.md', title: 'Rule Tuning - Nacho Flow' },
             'developer_guide': { path: 'docs/DEVELOPER_GUIDE.md', fallback: '../docs/DEVELOPER_GUIDE.md', title: 'Developer Guide - Nacho Flow' },
+            'metrics_guide': { path: 'docs/METRICS_DEVELOPER_GUIDE.md', fallback: '../docs/METRICS_DEVELOPER_GUIDE.md', title: 'Telemetry & Metrics - Nacho Flow' },
             'roadmap': { path: 'ROADMAP.md', fallback: '../ROADMAP.md', title: 'Roadmap - Nacho Flow' }
         };
 
+        const docFileToKey = {
+            'USER_GUIDE.MD': 'user_guide',
+            'USER_GUIDE': 'user_guide',
+            'EXTENSION_USER_GUIDE.MD': 'extension_guide',
+            'EXTENSION_USER_GUIDE': 'extension_guide',
+            'VSCODE_EXTENSION_SPEC.MD': 'extension_guide',
+            'ARCHITECTURE.MD': 'architecture',
+            'ARCHITECTURE': 'architecture',
+            'BENCHMARKS.MD': 'benchmarks',
+            'BENCHMARKS': 'benchmarks',
+            'BENCHMARKS_AB_CASE_STUDY.MD': 'case_study',
+            'BENCHMARKS_AB_CASE_STUDY': 'case_study',
+            'PERFORMANCE_WHITEPAPER.MD': 'performance_whitepaper',
+            'PERFORMANCE_WHITEPAPER': 'performance_whitepaper',
+            'TUNING_GUIDE.MD': 'tuning_guide',
+            'TUNING_GUIDE': 'tuning_guide',
+            'DEVELOPER_GUIDE.MD': 'developer_guide',
+            'DEVELOPER_GUIDE': 'developer_guide',
+            'METRICS_DEVELOPER_GUIDE.MD': 'metrics_guide',
+            'METRICS_DEVELOPER_GUIDE': 'metrics_guide',
+            'ROADMAP.MD': 'roadmap',
+            'ROADMAP': 'roadmap',
+            'README.MD': 'user_guide',
+            'AGENT_BENCHMARK_SUITE.MD': 'benchmarks'
+        };
+
         let currentDocKey = 'user_guide';
+        window.headingSlugMap = new Map();
 
         function getParam(param) {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get(param);
         }
 
-        async function loadDoc(docKey, clearHash = false) {
+        function generateSlugs(text) {
+            const slugs = new Set();
+            let clean = text.replace(/^#+\s*/, '').replace(/[`*_~]/g, '').trim();
+
+            // 1. GFM-compatible slug (preserves double hyphens from removed symbols)
+            let gfm = clean.toLowerCase()
+                .replace(/[^\w\s-]/gu, '')
+                .replace(/\s/g, '-');
+            if (gfm) slugs.add(gfm);
+
+            // 2. Collapsed hyphen slug (all multiple dashes become single dash, no leading/trailing dash)
+            let collapsed = gfm.replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+            if (collapsed) slugs.add(collapsed);
+
+            // 3. Simple alphanumeric slug
+            let simple = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            if (simple) slugs.add(simple);
+
+            // 4. Decimal dot variants (e.g. "3.1" -> "3-1" and "31")
+            let dotAsDash = clean.toLowerCase().replace(/\./g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+            if (dotAsDash) slugs.add(dotAsDash);
+
+            let dotRemoved = clean.toLowerCase().replace(/\./g, '').replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+            if (dotRemoved) slugs.add(dotRemoved);
+
+            // 5. No leading number prefix (e.g. "1. Installation" -> "installation")
+            let noPrefix = clean.replace(/^[\d.]+\s*/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            if (noPrefix) slugs.add(noPrefix);
+
+            return Array.from(slugs);
+        }
+
+        function scrollToId(rawId) {
+            if (!rawId) return;
+            const decoded = decodeURIComponent(rawId);
+
+            // 1. Direct getElementById
+            let target = document.getElementById(decoded) || document.getElementById(rawId);
+
+            // 2. Direct map lookup
+            if (!target && window.headingSlugMap) {
+                target = window.headingSlugMap.get(decoded) || window.headingSlugMap.get(rawId);
+            }
+
+            // 3. Normalized slug lookup
+            if (!target && window.headingSlugMap) {
+                const norm = decoded.toLowerCase().replace(/[^\w-]/g, '').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+                for (const [slug, el] of window.headingSlugMap.entries()) {
+                    const normSlug = slug.toLowerCase().replace(/[^\w-]/g, '').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+                    if (normSlug === norm) {
+                        target = el;
+                        break;
+                    }
+                }
+            }
+
+            // 4. Prefix or substring matching fallback
+            if (!target && window.headingSlugMap) {
+                const norm = decoded.toLowerCase().replace(/[^\w-]/g, '').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+                if (norm.length >= 3) {
+                    for (const [slug, el] of window.headingSlugMap.entries()) {
+                        const normSlug = slug.toLowerCase().replace(/[^\w-]/g, '').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+                        if (normSlug.startsWith(norm) || norm.startsWith(normSlug)) {
+                            target = el;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function processHeadingsAndLinks(contentDiv) {
+            window.headingSlugMap = new Map();
+
+            // 1. Process all headings h1-h6
+            const headings = contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            headings.forEach(h => {
+                const text = h.innerText || h.textContent || '';
+                const slugs = generateSlugs(text);
+                if (slugs.length === 0) return;
+
+                const primarySlug = slugs[0];
+                h.id = primarySlug;
+
+                slugs.forEach(slug => {
+                    window.headingSlugMap.set(slug, h);
+                    if (slug !== primarySlug && !document.getElementById(slug)) {
+                        const anchorSpan = document.createElement('span');
+                        anchorSpan.id = slug;
+                        anchorSpan.className = 'anchor-target';
+                        h.parentNode.insertBefore(anchorSpan, h);
+                    }
+                });
+            });
+
+            // 2. Process all anchor tags <a>
+            contentDiv.querySelectorAll('a').forEach(a => {
+                const href = a.getAttribute('href');
+                if (!href) return;
+
+                // External web links
+                if (/^(https?:)?\/\//i.test(href)) {
+                    a.setAttribute('target', '_blank');
+                    a.setAttribute('rel', 'noopener noreferrer');
+                    return;
+                }
+
+                // Cross-doc markdown links (e.g. TUNING_GUIDE.md or docs/TUNING_GUIDE.md#recipes)
+                const mdMatch = href.match(/^(?:(?:\.{1,2}\/|docs\/)*)([^#?]+\.md)(?:#([^?]+))?$/i);
+                if (mdMatch) {
+                    const fileName = mdMatch[1].split('/').pop().toUpperCase();
+                    const targetDocKey = docFileToKey[fileName];
+                    const targetHash = mdMatch[2] || '';
+
+                    if (targetDocKey) {
+                        const newHref = `docs.html?doc=${targetDocKey}${targetHash ? '#' + targetHash : ''}`;
+                        a.setAttribute('href', newHref);
+                        a.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            if (targetDocKey === currentDocKey) {
+                                if (targetHash) {
+                                    scrollToId(targetHash);
+                                    const u = new URL(window.location);
+                                    u.hash = targetHash;
+                                    window.history.replaceState({}, '', u);
+                                } else {
+                                    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                                }
+                            } else {
+                                loadDoc(targetDocKey, false, targetHash);
+                            }
+                        });
+                        return;
+                    }
+                }
+
+                // Internal same-page anchor links (#section)
+                if (href.startsWith('#')) {
+                    const targetId = href.substring(1);
+                    a.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        scrollToId(targetId);
+                        const u = new URL(window.location);
+                        u.hash = targetId;
+                        window.history.replaceState({}, '', u);
+                    });
+                    return;
+                }
+            });
+        }
+
+        async function loadDoc(docKey, clearHash = false, targetHash = null) {
             if (!docsMap[docKey]) docKey = 'user_guide';
             currentDocKey = docKey;
 
@@ -200,6 +393,8 @@
             url.searchParams.set('doc', docKey);
             if (clearHash) {
                 url.hash = '';
+            } else if (targetHash) {
+                url.hash = targetHash;
             }
             window.history.replaceState({}, '', url);
 
@@ -209,8 +404,9 @@
 
             document.title = docsMap[docKey].title;
 
-            // Reset scroll position to top when navigating
-            if (!window.location.hash) {
+            // Reset scroll position to top when navigating without a target anchor
+            const effectiveHash = targetHash || (!clearHash && window.location.hash ? window.location.hash.substring(1) : null);
+            if (!effectiveHash) {
                 window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
                 document.documentElement.scrollTop = 0;
                 document.body.scrollTop = 0;
@@ -275,6 +471,9 @@
                 document.getElementById('loading').style.display = 'none';
                 contentDiv.style.display = 'block';
 
+                // Process headings, slugs, anchor targets, and cross-doc links
+                processHeadingsAndLinks(contentDiv);
+
                 // Render Mermaid diagrams
                 if (window.mermaid) {
                     try {
@@ -324,17 +523,9 @@
                 // Generate TOC
                 buildTOC();
 
-                // Scroll to anchor if present in hash, otherwise guarantee top position
-                if (window.location.hash) {
-                    const id = window.location.hash.substring(1);
-                    const target = document.getElementById(id);
-                    if (target) {
-                        target.scrollIntoView({ behavior: 'smooth' });
-                    } else {
-                        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-                        document.documentElement.scrollTop = 0;
-                        document.body.scrollTop = 0;
-                    }
+                // Scroll to target anchor if present
+                if (effectiveHash) {
+                    setTimeout(() => scrollToId(effectiveHash), 60);
                 } else {
                     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
                     document.documentElement.scrollTop = 0;
@@ -361,23 +552,28 @@
             const tocLinks = document.getElementById('toc-links');
             tocLinks.innerHTML = '';
 
-            if (headings.length === 0) {
+            const validHeadings = Array.from(headings).filter(h => {
+                const text = (h.innerText || '').trim().toLowerCase();
+                return !text.includes('table of contents');
+            });
+
+            if (validHeadings.length === 0) {
                 document.getElementById('toc-container').style.display = 'none';
                 return;
             }
 
-            headings.forEach(h => {
-                let id = h.id || h.innerText.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-                h.id = id;
-
+            validHeadings.forEach(h => {
+                const id = h.id;
                 const a = document.createElement('a');
                 a.href = '#' + id;
                 a.className = 'toc-link ' + (h.tagName === 'H3' ? 'toc-h3' : '');
                 a.innerText = h.innerText.replace(/^[#\s]+/, '');
                 a.onclick = (e) => {
                     e.preventDefault();
-                    document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
-                    window.history.replaceState(null, null, '#' + id);
+                    scrollToId(id);
+                    const url = new URL(window.location);
+                    url.hash = id;
+                    window.history.replaceState(null, null, url);
                 };
                 tocLinks.appendChild(a);
             });
@@ -385,17 +581,114 @@
             document.getElementById('toc-container').style.display = 'block';
         }
 
+        // History back/forward navigation support
+        window.addEventListener('popstate', () => {
+            const doc = getParam('doc') || 'user_guide';
+            if (doc !== currentDocKey) {
+                loadDoc(doc, false, window.location.hash ? window.location.hash.substring(1) : null);
+            } else if (window.location.hash) {
+                scrollToId(window.location.hash.substring(1));
+            }
+        });
+
+        window.addEventListener('hashchange', () => {
+            if (window.location.hash) {
+                scrollToId(window.location.hash.substring(1));
+            }
+        });
+
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', () => {
             const doc = getParam('doc') || 'user_guide';
-            loadDoc(doc);
+            const initialHash = window.location.hash ? window.location.hash.substring(1) : null;
+            loadDoc(doc, false, initialHash);
 
-            // Mobile nav drawer toggle
+            // Mobile nav drawer, backdrop and accordion controller
             const toggle = document.getElementById('mobile-toggle');
             const links = document.getElementById('nav-links');
+            const dropdown = document.querySelector('.nav-dropdown');
+            const dropdownTrigger = document.querySelector('.dropdown-trigger');
+
+            let backdrop = document.getElementById('mobile-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.id = 'mobile-backdrop';
+                backdrop.className = 'mobile-backdrop';
+                document.body.appendChild(backdrop);
+            }
+
+            function openMobileMenu() {
+                if (!links || !toggle) return;
+                links.classList.add('open');
+                toggle.classList.add('active');
+                toggle.setAttribute('aria-expanded', 'true');
+                if (backdrop) backdrop.classList.add('active');
+                document.body.classList.add('menu-locked');
+            }
+
+            function closeMobileMenu() {
+                if (!links || !toggle) return;
+                links.classList.remove('open');
+                toggle.classList.remove('active');
+                toggle.setAttribute('aria-expanded', 'false');
+                if (backdrop) backdrop.classList.remove('active');
+                document.body.classList.remove('menu-locked');
+                if (dropdown) {
+                    dropdown.classList.remove('expanded');
+                    if (dropdownTrigger) dropdownTrigger.setAttribute('aria-expanded', 'false');
+                }
+            }
+
             if (toggle && links) {
-                toggle.addEventListener('click', () => {
-                    links.classList.toggle('open');
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (links.classList.contains('open')) {
+                        closeMobileMenu();
+                    } else {
+                        openMobileMenu();
+                    }
+                });
+            }
+
+            if (backdrop) {
+                backdrop.addEventListener('click', closeMobileMenu);
+            }
+
+            if (dropdownTrigger && dropdown) {
+                dropdownTrigger.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isExpanded = dropdown.classList.toggle('expanded');
+                    dropdownTrigger.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+                });
+            }
+
+            document.addEventListener('click', (e) => {
+                if (links && links.classList.contains('open')) {
+                    if (!links.contains(e.target) && !toggle.contains(e.target)) {
+                        closeMobileMenu();
+                    }
+                } else if (dropdown && dropdown.classList.contains('expanded')) {
+                    if (!dropdown.contains(e.target)) {
+                        dropdown.classList.remove('expanded');
+                        if (dropdownTrigger) dropdownTrigger.setAttribute('aria-expanded', 'false');
+                    }
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeMobileMenu();
+                }
+            });
+
+            if (links) {
+                links.querySelectorAll('a').forEach(link => {
+                    link.addEventListener('click', () => {
+                        if (window.innerWidth <= 900) {
+                            closeMobileMenu();
+                        }
+                    });
                 });
             }
         });

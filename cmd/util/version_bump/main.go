@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/safeio"
 )
@@ -55,10 +56,10 @@ func main() {
 }
 
 func runCLI(args []string) error {
-	return runWithRunners(args, "version.txt", "site/index.html", "extension/package.json", "extension/package-lock.json", defaultGitRunner, defaultOutputRunner)
+	return runWithRunners(args, "version.txt", "site/index.html", "extension/package.json", "extension/package-lock.json", "extension/CHANGELOG.md", defaultGitRunner, defaultOutputRunner)
 }
 
-func runWithRunners(args []string, versionFile, siteFile, pkgJsonFile, pkgLockFile string, git GitRunner, outRunner OutputRunner) error {
+func runWithRunners(args []string, versionFile, siteFile, pkgJsonFile, pkgLockFile, changelogFile string, git GitRunner, outRunner OutputRunner) error {
 	if len(args) < 2 {
 		return fmt.Errorf("usage: go run cmd/util/version_bump/main.go <bump-type>\nWhere <bump-type> is one of: patch, minor, major (or -type=patch, etc.)")
 	}
@@ -128,6 +129,11 @@ func runWithRunners(args []string, versionFile, siteFile, pkgJsonFile, pkgLockFi
 	if pkgLockFile != "" {
 		if err := updatePackageJSON(pkgLockFile, newVersion); err == nil {
 			filesToCommit = append(filesToCommit, pkgLockFile)
+		}
+	}
+	if changelogFile != "" {
+		if err := updateChangelog(changelogFile, newVersion); err == nil {
+			filesToCommit = append(filesToCommit, changelogFile)
 		}
 	}
 
@@ -276,4 +282,42 @@ func updatePackageJSON(filename string, v Version) error {
 	updated := re.ReplaceAll(data, fmt.Appendf(nil, `${1}"%s"`, versionStr))
 
 	return sbd.WriteFile(base, updated, 0600)
+}
+
+// updateChangelog updates extension/CHANGELOG.md by promoting the [Unreleased] section to the new version.
+func updateChangelog(filename string, v Version) error {
+	dir := filepath.Dir(filename)
+	base := filepath.Base(filename)
+	sbd, err := safeio.NewSafeBoundedDir(dir)
+	if err != nil {
+		return err
+	}
+
+	data, err := sbd.ReadFile(base)
+	if err != nil {
+		return err
+	}
+
+	content := string(data)
+	today := time.Now().Format("2006-01-02")
+	versionHeader := fmt.Sprintf("## [%d.%d.%d] - %s", v.Major, v.Minor, v.Patch, today)
+
+	// Check if this version header already exists
+	if strings.Contains(content, fmt.Sprintf("## [%d.%d.%d]", v.Major, v.Minor, v.Patch)) {
+		return nil
+	}
+
+	// Promote ## [Unreleased] to the new version header, keeping a fresh ## [Unreleased] at top
+	if strings.Contains(content, "## [Unreleased]") {
+		replacement := fmt.Sprintf("## [Unreleased]\n\n%s", versionHeader)
+		content = strings.Replace(content, "## [Unreleased]", replacement, 1)
+	} else {
+		// Fallback: prepend under the main title if ## [Unreleased] is missing
+		re := regexp.MustCompile(`(?m)^(# Change Log\s*\n+(?:.*\n)*?)(##\s*\[)`)
+		if re.MatchString(content) {
+			content = re.ReplaceAllString(content, fmt.Sprintf("${1}## [Unreleased]\n\n%s\n\n${2}", versionHeader))
+		}
+	}
+
+	return sbd.WriteFile(base, []byte(content), 0600)
 }

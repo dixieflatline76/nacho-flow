@@ -365,7 +365,7 @@ In **Nacho Flow `v0.8.2`**, three core control plane systems solve this failure 
 
 The `v0.6.0` study calculated cloud savings against an unrouted Claude 3.5 Sonnet baseline at flat prompt rates ($3.00 / 1M input tokens).
 
-In modern multi-turn agentic workflows (Zoo Code, Cline, Cursor), prompt cache hits comprise **80% to 95% of total turn tokens**, receiving an ~80% discount from upstream cloud providers. To prevent financial distortion, Nacho Flow `v0.8.2` implements a **3-Tier Priority Pricing Oracle** ([`pkg/telemetry/pricing.go`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/telemetry/pricing.go)):
+In modern multi-turn agentic workflows (Zoo Code, Cline, Cursor), prompt cache hits comprise **80% to 95% of total turn tokens**, receiving an ~80% discount from upstream cloud providers. To prevent financial distortion, Nacho Flow `v0.8.2` implements a **3-Tier Priority Pricing Oracle** ([`pkg/telemetry/pricing.go`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/pricing.go)):
 
 1. **Priority 1 (Upstream Actual Cost)**: Directly ingests the provider's exact billed cost (`usage.cost`) from SSE stream metadata.
 2. **Priority 2 (Live / Fallback Rate Card with Cache Discount)**:
