@@ -211,6 +211,7 @@ type FairyDustConfig struct {
 // Config defines the top-level configuration loaded from config.yaml.
 type Config struct {
 	Port         int                       `yaml:"port" json:"port"`
+	Host         string                    `yaml:"host,omitempty" json:"host,omitempty"`
 	AuthToken    string                    `yaml:"auth_token,omitempty" json:"auth_token,omitempty"`
 	Router       RouterConfig              `yaml:"router,omitempty" json:"router,omitempty"`
 	Deals        DealsConfig               `yaml:"deals,omitempty" json:"deals,omitempty"`

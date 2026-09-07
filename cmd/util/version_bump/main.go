@@ -48,6 +48,25 @@ func defaultOutputRunner(args ...string) (string, error) {
 
 var exitFunc = os.Exit
 
+var (
+	winresJSONPath = "cmd/nacho-flow/winres/winres.json"
+	winresRunner   = defaultWinresRunner
+)
+
+func defaultWinresRunner(inJson, outDir string) ([]string, error) {
+	// #nosec G204 - version_bump executes trusted go-winres tool
+	cmd := exec.Command("go", "run", "github.com/tc-hib/go-winres@latest", "make", "--in", inJson, "--out", outDir, "--arch", "amd64,386,arm64")
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+	base := filepath.Dir(outDir)
+	return []string{
+		filepath.Join(base, "rsrc_windows_amd64.syso"),
+		filepath.Join(base, "rsrc_windows_386.syso"),
+		filepath.Join(base, "rsrc_windows_arm64.syso"),
+	}, nil
+}
+
 func main() {
 	if err := runCLI(os.Args); err != nil {
 		fmt.Println("Error:", err)
@@ -134,6 +153,21 @@ func runWithRunners(args []string, versionFile, siteFile, pkgJsonFile, pkgLockFi
 	if changelogFile != "" {
 		if err := updateChangelog(changelogFile, newVersion); err == nil {
 			filesToCommit = append(filesToCommit, changelogFile)
+		}
+	}
+	if winresJSONPath != "" {
+		if _, statErr := os.Stat(winresJSONPath); statErr == nil {
+			if err := updateWinresVersion(winresJSONPath, newVersion); err == nil {
+				filesToCommit = append(filesToCommit, winresJSONPath)
+				outPrefix := filepath.Join(filepath.Dir(filepath.Dir(winresJSONPath)), "rsrc")
+				if sysoFiles, sErr := winresRunner(winresJSONPath, outPrefix); sErr == nil {
+					for _, sf := range sysoFiles {
+						if _, sfErr := os.Stat(sf); sfErr == nil {
+							filesToCommit = append(filesToCommit, sf)
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -320,4 +354,25 @@ func updateChangelog(filename string, v Version) error {
 	}
 
 	return sbd.WriteFile(base, []byte(content), 0600)
+}
+
+// updateWinresVersion updates version fields in winres.json with X.Y.Z.0.
+func updateWinresVersion(filename string, v Version) error {
+	dir := filepath.Dir(filename)
+	base := filepath.Base(filename)
+	sbd, err := safeio.NewSafeBoundedDir(dir)
+	if err != nil {
+		return err
+	}
+
+	data, err := sbd.ReadFile(base)
+	if err != nil {
+		return err
+	}
+
+	verQuad := fmt.Sprintf("%d.%d.%d.0", v.Major, v.Minor, v.Patch)
+	re := regexp.MustCompile(`("(?:version|file_version|product_version|FileVersion|ProductVersion)"\s*:\s*)"[^"]+"`)
+	updated := re.ReplaceAll(data, fmt.Appendf(nil, `${1}"%s"`, verQuad))
+
+	return sbd.WriteFile(base, updated, 0600)
 }

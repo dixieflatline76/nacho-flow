@@ -19,6 +19,7 @@ type SanitizedProviderDTO struct {
 // SanitizedConfigDTO represents a top-level configuration payload with all credentials masked for safe serialization.
 type SanitizedConfigDTO struct {
 	Port        int
+	Host        string
 	ClientAuth  string
 	Router      contract.RouterConfig
 	Deals       contract.DealsConfig
@@ -35,6 +36,7 @@ func ToPublicDTO(cfg *contract.Config) *SanitizedConfigDTO {
 
 	dto := &SanitizedConfigDTO{
 		Port:        cfg.Port,
+		Host:        cfg.Host,
 		ClientAuth:  MaskSecret(cfg.AuthToken),
 		Router:      cfg.Router,
 		Deals:       cfg.Deals,
@@ -87,6 +89,9 @@ func (d *SanitizedConfigDTO) ToMap() map[string]any {
 		"providers":    providers,
 		"tiers":        d.Tiers,
 		"default_tier": d.DefaultTier,
+	}
+	if d.Host != "" {
+		res["host"] = d.Host
 	}
 	if d.ClientAuth != "" {
 		res["auth_token"] = d.ClientAuth

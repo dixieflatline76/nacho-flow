@@ -221,10 +221,10 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **95.9%** |
-| `cmd/util/version_bump` | Version Bump CLI Tool | **95.8%** |
+| `cmd/util/version_bump` | Version Bump CLI Tool | **95.9%** |
 | `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **95.5%** |
 | `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.4%** |
-| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.4%** |
+| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.2%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
@@ -232,7 +232,7 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 <!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **14 / 14 Suites** | **223 / 223 (100%)** | **95.80% / 96.11% / 96.03%** |
+| **Extension Core & Webview Suite** | **14 / 14 Suites** | **223 / 223 (100%)** | **95.74% / 96.11% / 96.03%** |
 <!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---

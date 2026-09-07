@@ -71,6 +71,13 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	if cfg.Port == 0 {
 		cfg.Port = contract.DefaultServerPort
 	}
+	if cfg.Host == "" {
+		if envHost := os.Getenv("NACHO_HOST"); envHost != "" {
+			cfg.Host = envHost
+		} else {
+			cfg.Host = contract.DefaultDaemonHost
+		}
+	}
 
 	// Resolve ENV variables for auth_token
 	if strings.HasPrefix(cfg.AuthToken, contract.EnvVarPrefix) {

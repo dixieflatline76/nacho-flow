@@ -81,6 +81,11 @@ The extension lets you toggle seamlessly between running a local workstation ins
 - **`🔄 Restart`**: Restarts the local binary and reloads all configuration atomically.
 - **`📄 Logs`**: Opens an interactive streaming output channel showing color-coded request logs, token volumes, routing decisions, and latencies.
 
+> [!NOTE]
+> **Local Machine Security Isolation (`127.0.0.1`)**:
+> - By default, the embedded daemon binds strictly to `127.0.0.1` (local machine only). This guarantees local security isolation and eliminates OS inbound network firewall consent prompts (such as Windows Defender Firewall).
+> - **LAN Access**: If you wish to expose the daemon to other machines on your local network (e.g. secondary laptops or remote agent test harnesses), set `host: "0.0.0.0"` in `config.yaml` or launch with `nacho-flow -host 0.0.0.0`.
+
 #### Mode B: "Remote Server" (Team / Home Lab Gateway)
 For developers hosting Nacho Flow on a dedicated GPU server, home lab workstation, or cloud VPS:
 1. Select **Remote Server**.
@@ -428,3 +433,7 @@ Whenever you use **1-Click Auto-Tuner** or **Adopt Deal**, Nacho Flow creates a 
 config.yaml.bak_20260904_013000
 ```
 To revert, simply copy the backup file over `config.yaml` or use VS Code's local timeline.
+
+### 5. Localhost Binding vs. LAN Access (`127.0.0.1` vs `0.0.0.0`)
+- **Default Loopback (`127.0.0.1`)**: Nacho Flow listens strictly on local loopback by default. This guarantees that your gateway is never exposed to the wider local network and completely eliminates OS inbound network firewall consent prompts (e.g. Windows Defender Firewall).
+- **Enabling LAN Access**: To share the gateway with other physical devices on your LAN, specify `host: "0.0.0.0"` in `config.yaml` or pass the `-host 0.0.0.0` CLI flag. When binding to `0.0.0.0`, always set an `auth_token` in `config.yaml` to secure your model routes against unauthorized network callers.

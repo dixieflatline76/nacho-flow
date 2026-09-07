@@ -350,6 +350,64 @@ providers:
 	if cfg.Port != 8000 {
 		t.Errorf("Expected default port 8000, got %d", cfg.Port)
 	}
+	if cfg.Host != contract.DefaultDaemonHost {
+		t.Errorf("Expected default host %s, got %s", contract.DefaultDaemonHost, cfg.Host)
+	}
+}
+
+// Test 1.11b: Custom host retained when specified
+func TestConfig_CustomHostAssignment(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+host: "0.0.0.0"
+port: 9000
+providers:
+  local:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Host != "0.0.0.0" {
+		t.Errorf("Expected custom host '0.0.0.0', got %s", cfg.Host)
+	}
+	if cfg.Port != 9000 {
+		t.Errorf("Expected custom port 9000, got %d", cfg.Port)
+	}
+}
+
+// Test 1.11c: NACHO_HOST env variable resolved when host is omitted
+func TestConfig_EnvHostResolution(t *testing.T) {
+	t.Setenv("NACHO_HOST", "192.168.1.50")
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 8000
+providers:
+  local:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Host != "192.168.1.50" {
+		t.Errorf("Expected host from NACHO_HOST '192.168.1.50', got %s", cfg.Host)
+	}
 }
 
 // Test 1.12: Auto-bootstrap creates default starter config when no config exists

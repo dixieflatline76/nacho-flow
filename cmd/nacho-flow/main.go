@@ -57,6 +57,7 @@ func init() {
 var (
 	configPathFlag         = flag.String("config", "", "Path to config.yaml file")
 	portFlag               = flag.Int("port", 0, "Port to listen on (overrides config.yaml)")
+	hostFlag               = flag.String("host", "", "Host/address to bind to (default: 127.0.0.1, overrides config.yaml)")
 	logLevelFlag           = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	versionFlag            = flag.Bool("version", false, "Print version and exit")
 	vFlag                  = flag.Bool("v", false, "Print version and exit")
@@ -177,6 +178,9 @@ func (p *program) run(s service.Service) error {
 
 	if *portFlag != 0 {
 		cfg.Port = *portFlag
+	}
+	if hostFlag != nil && *hostFlag != "" {
+		cfg.Host = *hostFlag
 	}
 
 	evaluator, err := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier, cfg.Providers)
@@ -334,7 +338,11 @@ func (p *program) run(s service.Service) error {
 		}
 	}(activeConfigPath)
 
-	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
+	bindHost := cfg.Host
+	if bindHost == "" {
+		bindHost = contract.DefaultDaemonHost
+	}
+	addr := fmt.Sprintf("%s:%d", bindHost, cfg.Port)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           srvHandler,

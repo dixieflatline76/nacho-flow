@@ -23,6 +23,7 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 	enableDirectives := true
 	orig := &contract.Config{
 		Port:      8000,
+		Host:      "127.0.0.1",
 		AuthToken: "sk-nacho-gateway-super-secret-12345",
 		Router: contract.RouterConfig{
 			EnableInPromptDirectives: &enableDirectives,
@@ -70,6 +71,9 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 	}
 
 	// 1. Validate Masking
+	if dto.Host != "127.0.0.1" {
+		t.Errorf("expected Host '127.0.0.1', got '%s'", dto.Host)
+	}
 	if dto.ClientAuth != "sk-nac***" {
 		t.Errorf("expected ClientAuth 'sk-nac***', got '%s'", dto.ClientAuth)
 	}
@@ -86,6 +90,9 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 		t.Fatalf("json.Marshal failed: %v", err)
 	}
 	jsonStr := string(jsonBytes)
+	if !strings.Contains(jsonStr, `"host":"127.0.0.1"`) {
+		t.Errorf("expected json to contain 'host' tag, got: %s", jsonStr)
+	}
 	if !strings.Contains(jsonStr, `"auth_token":"sk-nac***"`) {
 		t.Errorf("expected json to contain 'auth_token' tag, got: %s", jsonStr)
 	}
