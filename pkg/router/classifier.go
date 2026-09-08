@@ -933,12 +933,20 @@ func detectShellWrite(cmd string) bool {
 	// git file-modifying commands (narrowed to concrete file writes; avoids merge/rebase false positives)
 	if containsCommandWord(lower, "git") {
 		if strings.Contains(lower, "checkout --") ||
+			strings.Contains(lower, "checkout .") ||
 			strings.Contains(lower, "restore ") ||
 			strings.Contains(lower, "restore\t") ||
 			strings.Contains(lower, "apply ") ||
 			strings.Contains(lower, "apply\t") {
 			return true
 		}
+	}
+
+	// Project and package scaffolding commands that generate/modify configuration and source files
+	if (containsCommandWord(lower, "go") && (strings.Contains(lower, "mod init") || strings.Contains(lower, "mod tidy"))) ||
+		(containsCommandWord(lower, "npm") && (strings.Contains(lower, "init") || strings.Contains(lower, "create "))) ||
+		(containsCommandWord(lower, "cargo") && (strings.Contains(lower, "new ") || strings.Contains(lower, "init"))) {
+		return true
 	}
 
 	return false
