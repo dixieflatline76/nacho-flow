@@ -8,10 +8,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
 func TestProxy_CycleBreaker_Stage1_LocalRetry(t *testing.T) {
@@ -1171,3 +1173,160 @@ func TestProxy_CycleBreaker_AutoEscalationAndCooldown(t *testing.T) {
 		t.Errorf("Turn 2 expected auto-escalation to Tier 3 Pro, got: %s", tierHeader2)
 	}
 }
+
+type mockObsSink struct {
+	records chan telemetry.TurnRecord
+}
+
+func (m *mockObsSink) Emit(rec telemetry.TurnRecord) {
+	select {
+	case m.records <- rec:
+	default:
+	}
+}
+
+func (m *mockObsSink) Close() error { return nil }
+
+func TestProxy_ToolTokens_Telemetry_EndToEnd(t *testing.T) {
+	mockBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		// Stream tool calls with code arguments chunk by chunk
+		chunks := []string{
+			"data: {\"choices\": [{\"delta\": {\"tool_calls\": [{\"index\": 0, \"id\": \"call_123\", \"type\": \"function\", \"function\": {\"name\": \"write_to_file\", \"arguments\": \"{\\\"path\\\": \\\"main.go\\\", \\\"content\\\": \\\"func main() {}\\\"}\"}}]}}]}\n\n",
+			"data: [DONE]\n\n",
+		}
+		for _, c := range chunks {
+			w.Write([]byte(c))
+		}
+	}))
+	defer mockBackend.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		CycleBreaker: contract.CycleBreakerConfig{
+			Enabled:       &enabled,
+			MaxToolTokens: 8192,
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"mock-lumo": {
+				BaseURL: mockBackend.URL,
+				Type:    "cloud",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Lumo Max Tier",
+				Model:    "lumo-max",
+				Provider: "mock-lumo",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+	sink := &mockObsSink{records: make(chan telemetry.TurnRecord, 5)}
+	srv.tracker.AddSink(sink)
+
+	reqPayload := `{
+		"model":"lumo-max",
+		"stream":true,
+		"messages":[{"role":"user","content":"Write main.go"}],
+		"tools":[{"type":"function","function":{"name":"write_to_file","description":"write"}}]
+	}`
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got: %d", rec.Code)
+	}
+
+	select {
+	case obs := <-sink.records:
+		if obs.CycleToolTokens <= 0 {
+			t.Errorf("Expected CycleToolTokens > 0, got: %d", obs.CycleToolTokens)
+		}
+		if obs.CycleMaxToolNgramFreq < 1 {
+			t.Errorf("Expected CycleMaxToolNgramFreq >= 1, got: %d", obs.CycleMaxToolNgramFreq)
+		}
+		if obs.CycleProseTokens != 0 {
+			t.Errorf("Expected CycleProseTokens == 0 for pure tool stream, got: %d", obs.CycleProseTokens)
+		}
+		if obs.HasShellWrite {
+			t.Errorf("Expected HasShellWrite == false for write_to_file, got: true")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Timed out waiting for telemetry sink to receive TurnRecord")
+	}
+}
+
+func TestProxy_ShellWrite_Telemetry_EndToEnd(t *testing.T) {
+	mockBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("data: {\"choices\": [{\"delta\": {\"content\": \"Done!\"}}]}\n\n"))
+		w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer mockBackend.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock-lumo": {
+				BaseURL: mockBackend.URL,
+				Type:    "cloud",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Lumo Max Tier",
+				Model:    "lumo-max",
+				Provider: "mock-lumo",
+				When:     "true",
+			},
+		},
+		CycleBreaker: contract.CycleBreakerConfig{
+			Enabled: &enabled,
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+	sink := &mockObsSink{records: make(chan telemetry.TurnRecord, 5)}
+	srv.tracker.AddSink(sink)
+
+	reqPayload := `{
+		"model":"lumo-max",
+		"stream":true,
+		"messages":[
+			{"role":"user","content":"Create main.go"},
+			{"role":"assistant","content":null,"tool_calls":[{"id":"call_bash_1","type":"function","function":{"name":"execute_command","arguments":"{\"command\":\"echo \\\"package main\\\" > main.go\"}"}}]},
+			{"role":"tool","tool_call_id":"call_bash_1","content":"Command succeeded with exit code 0"}
+		]
+	}`
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got: %d", rec.Code)
+	}
+
+	select {
+	case obs := <-sink.records:
+		if !obs.HasShellWrite {
+			t.Errorf("Expected HasShellWrite == true for echo > redirection, got false")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Timed out waiting for telemetry sink to receive TurnRecord")
+	}
+}
+
