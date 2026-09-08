@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 )
@@ -868,3 +869,52 @@ func TestStreamNormalizer_RawChannelTag_PrecedingToolCall(t *testing.T) {
 	}
 }
 
+func TestStreamNormalizer_ToolCall_CycleBreaking(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxToolTokens:       8192,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// Repeating tool call arguments
+	argPhrase := "execute migration task systematically on cluster node "
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"bash\",\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: [DONE]\n\n",
+		argPhrase, argPhrase, argPhrase,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	var violationReason string
+	for {
+		_, err := norm.Read(buf)
+		if v, reason := norm.CheckCycleViolation(); v {
+			violated = true
+			violationReason = reason
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if !violated {
+		t.Fatalf("expected tool argument repetition to trigger cycle violation")
+	}
+	if violationReason != "tool_repetition_loop_detected" {
+		t.Fatalf("expected reason tool_repetition_loop_detected, got: %s", violationReason)
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
+	}
+}

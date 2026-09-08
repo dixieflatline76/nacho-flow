@@ -187,6 +187,7 @@ type classifyContentPart struct {
 	Name      string          `json:"name,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	IsError   bool            `json:"is_error,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
 	Content   json.RawMessage `json:"content,omitempty"`
 }
 
@@ -241,14 +242,16 @@ func (p *classifyContentPart) UnmarshalJSON(data []byte) error {
 }
 
 type classifyToolCall struct {
-	ID       string              `json:"id"`
-	Type     string              `json:"type,omitempty"`
-	Name     string              `json:"name,omitempty"`
-	Function *classifyToolCallFn `json:"function,omitempty"`
+	ID        string              `json:"id"`
+	Type      string              `json:"type,omitempty"`
+	Name      string              `json:"name,omitempty"`
+	Function  *classifyToolCallFn `json:"function,omitempty"`
+	Arguments json.RawMessage     `json:"arguments,omitempty"`
 }
 
 type classifyToolCallFn struct {
-	Name string `json:"name"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 type classifyToolSchema struct {
@@ -338,7 +341,7 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	}
 
 	// 2.5 Scan trailing messages for error patterns and tool progress
-	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasTestPass, reqCtx.HasTestFail = c.scanTrailingTyped(payload.Messages)
+	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasShellWrite, reqCtx.HasTestPass, reqCtx.HasTestFail = c.scanTrailingTyped(payload.Messages)
 	reqCtx.HasTestProgress = reqCtx.HasTestPass && !reqCtx.HasTestFail
 
 	// 3. Approximate total token count using zero-allocation len(body) estimator
@@ -375,7 +378,7 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	return reqCtx, nil
 }
 
-func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasTestPass bool, hasTestFail bool) {
+func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasShellWrite bool, hasTestPass bool, hasTestFail bool) {
 	signatures := c.GetErrorSignatures()
 	writeTools := c.GetKickstartWriteTools()
 
@@ -388,6 +391,10 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 	writeCallIDs := stackIDs[:0]
 	hasAnyWriteCall := false
 
+	var stackShellIDs [8]string
+	shellWriteCallIDs := stackShellIDs[:0]
+	hasAnyShellWriteCall := false
+
 	// Pass 1: assistant tool calls
 	for i := start; i < len(messages); i++ {
 		msg := messages[i]
@@ -397,35 +404,75 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 				if tc.Function != nil && tc.Function.Name != "" {
 					fnName = tc.Function.Name
 				}
-				if writeTools != nil && writeTools[strings.ToLower(strings.TrimSpace(fnName))] {
+				fnLower := strings.ToLower(strings.TrimSpace(fnName))
+				if writeTools != nil && writeTools[fnLower] {
 					if tc.ID != "" {
 						writeCallIDs = append(writeCallIDs, tc.ID)
 					}
 					hasAnyWriteCall = true
 				}
+				if isShellTool(fnLower) {
+					var rawArgs json.RawMessage
+					if tc.Function != nil && len(tc.Function.Arguments) > 0 {
+						rawArgs = tc.Function.Arguments
+					} else if len(tc.Arguments) > 0 {
+						rawArgs = tc.Arguments
+					}
+					if cmd := extractCommandFromRaw(rawArgs); cmd != "" && detectShellWrite(cmd) {
+						if tc.ID != "" {
+							shellWriteCallIDs = append(shellWriteCallIDs, tc.ID)
+						}
+						hasAnyShellWriteCall = true
+					}
+				}
 			}
 			if msg.FunctionCall != nil && msg.FunctionCall.Name != "" {
-				if writeTools != nil && writeTools[strings.ToLower(strings.TrimSpace(msg.FunctionCall.Name))] {
+				fnLower := strings.ToLower(strings.TrimSpace(msg.FunctionCall.Name))
+				if writeTools != nil && writeTools[fnLower] {
 					hasAnyWriteCall = true
+				}
+				if isShellTool(fnLower) {
+					if cmd := extractCommandFromRaw(msg.FunctionCall.Arguments); cmd != "" && detectShellWrite(cmd) {
+						hasAnyShellWriteCall = true
+					}
 				}
 			}
 			for _, p := range msg.Content.Parts {
 				if p.Type == "tool_use" {
-					if writeTools != nil && writeTools[strings.ToLower(strings.TrimSpace(p.Name))] {
+					pLower := strings.ToLower(strings.TrimSpace(p.Name))
+					if writeTools != nil && writeTools[pLower] {
 						if p.ID != "" {
 							writeCallIDs = append(writeCallIDs, p.ID)
 						}
 						hasAnyWriteCall = true
 					}
+					if isShellTool(pLower) {
+						if cmd := extractCommandFromRaw(p.Input); cmd != "" && detectShellWrite(cmd) {
+							if p.ID != "" {
+								shellWriteCallIDs = append(shellWriteCallIDs, p.ID)
+							}
+							hasAnyShellWriteCall = true
+						}
+					}
 				}
 			}
 			assistantText := msg.Text()
-			if assistantText != "" && len(writeTools) > 0 {
+			if assistantText != "" {
 				lowerText := strings.ToLower(assistantText)
-				for toolName := range writeTools {
-					if containsXMLToolTag(lowerText, toolName) {
-						hasAnyWriteCall = true
-						break
+				if len(writeTools) > 0 {
+					for toolName := range writeTools {
+						if containsXMLToolTag(lowerText, toolName) {
+							hasAnyWriteCall = true
+							break
+						}
+					}
+				}
+				for _, shellName := range []string{"execute_command", "bash", "terminal", "run_command"} {
+					if containsXMLToolTag(lowerText, shellName) {
+						if cmd := extractXMLCommand(assistantText); cmd != "" && detectShellWrite(cmd) {
+							hasAnyShellWriteCall = true
+							break
+						}
 					}
 				}
 			}
@@ -443,6 +490,11 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 					hasWriteProgress = true
 				} else if msg.ToolCallID == "" && hasAnyWriteCall {
 					hasWriteProgress = true
+				}
+				if msg.ToolCallID != "" && writeCallIDsContains(shellWriteCallIDs, msg.ToolCallID) {
+					hasShellWrite = true
+				} else if msg.ToolCallID == "" && hasAnyShellWriteCall {
+					hasShellWrite = true
 				}
 			}
 			p, f := detectTestSignals(text)
@@ -465,6 +517,11 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 						} else if part.ToolUseID == "" && hasAnyWriteCall {
 							hasWriteProgress = true
 						}
+						if part.ToolUseID != "" && writeCallIDsContains(shellWriteCallIDs, part.ToolUseID) {
+							hasShellWrite = true
+						} else if part.ToolUseID == "" && hasAnyShellWriteCall {
+							hasShellWrite = true
+						}
 					}
 				}
 				p, f := detectTestSignals(text)
@@ -478,11 +535,16 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 		}
 		// Cline-style: user message following an assistant with XML tool calls.
 		// In Cline's protocol, every user message after a tool call IS the tool result.
-		if msg.Role == "user" && hasAnyWriteCall {
+		if msg.Role == "user" && (hasAnyWriteCall || hasAnyShellWriteCall) {
 			text := msg.Text()
 			if !isErrorText(text, signatures) {
 				hasToolProgress = true
-				hasWriteProgress = true
+				if hasAnyWriteCall {
+					hasWriteProgress = true
+				}
+				if hasAnyShellWriteCall {
+					hasShellWrite = true
+				}
 			}
 			p, f := detectTestSignals(text)
 			if p {
@@ -521,7 +583,7 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 		}
 	}
 
-	return historyErrors, hasToolProgress, hasWriteProgress, hasTestPass, hasTestFail
+	return historyErrors, hasToolProgress, hasWriteProgress, hasShellWrite, hasTestPass, hasTestFail
 }
 
 // containsXMLToolTag checks whether text contains an XML tool tag (e.g. <write_to_file> or <write_to_file )
@@ -700,4 +762,230 @@ func writeCallIDsContains(ids []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// isShellTool checks if the given tool name represents a shell/terminal execution tool.
+func isShellTool(name string) bool {
+	switch name {
+	case "bash", "execute_command", "run_command", "terminal", "run_shell_command",
+		"execute_bash", "powershell", "pwsh", "cmd", "sh", "zsh":
+		return true
+	default:
+		return false
+	}
+}
+
+// extractCommandFromRaw pulls the shell command string from tool call argument payloads.
+func extractCommandFromRaw(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var unquoted string
+		if err := json.Unmarshal(trimmed, &unquoted); err == nil {
+			trimmed = bytes.TrimSpace([]byte(unquoted))
+		}
+	}
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return ""
+	}
+	var fastArgs struct {
+		Command     string `json:"command"`
+		CommandLine string `json:"CommandLine"`
+		Cmd         string `json:"cmd"`
+		Script      string `json:"script"`
+	}
+	if err := json.Unmarshal(trimmed, &fastArgs); err == nil {
+		if fastArgs.Command != "" {
+			return fastArgs.Command
+		}
+		if fastArgs.CommandLine != "" {
+			return fastArgs.CommandLine
+		}
+		if fastArgs.Cmd != "" {
+			return fastArgs.Cmd
+		}
+		if fastArgs.Script != "" {
+			return fastArgs.Script
+		}
+	}
+	return ""
+}
+
+// extractXMLCommand extracts shell commands from Cline-style XML tool blocks.
+func extractXMLCommand(text string) string {
+	for _, tag := range []string{"command", "CommandLine", "cmd", "script"} {
+		openTag := "<" + tag + ">"
+		closeTag := "</" + tag + ">"
+		start := strings.Index(text, openTag)
+		if start != -1 {
+			end := strings.Index(text[start+len(openTag):], closeTag)
+			if end != -1 {
+				return strings.TrimSpace(text[start+len(openTag) : start+len(openTag)+end])
+			}
+		}
+	}
+	return ""
+}
+
+// detectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
+func detectShellWrite(cmd string) bool {
+	trimmed := strings.TrimSpace(cmd)
+	if trimmed == "" {
+		return false
+	}
+
+	// 1. Redirection checks: > and >> (ignoring comparisons/scripts inside quotes)
+	if strings.Contains(trimmed, ">") {
+		var inSingleQuote, inDoubleQuote bool
+		for i := 0; i < len(trimmed); i++ {
+			ch := trimmed[i]
+			if ch == '\\' && i+1 < len(trimmed) {
+				i++
+				continue
+			}
+			if ch == '\'' && !inDoubleQuote {
+				inSingleQuote = !inSingleQuote
+				continue
+			}
+			if ch == '"' && !inSingleQuote {
+				inDoubleQuote = !inDoubleQuote
+				continue
+			}
+			if inSingleQuote || inDoubleQuote {
+				continue
+			}
+			if ch == '>' {
+				// Guard: process substitution <( or redirection descriptor &>
+				if i > 0 && (trimmed[i-1] == '&' || trimmed[i-1] == '<') {
+					continue
+				}
+				// Guard: >&2 (stdout to stderr)
+				if i+1 < len(trimmed) && trimmed[i+1] == '&' {
+					continue
+				}
+				// Skip second '>' if '>>'
+				targetIdx := i + 1
+				if targetIdx < len(trimmed) && trimmed[targetIdx] == '>' {
+					targetIdx++
+				}
+				// Guard: >= comparison operator
+				if targetIdx < len(trimmed) && trimmed[targetIdx] == '=' {
+					continue
+				}
+				target := strings.TrimSpace(trimmed[targetIdx:])
+				if endIdx := strings.IndexAny(target, " \t\r\n|;&"); endIdx != -1 {
+					target = target[:endIdx]
+				}
+				target = strings.TrimSpace(target)
+				if isNullTarget(target) {
+					continue
+				}
+				if target != "" {
+					return true
+				}
+			}
+		}
+	}
+
+	lower := strings.ToLower(trimmed)
+
+	// 2. Pipe to file-writing tools
+	if strings.Contains(lower, "| tee") ||
+		strings.Contains(lower, "|tee") ||
+		strings.Contains(lower, "| dd of=") ||
+		strings.Contains(lower, "| out-file") ||
+		strings.Contains(lower, "| set-content") ||
+		strings.Contains(lower, "| add-content") {
+		return true
+	}
+
+	// 3. Heredocs combined with file writing
+	if strings.Contains(trimmed, "<<") {
+		if strings.Contains(trimmed, ">") || strings.Contains(lower, "| tee") {
+			return true
+		}
+	}
+
+	// 4. File-modifying CLI tools
+	if containsCommandWord(lower, "sed") && strings.Contains(lower, "-i") {
+		return true
+	}
+
+	modifyingTools := [...]string{
+		"patch", "touch", "mkdir", "rm", "rmdir", "cp", "mv",
+		"truncate", "install", "unzip", "gunzip",
+		"copy", "move", "del", "erase", "ren", "rename", "md", "rd",
+		"new-item", "copy-item", "move-item", "remove-item", "set-content", "add-content", "out-file",
+	}
+	for _, tool := range modifyingTools {
+		if containsCommandWord(lower, tool) {
+			return true
+		}
+	}
+
+	// tar extraction
+	if containsCommandWord(lower, "tar") && (strings.Contains(lower, "-x") || strings.Contains(lower, " x")) {
+		return true
+	}
+
+	// git file-modifying commands (narrowed to concrete file writes; avoids merge/rebase false positives)
+	if containsCommandWord(lower, "git") {
+		if strings.Contains(lower, "checkout --") ||
+			strings.Contains(lower, "restore ") ||
+			strings.Contains(lower, "restore\t") ||
+			strings.Contains(lower, "apply ") ||
+			strings.Contains(lower, "apply\t") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isNullTarget(target string) bool {
+	lower := strings.ToLower(target)
+	switch lower {
+	case "/dev/null", "/dev/zero", "nul", "$null", "&1", "&2":
+		return true
+	default:
+		return false
+	}
+}
+
+func containsCommandWord(s, word string) bool {
+	idx := 0
+	for {
+		pos := strings.Index(s[idx:], word)
+		if pos == -1 {
+			return false
+		}
+		actualPos := idx + pos
+		prefixOK := false
+		if actualPos == 0 {
+			prefixOK = true
+		} else {
+			prev := s[actualPos-1]
+			if prev == ' ' || prev == '\t' || prev == ';' || prev == '|' || prev == '&' || prev == '`' || prev == '(' || prev == '\n' {
+				prefixOK = true
+			}
+		}
+
+		afterPos := actualPos + len(word)
+		suffixOK := false
+		if afterPos >= len(s) {
+			suffixOK = true
+		} else {
+			next := s[afterPos]
+			if next == ' ' || next == '\t' || next == ';' || next == '|' || next == '&' || next == '`' || next == ')' || next == '\n' || next == '\r' {
+				suffixOK = true
+			}
+		}
+
+		if prefixOK && suffixOK {
+			return true
+		}
+		idx = actualPos + 1
+	}
 }

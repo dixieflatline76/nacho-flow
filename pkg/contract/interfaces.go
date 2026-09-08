@@ -18,6 +18,7 @@ type RequestContext struct {
 	IsRetry                   bool     `json:"is_retry,omitempty"`
 	HasToolProgress           bool     `json:"has_tool_progress,omitempty"`
 	HasWriteProgress          bool     `json:"has_write_progress,omitempty"`
+	HasShellWrite             bool     `json:"has_shell_write,omitempty"`
 	HasTestProgress           bool     `json:"has_test_progress,omitempty"`
 	HasTestPass               bool     `json:"has_test_pass,omitempty"`
 	HasTestFail               bool     `json:"has_test_fail,omitempty"`
@@ -34,6 +35,8 @@ type RequestContext struct {
 	CycleMaxNgramFreq         int      `json:"cycle_max_ngram_freq,omitempty"`
 	CycleThinkingTokens       int      `json:"cycle_thinking_tokens,omitempty"`
 	CycleMaxThinkingNgramFreq int      `json:"cycle_max_thinking_ngram_freq,omitempty"`
+	CycleToolTokens           int      `json:"cycle_tool_tokens,omitempty"`
+	CycleMaxToolNgramFreq     int      `json:"cycle_max_tool_ngram_freq,omitempty"`
 	SessionKickstarted        bool     `json:"session_kickstarted,omitempty"`
 	SessionKickstartCount     int      `json:"session_kickstart_count,omitempty"`
 	SessionKey                string   `json:"session_key,omitempty"`
@@ -92,6 +95,7 @@ type CycleBreakerConfig struct {
 	Enabled                     *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	MaxProseTokens              int      `yaml:"max_prose_tokens,omitempty" json:"max_prose_tokens,omitempty"`
 	MaxThinkingTokens           int      `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
+	MaxToolTokens               int      `yaml:"max_tool_tokens,omitempty" json:"max_tool_tokens,omitempty"`
 	RepetitionWindow            int      `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
 	RepetitionThreshold         int      `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
 	ThinkingRepetitionThreshold int      `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
@@ -109,21 +113,21 @@ type CycleBreakerConfig struct {
 
 // Tier defines a single model routing rule in the 1..N evaluation pipeline.
 type Tier struct {
-	Name            string              `yaml:"name" json:"name"`
-	Model           string              `yaml:"model" json:"model"`
-	Provider        string              `yaml:"provider" json:"provider"`
-	When            string              `yaml:"when" json:"when"`
+	Name              string              `yaml:"name" json:"name"`
+	Model             string              `yaml:"model" json:"model"`
+	Provider          string              `yaml:"provider" json:"provider"`
+	When              string              `yaml:"when" json:"when"`
 	StripImages       bool                `yaml:"strip_images" json:"strip_images"`
 	HasVision         *bool               `yaml:"has_vision,omitempty" json:"has_vision,omitempty"`
 	ResolvedHasVision bool                `yaml:"-" json:"resolved_has_vision"`
-	ReasoningEffort string              `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
-	MaxContext      int                 `yaml:"max_context,omitempty" json:"max_context,omitempty"`
-	Raw             *bool               `yaml:"raw,omitempty" json:"raw,omitempty"`
-	Shield          *bool               `yaml:"shield,omitempty" json:"shield,omitempty"`
-	Normalizer      *bool               `yaml:"normalizer,omitempty" json:"normalizer,omitempty"`
-	Normalizers     *NormalizersConfig  `yaml:"normalizers,omitempty" json:"normalizers,omitempty"`
-	CycleKiller     *CycleBreakerConfig `yaml:"cycle_killer,omitempty" json:"cycle_killer,omitempty"`
-	CycleBreaker    *CycleBreakerConfig `yaml:"cycle_breaker,omitempty" json:"cycle_breaker,omitempty"`
+	ReasoningEffort   string              `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
+	MaxContext        int                 `yaml:"max_context,omitempty" json:"max_context,omitempty"`
+	Raw               *bool               `yaml:"raw,omitempty" json:"raw,omitempty"`
+	Shield            *bool               `yaml:"shield,omitempty" json:"shield,omitempty"`
+	Normalizer        *bool               `yaml:"normalizer,omitempty" json:"normalizer,omitempty"`
+	Normalizers       *NormalizersConfig  `yaml:"normalizers,omitempty" json:"normalizers,omitempty"`
+	CycleKiller       *CycleBreakerConfig `yaml:"cycle_killer,omitempty" json:"cycle_killer,omitempty"`
+	CycleBreaker      *CycleBreakerConfig `yaml:"cycle_breaker,omitempty" json:"cycle_breaker,omitempty"`
 }
 
 // ProviderType defines the execution classification of an LLM backend.

@@ -168,9 +168,10 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **The Problem ("Qu'est-ce que c'est?")**: LLM models in complex agentic tool-calling sessions can get trapped in circular deliberation loops or generate multi-minute runaway prose monologues without calling tools. Post-turn defenses fail to stop mid-stream compute and token burn.
 - **Provider-Agnostic, Config-Driven Architecture**: Fully configurable per-tier and globally in `config.yaml` across both Local GPU and Cloud models. Activation is governed strictly by YAML config rather than hardcoded provider checks.
 - **Multi-Lane Detection Engine**:
-  1. **Sliding N-Gram Repetition Detector**: Tracks rolling n-gram windows using 64-bit FNV-1a hashing across both prose and reasoning (`<think>`) streams. If a sequence repeats $\ge \text{threshold}$ times, it trips in **< 3 seconds** (< 30 tokens).
+  1. **Sliding N-Gram Repetition Detector**: Tracks rolling n-gram windows using 64-bit FNV-1a hashing across prose, reasoning (`<think>`), and tool argument streams. If a sequence repeats $\ge \text{threshold}$ times, it trips in **< 3 seconds** (< 30 tokens).
   2. **Prose Token Soft Ceiling**: Counts non-thinking, non-tool words against `max_prose_tokens` (default 4096) during agentic turns (`HasTools == true`).
   3. **Thinking Token Ceiling**: Monitors reasoning token depth against `max_thinking_tokens` (default 1500) with repetition validation.
+  4. **Tool Argument Lane (RFC-002)**: Monitors in-flight function and tool call arguments (`delta.tool_calls[].function.arguments`) against `max_tool_tokens` (default 4096). Catches runaway infinite tool loops (e.g. recursive `sed -i` pattern loops or repeating bash pipelines) with zero extra allocations on the fast path using `toolChunksScratch`.
 - **Two-Phase Stream Defense Architecture**:
   - **Phase 1: Pre-Header Adaptive Defense (2KB Peek Buffer)**: If a loop or monologue budget breach occurs before HTTP headers are committed, Nacho Flow cleanly aborts the stream, appends an authoritative `[SYSTEM OVERRIDE]` prompt (*"You produced excessive reasoning without calling any tools. Stop planning. Execute immediately. Call the appropriate tool NOW with the correct arguments. Do not explain your reasoning."*), and re-dispatches synchronously. Incurred cost remains **$0.00** on local models. On repeated breach, it transparently fails over to the cloud default tier.
   - **Phase 2: Active Mid-Stream Circuit Severing**: During active HTTP chunk streaming, `proxy.go` checks for cycle violations **before** writing chunks to the client. Upon violation, it immediately severs the upstream GPU/API connection (`resp.Body.Close()`), swallows the degenerate repeating chunk, and emits a clean terminal SSE finish sequence (`finish_reason: "stop"` followed by `data: [DONE]`), unblocking the downstream agent in $<2$ seconds.
@@ -178,10 +179,15 @@ Every incoming request passes through an optimized multi-stage processing pipeli
   - **MinRetriesFloor (Retry Floor Preservation)**: When Cycle Killer severs a stream, `RecordCycleKill` sets `MinRetriesFloor = 3`. Even if the client resets/prunes context tokens (e.g. 120k $\rightarrow$ 15k tokens) and submits a new prompt hash, the floor prevents retries from resetting to 0, ensuring the immediate next turn auto-escalates to Tier 3 / Tier 4. The floor safely decays turn by turn.
   - **Per-Session Model Cooldown**: Severed models are placed on a 2-minute session-scoped cooldown (`CoolingDownModels map[string]time.Time`). `strategy.ExprEvaluator.SelectTier` programmatically skips cooling-down models to avoid repeating deterministic reasoning loops on the same session.
 
-### Stage 5f: ⚡ Kickstart: Cross-Turn Session Resuscitation (`pkg/router/session.go`)
-- **The Problem**: Coding agents can get trapped in multi-turn read/plan loops (e.g. alternating `read_file` and `update_todo` across 60+ turns) without executing edits or commands. Because each turn produces valid, non-repeating tokens, stream-level n-gram detection cannot catch it.
+### Stage 5f: ⚡ Kickstart: Cross-Turn Session Resuscitation (`pkg/router/session.go`, `pkg/router/classifier.go`)
+- **The Problem**: Coding agents can get trapped in multi-turn read/plan loops (e.g. alternating `read_file` and `update_todo` across 60+ turns) or failing test loops followed by bare read commands (`cat main.go`, `ls`) without making code changes.
 - **Stateful Turn Tracker**: Tracks `KickstartCount` within `SessionState` across consecutive request turns.
-- **Tool Progress Evaluation**: Reset to 0 whenever the agent executes productive state changes (`HasToolProgress`). When `kickstart_write_only: true` is configured, only write-class operations (`write_to_file`, `replace_in_file`, `execute_command`, or custom tools from `kickstart_write_tools`) count as progress (`HasWriteProgress`), preventing read-only / metadata operations (`read_file`, `update_todo`, `list_dir`) from resetting the resuscitation counter.
+- **Tool Progress Evaluation**: Reset to 0 whenever the agent executes productive state changes (`HasToolProgress`). When `kickstart_write_only: true` is configured, only genuine write-class operations count as progress:
+  - Structured file tools (`write_to_file`, `replace_in_file`, custom tools from `kickstart_write_tools`) $\rightarrow$ `HasWriteProgress`
+  - Shell command file writes (`sed -i`, `>`, `>>`, `| tee`, `patch`, `git restore`) detected via zero-alloc SIMD string scanning $\rightarrow$ `HasShellWrite`
+  - Clean passing test suites $\rightarrow$ `HasTestProgress`
+  Read-only / metadata operations (`cat`, `ls`, `grep`, `read_file`, `update_todo`) do NOT reset retries while tests fail, breaking infinite retry loops.
+- **Plan Mode Guard**: When an agent operates in pure plan mode (`HasTools && !HasWriteCapability`), tool progress is preserved without false kickstart accumulation.
 - **Resuscitation Injection**: When `KickstartCount >= kickstart_threshold` (default 5, `0` disables), Nacho Flow injects `[SYSTEM OVERRIDE]` to force the agent to transition from planning to execution.
 
 ### Stage 5g: 🔑 Clean Session Key & Ephemeral Port Normalization (`pkg/server/proxy.go`)
@@ -190,8 +196,8 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 
 ### Stage 5h: 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints (`pkg/router/session.go`, `pkg/server/proxy.go`)
 - **The Problem**: While low-cost models (Gemini Flash, local models) complete agent tasks at extreme speed and low cost, they can accumulate subtle syntax bugs, missing module extensions (e.g. Node 22 ESM `.js` imports), or architectural drift over long 40+ turn sessions without failing immediate syntax checks.
-- **Write-Progress State Accumulator**: `SessionTracker.RecordWriteProgress` tracks the total number of productive write turns (`WriteProgressCount`) across the session. Read-only turns do not increment the counter.
-- **Cadence & Candidate Evaluation**: When `reqCtx.HasWriteProgress == true`, the proxy evaluates configured `fairy_dust.entries`. An entry matches when `WriteProgressCount % entry.Frequency == 0` and the session has not exceeded `entry.MaxCount`.
+- **Write-Progress State Accumulator**: `SessionTracker.RecordWriteProgress` tracks the total number of productive write turns (`WriteProgressCount`) across the session (`HasWriteProgress || HasShellWrite`). Read-only turns do not increment the counter.
+- **Cadence & Candidate Evaluation**: When `reqCtx.HasWriteProgress || reqCtx.HasShellWrite`, the proxy evaluates configured `fairy_dust.entries`. An entry matches when `WriteProgressCount % entry.Frequency == 0` and the session has not exceeded `entry.MaxCount`.
 - **Priority-Based Candidate Winner**: When multiple checkpoints coincide (e.g. a 15-turn Tactical and a 40-turn Strategic review on turn 120), the highest-priority candidate is selected.
 - **Dynamic Tier Override & Prompt Injection**: The proxy overrides `targetTier` with the winning frontier model (e.g., Claude Sonnet 5 or Claude Opus 5) and injects the entry's authoritative checkpoint review prompt into the request payload.
 

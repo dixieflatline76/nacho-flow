@@ -2,7 +2,7 @@
 name: Feature Request
 about: Suggest a new feature, routing strategy, or provider integration for Nacho Flow
 title: '[FEATURE] '
-labels: enhancement
+labels: "type: feature, status: needs triage"
 assignees: ''
 
 ---

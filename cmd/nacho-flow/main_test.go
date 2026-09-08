@@ -1258,4 +1258,3 @@ func TestExecuteStartupDirectives_MalformedJSON(t *testing.T) {
 		t.Fatalf("expected malformed directive file to be wiped, but it still exists")
 	}
 }
-
