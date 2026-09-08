@@ -32,30 +32,31 @@ type runtimeState struct {
 }
 
 type Server struct {
-	state          atomic.Pointer[runtimeState]
-	classifier     contract.Classifier
-	sanitizer      contract.Sanitizer
-	oracle         *telemetry.PricingOracle
-	tracker        *telemetry.StatsTracker
-	sessionTracker *router.SessionTracker
-	metaRegistry   *MetaRegistry
-	shieldMgr      *shield.ShieldManager
-	logger         *slog.Logger
-	transport      *http.Transport
-	ringBuffer     *telemetry.RingBufferSink
-	eventBroker    *telemetry.EventBroker
-	tuner          *tuner.CostPenaltyOptimizer
-	diskStore      *store.DiskStore
-	trafficLogPath string
-	configPath     string
-	lastDiskWriteUnixNano atomic.Int64
-	startTime      time.Time
-	mementoState   *runtimeState
-	watchdogMu     sync.Mutex
-	watchdogActive bool
-	watchdogErrors atomic.Int32
-	directivePath  string
-	exitFunc       func(code int)
+	state                    atomic.Pointer[runtimeState]
+	classifier               contract.Classifier
+	sanitizer                contract.Sanitizer
+	oracle                   *telemetry.PricingOracle
+	tracker                  *telemetry.StatsTracker
+	sessionTracker           *router.SessionTracker
+	metaRegistry             *MetaRegistry
+	shieldMgr                *shield.ShieldManager
+	logger                   *slog.Logger
+	transport                *http.Transport
+	ringBuffer               *telemetry.RingBufferSink
+	eventBroker              *telemetry.EventBroker
+	tuner                    *tuner.CostPenaltyOptimizer
+	diskStore                *store.DiskStore
+	trafficLogPath           string
+	configPath               string
+	lastDiskWriteUnixNano    atomic.Int64
+	startTime                time.Time
+	mementoState             *runtimeState
+	watchdogMu               sync.Mutex
+	watchdogActive           bool
+	watchdogErrors           atomic.Int32
+	directivePath            string
+	exitFunc                 func(code int)
+	warnedZeroUsageProviders sync.Map
 }
 
 // GetConfig returns the current active configuration atomically.
@@ -496,12 +497,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqCtx.SessionKey = sessionKey
 	promptHash := router.HashPrompt(reqCtx.Prompt)
 
-	// Pass tool progress signal from classifier to session tracker
-	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash, reqCtx.HasToolProgress)
+	cfg := s.GetConfig()
+
+	// Pass tool progress signal from classifier to session tracker.
+	// In write-only mode, genuine forward progress requires write progress or passing tests,
+	// preventing read-only command loops from resetting retries while tests fail.
+	turnProgress := reqCtx.HasToolProgress
+	if cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+		turnProgress = reqCtx.HasWriteProgress || reqCtx.HasShellWrite || reqCtx.HasTestProgress
+		if reqCtx.HasTools && !reqCtx.HasWriteCapability {
+			turnProgress = turnProgress || reqCtx.HasToolProgress
+		}
+	}
+	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash, turnProgress)
 	reqCtx.CoolingDownModels = s.sessionTracker.GetCoolingDownModels(sessionKey)
 
 	// Kickstart: detect semantic stall/idle loop across consecutive turns
-	cfg := s.GetConfig()
 	kickstartThreshold := cfg.CycleKiller.KickstartThreshold
 	if kickstartThreshold == 0 && cfg.CycleBreaker.KickstartThreshold > 0 {
 		kickstartThreshold = cfg.CycleBreaker.KickstartThreshold
@@ -511,7 +522,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
 			// Legitimate progress requires concrete write activity OR a clean passing test suite.
 			// Failing tests require code edits to fix and do NOT prevent kickstart accumulation.
-			kickstartProgress = reqCtx.HasWriteProgress || reqCtx.HasTestProgress
+			kickstartProgress = reqCtx.HasWriteProgress || reqCtx.HasShellWrite || reqCtx.HasTestProgress
 		}
 		// Part A Guard: Auto-suspend when agent has tools but zero write tools (Plan Mode)
 		if (cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly) && reqCtx.HasTools && !reqCtx.HasWriteCapability {
@@ -549,7 +560,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fdCfg := cfg.FairyDust
 	if fdCfg.Enabled != nil && *fdCfg.Enabled && len(fdCfg.Entries) > 0 && !guardrails.FairyDustDisabled {
 		// 1. Record write progress (single global counter, increments only on write turns)
-		writeCount := s.sessionTracker.RecordWriteProgress(sessionKey, reqCtx.HasWriteProgress)
+		writeCount := s.sessionTracker.RecordWriteProgress(sessionKey, reqCtx.HasWriteProgress || reqCtx.HasShellWrite)
 
 		// 2. Check each entry; collect the highest-priority candidate that triggers
 		type fdCandidate struct {
@@ -679,6 +690,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Int("retries", reqCtx.Retries),
 		slog.Bool("has_tool_progress", reqCtx.HasToolProgress),
 		slog.Bool("has_write_progress", reqCtx.HasWriteProgress),
+		slog.Bool("has_shell_write", reqCtx.HasShellWrite),
 		slog.Bool("has_test_progress", reqCtx.HasTestProgress),
 		slog.Bool("has_test_pass", reqCtx.HasTestPass),
 		slog.Bool("has_test_fail", reqCtx.HasTestFail),
@@ -867,6 +879,15 @@ func (s *Server) dispatchTier(
 		rawPayload["model"] = targetTier.Model
 		if targetTier.ReasoningEffort != "" {
 			rawPayload["reasoning_effort"] = targetTier.ReasoningEffort
+		}
+		if isStream, _ := rawPayload["stream"].(bool); isStream {
+			if opts, ok := rawPayload["stream_options"].(map[string]interface{}); ok {
+				opts["include_usage"] = true
+			} else {
+				rawPayload["stream_options"] = map[string]interface{}{
+					"include_usage": true,
+				}
+			}
 		}
 		if reencoded, err := json.Marshal(rawPayload); err == nil {
 			preparedBody = reencoded
@@ -1088,12 +1109,27 @@ func (s *Server) dispatchTier(
 				}
 			}
 		}
-		usage, _ := normalizer.GetUsage()
+		usage, hasUsage := normalizer.GetUsage()
+		if usage.PromptTokens > 0 {
+			if calibrator, ok := s.classifier.(interface{ GetEstimator() *router.TokenEstimator }); ok {
+				calibrator.GetEstimator().Calibrate(usage.PromptTokens, len(body))
+			}
+		}
+		if resp.StatusCode == http.StatusOK && !hasUsage {
+			if _, loaded := s.warnedZeroUsageProviders.LoadOrStore(targetTier.Provider, true); !loaded {
+				reqLogger.Warn("Streaming response completed with zero usage tokens reported by provider",
+					slog.String("provider", targetTier.Provider),
+					slog.String("model", targetTier.Model),
+				)
+			}
+		}
 		if cb != nil {
 			reqCtx.CycleProseTokens = cb.ProseTokens()
 			reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
 			reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
 			reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+			reqCtx.CycleToolTokens = cb.ToolTokens()
+			reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
 		}
 		_ = normalizer.Close()
 

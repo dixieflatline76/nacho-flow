@@ -30,8 +30,9 @@ scratch/
 *.bak.*
 config.yaml.bak.*
 
-# Private Business Strategy
+# Private Business Strategy & Local Docs
 docs/business/
+docs/local/
 
 # IDEs & OS
 .DS_Store

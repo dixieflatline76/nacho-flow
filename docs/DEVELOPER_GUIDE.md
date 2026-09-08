@@ -6,7 +6,7 @@ This guide is intended for engineers contributing to, extending, or maintaining 
 
 ## 1. Development Prerequisites
 
-- **Go**: Version `1.22+` (supports `slog`, generic channels, and `atomic.Pointer`).
+- **Go**: Version `1.26+` (supports deterministic GC, SIMD string scanning, and lock-free RCU atomic pointers).
 - **Make** (optional): For running build and release targets.
 - **Git**: For version control.
 

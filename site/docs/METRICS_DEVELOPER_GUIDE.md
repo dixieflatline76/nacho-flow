@@ -2,7 +2,7 @@
 
 **Audience:** Core engine developers, contributors, and AI pair-programming agents  
 **Package Path:** [`pkg/telemetry`](https://github.com/dixieflatline76/nacho-flow/tree/main/pkg/telemetry)  
-**Status:** Living Engineering Standard (v0.8.4+)
+**Status:** Living Engineering Standard (v1.0.2+)
 
 ---
 

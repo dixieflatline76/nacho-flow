@@ -2,6 +2,7 @@ package shield
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -353,5 +354,213 @@ func TestCycleBreaker_NQueensAlgorithmicProse(t *testing.T) {
 		if triggered {
 			t.Fatalf("N-Queens algorithmic explanation triggered cycle breaker at section %d: %s", i+1, reason)
 		}
+	}
+}
+
+func TestCycleBreaker_ToolLane_RepetitionDetection(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxToolTokens:       8192,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	phrase := "replace target directory with destination directory systematically "
+
+	triggered, reason := cb.ProcessToolDelta(phrase)
+	if triggered {
+		t.Fatalf("first repetition should not trigger, got %s", reason)
+	}
+
+	triggered, reason = cb.ProcessToolDelta(phrase)
+	if triggered {
+		t.Fatalf("second repetition should not trigger, got %s", reason)
+	}
+
+	// Third repetition in tool arguments triggers tool_repetition_loop_detected
+	triggered, reason = cb.ProcessToolDelta(phrase)
+	if !triggered {
+		t.Fatalf("third repetition should trigger tool repetition loop")
+	}
+	if reason != "tool_repetition_loop_detected" {
+		t.Fatalf("expected reason tool_repetition_loop_detected, got %s", reason)
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected non-zero ToolTokens, got %d", cb.ToolTokens())
+	}
+	if cb.MaxToolNgramFreq() < 3 {
+		t.Errorf("expected MaxToolNgramFreq >= 3, got %d", cb.MaxToolNgramFreq())
+	}
+}
+
+func TestCycleBreaker_ToolLane_LargeCodePayload_NoFalsePositive(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxProseTokens:      100, // tight prose budget
+		MaxThinkingTokens:   100, // tight thinking budget
+		MaxToolTokens:       8192,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// Realistic Go code file written to a file via tool arguments
+	code := `package server
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+type Config struct {
+	Port         int           ` + "`json:\"port\"`" + `
+	ReadTimeout  time.Duration ` + "`json:\"read_timeout\"`" + `
+	WriteTimeout time.Duration ` + "`json:\"write_timeout\"`" + `
+}
+
+type Server struct {
+	cfg    *Config
+	server *http.Server
+	mux    *http.ServeMux
+}
+
+func NewServer(cfg *Config) (*Server, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("configuration cannot be nil")
+	}
+	mux := http.NewServeMux()
+	s := &Server{
+		cfg: cfg,
+		mux: mux,
+		server: &http.Server{
+			Addr:         fmt.Sprintf(":%d", cfg.Port),
+			Handler:      mux,
+			ReadTimeout:  cfg.ReadTimeout,
+			WriteTimeout: cfg.WriteTimeout,
+		},
+	}
+	s.registerRoutes()
+	return s, nil
+}
+
+func (s *Server) registerRoutes() {
+	s.mux.HandleFunc("/healthz", s.handleHealthCheck)
+	s.mux.HandleFunc("/api/v1/status", s.handleStatusReport)
+	s.mux.HandleFunc("/api/v1/config", s.handleGetConfiguration)
+}
+
+func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(` + "`{\"status\":\"healthy\"}`" + `))
+}
+
+func (s *Server) handleStatusReport(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	select {
+	case <-ctx.Done():
+		http.Error(w, "request timed out during status evaluation", http.StatusGatewayTimeout)
+		return
+	default:
+		payload := map[string]any{
+			"uptime": time.Since(time.Now()),
+			"active": true,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(payload)
+	}
+}
+
+func (s *Server) handleGetConfiguration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.cfg)
+}
+`
+
+	triggered, reason := cb.ProcessToolDelta(code)
+	if triggered {
+		t.Fatalf("expected large tool payload with unique identifiers not to trigger, got %s", reason)
+	}
+	// Tool lane tokens should be tracked, prose and thinking should remain zero
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
+	}
+	if cb.ProseTokens() != 0 {
+		t.Errorf("expected ProseTokens == 0, got %d", cb.ProseTokens())
+	}
+	if cb.ThinkingTokens() != 0 {
+		t.Errorf("expected ThinkingTokens == 0, got %d", cb.ThinkingTokens())
+	}
+}
+
+func TestCycleBreaker_ToolLane_BudgetExceededWithRepetition(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxToolTokens:       50,
+		RepetitionWindow:    5,
+		RepetitionThreshold: 5, // high threshold, won't trip loop
+	})
+
+	// Send repeating phrase twice to get max freq >= 2
+	phrase := "modify update replace execute apply "
+	cb.ProcessToolDelta(phrase)
+	cb.ProcessToolDelta(phrase)
+
+	// Send additional unique tokens to breach maxToolTokens (50)
+	var sb strings.Builder
+	for i := 0; i < 60; i++ {
+		sb.WriteString(fmt.Sprintf("uniqueParameterWord%d ", i))
+	}
+	triggered, reason := cb.ProcessToolDelta(sb.String())
+	if !triggered {
+		t.Fatalf("expected budget exceeded with repetition to trigger")
+	}
+	if reason != "tool_budget_exceeded_with_repetition" {
+		t.Fatalf("expected tool_budget_exceeded_with_repetition, got %s", reason)
+	}
+}
+
+func TestCycleBreaker_ToolLane_IsolationAndReset(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled: &enabled,
+	})
+
+	cb.ProcessToolDelta("some tool argument delta content")
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0")
+	}
+
+	cb.Reset()
+	if cb.ToolTokens() != 0 {
+		t.Errorf("expected ToolTokens == 0 after Reset, got %d", cb.ToolTokens())
+	}
+	if cb.MaxToolNgramFreq() != 0 {
+		t.Errorf("expected MaxToolNgramFreq == 0 after Reset, got %d", cb.MaxToolNgramFreq())
+	}
+
+	// Test disabled cb does not process
+	disabled := false
+	cbDisabled := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled: &disabled,
+	})
+	trig, r := cbDisabled.ProcessToolDelta("repeat repeat repeat repeat repeat repeat repeat")
+	if trig || r != "" {
+		t.Errorf("expected disabled cb not to trigger, got %v %s", trig, r)
 	}
 }

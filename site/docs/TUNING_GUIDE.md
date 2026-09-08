@@ -50,7 +50,11 @@ flowchart TD
 | `SessionKickstarted` | `bool` | `true` if the session exceeded `kickstart_threshold` without tool/write progress | `SessionKickstarted && Retries < 3` |
 | `SessionKickstartCount` | `int` | Number of times kickstart resuscitation has fired this session | `SessionKickstartCount > 2` |
 | `HasToolProgress` | `bool` | `true` if the previous turn contained successful tool execution | `HasToolProgress` |
-| `HasWriteProgress` | `bool` | `true` if the previous turn contained productive write/command tool execution | `HasWriteProgress` |
+| `HasWriteProgress` | `bool` | `true` if the previous turn contained productive file-write tool execution (`write_to_file`, `replace_in_file`) | `HasWriteProgress` |
+| `HasShellWrite` | `bool` | `true` if terminal execution modified files (`sed -i`, `>`, `>>`, `| tee`, `patch`, `git restore`) | `HasShellWrite` |
+| `HasTestProgress` | `bool` | `true` if the previous turn executed a test suite or build command | `HasTestProgress` |
+| `HasTestPass` | `bool` | `true` if tests or compiler output completed with zero errors / passed cleanly | `HasTestPass` |
+| `HasTestFail` | `bool` | `true` if tests failed, panics occurred, or compiler build errors were detected | `HasTestFail` |
 | `HistoryErrors` | `int` | Number of consecutive trailing errors in conversation history | `HistoryErrors >= 2` |
 | `CoolingDownModels` | `[]string` | Models currently under cooldown after Cycle Killer severed streams | `!('gemma4:12b-it-qat' in CoolingDownModels)` |
 

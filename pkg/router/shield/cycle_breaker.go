@@ -12,6 +12,7 @@ import (
 const (
 	defaultMaxProseTokens              = 4096
 	defaultMaxThinkingTokens           = 1500
+	defaultMaxToolTokens               = 8192
 	defaultRepetitionWindow            = 6
 	defaultRepetitionThreshold         = 3
 	defaultThinkingRepetitionThreshold = 5
@@ -24,13 +25,14 @@ type ngramOccurrence struct {
 	lastWordIdx      int
 }
 
-// CycleBreaker monitors in-flight streaming deltas across isolated thinking and prose lanes
-// to detect and break infinite circular reasoning loops and runaway prose monologues in real-time.
+// CycleBreaker monitors in-flight streaming deltas across isolated thinking, prose, and tool lanes
+// to detect and break infinite circular reasoning loops, runaway prose monologues, and cyclic tool calls in real-time.
 type CycleBreaker struct {
 	mu                          sync.Mutex
 	enabled                     bool
 	maxProseTokens              int
 	maxThinkingTokens           int
+	maxToolTokens               int
 	repetitionWindow            int
 	repetitionThreshold         int
 	thinkingRepetitionThreshold int
@@ -52,6 +54,14 @@ type CycleBreaker struct {
 	thinkingTokens       int
 	maxThinkingNgramFreq int
 	thinkingPendingWord  strings.Builder
+
+	// Tool lane state (isolated)
+	toolWords        []string
+	toolNgramCounts  map[uint64]int
+	toolNgramHistory map[uint64]ngramOccurrence
+	toolTokens       int
+	maxToolNgramFreq int
+	toolPendingWord  strings.Builder
 }
 
 // NewCycleBreaker initializes a CycleBreaker instance with provided or default configuration.
@@ -60,6 +70,7 @@ func NewCycleBreaker(cfg *contract.CycleBreakerConfig) *CycleBreaker {
 		enabled:                     true,
 		maxProseTokens:              defaultMaxProseTokens,
 		maxThinkingTokens:           defaultMaxThinkingTokens,
+		maxToolTokens:               defaultMaxToolTokens,
 		repetitionWindow:            defaultRepetitionWindow,
 		repetitionThreshold:         defaultRepetitionThreshold,
 		thinkingRepetitionThreshold: defaultThinkingRepetitionThreshold,
@@ -71,6 +82,9 @@ func NewCycleBreaker(cfg *contract.CycleBreakerConfig) *CycleBreaker {
 		thinkingNgramCounts:         make(map[uint64]int),
 		thinkingNgramHistory:        make(map[uint64]ngramOccurrence),
 		thinkingWords:               make([]string, 0, 128),
+		toolNgramCounts:             make(map[uint64]int),
+		toolNgramHistory:            make(map[uint64]ngramOccurrence),
+		toolWords:                   make([]string, 0, 128),
 	}
 
 	if cfg != nil {
@@ -82,6 +96,9 @@ func NewCycleBreaker(cfg *contract.CycleBreakerConfig) *CycleBreaker {
 		}
 		if cfg.MaxThinkingTokens > 0 {
 			cb.maxThinkingTokens = cfg.MaxThinkingTokens
+		}
+		if cfg.MaxToolTokens > 0 {
+			cb.maxToolTokens = cfg.MaxToolTokens
 		}
 		if cfg.RepetitionWindow > 0 {
 			cb.repetitionWindow = cfg.RepetitionWindow
@@ -152,7 +169,21 @@ func (cb *CycleBreaker) MaxThinkingNgramFreq() int {
 	return cb.maxThinkingNgramFreq
 }
 
-// Reset clears accumulated words, n-grams, and token counters across both prose and thinking lanes.
+// ToolTokens returns the current accumulated tool lane token count.
+func (cb *CycleBreaker) ToolTokens() int {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.toolTokens
+}
+
+// MaxToolNgramFreq returns the highest observed N-gram frequency in the tool lane.
+func (cb *CycleBreaker) MaxToolNgramFreq() int {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.maxToolNgramFreq
+}
+
+// Reset clears accumulated words, n-grams, and token counters across prose, thinking, and tool lanes.
 func (cb *CycleBreaker) Reset() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -169,6 +200,13 @@ func (cb *CycleBreaker) Reset() {
 	cb.thinkingTokens = 0
 	cb.maxThinkingNgramFreq = 0
 	cb.thinkingPendingWord.Reset()
+
+	cb.toolWords = cb.toolWords[:0]
+	cb.toolNgramCounts = make(map[uint64]int)
+	cb.toolNgramHistory = make(map[uint64]ngramOccurrence)
+	cb.toolTokens = 0
+	cb.maxToolNgramFreq = 0
+	cb.toolPendingWord.Reset()
 }
 
 // ProcessDelta parses a text delta chunk from the stream and checks for repetition loops or budget breaches.
@@ -322,6 +360,83 @@ func (cb *CycleBreaker) addThinkingWord(word string) bool {
 
 func (cb *CycleBreaker) maxThinkingLoopDistance() int {
 	if cb.thinkingTokens < 512 {
+		return 24
+	}
+	return defaultMaxLoopDistance
+}
+
+// ProcessToolDelta parses a tool argument delta chunk from the stream and checks for repetition loops or budget breaches.
+// Operates on an isolated tool lane to protect against degenerate loops inside tool arguments
+// while allowing large legitimate code writes up to maxToolTokens.
+func (cb *CycleBreaker) ProcessToolDelta(content string) (triggered bool, reason string) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	if !cb.enabled || content == "" {
+		return false, ""
+	}
+
+	cb.toolTokens += (len(content) + 3) / 4
+
+	for _, r := range content {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			cb.toolPendingWord.WriteRune(unicode.ToLower(r))
+		} else {
+			if cb.toolPendingWord.Len() > 0 {
+				word := cb.toolPendingWord.String()
+				cb.toolPendingWord.Reset()
+				if cb.addToolWord(word) {
+					return true, "tool_repetition_loop_detected"
+				}
+			}
+		}
+	}
+
+	if cb.toolTokens > cb.maxToolTokens && cb.maxToolNgramFreq >= 2 {
+		return true, "tool_budget_exceeded_with_repetition"
+	}
+
+	return false, ""
+}
+
+// addToolWord appends a word and updates the sliding tool N-gram frequency table.
+func (cb *CycleBreaker) addToolWord(word string) bool {
+	cb.toolWords = append(cb.toolWords, word)
+	wLen := len(cb.toolWords)
+
+	if wLen < cb.repetitionWindow {
+		return false
+	}
+
+	h := fnv.New64a()
+	for i := wLen - cb.repetitionWindow; i < wLen; i++ {
+		_, _ = h.Write([]byte(cb.toolWords[i]))
+		_, _ = h.Write([]byte{0}) // separator
+	}
+	hashVal := h.Sum64()
+
+	cb.toolNgramCounts[hashVal]++
+	if cb.toolNgramCounts[hashVal] > cb.maxToolNgramFreq {
+		cb.maxToolNgramFreq = cb.toolNgramCounts[hashVal]
+	}
+
+	consecutive := 1
+	if prev, exists := cb.toolNgramHistory[hashVal]; exists {
+		dist := wLen - prev.lastWordIdx
+		if dist <= cb.maxToolLoopDistance() {
+			consecutive = prev.consecutiveCount + 1
+		}
+	}
+	cb.toolNgramHistory[hashVal] = ngramOccurrence{
+		consecutiveCount: consecutive,
+		lastWordIdx:      wLen,
+	}
+
+	return consecutive >= cb.repetitionThreshold
+}
+
+func (cb *CycleBreaker) maxToolLoopDistance() int {
+	if cb.toolTokens < 512 {
 		return 24
 	}
 	return defaultMaxLoopDistance

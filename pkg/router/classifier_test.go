@@ -980,3 +980,179 @@ func BenchmarkClassify_MultiTurn_ZeroAlloc(b *testing.B) {
 		_, _ = classifier.Classify(jsonBody)
 	}
 }
+
+func TestDetectShellWrite(t *testing.T) {
+	tests := []struct {
+		name     string
+		cmd      string
+		expected bool
+	}{
+		// Writes via redirection
+		{"echo redirect write", "echo 'package main' > main.go", true},
+		{"append redirect write", "echo 'export PATH' >> ~/.bashrc", true},
+		{"cat to file", "cat source.go > dest.go", true},
+		{"python redirect write", "python3 -c 'print(1)' > out.txt", true},
+		{"pipe to tee", "cat file.txt | tee output.txt", true},
+		{"pipe to tee append", "make build | tee -a build.log", true},
+		{"pipe to dd of", "cat file | dd of=/tmp/out", true},
+
+		// Heredocs
+		{"heredoc single quote", "cat << 'EOF' > main.go\npackage main\nEOF", true},
+		{"heredoc double quote", "cat << \"EOF\" > config.json\n{}\nEOF", true},
+		{"heredoc unquoted", "cat <<EOF > notes.txt\nnotes\nEOF", true},
+
+		// Direct file manipulation commands
+		{"sed in-place", "sed -i 's/foo/bar/g' main.go", true},
+		{"sed without in-place", "sed 's/foo/bar/g' main.go", false},
+		{"patch command", "patch -p1 < fix.patch", true},
+		{"touch command", "touch newfile.txt", true},
+		{"mkdir command", "mkdir -p pkg/models", true},
+		{"rm command", "rm -rf tmp/cache", true},
+		{"rmdir command", "rmdir old_dir", true},
+		{"cp command", "cp template.go handler.go", true},
+		{"mv command", "mv old.go new.go", true},
+		{"truncate command", "truncate -s 0 log.txt", true},
+		{"tar extract", "tar -xzf archive.tar.gz", true},
+		{"unzip command", "unzip bundle.zip", true},
+		{"git checkout file", "git checkout -- main.go", true},
+		{"git restore file", "git restore pkg/router.go", true},
+		{"git apply patch", "git apply fix.diff", true},
+
+		// Windows commands
+		{"powershell Out-File", "Get-Process | Out-File proc.txt", true},
+		{"powershell Set-Content", "Set-Content -Path file.txt -Value 'hello'", true},
+		{"powershell Add-Content", "Add-Content -Path file.txt -Value 'hello'", true},
+		{"powershell New-Item", "New-Item -ItemType File -Path test.txt", true},
+		{"cmd copy", "copy file1.txt file2.txt", true},
+		{"cmd move", "move old.txt new.txt", true},
+		{"cmd del", "del /f /q *.tmp", true},
+		{"cmd erase", "erase file.txt", true},
+		{"cmd ren", "ren file1.txt file2.txt", true},
+		{"cmd md", "md new_folder", true},
+
+		// Non-writing commands (READS AND DEV/NULL GUARDS)
+		{"bare cat read", "cat main.go", false},
+		{"head read", "head -n 50 main.go", false},
+		{"tail read", "tail -f server.log", false},
+		{"grep pattern", "grep -rn 'func Handle' .", false},
+		{"ls command", "ls -la /tmp", false},
+		{"dir command", "dir C:\\Windows", false},
+		{"echo string only", "echo 'starting migration...'", false},
+		{"go test", "go test -v ./...", false},
+		{"git log", "git log -n 5", false},
+		{"git status", "git status --porcelain", false},
+		{"curl to dev null", "curl -s http://localhost:8080/health > /dev/null", false},
+		{"curl to dev null with stderr redirect", "curl -s http://localhost:8080/health > /dev/null 2>&1", false},
+		{"command with stderr to stdout", "go build ./... 2>&1", false},
+		{"command with stdout to stderr", "echo error >&2", false},
+		{"command to nul Windows", "ping 127.0.0.1 > nul", false},
+		{"powershell to null", "Test-Path . > $null", false},
+		{"python comparison single quotes", "python -c 'if x > 5: print(x)'", false},
+		{"python comparison double quotes", "python -c \"if x > 5: print(x)\"", false},
+		{"awk comparison", "awk '$2 > 10 { print $1 }' input.txt", false},
+		{"comparison operator greater equal", "test 10 >= 5", false},
+		{"git merge branch", "git merge origin/main", false},
+		{"git rebase master", "git rebase master", false},
+		{"git cherry-pick commit", "git cherry-pick abc1234", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := detectShellWrite(tc.cmd)
+			if res != tc.expected {
+				t.Errorf("detectShellWrite(%q) = %v, expected %v", tc.cmd, res, tc.expected)
+			}
+		})
+	}
+}
+
+func TestClassify_ShellWriteProgress_SignalSeparation(t *testing.T) {
+	c := NewClassifier()
+
+	// 1. Bash cat read -> HasToolProgress=true, HasWriteProgress=false, HasShellWrite=false
+	readPayload := []byte(`{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": "Check context"},
+			{"role": "assistant", "content": [
+				{"type": "tool_use", "id": "t1", "name": "bash", "input": {"command": "cat main.go"}}
+			]},
+			{"role": "user", "content": [
+				{"type": "tool_result", "tool_use_id": "t1", "content": "package main\n\nfunc main() {}"}
+			]}
+		]
+	}`)
+
+	reqRead, err := c.Classify(readPayload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if !reqRead.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true for successful cat read")
+	}
+	if reqRead.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=false for cat read (should not trigger structured write)")
+	}
+	if reqRead.HasShellWrite {
+		t.Errorf("expected HasShellWrite=false for bare cat read")
+	}
+
+	// 2. Bash redirection write -> HasToolProgress=true, HasWriteProgress=false, HasShellWrite=true
+	writePayload := []byte(`{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": "Write main.go"},
+			{"role": "assistant", "content": [
+				{"type": "tool_use", "id": "t2", "name": "bash", "input": {"command": "echo 'package main' > main.go"}}
+			]},
+			{"role": "user", "content": [
+				{"type": "tool_result", "tool_use_id": "t2", "content": ""}
+			]}
+		]
+	}`)
+
+	reqWrite, err := c.Classify(writePayload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if !reqWrite.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true for successful bash write")
+	}
+	if reqWrite.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=false for bash command (signal separation!)")
+	}
+	if !reqWrite.HasShellWrite {
+		t.Errorf("expected HasShellWrite=true for bash redirection write")
+	}
+
+	// 3. Structured tool write -> HasToolProgress=true, HasWriteProgress=true, HasShellWrite=false
+	if rc, ok := c.(interface{ SetKickstartWriteTools([]string) }); ok {
+		rc.SetKickstartWriteTools([]string{"write_to_file"})
+	}
+	structPayload := []byte(`{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": "Write file"},
+			{"role": "assistant", "content": [
+				{"type": "tool_use", "id": "t3", "name": "write_to_file", "input": {"file": "main.go", "content": "package main"}}
+			]},
+			{"role": "user", "content": [
+				{"type": "tool_result", "tool_use_id": "t3", "content": "File saved"}
+			]}
+		]
+	}`)
+
+	reqStruct, err := c.Classify(structPayload)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+	if !reqStruct.HasToolProgress {
+		t.Errorf("expected HasToolProgress=true for structured write")
+	}
+	if !reqStruct.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true for structured write_to_file")
+	}
+	if reqStruct.HasShellWrite {
+		t.Errorf("expected HasShellWrite=false for structured tool")
+	}
+}

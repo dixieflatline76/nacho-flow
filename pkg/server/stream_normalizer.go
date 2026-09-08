@@ -118,6 +118,14 @@ type fastDelta struct {
 	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
 }
 
+type fastToolCallChunk struct {
+	Index    int `json:"index"`
+	Function struct {
+		Name      string `json:"name,omitempty"`
+		Arguments string `json:"arguments,omitempty"`
+	} `json:"function"`
+}
+
 type fastStreamChoice struct {
 	Index        int             `json:"index"`
 	Delta        fastDelta       `json:"delta"`
@@ -173,6 +181,7 @@ type StreamNormalizer struct {
 	cycleViolationReason   string
 	features               uint16
 	pendingTagClosing      bool
+	toolChunksScratch      []fastToolCallChunk
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -281,6 +290,10 @@ func (s *StreamNormalizer) processLine(line []byte) {
 
 // fastPassProse handles prose chunks that require no JSON transformations.
 func (s *StreamNormalizer) fastPassProse(line, payload []byte) {
+	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
+		s.processChunkLine(line, payload)
+		return
+	}
 	if contentStr := payloadContent(payload); contentStr != "" {
 		s.recordProse(contentStr)
 	}
@@ -296,6 +309,10 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 	}
 
 	choice := &chunk.Choices[0]
+	if len(choice.Delta.ToolCalls) > 0 {
+		s.extractAndRecordToolCalls(choice.Delta.ToolCalls)
+	}
+
 	reasoningText := s.resolveReasoningField(&choice.Delta)
 
 	if reasoningText != "" {
@@ -500,6 +517,34 @@ func (s *StreamNormalizer) recordProse(text string) {
 		if triggered, reason := s.cycleBreaker.ProcessDelta(text, false); triggered {
 			s.cycleViolated = true
 			s.cycleViolationReason = reason
+		}
+	}
+}
+
+// recordToolDelta feeds tool argument tokens into character counting and the cycle breaker tool lane.
+func (s *StreamNormalizer) recordToolDelta(argText string) {
+	if argText == "" {
+		return
+	}
+	s.emittedCompletionChars += len(argText)
+	if s.cycleBreaker != nil && !s.cycleViolated {
+		if triggered, reason := s.cycleBreaker.ProcessToolDelta(argText); triggered {
+			s.cycleViolated = true
+			s.cycleViolationReason = reason
+		}
+	}
+}
+
+func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	s.toolChunksScratch = s.toolChunksScratch[:0]
+	if err := json.Unmarshal(raw, &s.toolChunksScratch); err == nil {
+		for i := range s.toolChunksScratch {
+			if s.toolChunksScratch[i].Function.Arguments != "" {
+				s.recordToolDelta(s.toolChunksScratch[i].Function.Arguments)
+			}
 		}
 	}
 }
