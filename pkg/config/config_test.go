@@ -586,3 +586,43 @@ default_tier:
 		t.Errorf("Expected port 9123 loaded from NACHO_CONFIG_DIR, got %d", cfg.Port)
 	}
 }
+
+func TestResolveEnvVars(t *testing.T) {
+	t.Setenv("TEST_OPENROUTER_KEY", "sk-or-v1-secret123456789")
+	t.Setenv("TEST_AUTH_TOKEN_VAR", "sk-gateway-secret-token")
+
+	cfg := &contract.Config{
+		AuthToken: "ENV_TEST_AUTH_TOKEN_VAR",
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {
+				APIKey:  "ENV_TEST_OPENROUTER_KEY",
+				BaseURL: "https://openrouter.ai/api/v1",
+				Type:    "cloud",
+			},
+			"ollama": {
+				APIKey:  "",
+				BaseURL: "http://127.0.0.1:11434",
+				Type:    "local",
+			},
+		},
+	}
+
+	ResolveEnvVars(cfg)
+
+	if cfg.AuthToken != "sk-gateway-secret-token" {
+		t.Errorf("expected AuthToken 'sk-gateway-secret-token', got '%s'", cfg.AuthToken)
+	}
+
+	orP, ok := cfg.Providers["openrouter"]
+	if !ok {
+		t.Fatalf("expected openrouter provider to exist")
+	}
+	if orP.APIKey != "sk-or-v1-secret123456789" {
+		t.Errorf("expected openrouter APIKey 'sk-or-v1-secret123456789', got '%s'", orP.APIKey)
+	}
+
+	ollamaP := cfg.Providers["ollama"]
+	if ollamaP.APIKey != "" {
+		t.Errorf("expected ollama APIKey to remain empty, got '%s'", ollamaP.APIKey)
+	}
+}

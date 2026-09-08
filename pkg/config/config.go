@@ -79,6 +79,24 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 		}
 	}
 
+	// Resolve ENV variables for auth_token and provider API keys
+	ResolveEnvVars(&cfg)
+
+	// Boundary Schema Validation: Enforce mandatory provider types, base URLs, and tier references
+	if err := ValidateConfig(&cfg); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
+}
+
+// ResolveEnvVars expands environment variable references for AuthToken and Provider API keys.
+// Resolves prefixes matching contract.EnvVarPrefix ("ENV_") from the host environment.
+func ResolveEnvVars(cfg *contract.Config) {
+	if cfg == nil {
+		return
+	}
+
 	// Resolve ENV variables for auth_token
 	if strings.HasPrefix(cfg.AuthToken, contract.EnvVarPrefix) {
 		envVarName := strings.TrimPrefix(cfg.AuthToken, contract.EnvVarPrefix)
@@ -94,19 +112,12 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	// Resolve ENV variables for provider API keys
 	for id, p := range cfg.Providers {
 		// Resolve ENV_... format
-		if strings.HasPrefix(p.APIKey, "ENV_") {
-			envVarName := strings.TrimPrefix(p.APIKey, "ENV_")
+		if strings.HasPrefix(p.APIKey, contract.EnvVarPrefix) {
+			envVarName := strings.TrimPrefix(p.APIKey, contract.EnvVarPrefix)
 			if envVal := os.Getenv(envVarName); envVal != "" {
 				p.APIKey = envVal
 			}
 		}
 		cfg.Providers[id] = p
 	}
-
-	// Boundary Schema Validation: Enforce mandatory provider types, base URLs, and tier references
-	if err := ValidateConfig(&cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
 }
