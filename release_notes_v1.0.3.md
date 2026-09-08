@@ -20,13 +20,27 @@ Nacho Flow is an open-source, high-performance agent supervisor and model dispat
 
 ---
 
-#### 📈 3. Router Resilience & Test Coverage Boost
+#### 🔑 3. Dynamic Environment Variable Resolution (`ENV_`)
+* **The Problem:** When loading or hot-swapping configurations dynamically via the VS Code extension or REST API (`POST /api/v1/config`), environment variable placeholders (such as `api_key: "ENV_OPENROUTER_API_KEY"`) were not automatically re-expanded, leading to authentication rejections unless keys were manually typed into the YAML.
+* **The Solution:** Nacho Flow's `ApplyConfig` engine now dynamically expands all `ENV_<VAR_NAME>` placeholders against the active process environment at runtime, ensuring smooth, secure zero-touch key management across config hot-swaps.
+
+---
+
+#### 🛡️ 4. Config Synchronization, Loopback Isolation & Guardrail Parity
+* **Loopback Security Isolation:** Enforced `host: "127.0.0.1"` across all shipped VS Code extension presets (`extension/resources/presets/`) and root configs to provide local loopback security isolation and eliminate Windows Defender Firewall popup prompts.
+* **In-Flight Tool Argument Cycle Breaking (`max_tool_tokens: 8192`):** Enabled across all flavor configs to terminate infinite tool argument loops mid-stream.
+* **Agent Shield Failure Signatures:** Intercepts Cline Zod schema validation errors (`"expected string, received undefined"`, `"✖ Invalid input"`, `"Parameter 'old_text' is required"`) in trailing conversation history to increment error tracking and drive proactive tier escalation.
+* **Fairy Dust Cost Safety:** Defaulted periodic strategic reviews to Claude Sonnet 5, with Claude Opus 5 safely commented out (`# model: "anthropic/claude-opus-5"`, `model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs`) to prevent surprise frontier token bills.
+
+---
+
+#### 📈 5. Router Resilience & Test Coverage Boost
 * Added comprehensive edge-case test suites for token estimators, custom rule AST cache invalidation, and tier fallback handlers.
 * Increased `pkg/router` statement coverage from **94.1%** to **97.9%**, lifting global repository coverage to **96.7%** (with all 16 Go packages $\ge 95.1\%$).
 
 ---
 
-#### 📋 4. Repository Governance & Roadmap Alignment
+#### 📋 6. Repository Governance & Roadmap Alignment
 * Configured an official repository label taxonomy (`area/*`, `type/*`, `priority/*`).
 * Established and linked active milestones to the **Nacho Flow Roadmap** GitHub Project.
 
