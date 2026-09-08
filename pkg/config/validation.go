@@ -55,5 +55,13 @@ func ValidateConfig(cfg *contract.Config) error {
 		}
 	}
 
+	for _, entry := range cfg.FairyDust.Entries {
+		if entry.Provider != "" {
+			if _, exists := cfg.Providers[entry.Provider]; !exists {
+				return fmt.Errorf("config error: fairy_dust entry '%s' references unknown provider '%s'", entry.Name, entry.Provider)
+			}
+		}
+	}
+
 	return nil
 }

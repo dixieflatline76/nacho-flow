@@ -586,3 +586,85 @@ default_tier:
 		t.Errorf("Expected port 9123 loaded from NACHO_CONFIG_DIR, got %d", cfg.Port)
 	}
 }
+
+func TestResolveEnvVars(t *testing.T) {
+	t.Setenv("TEST_OPENROUTER_KEY", "sk-or-v1-secret123456789")
+	t.Setenv("TEST_AUTH_TOKEN_VAR", "sk-gateway-secret-token")
+
+	cfg := &contract.Config{
+		AuthToken: "ENV_TEST_AUTH_TOKEN_VAR",
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {
+				APIKey:  "ENV_TEST_OPENROUTER_KEY",
+				BaseURL: "https://openrouter.ai/api/v1",
+				Type:    "cloud",
+			},
+			"ollama": {
+				APIKey:  "",
+				BaseURL: "http://127.0.0.1:11434",
+				Type:    "local",
+			},
+		},
+	}
+
+	ResolveEnvVars(cfg)
+
+	if cfg.AuthToken != "sk-gateway-secret-token" {
+		t.Errorf("expected AuthToken 'sk-gateway-secret-token', got '%s'", cfg.AuthToken)
+	}
+
+	orP, ok := cfg.Providers["openrouter"]
+	if !ok {
+		t.Fatalf("expected openrouter provider to exist")
+	}
+	if orP.APIKey != "sk-or-v1-secret123456789" {
+		t.Errorf("expected openrouter APIKey 'sk-or-v1-secret123456789', got '%s'", orP.APIKey)
+	}
+
+	ollamaP := cfg.Providers["ollama"]
+	if ollamaP.APIKey != "" {
+		t.Errorf("expected ollama APIKey to remain empty, got '%s'", ollamaP.APIKey)
+	}
+}
+
+func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
+	configFiles := []string{
+		"../../config.yaml",
+		"../../config.cline.yaml",
+		"../../config.zoo.yaml",
+		"../../extension/resources/presets/config.yaml",
+		"../../extension/resources/presets/config.cline.yaml",
+		"../../extension/resources/presets/config.zoo.yaml",
+	}
+
+	for _, relPath := range configFiles {
+		t.Run(relPath, func(t *testing.T) {
+			absPath, err := filepath.Abs(relPath)
+			if err != nil {
+				t.Fatalf("failed to resolve abs path for %s: %v", relPath, err)
+			}
+			cfg, err := LoadConfig(absPath)
+			if err != nil {
+				t.Fatalf("LoadConfig failed for %s: %v", relPath, err)
+			}
+			if err := ValidateConfig(cfg); err != nil {
+				t.Fatalf("ValidateConfig failed for %s: %v", relPath, err)
+			}
+			if cfg.Host != "127.0.0.1" {
+				t.Errorf("%s: expected Host '127.0.0.1', got '%s'", relPath, cfg.Host)
+			}
+			if cfg.CycleKiller.MaxToolTokens != 8192 {
+				t.Errorf("%s: expected MaxToolTokens 8192, got %d", relPath, cfg.CycleKiller.MaxToolTokens)
+			}
+			if len(cfg.AgentShield.ErrorSignatures) == 0 {
+				t.Errorf("%s: expected non-empty error_signatures", relPath)
+			}
+			if len(cfg.FairyDust.Entries) < 2 {
+				t.Fatalf("%s: expected at least 2 fairy_dust entries, got %d", relPath, len(cfg.FairyDust.Entries))
+			}
+			if cfg.FairyDust.Entries[1].Model != "anthropic/claude-sonnet-5" {
+				t.Errorf("%s: expected Strategic Architecture Review to use anthropic/claude-sonnet-5, got %s", relPath, cfg.FairyDust.Entries[1].Model)
+			}
+		})
+	}
+}

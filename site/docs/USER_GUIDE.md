@@ -234,7 +234,7 @@ tiers:
     when: "Retries >= 2 && Retries < 8"
 
   # Tier 5: On-Demand Opus (Unreachable by automatic routing)
-  # Accessible strictly via @nacho:model or X-Spicy-Model, and invoked by Fairy Dusting
+  # Accessible strictly via @nacho:model or X-Spicy-Model, or by swapping into Fairy Dusting
   - name: "Opus On-Demand (Spicy Only)"
     model: "anthropic/claude-opus-5"
     provider: "openrouter"
@@ -266,12 +266,21 @@ agent_shield:
     - "switch to code mode"
     - "switch to architect mode"
     - "ready to implement"
+  # Error signatures to detect and register in conversation history
+  # Intercepts agent tool validation failures (e.g. Cline Zod schemas) to drive escalation
+  error_signatures:
+    - "expected string, received undefined"
+    - "✖ Invalid input"
+    - "Invalid input:"
+    - "Parameter 'old_text' is required"
+    - "Missing parameter 'old_text'"
 
 # 🎸 Cycle Killer & ⚡ Kickstart: In-Flight Stream Defense & Session Resuscitation
 cycle_killer:
   enabled: true
   max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
   max_thinking_tokens: 1500         # Max reasoning tokens before repetition enforcement kicks in
+  max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
   repetition_window: 6              # Sliding n-gram window size (words) for loop detection
   repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
   thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks
@@ -305,18 +314,22 @@ fairy_dust:
         (2) subtle edge case bugs, (3) test coverage gaps. If you spot issues,
         fix them immediately. If correct, confirm and continue.
 
-    # Strategic Review: Catch architectural drift every 40 file writes
+    # Strategic Review: Catch architectural drift every 40 file writes (cost-safe default: Sonnet 5)
     - name: "Strategic Architecture Review"
       frequency: 40
       max_count: 2
       provider: "openrouter"
-      model: "anthropic/claude-opus-5"
+      # model: "anthropic/claude-opus-5"
+      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
       prompt: >
         [SYSTEM CHECKPOINT: STRATEGIC ARCHITECTURE REVIEW]
         Perform a high-level architectural audit: (1) Does implementation match
         original requirements? (2) Has technical debt accumulated? (3) Restructure
         if necessary, or confirm trajectory and continue.
 ```
+
+> [!TIP]
+> **Dynamic Environment Variable Resolution**: Any provider `api_key` formatted as `ENV_<VAR_NAME>` (e.g. `ENV_OPENROUTER_API_KEY`) is automatically expanded from your system environment on startup **and** dynamically re-resolved during in-memory configuration updates (`POST /api/v1/config` or the extension's `⚡ Hot-Swap`). You never need to hardcode API keys on disk.
 
 ---
 

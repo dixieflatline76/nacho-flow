@@ -63,6 +63,29 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 			Model:    "google/gemini-3.7-flash",
 			Provider: "openrouter",
 		},
+		AgentShield: contract.AgentShieldConfig{
+			Enabled:         &enableDirectives,
+			TailBufferBytes: 256,
+			ErrorSignatures: []string{"[ERROR] You did not use a tool"},
+		},
+		CycleKiller: contract.CycleBreakerConfig{
+			Enabled:              &enableDirectives,
+			MaxProseTokens:       4096,
+			MaxToolTokens:        8192,
+			ModelCooldownSeconds: 120,
+			RetryFloor:           3,
+			KickstartWriteOnly:   true,
+		},
+		FairyDust: contract.FairyDustConfig{
+			Enabled: &enableDirectives,
+			Entries: []contract.FairyDustEntry{
+				{
+					Name:      "Tactical Code Review",
+					Model:     "anthropic/claude-sonnet-5",
+					Frequency: 15,
+				},
+			},
+		},
 	}
 
 	dto := ToPublicDTO(orig)
@@ -130,5 +153,14 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 	}
 	if !strings.Contains(persistStr, "api_key: sk-or-v1-abcdef1234567890") {
 		t.Errorf("expected persisted yaml to contain full api key, got: %s", persistStr)
+	}
+	if !strings.Contains(persistStr, "agent_shield:") {
+		t.Errorf("expected persisted yaml to contain agent_shield, got: %s", persistStr)
+	}
+	if !strings.Contains(persistStr, "cycle_killer:") || !strings.Contains(persistStr, "max_tool_tokens: 8192") {
+		t.Errorf("expected persisted yaml to contain cycle_killer with max_tool_tokens, got: %s", persistStr)
+	}
+	if !strings.Contains(persistStr, "fairy_dust:") || !strings.Contains(persistStr, "Tactical Code Review") {
+		t.Errorf("expected persisted yaml to contain fairy_dust, got: %s", persistStr)
 	}
 }

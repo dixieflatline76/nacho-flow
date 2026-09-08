@@ -141,6 +141,7 @@ Create a `config.yaml` in your project folder or `~/.config/nacho-flow/config.ya
 
 ```yaml
 port: 8000
+host: "127.0.0.1" # Local loopback isolation. Use "0.0.0.0" for LAN access.
 # Inbound Client Auth (Optional: Secures gateway on LAN / 0.0.0.0)
 auth_token: "sk-nacho-secret-key"
 
@@ -197,6 +198,27 @@ default_tier:
   model: "deepseek/deepseek-v4-flash-latest"
   provider: "openrouter"
   when: "true"
+
+# In-Flight Stream Defense & Session Resuscitation
+cycle_killer:
+  enabled: true
+  max_tool_tokens: 8192         # RFC-002: In-flight streaming tool argument loop breaker
+  repetition_threshold: 3       # Kills repeating n-grams in < 3 seconds
+  kickstart_threshold: 5        # Resuscitates agents stuck in idle read-only loops
+
+# Periodic Proactive Frontier Quality Reviews (Cost-Safe Sonnet 5 default)
+fairy_dust:
+  enabled: true
+  entries:
+    - name: "Tactical Code Review"
+      frequency: 15             # Checkpoint every 15 file writes
+      provider: "openrouter"
+      model: "anthropic/claude-sonnet-5"
+    - name: "Strategic Architecture Review"
+      frequency: 40             # Deep audit every 40 file writes
+      provider: "openrouter"
+      # model: "anthropic/claude-opus-5"
+      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
 ```
 
 ---

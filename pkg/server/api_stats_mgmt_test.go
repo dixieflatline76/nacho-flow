@@ -838,3 +838,71 @@ type plainWriter struct {
 func (p *plainWriter) Header() http.Header         { return p.header }
 func (p *plainWriter) Write(b []byte) (int, error) { return p.buf.Write(b) }
 func (p *plainWriter) WriteHeader(status int)      { p.status = status }
+
+func TestApplyConfig_ResolvesEnvVars(t *testing.T) {
+	t.Setenv("TEST_OPENROUTER_APPLY_KEY", "sk-or-v1-applytestsecret")
+	t.Setenv("TEST_GATEWAY_APPLY_AUTH", "sk-gateway-auth-secret")
+
+	srv := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
+
+	incoming := &contract.Config{
+		Port:      8000,
+		AuthToken: "ENV_TEST_GATEWAY_APPLY_AUTH",
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {
+				BaseURL: "https://openrouter.ai/api/v1",
+				APIKey:  "ENV_TEST_OPENROUTER_APPLY_KEY",
+				Type:    "cloud",
+			},
+			"ollama": {
+				BaseURL: "http://127.0.0.1:11434",
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1",
+				Model:    "test-model",
+				Provider: "openrouter",
+				When:     "true",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default",
+			Model:    "test-model",
+			Provider: "openrouter",
+			When:     "true",
+		},
+	}
+
+	_, err := srv.ApplyConfig(incoming, false)
+	if err != nil {
+		t.Fatalf("ApplyConfig failed: %v", err)
+	}
+
+	cfg := srv.GetConfig()
+	if cfg.AuthToken != "sk-gateway-auth-secret" {
+		t.Errorf("expected AuthToken to be resolved to 'sk-gateway-auth-secret', got '%s'", cfg.AuthToken)
+	}
+
+	orCfg, ok := cfg.Providers["openrouter"]
+	if !ok {
+		t.Fatalf("openrouter provider not found in config")
+	}
+	if orCfg.APIKey != "sk-or-v1-applytestsecret" {
+		t.Errorf("expected openrouter APIKey to be 'sk-or-v1-applytestsecret', got '%s'", orCfg.APIKey)
+	}
+
+	// Verify the registry provider instance also has the resolved key
+	prov, found := srv.GetRegistry().Get("openrouter")
+	if !found {
+		t.Fatalf("openrouter provider not found in registry")
+	}
+	authProv, ok := prov.(provider.AuthProvider)
+	if !ok {
+		t.Fatalf("openrouter does not implement AuthProvider")
+	}
+	if authProv.GetAPIKey() != "sk-or-v1-applytestsecret" {
+		t.Errorf("expected registry provider GetAPIKey to be 'sk-or-v1-applytestsecret', got '%s'", authProv.GetAPIKey())
+	}
+}

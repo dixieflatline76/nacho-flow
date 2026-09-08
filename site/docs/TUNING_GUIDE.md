@@ -493,18 +493,20 @@ cycle_killer:
   enabled: true
   max_prose_tokens: 4096
   max_thinking_tokens: 1500
+  max_tool_tokens: 8192        # In-flight tool argument repetition breaker (RFC-002)
   repetition_threshold: 3
   kickstart_threshold: 5
   kickstart_write_only: true
 ```
 
 ### 8.3 Cline Tuning Profile (`config.cline.yaml`)
-Cline models output XML tags within prose explanations. To avoid false-positive Cycle Killer stream severing and prevent Kickstart loops:
+Cline models output XML tags within prose explanations. To avoid false-positive Cycle Killer stream severing, monitor streaming tool arguments, and track Cline-specific Zod schema failures:
 ```yaml
 cycle_killer:
   enabled: true
   max_prose_tokens: 6144       # Relaxed for prose XML preambles
   max_thinking_tokens: 2000    # Extra planning runway
+  max_tool_tokens: 8192        # In-flight tool argument repetition breaker (RFC-002)
   repetition_threshold: 4      # XML formats are naturally more repetitive
   # kickstart_threshold: 0     # Disabled: Cline rarely idles in read loops
   kickstart_write_tools:       # Required for Fairy Dust write progress tracking
@@ -512,7 +514,19 @@ cycle_killer:
     - replace_in_file
     - execute_command
     - insert_code_block
+
+# Cline Zod schema failure signatures:
+agent_shield:
+  enabled: true
+  error_signatures:
+    - "expected string, received undefined"
+    - "✖ Invalid input"
+    - "Invalid input:"
+    - "Parameter 'old_text' is required"
+    - "Missing parameter 'old_text'"
 ```
+
+Cline validates model tool arguments using strict Zod schemas. When a model omits required parameters (e.g. `old_text` in diff tools) or produces unexpected types, Cline writes validation error messages into the conversation history. Configuring `error_signatures` allows Nacho Flow to detect these failures as `historyErrors`, increment retry tracking, and auto-escalate to Tier 4 / Cloud Fallback before the agent gets stuck in a loop.
 
 ---
 
@@ -540,7 +554,8 @@ fairy_dust:
       frequency: 40       # Fires every 40 file writes
       max_count: 2        # Hard cap: max 2 deep audits per session
       provider: "openrouter"
-      model: "anthropic/claude-opus-5"
+      # model: "anthropic/claude-opus-5"
+      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
       prompt: >
         [SYSTEM CHECKPOINT: STRATEGIC ARCHITECTURE REVIEW]
         Audit implementation against initial requirements and resolve systemic structural drift.
@@ -556,7 +571,8 @@ In runaway error cascades or edge cases, routing must **never default to ultra-e
      model: "anthropic/claude-opus-5"
      when: "false"
    ```
-   This guarantees that automated routing never accidentally lands on Opus. Opus is accessible solely through **Fairy Dust strategic reviews** and **manual in-prompt `@nacho:model` / `X-Spicy-Model` overrides**.
+   This guarantees that automated routing never accidentally lands on Opus.
+3. **Fairy Dust Cost Safety (Sonnet 5 Default)**: Even within Fairy Dusting periodic quality reviews, Opus 5 is commented out by default (`# model: "anthropic/claude-opus-5"`) and replaced with Claude Sonnet 5 (`model: "anthropic/claude-sonnet-5"`). For heavy codebases or difficult multi-file architectural refactors, developers can easily swap in Opus 5 by uncommenting the line. Outside Fairy Dust, Opus remains accessible solely via manual in-prompt `@nacho:model` / `X-Spicy-Model` overrides.
 
 ### 9.3 HotSauce Kickstart & Plan-Mode Tuning
 

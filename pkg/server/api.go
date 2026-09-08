@@ -300,8 +300,14 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAML ...[]byte) (string, error) {
 	var backupFile string
 
-	// 1. Merge with existing secrets if incoming has masked placeholders
+	// 1. Resolve environment variables on incoming config
+	config.ResolveEnvVars(incoming)
+
+	// 2. Merge with existing secrets if incoming has masked placeholders
 	merged := config.MergeSecrets(s.GetConfig(), incoming)
+
+	// 2b. Ensure any unresolved ENV_ variables in merged config are also expanded
+	config.ResolveEnvVars(merged)
 
 	// 2. Validate configuration contract (providers, types, base_urls, tier provider references)
 	if err := config.ValidateConfig(merged); err != nil {
@@ -441,7 +447,9 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Query().Get("dry_run") == "true" {
+		config.ResolveEnvVars(&incoming)
 		merged := config.MergeSecrets(s.GetConfig(), &incoming)
+		config.ResolveEnvVars(merged)
 		if valErr := config.ValidateConfig(merged); valErr != nil {
 			w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 			w.WriteHeader(http.StatusBadRequest)
