@@ -207,6 +207,9 @@ func TestTrafficLogger_CycleBreakerMetrics_Roundtrip(t *testing.T) {
 		CycleMaxNgramFreq:         1,
 		CycleThinkingTokens:       1203,
 		CycleMaxThinkingNgramFreq: 1,
+		CycleToolTokens:           1520,
+		CycleMaxToolNgramFreq:     2,
+		HasShellWrite:             true,
 	}
 
 	if logger.FilePath() != logPath {
@@ -239,5 +242,14 @@ func TestTrafficLogger_CycleBreakerMetrics_Roundtrip(t *testing.T) {
 	}
 	if got.CycleMaxThinkingNgramFreq != 1 {
 		t.Errorf("Expected CycleMaxThinkingNgramFreq 1, got %d", got.CycleMaxThinkingNgramFreq)
+	}
+	if got.CycleToolTokens != 1520 {
+		t.Errorf("Expected CycleToolTokens 1520, got %d", got.CycleToolTokens)
+	}
+	if got.CycleMaxToolNgramFreq != 2 {
+		t.Errorf("Expected CycleMaxToolNgramFreq 2, got %d", got.CycleMaxToolNgramFreq)
+	}
+	if !got.HasShellWrite {
+		t.Errorf("Expected HasShellWrite true, got false")
 	}
 }

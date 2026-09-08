@@ -1224,6 +1224,8 @@ func (s *Server) dispatchTier(
 							reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
 							reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
 							reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+							reqCtx.CycleToolTokens = cb.ToolTokens()
+							reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
 							if reqCtx.CycleBreakerTriggered {
 								if reqCtx.CycleRetries < cb.MaxRetries() {
 									reqCtx.CycleRetries++
@@ -1398,6 +1400,9 @@ func (s *Server) recordTelemetry(
 		CycleMaxNgramFreq:         reqCtx.CycleMaxNgramFreq,
 		CycleThinkingTokens:       reqCtx.CycleThinkingTokens,
 		CycleMaxThinkingNgramFreq: reqCtx.CycleMaxThinkingNgramFreq,
+		CycleToolTokens:           reqCtx.CycleToolTokens,
+		CycleMaxToolNgramFreq:     reqCtx.CycleMaxToolNgramFreq,
+		HasShellWrite:             reqCtx.HasShellWrite,
 		SessionKickstarted:        reqCtx.SessionKickstarted,
 		CachedTokens:              cachedTokens,
 		UpstreamCost:              upstreamCost,
@@ -1419,6 +1424,8 @@ func (s *Server) recordTelemetry(
 		slog.Int("cycle_max_ngram_freq", reqCtx.CycleMaxNgramFreq),
 		slog.Int("cycle_thinking_tokens", reqCtx.CycleThinkingTokens),
 		slog.Int("cycle_max_thinking_ngram_freq", reqCtx.CycleMaxThinkingNgramFreq),
+		slog.Int("cycle_tool_tokens", reqCtx.CycleToolTokens),
+		slog.Int("cycle_max_tool_ngram_freq", reqCtx.CycleMaxToolNgramFreq),
 		slog.Bool("session_kickstarted", reqCtx.SessionKickstarted),
 		slog.Int("session_kickstart_count", reqCtx.SessionKickstartCount),
 		slog.Bool("fairy_dusted", reqCtx.FairyDusted),

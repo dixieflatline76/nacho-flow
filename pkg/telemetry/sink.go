@@ -30,6 +30,9 @@ type TurnRecord struct {
 	CycleMaxNgramFreq         int       `json:"cycle_max_ngram_freq,omitempty"`
 	CycleThinkingTokens       int       `json:"cycle_thinking_tokens,omitempty"`
 	CycleMaxThinkingNgramFreq int       `json:"cycle_max_thinking_ngram_freq,omitempty"`
+	CycleToolTokens           int       `json:"cycle_tool_tokens,omitempty"`
+	CycleMaxToolNgramFreq     int       `json:"cycle_max_tool_ngram_freq,omitempty"`
+	HasShellWrite             bool      `json:"has_shell_write,omitempty"`
 	SessionKickstarted        bool      `json:"session_kickstarted,omitempty"`
 	CachedTokens              int       `json:"cached_tokens,omitempty"`
 	UpstreamCost              float64   `json:"upstream_cost,omitempty"`
