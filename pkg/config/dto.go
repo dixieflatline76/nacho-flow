@@ -23,6 +23,9 @@ type SanitizedConfigDTO struct {
 	ClientAuth  string
 	Router      contract.RouterConfig
 	Deals       contract.DealsConfig
+	AgentShield contract.AgentShieldConfig
+	CycleKiller contract.CycleBreakerConfig
+	FairyDust   contract.FairyDustConfig
 	Providers   map[string]SanitizedProviderDTO
 	Tiers       []contract.Tier
 	DefaultTier contract.Tier
@@ -34,12 +37,20 @@ func ToPublicDTO(cfg *contract.Config) *SanitizedConfigDTO {
 		return nil
 	}
 
+	ck := cfg.CycleKiller
+	if ck.Enabled == nil && cfg.CycleBreaker.Enabled != nil {
+		ck = cfg.CycleBreaker
+	}
+
 	dto := &SanitizedConfigDTO{
 		Port:        cfg.Port,
 		Host:        cfg.Host,
 		ClientAuth:  MaskSecret(cfg.AuthToken),
 		Router:      cfg.Router,
 		Deals:       cfg.Deals,
+		AgentShield: cfg.AgentShield,
+		CycleKiller: ck,
+		FairyDust:   cfg.FairyDust,
 		Providers:   make(map[string]SanitizedProviderDTO, len(cfg.Providers)),
 		Tiers:       make([]contract.Tier, len(cfg.Tiers)),
 		DefaultTier: cfg.DefaultTier,
@@ -102,6 +113,15 @@ func (d *SanitizedConfigDTO) ToMap() map[string]any {
 	if d.Deals.Enabled {
 		res["deals"] = d.Deals
 	}
+	if d.AgentShield.Enabled != nil {
+		res["agent_shield"] = d.AgentShield
+	}
+	if d.CycleKiller.Enabled != nil {
+		res["cycle_killer"] = d.CycleKiller
+	}
+	if d.FairyDust.Enabled != nil {
+		res["fairy_dust"] = d.FairyDust
+	}
 	return res
 }
 
@@ -147,6 +167,9 @@ func SerializeConfigYAML(cfg *contract.Config) ([]byte, error) {
 		"tiers":        cfg.Tiers,
 		"default_tier": cfg.DefaultTier,
 	}
+	if cfg.Host != "" {
+		res["host"] = cfg.Host
+	}
 	if cfg.AuthToken != "" {
 		res["auth_token"] = cfg.AuthToken
 	}
@@ -155,6 +178,19 @@ func SerializeConfigYAML(cfg *contract.Config) ([]byte, error) {
 	}
 	if cfg.Deals.Enabled {
 		res["deals"] = cfg.Deals
+	}
+	if cfg.AgentShield.Enabled != nil {
+		res["agent_shield"] = cfg.AgentShield
+	}
+	ck := cfg.CycleKiller
+	if ck.Enabled == nil && cfg.CycleBreaker.Enabled != nil {
+		ck = cfg.CycleBreaker
+	}
+	if ck.Enabled != nil {
+		res["cycle_killer"] = ck
+	}
+	if cfg.FairyDust.Enabled != nil {
+		res["fairy_dust"] = cfg.FairyDust
 	}
 	return yaml.Marshal(res)
 }

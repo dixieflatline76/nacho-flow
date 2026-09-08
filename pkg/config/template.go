@@ -11,7 +11,7 @@ const DefaultStarterConfigTemplate = `# ========================================
 # =============================================================================
 
 port: 8000
-# host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
+host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
 
 # =============================================================================
 # 🔌 LLM PROVIDERS
@@ -65,22 +65,65 @@ agent_shield:
     - "switch to code mode"
     - "switch to architect mode"
     - "ready to implement"
+  error_signatures:
+    - "[ERROR] You did not use a tool"
+    - "Missing value for required parameter"
+    - "The tool execution failed"
+    - "<error_details>"
+    - "No sufficiently similar match found"
+    - "Command failed with exit code"
+    - "Please retry with complete response"
+    - "Editor operation failed"
+    - "Parameter 'old_text' is required"
+    - "Parameter ` + "`old_text`" + ` is required"
+    - "Parameter old_text is required"
+    - "Command not executed:"
+    - "expected string, received undefined"
+    - "✖ Invalid input"
+    - "Invalid input:"
+    - "tool execution error"
 
 # =============================================================================
 # 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
 # In-Flight Stream Defense that murders infinite loops & monologue traps in <3s
 # =============================================================================
 cycle_killer:
-  enabled: true
-  max_prose_tokens: 4096
-  max_thinking_tokens: 4096
-  repetition_window: 6
-  repetition_threshold: 3
-  thinking_repetition_threshold: 5
-  max_retries: 1
+  enabled: true                     # Master switch for all in-flight stream defense
+  max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
+  max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
+  max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
+  repetition_window: 6              # Sliding n-gram window size (words) for loop detection
+  repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
+  thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks (higher = more lenient)
+  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+  model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
+  retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
   kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
   kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
   kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
+  kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
+  # 🛡️ Plan Mode Guard: When agent declares 0 write tools, Kickstart automatically suspends idle escalation
+  kickstart_write_tools:            # Tools that count as "real progress" (read-only tools are ignored)
+    - write_to_file
+    - replace_in_file
+    - replace_file_content
+    - multi_replace_file_content
+    - execute_command
+    - apply_diff
+    - insert_code_block
+    - create_file
+    - create_or_update_file
+    - write_file
+    - edit_file
+    - delete_file
+    - patch_file
+    - run_command
+    - run_terminal_command
+    - terminal
+    - bash
+    - exec
+    - editor
+    - run_commands
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
@@ -103,37 +146,126 @@ tiers:
     when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Free (Gemma 4 12B QAT) - $0.00 Cost
+  # TIER 1: Local GPU Workhorse (100% Free VRAM Offload)
   # ---------------------------------------------------------------------------
-  - name: "Tier 1: Local GPU Free (Gemma 4 12B QAT)"
+  - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
     model: "gemma4:12b-it-qat"
-    when: "Tokens < 16000 && Retries == 0"
+    when: "Tokens < 20000 && Retries < 2"
     strip_images: false
-    max_context: 64000
+    max_context: 32000
 
   # ---------------------------------------------------------------------------
-  # TIER 2: Frontier-Grade Cloud Workhorse (Gemini 3.7 Flash Thinking)
+  # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus — $0.65 / $3.25 per 1M)
   # ---------------------------------------------------------------------------
-  - name: "Tier 2: Cloud Workhorse (Gemini 3.7 Flash)"
+  - name: "Tier 2: Flagship Agent Coder (Qwen3 Coder Plus)"
+    provider: "openrouter"
+    model: "qwen/qwen3-coder-plus"
+    when: "Tokens < 160000 && Retries < 2"
+
+  # ---------------------------------------------------------------------------
+  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash — $0.75 / $3.75 per 1M)
+  # ---------------------------------------------------------------------------
+  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.7-flash"
-    when: "Retries < 1"
+    when: "Tokens < 260000 && Retries < 5"
 
   # ---------------------------------------------------------------------------
-  # TIER 3: Deep Cloud Reasoner (DeepSeek R1)
+  # TIER 4: Large Context Synthesis (Gemini 3.1 Pro)
   # ---------------------------------------------------------------------------
-  - name: "Tier 3: Deep Reasoner (DeepSeek R1)"
+  - name: "Tier 4: Large Context Synthesis (Gemini 3.1 Pro)"
     provider: "openrouter"
-    model: "deepseek/deepseek-r1"
-    when: "Retries == 1 || 'reason' in Keywords || 'algorithm' in Keywords || 'architect' in Keywords"
+    model: "google/gemini-3.1-pro-preview"
+    when: "Retries < 7"
+
+  # ---------------------------------------------------------------------------
+  # TIER 5: Frontier Powerhouse (Claude Sonnet 5 — $2.00/$10.00 per 1M)
+  # ---------------------------------------------------------------------------
+  - name: "Tier 5: Frontier Powerhouse (Claude Sonnet 5)"
+    provider: "openrouter"
+    model: "anthropic/claude-sonnet-5"
+    when: "Retries < 9"
+
+  # ---------------------------------------------------------------------------
+  # TIER 6: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
+  # Access via: X-Spicy-Model: anthropic/claude-opus-5 or Fairy Dust Checkpoints
+  # ---------------------------------------------------------------------------
+  - name: "Tier 6: Opus On-Demand (Spicy Only)"
+    provider: "openrouter"
+    model: "anthropic/claude-opus-5"
+    when: "false"
 
 # =============================================================================
-# 🛡️ DEFAULT TIER: Frontier Powerhouse (Claude Sonnet 5)
+# 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Claude Sonnet 5)
 # =============================================================================
 default_tier:
-  name: "Tier 4: Frontier Powerhouse (Claude Sonnet 5)"
+  name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
   provider: "openrouter"
   model: "anthropic/claude-sonnet-5"
   when: "true"
+
+# =============================================================================
+# FAIRY DUSTING - Proactive Frontier Quality Checkpoints
+# =============================================================================
+fairy_dust:
+  enabled: true
+  entries:
+    # Tactical Code Review (Claude Sonnet 5) — ADVERSARIAL BUG HUNTER
+    - name: "Tactical Code Review"
+      model: "anthropic/claude-sonnet-5"
+      provider: "openrouter"
+      frequency: 15
+      max_per_session: 5
+      priority: 10
+      prompt: >
+        [ADVERSARIAL CODE REVIEW] You are a hostile senior reviewer whose job is
+        to FIND BUGS, not confirm correctness. Systematically check for:
+        (1) STUB FUNCTIONS: Methods that accept parameters but silently discard
+        them or return without doing meaningful work (e.g., an Insurance() that
+        never stores the bet). Flag any function where the implementation does
+        not match the contract implied by its signature and docstring.
+        (2) DEAD CODE & UNREACHABLE BRANCHES: Logic that can never execute due
+        to earlier returns, tautological conditions, or short-circuit evaluation.
+        (3) COPY-PASTE DUPLICATION: The same logic (e.g., hand value calculation,
+        soft-hand detection) reimplemented across multiple packages. If found,
+        refactor into a shared utility.
+        (4) OFF-BY-ONE & INDEX BUGS: Array index manipulation after splits,
+        insertions, or deletions. Verify loop bounds and slice operations.
+        (5) STATE MACHINE VIOLATIONS: Recursive state transitions where method A
+        calls method B which transitions state back through A. State machines
+        must be driven by callers, not by recursive internal calls.
+        (6) MISSING ERROR PROPAGATION: Errors caught but swallowed with _ or
+        ignored with empty catch blocks.
+        Fix every issue found with tool calls. Do NOT say "looks good" unless
+        you have verified every function body against its signature contract.
+
+    # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
+    - name: "Strategic Architecture Review"
+      # model: "anthropic/claude-opus-5"
+      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
+      provider: "openrouter"
+      frequency: 60
+      max_per_session: 1
+      priority: 100
+      prompt: >
+        [SPEC TRACEABILITY AUDIT] You are the QA lead performing a requirements
+        gap analysis. Your job is NOT to review code style — it is to verify
+        that every requirement in the original task prompt has been IMPLEMENTED
+        AND TESTED, not just stubbed. Perform these steps:
+        (1) EXTRACT REQUIREMENTS: Parse the original task/prompt into a numbered
+        checklist of concrete deliverables (e.g., "Monte Carlo simulation running
+        10,000+ hands", "Hi-Lo/KO/Omega II counting", ">= 90% test coverage").
+        (2) TRACE EACH REQUIREMENT: For each item, find the file(s) that implement
+        it. Verify the implementation is FUNCTIONAL, not a stub or no-op. If a
+        method exists but does nothing meaningful, mark it RED.
+        (3) CHECK TEST COVERAGE: For each requirement, verify a corresponding
+        test exists AND exercises the actual logic (not just the happy path).
+        If coverage is below the stated target, write the missing tests.
+        (4) VERIFY NUMERIC CLAIMS: If the spec requires specific outputs (e.g.,
+        house edge within expected range, correct payout ratios), run or trace
+        the calculations to confirm they produce correct results.
+        (5) REPORT: List each requirement as GREEN (implemented + tested),
+        YELLOW (implemented but untested), or RED (missing/stubbed). Fix all
+        RED items with tool calls before continuing.
 `

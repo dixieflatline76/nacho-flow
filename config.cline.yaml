@@ -11,6 +11,7 @@
 # =============================================================================
 
 port: 8000
+host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
 
 # =============================================================================
 # 🔌 LLM PROVIDERS
@@ -73,9 +74,14 @@ agent_shield:
     - "Command failed with exit code"
     - "Please retry with complete response"
     - "Editor operation failed"
+    - "Parameter 'old_text' is required"
     - "Parameter `old_text` is required"
     - "Parameter old_text is required"
     - "Command not executed:"
+    - "expected string, received undefined"
+    - "✖ Invalid input"
+    - "Invalid input:"
+    - "tool execution error"
 
 # =============================================================================
 # 🎸 CYCLE KILLER — CLINE-TUNED
@@ -87,6 +93,7 @@ cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
   max_prose_tokens: 6144            # Cline XML needs more prose runway than JSON calling
   max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
+  max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
   repetition_window: 6              # Sliding n-gram window size (words) for loop detection
   repetition_threshold: 4           # Slightly higher threshold: Cline XML is naturally repetitive
   thinking_repetition_threshold: 6  # Lenient reasoning repetition for deep architecture plans
@@ -238,9 +245,10 @@ fairy_dust:
         Fix every issue found with tool calls. Do NOT say "looks good" unless
         you have verified every function body against its signature contract.
 
-    # Strategic Architecture Review (Claude Opus 5) — SPEC TRACEABILITY AUDIT
+    # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
-      model: "anthropic/claude-opus-5"
+      # model: "anthropic/claude-opus-5"
+      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
       provider: "openrouter"
       frequency: 60
       max_per_session: 1

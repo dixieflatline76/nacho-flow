@@ -165,3 +165,34 @@ func TestValidateConfig_UnknownDefaultTierProvider(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+func TestValidateConfig_UnknownFairyDustProvider(t *testing.T) {
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {
+				BaseURL: "http://127.0.0.1:11434",
+				Type:    contract.ProviderTypeLocal,
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default",
+			Provider: "ollama",
+		},
+		FairyDust: contract.FairyDustConfig{
+			Entries: []contract.FairyDustEntry{
+				{
+					Name:     "Audit",
+					Model:    "test-model",
+					Provider: "unknown-provider",
+				},
+			},
+		},
+	}
+	err := config.ValidateConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error for unknown fairy dust provider, got nil")
+	}
+	if !strings.Contains(err.Error(), "fairy_dust entry 'Audit' references unknown provider 'unknown-provider'") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
