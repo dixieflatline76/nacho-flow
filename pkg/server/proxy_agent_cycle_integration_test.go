@@ -14,12 +14,12 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 )
 
-// TestProxy_LumoIncident_ToolCallLoopSevering tests that when a model emits 0 prose tokens
-// and streams pure tool-calls with repetitive arguments (the exact failure mode observed with Lumo),
+// TestProxy_ToolCallLoopSevering tests that when a model emits 0 prose tokens
+// and streams pure tool-calls with repetitive arguments (the exact failure mode observed with runaway tool loops),
 // the in-flight streaming Cycle Killer tool lane engages and severs the stream with a system override.
-func TestProxy_LumoIncident_ToolCallLoopSevering(t *testing.T) {
-	// Mock upstream simulating Lumo streaming repetitive tool-call arguments
-	mockLumo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestProxy_ToolCallLoopSevering(t *testing.T) {
+	// Mock upstream simulating model streaming repetitive tool-call arguments
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.WriteHeader(http.StatusOK)
@@ -42,7 +42,7 @@ func TestProxy_LumoIncident_ToolCallLoopSevering(t *testing.T) {
 		w.Write([]byte("data: [DONE]\n\n"))
 		flusher.Flush()
 	}))
-	defer mockLumo.Close()
+	defer mockUpstream.Close()
 
 	enabled := true
 	cfg := &contract.Config{
@@ -54,16 +54,16 @@ func TestProxy_LumoIncident_ToolCallLoopSevering(t *testing.T) {
 			MaxToolTokens:       4096,
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"lumo_provider": {
-				BaseURL: mockLumo.URL,
+			"loop_provider": {
+				BaseURL: mockUpstream.URL,
 				Type:    "cloud",
 			},
 		},
 		Tiers: []contract.Tier{
 			{
-				Name:     "Lumo Tier",
-				Model:    "lumo-max",
-				Provider: "lumo_provider",
+				Name:     "Loop Tier",
+				Model:    "loop-model-v1",
+				Provider: "loop_provider",
 				When:     "true",
 			},
 		},
@@ -75,7 +75,7 @@ func TestProxy_LumoIncident_ToolCallLoopSevering(t *testing.T) {
 	srv := NewServer(cfg, evaluator, classifier, sanitizer)
 
 	reqPayload := `{
-		"model": "lumo-max",
+		"model": "loop-model-v1",
 		"stream": true,
 		"messages": [{"role": "user", "content": "Fix the card replacement bug"}],
 		"tools": [{"type": "function", "function": {"name": "execute_command"}}]
@@ -106,11 +106,11 @@ func TestProxy_LumoIncident_ToolCallLoopSevering(t *testing.T) {
 	}
 }
 
-// TestProxy_LumoIncident_FailingTestReadOnlyLoop_EscalatesToCloud verifies that when an agent
+// TestProxy_FailingTestReadOnlyLoop_EscalatesToCloud verifies that when an agent
 // runs a failing test, then runs read-only commands (cat/read_file) without making write progress,
 // retries accumulate under KickstartWriteOnly and trigger auto-escalation to the cloud tier.
 // It also verifies that when a genuine shell write is executed, retries reset back to 0.
-func TestProxy_LumoIncident_FailingTestReadOnlyLoop_EscalatesToCloud(t *testing.T) {
+func TestProxy_FailingTestReadOnlyLoop_EscalatesToCloud(t *testing.T) {
 	localRequests := 0
 	cloudRequests := 0
 
@@ -173,7 +173,7 @@ func TestProxy_LumoIncident_FailingTestReadOnlyLoop_EscalatesToCloud(t *testing.
 	sanitizer := router.NewSanitizer()
 	srv := NewServer(cfg, evaluator, classifier, sanitizer)
 
-	sessionID := "lumo-incident-session-123"
+	sessionID := "agent-loop-session-123"
 
 	// Turn 1: User prompt. Initial request -> retries = 0 -> routes to Local Tier
 	turn1Payload := `{
@@ -279,14 +279,14 @@ func TestProxy_LumoIncident_FailingTestReadOnlyLoop_EscalatesToCloud(t *testing.
 	}
 }
 
-// TestProxy_LumoIncident_StreamOptionsAndCalibration verifies that the proxy automatically injects
+// TestProxy_StreamOptionsAndCalibration verifies that the proxy automatically injects
 // stream_options: {"include_usage": true} into streaming requests, calibrates the estimator when
 // usage arrives, and emits a single deduplicated warning when the provider omits usage.
-func TestProxy_LumoIncident_StreamOptionsAndCalibration(t *testing.T) {
+func TestProxy_StreamOptionsAndCalibration(t *testing.T) {
 	var capturedStreamOptions []byte
 	requestCount := 0
 
-	mockLumo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		body, _ := io.ReadAll(r.Body)
 		if bytes.Contains(body, []byte("stream_options")) {
@@ -305,25 +305,25 @@ func TestProxy_LumoIncident_StreamOptionsAndCalibration(t *testing.T) {
 			w.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1500,\"completion_tokens\":10,\"total_tokens\":1510}}\n\n"))
 			flusher.Flush()
 		}
-		// Request 2 & 3: Emit NO usage object (simulating Lumo bug)
+		// Request 2 & 3: Emit NO usage object (simulating upstream provider omitting usage)
 		w.Write([]byte("data: [DONE]\n\n"))
 		flusher.Flush()
 	}))
-	defer mockLumo.Close()
+	defer mockUpstream.Close()
 
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"lumo_provider": {
-				BaseURL: mockLumo.URL,
+			"stream_provider": {
+				BaseURL: mockUpstream.URL,
 				Type:    "cloud",
 			},
 		},
 		Tiers: []contract.Tier{
 			{
-				Name:     "Lumo Tier",
-				Model:    "lumo-max",
-				Provider: "lumo_provider",
+				Name:     "Stream Tier",
+				Model:    "stream-model-v1",
+				Provider: "stream_provider",
 				When:     "true",
 			},
 		},
@@ -344,7 +344,7 @@ func TestProxy_LumoIncident_StreamOptionsAndCalibration(t *testing.T) {
 
 	// 1. First streaming request: verify stream_options injected and estimator calibrated
 	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{
-		"model": "lumo-max",
+		"model": "stream-model-v1",
 		"stream": true,
 		"messages": [{"role": "user", "content": "Hello"}]
 	}`))
@@ -364,7 +364,7 @@ func TestProxy_LumoIncident_StreamOptionsAndCalibration(t *testing.T) {
 
 	// 2. Second request: Upstream omits usage -> verify WARN log
 	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{
-		"model": "lumo-max",
+		"model": "stream-model-v1",
 		"stream": true,
 		"messages": [{"role": "user", "content": "Second turn without usage"}]
 	}`))
@@ -375,14 +375,14 @@ func TestProxy_LumoIncident_StreamOptionsAndCalibration(t *testing.T) {
 	}
 
 	logStr := logBuf.String()
-	if !strings.Contains(logStr, "zero usage tokens reported by provider") || !strings.Contains(logStr, "lumo_provider") {
-		t.Errorf("Expected warning about zero usage tokens for lumo_provider, got: %s", logStr)
+	if !strings.Contains(logStr, "zero usage tokens reported by provider") || !strings.Contains(logStr, "stream_provider") {
+		t.Errorf("Expected warning about zero usage tokens for stream_provider, got: %s", logStr)
 	}
 
 	// 3. Third request: Upstream omits usage again -> verify WARN log is NOT duplicated
 	logBuf.Reset()
 	req3 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{
-		"model": "lumo-max",
+		"model": "stream-model-v1",
 		"stream": true,
 		"messages": [{"role": "user", "content": "Third turn without usage"}]
 	}`))

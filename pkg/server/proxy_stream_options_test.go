@@ -140,16 +140,16 @@ func TestProxy_Streaming_TokenCalibrationAndZeroUsageWarn(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"lumo_provider": {
+			"stream_provider": {
 				BaseURL: mockUpstream.URL,
 				Type:    "cloud",
 			},
 		},
 		Tiers: []contract.Tier{
 			{
-				Name:     "Lumo Tier",
-				Model:    "lumo-max",
-				Provider: "lumo_provider",
+				Name:     "Stream Tier",
+				Model:    "stream-model-v1",
+				Provider: "stream_provider",
 				When:     "true",
 			},
 		},
@@ -174,7 +174,7 @@ func TestProxy_Streaming_TokenCalibrationAndZeroUsageWarn(t *testing.T) {
 
 	// Request 1: should calibrate estimator using usage.PromptTokens (1200)
 	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{
-		"model": "lumo-max",
+		"model": "stream-model-v1",
 		"stream": true,
 		"messages": [{"role": "user", "content": "calibrate me"}]
 	}`))
@@ -191,7 +191,7 @@ func TestProxy_Streaming_TokenCalibrationAndZeroUsageWarn(t *testing.T) {
 
 	// Request 2: missing usage on 200 stream -> should log WARN
 	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{
-		"model": "lumo-max",
+		"model": "stream-model-v1",
 		"stream": true,
 		"messages": [{"role": "user", "content": "zero usage"}]
 	}`))
@@ -202,14 +202,14 @@ func TestProxy_Streaming_TokenCalibrationAndZeroUsageWarn(t *testing.T) {
 	}
 
 	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "zero usage") && !strings.Contains(logOutput, "lumo_provider") {
+	if !strings.Contains(logOutput, "zero usage") && !strings.Contains(logOutput, "stream_provider") {
 		t.Errorf("Expected WARN log about zero usage tokens for provider, got: %s", logOutput)
 	}
 
 	// Request 3: second stream with zero usage from the same provider -> should NOT log again
 	logBuf.Reset()
 	req3 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{
-		"model": "lumo-max",
+		"model": "stream-model-v1",
 		"stream": true,
 		"messages": [{"role": "user", "content": "zero usage again"}]
 	}`))
