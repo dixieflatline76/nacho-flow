@@ -2,7 +2,7 @@
 name: Bug Report
 about: Report a bug, crash, or routing error in Nacho Flow
 title: '[BUG] '
-labels: bug
+labels: "type: bug, status: needs triage"
 assignees: ''
 
 ---
