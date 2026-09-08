@@ -117,14 +117,18 @@ Different autonomous coding agents produce vastly different prompt and tool stru
 | :--- | :--- | :--- | :--- |
 | **🌮 Standard** | `config.yaml` | General use, Aider, Cursor, Continue | Balanced context limits (16k local), standard prose token ceilings, standard tool detection. |
 | **🤖 Zoo Code** | `config.zoo.yaml` | Zoo Code | Strict OpenAI JSON tool calling, tighter prose limits (800 words), aggressive Cycle Killer loop murder. |
-| **🛠️ Cline (XML-Native)** | `config.cline.yaml` | Cline, Claude Dev | Relaxed prose ceilings (`max_prose_tokens: 6144`) so Cline's verbose XML conversational preambles (`<write_to_file>`, `<replace_in_file>`) are never prematurely cut off. |
+| **🛠️ Cline (XML-Native)** | `config.cline.yaml` | Cline, Claude Dev | Relaxed prose ceilings (`max_prose_tokens: 6144`), streaming tool argument repetition guard (`max_tool_tokens: 8192`), and Zod schema failure signatures. |
+
+> [!NOTE]
+> **Loopback Security Isolation**: All bundled extension presets strictly enforce `host: "127.0.0.1"` to provide local machine isolation and prevent Windows Defender Firewall network permission prompts. If you require LAN access for remote machines, set `host: "0.0.0.0"` in your workspace config.
 
 #### 1-Click Hot-Swap (`⚡ Hot-Swap`):
 1. Select your target preset from the dropdown (`Standard`, `Zoo Code`, or `Cline`).
 2. Click **`⚡ Hot-Swap`**.
 3. The extension reads the preset YAML and sends an atomic payload update to the running gateway via `POST /api/v1/config`.
 4. The Go daemon executes an **in-memory Read-Copy-Update (RCU)** swap in $< 1\text{ ms}$. In-flight streams complete uninterrupted, while new turns instantly evaluate the new rule set!
-5. A transient confirmation toast appears: `🌮 Switched to 🤖 Zoo Code routing preset!`.
+5. Any environment variable placeholders (`ENV_<KEY>`) in the preset are automatically expanded from the host process environment, keeping API authentication seamless.
+6. A transient confirmation toast appears: `🌮 Switched to 🤖 Zoo Code routing preset!`.
 
 #### Preset Resolution Hierarchy:
 When resolving preset files, the extension checks:
