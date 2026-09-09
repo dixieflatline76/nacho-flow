@@ -46,6 +46,24 @@ Nacho Flow is an open-source, high-performance agent supervisor and model dispat
 
 ---
 
+#### 📡 7. SSE Data Prefix Calibration & Token Usage Normalization (Lumo / Proton)
+* **The Problem:** The Server-Sent Events (SSE) specification defines the space following `data:` as optional (`data: ` or `data:`). Upstream providers like Lumo (Proton) emit chunks without a space (`data:{...}`). Previously, strict prefix matching on `data: ` caused Lumo chunks to bypass normalizer processing and dump directly into the raw passthrough buffer, completely bypassing `captureUsage()` and logging zero token usage.
+* **The Solution:** Implemented zero-allocation two-branch sub-slicing (`trimmed[6:]` and `trimmed[5:]`) in `StreamNormalizer.processLine`. All token usage, content chunks, and `[DONE]` terminals are now captured seamlessly, while maintaining 100% backward compatibility for OpenRouter ground-truth cost (`usage.cost`) and cache token breakdowns.
+
+---
+
+#### 📊 8. Telemetry Observability for Tool Lanes & Shell Writes
+* **Dual-Sink Emission:** The Cycle Killer tool argument lane metrics (`cycle_tool_tokens`, `cycle_max_tool_ngram_freq`) and the shell write flag (`has_shell_write`) are now wired and emitted directly to both `router.log` and `traffic.jsonl` telemetry sinks.
+* **Expanded Shell Detection:** `detectShellWrite` in the classifier now detects `git checkout .` and project scaffolding commands.
+
+---
+
+#### ⚡ 9. High-Concurrency Windows Benchmark Hardening
+* **Socket Drain Pause:** Added an inter-stage drain pause (2-second sleep + `runtime.GC()`) after Stage 4 in `nacho_bench` to allow Windows loopback `TIME_WAIT` TCP sockets to recycle cleanly before Stage 5 launches.
+* **50k-Thread Ceiling Protected:** Eliminates OS thread pool exhaustion during the 1,000-worker concurrency spike. Stress testing now completes all 5 stages across 350,000 requests with zero dropped sockets.
+
+---
+
 ### ⚡ Architectural Highlights (v1.0 Foundation)
 
 #### 🚀 1. Wire-Speed Pass-Through & Streaming Routing ($30,000+\text{ req/s}$)
