@@ -690,6 +690,13 @@ func runFullStressTest() []StepResult {
 		fmt.Printf("   ✓ Done in %.2fs | RPS: %.1f | P50: %.2fms | P99: %.2fms | Heap: %.1f MB | Success: %d/%d (Fail: %d)\n\n",
 			res.Duration.Seconds(), res.RPS, float64(res.P50.Microseconds())/1000.0, float64(res.P99.Microseconds())/1000.0,
 			res.HeapAllocMB, res.Completed, s.requests, res.Failed)
+
+		// Drain TIME_WAIT sockets before the 1000-worker stage to prevent
+		// Windows loopback thread exhaustion (50,000 OS thread ceiling).
+		if s.stage == 4 {
+			runtime.GC()
+			time.Sleep(2 * time.Second)
+		}
 	}
 
 	return results

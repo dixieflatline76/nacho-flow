@@ -1,6 +1,6 @@
 # 📄 Architectural Whitepaper: Near-Zero Allocation Hot Paths & Wire-Speed Agent Supervision
 
-**How Nacho Flow Delivers Deep Semantic Payload Inspection, Live AST Evaluation, and In-Flight Stream Healing in $< 0.2\text{ms}$ with <!-- BENCHMARK:WHITEPAPER_SUBTITLE_START -->$30,000+\text{ req/s}$<!-- BENCHMARK:WHITEPAPER_SUBTITLE_END --> Throughput.**
+**How Nacho Flow Delivers Deep Semantic Payload Inspection, Live AST Evaluation, and In-Flight Stream Healing in $< 0.2\text{ms}$ with <!-- BENCHMARK:WHITEPAPER_SUBTITLE_START -->$31,000+\text{ req/s}$<!-- BENCHMARK:WHITEPAPER_SUBTITLE_END --> Throughput.**
 
 *Author: Karl Kwong / Dixieflatline76*  
 *Target Engine: Nacho Flow Core Engine (Pure Go, Static Binary, Zero CGO)*  
@@ -20,7 +20,7 @@ Indeed, popular enterprise gateways like **LiteLLM** add **$8.0\text{--}25.0\tex
 Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 - **Raw Pass-Through Proxy Latency**: **$0.184\text{ ms}$** ($184.7\,\mu\text{s}$)
 - **Full Deep-Inspection Latency** (Bearer Auth + AST Rules + Multi-Model Normalization): **$0.205\text{ ms}$** ($205.9\,\mu\text{s}$)
-- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,652\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
+- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$31,831\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
 - **Idle Memory Footprint**: **$< 25\text{ MB}$** (peaking under $111\text{ MB}$ at $500$ simultaneous client streams).
 
 ```
@@ -323,11 +323,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$28684.3\text{ req/s}$** | $2.01\text{ ms}$ | $6.48\text{ ms}$ | $59.8\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$25497.9\text{ req/s}$** | $3.01\text{ ms}$ | $17.26\text{ ms}$ | $108.4\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$29264.4\text{ req/s}$** | $7.70\text{ ms}$ | $30.07\text{ ms}$ | $151.7\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$25821.4\text{ req/s}$** | $14.39\text{ ms}$ | $65.16\text{ ms}$ | $142.0\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$26149.9\text{ req/s}$** | $34.04\text{ ms}$ | $86.57\text{ ms}$ | $199.1\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$30523.6\text{ req/s}$** | $2.01\text{ ms}$ | $6.11\text{ ms}$ | $110.3\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$27870.1\text{ req/s}$** | $2.52\text{ ms}$ | $16.45\text{ ms}$ | $90.0\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$31831.5\text{ req/s}$** | $7.03\text{ ms}$ | $25.22\text{ ms}$ | $100.7\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$25400.0\text{ req/s}$** | $14.99\text{ ms}$ | $68.14\text{ ms}$ | $175.0\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$28011.2\text{ req/s}$** | $30.94\text{ ms}$ | $99.63\text{ ms}$ | $313.9\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 ### Nanosecond Micro-Benchmark Suite
