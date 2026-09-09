@@ -109,6 +109,9 @@ type Observation struct {
 	CycleMaxNgramFreq         int
 	CycleThinkingTokens       int
 	CycleMaxThinkingNgramFreq int
+	CycleToolTokens           int
+	CycleMaxToolNgramFreq     int
+	HasShellWrite             bool
 	SessionKickstarted        bool
 	CachedTokens              int
 	UpstreamCost              float64
@@ -542,6 +545,9 @@ func (s *StatsTracker) worker() {
 				CycleMaxNgramFreq:         obs.CycleMaxNgramFreq,
 				CycleThinkingTokens:       obs.CycleThinkingTokens,
 				CycleMaxThinkingNgramFreq: obs.CycleMaxThinkingNgramFreq,
+				CycleToolTokens:           obs.CycleToolTokens,
+				CycleMaxToolNgramFreq:     obs.CycleMaxToolNgramFreq,
+				HasShellWrite:             obs.HasShellWrite,
 				SessionKickstarted:        obs.SessionKickstarted,
 				CachedTokens:              obs.CachedTokens,
 				UpstreamCost:              obs.UpstreamCost,

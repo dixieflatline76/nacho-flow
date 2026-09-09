@@ -260,12 +260,24 @@ func (s *StreamNormalizer) processLine(line []byte) {
 	trimmed := bytes.TrimRight(line, "\r\n")
 
 	// Raw pass-through fast path
-	if s.features == uint16(router.FeatureRawPassThrough) || !bytes.HasPrefix(trimmed, []byte("data: ")) {
+	if s.features == uint16(router.FeatureRawPassThrough) {
 		s.outBuf.Write(line)
 		return
 	}
 
-	payload := bytes.TrimPrefix(trimmed, []byte("data: "))
+	// Support both "data: " (standard) and "data:" (no space) per SSE spec.
+	// Lumo/Proton sends "data:{...}" without the space, which previously
+	// caused the entire line to bypass captureUsage() silently.
+	var payload []byte
+	switch {
+	case bytes.HasPrefix(trimmed, []byte("data: ")):
+		payload = trimmed[6:] // len("data: ") == 6
+	case bytes.HasPrefix(trimmed, []byte("data:")):
+		payload = trimmed[5:] // len("data:") == 5
+	default:
+		s.outBuf.Write(line)
+		return
+	}
 	if bytes.Equal(payload, []byte("[DONE]")) {
 		s.handleDone(line)
 		return

@@ -1015,8 +1015,16 @@ func TestDetectShellWrite(t *testing.T) {
 		{"tar extract", "tar -xzf archive.tar.gz", true},
 		{"unzip command", "unzip bundle.zip", true},
 		{"git checkout file", "git checkout -- main.go", true},
+		{"git checkout all", "git checkout .", true},
 		{"git restore file", "git restore pkg/router.go", true},
 		{"git apply patch", "git apply fix.diff", true},
+
+		// Scaffolding commands
+		{"go mod init", "go mod init myapp", true},
+		{"go mod tidy", "go mod tidy", true},
+		{"npm init", "npm init -y", true},
+		{"cargo new", "cargo new myapp", true},
+		{"cargo init", "cargo init", true},
 
 		// Windows commands
 		{"powershell Out-File", "Get-Process | Out-File proc.txt", true},
