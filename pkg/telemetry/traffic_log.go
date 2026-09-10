@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -18,9 +18,9 @@ type TrafficLogger struct {
 	file     *os.File
 	writer   *bufio.Writer
 	queue    chan TurnRecord
+	closeReq chan struct{}
 	done     chan struct{}
-	mu       sync.Mutex
-	closed   bool
+	closed   atomic.Bool
 }
 
 // NewTrafficLogger creates a new TrafficLogger targeting the specified path.
@@ -49,6 +49,7 @@ func NewTrafficLogger(filePath string, bufferSize int) (*TrafficLogger, error) {
 		file:     file,
 		writer:   bufio.NewWriterSize(file, 64*1024), // 64KB write buffer
 		queue:    make(chan TurnRecord, bufferSize),
+		closeReq: make(chan struct{}),
 		done:     make(chan struct{}),
 	}
 
@@ -69,27 +70,34 @@ func (tl *TrafficLogger) worker() {
 
 	for {
 		select {
-		case record, ok := <-tl.queue:
-			if !ok {
-				tl.flush()
-				return
-			}
-			data, err := json.Marshal(record)
-			if err == nil {
-				tl.mu.Lock()
-				_, _ = tl.writer.Write(data)
-				_ = tl.writer.WriteByte('\n')
-				tl.mu.Unlock()
-			}
+		case record := <-tl.queue:
+			tl.writeRecord(record)
 		case <-flushTicker.C:
 			tl.flush()
+		case <-tl.closeReq:
+			// Drain remaining records in queue before terminating
+			for {
+				select {
+				case record := <-tl.queue:
+					tl.writeRecord(record)
+				default:
+					tl.flush()
+					return
+				}
+			}
 		}
 	}
 }
 
+func (tl *TrafficLogger) writeRecord(record TurnRecord) {
+	data, err := json.Marshal(record)
+	if err == nil {
+		_, _ = tl.writer.Write(data)
+		_ = tl.writer.WriteByte('\n')
+	}
+}
+
 func (tl *TrafficLogger) flush() {
-	tl.mu.Lock()
-	defer tl.mu.Unlock()
 	if tl.writer != nil {
 		_ = tl.writer.Flush()
 	}
@@ -99,13 +107,11 @@ func (tl *TrafficLogger) flush() {
 }
 
 // Emit sends a TurnRecord to the non-blocking asynchronous write queue.
+// This call is completely lock-free and thread-safe.
 func (tl *TrafficLogger) Emit(record TurnRecord) {
-	tl.mu.Lock()
-	if tl.closed {
-		tl.mu.Unlock()
+	if tl.closed.Load() {
 		return
 	}
-	tl.mu.Unlock()
 
 	select {
 	case tl.queue <- record:
@@ -116,19 +122,12 @@ func (tl *TrafficLogger) Emit(record TurnRecord) {
 
 // Close flushes buffered writes and closes the file.
 func (tl *TrafficLogger) Close() error {
-	tl.mu.Lock()
-	if tl.closed {
-		tl.mu.Unlock()
+	if tl.closed.Swap(true) {
 		return nil
 	}
-	tl.closed = true
-	close(tl.queue)
-	tl.mu.Unlock()
-
+	close(tl.closeReq)
 	<-tl.done
 
-	tl.mu.Lock()
-	defer tl.mu.Unlock()
 	if tl.file != nil {
 		return tl.file.Close()
 	}

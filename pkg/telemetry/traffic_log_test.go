@@ -253,3 +253,93 @@ func TestTrafficLogger_CycleBreakerMetrics_Roundtrip(t *testing.T) {
 		t.Errorf("Expected HasShellWrite true, got false")
 	}
 }
+
+// Test 1.6: Concurrent Close and Emit to verify zero panics and lock-free thread safety
+func TestTrafficLogger_ConcurrentCloseAndEmit(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "concurrent_close.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 500)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	emitters := 30
+	recordsPerEmitter := 200
+
+	for i := 0; i < emitters; i++ {
+		wg.Add(1)
+		go func(emitterID int) {
+			defer wg.Done()
+			for j := 0; j < recordsPerEmitter; j++ {
+				logger.Emit(TurnRecord{
+					Timestamp: time.Now().UTC(),
+					RequestID: "req-concurrent",
+					Tokens:    emitterID*1000 + j,
+				})
+				if j == recordsPerEmitter/2 && emitterID == 0 {
+					// Concurrently trigger close from one goroutine
+					go func() {
+						_ = logger.Close()
+					}()
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	// Ensure Close completes safely even if double called
+	if err := logger.Close(); err != nil {
+		t.Errorf("Unexpected error on double close: %v", err)
+	}
+}
+
+// Test 1.7: Queue saturation non-blocking drop under extreme overload
+func TestTrafficLogger_QueueFullDrop(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "drop_traffic.jsonl")
+
+	// Create logger with tiny buffer
+	logger, err := NewTrafficLogger(logPath, 1)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	// Flood emits faster than worker can process without blocking
+	for i := 0; i < 50; i++ {
+		logger.Emit(TurnRecord{Tokens: i})
+	}
+
+	if err := logger.Close(); err != nil {
+		t.Fatalf("Failed to close logger: %v", err)
+	}
+}
+
+func BenchmarkTrafficLogger_Emit(b *testing.B) {
+	tempDir := b.TempDir()
+	logPath := filepath.Join(tempDir, "bench_traffic.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 50000)
+	if err != nil {
+		b.Fatalf("Failed to create logger: %v", err)
+	}
+	defer func() { _ = logger.Close() }()
+
+	rec := TurnRecord{
+		Timestamp:   time.Now().UTC(),
+		RequestID:   "bench-req",
+		Tokens:      1500,
+		TargetModel: "qwen2.5-coder",
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			logger.Emit(rec)
+		}
+	})
+}
+
