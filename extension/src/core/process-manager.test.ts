@@ -1,6 +1,7 @@
 import * as child_process from 'child_process';
 import * as fs from 'fs';
 import * as http from 'http';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ProcessManager, parseStartupError } from './process-manager';
@@ -35,6 +36,25 @@ describe('ProcessManager', () => {
 			expect(processManager.isLocalUrl('http://192.168.0.205:8000')).toBe(false);
 			expect(processManager.isLocalUrl('https://api.openai.com')).toBe(false);
 			expect(processManager.isLocalUrl('invalid-url-127.0.0.1')).toBe(true);
+		});
+	});
+
+	describe('resolveLogDir', () => {
+		it('should prioritize configPath directory when provided', () => {
+			const dir = processManager.resolveLogDir('/custom/presets/config.yaml');
+			expect(dir).toBe(path.join('/custom/presets', 'logs'));
+		});
+
+		it('should use globalStorageUri presets/logs when configPath is not provided', () => {
+			const mockStorageUri = { fsPath: '/global/storage' } as any;
+			const mgr = new ProcessManager(mockExtensionUri, mockOutputChannel, mockStorageUri);
+			const dir = mgr.resolveLogDir();
+			expect(dir).toBe(path.join('/global/storage', 'presets', 'logs'));
+		});
+
+		it('should fall back to homedir .nacho-flow/logs when neither configPath nor globalStorageUri is provided', () => {
+			const dir = processManager.resolveLogDir();
+			expect(dir).toBe(path.join(os.homedir(), '.nacho-flow', 'logs'));
 		});
 	});
 
@@ -259,6 +279,207 @@ describe('ProcessManager', () => {
 			};
 			const stopFailed = await processManager.stop();
 			expect(stopFailed).toBe(false);
+		});
+
+		it('should adopt already-healthy engine, mark attached, and report running', async () => {
+			jest.spyOn(processManager, 'checkHealth').mockResolvedValue(true);
+			const res = await processManager.start('http://127.0.0.1:8000');
+			expect(res.success).toBe(true);
+			expect(processManager.isEngineAttached()).toBe(true);
+			expect(processManager.isRunning()).toBe(true);
+		});
+
+		it('should pass --log-dir and set safeCwd without touching workspaceFolders', async () => {
+			const mockStorageUri = { fsPath: '/Users/test/globalStorage' } as any;
+			const mgr = new ProcessManager(mockExtensionUri, mockOutputChannel, mockStorageUri);
+			jest.spyOn(mgr, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			jest.spyOn(mgr, 'checkHealth').mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+			let spawnedCwd: string | undefined;
+			let spawnedArgs: string[] = [];
+			(child_process.spawn as jest.Mock).mockImplementation((_cmd, args, opts) => {
+				spawnedArgs = args;
+				spawnedCwd = opts?.cwd;
+				return {
+					stdout: { on: jest.fn() },
+					stderr: { on: jest.fn() },
+					on: jest.fn(),
+					kill: jest.fn(),
+					killed: false,
+					pid: 5555
+				};
+			});
+
+			const configPath = path.normalize('/Users/test/globalStorage/presets/config.yaml');
+			const res = await mgr.start('http://127.0.0.1:8000', configPath);
+			expect(res.success).toBe(true);
+			expect(spawnedArgs).toContain('--log-dir');
+			expect(spawnedArgs).toContain(path.join(path.dirname(configPath), 'logs'));
+			expect(spawnedCwd).toBe(path.dirname(configPath));
+		});
+
+		it('should default safeCwd to presets directory when configPath is omitted but globalStorageUri is set', async () => {
+			const mockStorageUri = { fsPath: path.normalize('/Users/test/globalStorage') } as any;
+			const mgr = new ProcessManager(mockExtensionUri, mockOutputChannel, mockStorageUri);
+			jest.spyOn(mgr, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			jest.spyOn(mgr, 'checkHealth').mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+			let spawnedCwd: string | undefined;
+			(child_process.spawn as jest.Mock).mockImplementation((_cmd, _args, opts) => {
+				spawnedCwd = opts?.cwd;
+				return {
+					stdout: { on: jest.fn() },
+					stderr: { on: jest.fn() },
+					on: jest.fn(),
+					kill: jest.fn(),
+					killed: false,
+					pid: 5556
+				};
+			});
+
+			const res = await mgr.start('http://127.0.0.1:8000');
+			expect(res.success).toBe(true);
+			expect(spawnedCwd).toBe(path.join(path.normalize('/Users/test/globalStorage'), 'presets'));
+		});
+
+		it('should send shutdown directive on stop and terminate child process', async () => {
+			let requestUrl = '';
+			let requestOpts: any;
+			let writtenBody = '';
+			(http.request as jest.Mock).mockImplementation((url, opts, cb) => {
+				requestUrl = url.toString();
+				requestOpts = opts;
+				return {
+					on: jest.fn(),
+					write: jest.fn((body) => { writtenBody = body; }),
+					end: jest.fn(() => { if (cb) cb({ statusCode: 200 }); }),
+					destroy: jest.fn()
+				};
+			});
+
+			const mockChild: any = {
+				pid: 4321,
+				kill: jest.fn(),
+				killed: false
+			};
+			(processManager as any).childProcess = mockChild;
+			(processManager as any).isAttached = true;
+			(child_process.execSync as jest.Mock).mockImplementation(() => {});
+
+			const stopped = await processManager.stop('http://127.0.0.1:8000', 'auth-secret');
+			expect(stopped).toBe(true);
+			expect(requestUrl).toContain('/api/v1/directive');
+			expect(requestOpts.headers['Authorization']).toBe('Bearer auth-secret');
+			expect(writtenBody).toContain('SHUTDOWN');
+			expect(processManager.isEngineAttached()).toBe(false);
+			expect(processManager.isRunning()).toBe(false);
+		});
+
+		it('should send SIGTERM on non-windows platform during stop', async () => {
+			const originalPlatform = process.platform;
+			Object.defineProperty(process, 'platform', { value: 'linux' });
+			const mockChild: any = {
+				pid: 7777,
+				kill: jest.fn(),
+				killed: false
+			};
+			(processManager as any).childProcess = mockChild;
+			await processManager.stop();
+			expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
+		it('should safely handle directive error, timeout, and exceptions in sendShutdownDirective', async () => {
+			// Test error handler
+			(http.request as jest.Mock).mockImplementationOnce((_url, _opts, _cb) => {
+				const handlers: Record<string, Function> = {};
+				return {
+					on: jest.fn((evt, fn) => { handlers[evt] = fn; if (evt === 'error') fn(new Error('Directive error')); }),
+					write: jest.fn(),
+					end: jest.fn(),
+					destroy: jest.fn()
+				};
+			});
+			(processManager as any).isAttached = true;
+			expect(await processManager.stop('http://127.0.0.1:8000')).toBe(true);
+
+			// Test timeout handler
+			(http.request as jest.Mock).mockImplementationOnce((_url, _opts, _cb) => {
+				const handlers: Record<string, Function> = {};
+				const destroyMock = jest.fn();
+				return {
+					on: jest.fn((evt, fn) => { handlers[evt] = fn; if (evt === 'timeout') fn(); }),
+					write: jest.fn(),
+					end: jest.fn(),
+					destroy: destroyMock
+				};
+			});
+			(processManager as any).isAttached = true;
+			expect(await processManager.stop('http://127.0.0.1:8000')).toBe(true);
+
+			// Test synchronous exception handler
+			(http.request as jest.Mock).mockImplementationOnce(() => {
+				throw new Error('Sync fail in directive');
+			});
+			(processManager as any).isAttached = true;
+			expect(await processManager.stop('http://127.0.0.1:8000')).toBe(true);
+		});
+
+		it('should cap stdout and stderr buffers at 20 lines', async () => {
+			jest.spyOn(processManager, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			let stdoutCb: any;
+			let stderrCb: any;
+			const mockChild: any = {
+				stdout: { on: jest.fn((evt, fn) => { if (evt === 'data') stdoutCb = fn; }) },
+				stderr: { on: jest.fn((evt, fn) => { if (evt === 'data') stderrCb = fn; }) },
+				on: jest.fn(),
+				kill: jest.fn(),
+				killed: false,
+				pid: 1111
+			};
+			(child_process.spawn as jest.Mock).mockReturnValue(mockChild);
+			jest.spyOn(processManager, 'checkHealth').mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+			await processManager.start('http://127.0.0.1:8000');
+			for (let i = 0; i < 25; i++) {
+				stdoutCb(Buffer.from(`stdout line ${i}\n`));
+				stderrCb(Buffer.from(`stderr line ${i}\n`));
+			}
+			expect((processManager as any).lastStdout.length).toBe(20);
+			expect((processManager as any).lastStderr.length).toBe(20);
+		});
+
+		it('should handle spawn exception gracefully', async () => {
+			jest.spyOn(processManager, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			(child_process.spawn as jest.Mock).mockImplementation(() => {
+				throw new Error('EACCES permission denied');
+			});
+			jest.spyOn(processManager, 'checkHealth').mockResolvedValue(false);
+
+			const res = await processManager.start('http://127.0.0.1:8000');
+			expect(res.success).toBe(false);
+			expect(res.parsedError?.type).toBe('SPAWN_ERROR');
+			expect(res.error).toContain('Failed to spawn Nacho Flow: EACCES');
+		});
+
+		it('should catch synchronous exceptions in checkHealth and return false', async () => {
+			(http.get as jest.Mock).mockImplementationOnce(() => {
+				throw new Error('Sync fail');
+			});
+			const isUp = await processManager.checkHealth('http://127.0.0.1:8000');
+			expect(isUp).toBe(false);
 		});
 
 		it('should cleanly dispose of child process and handle exceptions', () => {

@@ -60,6 +60,8 @@ func (s *Server) handleAPIDirective(w http.ResponseWriter, r *http.Request) {
 		s.handleResetCircuitsDirective(w, req)
 	case contract.DirectiveActionRecalculateStats:
 		s.handleRecalculateStatsDirective(w, req)
+	case contract.DirectiveActionShutdown:
+		s.handleShutdownDirective(w, req)
 	default:
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusBadRequest)
@@ -74,6 +76,31 @@ func (s *Server) getDirectiveFilePath() (string, error) {
 		return s.directivePath, nil
 	}
 	return contract.GetDirectiveFilePath()
+}
+
+func (s *Server) handleShutdownDirective(w http.ResponseWriter, req DirectiveRequest) {
+	resp := DirectiveResponse{
+		Status:          "acknowledged",
+		Action:          contract.DirectiveActionShutdown,
+		RequiresRestart: false,
+		Message:         "Daemon shutting down.",
+	}
+
+	w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	exitFn := s.exitFunc
+	if exitFn == nil {
+		exitFn = os.Exit
+	}
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		exitFn(0)
+	}()
 }
 
 func (s *Server) handlePurgeAllLogsDirective(w http.ResponseWriter, req DirectiveRequest) {
@@ -100,12 +127,19 @@ func (s *Server) handlePurgeAllLogsDirective(w http.ResponseWriter, req Directiv
 		statsPath = filepath.Join(userConfigDir, contract.AppName, contract.DefaultStatsFileName)
 	}
 
+	logDir := ""
+	if s.trafficLogPath != "" {
+		logDir = filepath.Dir(s.trafficLogPath)
+	} else {
+		logDir = contract.ResolveLogDir("")
+	}
+
 	envelope := map[string]interface{}{
 		"action":     contract.DirectiveActionPurgeAllLogs,
 		"created_at": time.Now().UTC().Format(time.RFC3339),
 		"targets": map[string]interface{}{
 			"stats_path": statsPath,
-			"log_dir":    "logs",
+			"log_dir":    logDir,
 			"log_files":  []string{contract.DefaultTrafficLogFileName, contract.DefaultRouterLogFileName},
 		},
 	}

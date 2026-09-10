@@ -9,10 +9,22 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
+// ToolActivityCategory classifies tool actions to apply appropriate safety ceilings
+// and repetition rules based on whether the action modifies files or executes commands.
+type ToolActivityCategory int
+
+const (
+	// ToolCategoryCommand applies sliding N-gram loop detection and defaultMaxToolTokens (4096).
+	ToolCategoryCommand ToolActivityCategory = iota
+	// ToolCategoryFileWrite exempts content from N-gram loop detection and applies defaultMaxWriteTokens (32768).
+	ToolCategoryFileWrite
+)
+
 const (
 	defaultMaxProseTokens              = 4096
 	defaultMaxThinkingTokens           = 1500
-	defaultMaxToolTokens               = 8192
+	defaultMaxToolTokens               = 4096
+	defaultMaxWriteTokens              = 32768
 	defaultRepetitionWindow            = 6
 	defaultRepetitionThreshold         = 3
 	defaultThinkingRepetitionThreshold = 5
@@ -33,6 +45,7 @@ type CycleBreaker struct {
 	maxProseTokens              int
 	maxThinkingTokens           int
 	maxToolTokens               int
+	maxWriteTokens              int
 	repetitionWindow            int
 	repetitionThreshold         int
 	thinkingRepetitionThreshold int
@@ -71,6 +84,7 @@ func NewCycleBreaker(cfg *contract.CycleBreakerConfig) *CycleBreaker {
 		maxProseTokens:              defaultMaxProseTokens,
 		maxThinkingTokens:           defaultMaxThinkingTokens,
 		maxToolTokens:               defaultMaxToolTokens,
+		maxWriteTokens:              defaultMaxWriteTokens,
 		repetitionWindow:            defaultRepetitionWindow,
 		repetitionThreshold:         defaultRepetitionThreshold,
 		thinkingRepetitionThreshold: defaultThinkingRepetitionThreshold,
@@ -99,6 +113,9 @@ func NewCycleBreaker(cfg *contract.CycleBreakerConfig) *CycleBreaker {
 		}
 		if cfg.MaxToolTokens > 0 {
 			cb.maxToolTokens = cfg.MaxToolTokens
+		}
+		if cfg.MaxWriteTokens > 0 {
+			cb.maxWriteTokens = cfg.MaxWriteTokens
 		}
 		if cfg.RepetitionWindow > 0 {
 			cb.repetitionWindow = cfg.RepetitionWindow
@@ -181,6 +198,13 @@ func (cb *CycleBreaker) MaxToolNgramFreq() int {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	return cb.maxToolNgramFreq
+}
+
+// MaxWriteTokens returns the configured maximum tool tokens for file writes.
+func (cb *CycleBreaker) MaxWriteTokens() int {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.maxWriteTokens
 }
 
 // Reset clears accumulated words, n-grams, and token counters across prose, thinking, and tool lanes.
@@ -366,9 +390,11 @@ func (cb *CycleBreaker) maxThinkingLoopDistance() int {
 }
 
 // ProcessToolDelta parses a tool argument delta chunk from the stream and checks for repetition loops or budget breaches.
-// Operates on an isolated tool lane to protect against degenerate loops inside tool arguments
-// while allowing large legitimate code writes up to maxToolTokens.
-func (cb *CycleBreaker) ProcessToolDelta(content string) (triggered bool, reason string) {
+// Operates on an isolated tool lane to protect against degenerate loops inside tool arguments.
+// When category is ToolCategoryFileWrite, sliding N-gram loop detection is bypassed (unit test tables repeat naturally)
+// and the spacious maxWriteTokens ceiling (default 32768) applies with zero-alloc fast exit.
+// When category is ToolCategoryCommand (or default), sliding N-gram loop detection and maxToolTokens (default 4096) apply.
+func (cb *CycleBreaker) ProcessToolDelta(content string, category ...ToolActivityCategory) (triggered bool, reason string) {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
@@ -376,8 +402,23 @@ func (cb *CycleBreaker) ProcessToolDelta(content string) (triggered bool, reason
 		return false, ""
 	}
 
-	cb.toolTokens += (len(content) + 3) / 4
+	actCat := ToolCategoryCommand
+	if len(category) > 0 {
+		actCat = category[0]
+	}
 
+	deltaTokens := (len(content) + 3) / 4
+	cb.toolTokens += deltaTokens
+
+	// Category A: File writes (zero-alloc fast path)
+	if actCat == ToolCategoryFileWrite {
+		if cb.toolTokens > cb.maxWriteTokens {
+			return true, "write_budget_exceeded"
+		}
+		return false, ""
+	}
+
+	// Category B: Commands & tool invocations (bounded by maxToolTokens, sliding N-gram loop detection)
 	for _, r := range content {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			cb.toolPendingWord.WriteRune(unicode.ToLower(r))

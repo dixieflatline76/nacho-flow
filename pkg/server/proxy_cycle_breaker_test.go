@@ -1251,8 +1251,9 @@ func TestProxy_ToolTokens_Telemetry_EndToEnd(t *testing.T) {
 		if obs.CycleToolTokens <= 0 {
 			t.Errorf("Expected CycleToolTokens > 0, got: %d", obs.CycleToolTokens)
 		}
-		if obs.CycleMaxToolNgramFreq < 1 {
-			t.Errorf("Expected CycleMaxToolNgramFreq >= 1, got: %d", obs.CycleMaxToolNgramFreq)
+		// File writes have N-gram immunity to prevent false-positive kills on struct/table tests
+		if obs.CycleMaxToolNgramFreq != 0 {
+			t.Errorf("Expected CycleMaxToolNgramFreq == 0 for write_to_file, got: %d", obs.CycleMaxToolNgramFreq)
 		}
 		if obs.CycleProseTokens != 0 {
 			t.Errorf("Expected CycleProseTokens == 0 for pure tool stream, got: %d", obs.CycleProseTokens)

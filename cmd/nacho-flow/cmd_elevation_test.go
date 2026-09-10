@@ -136,6 +136,9 @@ func TestProgram_AsyncRun_Execution(t *testing.T) {
 
 	// Run from a temp dir so the log file lands somewhere clean
 	tmpDir := t.TempDir()
+	logDir := filepath.Join(tmpDir, "logs")
+	*logDirFlag = logDir
+	defer func() { *logDirFlag = "" }()
 	_ = os.Chdir(tmpDir)
 
 	serviceInteractiveFunc = func() bool { return false }
@@ -156,13 +159,55 @@ func TestProgram_AsyncRun_Execution(t *testing.T) {
 		t.Errorf("expected stderr to contain '[FATAL:CONFIG_ERROR]', got: %s", errOutput)
 	}
 	// Assert asyncRun forwarded the error through slog to the log file (non-interactive writes to disk)
-	logFile := filepath.Join(tmpDir, "logs", "router.log")
+	logFile := filepath.Join(logDir, "router.log")
 	logData, err := os.ReadFile(logFile)
 	if err != nil {
 		t.Fatalf("expected log file at %s, got error: %v", logFile, err)
 	}
 	if !strings.Contains(string(logData), "Fatal runtime error") {
 		t.Errorf("expected log file to contain 'Fatal runtime error', got: %s", string(logData))
+	}
+}
+
+func TestProgram_Run_LogDirFlag_NoWorkspacePollution(t *testing.T) {
+	oldInteractive := serviceInteractiveFunc
+	oldConfig := *configPathFlag
+	origDir, _ := os.Getwd()
+	defer func() {
+		serviceInteractiveFunc = oldInteractive
+		*configPathFlag = oldConfig
+		_ = os.Chdir(origDir)
+	}()
+
+	tmpWorkspace := t.TempDir()
+	customLogDir := filepath.Join(t.TempDir(), "presets", "logs")
+
+	*logDirFlag = customLogDir
+	defer func() { *logDirFlag = "" }()
+	_ = os.Chdir(tmpWorkspace)
+
+	serviceInteractiveFunc = func() bool { return false }
+	*configPathFlag = "/invalid/nonexistent/config.yaml"
+
+	var p *program
+	_ = captureStderrLocal(func() {
+		p = &program{}
+		p.asyncRun(nil)
+	})
+	if p.logCloser != nil {
+		_ = p.logCloser.Close()
+	}
+
+	// Verify log file was written to customLogDir
+	customLogFile := filepath.Join(customLogDir, "router.log")
+	if _, err := os.Stat(customLogFile); err != nil {
+		t.Fatalf("expected router.log in custom log dir %s, got err: %v", customLogDir, err)
+	}
+
+	// Verify workspace directory has NO logs/ folder
+	pollutedLogs := filepath.Join(tmpWorkspace, "logs")
+	if _, err := os.Stat(pollutedLogs); !os.IsNotExist(err) {
+		t.Fatalf("workspace pollution detected! Found unwanted logs directory at %s", pollutedLogs)
 	}
 }
 

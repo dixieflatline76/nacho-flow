@@ -104,3 +104,51 @@ func TestGetUserConfigDir(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveLogDir(t *testing.T) {
+	if contract.DirectiveActionShutdown != "SHUTDOWN" {
+		t.Fatalf("unexpected DirectiveActionShutdown: %s", contract.DirectiveActionShutdown)
+	}
+
+	t.Run("ExplicitDirTakesPrecedence", func(t *testing.T) {
+		t.Setenv("NACHO_LOG_DIR", "/env/log/dir")
+		custom := filepath.Join(t.TempDir(), "explicit", "logs")
+		got := contract.ResolveLogDir(custom)
+		if got != filepath.Clean(custom) {
+			t.Fatalf("expected %s, got %s", filepath.Clean(custom), got)
+		}
+	})
+
+	t.Run("EnvVarTakesPrecedenceWhenExplicitEmpty", func(t *testing.T) {
+		envDir := filepath.Join(t.TempDir(), "env-logs")
+		t.Setenv("NACHO_LOG_DIR", envDir)
+		got := contract.ResolveLogDir("")
+		if got != filepath.Clean(envDir) {
+			t.Fatalf("expected %s, got %s", filepath.Clean(envDir), got)
+		}
+	})
+
+	t.Run("FallsBackToConfigDirWhenEnvEmpty", func(t *testing.T) {
+		t.Setenv("NACHO_LOG_DIR", "")
+		cfgDir := filepath.Join(t.TempDir(), "fake-config")
+		t.Setenv("NACHO_CONFIG_DIR", cfgDir)
+		got := contract.ResolveLogDir("")
+		expected := filepath.Join(cfgDir, contract.AppName, "logs")
+		if got != expected {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("FallsBackToRelativeLogsWhenAllEmpty", func(t *testing.T) {
+		t.Setenv("NACHO_LOG_DIR", "")
+		t.Setenv("NACHO_CONFIG_DIR", "")
+		t.Setenv("APPDATA", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "")
+		t.Setenv("USERPROFILE", "")
+		got := contract.ResolveLogDir("")
+		if got == "" {
+			t.Fatalf("expected non-empty fallback log dir")
+		}
+	})
+}

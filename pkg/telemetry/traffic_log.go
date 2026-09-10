@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
 // TrafficLogger writes streaming TurnRecord observations to a JSONL file asynchronously.
@@ -24,7 +26,7 @@ type TrafficLogger struct {
 // NewTrafficLogger creates a new TrafficLogger targeting the specified path.
 func NewTrafficLogger(filePath string, bufferSize int) (*TrafficLogger, error) {
 	if filePath == "" {
-		filePath = filepath.Join("logs", "traffic.jsonl")
+		filePath = filepath.Join(contract.ResolveLogDir(""), contract.DefaultTrafficLogFileName)
 	}
 
 	if bufferSize <= 0 {

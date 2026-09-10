@@ -104,13 +104,16 @@ export class ProcessManager {
 	private childProcess: child_process.ChildProcess | null = null;
 	private outputChannel: vscode.OutputChannel;
 	private extensionUri: vscode.Uri;
+	private globalStorageUri?: vscode.Uri;
 	private lastStderr: string[] = [];
 	private lastStdout: string[] = [];
 	private isStopping = false;
+	private isAttached = false;
 
-	constructor(extensionUri: vscode.Uri, outputChannel: vscode.OutputChannel) {
+	constructor(extensionUri: vscode.Uri, outputChannel: vscode.OutputChannel, globalStorageUri?: vscode.Uri) {
 		this.extensionUri = extensionUri;
 		this.outputChannel = outputChannel;
+		this.globalStorageUri = globalStorageUri;
 	}
 
 	/**
@@ -240,6 +243,7 @@ export class ProcessManager {
 		const alreadyHealthy = await this.checkHealth(daemonUrl, 500);
 		if (alreadyHealthy) {
 			this.outputChannel.appendLine('[ProcessManager] Engine is already active and healthy.');
+			this.isAttached = true;
 			return { success: true };
 		}
 
@@ -263,6 +267,12 @@ export class ProcessManager {
 			args.push('--config', configPath);
 		}
 
+		const logDir = this.resolveLogDir(configPath);
+		try {
+			fs.mkdirSync(logDir, { recursive: true });
+		} catch (_) {}
+		args.push('--log-dir', logDir);
+
 		this.lastStderr = [];
 		this.lastStdout = [];
 		this.isStopping = false;
@@ -273,8 +283,8 @@ export class ProcessManager {
 			if (!safeCwd && configPath) {
 				safeCwd = path.dirname(configPath);
 			}
-			if (!safeCwd && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-				safeCwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
+			if (!safeCwd && this.globalStorageUri) {
+				safeCwd = path.join(this.globalStorageUri.fsPath, 'presets');
 			}
 			if (!safeCwd) {
 				safeCwd = os.homedir();
@@ -369,35 +379,90 @@ export class ProcessManager {
 	}
 
 	/**
-	 * Stops any active child process spawned by this extension.
+	 * Resolves the directory where runtime logs (router.log, traffic.jsonl) should be written.
+	 * Prioritizes presets/logs within global storage or next to the active config file.
 	 */
-	public async stop(): Promise<boolean> {
-		if (!this.childProcess) {
+	public resolveLogDir(configPath?: string): string {
+		if (configPath) {
+			return path.join(path.dirname(configPath), 'logs');
+		}
+		if (this.globalStorageUri) {
+			return path.join(this.globalStorageUri.fsPath, 'presets', 'logs');
+		}
+		return path.join(os.homedir(), '.nacho-flow', 'logs');
+	}
+
+	/**
+	 * Stops any active child process spawned by this extension or sends shutdown directive to attached daemon.
+	 */
+	public async stop(daemonUrl?: string, authToken?: string): Promise<boolean> {
+		if (!this.childProcess && !this.isAttached) {
 			return true;
 		}
 
 		try {
 			this.isStopping = true;
 			this.outputChannel.appendLine('[ProcessManager] Stopping local engine process...');
-			if (process.platform === 'win32') {
-				try {
-					if (this.childProcess.pid) {
-						child_process.execSync(`taskkill /pid ${this.childProcess.pid} /f /t`);
-					}
-				} catch {
-					this.childProcess.kill();
-				}
-			} else {
-				this.childProcess.kill('SIGTERM');
+
+			if (daemonUrl) {
+				await this.sendShutdownDirective(daemonUrl, authToken);
 			}
-			this.childProcess = null;
+
+			if (this.childProcess) {
+				if (process.platform === 'win32') {
+					try {
+						if (this.childProcess.pid) {
+							child_process.execSync(`taskkill /pid ${this.childProcess.pid} /f /t`);
+						}
+					} catch {
+						this.childProcess.kill();
+					}
+				} else {
+					this.childProcess.kill('SIGTERM');
+				}
+				this.childProcess = null;
+			}
+
+			this.isAttached = false;
 			return true;
 		} catch (err: any) {
 			this.isStopping = false;
 			this.outputChannel.appendLine(`[ProcessManager] Error stopping process: ${err.message}`);
 			this.childProcess = null;
+			this.isAttached = false;
 			return false;
 		}
+	}
+
+	private async sendShutdownDirective(daemonUrl: string, authToken?: string): Promise<void> {
+		return new Promise((resolve) => {
+			try {
+				const parsed = new URL('/api/v1/directive', daemonUrl);
+				const req = http.request(
+					parsed,
+					{
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+						},
+						timeout: 1000
+					},
+					() => {
+						resolve();
+					}
+				);
+				req.on('error', () => resolve());
+				req.on('timeout', () => {
+					req.destroy();
+					resolve();
+				});
+				req.write(JSON.stringify({ action: 'SHUTDOWN' }));
+				req.end();
+			} catch {
+				resolve();
+			}
+		});
 	}
 
 	/**
@@ -405,24 +470,33 @@ export class ProcessManager {
 	 */
 	public async restart(
 		daemonUrl: string,
-		configPath?: string
+		configPath?: string,
+		authToken?: string
 	): Promise<{ success: boolean; error?: string; parsedError?: ParsedStartupError }> {
-		await this.stop();
+		await this.stop(daemonUrl, authToken);
 		await new Promise((r) => setTimeout(r, 500));
 		return await this.start(daemonUrl, configPath);
 	}
 
 	/**
-	 * Returns true if this extension is actively managing a running child process.
+	 * Returns true if this extension is actively managing a running child process or is attached to an active engine.
 	 */
 	public isRunning(): boolean {
-		return this.childProcess !== null && !this.childProcess.killed;
+		return (this.childProcess !== null && !this.childProcess.killed) || this.isAttached;
+	}
+
+	/**
+	 * Returns true if attached to an existing daemon that was already healthy on startup.
+	 */
+	public isEngineAttached(): boolean {
+		return this.isAttached;
 	}
 
 	/**
 	 * Clean up resources on extension deactivation.
 	 */
 	public dispose(): void {
+		this.isAttached = false;
 		if (this.childProcess) {
 			try {
 				this.isStopping = true;

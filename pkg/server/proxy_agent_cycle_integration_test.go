@@ -30,12 +30,12 @@ func TestProxy_ToolCallLoopSevering(t *testing.T) {
 		}
 
 		// Initial chunk opening execute_command tool call
-		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"execute_command\",\"arguments\":\"sed -i \"}}]}}]}\n\n"))
+		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"execute_command\",\"arguments\":\"echo 'inspecting card types' && awk \"}}]}}]}\n\n"))
 		flusher.Flush()
 
-		// Repeated argument chunks simulating runaway sed pattern loop
+		// Repeated argument chunks simulating runaway command pipeline loop
 		for i := 0; i < 20; i++ {
-			w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"'s/bad_card/good_card/g' cards.go && sed -i \"}}]}}]}\n\n"))
+			w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"'{print $1}' cards.go && echo 'inspecting card types' && awk \"}}]}}]}\n\n"))
 			flusher.Flush()
 		}
 
@@ -92,14 +92,20 @@ func TestProxy_ToolCallLoopSevering(t *testing.T) {
 	respBody := rec.Body.String()
 	bodyStr := rec.Body.String()
 
-	// Verify that the stream was intercepted and severed by the tool-call cycle killer
+	// Verify that the stream was intercepted and severed by the tool-call cycle killer with a protocol-safe SSE error
 	if !strings.Contains(bodyStr, "tool repetition loop detected") {
 		t.Fatalf("Expected stream to be severed with tool repetition cycle killer message, got body:\n%s", bodyStr)
 	}
 
-	// Verify that the severed stream cleanly closes with finish_reason: stop and [DONE]
-	if !strings.Contains(respBody, `"finish_reason":"stop"`) {
-		t.Errorf("Expected severed stream to end with finish_reason: stop")
+	if !strings.Contains(respBody, "cycle_killer_error") {
+		t.Errorf("Expected severed stream to emit cycle_killer_error type, got body:\n%s", respBody)
+	}
+	if !strings.Contains(respBody, "tool_cycle_detected") {
+		t.Errorf("Expected severed stream to emit tool_cycle_detected code, got body:\n%s", respBody)
+	}
+	// Verify that no invalid finish_reason: stop chunk was sent with incomplete JSON
+	if strings.Contains(respBody, `"finish_reason":"stop"`) {
+		t.Errorf("Severed tool call stream should not emit finish_reason: stop to prevent JSON parse crashes")
 	}
 	if !strings.Contains(respBody, "[DONE]") {
 		t.Errorf("Expected severed stream to end with [DONE]")

@@ -1085,14 +1085,26 @@ func (s *Server) dispatchTier(
 					if s.sessionTracker != nil {
 						s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
 					}
+					isToolViolation := normalizer.HasActiveToolCall() || strings.HasPrefix(reason, "tool_") || strings.HasPrefix(reason, "write_")
 					_ = normalizer.Close()
 
-					noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
-					escapedNotice, _ := json.Marshal(noticeText)
-					noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
-					finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
-					_, _ = w.Write([]byte(noticeChunk))
-					_, _ = w.Write([]byte(finishChunk))
+					if isToolViolation {
+						errPayload, _ := json.Marshal(map[string]any{
+							"error": map[string]any{
+								"message": fmt.Sprintf("Nacho Flow cycle breaker: model (%s) got stuck in a %s during tool call execution.", targetTier.Model, formatCycleKillReason(reason)),
+								"type":    "cycle_killer_error",
+								"code":    "tool_cycle_detected",
+							},
+						})
+						_, _ = w.Write([]byte(fmt.Sprintf("data: %s\n\ndata: [DONE]\n\n", string(errPayload))))
+					} else {
+						noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
+						escapedNotice, _ := json.Marshal(noticeText)
+						noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
+						finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+						_, _ = w.Write([]byte(noticeChunk))
+						_, _ = w.Write([]byte(finishChunk))
+					}
 					if flusher, ok := w.(http.Flusher); ok {
 						flusher.Flush()
 					}

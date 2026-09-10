@@ -56,6 +56,7 @@ func init() {
 
 var (
 	configPathFlag         = flag.String("config", "", "Path to config.yaml file")
+	logDirFlag             = flag.String("log-dir", "", "Directory to store log files (router.log, traffic.jsonl)")
 	portFlag               = flag.Int("port", 0, "Port to listen on (overrides config.yaml)")
 	hostFlag               = flag.String("host", "", "Host/address to bind to (default: 127.0.0.1, overrides config.yaml)")
 	logLevelFlag           = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
@@ -137,6 +138,8 @@ func parseLogLevel(lvl string) slog.Level {
 }
 
 func (p *program) run(s service.Service) error {
+	effectiveLogDir := contract.ResolveLogDir(*logDirFlag)
+
 	// 0. Execute any pending cold startup directives before initializing loggers or stores
 	_ = executeStartupDirectives("")
 
@@ -150,7 +153,7 @@ func (p *program) run(s service.Service) error {
 		}
 	}
 
-	appLogger, logCloser := telemetry.InitLogger(serviceInteractiveFunc(), "logs", parseLogLevel(*logLevelFlag), svcLogger)
+	appLogger, logCloser := telemetry.InitLogger(serviceInteractiveFunc(), effectiveLogDir, parseLogLevel(*logLevelFlag), svcLogger)
 	p.mu.Lock()
 	p.logCloser = logCloser
 	p.slog = appLogger
@@ -245,7 +248,8 @@ func (p *program) run(s service.Service) error {
 
 	// 5. Attach Streaming TrafficLogger sink for Auto-Tuner
 	var trafficLogger *telemetry.TrafficLogger
-	trafficLogger, err = telemetry.NewTrafficLogger("", 5000)
+	trafficLogPath := filepath.Join(effectiveLogDir, contract.DefaultTrafficLogFileName)
+	trafficLogger, err = telemetry.NewTrafficLogger(trafficLogPath, 5000)
 	if err == nil {
 		tracker.AddSink(trafficLogger)
 		if histRecords, rErr := telemetry.ReadRecords(trafficLogger.FilePath(), 50); rErr == nil && len(histRecords) > 0 {

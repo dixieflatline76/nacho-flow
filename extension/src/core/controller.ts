@@ -31,7 +31,11 @@ export class ExtensionController {
 		this.context = context;
 		this.authManager = new AuthManager(context);
 		this.statusBar = new StatusBarManager();
-		this.processManager = new ProcessManager(context.extensionUri, (this.outputChannel as any) || { append: () => {}, appendLine: () => {} });
+		this.processManager = new ProcessManager(
+			context.extensionUri,
+			(this.outputChannel as any) || { append: () => {}, appendLine: () => {} },
+			context.globalStorageUri
+		);
 	}
 
 	public async initialize(): Promise<void> {
@@ -50,7 +54,7 @@ export class ExtensionController {
 		// Create Output Channel for live engine logs
 		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Model Dispatcher');
 		if (!this.processManager) {
-			this.processManager = new ProcessManager(this.context.extensionUri, this.outputChannel);
+			this.processManager = new ProcessManager(this.context.extensionUri, this.outputChannel, this.context.globalStorageUri);
 		}
 
 		// Register commands
@@ -276,7 +280,8 @@ export class ExtensionController {
 							vscode.window.showWarningMessage('Nacho Flow: Cannot stop remote engine.');
 							break;
 						}
-						await this.processManager.stop();
+						const authToken = await this.authManager.getAuthToken();
+						await this.processManager.stop(daemonUrl, authToken);
 						await this.authManager.setLocalEngineRunning(false);
 						this.showTransientToast('⏹️ Nacho Flow: Model Dispatcher stopped');
 						if (this.sidebarProvider) {
@@ -1356,7 +1361,8 @@ export class ExtensionController {
 				await new Promise((r) => setTimeout(r, 300));
 				for (let i = 0; i < 20; i++) {
 					if (this.processManager.isLocalUrl(daemonUrl) && !this.processManager.isRunning()) {
-						await this.processManager.start(daemonUrl);
+						const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
+						await this.processManager.start(daemonUrl, presetUri.fsPath);
 					}
 					const isOnline = await this.processManager.checkHealth(daemonUrl, 300);
 					if (isOnline) {

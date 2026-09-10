@@ -829,6 +829,11 @@ func extractXMLCommand(text string) string {
 	return ""
 }
 
+// DetectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
+func DetectShellWrite(cmd string) bool {
+	return detectShellWrite(cmd)
+}
+
 // detectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
 func detectShellWrite(cmd string) bool {
 	trimmed := strings.TrimSpace(cmd)

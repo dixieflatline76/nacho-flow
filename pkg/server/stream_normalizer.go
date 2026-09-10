@@ -182,6 +182,8 @@ type StreamNormalizer struct {
 	features               uint16
 	pendingTagClosing      bool
 	toolChunksScratch      []fastToolCallChunk
+	currentToolCategory    shield.ToolActivityCategory
+	hasActiveToolCall      bool
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -221,6 +223,11 @@ func (s *StreamNormalizer) SetCycleBreaker(cb *shield.CycleBreaker) {
 // CheckCycleViolation reports whether the stream triggered a cycle breaker violation.
 func (s *StreamNormalizer) CheckCycleViolation() (bool, string) {
 	return s.cycleViolated, s.cycleViolationReason
+}
+
+// HasActiveToolCall returns whether a tool call delta stream is currently active.
+func (s *StreamNormalizer) HasActiveToolCall() bool {
+	return s.hasActiveToolCall
 }
 
 func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
@@ -321,6 +328,9 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 	}
 
 	choice := &chunk.Choices[0]
+	if choice.FinishReason != nil && *choice.FinishReason != "" {
+		s.hasActiveToolCall = false
+	}
 	if len(choice.Delta.ToolCalls) > 0 {
 		s.extractAndRecordToolCalls(choice.Delta.ToolCalls)
 	}
@@ -436,6 +446,7 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 	s.inThinking = false
 	s.inStructuredReasoning = false
 	s.pendingTagClosing = false
+	s.hasActiveToolCall = false
 
 	shieldEnabled := (s.features & uint16(router.FeatureShieldEnabled)) != 0
 	if shieldEnabled && !s.hasNativeTools && s.interactiveTool != "" && s.shieldMgr != nil && s.tailBuffer != nil {
@@ -533,6 +544,17 @@ func (s *StreamNormalizer) recordProse(text string) {
 	}
 }
 
+func isStructuredWriteTool(name string) bool {
+	switch strings.ToLower(name) {
+	case "write_to_file", "replace_file_content", "multi_replace_file_content",
+		"apply_diff", "create_file", "edit_file", "write_file", "save_file",
+		"create_or_update_file", "patch_file":
+		return true
+	default:
+		return false
+	}
+}
+
 // recordToolDelta feeds tool argument tokens into character counting and the cycle breaker tool lane.
 func (s *StreamNormalizer) recordToolDelta(argText string) {
 	if argText == "" {
@@ -540,7 +562,7 @@ func (s *StreamNormalizer) recordToolDelta(argText string) {
 	}
 	s.emittedCompletionChars += len(argText)
 	if s.cycleBreaker != nil && !s.cycleViolated {
-		if triggered, reason := s.cycleBreaker.ProcessToolDelta(argText); triggered {
+		if triggered, reason := s.cycleBreaker.ProcessToolDelta(argText, s.currentToolCategory); triggered {
 			s.cycleViolated = true
 			s.cycleViolationReason = reason
 		}
@@ -554,8 +576,21 @@ func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
 	s.toolChunksScratch = s.toolChunksScratch[:0]
 	if err := json.Unmarshal(raw, &s.toolChunksScratch); err == nil {
 		for i := range s.toolChunksScratch {
-			if s.toolChunksScratch[i].Function.Arguments != "" {
-				s.recordToolDelta(s.toolChunksScratch[i].Function.Arguments)
+			s.hasActiveToolCall = true
+			if s.toolChunksScratch[i].Function.Name != "" {
+				name := s.toolChunksScratch[i].Function.Name
+				if isStructuredWriteTool(name) {
+					s.currentToolCategory = shield.ToolCategoryFileWrite
+				} else {
+					s.currentToolCategory = shield.ToolCategoryCommand
+				}
+			}
+			args := s.toolChunksScratch[i].Function.Arguments
+			if args != "" {
+				if s.currentToolCategory == shield.ToolCategoryCommand && router.DetectShellWrite(args) {
+					s.currentToolCategory = shield.ToolCategoryFileWrite
+				}
+				s.recordToolDelta(args)
 			}
 		}
 	}
@@ -590,6 +625,7 @@ func (s *StreamNormalizer) Close() error {
 		return nil
 	}
 	s.closed = true
+	s.hasActiveToolCall = false
 	var err error
 	if s.upstream != nil {
 		err = s.upstream.Close()
