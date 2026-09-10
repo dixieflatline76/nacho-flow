@@ -173,16 +173,15 @@ tiers:
     when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (Qwen 2.5 Coder Cline 14B) - 100% VRAM Offload
-  # Fine-tuned specifically for Cline's tool calling and diff replacement format.
-  # Fast inference (~35-40 tok/s on RX 6900 XT).
+  # TIER 1: Local GPU Workhorse (Devstral Small 2 16k) - 100% VRAM Offload
+  # Native function calling support for Cline.
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
-    model: "maryasov/qwen2.5-coder-cline:14b"
+    model: "devstral-small-2:16k"
     when: "Tokens < 16000 && Retries < 2"
     strip_images: false
-    max_context: 32000
+    max_context: 16384
 
   # ---------------------------------------------------------------------------
   # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus — $0.65 / $3.25 per 1M)
