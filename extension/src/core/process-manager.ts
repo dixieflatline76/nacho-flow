@@ -384,10 +384,16 @@ export class ProcessManager {
 	 */
 	public resolveLogDir(configPath?: string): string {
 		if (configPath) {
-			return path.join(path.dirname(configPath), 'logs');
+			const dir = path.dirname(configPath);
+			if (path.basename(dir) === '.nacho' || path.basename(dir) === 'presets') {
+				return path.join(dir, 'logs');
+			}
 		}
 		if (this.globalStorageUri) {
 			return path.join(this.globalStorageUri.fsPath, 'presets', 'logs');
+		}
+		if (configPath) {
+			return path.join(path.dirname(configPath), 'logs');
 		}
 		return path.join(os.homedir(), '.nacho-flow', 'logs');
 	}

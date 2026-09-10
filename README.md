@@ -71,7 +71,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 ## ✨ Key Features
 
 ### 🛡️ 1. Active Agent Guardrails & Loop Defense
-* **Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream in real time (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
+* **Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream across prose, thinking, and tool lanes (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s with protocol-safe error severance, while granting file writes full immunity so table-driven unit tests and repetitive structs are never falsely interrupted.
 * **Kickstart (Stall Resuscitation Engine)**: Detects consecutive non-write turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`). Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), jolting agents out of passive read/plan procrastination when implementation stalls.
 * **Agentic Tool Fallback Shield**: Sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
 * **Smarter Test-Loop Breaker**: Detects when an agent is repeatedly running failing tests without editing code, requiring concrete file write modifications to break idle accumulation.

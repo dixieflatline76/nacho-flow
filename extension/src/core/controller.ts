@@ -869,7 +869,19 @@ export class ExtensionController {
 			} catch (_) {}
 		}
 
-		// 2. Check standard OS user config directory locations (macOS, Linux, Windows)
+		// 2. Check active preset in global storage / workspace override via resolvePresetUri
+		try {
+			await this.ensureGlobalPresets();
+			const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
+			if (presetUri.scheme === 'file' && this.fileExists(presetUri.fsPath)) {
+				const doc = await vscode.workspace.openTextDocument(presetUri);
+				this.activeConfigDocUri = doc.uri;
+				await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+				return;
+			}
+		} catch (_) {}
+
+		// 3. Check standard OS user config directory locations (macOS, Linux, Windows)
 		const standardPaths = this.getStandardConfigPaths();
 		for (const p of standardPaths) {
 			if (this.fileExists(p)) {
@@ -882,7 +894,7 @@ export class ExtensionController {
 			}
 		}
 
-		// 3. Search open workspace folders for local config.yaml
+		// 4. Search open workspace folders for local config.yaml
 		const files = await vscode.workspace.findFiles('**/config.yaml', '**/node_modules/**', 1);
 		if (files.length > 0) {
 			const doc = await vscode.workspace.openTextDocument(files[0]);
@@ -1113,10 +1125,16 @@ export class ExtensionController {
 		};
 		const filename = fileMap[presetId] || 'config.yaml';
 
-		// 1. Check workspace folders first (workspace-level override)
+		// 1. Check workspace folders for explicit project overrides (.nacho/ hidden folder first, then workspace root)
 		const workspaceFolders = vscode.workspace.workspaceFolders;
 		if (workspaceFolders && workspaceFolders.length > 0) {
 			for (const folder of workspaceFolders) {
+				const hiddenPresetUri = vscode.Uri.joinPath(folder.uri, '.nacho', filename);
+				try {
+					await vscode.workspace.fs.stat(hiddenPresetUri);
+					return { uri: hiddenPresetUri, isWorkspace: true };
+				} catch (_) {}
+
 				const wsPresetUri = vscode.Uri.joinPath(folder.uri, filename);
 				try {
 					await vscode.workspace.fs.stat(wsPresetUri);

@@ -280,7 +280,8 @@ cycle_killer:
   enabled: true
   max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
   max_thinking_tokens: 1500         # Max reasoning tokens before repetition enforcement kicks in
-  max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
+  max_tool_tokens: 4096             # Max command/tool invocation arguments before repetition enforcement
+  max_write_tokens: 32768           # 🛡️ File Write Ceiling: file writes bypass N-gram repetition with a 32k ceiling
   repetition_window: 6              # Sliding n-gram window size (words) for loop detection
   repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
   thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks

@@ -40,9 +40,19 @@ describe('ProcessManager', () => {
 	});
 
 	describe('resolveLogDir', () => {
-		it('should prioritize configPath directory when provided', () => {
+		it('should prioritize configPath directory when inside presets or .nacho', () => {
 			const dir = processManager.resolveLogDir('/custom/presets/config.yaml');
 			expect(dir).toBe(path.join('/custom/presets', 'logs'));
+
+			const nachoDir = processManager.resolveLogDir('/my-project/.nacho/config.yaml');
+			expect(nachoDir).toBe(path.join('/my-project/.nacho', 'logs'));
+		});
+
+		it('should route loose workspace configPath to globalStorage presets/logs when globalStorageUri exists', () => {
+			const mockStorageUri = { fsPath: '/global/storage' } as any;
+			const mgr = new ProcessManager(mockExtensionUri, mockOutputChannel, mockStorageUri);
+			const dir = mgr.resolveLogDir('/my-project/config.yaml');
+			expect(dir).toBe(path.join('/global/storage', 'presets', 'logs'));
 		});
 
 		it('should use globalStorageUri presets/logs when configPath is not provided', () => {
