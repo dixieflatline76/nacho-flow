@@ -1240,4 +1240,3 @@ func BenchmarkClassifier_GetEstimator(b *testing.B) {
 		}
 	})
 }
-

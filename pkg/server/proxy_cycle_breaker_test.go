@@ -1340,10 +1340,10 @@ func TestProxy_ShellWrite_Telemetry_EndToEnd(t *testing.T) {
 // "Expected ':' after property name in JSON at position 515 (line 1 column 516)".
 //
 // This test verifies:
-// 1. Category A file writes for table tests stream to completion with 0 false-positive kills.
-// 2. The resulting tool call argument JSON is completely valid and parseable (position 515 intact).
-// 3. When genuine Category B command loops are severed, protocol-safe SSE error framing is emitted,
-//    strictly omitting finish_reason: "stop" to guarantee client JSON parsers never crash.
+//  1. Category A file writes for table tests stream to completion with 0 false-positive kills.
+//  2. The resulting tool call argument JSON is completely valid and parseable (position 515 intact).
+//  3. When genuine Category B command loops are severed, protocol-safe SSE error framing is emitted,
+//     strictly omitting finish_reason: "stop" to guarantee client JSON parsers never crash.
 func TestProxy_ToolCall_Position515_TruncationReplay(t *testing.T) {
 	t.Run("LiveReplay_NQueens_TableTest_CompletesWithoutFalseKill", func(t *testing.T) {
 		// Exact table test structure generated during the 2026-09-10T08:14:58Z N-Queens session
@@ -1594,4 +1594,3 @@ func TestSolveNQueens(t *testing.T) {
 		}
 	})
 }
-

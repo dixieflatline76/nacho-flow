@@ -849,4 +849,3 @@ func BenchmarkCycleBreaker_PoolAcquireRelease(b *testing.B) {
 		PutCycleBreaker(cb)
 	}
 }
-

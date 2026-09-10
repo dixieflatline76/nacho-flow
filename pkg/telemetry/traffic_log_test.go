@@ -342,4 +342,3 @@ func BenchmarkTrafficLogger_Emit(b *testing.B) {
 		}
 	})
 }
-
