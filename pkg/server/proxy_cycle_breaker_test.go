@@ -1330,3 +1330,268 @@ func TestProxy_ShellWrite_Telemetry_EndToEnd(t *testing.T) {
 		t.Fatalf("Timed out waiting for telemetry sink to receive TurnRecord")
 	}
 }
+
+// TestProxy_ToolCall_Position515_TruncationReplay replays the exact failure scenario from
+// traffic.jsonl (line 4, 2026-09-10T08:14:58.525222Z) and media_1789028254493.png.
+// In the user's live session, Zoo Code generated table-driven tests for N-Queens in board_test.go.
+// The old cycle breaker flagged repetitive table test structs as tool_repetition_loop_detected at
+// ~515 bytes and severed the stream by appending markdown text with finish_reason: "stop".
+// This caused Zoo Code's JSON.parse() to throw:
+// "Expected ':' after property name in JSON at position 515 (line 1 column 516)".
+//
+// This test verifies:
+// 1. Category A file writes for table tests stream to completion with 0 false-positive kills.
+// 2. The resulting tool call argument JSON is completely valid and parseable (position 515 intact).
+// 3. When genuine Category B command loops are severed, protocol-safe SSE error framing is emitted,
+//    strictly omitting finish_reason: "stop" to guarantee client JSON parsers never crash.
+func TestProxy_ToolCall_Position515_TruncationReplay(t *testing.T) {
+	t.Run("LiveReplay_NQueens_TableTest_CompletesWithoutFalseKill", func(t *testing.T) {
+		// Exact table test structure generated during the 2026-09-10T08:14:58Z N-Queens session
+		nqueensBoardTestCode := `package board_test
+
+import (
+	"testing"
+	"github.com/example/nqueens/internal/board"
+)
+
+func TestSolveNQueens(t *testing.T) {
+	tests := []struct {
+		name     string
+		n        int
+		expected int
+		hasError bool
+	}{
+		{name: "n=1 single queen", n: 1, expected: 1, hasError: false},
+		{name: "n=2 no solution", n: 2, expected: 0, hasError: false},
+		{name: "n=3 no solution", n: 3, expected: 0, hasError: false},
+		{name: "n=4 two solutions", n: 4, expected: 2, hasError: false},
+		{name: "n=5 ten solutions", n: 5, expected: 10, hasError: false},
+		{name: "n=6 four solutions", n: 6, expected: 4, hasError: false},
+		{name: "n=7 forty solutions", n: 7, expected: 40, hasError: false},
+		{name: "n=8 standard chessboard", n: 8, expected: 92, hasError: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			solutions, err := board.Solve(tc.n)
+			if (err != nil) != tc.hasError {
+				t.Fatalf("expected error: %v, got: %v", tc.hasError, err)
+			}
+			if len(solutions) != tc.expected {
+				t.Fatalf("expected %d solutions, got %d", tc.expected, len(solutions))
+			}
+		})
+	}
+}
+`
+		// Build tool call arguments JSON
+		argsMap := map[string]string{
+			"path":    "internal/board_test.go",
+			"content": nqueensBoardTestCode,
+		}
+		argsBytes, _ := json.Marshal(argsMap)
+		argsStr := string(argsBytes)
+
+		// Slice arguments into 64-byte chunks to simulate realistic LLM streaming
+		var streamChunks []string
+		streamChunks = append(streamChunks, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_nqueens_1","type":"function","function":{"name":"write_to_file","arguments":""}}]}}]}`+"\n\n")
+		for i := 0; i < len(argsStr); i += 64 {
+			end := i + 64
+			if end > len(argsStr) {
+				end = len(argsStr)
+			}
+			chunkArg, _ := json.Marshal(argsStr[i:end])
+			streamChunks = append(streamChunks, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":`+string(chunkArg)+`}}]}}]}`+"\n\n")
+		}
+		streamChunks = append(streamChunks, `data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+		streamChunks = append(streamChunks, "data: [DONE]\n\n")
+
+		mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			for _, chunk := range streamChunks {
+				w.Write([]byte(chunk))
+			}
+		}))
+		defer mockUpstream.Close()
+
+		enabled := true
+		cfg := &contract.Config{
+			Port: 8000,
+			CycleBreaker: contract.CycleBreakerConfig{
+				Enabled:             &enabled,
+				MaxToolTokens:       4096,
+				MaxWriteTokens:      32768,
+				RepetitionWindow:    6,
+				RepetitionThreshold: 3,
+			},
+			Providers: map[string]contract.ProviderConfig{
+				"mock-lumo": {
+					BaseURL: mockUpstream.URL,
+					Type:    "cloud",
+				},
+			},
+			Tiers: []contract.Tier{
+				{
+					Name:     "Lumo Max",
+					Model:    "lumo-max",
+					Provider: "mock-lumo",
+					When:     "true",
+				},
+			},
+		}
+
+		evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+		classifier := router.NewClassifier()
+		sanitizer := router.NewSanitizer()
+		srv := NewServer(cfg, evaluator, classifier, sanitizer)
+		sink := &mockObsSink{records: make(chan telemetry.TurnRecord, 5)}
+		srv.tracker.AddSink(sink)
+
+		reqPayload := `{
+			"model": "lumo-max",
+			"stream": true,
+			"messages": [{"role": "user", "content": "Implement the core board with TDD for N-Queens"}],
+			"tools": [{"type": "function", "function": {"name": "write_to_file"}}]
+		}`
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Expected 200 OK, got: %d", rec.Code)
+		}
+
+		respBody := rec.Body.String()
+
+		// 1. Verify stream was NOT prematurely severed
+		if strings.Contains(respBody, "tool_repetition_loop_detected") || strings.Contains(respBody, "cycle_killer_error") {
+			t.Fatalf("Regression: Table-driven tests were falsely flagged by cycle breaker! Body:\n%s", respBody)
+		}
+
+		// 2. Extract and verify accumulated arguments are 100% valid JSON
+		var accumulatedArgs strings.Builder
+		for _, line := range strings.Split(respBody, "\n") {
+			if strings.HasPrefix(line, "data: ") && !strings.Contains(line, "[DONE]") {
+				var chunk struct {
+					Choices []struct {
+						Delta struct {
+							ToolCalls []struct {
+								Function struct {
+									Arguments string `json:"arguments"`
+								} `json:"function"`
+							} `json:"tool_calls"`
+						} `json:"delta"`
+					} `json:"choices"`
+				}
+				if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &chunk); err == nil {
+					for _, c := range chunk.Choices {
+						for _, tc := range c.Delta.ToolCalls {
+							accumulatedArgs.WriteString(tc.Function.Arguments)
+						}
+					}
+				}
+			}
+		}
+
+		var parsedArgs map[string]string
+		if err := json.Unmarshal([]byte(accumulatedArgs.String()), &parsedArgs); err != nil {
+			t.Fatalf("JSON parse error on tool arguments (position 515 bug reproduced!): %v\nAccumulated: %s", err, accumulatedArgs.String())
+		}
+		if parsedArgs["path"] != "internal/board_test.go" {
+			t.Errorf("Expected path 'internal/board_test.go', got: %s", parsedArgs["path"])
+		}
+		if !strings.Contains(parsedArgs["content"], "TestSolveNQueens") {
+			t.Errorf("Expected content to contain 'TestSolveNQueens'")
+		}
+
+		// 3. Verify telemetry recorded immunity
+		select {
+		case obs := <-sink.records:
+			if obs.CycleBreakerTriggered {
+				t.Errorf("Expected CycleBreakerTriggered == false")
+			}
+			if obs.CycleMaxToolNgramFreq != 0 {
+				t.Errorf("Expected CycleMaxToolNgramFreq == 0 for file write immunity, got: %d", obs.CycleMaxToolNgramFreq)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("Timed out waiting for telemetry sink")
+		}
+	})
+
+	t.Run("SeveredCommandLoop_EmitsProtocolSafeError_NoFinishReasonStop", func(t *testing.T) {
+		// Simulate runaway loop in Category B (command execution)
+		mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			flusher := w.(http.Flusher)
+
+			w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_cmd_1","type":"function","function":{"name":"execute_command","arguments":"echo 'looping' && ls -la && "}}]}}]}` + "\n\n"))
+			flusher.Flush()
+
+			// Exceed repetition threshold
+			for i := 0; i < 15; i++ {
+				w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"echo 'looping' && ls -la && "}}]}}]}` + "\n\n"))
+				flusher.Flush()
+			}
+			w.Write([]byte("data: [DONE]\n\n"))
+			flusher.Flush()
+		}))
+		defer mockUpstream.Close()
+
+		enabled := true
+		cfg := &contract.Config{
+			Port: 8000,
+			CycleBreaker: contract.CycleBreakerConfig{
+				Enabled:             &enabled,
+				RepetitionThreshold: 3,
+				RepetitionWindow:    6,
+				MaxToolTokens:       4096,
+			},
+			Providers: map[string]contract.ProviderConfig{
+				"mock-lumo": {
+					BaseURL: mockUpstream.URL,
+					Type:    "cloud",
+				},
+			},
+			Tiers: []contract.Tier{
+				{
+					Name:     "Lumo Max",
+					Model:    "lumo-max",
+					Provider: "mock-lumo",
+					When:     "true",
+				},
+			},
+		}
+
+		evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+		classifier := router.NewClassifier()
+		sanitizer := router.NewSanitizer()
+		srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+		reqPayload := `{
+			"model": "lumo-max",
+			"stream": true,
+			"messages": [{"role": "user", "content": "Run checks"}],
+			"tools": [{"type": "function", "function": {"name": "execute_command"}}]
+		}`
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		respBody := rec.Body.String()
+
+		// Verify protocol-safe error was emitted
+		if !strings.Contains(respBody, "tool_cycle_detected") {
+			t.Errorf("Expected tool_cycle_detected error code in severed response, got:\n%s", respBody)
+		}
+		if !strings.Contains(respBody, "cycle_killer_error") {
+			t.Errorf("Expected cycle_killer_error type in severed response")
+		}
+		// CRITICAL: finish_reason: "stop" must NEVER be emitted on severed tool calls!
+		if strings.Contains(respBody, `"finish_reason":"stop"`) {
+			t.Errorf("Protocol violation: finish_reason 'stop' emitted on severed tool call! Causes client JSON.parse() crashes.")
+		}
+	})
+}
+
