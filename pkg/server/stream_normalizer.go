@@ -644,6 +644,10 @@ func (s *StreamNormalizer) Close() error {
 		shield.PutTailBuffer(s.tailBuffer)
 		s.tailBuffer = nil
 	}
+	if s.cycleBreaker != nil {
+		shield.PutCycleBreaker(s.cycleBreaker)
+		s.cycleBreaker = nil
+	}
 	return err
 }
 

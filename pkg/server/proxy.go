@@ -1238,10 +1238,14 @@ func (s *Server) dispatchTier(
 							reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
 							reqCtx.CycleToolTokens = cb.ToolTokens()
 							reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
+							cbMaxRetries := cb.MaxRetries()
+							cbCorrectionPrompt := cb.CorrectionPrompt()
+							shield.PutCycleBreaker(cb)
+
 							if reqCtx.CycleBreakerTriggered {
-								if reqCtx.CycleRetries < cb.MaxRetries() {
+								if reqCtx.CycleRetries < cbMaxRetries {
 									reqCtx.CycleRetries++
-									injectedBody := injectCorrectionPrompt(body, cb.CorrectionPrompt())
+									injectedBody := injectCorrectionPrompt(body, cbCorrectionPrompt)
 									s.dispatchTier(w, r, reqCtx, targetTier, injectedBody, startTime, reqLogger, false)
 									return
 								}

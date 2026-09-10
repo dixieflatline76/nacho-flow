@@ -762,3 +762,93 @@ func BenchmarkCycleBreaker_ProcessToolDelta_FileWrite(b *testing.B) {
 		cb.ProcessToolDelta(chunk, ToolCategoryFileWrite)
 	}
 }
+
+func TestCycleBreaker_PoolAcquireRelease_CleanState(t *testing.T) {
+	enabled := true
+	cfg1 := &contract.CycleBreakerConfig{
+		Enabled:        &enabled,
+		MaxProseTokens: 1000,
+		MaxWriteTokens: 20000,
+	}
+
+	cb1 := GetCycleBreaker(cfg1)
+	cb1.ProcessDelta("word1 word2 word3 word4 word5 word6", false)
+	cb1.ProcessDelta("thinking step 1 2 3 4 5", true)
+	cb1.ProcessToolDelta("cmd arg1 arg2", ToolCategoryCommand)
+
+	if cb1.ProseTokens() == 0 || cb1.ThinkingTokens() == 0 || cb1.ToolTokens() == 0 {
+		t.Fatalf("expected non-zero counters before release")
+	}
+
+	PutCycleBreaker(cb1)
+
+	// Re-acquire from pool with different config
+	disabled := false
+	cfg2 := &contract.CycleBreakerConfig{
+		Enabled:        &disabled,
+		MaxProseTokens: 500,
+		MaxWriteTokens: 16000,
+	}
+	cb2 := GetCycleBreaker(cfg2)
+	defer PutCycleBreaker(cb2)
+
+	if cb2.IsEnabled() {
+		t.Errorf("expected cb2.IsEnabled() == false")
+	}
+	if cb2.MaxWriteTokens() != 16000 {
+		t.Errorf("expected MaxWriteTokens == 16000, got %d", cb2.MaxWriteTokens())
+	}
+	if cb2.ProseTokens() != 0 {
+		t.Errorf("expected ProseTokens == 0 after pool reset, got %d", cb2.ProseTokens())
+	}
+	if cb2.ThinkingTokens() != 0 {
+		t.Errorf("expected ThinkingTokens == 0 after pool reset, got %d", cb2.ThinkingTokens())
+	}
+	if cb2.ToolTokens() != 0 {
+		t.Errorf("expected ToolTokens == 0 after pool reset, got %d", cb2.ToolTokens())
+	}
+	if cb2.MaxNgramFreq() != 0 {
+		t.Errorf("expected MaxNgramFreq == 0 after pool reset, got %d", cb2.MaxNgramFreq())
+	}
+}
+
+func TestCycleBreaker_Reset_ZeroAllocations(t *testing.T) {
+	enabled := true
+	cb := GetCycleBreaker(&contract.CycleBreakerConfig{Enabled: &enabled})
+	defer PutCycleBreaker(cb)
+
+	// Populate entries in all lanes
+	cb.ProcessDelta("alpha beta gamma delta epsilon zeta eta theta", false)
+	cb.ProcessDelta("think one think two think three think four", true)
+	cb.ProcessToolDelta("exec command arg1 arg2 arg3", ToolCategoryCommand)
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		cb.Reset()
+	})
+
+	if allocs > 0 {
+		t.Fatalf("expected 0 allocs on cb.Reset() in-place map clear, got %f", allocs)
+	}
+}
+
+func TestCycleBreaker_PutCycleBreaker_NilSafe(t *testing.T) {
+	// Should not panic on nil
+	PutCycleBreaker(nil)
+}
+
+func BenchmarkCycleBreaker_PoolAcquireRelease(b *testing.B) {
+	enabled := true
+	cfg := &contract.CycleBreakerConfig{
+		Enabled:        &enabled,
+		MaxProseTokens: 4096,
+		MaxWriteTokens: 32768,
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		cb := GetCycleBreaker(cfg)
+		PutCycleBreaker(cb)
+	}
+}
+
