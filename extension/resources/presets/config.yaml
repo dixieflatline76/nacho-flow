@@ -88,7 +88,11 @@ cycle_killer:
   kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
   kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
   # 🛡️ Plan Mode Guard: When agent declares 0 write tools, Kickstart automatically suspends idle escalation
-  kickstart_write_tools:            # Tools that count as "real progress" (read-only tools are ignored)
+  # 🛡️ File Write & Progress Tools: Category A immunity & Kickstart progress
+  write_tools:
+    - editor
+    - str_replace_editor
+    - text_editor
     - write_to_file
     - replace_in_file
     - replace_file_content
@@ -104,11 +108,33 @@ cycle_killer:
     - patch_file
     - run_command
     - run_terminal_command
+    - run_commands
     - terminal
     - bash
     - exec
+  kickstart_write_tools:            # Preserved for backward compatibility
     - editor
+    - str_replace_editor
+    - text_editor
+    - write_to_file
+    - replace_in_file
+    - replace_file_content
+    - multi_replace_file_content
+    - execute_command
+    - apply_diff
+    - insert_code_block
+    - create_file
+    - create_or_update_file
+    - write_file
+    - edit_file
+    - delete_file
+    - patch_file
+    - run_command
+    - run_terminal_command
     - run_commands
+    - terminal
+    - bash
+    - exec
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
