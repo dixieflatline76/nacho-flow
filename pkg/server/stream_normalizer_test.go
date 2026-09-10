@@ -918,3 +918,49 @@ func TestStreamNormalizer_ToolCall_CycleBreaking(t *testing.T) {
 		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
 	}
 }
+
+func TestStreamNormalizer_ClineEditor_ImmunityToFileWrites(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// Repeating table-driven test boilerplate that previously caused false-positive cycle kills in Cline v4
+	tableTestBoilerplate := "for _, tt := range tests { t.Run(tt.name, func(t *testing.T) { "
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"editor\",\"arguments\":\"{\\\"path\\\":\\\"solver_test.go\\\",\\\"file_text\\\":\\\"\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: [DONE]\n\n",
+		tableTestBoilerplate, tableTestBoilerplate, tableTestBoilerplate,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	for {
+		_, err := norm.Read(buf)
+		if v, _ := norm.CheckCycleViolation(); v {
+			violated = true
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if violated {
+		t.Fatalf("expected Cline editor table-driven tests write to be immune from cycle violation, but was severed")
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
+	}
+}
+

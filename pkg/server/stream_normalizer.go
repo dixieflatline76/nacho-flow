@@ -543,14 +543,7 @@ func (s *StreamNormalizer) recordProse(text string) {
 }
 
 func isStructuredWriteTool(name string) bool {
-	switch strings.ToLower(name) {
-	case "write_to_file", "replace_file_content", "multi_replace_file_content",
-		"apply_diff", "create_file", "edit_file", "write_file", "save_file",
-		"create_or_update_file", "patch_file":
-		return true
-	default:
-		return false
-	}
+	return router.IsBuiltinWriteTool(name)
 }
 
 // recordToolDelta feeds tool argument tokens into character counting and the cycle breaker tool lane.
@@ -585,8 +578,15 @@ func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
 			}
 			args := s.toolChunksScratch[i].Function.Arguments
 			if args != "" {
-				if s.currentToolCategory == shield.ToolCategoryCommand && router.DetectShellWrite(args) {
-					s.currentToolCategory = shield.ToolCategoryFileWrite
+				if s.currentToolCategory == shield.ToolCategoryCommand {
+					if router.DetectShellWrite(args) ||
+						strings.Contains(args, "\"file_text\"") ||
+						strings.Contains(args, "\"diff\"") ||
+						strings.Contains(args, "\"new_str\"") ||
+						strings.Contains(args, "\"command\":\"create\"") ||
+						strings.Contains(args, "\"command\": \"create\"") {
+						s.currentToolCategory = shield.ToolCategoryFileWrite
+					}
 				}
 				s.recordToolDelta(args)
 			}

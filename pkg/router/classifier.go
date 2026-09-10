@@ -72,7 +72,7 @@ func (c *RequestClassifier) GetErrorSignatures() []string {
 
 // SetKickstartWriteTools configures custom write-tool names from config.yaml.
 func (c *RequestClassifier) SetKickstartWriteTools(tools []string) {
-	if len(tools) == 0 {
+	if tools == nil {
 		c.writeToolsLookup.Store(nil)
 		return
 	}
@@ -289,8 +289,14 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 				reqCtx.InteractiveTool = fnName
 			}
 
-			if !reqCtx.HasWriteCapability && writeLookup != nil && writeLookup[strings.ToLower(strings.TrimSpace(fnName))] {
-				reqCtx.HasWriteCapability = true
+			if !reqCtx.HasWriteCapability {
+				if writeLookup != nil {
+					if writeLookup[strings.ToLower(strings.TrimSpace(fnName))] {
+						reqCtx.HasWriteCapability = true
+					}
+				} else if IsBuiltinWriteTool(fnName) {
+					reqCtx.HasWriteCapability = true
+				}
 			}
 		}
 	}
@@ -397,7 +403,13 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 					fnName = tc.Function.Name
 				}
 				fnLower := strings.ToLower(strings.TrimSpace(fnName))
-				if writeTools != nil && writeTools[fnLower] {
+				isWrite := false
+				if writeTools != nil {
+					isWrite = writeTools[fnLower]
+				} else {
+					isWrite = IsBuiltinWriteTool(fnLower)
+				}
+				if isWrite {
 					if tc.ID != "" {
 						writeCallIDs = append(writeCallIDs, tc.ID)
 					}
@@ -432,7 +444,13 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 			for _, p := range msg.Content.Parts {
 				if p.Type == "tool_use" {
 					pLower := strings.ToLower(strings.TrimSpace(p.Name))
-					if writeTools != nil && writeTools[pLower] {
+					isWrite := false
+					if writeTools != nil {
+						isWrite = writeTools[pLower]
+					} else {
+						isWrite = IsBuiltinWriteTool(pLower)
+					}
+					if isWrite {
 						if p.ID != "" {
 							writeCallIDs = append(writeCallIDs, p.ID)
 						}
@@ -765,6 +783,23 @@ func isShellTool(name string) bool {
 	default:
 		return false
 	}
+}
+
+// IsBuiltinWriteTool checks if the tool name represents a structured file writing or editing tool.
+func IsBuiltinWriteTool(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	switch lower {
+	case "editor", "replace_in_file", "str_replace_editor", "text_editor",
+		"write_to_file", "replace_file_content", "multi_replace_file_content",
+		"apply_diff", "create_file", "edit_file", "write_file", "save_file",
+		"create_or_update_file", "patch_file", "put_file", "reapply", "insert_content":
+		return true
+	}
+	if strings.HasSuffix(lower, "_editor") || strings.HasPrefix(lower, "edit_") ||
+		strings.Contains(lower, "write") || strings.Contains(lower, "patch") || strings.Contains(lower, "diff") {
+		return true
+	}
+	return false
 }
 
 // extractCommandFromRaw pulls the shell command string from tool call argument payloads.

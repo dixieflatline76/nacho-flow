@@ -208,7 +208,13 @@ func NewServerWithTelemetryAndRegistry(
 	if classWithSigs, ok := class.(interface{ SetErrorSignatures([]string) }); ok {
 		classWithSigs.SetErrorSignatures(cfg.AgentShield.ErrorSignatures)
 	}
-	writeTools := cfg.CycleKiller.KickstartWriteTools
+	writeTools := cfg.CycleKiller.WriteTools
+	if len(writeTools) == 0 {
+		writeTools = cfg.CycleKiller.KickstartWriteTools
+	}
+	if len(writeTools) == 0 && len(cfg.CycleBreaker.WriteTools) > 0 {
+		writeTools = cfg.CycleBreaker.WriteTools
+	}
 	if len(writeTools) == 0 && len(cfg.CycleBreaker.KickstartWriteTools) > 0 {
 		writeTools = cfg.CycleBreaker.KickstartWriteTools
 	}

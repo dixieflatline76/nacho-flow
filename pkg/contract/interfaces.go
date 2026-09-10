@@ -104,6 +104,7 @@ type CycleBreakerConfig struct {
 	CorrectionPrompt            string   `yaml:"correction_prompt,omitempty" json:"correction_prompt,omitempty"`
 	KickstartThreshold          int      `yaml:"kickstart_threshold,omitempty" json:"kickstart_threshold,omitempty"`
 	KickstartWriteOnly          bool     `yaml:"kickstart_write_only,omitempty" json:"kickstart_write_only,omitempty"`
+	WriteTools                  []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
 	KickstartWriteTools         []string `yaml:"kickstart_write_tools,omitempty" json:"kickstart_write_tools,omitempty"`
 	KickstartPrompt             string   `yaml:"kickstart_prompt,omitempty" json:"kickstart_prompt,omitempty"`
 	KickstartMaxCount           int      `yaml:"kickstart_max_count,omitempty" json:"kickstart_max_count,omitempty"`
