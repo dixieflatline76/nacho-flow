@@ -69,11 +69,11 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 <!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **25393.6 req/s** | 2.00 ms | 8.47 ms | 116.4 MB |
-| **100 workers** | 50,000 | **100.0%** | **22806.7 req/s** | 3.41 ms | 21.24 ms | 117.7 MB |
-| **250 workers** | 75,000 | **100.0%** | **27632.8 req/s** | 8.01 ms | 30.01 ms | 112.8 MB |
-| **500 workers** | 100,000 | **100.0%** | **24616.0 req/s** | 16.05 ms | 82.89 ms | 162.3 MB |
-| **1000 workers** | 100,000 | **100.0%** | **23902.7 req/s** | 39.04 ms | 81.11 ms | 110.4 MB |
+| **50 workers** | 25,000 | **100.0%** | **25442.1 req/s** | 2.01 ms | 8.70 ms | 123.9 MB |
+| **100 workers** | 50,000 | **100.0%** | **22844.8 req/s** | 3.29 ms | 20.94 ms | 94.3 MB |
+| **250 workers** | 75,000 | **100.0%** | **26356.8 req/s** | 8.04 ms | 32.44 ms | 112.1 MB |
+| **500 workers** | 100,000 | **100.0%** | **21857.1 req/s** | 18.05 ms | 82.80 ms | 220.1 MB |
+| **1000 workers** | 100,000 | **100.0%** | **23662.6 req/s** | 38.53 ms | 83.84 ms | 266.9 MB |
 <!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
@@ -92,10 +92,10 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 <!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 27712.9 req/s | 26654.7 req/s | **-3.8%** | **+0.33 ms** (0.00ms vs 0.33ms) | +0.12 ms |
-| **50 workers** | 28693.9 req/s | 28265.9 req/s | **-1.5%** | **+0.00 ms** (2.00ms vs 2.00ms) | +0.07 ms |
-| **100 workers** | 27972.7 req/s | 26956.2 req/s | **-3.6%** | **+0.54 ms** (2.51ms vs 3.05ms) | -1.88 ms |
-| **200 workers** | 28374.7 req/s | 28023.2 req/s | **-1.2%** | **+0.04 ms** (6.00ms vs 6.03ms) | -3.10 ms |
+| **25 workers** | 27211.2 req/s | 26335.6 req/s | **-3.2%** | **-0.51 ms** (0.51ms vs 0.00ms) | +0.45 ms |
+| **50 workers** | 28478.9 req/s | 27386.9 req/s | **-3.8%** | **+0.00 ms** (2.00ms vs 2.00ms) | +1.17 ms |
+| **100 workers** | 27435.5 req/s | 25954.6 req/s | **-5.4%** | **+0.65 ms** (2.51ms vs 3.16ms) | -2.22 ms |
+| **200 workers** | 28351.1 req/s | 27398.6 req/s | **-3.4%** | **+0.16 ms** (5.99ms vs 6.15ms) | -3.80 ms |
 <!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 

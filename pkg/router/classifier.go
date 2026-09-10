@@ -12,11 +12,10 @@ import (
 )
 
 type RequestClassifier struct {
-	mu                  sync.RWMutex
-	estimator           *TokenEstimator
-	errorSignatures     []string
-	kickstartWriteTools []string
-	writeToolsLookup    atomic.Pointer[map[string]bool]
+	estimator        atomic.Pointer[TokenEstimator]
+	errorSignatures  atomic.Pointer[[]string]
+	writeToolsLookup atomic.Pointer[map[string]bool]
+	initMu           sync.Mutex
 }
 
 // defaultAgentErrorSignatures are fallback error patterns injected by agent clients
@@ -45,45 +44,38 @@ func NewClassifierWithEstimator(e *TokenEstimator) contract.Classifier {
 	if e == nil {
 		e = NewTokenEstimator()
 	}
-	return &RequestClassifier{
-		estimator: e,
-	}
+	c := &RequestClassifier{}
+	c.estimator.Store(e)
+	return c
 }
 
 // SetErrorSignatures configures custom error patterns from config.yaml.
 func (c *RequestClassifier) SetErrorSignatures(signatures []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if len(signatures) == 0 {
-		c.errorSignatures = nil
+		c.errorSignatures.Store(nil)
 		return
 	}
-	c.errorSignatures = make([]string, len(signatures))
-	copy(c.errorSignatures, signatures)
+	copied := make([]string, len(signatures))
+	copy(copied, signatures)
+	c.errorSignatures.Store(&copied)
 }
 
 // GetErrorSignatures returns active error signatures or default fallback.
+// Completely lock-free using RCU atomic pointer load.
 func (c *RequestClassifier) GetErrorSignatures() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if len(c.errorSignatures) == 0 {
+	ptr := c.errorSignatures.Load()
+	if ptr == nil || len(*ptr) == 0 {
 		return defaultAgentErrorSignatures
 	}
-	return c.errorSignatures
+	return *ptr
 }
 
 // SetKickstartWriteTools configures custom write-tool names from config.yaml.
 func (c *RequestClassifier) SetKickstartWriteTools(tools []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if len(tools) == 0 {
-		c.kickstartWriteTools = nil
 		c.writeToolsLookup.Store(nil)
 		return
 	}
-	c.kickstartWriteTools = make([]string, len(tools))
-	copy(c.kickstartWriteTools, tools)
-
 	lookup := make(map[string]bool, len(tools))
 	for _, t := range tools {
 		lookup[strings.ToLower(strings.TrimSpace(t))] = true
@@ -103,20 +95,19 @@ func (c *RequestClassifier) GetKickstartWriteTools() map[string]bool {
 }
 
 // GetEstimator returns the active TokenEstimator instance for dynamic calibration.
+// Completely lock-free on the hot path via atomic pointer load.
 func (c *RequestClassifier) GetEstimator() *TokenEstimator {
-	c.mu.RLock()
-	if c.estimator != nil {
-		defer c.mu.RUnlock()
-		return c.estimator
+	if est := c.estimator.Load(); est != nil {
+		return est
 	}
-	c.mu.RUnlock()
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.estimator == nil {
-		c.estimator = NewTokenEstimator()
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+	if est := c.estimator.Load(); est != nil {
+		return est
 	}
-	return c.estimator
+	est := NewTokenEstimator()
+	c.estimator.Store(est)
+	return est
 }
 
 type classifyPayload struct {

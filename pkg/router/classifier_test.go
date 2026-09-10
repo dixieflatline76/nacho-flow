@@ -474,7 +474,7 @@ func TestScanTrailingMessages_WriteProgress(t *testing.T) {
 }
 
 func TestClassify_HasWriteCapability(t *testing.T) {
-	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c := NewClassifier().(*RequestClassifier)
 	c.SetKickstartWriteTools([]string{"write_to_file", "replace_in_file", "execute_command"})
 
 	// Plan Mode: only read tools -> HasWriteCapability = false
@@ -524,7 +524,7 @@ func TestClassify_HasWriteCapability(t *testing.T) {
 	}
 
 	// Empty write tools config -> HasWriteCapability stays false (default builtins or empty)
-	c2 := &RequestClassifier{estimator: NewTokenEstimator()}
+	c2 := NewClassifier().(*RequestClassifier)
 	c2.SetKickstartWriteTools([]string{})
 	ctx4, _ := c2.Classify([]byte(codePayload))
 	if ctx4.HasWriteCapability {
@@ -535,7 +535,7 @@ func TestClassify_HasWriteCapability(t *testing.T) {
 // TestClassifier_Phase1B_OverflowParallelWriteCalls tests that more than 8 parallel tool calls
 // do not get silently dropped and hasWriteProgress correctly evaluates to true.
 func TestClassifier_Phase1B_OverflowParallelWriteCalls(t *testing.T) {
-	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c := NewClassifier().(*RequestClassifier)
 	c.SetKickstartWriteTools([]string{"write_to_file", "execute_command"})
 
 	// Assistant issues 12 parallel write calls (call_1 to call_12)
@@ -587,7 +587,7 @@ func TestClassifier_Phase1B_OverflowParallelWriteCalls(t *testing.T) {
 
 // TestClassifier_Phase1A_ConcurrentWriteToolsAccess tests lock-free reads while write tools reload concurrently.
 func TestClassifier_Phase1A_ConcurrentWriteToolsAccess(t *testing.T) {
-	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c := NewClassifier().(*RequestClassifier)
 	c.SetKickstartWriteTools([]string{"write_to_file", "replace_in_file"})
 
 	done := make(chan struct{})
@@ -633,7 +633,7 @@ func TestClassifier_Phase1A_ConcurrentWriteToolsAccess(t *testing.T) {
 // to verify deferred trailing message parsing correctly extracts prompt, error signatures,
 // and tool signals while only inspecting the last 8 messages.
 func TestClassifier_Phase3_LongConversationDeferredScanning(t *testing.T) {
-	c := &RequestClassifier{estimator: NewTokenEstimator()}
+	c := NewClassifier().(*RequestClassifier)
 	c.SetKickstartWriteTools([]string{"write_to_file", "execute_command"})
 
 	var messages []map[string]interface{}
@@ -1164,3 +1164,79 @@ func TestClassify_ShellWriteProgress_SignalSeparation(t *testing.T) {
 		t.Errorf("expected HasShellWrite=false for structured tool")
 	}
 }
+
+func TestClassifier_RCU_ErrorSignatures_Race(t *testing.T) {
+	c := NewClassifier().(*RequestClassifier)
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+
+	// 20 parallel readers calling GetErrorSignatures and GetEstimator
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					sigs := c.GetErrorSignatures()
+					if len(sigs) == 0 {
+						t.Errorf("expected non-empty signatures")
+					}
+					est := c.GetEstimator()
+					if est == nil {
+						t.Errorf("expected non-nil estimator")
+					}
+				}
+			}
+		}()
+	}
+
+	// 1 writer continually swapping error signatures
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		customA := []string{"CUSTOM_A", "CUSTOM_B"}
+		customB := []string{"CUSTOM_C"}
+		for i := 0; i < 100; i++ {
+			if i%3 == 0 {
+				c.SetErrorSignatures(customA)
+			} else if i%3 == 1 {
+				c.SetErrorSignatures(customB)
+			} else {
+				c.SetErrorSignatures(nil)
+			}
+			time.Sleep(500 * time.Microsecond)
+		}
+	}()
+
+	time.Sleep(60 * time.Millisecond)
+	close(done)
+	wg.Wait()
+}
+
+func BenchmarkClassifier_GetErrorSignatures(b *testing.B) {
+	c := NewClassifier().(*RequestClassifier)
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = c.GetErrorSignatures()
+		}
+	})
+}
+
+func BenchmarkClassifier_GetEstimator(b *testing.B) {
+	c := NewClassifier().(*RequestClassifier)
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = c.GetEstimator()
+		}
+	})
+}
+
