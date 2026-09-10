@@ -173,14 +173,14 @@ tiers:
     when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (Devstral Small 24B) - 100% VRAM Offload
-  # Devstral handles Cline's XML tool format natively (vs Gemma = JSON function calling).
-  # Lower token ceiling (12k) for tighter VRAM on 16GB RX 6900 XT.
+  # TIER 1: Local GPU Workhorse (Qwen 2.5 Coder Cline 14B) - 100% VRAM Offload
+  # Fine-tuned specifically for Cline's tool calling and diff replacement format.
+  # Fast inference (~35-40 tok/s on RX 6900 XT).
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
-    model: "devstral-small-2:24b"
-    when: "Tokens < 12000 && Retries < 2"
+    model: "maryasov/qwen2.5-coder-cline:14b"
+    when: "Tokens < 16000 && Retries < 2"
     strip_images: false
     max_context: 32000
 

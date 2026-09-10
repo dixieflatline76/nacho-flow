@@ -1,7 +1,13 @@
 # =============================================================================
-# 🌮 NACHO FLOW CONFIGURATION — ZOO CODE OPTIMIZED (2026 SUB-CENT TIER)
-# Zoo Code uses OpenAI-compatible JSON function calling.
-# Pipeline: Local GPU ($0) -> DeepSeek V4 Flash ($0.05/M) -> Gemini 3.7 Flash -> Sonnet 5
+# 🌮 NACHO FLOW: CLINE-OPTIMIZED CONFIGURATION
+# Tuned for Cline's diff-based edit architecture (SdkDiffEditCoordinator)
+#
+# KEY DIFFERENCES FROM ZOO CODE CONFIG:
+#   - Local Tier 1 uses Devstral Small 24B (handles Cline's XML tool format natively)
+#   - Relaxed Cycle Killer prose/thinking limits for Cline's XML tool format (6144 tokens)
+#   - Lower local token threshold (12k vs 20k) to escalate before large diff generation
+#
+# USAGE: nacho-flow -config config.cline.yaml
 # =============================================================================
 
 port: 8000
@@ -11,10 +17,19 @@ host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.
 # 🔌 LLM PROVIDERS
 # =============================================================================
 providers:
+  # ---------------------------------------------------------------------------
+  # 1. Local GPU Provider (Ollama / vLLM / SGLang)
+  # - Cost: $0.00 / 1M Tokens (100% Free Local Compute)
+  # ---------------------------------------------------------------------------
   ollama:
     base_url: "http://127.0.0.1:11434"
     type: "local"
 
+  # ---------------------------------------------------------------------------
+  # 2. OpenRouter Cloud Gateway
+  # - Role: Global routing to 300+ frontier and open-weight cloud models.
+  # - Secret: Resolves ENV_OPENROUTER_API_KEY from environment.
+  # ---------------------------------------------------------------------------
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
@@ -69,17 +84,19 @@ agent_shield:
     - "tool execution error"
 
 # =============================================================================
-# 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
-# In-Flight Stream Defense that murders infinite loops & monologue traps in <3s
+# 🎸 CYCLE KILLER — CLINE-TUNED
+# Cline embeds tool calls as XML inside prose, so models legitimately produce
+# longer prose blocks before tool tags appear. These limits are relaxed vs
+# the Zoo Code defaults to avoid false-positive stream severing.
 # =============================================================================
 cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
-  max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
+  max_prose_tokens: 6144            # Cline XML needs more prose runway than JSON calling
   max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
   max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
   repetition_window: 6              # Sliding n-gram window size (words) for loop detection
-  repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
-  thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks (higher = more lenient)
+  repetition_threshold: 4           # Slightly higher threshold: Cline XML is naturally repetitive
+  thinking_repetition_threshold: 6  # Lenient reasoning repetition for deep architecture plans
   max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
   model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
   retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
@@ -87,7 +104,6 @@ cycle_killer:
   kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
   kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
   kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
-  # 🛡️ Plan Mode Guard: When agent declares 0 write tools, Kickstart automatically suspends idle escalation
   # 🛡️ File Write & Progress Tools: Category A immunity & Kickstart progress
   write_tools:
     - editor
@@ -157,12 +173,14 @@ tiers:
     when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (100% Free VRAM Offload)
+  # TIER 1: Local GPU Workhorse (Qwen 2.5 Coder Cline 14B) - 100% VRAM Offload
+  # Fine-tuned specifically for Cline's tool calling and diff replacement format.
+  # Fast inference (~35-40 tok/s on RX 6900 XT).
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
-    model: "gemma4:12b-it-qat"
-    when: "Tokens < 20000 && Retries < 2"
+    model: "maryasov/qwen2.5-coder-cline:14b"
+    when: "Tokens < 16000 && Retries < 2"
     strip_images: false
     max_context: 32000
 
@@ -182,7 +200,7 @@ tiers:
   - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.7-flash"
-    when: "Tokens < 260000 && Retries < 5"
+    when: "Tokens < 260000 && Retries < 4"
 
   # ---------------------------------------------------------------------------
   # TIER 4: Large Context Synthesis (Gemini 3.1 Pro)
@@ -190,7 +208,7 @@ tiers:
   - name: "Tier 4: Large Context Synthesis (Gemini 3.1 Pro)"
     provider: "openrouter"
     model: "google/gemini-3.1-pro-preview"
-    when: "Retries < 7"
+    when: "Retries < 6"
 
   # ---------------------------------------------------------------------------
   # TIER 5: Frontier Powerhouse (Claude Sonnet 5 — $2.00/$10.00 per 1M)
@@ -198,7 +216,7 @@ tiers:
   - name: "Tier 5: Frontier Powerhouse (Claude Sonnet 5)"
     provider: "openrouter"
     model: "anthropic/claude-sonnet-5"
-    when: "Retries < 9"
+    when: "Retries < 8"
 
   # ---------------------------------------------------------------------------
   # TIER 6: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
