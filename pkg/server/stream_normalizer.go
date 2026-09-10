@@ -383,9 +383,7 @@ func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
 	raw := choice.Delta.Content
 	if s.pendingTagClosing {
 		s.pendingTagClosing = false
-		if strings.HasPrefix(raw, ">") {
-			raw = strings.TrimPrefix(raw, ">")
-		}
+		raw = strings.TrimPrefix(raw, ">")
 	}
 
 	if strings.HasSuffix(raw, "<channel|") || strings.HasSuffix(raw, "<|channel|") || strings.HasSuffix(raw, "<|channel") {

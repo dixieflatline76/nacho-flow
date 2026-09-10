@@ -1200,11 +1200,12 @@ func TestClassifier_RCU_ErrorSignatures_Race(t *testing.T) {
 		customA := []string{"CUSTOM_A", "CUSTOM_B"}
 		customB := []string{"CUSTOM_C"}
 		for i := 0; i < 100; i++ {
-			if i%3 == 0 {
+			switch i % 3 {
+			case 0:
 				c.SetErrorSignatures(customA)
-			} else if i%3 == 1 {
+			case 1:
 				c.SetErrorSignatures(customB)
-			} else {
+			default:
 				c.SetErrorSignatures(nil)
 			}
 			time.Sleep(500 * time.Microsecond)

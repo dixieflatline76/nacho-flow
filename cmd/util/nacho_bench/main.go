@@ -333,7 +333,9 @@ func replaceTagContent(doc, startTag, endTag, replacement string) string {
 			break
 		}
 		result.WriteString(remaining[:startIdx+len(startTag)])
-		result.WriteString("\n" + strings.TrimSpace(replacement) + "\n")
+		result.WriteByte('\n')
+		result.WriteString(strings.TrimSpace(replacement))
+		result.WriteByte('\n')
 		remaining = remaining[endIdx:]
 		result.WriteString(endTag)
 		remaining = remaining[len(endTag):]

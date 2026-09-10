@@ -756,9 +756,8 @@ func BenchmarkCycleBreaker_ProcessToolDelta_FileWrite(b *testing.B) {
 	})
 
 	chunk := `{"name": "board_test.go", "content": "func TestBoard(t *testing.T) { ... }"}`
-	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		cb.ProcessToolDelta(chunk, ToolCategoryFileWrite)
 	}
 }
@@ -844,9 +843,8 @@ func BenchmarkCycleBreaker_PoolAcquireRelease(b *testing.B) {
 		MaxWriteTokens: 32768,
 	}
 
-	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		cb := GetCycleBreaker(cfg)
 		PutCycleBreaker(cb)
 	}

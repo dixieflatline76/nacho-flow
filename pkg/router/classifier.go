@@ -193,7 +193,8 @@ func (p *classifyContentPart) UnmarshalJSON(data []byte) error {
 	if len(p.Content) > 0 {
 		trimmed := bytes.TrimSpace(p.Content)
 		if len(trimmed) > 0 {
-			if trimmed[0] == '"' {
+			switch trimmed[0] {
+			case '"':
 				var s string
 				if err := json.Unmarshal(trimmed, &s); err == nil {
 					if p.Text == "" {
@@ -202,7 +203,7 @@ func (p *classifyContentPart) UnmarshalJSON(data []byte) error {
 						p.Text = p.Text + " " + s
 					}
 				}
-			} else if trimmed[0] == '[' {
+			case '[':
 				var blocks []struct {
 					Type string `json:"type"`
 					Text string `json:"text"`

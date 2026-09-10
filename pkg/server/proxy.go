@@ -1096,7 +1096,7 @@ func (s *Server) dispatchTier(
 								"code":    "tool_cycle_detected",
 							},
 						})
-						_, _ = w.Write([]byte(fmt.Sprintf("data: %s\n\ndata: [DONE]\n\n", string(errPayload))))
+						_, _ = w.Write(fmt.Appendf(nil, "data: %s\n\ndata: [DONE]\n\n", errPayload))
 					} else {
 						noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
 						escapedNotice, _ := json.Marshal(noticeText)

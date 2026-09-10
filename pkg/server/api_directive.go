@@ -78,7 +78,7 @@ func (s *Server) getDirectiveFilePath() (string, error) {
 	return contract.GetDirectiveFilePath()
 }
 
-func (s *Server) handleShutdownDirective(w http.ResponseWriter, req DirectiveRequest) {
+func (s *Server) handleShutdownDirective(w http.ResponseWriter, _ DirectiveRequest) {
 	resp := DirectiveResponse{
 		Status:          "acknowledged",
 		Action:          contract.DirectiveActionShutdown,
@@ -103,7 +103,7 @@ func (s *Server) handleShutdownDirective(w http.ResponseWriter, req DirectiveReq
 	}()
 }
 
-func (s *Server) handlePurgeAllLogsDirective(w http.ResponseWriter, req DirectiveRequest) {
+func (s *Server) handlePurgeAllLogsDirective(w http.ResponseWriter, _ DirectiveRequest) {
 	directivePath, err := s.getDirectiveFilePath()
 	if err != nil {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
@@ -245,7 +245,7 @@ func (s *Server) handleResetCircuitsDirective(w http.ResponseWriter, req Directi
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func (s *Server) handleRecalculateStatsDirective(w http.ResponseWriter, req DirectiveRequest) {
+func (s *Server) handleRecalculateStatsDirective(w http.ResponseWriter, _ DirectiveRequest) {
 	path := s.trafficLogPath
 	if path == "" {
 		path = "logs/traffic.jsonl"

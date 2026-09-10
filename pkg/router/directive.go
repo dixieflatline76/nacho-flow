@@ -88,11 +88,12 @@ func ExtractDirective(prompt string) (DirectiveInfo, string) {
 		info.ForcedTier = "reasoning"
 	case "kickstart":
 		vLower := strings.ToLower(val)
-		if vLower == "off" || vLower == "false" || vLower == "0" {
+		switch vLower {
+		case "off", "false", "0":
 			info.Directive = "kickstart-off"
-		} else if vLower == "on" || vLower == "true" || vLower == "1" {
+		case "on", "true", "1":
 			info.Directive = "kickstart-on"
-		} else {
+		default:
 			info.Directive = "unknown"
 			info.Arg = key + "=" + val
 			info.IsMeta = true
@@ -103,11 +104,12 @@ func ExtractDirective(prompt string) (DirectiveInfo, string) {
 		info.Directive = "kickstart-on"
 	case "cyclekiller", "cycle-killer", "cycle_killer":
 		vLower := strings.ToLower(val)
-		if vLower == "off" || vLower == "false" || vLower == "0" {
+		switch vLower {
+		case "off", "false", "0":
 			info.Directive = "cyclekiller-off"
-		} else if vLower == "on" || vLower == "true" || vLower == "1" {
+		case "on", "true", "1":
 			info.Directive = "cyclekiller-on"
-		} else {
+		default:
 			info.Directive = "unknown"
 			info.Arg = key + "=" + val
 			info.IsMeta = true
@@ -118,11 +120,12 @@ func ExtractDirective(prompt string) (DirectiveInfo, string) {
 		info.Directive = "cyclekiller-on"
 	case "shield":
 		vLower := strings.ToLower(val)
-		if vLower == "off" || vLower == "false" || vLower == "0" {
+		switch vLower {
+		case "off", "false", "0":
 			info.Directive = "shield-off"
-		} else if vLower == "on" || vLower == "true" || vLower == "1" {
+		case "on", "true", "1":
 			info.Directive = "shield-on"
-		} else {
+		default:
 			info.Directive = "unknown"
 			info.Arg = key + "=" + val
 			info.IsMeta = true
@@ -150,11 +153,12 @@ func ExtractDirective(prompt string) (DirectiveInfo, string) {
 		info.Directive = "raw-off"
 	case "fairydust", "fairy-dust", "fairy_dust":
 		vLower := strings.ToLower(val)
-		if vLower == "off" || vLower == "false" {
+		switch vLower {
+		case "off", "false":
 			info.Directive = "fairydust-off"
-		} else if vLower == "on" || vLower == "true" {
+		case "on", "true":
 			info.Directive = "fairydust-on"
-		} else {
+		default:
 			info.Directive = "unknown"
 			info.Arg = key + "=" + val
 			info.IsMeta = true
