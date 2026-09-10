@@ -105,6 +105,9 @@ cycle_killer:
   kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
   kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
   kickstart_write_tools:            # Tools that count as "real progress" (read-only tools are ignored)
+    - editor
+    - str_replace_editor
+    - text_editor
     - write_to_file
     - replace_in_file
     - replace_file_content
