@@ -447,5 +447,144 @@ describe('setOffline command in webview', () => {
   });
 });
 
+describe('syncSnapshot SSOT render pipeline in webview', () => {
+  it('renders complete live snapshot across all panels in local mode', () => {
+    const liveSnapshot = {
+      timestamp: 1000,
+      engine: {
+        mode: 'local',
+        isOnline: true,
+        activeProfile: 'profile1',
+        profileLabel: 'Profile 1',
+        isRemote: false
+      },
+      stats: makeStats(),
+      routes: { routes: [{ id: 'r-1', selected_tier: 'Tier 1: Frontier Cloud', status_code: 200, latency_ms: 120, cost_saved_usd: 0.05 }] },
+      circuits: { circuits: [{ name: 'openrouter', provider: 'openrouter', is_available: true, state: 'closed', failures: 0 }] },
+      deals: { deals: [{ id: 'deal-1', model: 'qwen/qwen-2.5-coder-32b', provider: 'openrouter', savings_pct: 40 }] },
+      config: {
+        port: 8000,
+        tiers: [{ name: 'Tier 1: Frontier Cloud', model: 'anthropic/claude-sonnet-5' }]
+      },
+      timeWindow: 'this_week',
+      routesRefreshInterval: 30
+    };
+
+    postMessage('syncSnapshot', liveSnapshot);
+
+    expect(document.getElementById('active-preset-badge')?.textContent).toBe('📋 Profile 1');
+    expect(document.getElementById('btn-edit-config')?.textContent).toContain('Profile 1 (YAML)');
+    expect(document.getElementById('tab-this_week')?.classList.contains('active')).toBe(true);
+    expect(document.getElementById('refresh-30s')?.classList.contains('active')).toBe(true);
+    expect(document.getElementById('stats-content')?.textContent).not.toContain('offline');
+    expect(document.getElementById('routes-content')?.textContent).toContain('Tier 1: Frontier Cloud');
+    expect(document.getElementById('circuits-content')?.textContent).toContain('openrouter');
+    expect(document.getElementById('deals-content')?.textContent).toContain('qwen/qwen-2.5-coder-32b');
+    expect(document.getElementById('config-content')?.textContent).toContain('Tier 1: Frontier Cloud');
+  });
+
+  it('renders online remote server snapshot with remote indicators', () => {
+    const remoteSnapshot = {
+      timestamp: 2000,
+      engine: {
+        mode: 'remote',
+        isOnline: true,
+        activeProfile: 'profile1',
+        profileLabel: 'Remote Server',
+        isRemote: true
+      },
+      stats: makeStats(),
+      routes: { routes: [] },
+      circuits: { circuits: [] },
+      deals: { deals: [] },
+      config: null
+    };
+
+    postMessage('syncSnapshot', remoteSnapshot);
+
+    expect(document.getElementById('active-preset-badge')?.textContent).toBe('🌐 Remote Server');
+    expect(document.getElementById('btn-edit-config')?.textContent).toContain('Remote config.yaml');
+  });
+
+  it('atomically transitions from live remote to offline local and purges all residual data', () => {
+    // 1. Send live remote snapshot
+    postMessage('syncSnapshot', {
+      timestamp: 3000,
+      engine: {
+        mode: 'remote',
+        isOnline: true,
+        activeProfile: 'profile1',
+        profileLabel: 'Remote Server',
+        isRemote: true
+      },
+      stats: makeStats(),
+      routes: { routes: [{ id: 'rem-1', selected_tier: 'Remote Tier' }] },
+      circuits: { circuits: [{ name: 'remote-gw', state: 'closed' }] },
+      deals: { deals: [{ id: 'deal-rem', model: 'cloud-model' }] },
+      config: { port: 8000 }
+    });
+
+    expect(document.getElementById('active-preset-badge')?.textContent).toBe('🌐 Remote Server');
+    expect(document.getElementById('stats-content')?.textContent).not.toContain('offline');
+
+    // 2. Send offline local snapshot
+    postMessage('syncSnapshot', {
+      timestamp: 4000,
+      engine: {
+        mode: 'local',
+        isOnline: false,
+        activeProfile: 'profile1',
+        profileLabel: 'Profile 1',
+        isRemote: false,
+        offlineReason: 'Local engine is offline (Click Start in sidebar)'
+      },
+      stats: null,
+      routes: { routes: [] },
+      circuits: { circuits: [] },
+      deals: { deals: [] },
+      config: null
+    });
+
+    // Verify all 6 panels instantly show offline status and badge reflects Profile 1
+    expect(document.getElementById('active-preset-badge')?.textContent).toBe('📋 Profile 1');
+    expect(document.getElementById('btn-edit-config')?.textContent).toContain('Profile 1 (YAML)');
+    expect(document.getElementById('stats-content')?.textContent).toContain('Local engine is offline');
+    expect(document.getElementById('cycle-killer-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('routes-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('circuits-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('deals-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('config-content')?.textContent).toContain('Engine is offline');
+  });
+
+  it('rejects stale out-of-order snapshots with older timestamps', () => {
+    postMessage('syncSnapshot', {
+      timestamp: 5000,
+      engine: {
+        mode: 'local',
+        isOnline: true,
+        activeProfile: 'profile3',
+        profileLabel: 'Profile 3',
+        isRemote: false
+      }
+    });
+    expect(document.getElementById('active-preset-badge')?.textContent).toBe('📋 Profile 3');
+
+    // Stale snapshot with timestamp 4500
+    postMessage('syncSnapshot', {
+      timestamp: 4500,
+      engine: {
+        mode: 'local',
+        isOnline: true,
+        activeProfile: 'profile1',
+        profileLabel: 'Profile 1',
+        isRemote: false
+      }
+    });
+
+    // Must remain Profile 3
+    expect(document.getElementById('active-preset-badge')?.textContent).toBe('📋 Profile 3');
+  });
+});
+
 
 

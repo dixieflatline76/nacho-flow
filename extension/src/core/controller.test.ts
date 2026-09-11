@@ -118,6 +118,7 @@ jest.mock('../ui/webview/dashboard', () => ({
     updateActiveProfile: jest.fn(),
     updateActivePreset: jest.fn(),
     setOffline: jest.fn(),
+    syncSnapshot: jest.fn(),
     onDidChangeViewState: jest.fn().mockReturnValue({ dispose: jest.fn() }),
     dispose: jest.fn()
   }))
@@ -368,6 +369,7 @@ describe('ExtensionController', () => {
         updateActiveProfile: jest.fn(),
         updateActivePreset: jest.fn(),
         setOffline: jest.fn(),
+        syncSnapshot: jest.fn(),
         dispose: jest.fn()
       };
       const mockRestClient = {
@@ -398,6 +400,65 @@ describe('ExtensionController', () => {
       await (extensionController as any).loadDashboardData(true);
       expect(mockDashboardPanel.setOffline).toHaveBeenCalledWith('Local engine is offline (Click Start in sidebar)');
       expect(mockDashboardPanel.updateActiveProfile).toHaveBeenCalledWith({ label: 'Profile 1', isRemote: false });
+    });
+
+    it('should build complete live DashboardSnapshot when engine is online with parallel telemetry', async () => {
+      const mockRestClient = {
+        getStats: jest.fn().mockResolvedValue({ total_requests: 50 }),
+        getDeals: jest.fn().mockResolvedValue({ deals: [{ id: 'd1' }] }),
+        getRoutes: jest.fn().mockResolvedValue({ routes: [{ id: 'r1' }] }),
+        getCircuits: jest.fn().mockResolvedValue({ circuits: [{ name: 'ollama' }] }),
+        getConfig: jest.fn().mockResolvedValue({ port: 8000 })
+      };
+      (extensionController as any).restClient = mockRestClient;
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      jest.spyOn(extensionController as any, 'isLocalEngineOffline').mockReturnValue(false);
+
+      const snapshot = await (extensionController as any).buildDashboardSnapshot();
+
+      expect(snapshot.engine.isOnline).toBe(true);
+      expect(snapshot.engine.mode).toBe('local');
+      expect(snapshot.engine.activeProfile).toBe('profile1');
+      expect(snapshot.engine.profileLabel).toBe('Profile 1');
+      expect(snapshot.stats).toEqual({ total_requests: 50 });
+      expect(snapshot.deals).toEqual({ deals: [{ id: 'd1' }] });
+      expect(snapshot.routes).toEqual({ routes: [{ id: 'r1' }] });
+      expect(snapshot.circuits).toEqual({ circuits: [{ name: 'ollama' }] });
+      expect(snapshot.config).toEqual({ port: 8000 });
+      expect(snapshot.timestamp).toBeGreaterThan(0);
+    });
+
+    it('should build offline DashboardSnapshot when local engine is offline', async () => {
+      (extensionController as any).restClient = {};
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      jest.spyOn(extensionController as any, 'isLocalEngineOffline').mockReturnValue(true);
+
+      const snapshot = await (extensionController as any).buildDashboardSnapshot();
+
+      expect(snapshot.engine.isOnline).toBe(false);
+      expect(snapshot.engine.offlineReason).toContain('Local engine is offline');
+      expect(snapshot.stats).toBeNull();
+    });
+
+    it('should build unreachable offline DashboardSnapshot when stats probe returns null', async () => {
+      const mockRestClient = {
+        getStats: jest.fn().mockRejectedValue(new Error('Connection refused')),
+        getDeals: jest.fn().mockResolvedValue(null),
+        getRoutes: jest.fn().mockResolvedValue(null),
+        getCircuits: jest.fn().mockResolvedValue(null),
+        getConfig: jest.fn().mockResolvedValue(null)
+      };
+      (extensionController as any).restClient = mockRestClient;
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      jest.spyOn(extensionController as any, 'isLocalEngineOffline').mockReturnValue(false);
+
+      const snapshot = await (extensionController as any).buildDashboardSnapshot();
+
+      expect(snapshot.engine.isOnline).toBe(false);
+      expect(snapshot.engine.isRemote).toBe(true);
+      expect(snapshot.engine.profileLabel).toBe('Remote Server');
+      expect(snapshot.engine.offlineReason).toBe('Remote server is unreachable');
+      expect(snapshot.stats).toBeNull();
     });
   });
 

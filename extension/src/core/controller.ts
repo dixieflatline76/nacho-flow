@@ -11,6 +11,7 @@ import { DashboardPanel } from '../ui/webview/dashboard';
 import { SidebarViewProvider } from '../ui/sidebar/sidebar-view-provider';
 import { ProcessManager, ParsedStartupError } from './process-manager';
 import { TelemetryPoller, RefreshIntervalSeconds } from './telemetry-poller';
+import { DashboardSnapshot, DashboardEngineState } from './types/nacho-types';
 
 export class ExtensionController {
 	private context: vscode.ExtensionContext;
@@ -1331,84 +1332,135 @@ export class ExtensionController {
 		await this.editActiveProfileFile();
 	}
 
+	public async buildDashboardSnapshot(): Promise<DashboardSnapshot> {
+		const isRemote = this.isRemoteHost();
+		const profileLabel = isRemote ? 'Remote Server' : this.getProfileLabel(this.activeProfile);
+		const baseEngineState: DashboardEngineState = {
+			isOnline: false,
+			isRemote,
+			mode: isRemote ? 'remote' : 'local',
+			activeProfile: this.activeProfile,
+			profileLabel
+		};
+
+		if (this.isLocalEngineOffline() || !this.restClient) {
+			return {
+				timestamp: Date.now(),
+				engine: {
+					...baseEngineState,
+					isOnline: false,
+					offlineReason: 'Local engine is offline (Click Start in sidebar)'
+				},
+				stats: null,
+				deals: null,
+				routes: null,
+				circuits: null,
+				config: null
+			};
+		}
+
+		const statsPromise = typeof this.restClient.getStats === 'function'
+			? Promise.resolve().then(() => this.restClient!.getStats()).catch(() => null)
+			: Promise.resolve(null);
+		const dealsPromise = typeof this.restClient.getDeals === 'function'
+			? Promise.resolve().then(() => this.restClient!.getDeals()).catch(() => null)
+			: Promise.resolve(null);
+		const routesPromise = typeof this.restClient.getRoutes === 'function'
+			? Promise.resolve().then(() => this.restClient!.getRoutes(10)).catch(() => null)
+			: Promise.resolve(null);
+		const circuitsPromise = typeof this.restClient.getCircuits === 'function'
+			? Promise.resolve().then(() => this.restClient!.getCircuits()).catch(() => null)
+			: Promise.resolve(null);
+		const configPromise = typeof this.restClient.getConfig === 'function'
+			? Promise.resolve().then(() => this.restClient!.getConfig()).catch(() => null)
+			: Promise.resolve(null);
+
+		const [stats, deals, routes, circuits, config] = await Promise.all([
+			statsPromise,
+			dealsPromise,
+			routesPromise,
+			circuitsPromise,
+			configPromise
+		]);
+
+		if (!stats) {
+			const reason = isRemote ? 'Remote server is unreachable' : 'Local engine is offline';
+			return {
+				timestamp: Date.now(),
+				engine: {
+					...baseEngineState,
+					isOnline: false,
+					offlineReason: reason
+				},
+				stats: null,
+				deals: null,
+				routes: null,
+				circuits: null,
+				config: null
+			};
+		}
+
+		return {
+			timestamp: Date.now(),
+			engine: {
+				...baseEngineState,
+				isOnline: true
+			},
+			stats,
+			deals,
+			routes,
+			circuits,
+			config
+		};
+	}
+
 	private async loadDashboardData(manual: boolean = false): Promise<void> {
 		if (!this.dashboardPanel) return;
 
-		// 1. Push active profile label to dashboard badge and edit button
-		const isRemote = this.isRemoteHost();
-		const profileLabel = isRemote ? 'Remote Server' : this.getProfileLabel(this.activeProfile);
+		const snapshot = await this.buildDashboardSnapshot();
+
+		// Unified snapshot sync
+		if (typeof (this.dashboardPanel as any).syncSnapshot === 'function') {
+			(this.dashboardPanel as any).syncSnapshot(snapshot);
+		}
+
+		// Backward-compatible individual dispatches & status bar updates
 		if (typeof (this.dashboardPanel as any).updateActiveProfile === 'function') {
-			(this.dashboardPanel as any).updateActiveProfile({ label: profileLabel, isRemote });
+			(this.dashboardPanel as any).updateActiveProfile({ label: snapshot.engine.profileLabel, isRemote: snapshot.engine.isRemote });
 		}
 		if (typeof (this.dashboardPanel as any).updateActivePreset === 'function') {
-			(this.dashboardPanel as any).updateActivePreset({ label: profileLabel, isRemote });
+			(this.dashboardPanel as any).updateActivePreset({ label: snapshot.engine.profileLabel, isRemote: snapshot.engine.isRemote });
 		}
 
-		// 2. Handle local engine offline
-		if (this.isLocalEngineOffline() || !this.restClient) {
+		if (!snapshot.engine.isOnline) {
 			this.statusBar.updateStats(null);
-			if (this.dashboardPanel && typeof (this.dashboardPanel as any).setOffline === 'function') {
-				(this.dashboardPanel as any).setOffline('Local engine is offline (Click Start in sidebar)');
+			if (typeof (this.dashboardPanel as any).setOffline === 'function') {
+				(this.dashboardPanel as any).setOffline(snapshot.engine.offlineReason || 'Local engine is offline');
 			}
 			await this.syncSidebarState();
 			if (manual) {
-				this.showTransientToast('ℹ️ Nacho Flow: Local engine is offline (Click Start in sidebar)');
+				const prefix = snapshot.engine.offlineReason?.includes('unreachable') ? '⚠️' : 'ℹ️';
+				this.showTransientToast(`${prefix} Nacho Flow: ${snapshot.engine.offlineReason || 'Local engine is offline'}`);
 			}
 			return;
 		}
 
-		// 3. Query stats and handle unreachable daemon
-		let stats = null;
-		try {
-			stats = await this.restClient.getStats();
-			if (stats) {
-				this.statusBar.updateStats(stats);
-				if (typeof (this.dashboardPanel as any).updateStats === 'function') {
-					this.dashboardPanel.updateStats(stats);
-				}
-			}
-		} catch (_) {}
-
-		if (!stats) {
-			this.statusBar.updateStats(null);
-			const reason = isRemote ? 'Remote server is unreachable' : 'Local engine is offline';
-			if (this.dashboardPanel && typeof (this.dashboardPanel as any).setOffline === 'function') {
-				(this.dashboardPanel as any).setOffline(reason);
-			}
-			await this.syncSidebarState();
-			if (manual) {
-				this.showTransientToast(`⚠️ Nacho Flow: ${reason}`);
-			}
-			return;
+		this.statusBar.updateStats(snapshot.stats);
+		if (snapshot.stats && typeof (this.dashboardPanel as any).updateStats === 'function') {
+			this.dashboardPanel.updateStats(snapshot.stats);
 		}
-
-		try {
-			const deals = await this.restClient.getDeals();
-			if (deals && this.dashboardPanel) {
-				this.dashboardPanel.updateDeals(deals);
-			}
-		} catch (_) {}
-
-		try {
-			const routes = await this.restClient.getRoutes(10);
-			if (routes && this.dashboardPanel) {
-				this.dashboardPanel.updateRoutes(routes);
-			}
-		} catch (_) {}
-
-		try {
-			const circuits = await this.restClient.getCircuits();
-			if (circuits && this.dashboardPanel) {
-				this.dashboardPanel.updateCircuits(circuits);
-			}
-		} catch (_) {}
-
-		try {
-			const config = await this.restClient.getConfig();
-			if (config && this.dashboardPanel) {
-				this.dashboardPanel.updateConfig(config);
-			}
-		} catch (_) {}
+		if (snapshot.deals && typeof (this.dashboardPanel as any).updateDeals === 'function') {
+			this.dashboardPanel.updateDeals(snapshot.deals);
+		}
+		if (snapshot.routes && typeof (this.dashboardPanel as any).updateRoutes === 'function') {
+			this.dashboardPanel.updateRoutes(snapshot.routes);
+		}
+		if (snapshot.circuits && typeof (this.dashboardPanel as any).updateCircuits === 'function') {
+			this.dashboardPanel.updateCircuits(snapshot.circuits);
+		}
+		if (snapshot.config && typeof (this.dashboardPanel as any).updateConfig === 'function') {
+			this.dashboardPanel.updateConfig(snapshot.config);
+		}
 
 		try {
 			await this.syncSidebarState();

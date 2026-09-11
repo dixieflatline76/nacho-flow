@@ -89,3 +89,26 @@ export interface TuningResult {
 	retries_eliminated: number;
 	total_sample_turns: number;
 }
+
+// Dashboard SSOT Snapshot State
+export interface DashboardEngineState {
+	mode: 'local' | 'remote';
+	isOnline: boolean;
+	activeProfile: 'profile1' | 'profile2' | 'profile3';
+	profileLabel: string;
+	isRemote: boolean;
+	offlineReason?: string;
+}
+
+export interface DashboardSnapshot {
+	timestamp: number;
+	engine: DashboardEngineState;
+	stats: any | null;
+	routes: any | null;
+	circuits: any | null;
+	deals: any | null;
+	config: any | null;
+	optimization?: any | null;
+	timeWindow?: string;
+	routesRefreshInterval?: number;
+}

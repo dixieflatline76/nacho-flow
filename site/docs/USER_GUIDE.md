@@ -1097,7 +1097,8 @@ The **Nacho Flow VS Code Extension** delivers full lifecycle management, visual 
 
 1. **Sidebar Control Hub**:
    - **Local Daemon Lifecycle**: 1-click Start, Stop, and Restart with real-time log output streaming to the `🌮 Nacho Flow Engine` output channel.
-   - **Engine Mode Toggle**: Seamlessly switch between **This Machine** (`127.0.0.1:8000`) and **Remote Server** (`http://<ip>:8000` with Bearer auth). Credentials and endpoint preferences are persisted separately.
+   - **Engine Mode Toggle & Auto-Resume**: Seamlessly switch between **This Machine** (`127.0.0.1:8000`) and **Remote Server** (`http://<ip>:8000` with Bearer auth). Credentials and endpoint preferences are strictly isolated via `vscode.SecretStorage`. Switching to Remote Server cleanly terminates the local daemon to free GPU resources; switching back to This Machine automatically resumes the engine if it was previously active.
+   - **Configurable Routing Profiles**: 1-click switching between three independent, fully customizable operational profiles (`Profile 1`, `Profile 2`, `Profile 3`). Users can freely configure each profile for any combination of models, tiers, and agent workflows. In local mode, switching cleanly restarts the native Go daemon with the native `--config <path>` flag. In remote mode, local profile mutation is disabled with clear status feedback.
    - **Upstream Engine Discovery**: Live discovery and status chips for Ollama, OpenRouter, vLLM, SGLang, and llama.cpp.
    - **1-Click Agent Setup**: Instant copy helpers for Base URL, API Key, and Model ID (`nacho-hybrid`) for Zoo Code, Cline, and Cursor.
    - **Direct Help & Support**: 1-click buttons linking directly to the User Guide and Support Desk.
@@ -1106,12 +1107,13 @@ The **Nacho Flow VS Code Extension** delivers full lifecycle management, visual 
    - Live status bar widget (`🌮 $X.XX svd`) updating continuously via Server-Sent Events (SSE).
    - Rich Markdown hover card displaying daemon health, uptime, total savings, and provider circuit states.
 
-3. **Analytics Dashboard Webview**:
-   - **Financial KPI Cards**: Cumulative spend, savings, savings percentage, and total turns.
-   - **O(1) Rolling Time Windows**: Filter metrics by Today, This Week, This Month, or All-Time.
+3. **Analytics Dashboard Webview & Top-Down State Snapshot**:
+   - **Unified State Snapshot Pipeline**: Delivers atomic snapshots (`DashboardSnapshot`) with monotonic timestamp sequencing, eliminating visual race conditions, stale telemetry cards, and out-of-order deliveries.
+   - **Active Profile Badge & Config Button**: Dynamic header indicators (`📋 Profile X` / `🌐 Remote Server`) with a 1-click **`[📝 Profile X (YAML)]`** / **`[📝 Remote config.yaml]`** editor button.
+   - **Clean State Transitions**: Transitions to offline or unreachable daemons atomically purge all data panels and display clean offline guidance without ghost cards.
+   - **Financial KPI Cards**: Cumulative spend, savings, savings percentage, and total turns across O(1) rolling time windows (Today, This Week, This Month, All-Time).
    - **Live Route Inspector**: Inspect the last 500 LLM requests in memory with zero disk overhead.
    - **Interactive Circuit Breaker Control**: Live status cards with individual reset buttons.
-   - **Configuration Editor**: Hot-reload `config.yaml` with syntax validation.
    - **Autonomous Auto-Tuning Trigger**: Run `nacho-flow tune` empirical optimization directly from the webview.
 
 For complete extension setup and features, see the [VS Code Companion Extension Guide](EXTENSION_USER_GUIDE.md).

@@ -198,6 +198,29 @@ describe('DashboardPanel', () => {
         data: { timeWindow: 'this_week' }
       });
     });
+
+    it('should post syncSnapshot message with complete snapshot state', () => {
+      const mockSnapshot: any = {
+        timestamp: 123456789,
+        engine: {
+          mode: 'local',
+          isOnline: true,
+          activeProfile: 'profile1',
+          profileLabel: 'Profile 1',
+          isRemote: false
+        },
+        stats: { total_requests: 42 },
+        routes: { routes: [] },
+        circuits: { circuits: [] },
+        deals: { deals: [] },
+        config: { port: 8000 }
+      };
+      dashboardPanel.syncSnapshot(mockSnapshot);
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'syncSnapshot',
+        data: mockSnapshot
+      });
+    });
   });
 
   describe('dispose', () => {
