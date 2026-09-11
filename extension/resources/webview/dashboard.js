@@ -36,8 +36,12 @@
 					window.setRoutesRefreshInterval(message.data.interval, false);
 				}
 				break;
+			case 'updateActiveProfile':
 			case 'updateActivePreset':
 				updateActivePreset(message.data);
+				break;
+			case 'setOffline':
+				setOffline(message.data);
 				break;
 		}
 	});
@@ -108,7 +112,11 @@
 		const statsContent = document.getElementById('stats-content');
 		const timeframeInfo = document.getElementById('stats-timeframe-info');
 		if (!stats) {
-			if (statsContent) statsContent.innerHTML = '<div class="loading">Connecting to Nacho Flow daemon...</div>';
+			const offlineMsg = (currentState && currentState.offlineReason) || 'Connecting to Nacho Flow daemon...';
+			if (statsContent) statsContent.innerHTML = `<div class="loading">${offlineMsg.startsWith('🌮') ? offlineMsg : '🌮 ' + offlineMsg}</div>`;
+			if (timeframeInfo) timeframeInfo.textContent = '';
+			const ckContent = document.getElementById('cycle-killer-content');
+			if (ckContent) ckContent.innerHTML = '<div class="loading">Engine is offline. Start the engine to activate stream defense watchdog.</div>';
 			return;
 		}
 
@@ -433,9 +441,75 @@
 	}
 
 	function updateActivePreset(data) {
+		if (!data || !data.label) return;
+		currentState.isRemote = Boolean(data.isRemote);
+		currentState.activeProfileLabel = data.label;
+		vscode.setState(currentState);
+
 		const badge = document.getElementById('active-preset-badge');
-		if (badge && data && data.label) {
-			badge.textContent = '\ud83d\udccb ' + data.label;
+		if (badge) {
+			badge.textContent = (data.isRemote ? '🌐 ' : '📋 ') + data.label;
+		}
+		const btnEdit = document.getElementById('btn-edit-config');
+		if (btnEdit) {
+			const configText = data.isRemote ? 'Remote config.yaml' : `${data.label} (YAML)`;
+			const svg = btnEdit.querySelector('svg');
+			btnEdit.innerHTML = '';
+			if (svg) btnEdit.appendChild(svg);
+			btnEdit.append(' ' + configText);
+		}
+	}
+
+	function setOffline(data) {
+		const offlineMsg = (data && data.reason) || 'Engine is offline. Start the engine from the sidebar to view live telemetry and cost savings.';
+		currentState.stats = null;
+		currentState.routes = { routes: [] };
+		currentState.circuits = { circuits: [] };
+		currentState.deals = { deals: [] };
+		currentState.optimization = null;
+		currentState.offlineReason = offlineMsg;
+		vscode.setState(currentState);
+
+		const statsContent = document.getElementById('stats-content');
+		const timeframeInfo = document.getElementById('stats-timeframe-info');
+		const ckContent = document.getElementById('cycle-killer-content');
+		const routesContent = document.getElementById('routes-content');
+		const circuitsContent = document.getElementById('circuits-content');
+		const dealsContent = document.getElementById('deals-content');
+		const configContent = document.getElementById('config-content');
+		const tunerBanner = document.getElementById('tuner-banner');
+
+		if (statsContent) {
+			statsContent.innerHTML = `<div class="loading">🌮 ${offlineMsg}</div>`;
+		}
+		if (timeframeInfo) {
+			timeframeInfo.textContent = '';
+		}
+		if (ckContent) {
+			ckContent.innerHTML = `<div class="loading">Engine is offline. Start the engine to activate stream defense watchdog.</div>`;
+		}
+		if (routesContent) {
+			routesContent.innerHTML = `<div class="loading">Engine is offline. No live route telemetry recorded.</div>`;
+		}
+		if (circuitsContent) {
+			circuitsContent.innerHTML = `<div class="loading">Engine is offline. Start engine to view circuit breaker status.</div>`;
+		}
+		if (dealsContent) {
+			dealsContent.innerHTML = `<div class="loading">Engine is offline. Live OpenRouter market deals unavailable while engine is stopped.</div>`;
+		}
+		if (configContent) {
+			const editBtnText = currentState.isRemote 
+				? '⚙️ Edit Remote config.yaml' 
+				: (currentState.activeProfileLabel ? `⚙️ Edit ${currentState.activeProfileLabel} (YAML)` : '⚙️ Edit config.yaml');
+			configContent.innerHTML = `
+				<div class="config-summary">
+					<div class="loading" style="margin-bottom: 8px;">Engine is offline. Start engine to load active routing tiers, or edit profile configuration:</div>
+					<button class="btn btn-primary" onclick="editConfig()">${editBtnText}</button>
+				</div>
+			`;
+		}
+		if (tunerBanner) {
+			tunerBanner.style.display = 'none';
 		}
 	}
 
@@ -638,7 +712,7 @@
 					<span>Active Tiers: <strong>${allTiers.length}</strong></span>
 				</div>
 				<div class="tiers-list">${tierList}</div>
-				<button class="btn btn-primary" onclick="editConfig()" style="margin-top: 12px;">⚙️ Edit config.yaml</button>
+				<button class="btn btn-primary" onclick="editConfig()" style="margin-top: 12px;">${currentState.isRemote ? '⚙️ Edit Remote config.yaml' : (currentState.activeProfileLabel ? `⚙️ Edit ${currentState.activeProfileLabel} (YAML)` : '⚙️ Edit config.yaml')}</button>
 			</div>
 		`;
 	}

@@ -187,7 +187,13 @@ function buildDOM(): void {
     <div id="stats-content"></div>
     <div id="stats-timeframe-info"></div>
     <div id="cycle-killer-content"></div>
+    <div id="routes-content"></div>
+    <div id="circuits-content"></div>
+    <div id="deals-content"></div>
+    <div id="config-content"></div>
     <div id="tuner-banner" style="display:none"></div>
+    <span id="active-preset-badge"></span>
+    <button id="btn-edit-config"><svg></svg> config.yaml</button>
     <button id="tab-all_time"></button>
     <button id="tab-today"></button>
     <button id="tab-yesterday"></button>
@@ -405,6 +411,39 @@ describe('Regression: Today must not show all-time totals when today has 0 inter
     setWindow('today');
     expect(ckContent()).toContain('0 <span class="ck-unit">Loops</span>');
     expect(ckContent()).not.toMatch(/>\s*12\s*<span class="ck-unit">Loops<\/span>/);
+  });
+});
+
+describe('updateActivePreset and profile / remote indicators', () => {
+  it('updates badge and config edit button for local profile', () => {
+    postMessage('updateActivePreset', { label: 'Profile 2', isRemote: false });
+    expect(document.getElementById('active-preset-badge')?.textContent).toBe('📋 Profile 2');
+    expect(document.getElementById('btn-edit-config')?.textContent).toContain('Profile 2 (YAML)');
+  });
+
+  it('updates badge and config edit button for remote server', () => {
+    postMessage('updateActivePreset', { label: 'Remote Server', isRemote: true });
+    expect(document.getElementById('active-preset-badge')?.textContent).toBe('🌐 Remote Server');
+    expect(document.getElementById('btn-edit-config')?.textContent).toContain('Remote config.yaml');
+  });
+});
+
+describe('setOffline command in webview', () => {
+  it('clears stale remote data across all panels and displays offline placeholders', () => {
+    // Populate with stats first
+    postMessage('updateStats', makeStats());
+    postMessage('updateRoutes', { routes: [{ id: '1', selected_tier: 'Tier 1' }] });
+    expect(document.getElementById('cycle-killer-content')?.textContent).not.toContain('offline');
+
+    // Post setOffline
+    postMessage('setOffline', { reason: 'Local engine is offline (Click Start in sidebar)' });
+
+    expect(document.getElementById('stats-content')?.textContent).toContain('Local engine is offline');
+    expect(document.getElementById('cycle-killer-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('routes-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('circuits-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('deals-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('config-content')?.textContent).toContain('Engine is offline');
   });
 });
 

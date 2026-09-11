@@ -174,6 +174,14 @@ describe('DashboardPanel', () => {
       });
     });
 
+    it('should post setOffline message', () => {
+      dashboardPanel.setOffline('Local engine is offline');
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'setOffline',
+        data: { reason: 'Local engine is offline' }
+      });
+    });
+
     it('should safely swallow error if postMessage throws when disposed', () => {
       mockWebviewPanel.webview.postMessage.mockImplementationOnce(() => {
         throw new Error('Webview is disposed');

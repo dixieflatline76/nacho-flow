@@ -9,7 +9,8 @@
 		hasOpenRouterKey: false,
 		remoteUrl: 'http://127.0.0.1:8000',
 		hasToken: false,
-		activePreset: 'standard' // 'standard' | 'zoo' | 'cline'
+		activeProfile: 'profile1', // 'profile1' | 'profile2' | 'profile3'
+		activePreset: 'profile1' // backwards compatibility
 	};
 
 	// DOM Elements
@@ -18,6 +19,7 @@
 	const radioRemote = document.getElementById('radio-mode-remote');
 	const localControls = document.getElementById('local-engine-controls');
 	const remoteControls = document.getElementById('remote-engine-controls');
+	const localProfileContainer = document.getElementById('local-profile-container');
 	const btnEngineStart = document.getElementById('btn-engine-start');
 	const btnEngineStop = document.getElementById('btn-engine-stop');
 	const remoteUrlInput = document.getElementById('remote-engine-url');
@@ -49,15 +51,17 @@
 	function applyState(newState) {
 		state = { ...state, ...newState };
 		
-		// Engine mode toggle
+		// Engine mode toggle & profile visibility
 		if (state.engineMode === 'remote') {
 			if (radioRemote) radioRemote.checked = true;
 			if (localControls) localControls.style.display = 'none';
 			if (remoteControls) remoteControls.style.display = 'flex';
+			if (localProfileContainer) localProfileContainer.style.display = 'none';
 		} else {
 			if (radioLocal) radioLocal.checked = true;
 			if (localControls) localControls.style.display = 'flex';
 			if (remoteControls) remoteControls.style.display = 'none';
+			if (localProfileContainer) localProfileContainer.style.display = 'block';
 		}
 
 		if (remoteUrlInput && state.remoteUrl) {
@@ -75,10 +79,11 @@
 		// Update proxy copy endpoint
 		updateProxyEndpoint();
 
-		// Sync preset dropdown to persisted active preset
-		const presetSelector = document.getElementById('preset-selector');
-		if (presetSelector && state.activePreset) {
-			presetSelector.value = state.activePreset;
+		// Sync profile dropdown to persisted active profile
+		const profileSelector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
+		const currentProfile = state.activeProfile || state.activePreset;
+		if (profileSelector && currentProfile) {
+			profileSelector.value = currentProfile;
 		}
 
 		if (state.engineStatus) {
@@ -405,20 +410,32 @@
 		vscode.postMessage({ command: 'refreshAll' });
 	};
 
-	// Preset selector functions
+	// Profile selector functions
+	window.onProfileChanged = function(profileId) {
+		state.activeProfile = profileId;
+	};
+
+	window.switchProfile = function() {
+		const selector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
+		const profileId = (selector && selector.value) || state.activeProfile || 'profile1';
+		vscode.postMessage({ command: 'switchProfile', profileId });
+	};
+
+	window.editActiveProfile = function() {
+		vscode.postMessage({ command: 'editActiveProfile' });
+	};
+
+	// Preserved for backward compatibility
 	window.onPresetChanged = function(presetId) {
-		// Preview only — actual swap happens on button click
-		state.activePreset = presetId;
+		window.onProfileChanged(presetId);
 	};
 
 	window.hotSwapPreset = function() {
-		const presetSelector = document.getElementById('preset-selector');
-		const presetId = (presetSelector && presetSelector.value) || 'standard';
-		vscode.postMessage({ command: 'hotSwapPreset', presetId });
+		window.switchProfile();
 	};
 
 	window.editActivePreset = function() {
-		vscode.postMessage({ command: 'editActivePreset' });
+		window.editActiveProfile();
 	};
 
 	// Initialize

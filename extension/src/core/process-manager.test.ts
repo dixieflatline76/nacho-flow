@@ -397,11 +397,14 @@ describe('ProcessManager', () => {
 			const mockChild: any = {
 				pid: 7777,
 				kill: jest.fn(),
-				killed: false
+				killed: false,
+				exitCode: null,
+				once: jest.fn((_evt, cb) => cb())
 			};
 			(processManager as any).childProcess = mockChild;
 			await processManager.stop();
 			expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
+			expect(mockChild.once).toHaveBeenCalledWith('exit', expect.any(Function));
 			Object.defineProperty(process, 'platform', { value: originalPlatform });
 		});
 
