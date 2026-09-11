@@ -5,13 +5,25 @@ export class StatusBarManager {
 	private stats: any = null;
 	private timeWindow: string = 'all_time';
 	private baseUrl: string = 'http://127.0.0.1:8000';
-	private activePreset: string = 'standard';
+	private activeProfile: string = 'profile1';
 
-	private static readonly PRESET_LABELS: Record<string, string> = {
-		standard: '🌮 Standard',
-		zoo: '🤖 Zoo Code',
-		cline: '🛠️ Cline',
+	private get activePreset(): string {
+		return this.activeProfile;
+	}
+	private set activePreset(val: string) {
+		this.activeProfile = val;
+	}
+
+	private static readonly PROFILE_LABELS: Record<string, string> = {
+		profile1: 'Profile 1',
+		profile2: 'Profile 2',
+		profile3: 'Profile 3',
+		standard: 'Profile 1',
+		zoo: 'Profile 2',
+		cline: 'Profile 3',
 	};
+
+	private static readonly PRESET_LABELS = StatusBarManager.PROFILE_LABELS;
 
 	constructor() {
 		this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -35,11 +47,15 @@ export class StatusBarManager {
 		}
 	}
 
-	public setActivePreset(preset: string): void {
-		if (preset && preset.trim() !== '') {
-			this.activePreset = preset.trim();
+	public setActiveProfile(profile: string): void {
+		if (profile && profile.trim() !== '') {
+			this.activeProfile = profile.trim();
 			this.updateStatusBar();
 		}
+	}
+
+	public setActivePreset(preset: string): void {
+		this.setActiveProfile(preset);
 	}
 
 	public updateStats(stats: any): void {
@@ -167,7 +183,7 @@ export class StatusBarManager {
 		md.appendMarkdown(`⚡ **Local GPU ($0.00)**: \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)*\n\n`);
 		md.appendMarkdown(`🪙 **Total Prompt Turns**: \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)*\n\n`);
 		md.appendMarkdown(`🛣️ **Model Dispatcher**: \`${this.getBaseUrl()}\`\n\n`);
-		md.appendMarkdown(`📋 **Active Preset**: \`${presetLabel}\`\n\n`);
+		md.appendMarkdown(`📋 **Active Profile**: \`${presetLabel}\`\n\n`);
 		md.appendMarkdown(`---\n\n`);
 		md.appendMarkdown(`Switch: [Today](command:nacho-flow.setTimeWindowToday) &nbsp;|&nbsp; [Yesterday](command:nacho-flow.setTimeWindowYesterday) &nbsp;|&nbsp; [This Week](command:nacho-flow.setTimeWindowWeek) &nbsp;|&nbsp; [This Month](command:nacho-flow.setTimeWindowMonth) &nbsp;|&nbsp; [All Time](command:nacho-flow.setTimeWindowAllTime)\n\n`);
 		md.appendMarkdown(`---\n\n`);

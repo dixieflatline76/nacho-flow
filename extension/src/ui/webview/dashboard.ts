@@ -55,7 +55,7 @@ export class DashboardPanel {
 				<div class="header-title">
 					<h1>🌮 Nacho Flow Dashboard</h1>
 					<span class="version-tag">Agent Supervisor & Model Dispatcher</span>
-					<span id="active-preset-badge" class="preset-badge">📋 🌮 Standard</span>
+					<span id="active-preset-badge" class="preset-badge">📋 Profile 1</span>
 				</div>
 			</div>
 			<div class="telemetry-bar-row">
@@ -194,8 +194,17 @@ export class DashboardPanel {
 		this.safePostMessage({ command: 'setRoutesRefreshInterval', data: { interval } });
 	}
 
-	public updateActivePreset(data: { label: string }): void {
+	public updateActiveProfile(data: { label: string; isRemote?: boolean }): void {
+		this.safePostMessage({ command: 'updateActiveProfile', data });
 		this.safePostMessage({ command: 'updateActivePreset', data });
+	}
+
+	public updateActivePreset(data: { label: string; isRemote?: boolean }): void {
+		this.updateActiveProfile(data);
+	}
+
+	public setOffline(reason?: string): void {
+		this.safePostMessage({ command: 'setOffline', data: { reason } });
 	}
 
 	public get isVisible(): boolean {

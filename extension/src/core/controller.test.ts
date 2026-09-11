@@ -115,7 +115,9 @@ jest.mock('../ui/webview/dashboard', () => ({
     updateCircuits: jest.fn(),
     updateConfig: jest.fn(),
     updateOptimization: jest.fn(),
+    updateActiveProfile: jest.fn(),
     updateActivePreset: jest.fn(),
+    setOffline: jest.fn(),
     onDidChangeViewState: jest.fn().mockReturnValue({ dispose: jest.fn() }),
     dispose: jest.fn()
   }))
@@ -278,6 +280,7 @@ describe('ExtensionController', () => {
       });
 
       await extensionController.initialize();
+      (extensionController as any).authManager.getEngineMode = jest.fn().mockReturnValue('remote');
       const mockRestClient = (extensionController as any).restClient;
       mockRestClient.updateConfigYaml = jest.fn().mockResolvedValue({ status: 'ok' });
       const loadDashboardSpy = jest.spyOn(extensionController as any, 'loadDashboardData').mockResolvedValue(undefined);
@@ -362,7 +365,9 @@ describe('ExtensionController', () => {
         updateRoutes: jest.fn(),
         updateCircuits: jest.fn(),
         updateConfig: jest.fn(),
+        updateActiveProfile: jest.fn(),
         updateActivePreset: jest.fn(),
+        setOffline: jest.fn(),
         dispose: jest.fn()
       };
       const mockRestClient = {
@@ -380,11 +385,25 @@ describe('ExtensionController', () => {
       expect(mockDashboardPanel.updateRoutes).toHaveBeenCalled();
       expect(mockDashboardPanel.updateCircuits).toHaveBeenCalled();
       expect(mockDashboardPanel.updateConfig).toHaveBeenCalled();
+      expect(mockDashboardPanel.updateActiveProfile).toHaveBeenCalledWith({ label: 'Profile 1', isRemote: false });
+
+      // Test remote mode push
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      await (extensionController as any).loadDashboardData();
+      expect(mockDashboardPanel.updateActiveProfile).toHaveBeenCalledWith({ label: 'Remote Server', isRemote: true });
+
+      // Test local engine offline handling
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      jest.spyOn(extensionController as any, 'isLocalEngineOffline').mockReturnValue(true);
+      await (extensionController as any).loadDashboardData(true);
+      expect(mockDashboardPanel.setOffline).toHaveBeenCalledWith('Local engine is offline (Click Start in sidebar)');
+      expect(mockDashboardPanel.updateActiveProfile).toHaveBeenCalledWith({ label: 'Profile 1', isRemote: false });
     });
   });
 
   describe('showConfigEditor', () => {
-    it('should fetch and open YAML config from daemon when restClient is available', async () => {
+    it('should fetch and open YAML config from daemon when restClient is available in remote mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
       const mockRestClient = {
         getConfigYaml: jest.fn().mockResolvedValue('port: 8000\nauth_token: sk-test')
       };
@@ -400,7 +419,17 @@ describe('ExtensionController', () => {
       expect(vscode.window.showTextDocument).toHaveBeenCalled();
     });
 
-    it('should open standard OS config.yaml if restClient fails and standard path exists', async () => {
+    it('should delegate to editActiveProfileFile in local engine mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      const editProfileSpy = jest.spyOn(extensionController as any, 'editActiveProfileFile').mockResolvedValue(undefined);
+
+      await (extensionController as any).showConfigEditor();
+
+      expect(editProfileSpy).toHaveBeenCalled();
+    });
+
+    it('should open standard OS config.yaml if restClient fails and standard path exists in remote mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
       (extensionController as any).restClient = null;
       jest.spyOn(extensionController, 'getStandardConfigPaths').mockReturnValue(['/mock/standard/config.yaml']);
       jest.spyOn(extensionController, 'fileExists').mockImplementation((p) => p === '/mock/standard/config.yaml');
@@ -413,7 +442,8 @@ describe('ExtensionController', () => {
       expect(vscode.window.showTextDocument).toHaveBeenCalled();
     });
 
-    it('should open workspace config.yaml if restClient fails and no standard path exists', async () => {
+    it('should open workspace config.yaml if restClient fails and no standard path exists in remote mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
       const mockRestClient = {
         getConfigYaml: jest.fn().mockRejectedValue(new Error('Network error'))
       };
@@ -431,7 +461,8 @@ describe('ExtensionController', () => {
       expect(vscode.window.showTextDocument).toHaveBeenCalled();
     });
 
-    it('should show warning message if config cannot be found anywhere', async () => {
+    it('should show warning message if config cannot be found anywhere in remote mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
       (extensionController as any).restClient = null;
       jest.spyOn(extensionController, 'getStandardConfigPaths').mockReturnValue([]);
       jest.spyOn(extensionController, 'fileExists').mockReturnValue(false);
@@ -440,6 +471,41 @@ describe('ExtensionController', () => {
       await (extensionController as any).showConfigEditor();
 
       expect(vscode.window.showWarningMessage).toHaveBeenCalledWith('Nacho Flow: Unable to fetch config from daemon or workspace');
+    });
+
+    it('should bootstrap starter config if standard path exists but no file found in remote mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      (extensionController as any).restClient = null;
+      jest.spyOn(extensionController, 'getStandardConfigPaths').mockReturnValue(['/mock/starter/config.yaml']);
+      jest.spyOn(extensionController, 'fileExists').mockReturnValue(false);
+      (vscode.workspace.findFiles as jest.Mock) = jest.fn().mockResolvedValue([]);
+      (vscode.workspace.openTextDocument as jest.Mock) = jest.fn().mockResolvedValue({ uri: vscode.Uri.file('/mock/starter/config.yaml') });
+      (vscode.window.showTextDocument as jest.Mock) = jest.fn().mockResolvedValue({});
+
+      await (extensionController as any).showConfigEditor();
+
+      expect(vscode.workspace.fs.createDirectory).toHaveBeenCalled();
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ path: expect.stringContaining('config.yaml') }),
+        expect.any(Buffer)
+      );
+      expect(vscode.window.showTextDocument).toHaveBeenCalled();
+    });
+
+    it('should open profileUri if file exists in remote mode fallback', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      (extensionController as any).restClient = null;
+      jest.spyOn(extensionController as any, 'resolveProfileUri').mockResolvedValue({
+        uri: vscode.Uri.file('/mock/profiles/profile1.yaml'),
+        isWorkspace: false
+      });
+      jest.spyOn(extensionController, 'fileExists').mockImplementation((p) => p === vscode.Uri.file('/mock/profiles/profile1.yaml').fsPath);
+      (vscode.workspace.openTextDocument as jest.Mock) = jest.fn().mockResolvedValue({ uri: vscode.Uri.file('/mock/profiles/profile1.yaml') });
+      (vscode.window.showTextDocument as jest.Mock) = jest.fn().mockResolvedValue({});
+
+      await (extensionController as any).showConfigEditor();
+
+      expect(vscode.window.showTextDocument).toHaveBeenCalled();
     });
   });
 
@@ -1452,6 +1518,8 @@ default_tier:
       };
       const mockDashboard = {
         setTimeWindow: jest.fn(),
+        updateStats: jest.fn(),
+        setOffline: jest.fn(),
         dispose: jest.fn()
       };
       (extensionController as any).dashboardPanel = mockDashboard;
@@ -1485,6 +1553,8 @@ default_tier:
       const mockDashboard = {
         setTimeWindow: jest.fn(),
         setRoutesRefreshInterval: jest.fn(),
+        updateStats: jest.fn(),
+        setOffline: jest.fn(),
         onDidChangeViewState: jest.fn().mockImplementation((cb: any) => {
           viewStateListener = cb;
         }),
@@ -1530,6 +1600,12 @@ default_tier:
       expect(openSettingsSpy).toHaveBeenCalled();
 
       // Test dispose cleanup
+      const onDispose = DashboardClass.mock.calls[DashboardClass.mock.calls.length - 1][2];
+      if (typeof onDispose === 'function') {
+        onDispose();
+        expect((extensionController as any).dashboardPanel).toBeNull();
+      }
+
       extensionController.dispose();
       expect(pollerMock.dispose).toHaveBeenCalled();
     });
@@ -1563,11 +1639,11 @@ default_tier:
 
       // Error in pollTelemetry outer block
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-      mockRestClient.getStats.mockImplementationOnce(() => {
-        throw new Error('Fatal socket error');
+      statusBarSpy.mockImplementationOnce(() => {
+        throw new Error('Fatal status bar error');
       });
       await (extensionController as any).pollTelemetry();
-      expect(statusBarSpy).toHaveBeenCalledWith(null);
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to poll telemetry:', expect.any(Error));
       consoleSpy.mockRestore();
 
       // Test startPeriodicUpdates creation
@@ -1610,19 +1686,43 @@ default_tier:
       (extensionController as any).context.extensionUri = origExt;
     });
 
-    it('should prioritize .nacho hidden folder preset override if present', async () => {
+    it('should ensure global profiles are copied when not existing', async () => {
+      (vscode.workspace.fs.stat as jest.Mock)
+        .mockRejectedValueOnce(new Error('not found'))
+        .mockRejectedValueOnce(new Error('not found'))
+        .mockRejectedValueOnce(new Error('not found'));
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValue(Buffer.from('profile template data'));
+      (vscode.workspace.fs.writeFile as jest.Mock).mockResolvedValue(undefined);
+
+      await (extensionController as any).ensureGlobalProfiles();
+
+      expect(vscode.workspace.fs.createDirectory).toHaveBeenCalled();
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledTimes(3);
+    });
+
+    it('should resolve presetUri by delegating to resolveProfileUri', async () => {
+      const spy = jest.spyOn(extensionController as any, 'resolveProfileUri').mockResolvedValue({
+        uri: vscode.Uri.file('/path/profile1.yaml'),
+        isWorkspace: false
+      });
+      const res = await (extensionController as any).resolvePresetUri('preset1');
+      expect(spy).toHaveBeenCalledWith('preset1');
+      expect(res.uri.fsPath).toBe(vscode.Uri.file('/path/profile1.yaml').fsPath);
+    });
+
+    it('should prioritize .nacho hidden folder profile override if present', async () => {
       (vscode.workspace as any).workspaceFolders = [
         { uri: { path: '/workspace' } }
       ];
       (vscode.workspace.fs.stat as jest.Mock).mockResolvedValueOnce({});
 
-      const res = await (extensionController as any).resolvePresetUri('cline');
+      const res = await (extensionController as any).resolveProfileUri('profile3');
       expect(res.isWorkspace).toBe(true);
       expect(res.uri.path).toContain('.nacho');
-      expect(res.uri.path).toContain('config.cline.yaml');
+      expect(res.uri.path).toContain('profile3.yaml');
     });
 
-    it('should fallback to root workspace preset if .nacho is absent but root preset exists', async () => {
+    it('should fallback to root workspace profile if .nacho is absent but root profile exists', async () => {
       (vscode.workspace as any).workspaceFolders = [
         { uri: { path: '/workspace' } }
       ];
@@ -1630,29 +1730,29 @@ default_tier:
         .mockRejectedValueOnce(new Error('File not found')) // .nacho fails
         .mockResolvedValueOnce({}); // root succeeds
 
-      const res = await (extensionController as any).resolvePresetUri('cline');
+      const res = await (extensionController as any).resolveProfileUri('profile3');
       expect(res.isWorkspace).toBe(true);
       expect(res.uri.path).not.toContain('.nacho');
-      expect(res.uri.path).toContain('config.cline.yaml');
+      expect(res.uri.path).toContain('profile3.yaml');
     });
 
-    it('should resolve preset from global storage when workspace does not have it', async () => {
+    it('should resolve profile from global storage when workspace does not have it', async () => {
       (vscode.workspace as any).workspaceFolders = [];
       (vscode.workspace.fs.stat as jest.Mock).mockResolvedValueOnce({});
 
-      const res = await (extensionController as any).resolvePresetUri('zoo');
+      const res = await (extensionController as any).resolveProfileUri('profile2');
       expect(res.isWorkspace).toBe(false);
-      expect(res.uri.path).toContain('config.zoo.yaml');
+      expect(res.uri.path).toContain('profile2.yaml');
     });
 
-    it('should fallback to bundled presets if globalStorageUri is missing', async () => {
+    it('should fallback to bundled profiles if globalStorageUri is missing', async () => {
       (vscode.workspace as any).workspaceFolders = [];
       const origGlobal = (extensionController as any).context.globalStorageUri;
       (extensionController as any).context.globalStorageUri = undefined;
 
-      const res = await (extensionController as any).resolvePresetUri('standard');
+      const res = await (extensionController as any).resolveProfileUri('profile1');
       expect(res.isWorkspace).toBe(false);
-      expect(res.uri.path).toContain('resources/presets/config.yaml');
+      expect(res.uri.path).toContain('resources/profiles/profile1.yaml');
 
       (extensionController as any).context.globalStorageUri = origGlobal;
     });
@@ -1664,98 +1764,139 @@ default_tier:
       (extensionController as any).context.globalStorageUri = undefined;
       (extensionController as any).context.extensionUri = undefined;
 
-      const res = await (extensionController as any).resolvePresetUri('invalid' as any);
+      const res = await (extensionController as any).resolveProfileUri('invalid' as any);
       expect(res.isWorkspace).toBe(false);
-      expect(res.uri.path).toBe('config.yaml');
+      expect(res.uri.path).toBe('invalid.yaml');
 
       (extensionController as any).context.globalStorageUri = origGlobal;
       (extensionController as any).context.extensionUri = origExt;
     });
 
-    it('should hot-swap preset successfully', async () => {
-      const mockRestClient = {
-        updateConfigYaml: jest.fn().mockResolvedValue(undefined)
+    it('should switch profile and restart running engine cleanly via native --config flag', async () => {
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        restart: restartSpy,
+        isLocalUrl: jest.fn().mockReturnValue(true)
       };
-      (extensionController as any).restClient = mockRestClient;
-      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValueOnce(Buffer.from('port: 8000\n'));
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        setLocalEngineRunning: jest.fn().mockResolvedValue(undefined)
+      };
       (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
 
       const loadDashSpy = jest.spyOn(extensionController as any, 'loadDashboardData').mockResolvedValue(undefined);
       const syncSidebarSpy = jest.spyOn(extensionController as any, 'syncSidebarState').mockResolvedValue(undefined);
 
-      await (extensionController as any).hotSwapPreset('cline');
+      await (extensionController as any).switchProfile('profile3');
 
-      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledWith('port: 8000\n');
-      expect((extensionController as any).activePreset).toBe('cline');
+      expect(restartSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', expect.stringContaining('profile3.yaml'));
+      expect((extensionController as any).activeProfile).toBe('profile3');
       expect(loadDashSpy).toHaveBeenCalled();
       expect(syncSidebarSpy).toHaveBeenCalled();
     });
 
-    it('should show error when hot-swap fails to read file', async () => {
-      (vscode.workspace.fs.readFile as jest.Mock).mockRejectedValueOnce(new Error('Permission denied'));
-      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
-
-      await (extensionController as any).hotSwapPreset('zoo');
-      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('could not be read')
-      );
-    });
-
-    it('should show error when hot-swap has no restClient', async () => {
-      (extensionController as any).restClient = null;
-      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValueOnce(Buffer.from('port: 8000\n'));
-      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
-
-      await (extensionController as any).hotSwapPreset('standard');
-      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Not connected to engine')
-      );
-    });
-
-    it('should show error when updateConfigYaml throws during hot-swap', async () => {
-      const mockRestClient = {
-        updateConfigYaml: jest.fn().mockRejectedValueOnce(new Error('Invalid YAML'))
+    it('should switch profile when engine is offline without restarting', async () => {
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false)
       };
-      (extensionController as any).restClient = mockRestClient;
-      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValueOnce(Buffer.from('port: 8000\n'));
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null)
+      };
       (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
 
-      await (extensionController as any).hotSwapPreset('zoo');
-      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Hot-swap failed: Invalid YAML')
+      await (extensionController as any).switchProfile('profile2');
+
+      expect((extensionController as any).activeProfile).toBe('profile2');
+    });
+
+    it('should suppress profile switching when connected to remote host', async () => {
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('remote')
+      };
+
+      await (extensionController as any).switchProfile('profile2');
+
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('disabled in remote server mode')
       );
     });
 
-    it('should edit active preset file', async () => {
+    it('should handle engine start error when switchProfile restart fails', async () => {
+      const restartSpy = jest.fn().mockResolvedValue({ success: false, error: 'Spawn failed' });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        restart: restartSpy,
+        isLocalUrl: jest.fn().mockReturnValue(true)
+      };
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null)
+      };
       (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
-      const mockDoc = { uri: { path: '/test/globalStorage/presets/config.yaml' } };
+
+      await (extensionController as any).switchProfile('profile2');
+
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Spawn failed');
+    });
+
+    it('should edit active profile file', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      const mockDoc = { uri: { path: '/test/globalStorage/profiles/profile1.yaml' } };
       (vscode.workspace.openTextDocument as jest.Mock).mockResolvedValueOnce(mockDoc);
 
-      await (extensionController as any).editActivePresetFile();
+      await (extensionController as any).editActiveProfileFile();
 
       expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
       expect(vscode.window.showTextDocument).toHaveBeenCalledWith(mockDoc);
       expect((extensionController as any).activeConfigDocUri).toBeDefined();
+
+      // Legacy aliases
+      const editActiveProfileSpy = jest.spyOn(extensionController as any, 'editActiveProfileFile').mockResolvedValue(undefined);
+      await (extensionController as any).editActivePresetFile();
+      expect(editActiveProfileSpy).toHaveBeenCalled();
+
+      const switchProfileSpy = jest.spyOn(extensionController as any, 'switchProfile').mockResolvedValue(undefined);
+      await (extensionController as any).hotSwapPreset('profile2');
+      expect(switchProfileSpy).toHaveBeenCalledWith('profile2');
+
+      expect(extensionController.fileExists(__filename)).toBe(true);
     });
 
-    it('should handle error when editing active preset file', async () => {
+    it('should delegate editActiveProfileFile to showConfigEditor in remote mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      const showConfigSpy = jest.spyOn(extensionController as any, 'showConfigEditor').mockResolvedValue(undefined);
+
+      await (extensionController as any).editActiveProfileFile();
+
+      expect(showConfigSpy).toHaveBeenCalled();
+    });
+
+    it('should handle error when editing active profile file', async () => {
       (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
       (vscode.workspace.openTextDocument as jest.Mock).mockRejectedValueOnce(new Error('Cannot open file'));
 
-      await (extensionController as any).editActivePresetFile();
+      await (extensionController as any).editActiveProfileFile();
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Could not open preset file: Cannot open file')
+        expect.stringContaining('Could not open profile file: Cannot open file')
       );
     });
 
-    it('should handle onDidSaveTextDocument when active preset config is saved', async () => {
+    it('should handle onDidSaveTextDocument when active profile config is saved', async () => {
       await extensionController.initialize();
 
       const mockRestClient = {
         updateConfigYaml: jest.fn().mockResolvedValue(undefined)
       };
       (extensionController as any).restClient = mockRestClient;
-      (extensionController as any).activePreset = 'standard';
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).authManager.getEngineMode = jest.fn().mockReturnValue('remote');
 
       // Find save callback registered during initialize()
       const onSaveCall = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls[0];
@@ -1763,10 +1904,10 @@ default_tier:
 
       expect(saveCallback).toBeDefined();
 
-      // Case 1: Active preset file matches
+      // Case 1: Active profile file matches in remote mode
       const matchingDoc = {
-        fileName: '/my/project/config.yaml',
-        uri: { toString: () => 'file:///my/project/config.yaml' },
+        fileName: '/my/project/profile1.yaml',
+        uri: { toString: () => 'file:///my/project/profile1.yaml' },
         getText: () => 'port: 8000\n'
       };
       await saveCallback(matchingDoc);
@@ -1796,7 +1937,7 @@ default_tier:
       mockRestClient.updateConfigYaml.mockRejectedValueOnce(new Error('Daemon unreachable'));
       await saveCallback(matchingDoc);
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to update config: Daemon unreachable')
+        expect.stringContaining('Failed to update remote config: Daemon unreachable')
       );
 
       // Case 5: restClient is null -> returns early
@@ -1804,19 +1945,74 @@ default_tier:
       await saveCallback(matchingDoc);
     });
 
-    it('should handle sidebar messages for hotSwapPreset and editActivePreset', async () => {
+    it('should persist shadow config directly to profileUri on disk and restart local engine when saved in local mode', async () => {
+      await extensionController.initialize();
+
+      const mockProcessManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        restart: jest.fn().mockResolvedValue({ success: true })
+      };
+      (extensionController as any).processManager = mockProcessManager;
+      (extensionController as any).restClient = {};
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).authManager.getEngineMode = jest.fn().mockReturnValue('local');
+      (extensionController as any).authManager.getBaseUrl = jest.fn().mockResolvedValue('http://127.0.0.1:8000');
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/global/profiles/profile1.yaml', toString: () => 'file:///global/profiles/profile1.yaml' }
+      });
+
+      const onSaveCall = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls[0];
+      const saveCallback = onSaveCall[0];
+
+      // Explicit edit target is shadow config nacho-flow-config.yaml
+      (extensionController as any).activeConfigDocUri = { toString: () => 'file:///storage/nacho-flow-config.yaml' };
+      const shadowDoc = {
+        fileName: '/storage/nacho-flow-config.yaml',
+        uri: { fsPath: '/storage/nacho-flow-config.yaml', toString: () => 'file:///storage/nacho-flow-config.yaml' },
+        getText: () => 'port: 8080\n'
+      };
+
+      await saveCallback(shadowDoc);
+
+      // Verify file was persisted to profile1.yaml on disk
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ fsPath: '/global/profiles/profile1.yaml' }),
+        expect.any(Buffer)
+      );
+      // Verify local engine restarted with the profile1.yaml path
+      expect(mockProcessManager.restart).toHaveBeenCalledWith(
+        'http://127.0.0.1:8000',
+        '/global/profiles/profile1.yaml'
+      );
+
+      // Verify restart error handling
+      mockProcessManager.restart.mockResolvedValueOnce({ success: false, error: 'Restart failed' });
+      const handleStartErrorSpy = jest.spyOn(extensionController as any, 'handleEngineStartError').mockResolvedValue(undefined);
+      await saveCallback(shadowDoc);
+      expect(handleStartErrorSpy).toHaveBeenCalled();
+    });
+
+    it('should handle sidebar messages for switchProfile, editActiveProfile, hotSwapPreset, and editActivePreset', async () => {
       await extensionController.initialize();
 
       const mockSidebarClass = require('../ui/sidebar/sidebar-view-provider').SidebarViewProvider;
       const onMessage = mockSidebarClass.getLastMessageCallback();
       expect(onMessage).toBeDefined();
 
+      const switchProfileSpy = jest.spyOn(extensionController as any, 'switchProfile').mockResolvedValue(undefined);
+      const editProfileSpy = jest.spyOn(extensionController as any, 'editActiveProfileFile').mockResolvedValue(undefined);
+      const showDashboardSpy = jest.spyOn(extensionController as any, 'showDashboard').mockReturnValue(undefined);
       const hotSwapSpy = jest.spyOn(extensionController as any, 'hotSwapPreset').mockResolvedValue(undefined);
       const editPresetSpy = jest.spyOn(extensionController as any, 'editActivePresetFile').mockResolvedValue(undefined);
-      const showDashboardSpy = jest.spyOn(extensionController as any, 'showDashboard').mockReturnValue(undefined);
 
-      await onMessage({ command: 'hotSwapPreset', presetId: 'cline' });
-      expect(hotSwapSpy).toHaveBeenCalledWith('cline');
+      await onMessage({ command: 'switchProfile', profileId: 'profile3' });
+      expect(switchProfileSpy).toHaveBeenCalledWith('profile3');
+
+      await onMessage({ command: 'editActiveProfile' });
+      expect(editProfileSpy).toHaveBeenCalled();
+
+      await onMessage({ command: 'hotSwapPreset', presetId: 'preset2' });
+      expect(hotSwapSpy).toHaveBeenCalledWith('preset2');
 
       await onMessage({ command: 'editActivePreset' });
       expect(editPresetSpy).toHaveBeenCalled();
@@ -1903,6 +2099,12 @@ other_key:
       (extensionController as any).restClient.getConfigYaml = jest.fn().mockResolvedValue(`tiers:\n  - name: "Different"\n    when: "true"\n`);
       await extensionController.applyOptimization({ target_tier_name: 'Target', synthesized_rule: 'rule' });
       expect(warnSpy).toHaveBeenCalledWith('Nacho Flow: Could not locate rule for tier "Target" in config YAML');
+
+      // 7. applyOptimization when getConfigYaml returns null
+      const errSpy = jest.spyOn(vscode.window, 'showErrorMessage');
+      (extensionController as any).restClient.getConfigYaml = jest.fn().mockResolvedValue(null);
+      await extensionController.applyOptimization({ target_tier_name: 'Target', synthesized_rule: 'rule' });
+      expect(errSpy).toHaveBeenCalledWith('Nacho Flow: Unable to fetch configuration from daemon');
     });
   });
 
@@ -1927,6 +2129,28 @@ other_key:
 
       await extensionController.initialize();
       expect(startSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', expect.any(String));
+    });
+
+    it('should not auto-resume when daemonUrl is not local', async () => {
+      const mockAuth = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://192.168.0.205:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null),
+        getRemoteUrl: jest.fn().mockReturnValue('http://192.168.0.205:8000'),
+        getRemoteToken: jest.fn().mockResolvedValue(null)
+      };
+      (extensionController as any).authManager = mockAuth;
+      const startSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        start: startSpy,
+        isRunning: jest.fn().mockReturnValue(false),
+        isLocalUrl: jest.fn().mockReturnValue(false),
+        stop: jest.fn().mockResolvedValue(true)
+      };
+
+      await extensionController.initialize();
+      expect(startSpy).not.toHaveBeenCalled();
     });
 
     it('should not auto-resume when isLocalEngineRunning is false or mode is remote', async () => {

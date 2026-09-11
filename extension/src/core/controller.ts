@@ -25,7 +25,15 @@ export class ExtensionController {
 	private telemetryPoller: TelemetryPoller | null = null;
 	private activeTimeWindow: string = 'all_time';
 	private routesRefreshInterval: RefreshIntervalSeconds = 60;
-	private activePreset: 'standard' | 'zoo' | 'cline' = 'standard';
+	private activeProfile: 'profile1' | 'profile2' | 'profile3' = 'profile1';
+
+	public get activePreset(): string {
+		return this.activeProfile;
+	}
+
+	public set activePreset(val: any) {
+		this.activeProfile = (val === 'zoo' ? 'profile2' : (val === 'cline' ? 'profile3' : (val === 'standard' ? 'profile1' : val))) || 'profile1';
+	}
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
@@ -42,11 +50,18 @@ export class ExtensionController {
 		// Load persisted preferences
 		this.activeTimeWindow = this.context.globalState?.get<string>('nachoFlow_timeWindow', 'all_time') || 'all_time';
 		this.statusBar.setTimeWindow(this.activeTimeWindow);
-		this.activePreset = this.context.globalState?.get<'standard' | 'zoo' | 'cline'>('nachoFlow_activePreset', 'standard') || 'standard';
-		this.statusBar.setActivePreset(this.activePreset);
 
-		// Ensure global preset templates are available
-		await this.ensureGlobalPresets();
+		// Support migration from legacy nachoFlow_activePreset
+		const legacyPreset = this.context.globalState?.get<string>('nachoFlow_activePreset');
+		let defaultProfile: 'profile1' | 'profile2' | 'profile3' = 'profile1';
+		if (legacyPreset === 'zoo') defaultProfile = 'profile2';
+		else if (legacyPreset === 'cline') defaultProfile = 'profile3';
+
+		this.activeProfile = this.context.globalState?.get<'profile1' | 'profile2' | 'profile3'>('nachoFlow_activeProfile', defaultProfile) || defaultProfile;
+		this.statusBar.setActiveProfile(this.activeProfile);
+
+		// Ensure global profile templates are available
+		await this.ensureGlobalProfiles();
 
 		const savedInterval = this.context.globalState?.get<number>('nachoFlow_routesRefreshInterval');
 		this.routesRefreshInterval = (typeof savedInterval !== 'undefined' ? savedInterval : 60) as RefreshIntervalSeconds;
@@ -63,7 +78,7 @@ export class ExtensionController {
 		// Register Activity Bar Sidebar View Provider
 		this.registerSidebarProvider();
 
-		// Auto-sync configuration to daemon when config is saved (preset-aware guard)
+		// Auto-sync configuration to daemon when config is saved
 		this.context.subscriptions.push(
 			vscode.workspace.onDidSaveTextDocument(async (doc) => {
 				if (!this.restClient) return;
@@ -72,27 +87,59 @@ export class ExtensionController {
 					return;
 				}
 
-				// Map active preset to its expected filename
-				const presetFileMap: Record<string, string> = {
-					standard: 'config.yaml',
-					zoo: 'config.zoo.yaml',
-					cline: 'config.cline.yaml'
+				const isRemote = this.isRemoteHost();
+				const profileFileMap: Record<string, string[]> = {
+					profile1: ['profile1.yaml', 'config.profile1.yaml', 'config.yaml'],
+					profile2: ['profile2.yaml', 'config.profile2.yaml'],
+					profile3: ['profile3.yaml', 'config.profile3.yaml']
 				};
-				const activeFilename = presetFileMap[this.activePreset];
+				const activeFilenames = profileFileMap[this.activeProfile] || [`${this.activeProfile}.yaml`];
 
-				// Only auto-push if the saved file matches the active preset, or it was explicitly opened via Edit YAML
-				const isActivePresetFile = doc.fileName.replace(/\\/g, '/').endsWith('/' + activeFilename);
+				// Only auto-push/restart if the saved file matches the active profile, or it was explicitly opened via Edit YAML
+				const normalizedDocPath = doc.fileName.replace(/\\/g, '/');
+				const isActiveProfileFile = activeFilenames.some((fn) => normalizedDocPath.endsWith('/' + fn));
 				const isExplicitEditTarget = this.activeConfigDocUri &&
 					doc.uri.toString() === this.activeConfigDocUri.toString();
 
-				if (isActivePresetFile || isExplicitEditTarget) {
-					try {
-						await this.restClient.updateConfigYaml(doc.getText());
-						this.showTransientToast(`🌮 Nacho Flow: ${activeFilename || 'Configuration'} updated and hot-reloaded!`);
-						await this.loadDashboardData();
-						await this.syncSidebarState();
-					} catch (err: any) {
-						vscode.window.showErrorMessage(`Nacho Flow: Failed to update config: ${err.message || err}`);
+				if (isActiveProfileFile || isExplicitEditTarget) {
+					if (isRemote) {
+						try {
+							await this.restClient.updateConfigYaml(doc.getText());
+							this.showTransientToast(`🌮 Nacho Flow: Remote server configuration updated and hot-reloaded!`);
+							await this.loadDashboardData();
+							await this.syncSidebarState();
+						} catch (err: any) {
+							vscode.window.showErrorMessage(`Nacho Flow: Failed to update remote config: ${err.message || err}`);
+						}
+					} else {
+						// Local engine: ensure changes from shadow config are written to the resolved active profile file on disk
+						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+						const normDocPath = path.resolve(doc.uri.fsPath).toLowerCase();
+						const normProfilePath = path.resolve(profileUri.fsPath).toLowerCase();
+						const isShadowConfig = Boolean(isExplicitEditTarget && normDocPath.endsWith('nacho-flow-config.yaml'));
+
+						if (isShadowConfig && normDocPath !== normProfilePath) {
+							try {
+								await vscode.workspace.fs.writeFile(profileUri, Buffer.from(doc.getText(), 'utf8'));
+							} catch (err: any) {
+								vscode.window.showErrorMessage(`Nacho Flow: Failed to persist config to ${profileUri.fsPath}: ${err.message || err}`);
+							}
+						}
+
+						// Local engine: restart cleanly via native --config flag
+						if (this.processManager && this.processManager.isRunning()) {
+							const daemonUrl = await this.authManager.getBaseUrl();
+							const profileLabel = this.getProfileLabel(this.activeProfile);
+							this.showTransientToast(`🔄 Nacho Flow: Restarting local engine with updated ${profileLabel}...`);
+							const result = await this.processManager.restart(daemonUrl, profileUri.fsPath);
+							if (result.success) {
+								await this.initializeClients();
+								await this.syncSidebarState();
+								await this.loadDashboardData();
+							} else if (result.error) {
+								await this.handleEngineStartError(result);
+							}
+						}
 					}
 				}
 			})
@@ -236,8 +283,8 @@ export class ExtensionController {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
 						this.showTransientToast('▶️ Nacho Flow: Starting Model Dispatcher...');
-						const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
-						const configPath = presetUri.fsPath;
+						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+						const configPath = profileUri.fsPath;
 						const result = await this.processManager.start(daemonUrl, configPath);
 						if (result.success) {
 							await this.authManager.setLocalEngineRunning(true);
@@ -260,8 +307,8 @@ export class ExtensionController {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
 						this.showTransientToast('🔄 Nacho Flow: Restarting Model Dispatcher...');
-						const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
-						const configPath = presetUri.fsPath;
+						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+						const configPath = profileUri.fsPath;
 						const result = await this.processManager.restart(daemonUrl, configPath);
 						if (result.success) {
 							await this.authManager.setLocalEngineRunning(true);
@@ -359,8 +406,18 @@ export class ExtensionController {
 					case 'openDashboard':
 						this.showDashboard();
 						break;
+					case 'switchProfile': {
+						const profileId = message.profileId as 'profile1' | 'profile2' | 'profile3';
+						if (profileId) {
+							await this.switchProfile(profileId);
+						}
+						break;
+					}
+					case 'editActiveProfile':
+						await this.editActiveProfileFile();
+						break;
 					case 'hotSwapPreset': {
-						const presetId = message.presetId as 'standard' | 'zoo' | 'cline';
+						const presetId = message.presetId as any;
 						if (presetId) {
 							await this.hotSwapPreset(presetId);
 						}
@@ -394,9 +451,9 @@ export class ExtensionController {
 		if (!this.processManager.isLocalUrl(daemonUrl)) {
 			return;
 		}
-		const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
-		const configPath = presetUri.fsPath;
-		this.outputChannel?.appendLine(`[Controller] Auto-resuming local engine with preset '${this.activePreset}' at ${configPath}`);
+		const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+		const configPath = profileUri.fsPath;
+		this.outputChannel?.appendLine(`[Controller] Auto-resuming local engine with profile '${this.activeProfile}' at ${configPath}`);
 		const result = await this.processManager.start(daemonUrl, configPath);
 		// Note: isLocalEngineRunning is already true (precondition checked above); no need to re-persist on success.
 		if (!result.success && result.error) {
@@ -499,18 +556,20 @@ export class ExtensionController {
 		const remoteUrl = this.authManager.getRemoteUrl();
 		const remoteToken = await this.authManager.getRemoteToken();
 
-		// Sync base URL and active preset to status bar
+		// Sync base URL and active profile to status bar
 		this.statusBar.setBaseUrl(baseUrl);
-		this.statusBar.setActivePreset(this.activePreset);
+		this.statusBar.setActiveProfile(this.activeProfile);
 
 		this.sidebarProvider.updateState({
 			engineMode,
+			isRemote: this.isRemoteHost(),
 			remoteUrl,
 			token: remoteToken || '',
 			hasToken: !!token,
 			engineStatus,
 			providers,
-			activePreset: this.activePreset
+			activeProfile: this.activeProfile,
+			activePreset: this.activeProfile
 		});
 	}
 
@@ -848,7 +907,13 @@ export class ExtensionController {
 	}
 
 	private async showConfigEditor(): Promise<void> {
-		// 1. Try to fetch live configuration from running daemon REST API
+		// In local engine mode, directly open the resolved local profile file on disk so edits persist across restarts
+		if (!this.isRemoteHost()) {
+			await this.editActiveProfileFile();
+			return;
+		}
+
+		// 1. In remote mode, try to fetch live configuration from running daemon REST API
 		if (this.restClient) {
 			try {
 				const yamlContent = await this.restClient.getConfigYaml();
@@ -869,12 +934,12 @@ export class ExtensionController {
 			} catch (_) {}
 		}
 
-		// 2. Check active preset in global storage / workspace override via resolvePresetUri
+		// 2. Check active profile in global storage / workspace override via resolveProfileUri
 		try {
-			await this.ensureGlobalPresets();
-			const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
-			if (presetUri.scheme === 'file' && this.fileExists(presetUri.fsPath)) {
-				const doc = await vscode.workspace.openTextDocument(presetUri);
+			await this.ensureGlobalProfiles();
+			const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+			if (profileUri.scheme === 'file' && this.fileExists(profileUri.fsPath)) {
+				const doc = await vscode.workspace.openTextDocument(profileUri);
 				this.activeConfigDocUri = doc.uri;
 				await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
 				return;
@@ -908,11 +973,11 @@ export class ExtensionController {
 			const targetPath = standardPaths[0];
 			try {
 				const targetDir = path.dirname(targetPath);
-				if (!fs.existsSync(targetDir)) {
-					fs.mkdirSync(targetDir, { recursive: true });
-				}
+				try {
+					await vscode.workspace.fs.createDirectory(vscode.Uri.file(targetDir));
+				} catch (_) {}
 				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Agent Supervisor & Model Dispatcher\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "local"\n\n  openrouter:\n    base_url: "https://openrouter.ai/api/v1"\n    type: "cloud"\n    api_key: "ENV_OPENROUTER_API_KEY"\n`;
-				fs.writeFileSync(targetPath, starter, 'utf8');
+				await vscode.workspace.fs.writeFile(vscode.Uri.file(targetPath), Buffer.from(starter, 'utf8'));
 				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
 				this.activeConfigDocUri = doc.uri;
 				await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
@@ -1092,155 +1157,230 @@ export class ExtensionController {
 		}
 	}
 
-	private async ensureGlobalPresets(): Promise<void> {
+	public getProfileLabel(profileId: string): string {
+		const labels: Record<string, string> = {
+			profile1: 'Profile 1',
+			profile2: 'Profile 2',
+			profile3: 'Profile 3',
+			standard: 'Profile 1',
+			zoo: 'Profile 2',
+			cline: 'Profile 3'
+		};
+		return labels[profileId] || 'Profile 1';
+	}
+
+	public isRemoteHost(): boolean {
+		return this.authManager.getEngineMode() === 'remote';
+	}
+
+	private async ensureGlobalProfiles(): Promise<void> {
 		if (!this.context.globalStorageUri || !this.context.extensionUri) return;
-		const presetsDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'presets');
+		const profilesDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles');
 		try {
-			await vscode.workspace.fs.createDirectory(presetsDir);
+			await vscode.workspace.fs.createDirectory(profilesDir);
 		} catch (_) {}
 
-		const presets = ['config.yaml', 'config.zoo.yaml', 'config.cline.yaml'];
-		for (const filename of presets) {
-			const targetUri = vscode.Uri.joinPath(presetsDir, filename);
+		const profiles = ['profile1.yaml', 'profile2.yaml', 'profile3.yaml'];
+		for (const filename of profiles) {
+			const targetUri = vscode.Uri.joinPath(profilesDir, filename);
 			try {
 				await vscode.workspace.fs.stat(targetUri);
 			} catch {
-				// File does not exist in global storage yet, copy from bundled presets
+				// File does not exist in global storage yet, copy from bundled profiles
 				try {
-					const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'presets', filename);
+					const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', filename);
 					const data = await vscode.workspace.fs.readFile(templateUri);
 					await vscode.workspace.fs.writeFile(targetUri, data);
 				} catch (err) {
-					console.error(`Failed to copy preset template ${filename}:`, err);
+					console.error(`Failed to copy profile template ${filename}:`, err);
 				}
 			}
 		}
 	}
 
-	private async resolvePresetUri(presetId: 'standard' | 'zoo' | 'cline'): Promise<{ uri: vscode.Uri; isWorkspace: boolean }> {
-		const fileMap: Record<string, string> = {
-			standard: 'config.yaml',
-			zoo: 'config.zoo.yaml',
-			cline: 'config.cline.yaml'
-		};
-		const filename = fileMap[presetId] || 'config.yaml';
+	private async ensureGlobalPresets(): Promise<void> {
+		await this.ensureGlobalProfiles();
+	}
+
+	private async resolveProfileUri(profileId: string): Promise<{ uri: vscode.Uri; isWorkspace: boolean }> {
+		if ((this as any).resolvePresetUri && (this as any).resolvePresetUri !== ExtensionController.prototype.resolvePresetUri && (this as any).resolvePresetUri !== this.resolveProfileUri) {
+			return await (this as any).resolvePresetUri(profileId);
+		}
+		const idStr = String(profileId || 'profile1');
+		const normalizedId = (idStr === 'zoo' ? 'profile2' : (idStr === 'cline' ? 'profile3' : (idStr === 'standard' ? 'profile1' : idStr))) || 'profile1';
+		const candidateFilenames = [
+			`${normalizedId}.yaml`,
+			`config.${normalizedId}.yaml`
+		];
+		if (normalizedId === 'profile1') {
+			candidateFilenames.push('config.yaml');
+		}
 
 		// 1. Check workspace folders for explicit project overrides (.nacho/ hidden folder first, then workspace root)
 		const workspaceFolders = vscode.workspace.workspaceFolders;
 		if (workspaceFolders && workspaceFolders.length > 0) {
 			for (const folder of workspaceFolders) {
-				const hiddenPresetUri = vscode.Uri.joinPath(folder.uri, '.nacho', filename);
-				try {
-					await vscode.workspace.fs.stat(hiddenPresetUri);
-					return { uri: hiddenPresetUri, isWorkspace: true };
-				} catch (_) {}
+				for (const filename of candidateFilenames) {
+					const hiddenUri = vscode.Uri.joinPath(folder.uri, '.nacho', filename);
+					try {
+						await vscode.workspace.fs.stat(hiddenUri);
+						return { uri: hiddenUri, isWorkspace: true };
+					} catch (_) {}
 
-				const wsPresetUri = vscode.Uri.joinPath(folder.uri, filename);
-				try {
-					await vscode.workspace.fs.stat(wsPresetUri);
-					return { uri: wsPresetUri, isWorkspace: true };
-				} catch (_) {}
+					const wsUri = vscode.Uri.joinPath(folder.uri, filename);
+					try {
+						await vscode.workspace.fs.stat(wsUri);
+						return { uri: wsUri, isWorkspace: true };
+					} catch (_) {}
+				}
 			}
 		}
 
-		// 2. Check globalStorageUri (persistent user presets across any workspace)
+		// 2. Check globalStorageUri (persistent user profiles across any workspace)
 		if (this.context.globalStorageUri) {
-			const globalPresetUri = vscode.Uri.joinPath(this.context.globalStorageUri, 'presets', filename);
+			const globalProfileUri = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles', `${normalizedId}.yaml`);
 			try {
-				await vscode.workspace.fs.stat(globalPresetUri);
-				return { uri: globalPresetUri, isWorkspace: false };
+				await vscode.workspace.fs.stat(globalProfileUri);
+				return { uri: globalProfileUri, isWorkspace: false };
 			} catch (_) {
-				await this.ensureGlobalPresets();
+				await this.ensureGlobalProfiles();
 				try {
-					await vscode.workspace.fs.stat(globalPresetUri);
-					return { uri: globalPresetUri, isWorkspace: false };
+					await vscode.workspace.fs.stat(globalProfileUri);
+					return { uri: globalProfileUri, isWorkspace: false };
 				} catch (_) {}
 			}
 		}
 
 		// 3. Fallback to bundled template in extension resources
 		if (this.context.extensionUri) {
-			const bundledUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'presets', filename);
+			const bundledUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${normalizedId}.yaml`);
 			return { uri: bundledUri, isWorkspace: false };
 		}
 
 		// 4. Ultimate fallback to local path
-		return { uri: vscode.Uri.file(filename), isWorkspace: false };
+		return { uri: vscode.Uri.file(`${normalizedId}.yaml`), isWorkspace: false };
 	}
 
-	private async hotSwapPreset(presetId: 'standard' | 'zoo' | 'cline'): Promise<void> {
-		const { uri: presetUri, isWorkspace } = await this.resolvePresetUri(presetId);
-		let yamlContent: string;
+	private async resolvePresetUri(presetId: any): Promise<{ uri: vscode.Uri; isWorkspace: boolean }> {
+		return await this.resolveProfileUri(presetId);
+	}
 
-		try {
-			const fileBytes = await vscode.workspace.fs.readFile(presetUri);
-			yamlContent = Buffer.from(fileBytes).toString('utf8');
-		} catch (err: any) {
-			vscode.window.showErrorMessage(
-				`Nacho Flow: Preset file "${presetUri.fsPath || presetUri.path}" could not be read: ${err.message || err}`
-			);
+	private async switchProfile(profileId: 'profile1' | 'profile2' | 'profile3'): Promise<void> {
+		if (this.isRemoteHost()) {
+			vscode.window.showInformationMessage('Nacho Flow: Profile switching is disabled in remote server mode.');
 			return;
 		}
 
-		// 2. Push to engine via API
-		if (!this.restClient) {
-			vscode.window.showErrorMessage('Nacho Flow: Not connected to engine — cannot hot-swap.');
-			return;
-		}
+		await this.ensureGlobalProfiles();
+		const { uri: profileUri, isWorkspace } = await this.resolveProfileUri(profileId);
+		const configPath = profileUri.fsPath;
 
-		try {
-			await this.restClient.updateConfigYaml(yamlContent);
-		} catch (err: any) {
-			vscode.window.showErrorMessage(`Nacho Flow: Hot-swap failed: ${err.message || err}`);
-			return;
-		}
+		// Persist active profile and update state
+		this.activeProfile = profileId;
+		await this.context.globalState?.update('nachoFlow_activeProfile', profileId);
+		this.statusBar.setActiveProfile(this.activeProfile);
 
-		// 3. Persist active preset and update state
-		this.activePreset = presetId;
-		await this.context.globalState?.update('nachoFlow_activePreset', presetId);
-		this.statusBar.setActivePreset(this.activePreset);
-
-		// 4. Refresh UI
-		const presetLabels: Record<string, string> = {
-			standard: '🌮 Standard',
-			zoo: '🤖 Zoo Code',
-			cline: '🛠️ Cline'
-		};
+		const profileLabel = this.getProfileLabel(profileId);
 		const locationHint = isWorkspace ? ' (Workspace Override)' : '';
-		this.showTransientToast(`🌮 Switched to ${presetLabels[presetId]} routing preset${locationHint}!`);
+
+		// If local engine is running, restart cleanly with --config <configPath>
+		const daemonUrl = await this.authManager.getBaseUrl();
+		if (this.processManager && this.processManager.isRunning()) {
+			if (this.sidebarProvider) {
+				this.sidebarProvider.updateEngineStatus({ starting: true });
+			}
+			this.showTransientToast(`🔄 Restarting Nacho Flow with ${profileLabel}${locationHint}...`);
+			const result = await this.processManager.restart(daemonUrl, configPath);
+			if (result.success) {
+				await this.authManager.setLocalEngineRunning(true);
+				this.showTransientToast(`🌮 Switched to ${profileLabel}${locationHint}!`);
+			} else if (result.error) {
+				await this.handleEngineStartError(result);
+			}
+			await this.initializeClients();
+		} else {
+			this.showTransientToast(`🌮 Selected ${profileLabel}${locationHint} (Engine offline)`);
+		}
+
 		await this.loadDashboardData();
 		await this.syncSidebarState();
 	}
 
-	private async editActivePresetFile(): Promise<void> {
-		await this.ensureGlobalPresets();
-		const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
-		try {
-			const doc = await vscode.workspace.openTextDocument(presetUri);
-			await vscode.window.showTextDocument(doc);
-			this.activeConfigDocUri = presetUri;
-		} catch (err: any) {
-			vscode.window.showErrorMessage(`Nacho Flow: Could not open preset file: ${err.message || err}`);
-		}
+	private async hotSwapPreset(presetId: any): Promise<void> {
+		await this.switchProfile(presetId);
 	}
 
-	private async loadDashboardData(manual: boolean = false): Promise<void> {
-		if (!this.restClient || !this.dashboardPanel) return;
-		
-		if (this.isLocalEngineOffline()) {
-			await this.syncSidebarState();
+	private async editActiveProfileFile(): Promise<void> {
+		if (this.isRemoteHost()) {
+			await this.showConfigEditor();
 			return;
 		}
 
+		await this.ensureGlobalProfiles();
+		const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
 		try {
-			const stats = await this.restClient.getStats();
+			const doc = await vscode.workspace.openTextDocument(profileUri);
+			await vscode.window.showTextDocument(doc);
+			this.activeConfigDocUri = profileUri;
+		} catch (err: any) {
+			vscode.window.showErrorMessage(`Nacho Flow: Could not open profile file: ${err.message || err}`);
+		}
+	}
+
+	private async editActivePresetFile(): Promise<void> {
+		await this.editActiveProfileFile();
+	}
+
+	private async loadDashboardData(manual: boolean = false): Promise<void> {
+		if (!this.dashboardPanel) return;
+
+		// 1. Push active profile label to dashboard badge and edit button
+		const isRemote = this.isRemoteHost();
+		const profileLabel = isRemote ? 'Remote Server' : this.getProfileLabel(this.activeProfile);
+		if (typeof (this.dashboardPanel as any).updateActiveProfile === 'function') {
+			(this.dashboardPanel as any).updateActiveProfile({ label: profileLabel, isRemote });
+		}
+		if (typeof (this.dashboardPanel as any).updateActivePreset === 'function') {
+			(this.dashboardPanel as any).updateActivePreset({ label: profileLabel, isRemote });
+		}
+
+		// 2. Handle local engine offline
+		if (this.isLocalEngineOffline() || !this.restClient) {
+			this.statusBar.updateStats(null);
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).setOffline === 'function') {
+				(this.dashboardPanel as any).setOffline('Local engine is offline (Click Start in sidebar)');
+			}
+			await this.syncSidebarState();
+			if (manual) {
+				this.showTransientToast('ℹ️ Nacho Flow: Local engine is offline (Click Start in sidebar)');
+			}
+			return;
+		}
+
+		// 3. Query stats and handle unreachable daemon
+		let stats = null;
+		try {
+			stats = await this.restClient.getStats();
 			if (stats) {
 				this.statusBar.updateStats(stats);
-				if (this.dashboardPanel) {
+				if (typeof (this.dashboardPanel as any).updateStats === 'function') {
 					this.dashboardPanel.updateStats(stats);
 				}
 			}
 		} catch (_) {}
+
+		if (!stats) {
+			this.statusBar.updateStats(null);
+			const reason = isRemote ? 'Remote server is unreachable' : 'Local engine is offline';
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).setOffline === 'function') {
+				(this.dashboardPanel as any).setOffline(reason);
+			}
+			await this.syncSidebarState();
+			if (manual) {
+				this.showTransientToast(`⚠️ Nacho Flow: ${reason}`);
+			}
+			return;
+		}
 
 		try {
 			const deals = await this.restClient.getDeals();
@@ -1273,16 +1413,6 @@ export class ExtensionController {
 		try {
 			await this.syncSidebarState();
 		} catch (_) {}
-
-		// Push active preset label to dashboard
-		if (this.dashboardPanel) {
-			const presetLabels: Record<string, string> = {
-				standard: '🌮 Standard',
-				zoo: '🤖 Zoo Code',
-				cline: '🛠️ Cline'
-			};
-			this.dashboardPanel.updateActivePreset({ label: presetLabels[this.activePreset] || this.activePreset });
-		}
 
 		if (manual) {
 			this.showTransientToast('🔄 Nacho Flow: Telemetry & dashboard refreshed');
@@ -1379,8 +1509,8 @@ export class ExtensionController {
 				await new Promise((r) => setTimeout(r, 300));
 				for (let i = 0; i < 20; i++) {
 					if (this.processManager.isLocalUrl(daemonUrl) && !this.processManager.isRunning()) {
-						const { uri: presetUri } = await this.resolvePresetUri(this.activePreset);
-						await this.processManager.start(daemonUrl, presetUri.fsPath);
+						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+						await this.processManager.start(daemonUrl, profileUri.fsPath);
 					}
 					const isOnline = await this.processManager.checkHealth(daemonUrl, 300);
 					if (isOnline) {
@@ -1422,8 +1552,8 @@ export class ExtensionController {
 
 		if (this.isLocalEngineOffline()) {
 			this.statusBar.updateStats(null);
-			if (this.dashboardPanel) {
-				this.dashboardPanel.updateStats(null);
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).setOffline === 'function') {
+				(this.dashboardPanel as any).setOffline('Local engine is offline (Click Start in sidebar)');
 			}
 			return;
 		}
@@ -1441,14 +1571,14 @@ export class ExtensionController {
 
 			if (stats) {
 				this.statusBar.updateStats(stats);
-				if (this.dashboardPanel) {
+				if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateStats === 'function') {
 					this.dashboardPanel.updateStats(stats);
 				}
 			} else {
 				this.statusBar.updateStats(null);
 			}
 
-			if (routes && this.dashboardPanel) {
+			if (routes && this.dashboardPanel && typeof (this.dashboardPanel as any).updateRoutes === 'function') {
 				this.dashboardPanel.updateRoutes(routes);
 			}
 		} catch (error) {

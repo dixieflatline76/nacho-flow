@@ -45,15 +45,15 @@
       },
       {
         "command": "nacho-flow.openConfig",
-        "title": "Nacho Flow: Open Configuration Editor"
+        "title": "Nacho Flow: Open Configuration (config.yaml)"
       },
       {
         "command": "nacho-flow.resetCircuit",
-        "title": "Nacho Flow: Reset Circuit Breaker"
+        "title": "Nacho Flow: Reset Circuit Breakers"
       },
       {
         "command": "nacho-flow.setAuthToken",
-        "title": "Nacho Flow: Set Auth Token"
+        "title": "Nacho Flow: Set Bearer Auth Token"
       },
       {
         "command": "nacho-flow.runOptimizer",
@@ -121,7 +121,12 @@
         "nachoFlow.daemonUrl": {
           "type": "string",
           "default": "http://127.0.0.1:8000",
-          "description": "URL of the Nacho Flow daemon (supports remote Tailscale/LAN URLs)"
+          "description": "URL of the local Nacho Flow daemon"
+        },
+        "nachoFlow.remoteDaemonUrl": {
+          "type": "string",
+          "default": "http://192.168.0.205:8000",
+          "description": "URL of the remote Nacho Flow daemon server"
         },
         "nachoFlow.authToken": {
           "type": "string",

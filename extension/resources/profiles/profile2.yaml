@@ -1,0 +1,266 @@
+# =============================================================================
+# 🌮 NACHO FLOW CONFIGURATION — PROFILE 2
+# Universal gateway configuration for autonomous coding agents (Cline, Zoo, Cursor, Aider)
+# Pipeline: Local GPU ($0) -> Fast Cloud ($0.65/M) -> Reasoning ($0.75/M) -> Frontier ($2/M)
+# =============================================================================
+
+port: 8000
+host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
+
+# =============================================================================
+# 🔌 LLM PROVIDERS
+# =============================================================================
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
+
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: "ENV_OPENROUTER_API_KEY"
+    type: "cloud"
+    headers:
+      HTTP-Referer: "https://github.com/dixieflatline76/nacho-flow"
+      X-Title: "nacho-flow"
+
+# =============================================================================
+# 🔥 HEATSEEKER LIVE MODEL DEALS
+# =============================================================================
+deals:
+  enabled: true
+  alert_threshold_pct: 30.0
+  min_coding_index: 40.0
+  require_tools: true
+
+# =============================================================================
+# 🛡️ AGENTIC TOOL FALLBACK SHIELD
+# =============================================================================
+agent_shield:
+  enabled: true
+  tail_buffer_bytes: 256
+  question_heuristics:
+    - "are you satisfied"
+    - "would you like"
+    - "should i"
+    - "do you approve"
+    - "please confirm"
+    - "let me know if"
+    - "how would you like to proceed"
+  mode_switch_heuristics:
+    - "switch to code mode"
+    - "switch to architect mode"
+    - "ready to implement"
+  error_signatures:
+    - "[ERROR] You did not use a tool"
+    - "Missing value for required parameter"
+    - "The tool execution failed"
+    - "<error_details>"
+    - "No sufficiently similar match found"
+    - "Command failed with exit code"
+    - "Please retry with complete response"
+    - "Editor operation failed"
+    - "Parameter 'old_text' is required"
+    - "Parameter `old_text` is required"
+    - "Parameter old_text is required"
+    - "Command not executed:"
+    - "expected string, received undefined"
+    - "✖ Invalid input"
+    - "Invalid input:"
+    - "tool execution error"
+
+# =============================================================================
+# 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
+# In-Flight Stream Defense that murders infinite loops & monologue traps in <3s
+# =============================================================================
+cycle_killer:
+  enabled: true                     # Master switch for all in-flight stream defense
+  max_prose_tokens: 6144            # Max non-tool prose before intervention (<think> is exempt; relaxed for XML)
+  max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
+  max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
+  repetition_window: 6              # Sliding n-gram window size (words) for loop detection
+  repetition_threshold: 8           # Relaxed threshold (8): allows batch shell ops without false positives
+  thinking_repetition_threshold: 6  # Lenient reasoning repetition for deep architecture plans
+  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+  model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
+  retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
+  kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
+  kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
+  kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
+  kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
+  # 🛡️ File Write & Progress Tools: Category A immunity & Kickstart progress
+  write_tools:
+    - editor
+    - str_replace_editor
+    - text_editor
+    - write_to_file
+    - replace_in_file
+    - replace_file_content
+    - multi_replace_file_content
+    - execute_command
+    - apply_diff
+    - insert_code_block
+    - create_file
+    - create_or_update_file
+    - write_file
+    - edit_file
+    - delete_file
+    - patch_file
+    - run_command
+    - run_terminal_command
+    - run_commands
+    - terminal
+    - bash
+    - exec
+  kickstart_write_tools:            # Preserved for backward compatibility
+    - editor
+    - str_replace_editor
+    - text_editor
+    - write_to_file
+    - replace_in_file
+    - replace_file_content
+    - multi_replace_file_content
+    - execute_command
+    - apply_diff
+    - insert_code_block
+    - create_file
+    - create_or_update_file
+    - write_file
+    - edit_file
+    - delete_file
+    - patch_file
+    - run_command
+    - run_terminal_command
+    - run_commands
+    - terminal
+    - bash
+    - exec
+
+# =============================================================================
+# 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
+# =============================================================================
+tiers:
+  # ---------------------------------------------------------------------------
+  # ⚡ KICKSTART ESCALATION: Break read-only idle loops with Gemini Flash
+  # ---------------------------------------------------------------------------
+  - name: "Kickstart Escalation (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "SessionKickstarted && Retries < 3"
+
+  # ---------------------------------------------------------------------------
+  # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
+  # ---------------------------------------------------------------------------
+  - name: "Tier: Multimodal Vision (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "HasImages && Retries < 2"
+
+  # ---------------------------------------------------------------------------
+  # TIER 1: Local GPU Workhorse (Gemma 4 12B QAT) - 100% VRAM Offload
+  # ---------------------------------------------------------------------------
+  - name: "Tier 1: Local GPU Workhorse"
+    provider: "ollama"
+    model: "gemma4:12b-it-qat"
+    when: "Tokens < 20000 && Retries < 2"
+    strip_images: false
+    max_context: 32000
+
+  # ---------------------------------------------------------------------------
+  # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus — $0.65 / $3.25 per 1M)
+  # Dense flagship coder: AST diff precision, ESM/TS compliance, post-compression resilience
+  # ---------------------------------------------------------------------------
+  - name: "Tier 2: Flagship Agent Coder (Qwen3 Coder Plus)"
+    provider: "openrouter"
+    model: "qwen/qwen3-coder-plus"
+    when: "Tokens < 160000 && Retries < 2"
+
+  # ---------------------------------------------------------------------------
+  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash — $0.75 / $3.75 per 1M)
+  # Takes over when Qwen fails a turn (Retries >= 2) or for deep context (>100k)
+  # ---------------------------------------------------------------------------
+  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash)"
+    provider: "openrouter"
+    model: "google/gemini-3.7-flash"
+    when: "Tokens < 260000 && Retries < 5"
+
+  # ---------------------------------------------------------------------------
+  # TIER 4: Large Context Synthesis (Gemini 3.1 Pro)
+  # ---------------------------------------------------------------------------
+  - name: "Tier 4: Large Context Synthesis (Gemini 3.1 Pro)"
+    provider: "openrouter"
+    model: "google/gemini-3.1-pro-preview"
+    when: "Retries < 7"
+
+  # ---------------------------------------------------------------------------
+  # TIER 5: Frontier Powerhouse (Claude Sonnet 5 — $2.00/$10.00 per 1M)
+  # ---------------------------------------------------------------------------
+  - name: "Tier 5: Frontier Powerhouse (Claude Sonnet 5)"
+    provider: "openrouter"
+    model: "anthropic/claude-sonnet-5"
+    when: "Retries < 9"
+
+  # ---------------------------------------------------------------------------
+  # TIER 6: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
+  # Access via: X-Spicy-Model: anthropic/claude-opus-5 or Fairy Dust Checkpoints
+  # ---------------------------------------------------------------------------
+  - name: "Tier 6: Opus On-Demand (Spicy Only)"
+    provider: "openrouter"
+    model: "anthropic/claude-opus-5"
+    when: "false"
+
+# =============================================================================
+# 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Claude Sonnet 5)
+# =============================================================================
+default_tier:
+  name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
+  provider: "openrouter"
+  model: "anthropic/claude-sonnet-5"
+  when: "true"
+
+# =============================================================================
+# FAIRY DUSTING - Proactive Frontier Quality Checkpoints
+# =============================================================================
+fairy_dust:
+  enabled: true
+  entries:
+    # Tactical Code Review (Claude Sonnet 5) — ZERO-PROSE ADVERSARIAL BUG FIXER
+    - name: "Tactical Code Review"
+      model: "anthropic/claude-sonnet-5"
+      provider: "openrouter"
+      frequency: 15
+      max_per_session: 5
+      priority: 10
+      prompt: >
+        [ADVERSARIAL BUG FIXER: ZERO-PROSE ACTION REQUIRED]
+        You are an elite adversarial bug hunter. Your value is CODE FIXES, NOT ESSAYS.
+        CRITICAL: Do NOT write long explanations, code reviews, or prose summaries.
+        Every token spent on conversational prose is wasted. State any bug in at most
+        1-2 concise bullet points and IMMEDIATELY emit tool calls (write_to_file,
+        replace_in_file, execute_command) to fix it.
+        Check for:
+        (1) STUB FUNCTIONS: Methods that discard parameters or return dummy values.
+        (2) DEAD CODE / UNREACHABLE BRANCHES.
+        (3) COPY-PASTE DUPLICATION: Refactor duplicated logic into shared helpers.
+        (4) OFF-BY-ONE & SLICE/INDEX BUGS.
+        (5) STATE MACHINE VIOLATIONS: Recursive re-entrancy vs caller-driven transitions.
+        (6) SWALLOWED / UNCHECKED ERRORS.
+        Fix every issue directly with tool calls now. If no bugs exist, output at most
+        1 sentence confirming correctness and continue the next task step with tools.
+
+    # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
+    - name: "Strategic Architecture Review"
+      # model: "anthropic/claude-opus-5"
+      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
+      provider: "openrouter"
+      frequency: 60
+      max_per_session: 1
+      priority: 100
+      prompt: >
+        [SPEC TRACEABILITY AUDIT: ACTION REQUIRED - ZERO ESSAYS]
+        You are the QA lead performing requirements verification.
+        CRITICAL: Do NOT write lengthy analysis essays or commentary.
+        Your value is IMPLEMENTATION AND TESTS. Verify that all requirements in the
+        task prompt are fully implemented and tested (not stubbed).
+        If any requirement or test is missing or untested, output at most a compact
+        3-5 line checklist of gaps, then IMMEDIATELY emit tool calls (write_to_file,
+        replace_in_file, execute_command) to write the missing code and tests.

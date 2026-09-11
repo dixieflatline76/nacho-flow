@@ -109,6 +109,7 @@ export class ProcessManager {
 	private lastStdout: string[] = [];
 	private isStopping = false;
 	private isAttached = false;
+	private restartMutex: Promise<any> = Promise.resolve();
 
 	constructor(extensionUri: vscode.Uri, outputChannel: vscode.OutputChannel, globalStorageUri?: vscode.Uri) {
 		this.extensionUri = extensionUri;
@@ -385,7 +386,7 @@ export class ProcessManager {
 	public resolveLogDir(configPath?: string): string {
 		if (configPath) {
 			const dir = path.dirname(configPath);
-			if (path.basename(dir) === '.nacho' || path.basename(dir) === 'presets') {
+			if (path.basename(dir) === '.nacho' || path.basename(dir) === 'presets' || path.basename(dir) === 'profiles') {
 				return path.join(dir, 'logs');
 			}
 		}
@@ -415,18 +416,35 @@ export class ProcessManager {
 			}
 
 			if (this.childProcess) {
+				const proc = this.childProcess;
+				this.childProcess = null;
+
 				if (process.platform === 'win32') {
 					try {
-						if (this.childProcess.pid) {
-							child_process.execSync(`taskkill /pid ${this.childProcess.pid} /f /t`);
+						if (proc.pid) {
+							child_process.execSync(`taskkill /pid ${proc.pid} /f /t`);
 						}
 					} catch {
-						this.childProcess.kill();
+						proc.kill();
 					}
 				} else {
-					this.childProcess.kill('SIGTERM');
+					proc.kill('SIGTERM');
+					if (typeof proc.once === 'function' && !proc.killed && proc.exitCode === null) {
+						await new Promise<void>((resolve) => {
+							const timer = setTimeout(() => {
+								try {
+									proc.kill('SIGKILL');
+								} catch (_) {}
+								resolve();
+							}, 1200);
+
+							proc.once('exit', () => {
+								clearTimeout(timer);
+								resolve();
+							});
+						});
+					}
 				}
-				this.childProcess = null;
 			}
 
 			this.isAttached = false;
@@ -472,16 +490,22 @@ export class ProcessManager {
 	}
 
 	/**
-	 * Restarts the engine by stopping and starting.
+	 * Restarts the engine by stopping and starting, serialized via a mutex to prevent race conditions.
 	 */
 	public async restart(
 		daemonUrl: string,
 		configPath?: string,
 		authToken?: string
 	): Promise<{ success: boolean; error?: string; parsedError?: ParsedStartupError }> {
-		await this.stop(daemonUrl, authToken);
-		await new Promise((r) => setTimeout(r, 500));
-		return await this.start(daemonUrl, configPath);
+		const executeRestart = async () => {
+			await this.stop(daemonUrl, authToken);
+			await new Promise((r) => setTimeout(r, 600));
+			return await this.start(daemonUrl, configPath);
+		};
+
+		const restartOp = this.restartMutex.then(executeRestart, executeRestart);
+		this.restartMutex = restartOp.catch(() => ({ success: false }));
+		return await restartOp;
 	}
 
 	/**

@@ -46,3 +46,4 @@ extension/node_modules/
 extension/coverage/
 *.vsix
 scripts/deploy.sh
+deploy_local_vsix.bat
