@@ -1,0 +1,8 @@
+{
+  "id": "aider",
+  "name": "Aider",
+  "version": "1.0.0",
+  "write_tools": ["write_file", "patch_file", "apply_diff"],
+  "read_tools": ["read_file"],
+  "command_tools": ["run_cmd"]
+}

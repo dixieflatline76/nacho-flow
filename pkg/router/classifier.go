@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"unicode"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
@@ -787,19 +788,7 @@ func isShellTool(name string) bool {
 
 // IsBuiltinWriteTool checks if the tool name represents a structured file writing or editing tool.
 func IsBuiltinWriteTool(name string) bool {
-	lower := strings.ToLower(strings.TrimSpace(name))
-	switch lower {
-	case "editor", "replace_in_file", "str_replace_editor", "text_editor",
-		"write_to_file", "replace_file_content", "multi_replace_file_content",
-		"apply_diff", "create_file", "edit_file", "write_file", "save_file",
-		"create_or_update_file", "patch_file", "put_file", "reapply", "insert_content":
-		return true
-	}
-	if strings.HasSuffix(lower, "_editor") || strings.HasPrefix(lower, "edit_") ||
-		strings.Contains(lower, "write") || strings.Contains(lower, "patch") || strings.Contains(lower, "diff") {
-		return true
-	}
-	return false
+	return agentregistry.DefaultRegistry().IsWriteTool(name)
 }
 
 // extractCommandFromRaw pulls the shell command string from tool call argument payloads.
@@ -858,174 +847,10 @@ func extractXMLCommand(text string) string {
 
 // DetectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
 func DetectShellWrite(cmd string) bool {
-	return detectShellWrite(cmd)
+	return agentregistry.DefaultRegistry().DetectShellWrite(cmd)
 }
 
 // detectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
 func detectShellWrite(cmd string) bool {
-	trimmed := strings.TrimSpace(cmd)
-	if trimmed == "" {
-		return false
-	}
-
-	// 1. Redirection checks: > and >> (ignoring comparisons/scripts inside quotes)
-	if strings.Contains(trimmed, ">") {
-		var inSingleQuote, inDoubleQuote bool
-		for i := 0; i < len(trimmed); i++ {
-			ch := trimmed[i]
-			if ch == '\\' && i+1 < len(trimmed) {
-				i++
-				continue
-			}
-			if ch == '\'' && !inDoubleQuote {
-				inSingleQuote = !inSingleQuote
-				continue
-			}
-			if ch == '"' && !inSingleQuote {
-				inDoubleQuote = !inDoubleQuote
-				continue
-			}
-			if inSingleQuote || inDoubleQuote {
-				continue
-			}
-			if ch == '>' {
-				// Guard: process substitution <( or redirection descriptor &>
-				if i > 0 && (trimmed[i-1] == '&' || trimmed[i-1] == '<') {
-					continue
-				}
-				// Guard: >&2 (stdout to stderr)
-				if i+1 < len(trimmed) && trimmed[i+1] == '&' {
-					continue
-				}
-				// Skip second '>' if '>>'
-				targetIdx := i + 1
-				if targetIdx < len(trimmed) && trimmed[targetIdx] == '>' {
-					targetIdx++
-				}
-				// Guard: >= comparison operator
-				if targetIdx < len(trimmed) && trimmed[targetIdx] == '=' {
-					continue
-				}
-				target := strings.TrimSpace(trimmed[targetIdx:])
-				if endIdx := strings.IndexAny(target, " \t\r\n|;&"); endIdx != -1 {
-					target = target[:endIdx]
-				}
-				target = strings.TrimSpace(target)
-				if isNullTarget(target) {
-					continue
-				}
-				if target != "" {
-					return true
-				}
-			}
-		}
-	}
-
-	lower := strings.ToLower(trimmed)
-
-	// 2. Pipe to file-writing tools
-	if strings.Contains(lower, "| tee") ||
-		strings.Contains(lower, "|tee") ||
-		strings.Contains(lower, "| dd of=") ||
-		strings.Contains(lower, "| out-file") ||
-		strings.Contains(lower, "| set-content") ||
-		strings.Contains(lower, "| add-content") {
-		return true
-	}
-
-	// 3. Heredocs combined with file writing
-	if strings.Contains(trimmed, "<<") {
-		if strings.Contains(trimmed, ">") || strings.Contains(lower, "| tee") {
-			return true
-		}
-	}
-
-	// 4. File-modifying CLI tools
-	if containsCommandWord(lower, "sed") && strings.Contains(lower, "-i") {
-		return true
-	}
-
-	modifyingTools := [...]string{
-		"patch", "touch", "mkdir", "rm", "rmdir", "cp", "mv",
-		"truncate", "install", "unzip", "gunzip",
-		"copy", "move", "del", "erase", "ren", "rename", "md", "rd",
-		"new-item", "copy-item", "move-item", "remove-item", "set-content", "add-content", "out-file",
-	}
-	for _, tool := range modifyingTools {
-		if containsCommandWord(lower, tool) {
-			return true
-		}
-	}
-
-	// tar extraction
-	if containsCommandWord(lower, "tar") && (strings.Contains(lower, "-x") || strings.Contains(lower, " x")) {
-		return true
-	}
-
-	// git file-modifying commands (narrowed to concrete file writes; avoids merge/rebase false positives)
-	if containsCommandWord(lower, "git") {
-		if strings.Contains(lower, "checkout --") ||
-			strings.Contains(lower, "checkout .") ||
-			strings.Contains(lower, "restore ") ||
-			strings.Contains(lower, "restore\t") ||
-			strings.Contains(lower, "apply ") ||
-			strings.Contains(lower, "apply\t") {
-			return true
-		}
-	}
-
-	// Project and package scaffolding commands that generate/modify configuration and source files
-	if (containsCommandWord(lower, "go") && (strings.Contains(lower, "mod init") || strings.Contains(lower, "mod tidy"))) ||
-		(containsCommandWord(lower, "npm") && (strings.Contains(lower, "init") || strings.Contains(lower, "create "))) ||
-		(containsCommandWord(lower, "cargo") && (strings.Contains(lower, "new ") || strings.Contains(lower, "init"))) {
-		return true
-	}
-
-	return false
-}
-
-func isNullTarget(target string) bool {
-	lower := strings.ToLower(target)
-	switch lower {
-	case "/dev/null", "/dev/zero", "nul", "$null", "&1", "&2":
-		return true
-	default:
-		return false
-	}
-}
-
-func containsCommandWord(s, word string) bool {
-	idx := 0
-	for {
-		pos := strings.Index(s[idx:], word)
-		if pos == -1 {
-			return false
-		}
-		actualPos := idx + pos
-		prefixOK := false
-		if actualPos == 0 {
-			prefixOK = true
-		} else {
-			prev := s[actualPos-1]
-			if prev == ' ' || prev == '\t' || prev == ';' || prev == '|' || prev == '&' || prev == '`' || prev == '(' || prev == '\n' {
-				prefixOK = true
-			}
-		}
-
-		afterPos := actualPos + len(word)
-		suffixOK := false
-		if afterPos >= len(s) {
-			suffixOK = true
-		} else {
-			next := s[afterPos]
-			if next == ' ' || next == '\t' || next == ';' || next == '|' || next == '&' || next == '`' || next == ')' || next == '\n' || next == '\r' {
-				suffixOK = true
-			}
-		}
-
-		if prefixOK && suffixOK {
-			return true
-		}
-		idx = actualPos + 1
-	}
+	return agentregistry.DefaultRegistry().DetectShellWrite(cmd)
 }

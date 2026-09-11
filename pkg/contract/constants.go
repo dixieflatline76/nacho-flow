@@ -96,8 +96,14 @@ const (
 	DefaultCatalogFileName  = "models.json"
 	DefaultCatalogCacheDir  = ".nacho-flow/cache/curation"
 	DefaultCatalogVersion   = "v1.0.0"
-	FallbackCatalogVersion  = "v0.0.0"
 	DefaultRemoteCatalogURL = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/models.json"
+
+	// Modular Agent & Shell Catalog Defaults
+	DefaultRemoteAgentManifestURL = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/agents/manifest.json"
+	DefaultRemoteAgentBaseURL     = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/agents/"
+	DefaultRemoteShellURL         = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/shell.json"
+	DefaultCatalogAgentsDir       = "catalog/agents"
+	DefaultCatalogIncomingDir     = "catalog/incoming"
 )
 
 // File system and environment variable defaults.

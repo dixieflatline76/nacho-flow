@@ -1,0 +1,32 @@
+{
+  "version": "1.0.0",
+  "unix": {
+    "write_commands": [
+      "touch", "mkdir", "rm", "rmdir", "cp", "mv", "truncate", "install", 
+      "patch", "unzip", "gunzip"
+    ],
+    "write_pipes": [
+      "| tee", "|tee", "| dd of="
+    ],
+    "contextual_commands": {
+      "sed": ["-i"],
+      "tar": ["-x", " x"],
+      "git": ["checkout --", "checkout .", "restore ", "restore\t", "apply ", "apply\t"],
+      "go": ["mod init", "mod tidy"],
+      "npm": ["init", "create "],
+      "cargo": ["new ", "init"]
+    },
+    "redirections": [">", ">>", "<<"]
+  },
+  "windows": {
+    "write_commands": [
+      "copy", "move", "del", "erase", "ren", "rename", "md", "rd",
+      "new-item", "copy-item", "move-item", "remove-item",
+      "set-content", "add-content", "out-file"
+    ],
+    "write_pipes": [
+      "| out-file", "| set-content", "| add-content", "| tee-object"
+    ],
+    "redirections": [">", ">>"]
+  }
+}

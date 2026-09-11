@@ -98,7 +98,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **Safe Log Rotation & Cold Maintenance**: Rotates large `traffic.jsonl` and `router.log` files to timestamped `.bak` archives and resets stats directly from the VS Code sidebar without file locking issues.
 * **Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 <!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (96.7% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (96.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 * **Zero Runtime Dependencies**: Single static binary with zero CGO, Node, or Python runtime requirements (`CGO_ENABLED=0`).
 

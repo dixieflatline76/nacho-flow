@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 )
@@ -27,77 +28,10 @@ var (
 		},
 	}
 
-	// tagReplacer performs single-pass canonicalization and stripping of model-specific
-	// reasoning delimiters and chat template artifacts (Qwen, Claude, Gemma).
-	tagReplacer = strings.NewReplacer(
-		// Longest/most specific canonical think open tags first
-		"<|channel|>thought", "<think>",
-		"<|channel>thought", "<think>",
-		"<channel|thought>", "<think>",
-		"<channel|thought", "<think>",
-		"<|im_start|>think", "<think>",
-		"<|im_start|>thought", "<think>",
-		"<thinking>", "<think>",
-		// Canonical think close tags
-		"</thinking>", "</think>",
-		"</thought>", "</think>",
-		"<|im_end|>", "</think>",
-		// Specific call prefixes
-		"<|call:", "",
-		"<call:", "",
-		// Stripped turn/channel delimiters (longer first)
-		"<channel|>", "",
-		"<|channel|>", "",
-		"<|channel>", "",
-		"<channel|", "",
-		"<|channel|", "",
-		"<channel>", "",
-		"</channel>", "",
-		"<start_of_turn>", "",
-		"<end_of_turn>", "",
-	)
-
-	// reasoningByteMarkers are byte signatures that indicate potential reasoning content
-	// or model chat template delimiters requiring full chunk parsing rather than fast-path line passthrough.
-	reasoningByteMarkers = [][]byte{
-		[]byte("reasoning_content"),
-		[]byte("\"reasoning\""),
-		[]byte("\"reason\""),
-		// Delimiters (both raw and escaped)
-		[]byte("<think>"),
-		[]byte("</think>"),
-		[]byte("<thinking>"),
-		[]byte("</thinking>"),
-		[]byte("</thought>"),
-		[]byte("<|im_start|>"),
-		[]byte("<|im_end|>"),
-		[]byte("<start_of_turn>"),
-		[]byte("<end_of_turn>"),
-		[]byte("start_of_turn"),
-		[]byte("end_of_turn"),
-		[]byte("<channel"),
-		[]byte("channel|"),
-		[]byte("|channel"),
-		// JSON / HTML unicode escaped delimiters (\u003c / \u003C / \u003e)
-		[]byte(`\u003cthink`),
-		[]byte(`\u003Cthink`),
-		[]byte(`\u003c/think`),
-		[]byte(`\u003C/think`),
-		[]byte(`\u003cthinking`),
-		[]byte(`\u003Cthinking`),
-		[]byte(`\u003c/thinking`),
-		[]byte(`\u003C/thinking`),
-		[]byte(`\u003c/thought`),
-		[]byte(`\u003C/thought`),
-		[]byte(`\u003c|im_start`),
-		[]byte(`\u003C|im_start`),
-		[]byte(`\u003c|im_end`),
-		[]byte(`\u003C|im_end`),
-		[]byte(`\u003cchannel`),
-		[]byte(`\u003Cchannel`),
-		[]byte(`\u003c|channel`),
-		[]byte(`\u003C|channel`),
-	}
+	tagReplacer          = agentregistry.DefaultRegistry().TagReplacer()
+	reasoningByteMarkers = agentregistry.DefaultRegistry().ReasoningByteMarkers()
+	writeTagByteMarkers  = agentregistry.DefaultRegistry().WriteTagByteMarkers()
+	writeToolsList       = agentregistry.DefaultRegistry().WriteToolsList()
 )
 
 func hasAnyReasoningMarker(payload []byte) bool {
@@ -107,6 +41,143 @@ func hasAnyReasoningMarker(payload []byte) bool {
 		}
 	}
 	return false
+}
+
+func hasAnyWriteMarker(payload []byte) bool {
+	for _, marker := range writeTagByteMarkers {
+		if bytes.Contains(payload, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func findEarliestOpenTag(s string) (startIdx, endIdx int, tagName string) {
+	curr := s
+	offset := 0
+	for {
+		idx := strings.IndexByte(curr, '<')
+		if idx == -1 {
+			return -1, -1, ""
+		}
+		actualStart := offset + idx
+		// Check if it's a closing tag
+		if idx+1 < len(curr) && curr[idx+1] == '/' {
+			curr = curr[idx+1:]
+			offset = actualStart + 1
+			continue
+		}
+
+		rest := curr[idx+1:]
+		nameEnd := 0
+		for nameEnd < len(rest) {
+			b := rest[nameEnd]
+			if b == '>' || b == ' ' || b == '\t' || b == '\r' || b == '\n' || b == '/' {
+				break
+			}
+			nameEnd++
+		}
+
+		if nameEnd > 0 {
+			name := strings.ToLower(rest[:nameEnd])
+			if agentregistry.DefaultRegistry().IsWriteTool(name) {
+				gtIdx := strings.IndexByte(rest, '>')
+				if gtIdx != -1 {
+					return actualStart, actualStart + 1 + gtIdx + 1, name
+				}
+				return actualStart, -1, name
+			}
+		}
+
+		curr = curr[idx+1:]
+		offset = actualStart + 1
+	}
+}
+
+func findEarliestCloseTag(s string) (startIdx, endIdx int, tagName string) {
+	curr := s
+	offset := 0
+	for {
+		idx := strings.Index(curr, "</")
+		if idx == -1 {
+			return -1, -1, ""
+		}
+		actualStart := offset + idx
+		rest := curr[idx+2:]
+		nameEnd := 0
+		for nameEnd < len(rest) {
+			b := rest[nameEnd]
+			if b == '>' || b == ' ' || b == '\t' || b == '\r' || b == '\n' {
+				break
+			}
+			nameEnd++
+		}
+
+		if nameEnd > 0 {
+			name := strings.ToLower(rest[:nameEnd])
+			if agentregistry.DefaultRegistry().IsWriteTool(name) {
+				gtIdx := strings.IndexByte(rest, '>')
+				if gtIdx != -1 {
+					return actualStart, actualStart + 2 + gtIdx + 1, name
+				}
+				return actualStart, -1, name
+			}
+		}
+
+		curr = curr[idx+2:]
+		offset = actualStart + 2
+	}
+}
+
+func findPartialOpenTagSuffix(s string) string {
+	checkLen := len(s)
+	if checkLen > 25 {
+		checkLen = 25
+	}
+	tail := s[len(s)-checkLen:]
+	ltIdx := strings.LastIndexByte(tail, '<')
+	if ltIdx == -1 {
+		return ""
+	}
+	candidate := tail[ltIdx:]
+	if strings.ContainsRune(candidate, '>') {
+		return ""
+	}
+	if strings.HasPrefix(candidate, "</") {
+		return ""
+	}
+
+	afterLt := strings.ToLower(candidate[1:])
+	for _, tag := range writeToolsList {
+		if strings.HasPrefix(tag, afterLt) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func findPartialCloseTagSuffix(s string) string {
+	checkLen := len(s)
+	if checkLen > 25 {
+		checkLen = 25
+	}
+	tail := s[len(s)-checkLen:]
+	ltIdx := strings.LastIndex(tail, "</")
+	if ltIdx == -1 {
+		return ""
+	}
+	candidate := tail[ltIdx:]
+	if strings.ContainsRune(candidate, '>') {
+		return ""
+	}
+
+	afterSlash := strings.ToLower(candidate[2:])
+	for _, tag := range writeToolsList {
+		if strings.HasPrefix(tag, afterSlash) {
+			return candidate
+		}
+	}
+	return ""
 }
 
 type fastDelta struct {
@@ -184,6 +255,8 @@ type StreamNormalizer struct {
 	toolChunksScratch      []fastToolCallChunk
 	currentToolCategory    shield.ToolActivityCategory
 	hasActiveToolCall      bool
+	inWriteTool            bool
+	pendingWriteTagBuf     string
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -199,6 +272,11 @@ func NewStreamNormalizer(r io.ReadCloser) *StreamNormalizer {
 		outBuf:   buf,
 		features: uint16(router.FeatureDefaultAll),
 	}
+}
+
+// InWriteTool reports whether the normalizer is currently inside an XML write tool tag.
+func (s *StreamNormalizer) InWriteTool() bool {
+	return s.inWriteTool
 }
 
 // SetFeatures configures active FeatureFlags on the stream normalizer.
@@ -298,9 +376,15 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		s.captureUsage(payload)
 	}
 
-	// Fast path: if outside reasoning, no pending tag to close, and no markers detected, pass line through directly
-	if !s.inThinking && !s.pendingTagClosing && !hasAnyReasoningMarker(payload) {
+	// Fast path: if outside reasoning, outside write tools, no pending tag to close, and no markers detected, pass line through directly
+	if !s.inThinking && !s.inWriteTool && !s.pendingTagClosing && s.pendingWriteTagBuf == "" && !hasAnyReasoningMarker(payload) && !hasAnyWriteMarker(payload) {
 		s.fastPassProse(line, payload)
+		return
+	}
+
+	// Fast path: if inside write tools, outside reasoning, no pending tag to close, and no markers detected, pass line through directly as tool write
+	if s.inWriteTool && !s.inThinking && !s.pendingTagClosing && s.pendingWriteTagBuf == "" && !hasAnyReasoningMarker(payload) && !hasAnyWriteMarker(payload) {
+		s.fastPassWrite(line, payload)
 		return
 	}
 
@@ -314,7 +398,29 @@ func (s *StreamNormalizer) fastPassProse(line, payload []byte) {
 		return
 	}
 	if contentStr := payloadContent(payload); contentStr != "" {
+		if partial := findPartialOpenTagSuffix(contentStr); partial != "" {
+			s.routeContentDelta(contentStr)
+			s.outBuf.Write(line)
+			return
+		}
 		s.recordProse(contentStr)
+	}
+	s.outBuf.Write(line)
+}
+
+// fastPassWrite handles file write tool chunks with zero JSON overhead.
+func (s *StreamNormalizer) fastPassWrite(line, payload []byte) {
+	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
+		s.processChunkLine(line, payload)
+		return
+	}
+	if contentStr := payloadContent(payload); contentStr != "" {
+		if partial := findPartialCloseTagSuffix(contentStr); partial != "" {
+			s.routeContentDelta(contentStr)
+			s.outBuf.Write(line)
+			return
+		}
+		s.recordToolDelta(contentStr)
 	}
 	s.outBuf.Write(line)
 }
@@ -330,6 +436,11 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 	choice := &chunk.Choices[0]
 	if choice.FinishReason != nil && *choice.FinishReason != "" {
 		s.hasActiveToolCall = false
+		s.inWriteTool = false
+		if s.pendingWriteTagBuf != "" {
+			s.recordToolDelta(s.pendingWriteTagBuf)
+			s.pendingWriteTagBuf = ""
+		}
 	}
 	if len(choice.Delta.ToolCalls) > 0 {
 		s.extractAndRecordToolCalls(choice.Delta.ToolCalls)
@@ -346,7 +457,7 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 
 		s.recordReasoning(reasoningText)
 		if choice.Delta.Content != "" {
-			s.recordProse(choice.Delta.Content)
+			s.routeContentDelta(choice.Delta.Content)
 		}
 
 		s.emitChunk(chunk)
@@ -427,7 +538,88 @@ func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
 	choice.Delta.Reason = ""
 
 	s.recordReasoning(reasoningDelta)
-	s.recordProse(proseDelta)
+	s.routeContentDelta(proseDelta)
+}
+
+// routeContentDelta demuxes content streams between prose and active XML tool lanes.
+func (s *StreamNormalizer) routeContentDelta(content string) {
+	if content == "" && s.pendingWriteTagBuf == "" {
+		return
+	}
+
+	full := content
+	if s.pendingWriteTagBuf != "" {
+		full = s.pendingWriteTagBuf + content
+		s.pendingWriteTagBuf = ""
+	}
+
+	for len(full) > 0 {
+		if !s.inWriteTool {
+			openStart, openEnd, _ := findEarliestOpenTag(full)
+			if openStart == -1 {
+				if partial := findPartialOpenTagSuffix(full); partial != "" {
+					prose := full[:len(full)-len(partial)]
+					if prose != "" {
+						s.recordProse(prose)
+					}
+					s.pendingWriteTagBuf = partial
+					return
+				}
+				s.recordProse(full)
+				return
+			}
+
+			proseBefore := full[:openStart]
+			if proseBefore != "" {
+				s.recordProse(proseBefore)
+			}
+
+			if openEnd == -1 {
+				s.pendingWriteTagBuf = full[openStart:]
+				return
+			}
+
+			s.inWriteTool = true
+			s.currentToolCategory = shield.ToolCategoryFileWrite
+			s.hasActiveToolCall = true
+			tagText := full[openStart:openEnd]
+			s.recordToolDelta(tagText)
+			full = full[openEnd:]
+		} else {
+			closeStart, closeEnd, _ := findEarliestCloseTag(full)
+			if closeStart == -1 {
+				if partial := findPartialCloseTagSuffix(full); partial != "" {
+					toolContent := full[:len(full)-len(partial)]
+					if toolContent != "" {
+						s.recordToolDelta(toolContent)
+					}
+					s.pendingWriteTagBuf = partial
+					return
+				}
+				s.recordToolDelta(full)
+				return
+			}
+
+			toolBefore := full[:closeStart]
+			if toolBefore != "" {
+				s.recordToolDelta(toolBefore)
+			}
+
+			if closeEnd == -1 {
+				s.pendingWriteTagBuf = full[closeStart:]
+				return
+			}
+
+			tagText := full[closeStart:closeEnd]
+			s.recordToolDelta(tagText)
+			s.inWriteTool = false
+			if !s.hasNativeTools {
+				s.hasActiveToolCall = false
+			}
+			s.currentToolCategory = shield.ToolCategoryCommand
+			full = full[closeEnd:]
+		}
+	}
 }
 
 // emitChunk serializes and writes a modified SSE chunk into the output buffer.
@@ -445,6 +637,15 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 	s.inStructuredReasoning = false
 	s.pendingTagClosing = false
 	s.hasActiveToolCall = false
+	if s.pendingWriteTagBuf != "" {
+		if s.inWriteTool {
+			s.recordToolDelta(s.pendingWriteTagBuf)
+		} else {
+			s.recordProse(s.pendingWriteTagBuf)
+		}
+		s.pendingWriteTagBuf = ""
+	}
+	s.inWriteTool = false
 
 	shieldEnabled := (s.features & uint16(router.FeatureShieldEnabled)) != 0
 	if shieldEnabled && !s.hasNativeTools && s.interactiveTool != "" && s.shieldMgr != nil && s.tailBuffer != nil {
@@ -613,6 +814,8 @@ func (s *StreamNormalizer) Close() error {
 	}
 	s.closed = true
 	s.hasActiveToolCall = false
+	s.inWriteTool = false
+	s.pendingWriteTagBuf = ""
 	var err error
 	if s.upstream != nil {
 		err = s.upstream.Close()

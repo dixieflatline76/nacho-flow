@@ -719,7 +719,7 @@ func runSyncHarness() {
 
 	// 3. Run Microbenchmarks
 	fmt.Printf("\n▶ Running Go Nanosecond Micro-Benchmarks (go test -bench=...)\n")
-	microCmd := exec.Command("go", "test", "-bench=.", "-benchmem", "-run=^$", "./pkg/router/...", "./pkg/strategy/...", "./pkg/server/...")
+	microCmd := exec.Command("go", "test", "-bench=.", "-benchmem", "-run=^$", "./pkg/agentregistry/...", "./pkg/router/...", "./pkg/strategy/...", "./pkg/server/...")
 	microOut, _ := microCmd.CombinedOutput()
 	microList := parseMicroBenchOutput(string(microOut))
 

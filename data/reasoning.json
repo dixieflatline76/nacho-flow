@@ -1,0 +1,46 @@
+{
+  "version": "1.0.0",
+  "canonical_open": {
+    "<think>": [
+      "<|channel|>thought",
+      "<|channel>thought",
+      "<channel|thought>",
+      "<channel|thought",
+      "<|im_start|>think",
+      "<|im_start|>thought",
+      "<thinking>"
+    ]
+  },
+  "canonical_close": {
+    "</think>": [
+      "</thinking>",
+      "</thought>",
+      "<|im_end|>"
+    ]
+  },
+  "strip_delimiters": [
+    "<|call:",
+    "<call:",
+    "<channel|>",
+    "<|channel|>",
+    "<|channel>",
+    "<channel|",
+    "<|channel|",
+    "<channel>",
+    "</channel>",
+    "<start_of_turn>",
+    "<end_of_turn>"
+  ],
+  "reasoning_fields": [
+    "reasoning_content",
+    "\"reasoning\"",
+    "\"reason\""
+  ],
+  "extra_byte_markers": [
+    "start_of_turn",
+    "end_of_turn",
+    "<channel",
+    "channel|",
+    "|channel"
+  ]
+}

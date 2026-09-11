@@ -95,7 +95,7 @@ cycle_killer:
   max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
   max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
   repetition_window: 6              # Sliding n-gram window size (words) for loop detection
-  repetition_threshold: 4           # Slightly higher threshold: Cline XML is naturally repetitive
+  repetition_threshold: 8           # Relaxed threshold (8): allows batch shell ops without false positives
   thinking_repetition_threshold: 6  # Lenient reasoning repetition for deep architecture plans
   max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
   model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m

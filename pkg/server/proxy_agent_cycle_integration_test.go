@@ -402,3 +402,102 @@ func TestProxy_StreamOptionsAndCalibration(t *testing.T) {
 		t.Errorf("Expected warning to be deduplicated per provider, but it logged again: %s", logBuf.String())
 	}
 }
+
+// TestProxy_ClineXML_NQueensTableDrivenTestReplay replays the exact streaming scenario from Cline v4 Turn 10
+// where table-driven test boilerplate was previously falsely severed by the cycle killer.
+// It verifies end-to-end that the proxy streams the entire payload to the client without severing.
+func TestProxy_ClineXML_NQueensTableDrivenTestReplay(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("ResponseWriter does not support Flusher")
+		}
+
+		// Initial chunk opening write_to_file
+		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"I will now create the unit test suite.\\n<write_to_file>\\n<path>board_test.go</path>\\n<content>\\npackage board\\n\\nimport \\\"testing\\\"\\n\"}}]}\n\n"))
+		flusher.Flush()
+
+		// Repetitive table-driven test boilerplate chunks
+		tableBoilerplate := "func TestBoard_Attacks(t *testing.T) {\n\ttests := []struct {\n\t\tname string\n\t}{\n\t\t{\"case 1\"},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t})\n\t}\n}\n"
+		for i := 0; i < 6; i++ {
+			w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"" + strings.ReplaceAll(tableBoilerplate, "\n", "\\n") + "\"}}]}\n\n"))
+			flusher.Flush()
+		}
+
+		// Closing tags
+		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"</content>\\n</write_to_file>\\nNow the tests are ready.\"}}]}\n\n"))
+		flusher.Flush()
+
+		w.Write([]byte("data: [DONE]\n\n"))
+		flusher.Flush()
+	}))
+	defer mockUpstream.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		CycleKiller: contract.CycleBreakerConfig{
+			Enabled:             &enabled,
+			RepetitionThreshold: 3,
+			RepetitionWindow:    6,
+			MaxWriteTokens:      65536,
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"qwen_provider": {
+				BaseURL: mockUpstream.URL,
+				Type:    "cloud",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Qwen Tier",
+				Model:    "qwen3-coder-plus",
+				Provider: "qwen_provider",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	reqPayload := `{
+		"model": "qwen3-coder-plus",
+		"stream": true,
+		"messages": [{"role": "user", "content": "Write tests for N-Queens solver"}]
+	}`
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+
+	// Verify the stream completed without false cycle killer severance
+	if strings.Contains(body, "cycle_killer_error") || strings.Contains(body, "tool repetition loop detected") || strings.Contains(body, "🌮 Nacho Flow • Loop Detected") {
+		t.Fatalf("Stream was falsely severed by cycle breaker! Body:\n%s", body)
+	}
+
+	if !strings.Contains(body, "board_test.go") {
+		t.Errorf("Expected board_test.go to be present in stream body")
+	}
+
+	if !strings.Contains(body, "</write_to_file>") {
+		t.Errorf("Expected </write_to_file> to be present in stream body")
+	}
+
+	if !strings.Contains(body, "[DONE]") {
+		t.Errorf("Expected [DONE] at end of stream body")
+	}
+}
+

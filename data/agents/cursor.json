@@ -1,0 +1,8 @@
+{
+  "id": "cursor",
+  "name": "Cursor",
+  "version": "1.0.0",
+  "write_tools": ["edit_file", "create_file", "reapply", "insert_content", "modify_file"],
+  "read_tools": ["read_file"],
+  "command_tools": ["run_terminal_command"]
+}

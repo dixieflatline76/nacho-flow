@@ -1,0 +1,8 @@
+{
+  "id": "cline",
+  "name": "Cline / Claude Dev",
+  "version": "1.0.0",
+  "write_tools": ["editor", "write_to_file", "replace_in_file", "apply_patch"],
+  "read_tools": ["read_files", "read_file", "list_files", "search_files", "list_code_definition_names"],
+  "command_tools": ["run_commands", "execute_command"]
+}
