@@ -973,11 +973,11 @@ export class ExtensionController {
 			const targetPath = standardPaths[0];
 			try {
 				const targetDir = path.dirname(targetPath);
-				if (!fs.existsSync(targetDir)) {
-					fs.mkdirSync(targetDir, { recursive: true });
-				}
+				try {
+					await vscode.workspace.fs.createDirectory(vscode.Uri.file(targetDir));
+				} catch (_) {}
 				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Agent Supervisor & Model Dispatcher\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "local"\n\n  openrouter:\n    base_url: "https://openrouter.ai/api/v1"\n    type: "cloud"\n    api_key: "ENV_OPENROUTER_API_KEY"\n`;
-				fs.writeFileSync(targetPath, starter, 'utf8');
+				await vscode.workspace.fs.writeFile(vscode.Uri.file(targetPath), Buffer.from(starter, 'utf8'));
 				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
 				this.activeConfigDocUri = doc.uri;
 				await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
@@ -1347,10 +1347,8 @@ export class ExtensionController {
 		// 2. Handle local engine offline
 		if (this.isLocalEngineOffline() || !this.restClient) {
 			this.statusBar.updateStats(null);
-			if (typeof (this.dashboardPanel as any).setOffline === 'function') {
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).setOffline === 'function') {
 				(this.dashboardPanel as any).setOffline('Local engine is offline (Click Start in sidebar)');
-			} else if (typeof (this.dashboardPanel as any).updateStats === 'function') {
-				this.dashboardPanel.updateStats(null);
 			}
 			await this.syncSidebarState();
 			if (manual) {
@@ -1374,10 +1372,8 @@ export class ExtensionController {
 		if (!stats) {
 			this.statusBar.updateStats(null);
 			const reason = isRemote ? 'Remote server is unreachable' : 'Local engine is offline';
-			if (typeof (this.dashboardPanel as any).setOffline === 'function') {
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).setOffline === 'function') {
 				(this.dashboardPanel as any).setOffline(reason);
-			} else if (typeof (this.dashboardPanel as any).updateStats === 'function') {
-				this.dashboardPanel.updateStats(null);
 			}
 			await this.syncSidebarState();
 			if (manual) {
@@ -1556,12 +1552,8 @@ export class ExtensionController {
 
 		if (this.isLocalEngineOffline()) {
 			this.statusBar.updateStats(null);
-			if (this.dashboardPanel) {
-				if (typeof (this.dashboardPanel as any).setOffline === 'function') {
-					(this.dashboardPanel as any).setOffline('Local engine is offline (Click Start in sidebar)');
-				} else if (typeof (this.dashboardPanel as any).updateStats === 'function') {
-					this.dashboardPanel.updateStats(null);
-				}
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).setOffline === 'function') {
+				(this.dashboardPanel as any).setOffline('Local engine is offline (Click Start in sidebar)');
 			}
 			return;
 		}

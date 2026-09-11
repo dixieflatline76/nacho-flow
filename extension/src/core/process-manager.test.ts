@@ -391,6 +391,40 @@ describe('ProcessManager', () => {
 			expect(processManager.isRunning()).toBe(false);
 		});
 
+		it('should use taskkill on win32 platform during stop', async () => {
+			const originalPlatform = process.platform;
+			Object.defineProperty(process, 'platform', { value: 'win32' });
+			const mockChild: any = {
+				pid: 4321,
+				kill: jest.fn()
+			};
+			(processManager as any).childProcess = mockChild;
+			(child_process.execSync as jest.Mock).mockImplementation(() => {});
+
+			const stopped = await processManager.stop();
+			expect(stopped).toBe(true);
+			expect(child_process.execSync).toHaveBeenCalledWith('taskkill /pid 4321 /f /t');
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
+		it('should fall back to proc.kill() on win32 when taskkill fails during stop', async () => {
+			const originalPlatform = process.platform;
+			Object.defineProperty(process, 'platform', { value: 'win32' });
+			const mockChild: any = {
+				pid: 4322,
+				kill: jest.fn()
+			};
+			(processManager as any).childProcess = mockChild;
+			(child_process.execSync as jest.Mock).mockImplementation(() => {
+				throw new Error('taskkill failed');
+			});
+
+			const stopped = await processManager.stop();
+			expect(stopped).toBe(true);
+			expect(mockChild.kill).toHaveBeenCalled();
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
 		it('should send SIGTERM on non-windows platform during stop', async () => {
 			const originalPlatform = process.platform;
 			Object.defineProperty(process, 'platform', { value: 'linux' });
@@ -405,6 +439,32 @@ describe('ProcessManager', () => {
 			await processManager.stop();
 			expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
 			expect(mockChild.once).toHaveBeenCalledWith('exit', expect.any(Function));
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
+		it('should escalate to SIGKILL on non-windows platform if process does not exit in time', async () => {
+			const originalPlatform = process.platform;
+			Object.defineProperty(process, 'platform', { value: 'linux' });
+			const setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation((cb: any) => {
+				cb();
+				return 0 as any;
+			});
+			const mockChild: any = {
+				pid: 7778,
+				kill: jest.fn((sig) => {
+					if (sig === 'SIGKILL') {
+						throw new Error('Kill error');
+					}
+				}),
+				killed: false,
+				exitCode: null,
+				once: jest.fn()
+			};
+			(processManager as any).childProcess = mockChild;
+			await processManager.stop();
+			expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
+			expect(mockChild.kill).toHaveBeenCalledWith('SIGKILL');
+			setTimeoutSpy.mockRestore();
 			Object.defineProperty(process, 'platform', { value: originalPlatform });
 		});
 
@@ -495,24 +555,71 @@ describe('ProcessManager', () => {
 			expect(isUp).toBe(false);
 		});
 
-		it('should cleanly dispose of child process and handle exceptions', () => {
-			const mockChild: any = {
+		it('should cleanly dispose of child process on win32 and linux and handle exceptions', () => {
+			const originalPlatform = process.platform;
+
+			// win32
+			Object.defineProperty(process, 'platform', { value: 'win32' });
+			const mockWinChild: any = {
 				pid: 12345,
 				kill: jest.fn(),
 				killed: false
 			};
-			(processManager as any).childProcess = mockChild;
+			(processManager as any).childProcess = mockWinChild;
 			(child_process.execSync as jest.Mock).mockImplementation(() => {});
-
 			processManager.dispose();
+			expect(child_process.execSync).toHaveBeenCalledWith('taskkill /pid 12345 /f /t');
+			expect(processManager.isRunning()).toBe(false);
+
+			// linux
+			Object.defineProperty(process, 'platform', { value: 'linux' });
+			const mockLinuxChild: any = {
+				pid: 12346,
+				kill: jest.fn(),
+				killed: false
+			};
+			(processManager as any).childProcess = mockLinuxChild;
+			processManager.dispose();
+			expect(mockLinuxChild.kill).toHaveBeenCalledWith('SIGTERM');
 			expect(processManager.isRunning()).toBe(false);
 
 			// Test dispose exception catch block
 			(processManager as any).childProcess = {
+				pid: 12347,
 				kill: jest.fn().mockImplementation(() => { throw new Error('Dispose fail'); })
 			};
 			processManager.dispose();
 			expect(processManager.isRunning()).toBe(false);
+
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
+		it('should return startup timeout error when process stays alive but health check never passes', async () => {
+			jest.spyOn(processManager, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			const mockChild: any = {
+				pid: 5555,
+				stdout: { on: jest.fn() },
+				stderr: { on: jest.fn() },
+				on: jest.fn(),
+				kill: jest.fn(),
+				killed: false
+			};
+			(child_process.spawn as jest.Mock).mockReturnValue(mockChild);
+			jest.spyOn(processManager, 'checkHealth').mockResolvedValue(false);
+
+			const setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation((cb: any) => {
+				cb();
+				return 0 as any;
+			});
+
+			const res = await processManager.start('http://127.0.0.1:8000');
+			expect(res.success).toBe(false);
+			expect(res.error).toContain('timed out waiting for health check');
+
+			setTimeoutSpy.mockRestore();
 		});
 
 		it('should handle process error event and chmod error', async () => {
