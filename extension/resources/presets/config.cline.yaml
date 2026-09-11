@@ -3,9 +3,9 @@
 # Tuned for Cline's diff-based edit architecture (SdkDiffEditCoordinator)
 #
 # KEY DIFFERENCES FROM ZOO CODE CONFIG:
-#   - Local Tier 1 uses Devstral Small 24B (handles Cline's XML tool format natively)
+#   - Local Tier 1 uses Gemma 4 12B QAT ($0 local VRAM compute)
 #   - Relaxed Cycle Killer prose/thinking limits for Cline's XML tool format (6144 tokens)
-#   - Lower local token threshold (12k vs 20k) to escalate before large diff generation
+#   - Lower local token threshold (16k vs 20k) to escalate before large diff generation
 #
 # USAGE: nacho-flow -config config.cline.yaml
 # =============================================================================
@@ -173,15 +173,15 @@ tiers:
     when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (Devstral Small 2 16k) - 100% VRAM Offload
-  # Native function calling support for Cline.
+  # TIER 1: Local GPU Workhorse (Gemma 4 12B QAT) - 100% VRAM Offload
+  # Stream normalizer handles Cline's XML tool format in-flight.
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
-    model: "devstral-small-2:16k"
+    model: "gemma4:12b-it-qat"
     when: "Tokens < 16000 && Retries < 2"
     strip_images: false
-    max_context: 16384
+    max_context: 32000
 
   # ---------------------------------------------------------------------------
   # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus — $0.65 / $3.25 per 1M)

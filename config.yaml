@@ -1,13 +1,7 @@
 # =============================================================================
-# 🌮 NACHO FLOW: CLINE-OPTIMIZED CONFIGURATION
-# Tuned for Cline's diff-based edit architecture (SdkDiffEditCoordinator)
-#
-# KEY DIFFERENCES FROM ZOO CODE CONFIG:
-#   - Local Tier 1 uses Devstral Small 24B (handles Cline's XML tool format natively)
-#   - Relaxed Cycle Killer prose/thinking limits for Cline's XML tool format (6144 tokens)
-#   - Lower local token threshold (12k vs 20k) to escalate before large diff generation
-#
-# USAGE: nacho-flow -config config.cline.yaml
+# 🌮 NACHO FLOW CONFIGURATION — STANDARD HYBRID PIPELINE
+# Universal gateway configuration for autonomous coding agents (Cline, Zoo, Cursor, Aider)
+# Pipeline: Local GPU ($0) -> Fast Cloud ($0.65/M) -> Reasoning ($0.75/M) -> Frontier ($2/M)
 # =============================================================================
 
 port: 8000
@@ -17,19 +11,10 @@ host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.
 # 🔌 LLM PROVIDERS
 # =============================================================================
 providers:
-  # ---------------------------------------------------------------------------
-  # 1. Local GPU Provider (Ollama / vLLM / SGLang)
-  # - Cost: $0.00 / 1M Tokens (100% Free Local Compute)
-  # ---------------------------------------------------------------------------
   ollama:
     base_url: "http://127.0.0.1:11434"
     type: "local"
 
-  # ---------------------------------------------------------------------------
-  # 2. OpenRouter Cloud Gateway
-  # - Role: Global routing to 300+ frontier and open-weight cloud models.
-  # - Secret: Resolves ENV_OPENROUTER_API_KEY from environment.
-  # ---------------------------------------------------------------------------
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
@@ -84,14 +69,12 @@ agent_shield:
     - "tool execution error"
 
 # =============================================================================
-# 🎸 CYCLE KILLER — CLINE-TUNED
-# Cline embeds tool calls as XML inside prose, so models legitimately produce
-# longer prose blocks before tool tags appear. These limits are relaxed vs
-# the Zoo Code defaults to avoid false-positive stream severing.
+# 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
+# In-Flight Stream Defense that murders infinite loops & monologue traps in <3s
 # =============================================================================
 cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
-  max_prose_tokens: 6144            # Cline XML needs more prose runway than JSON calling
+  max_prose_tokens: 6144            # Max non-tool prose before intervention (<think> is exempt; relaxed for XML)
   max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
   max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
   repetition_window: 6              # Sliding n-gram window size (words) for loop detection
@@ -173,15 +156,14 @@ tiers:
     when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (Devstral Small 2 16k) - 100% VRAM Offload
-  # Native function calling support for Cline.
+  # TIER 1: Local GPU Workhorse (Gemma 4 12B QAT) - 100% VRAM Offload
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
-    model: "devstral-small-2:16k"
-    when: "Tokens < 16000 && Retries < 2"
+    model: "gemma4:12b-it-qat"
+    when: "Tokens < 20000 && Retries < 2"
     strip_images: false
-    max_context: 16384
+    max_context: 32000
 
   # ---------------------------------------------------------------------------
   # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus — $0.65 / $3.25 per 1M)
@@ -199,7 +181,7 @@ tiers:
   - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.7-flash"
-    when: "Tokens < 260000 && Retries < 4"
+    when: "Tokens < 260000 && Retries < 5"
 
   # ---------------------------------------------------------------------------
   # TIER 4: Large Context Synthesis (Gemini 3.1 Pro)
@@ -207,7 +189,7 @@ tiers:
   - name: "Tier 4: Large Context Synthesis (Gemini 3.1 Pro)"
     provider: "openrouter"
     model: "google/gemini-3.1-pro-preview"
-    when: "Retries < 6"
+    when: "Retries < 7"
 
   # ---------------------------------------------------------------------------
   # TIER 5: Frontier Powerhouse (Claude Sonnet 5 — $2.00/$10.00 per 1M)
@@ -215,7 +197,7 @@ tiers:
   - name: "Tier 5: Frontier Powerhouse (Claude Sonnet 5)"
     provider: "openrouter"
     model: "anthropic/claude-sonnet-5"
-    when: "Retries < 8"
+    when: "Retries < 9"
 
   # ---------------------------------------------------------------------------
   # TIER 6: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
@@ -241,7 +223,7 @@ default_tier:
 fairy_dust:
   enabled: true
   entries:
-    # Tactical Code Review (Claude Sonnet 5) — ADVERSARIAL BUG HUNTER
+    # Tactical Code Review (Claude Sonnet 5) — ZERO-PROSE ADVERSARIAL BUG FIXER
     - name: "Tactical Code Review"
       model: "anthropic/claude-sonnet-5"
       provider: "openrouter"
@@ -249,26 +231,21 @@ fairy_dust:
       max_per_session: 5
       priority: 10
       prompt: >
-        [ADVERSARIAL CODE REVIEW] You are a hostile senior reviewer whose job is
-        to FIND BUGS, not confirm correctness. Systematically check for:
-        (1) STUB FUNCTIONS: Methods that accept parameters but silently discard
-        them or return without doing meaningful work (e.g., an Insurance() that
-        never stores the bet). Flag any function where the implementation does
-        not match the contract implied by its signature and docstring.
-        (2) DEAD CODE & UNREACHABLE BRANCHES: Logic that can never execute due
-        to earlier returns, tautological conditions, or short-circuit evaluation.
-        (3) COPY-PASTE DUPLICATION: The same logic (e.g., hand value calculation,
-        soft-hand detection) reimplemented across multiple packages. If found,
-        refactor into a shared utility.
-        (4) OFF-BY-ONE & INDEX BUGS: Array index manipulation after splits,
-        insertions, or deletions. Verify loop bounds and slice operations.
-        (5) STATE MACHINE VIOLATIONS: Recursive state transitions where method A
-        calls method B which transitions state back through A. State machines
-        must be driven by callers, not by recursive internal calls.
-        (6) MISSING ERROR PROPAGATION: Errors caught but swallowed with _ or
-        ignored with empty catch blocks.
-        Fix every issue found with tool calls. Do NOT say "looks good" unless
-        you have verified every function body against its signature contract.
+        [ADVERSARIAL BUG FIXER: ZERO-PROSE ACTION REQUIRED]
+        You are an elite adversarial bug hunter. Your value is CODE FIXES, NOT ESSAYS.
+        CRITICAL: Do NOT write long explanations, code reviews, or prose summaries.
+        Every token spent on conversational prose is wasted. State any bug in at most
+        1-2 concise bullet points and IMMEDIATELY emit tool calls (write_to_file,
+        replace_in_file, execute_command) to fix it.
+        Check for:
+        (1) STUB FUNCTIONS: Methods that discard parameters or return dummy values.
+        (2) DEAD CODE / UNREACHABLE BRANCHES.
+        (3) COPY-PASTE DUPLICATION: Refactor duplicated logic into shared helpers.
+        (4) OFF-BY-ONE & SLICE/INDEX BUGS.
+        (5) STATE MACHINE VIOLATIONS: Recursive re-entrancy vs caller-driven transitions.
+        (6) SWALLOWED / UNCHECKED ERRORS.
+        Fix every issue directly with tool calls now. If no bugs exist, output at most
+        1 sentence confirming correctness and continue the next task step with tools.
 
     # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
@@ -279,22 +256,11 @@ fairy_dust:
       max_per_session: 1
       priority: 100
       prompt: >
-        [SPEC TRACEABILITY AUDIT] You are the QA lead performing a requirements
-        gap analysis. Your job is NOT to review code style — it is to verify
-        that every requirement in the original task prompt has been IMPLEMENTED
-        AND TESTED, not just stubbed. Perform these steps:
-        (1) EXTRACT REQUIREMENTS: Parse the original task/prompt into a numbered
-        checklist of concrete deliverables (e.g., "Monte Carlo simulation running
-        10,000+ hands", "Hi-Lo/KO/Omega II counting", ">= 90% test coverage").
-        (2) TRACE EACH REQUIREMENT: For each item, find the file(s) that implement
-        it. Verify the implementation is FUNCTIONAL, not a stub or no-op. If a
-        method exists but does nothing meaningful, mark it RED.
-        (3) CHECK TEST COVERAGE: For each requirement, verify a corresponding
-        test exists AND exercises the actual logic (not just the happy path).
-        If coverage is below the stated target, write the missing tests.
-        (4) VERIFY NUMERIC CLAIMS: If the spec requires specific outputs (e.g.,
-        house edge within expected range, correct payout ratios), run or trace
-        the calculations to confirm they produce correct results.
-        (5) REPORT: List each requirement as GREEN (implemented + tested),
-        YELLOW (implemented but untested), or RED (missing/stubbed). Fix all
-        RED items with tool calls before continuing.
+        [SPEC TRACEABILITY AUDIT: ACTION REQUIRED - ZERO ESSAYS]
+        You are the QA lead performing requirements verification.
+        CRITICAL: Do NOT write lengthy analysis essays or commentary.
+        Your value is IMPLEMENTATION AND TESTS. Verify that all requirements in the
+        task prompt are fully implemented and tested (not stubbed).
+        If any requirement or test is missing or untested, output at most a compact
+        3-5 line checklist of gaps, then IMMEDIATELY emit tool calls (write_to_file,
+        replace_in_file, execute_command) to write the missing code and tests.
