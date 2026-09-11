@@ -59,6 +59,26 @@ type Server struct {
 	warnedZeroUsageProviders sync.Map
 }
 
+// streamBufferBundle pools peek and stream transfer byte buffers to guarantee zero heap allocations.
+type streamBufferBundle struct {
+	peekBuf []byte    // capacity 4096, reset with [:0]
+	readBuf []byte    // capacity 4096
+	tempBuf [512]byte // 512-byte scratch reader
+}
+
+func (b *streamBufferBundle) reset() {
+	b.peekBuf = b.peekBuf[:0]
+}
+
+var streamBufferPool = sync.Pool{
+	New: func() any {
+		return &streamBufferBundle{
+			peekBuf: make([]byte, 0, 4096),
+			readBuf: make([]byte, 4096),
+		}
+	},
+}
+
 // GetConfig returns the current active configuration atomically.
 func (s *Server) GetConfig() *contract.Config {
 	if st := s.state.Load(); st != nil && st.config != nil {
@@ -208,7 +228,13 @@ func NewServerWithTelemetryAndRegistry(
 	if classWithSigs, ok := class.(interface{ SetErrorSignatures([]string) }); ok {
 		classWithSigs.SetErrorSignatures(cfg.AgentShield.ErrorSignatures)
 	}
-	writeTools := cfg.CycleKiller.KickstartWriteTools
+	writeTools := cfg.CycleKiller.WriteTools
+	if len(writeTools) == 0 {
+		writeTools = cfg.CycleKiller.KickstartWriteTools
+	}
+	if len(writeTools) == 0 && len(cfg.CycleBreaker.WriteTools) > 0 {
+		writeTools = cfg.CycleBreaker.WriteTools
+	}
 	if len(writeTools) == 0 && len(cfg.CycleBreaker.KickstartWriteTools) > 0 {
 		writeTools = cfg.CycleBreaker.KickstartWriteTools
 	}
@@ -594,6 +620,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reqCtx.FairyDusted = true
 			reqCtx.FairyDustEntry = winner.entry.Name
 			reqCtx.FairyDustCount = winner.count
+			reqCtx.NoCycleKiller = true
+			reqCtx.NoKickstart = true
+			reqCtx.NoShield = true
 			reqLogger.Info("Fairy Dust: quality checkpoint triggered",
 				slog.String("fairy_dust_entry", winner.entry.Name),
 				slog.Int("fairy_dust_count", winner.count),
@@ -643,6 +672,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// 4.6: Fairy Dust — override tier with winning entry's frontier model
 	if reqCtx.FairyDusted {
+		reqCtx.NoCycleKiller = true
+		reqCtx.NoKickstart = true
+		reqCtx.NoShield = true
 		for _, entry := range cfg.FairyDust.Entries {
 			if entry.Name == reqCtx.FairyDustEntry {
 				provider := entry.Provider
@@ -700,7 +732,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// Kickstart: inject prompt when idle loop detected
-	if reqCtx.SessionKickstarted {
+	if reqCtx.SessionKickstarted && !reqCtx.NoKickstart {
 		kickstartPrompt := contract.DefaultKickstartPrompt
 		if cfg.CycleKiller.KickstartPrompt != "" {
 			kickstartPrompt = cfg.CycleKiller.KickstartPrompt
@@ -762,7 +794,7 @@ func resolveFeatureFlags(reqCtx contract.RequestContext, targetTier contract.Tie
 	}
 
 	flags := router.FeatureDefaultAll
-	if !globalShieldEnabled {
+	if !globalShieldEnabled || reqCtx.NoShield {
 		flags = flags.MaskOut(router.FeatureShieldEnabled | router.FeatureShieldFollowup | router.FeatureShieldModeSwitch)
 	}
 
@@ -981,13 +1013,17 @@ func (s *Server) dispatchTier(
 			}
 		}
 
-		peekBytes := make([]byte, 0, 4096)
-		tempBuf := make([]byte, 512)
+		sBuf := streamBufferPool.Get().(*streamBufferBundle)
+		defer func() {
+			sBuf.reset()
+			streamBufferPool.Put(sBuf)
+		}()
+
 		var readErr error
-		for len(peekBytes) < 2048 {
-			n, err := normalizer.Read(tempBuf)
+		for len(sBuf.peekBuf) < 2048 {
+			n, err := normalizer.Read(sBuf.tempBuf[:])
 			if n > 0 {
-				peekBytes = append(peekBytes, tempBuf[:n]...)
+				sBuf.peekBuf = append(sBuf.peekBuf, sBuf.tempBuf[:n]...)
 			}
 			if err != nil {
 				readErr = err
@@ -999,8 +1035,8 @@ func (s *Server) dispatchTier(
 		}
 
 		// Check quality defect on stream: immediate [DONE] on local provider
-		trimmedPeek := strings.TrimSpace(string(peekBytes))
-		if targetProvider.IsLocal() && !isFallback && (trimmedPeek == "data: [DONE]" || (len(peekBytes) == 0 && readErr == io.EOF)) {
+		trimmedPeek := strings.TrimSpace(string(sBuf.peekBuf))
+		if targetProvider.IsLocal() && !isFallback && (trimmedPeek == "data: [DONE]" || (len(sBuf.peekBuf) == 0 && readErr == io.EOF)) {
 			_ = normalizer.Close()
 			reqLogger.Warn("Local provider returned empty stream, failing over to cloud fallback tier",
 				slog.String("tier", targetTier.Name),
@@ -1063,16 +1099,15 @@ func (s *Server) dispatchTier(
 		w.Header().Set(contract.HeaderSpiceTargetModel, targetTier.Model)
 		w.WriteHeader(resp.StatusCode)
 
-		if len(peekBytes) > 0 {
-			_, _ = w.Write(peekBytes)
+		if len(sBuf.peekBuf) > 0 {
+			_, _ = w.Write(sBuf.peekBuf)
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
 		}
 		if readErr == nil {
-			buf := make([]byte, 4096)
 			for {
-				n, err := normalizer.Read(buf)
+				n, err := normalizer.Read(sBuf.readBuf)
 				// Phase 2: Active Mid-Stream Circuit Severing (Check BEFORE writing to swallow degenerate chunks)
 				if violated, reason := normalizer.CheckCycleViolation(); violated && cb != nil && cb.IsEnabled() {
 					reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Severing runaway stream",
@@ -1085,21 +1120,33 @@ func (s *Server) dispatchTier(
 					if s.sessionTracker != nil {
 						s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
 					}
+					isToolViolation := normalizer.HasActiveToolCall() || strings.HasPrefix(reason, "tool_") || strings.HasPrefix(reason, "write_")
 					_ = normalizer.Close()
 
-					noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
-					escapedNotice, _ := json.Marshal(noticeText)
-					noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
-					finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
-					_, _ = w.Write([]byte(noticeChunk))
-					_, _ = w.Write([]byte(finishChunk))
+					if isToolViolation {
+						errPayload, _ := json.Marshal(map[string]any{
+							"error": map[string]any{
+								"message": fmt.Sprintf("Nacho Flow cycle breaker: model (%s) got stuck in a %s during tool call execution.", targetTier.Model, formatCycleKillReason(reason)),
+								"type":    "cycle_killer_error",
+								"code":    "tool_cycle_detected",
+							},
+						})
+						_, _ = w.Write(fmt.Appendf(nil, "data: %s\n\ndata: [DONE]\n\n", errPayload))
+					} else {
+						noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
+						escapedNotice, _ := json.Marshal(noticeText)
+						noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
+						finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+						_, _ = w.Write([]byte(noticeChunk))
+						_, _ = w.Write([]byte(finishChunk))
+					}
 					if flusher, ok := w.(http.Flusher); ok {
 						flusher.Flush()
 					}
 					break
 				}
 				if n > 0 {
-					_, _ = w.Write(buf[:n])
+					_, _ = w.Write(sBuf.readBuf[:n])
 					if flusher, ok := w.(http.Flusher); ok {
 						flusher.Flush()
 					}
@@ -1226,10 +1273,14 @@ func (s *Server) dispatchTier(
 							reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
 							reqCtx.CycleToolTokens = cb.ToolTokens()
 							reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
+							cbMaxRetries := cb.MaxRetries()
+							cbCorrectionPrompt := cb.CorrectionPrompt()
+							shield.PutCycleBreaker(cb)
+
 							if reqCtx.CycleBreakerTriggered {
-								if reqCtx.CycleRetries < cb.MaxRetries() {
+								if reqCtx.CycleRetries < cbMaxRetries {
 									reqCtx.CycleRetries++
-									injectedBody := injectCorrectionPrompt(body, cb.CorrectionPrompt())
+									injectedBody := injectCorrectionPrompt(body, cbCorrectionPrompt)
 									s.dispatchTier(w, r, reqCtx, targetTier, injectedBody, startTime, reqLogger, false)
 									return
 								}

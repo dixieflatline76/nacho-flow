@@ -96,8 +96,14 @@ const (
 	DefaultCatalogFileName  = "models.json"
 	DefaultCatalogCacheDir  = ".nacho-flow/cache/curation"
 	DefaultCatalogVersion   = "v1.0.0"
-	FallbackCatalogVersion  = "v0.0.0"
 	DefaultRemoteCatalogURL = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/models.json"
+
+	// Modular Agent & Shell Catalog Defaults
+	DefaultRemoteAgentManifestURL = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/agents/manifest.json"
+	DefaultRemoteAgentBaseURL     = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/agents/"
+	DefaultRemoteShellURL         = "https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/data/shell.json"
+	DefaultCatalogAgentsDir       = "catalog/agents"
+	DefaultCatalogIncomingDir     = "catalog/incoming"
 )
 
 // File system and environment variable defaults.
@@ -117,7 +123,27 @@ const (
 	DirectiveActionPurgeAllLogs     = "PURGE_ALL_LOGS"
 	DirectiveActionResetCircuits    = "RESET_CIRCUITS"
 	DirectiveActionRecalculateStats = "RECALCULATE_STATS"
+	DirectiveActionShutdown         = "SHUTDOWN"
 )
+
+// ResolveLogDir determines the active log directory based on priority:
+// 1. Explicit CLI argument (--log-dir)
+// 2. NACHO_LOG_DIR environment variable
+// 3. User config directory ($NACHO_CONFIG_DIR or OS config dir)/nacho-flow/logs
+// 4. "logs" relative fallback
+func ResolveLogDir(explicitDir string) string {
+	if explicitDir != "" {
+		return filepath.Clean(explicitDir)
+	}
+	if env := os.Getenv("NACHO_LOG_DIR"); env != "" {
+		return filepath.Clean(env)
+	}
+	userConfigDir, err := GetUserConfigDir()
+	if err == nil && userConfigDir != "" {
+		return filepath.Join(userConfigDir, AppName, "logs")
+	}
+	return "logs"
+}
 
 // GetUserConfigDir returns NACHO_CONFIG_DIR if set, otherwise falls back to os.UserConfigDir().
 func GetUserConfigDir() (string, error) {

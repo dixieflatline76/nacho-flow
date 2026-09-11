@@ -533,9 +533,8 @@ func BenchmarkDetectTestSignals(b *testing.B) {
 		strings.Repeat("more output line\n", 200) +
 		"FAIL\tpkg/solver\t0.05s\n"
 
-	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p, f := detectTestSignals(sample)
 		if !f || p {
 			b.Fatalf("unexpected result: pass=%v fail=%v", p, f)

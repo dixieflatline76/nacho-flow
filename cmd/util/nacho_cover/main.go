@@ -44,6 +44,7 @@ var packageDescriptions = map[string]string{
 	"cmd/nacho-flow":          "Main CLI Entrypoint, Subcommands & Daemon Init",
 	"pkg/safeio":              "Safe Bounded Directory Root I/O Operations",
 	"pkg/contract":            "Core Architectural Contracts, Request Context & Data Models",
+	"pkg/agentregistry":       "Modular Agent Catalog, Reasoning Parser & Tag Marker Compiler",
 }
 
 func replaceTagContent(doc, startTag, endTag, replacement string) string {
@@ -166,7 +167,7 @@ func updateTargetFile(path, goTable, extTable, summary string) error {
 
 func runGoCoverage() ([]PackageCoverage, float64, error) {
 	cmd := exec.Command("go", "test", "-coverprofile=cover.out",
-		"./pkg/config", "./pkg/contract", "./pkg/provider", "./pkg/router", "./pkg/router/shield",
+		"./pkg/agentregistry", "./pkg/config", "./pkg/contract", "./pkg/provider", "./pkg/router", "./pkg/router/shield",
 		"./pkg/safeio", "./pkg/server", "./pkg/store", "./pkg/strategy", "./pkg/telemetry",
 		"./pkg/telemetry/curation", "./pkg/tuner", "./cmd/nacho-flow", "./cmd/util/gen_catalog",
 		"./cmd/util/nacho_releaser", "./cmd/util/version_bump")

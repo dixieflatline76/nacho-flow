@@ -333,7 +333,9 @@ func replaceTagContent(doc, startTag, endTag, replacement string) string {
 			break
 		}
 		result.WriteString(remaining[:startIdx+len(startTag)])
-		result.WriteString("\n" + strings.TrimSpace(replacement) + "\n")
+		result.WriteByte('\n')
+		result.WriteString(strings.TrimSpace(replacement))
+		result.WriteByte('\n')
 		remaining = remaining[endIdx:]
 		result.WriteString(endTag)
 		remaining = remaining[len(endTag):]
@@ -717,7 +719,7 @@ func runSyncHarness() {
 
 	// 3. Run Microbenchmarks
 	fmt.Printf("\n▶ Running Go Nanosecond Micro-Benchmarks (go test -bench=...)\n")
-	microCmd := exec.Command("go", "test", "-bench=.", "-benchmem", "-run=^$", "./pkg/router/...", "./pkg/strategy/...", "./pkg/server/...")
+	microCmd := exec.Command("go", "test", "-bench=.", "-benchmem", "-run=^$", "./pkg/agentregistry/...", "./pkg/router/...", "./pkg/strategy/...", "./pkg/server/...")
 	microOut, _ := microCmd.CombinedOutput()
 	microList := parseMicroBenchOutput(string(microOut))
 

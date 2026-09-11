@@ -79,7 +79,7 @@ The extension lets you toggle seamlessly between running a local workstation ins
 - **`▶ Start`**: Launches the local `nacho-flow` binary in the background. The live status chip switches from `⚪ Engine Offline` to `🟢 Engine Online`.
 - **`⏹ Stop`**: Gracefully terminates the running local daemon.
 - **`🔄 Restart`**: Restarts the local binary and reloads all configuration atomically.
-- **`📄 Logs`**: Opens an interactive streaming output channel showing color-coded request logs, token volumes, routing decisions, and latencies.
+- **`📄 Logs`**: Opens an interactive streaming output channel in VS Code displaying real-time, color-coded daemon logs, token volumes, routing decisions, and latencies. (For physical files on disk, see [Where to Find Runtime Logs on Disk](#6-where-to-find-runtime-logs-on-disk-routerlog--trafficjsonl)).
 
 > [!NOTE]
 > **Local Machine Security Isolation (`127.0.0.1`)**:
@@ -132,9 +132,9 @@ Different autonomous coding agents produce vastly different prompt and tool stru
 
 #### Preset Resolution Hierarchy:
 When resolving preset files, the extension checks:
-1. **Workspace Root** (Workspace Override): `./config.yaml`, `./config.zoo.yaml`, or `./config.cline.yaml` in your active workspace folder. If present, it uses your project-specific customized rules.
-2. **Global Storage**: `~/.vscode/globalStorage/.../presets/` for persistent personalized presets across any project.
-3. **Bundled Templates**: Built-in, factory-calibrated templates packaged directly with the extension.
+1. **Explicit Project Override** (`.nacho/` or workspace root): Checks `./.nacho/config.yaml` (or `./config.yaml` if previously present). Storing project overrides in the hidden `.nacho/` directory prevents workspace clutter, ensures Git cleanliness, and avoids accidental credential commits.
+2. **Global Storage Presets (Default)**: `<globalStorage>/presets/` (1 level up from `presets/logs/`). Stores your active personalized `config.yaml`, `config.zoo.yaml`, and `config.cline.yaml` centrally so all your workspace projects share your tuned models, API keys, and routing rules without repo pollution.
+3. **Bundled Factory Templates**: Built-in, factory-calibrated templates packaged directly with the extension resources.
 
 #### Dynamic Sync & Live Editing (`📝 Edit YAML`):
 Click **`📝 Edit YAML`** next to the section header to open the active preset file directly in VS Code with syntax highlighting.
@@ -171,7 +171,7 @@ Under **3. Coding Agents**, the sidebar displays copy-ready configuration cards:
 
 The **4. Maintenance & Operations** card provides immediate recovery tools:
 
-- **`Recalculate Stats from Logs`**: Replays `traffic.jsonl` from disk to reconstruct historical token volumes and counterfactual cost savings after manual log modifications.
+- **`Recalculate Stats from Logs`**: Replays historical token volumes and counterfactual cost savings from `traffic.jsonl` on disk (`<globalStorage>/presets/logs/traffic.jsonl` or `~/.nacho-flow/logs/traffic.jsonl`).
 - **`Reset Circuit Breakers`**: If your local Ollama or vLLM instance crashed, ran out of VRAM, or was restarted, Nacho Flow trips the local circuit breaker to protect agent turns. Once your local engine is back up, click this button to instantly restore traffic to your GPU without restarting the gateway.
 - **`Purge All Logs & Reset Stats`**: Archives active traffic and router logs to `*.bak.YYYYMMDD-HHMMSS`, clears cumulative statistics, and resets all financial counters to $0.00 via cold boot restart.
 
@@ -441,3 +441,19 @@ To revert, simply copy the backup file over `config.yaml` or use VS Code's local
 ### 5. Localhost Binding vs. LAN Access (`127.0.0.1` vs `0.0.0.0`)
 - **Default Loopback (`127.0.0.1`)**: Nacho Flow listens strictly on local loopback by default. This guarantees that your gateway is never exposed to the wider local network and completely eliminates OS inbound network firewall consent prompts (e.g. Windows Defender Firewall).
 - **Enabling LAN Access**: To share the gateway with other physical devices on your LAN, specify `host: "0.0.0.0"` in `config.yaml` or pass the `-host 0.0.0.0` CLI flag. When binding to `0.0.0.0`, always set an `auth_token` in `config.yaml` to secure your model routes against unauthorized network callers.
+
+### 6. Where to Find Runtime Logs on Disk (`router.log` & `traffic.jsonl`)
+
+If you are diagnosing daemon startup issues, attaching logs to GitHub bug reports, or inspecting raw JSON request traffic:
+
+#### On-Disk Log Paths:
+| Environment | Log Directory Path |
+| :--- | :--- |
+| **VS Code Extension (Windows)** | `%APPDATA%\Code\User\globalStorage\dixieflatline76.nacho-flow\presets\logs\` |
+| **VS Code Extension (macOS)** | `~/Library/Application Support/Code/User/globalStorage/dixieflatline76.nacho-flow/presets/logs/` |
+| **VS Code Extension (Linux)** | `~/.config/Code/User/globalStorage/dixieflatline76.nacho-flow/presets/logs/` |
+| **Standalone CLI Daemon** | `~/.nacho-flow/logs/` (or directory specified via `--log-dir <path>`) |
+
+#### Log Files Produced:
+- **`router.log`**: Human-readable daemon output, server startup banners, port bindings, in-flight route decisions, Cycle Killer loop triggers, and circuit breaker trip events.
+- **`traffic.jsonl`**: High-performance structured JSONL stream containing turn-by-turn request/response telemetry, token counts, pricing, and savings metrics. This file feeds the Analytics Dashboard and is replayed by **Recalculate Stats from Logs**.

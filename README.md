@@ -71,14 +71,14 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 ## ✨ Key Features
 
 ### 🛡️ 1. Active Agent Guardrails & Loop Defense
-* **Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream in real time (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
+* **Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream across prose, thinking, and tool lanes (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s with protocol-safe error severance, while granting file writes full immunity so table-driven unit tests and repetitive structs are never falsely interrupted.
 * **Kickstart (Stall Resuscitation Engine)**: Detects consecutive non-write turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`). Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), jolting agents out of passive read/plan procrastination when implementation stalls.
 * **Agentic Tool Fallback Shield**: Sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
 * **Smarter Test-Loop Breaker**: Detects when an agent is repeatedly running failing tests without editing code, requiring concrete file write modifications to break idle accumulation.
 * **Fairy Dust (Programmable Milestone Checkpoints)**: A cadenced intervention engine. Deploy frontier reasoning models (e.g. Claude Opus) precisely every $N$ writes for quality verification without continuous frontier spend.
 
 ### ⚡ 2. High-Throughput Core & Streaming Normalization
-* **Zero-Overhead Core**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->31,000+ req/s (peak 31,831 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU state, stack-allocated buffers, and pooled HTTP transports.
+* **Zero-Overhead Core**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU state, stack-allocated buffers, and pooled HTTP transports.
 * **Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON.
 * **Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
 * **Streaming Delimiter Defense**: Prevents `<channel|>` and unicode-escaped delimiter leakage across streaming SSE chunk boundaries.
@@ -98,7 +98,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **Safe Log Rotation & Cold Maintenance**: Rotates large `traffic.jsonl` and `router.log` files to timestamped `.bak` archives and resets stats directly from the VS Code sidebar without file locking issues.
 * **Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 <!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (96.7% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (96.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 * **Zero Runtime Dependencies**: Single static binary with zero CGO, Node, or Python runtime requirements (`CGO_ENABLED=0`).
 
@@ -329,7 +329,7 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 - **[VS Code Companion Extension Guide](docs/EXTENSION_USER_GUIDE.md)**: Sidebar control hub, status bar widget, route inspector, and agent setup.
 - **[Product & Commercial Roadmap](ROADMAP.md)**: Open-source data plane, IDE extension, fleet protocol, and SaaS control plane.
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
-- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->31,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware.
+- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->30,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware.
 - **[Systems Performance Whitepaper](docs/PERFORMANCE_WHITEPAPER.md)**: Near-zero allocation systems architecture deep dive, detailing wire-speed streaming fast paths compared to LiteLLM and Bifrost.
 - **[A/B Benchmark Case Study Whitepaper](docs/BENCHMARKS_AB_CASE_STUDY.md)**: Empirical developer study proving $94.7\%$ cost reduction using local GPU routing.
 - **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules.

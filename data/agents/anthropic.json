@@ -1,0 +1,8 @@
+{
+  "id": "anthropic",
+  "name": "Anthropic Computer Use & Text Editor",
+  "version": "1.0.0",
+  "write_tools": ["str_replace_editor", "text_editor"],
+  "read_tools": ["view"],
+  "command_tools": ["bash"]
+}

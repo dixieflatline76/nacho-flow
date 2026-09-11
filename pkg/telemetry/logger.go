@@ -197,7 +197,7 @@ func NewServiceLogger(svcLogger service.Logger, level slog.Level) *slog.Logger {
 // and the rotating router.log file on disk.
 func InitLogger(isInteractive bool, logDir string, level slog.Level, svcLogger service.Logger) (*slog.Logger, io.Closer) {
 	if logDir == "" {
-		logDir = "logs"
+		logDir = contract.ResolveLogDir("")
 	}
 	logFilePath := filepath.Join(logDir, contract.DefaultRouterLogFileName)
 

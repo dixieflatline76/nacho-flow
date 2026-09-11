@@ -402,6 +402,76 @@ func BenchmarkSSE_ReasoningTransform(b *testing.B) {
 	}
 }
 
+func BenchmarkStreamNormalizer_RouteContentDelta_WriteTags(b *testing.B) {
+	enabled := true
+	cb := shield.GetCycleBreaker(&contract.CycleBreakerConfig{Enabled: &enabled})
+	defer shield.PutCycleBreaker(cb)
+
+	norm := &StreamNormalizer{
+		cycleBreaker: cb,
+		features:     uint16(router.FeatureDefaultAll),
+	}
+
+	openChunk := "<write_to_file path=\"pkg/util/helper.go\">"
+	codeChunk := "func Helper() string {\n\treturn \"ok\"\n}\n"
+	closeChunk := "</write_to_file>"
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		norm.inWriteTool = false
+		norm.pendingWriteTagBuf = ""
+		norm.routeContentDelta(openChunk)
+		norm.routeContentDelta(codeChunk)
+		norm.routeContentDelta(closeChunk)
+	}
+}
+
+func BenchmarkStreamNormalizer_FastPassWrite(b *testing.B) {
+	norm := &StreamNormalizer{
+		outBuf:      &bytes.Buffer{},
+		inWriteTool: true,
+		features:    uint16(router.FeatureDefaultAll),
+	}
+	line := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"fmt.Println(\\\"hello\\\")\\n\"}}]}\n\n")
+	payload := line[6 : len(line)-2]
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		norm.outBuf.Reset()
+		norm.fastPassWrite(line, payload)
+	}
+}
+
+func BenchmarkStreamNormalizer_FindEarliestOpenCloseTag(b *testing.B) {
+	openSample := "prefix prose <write_to_file path=\"foo.go\"> content"
+	closeSample := "content code </write_to_file> following prose"
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		_, _, _ = findEarliestOpenTag(openSample)
+		_, _, _ = findEarliestCloseTag(closeSample)
+	}
+}
+
+func BenchmarkStreamNormalizer_FindPartialTagSuffix(b *testing.B) {
+	partialOpen := "prefix prose <write_"
+	partialClose := "content code </write_"
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		_ = findPartialOpenTagSuffix(partialOpen)
+		_ = findPartialCloseTagSuffix(partialClose)
+	}
+}
+
 type streamErrReader struct {
 	err error
 }
@@ -918,3 +988,416 @@ func TestStreamNormalizer_ToolCall_CycleBreaking(t *testing.T) {
 		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
 	}
 }
+
+func TestStreamNormalizer_ClineEditor_ImmunityToFileWrites(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// Repeating table-driven test boilerplate that previously caused false-positive cycle kills in Cline v4
+	tableTestBoilerplate := "for _, tt := range tests { t.Run(tt.name, func(t *testing.T) { "
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"editor\",\"arguments\":\"{\\\"path\\\":\\\"solver_test.go\\\",\\\"file_text\\\":\\\"\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: [DONE]\n\n",
+		tableTestBoilerplate, tableTestBoilerplate, tableTestBoilerplate,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	for {
+		_, err := norm.Read(buf)
+		if v, _ := norm.CheckCycleViolation(); v {
+			violated = true
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if violated {
+		t.Fatalf("expected Cline editor table-driven tests write to be immune from cycle violation, but was severed")
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
+	}
+}
+
+func TestStreamNormalizer_ClineXML_WriteToFile_Immunity(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	tableTestBoilerplate := "for _, tt := range tests { t.Run(tt.name, func(t *testing.T) { "
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"I will create the test suite now.\\n<write_to_file>\\n<path>board_test.go</path>\\n<content>\\n\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"</content>\\n</write_to_file>\"}}]}\n\n"+
+			"data: [DONE]\n\n",
+		tableTestBoilerplate, tableTestBoilerplate, tableTestBoilerplate,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	for {
+		_, err := norm.Read(buf)
+		if v, _ := norm.CheckCycleViolation(); v {
+			violated = true
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if violated {
+		t.Fatalf("expected Cline <write_to_file> XML stream to be immune from cycle violation, but was severed")
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0 inside <write_to_file>, got %d", cb.ToolTokens())
+	}
+}
+
+func TestStreamNormalizer_ClineXML_Editor_Immunity(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	matrixRow := ". . 1 . 1 . 1 .\n"
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"<editor>\\n<command>create</command>\\n<path>board.go</path>\\n<file_text>\\n\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"</file_text>\\n</editor>\"}}]}\n\n"+
+			"data: [DONE]\n\n",
+		matrixRow, matrixRow, matrixRow,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	for {
+		_, err := norm.Read(buf)
+		if v, _ := norm.CheckCycleViolation(); v {
+			violated = true
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if violated {
+		t.Fatalf("expected Cline <editor> XML stream to be immune from cycle violation, but was severed")
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0 inside <editor>, got %d", cb.ToolTokens())
+	}
+}
+
+func TestStreamNormalizer_ClineXML_TransitionBackToProse(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	validCode := "package board\n\ntype Board struct {}\n"
+	loopingProse := "I am analyzing the error now please wait. "
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"<write_to_file>\\n<path>board.go</path>\\n<content>\\n%s</content>\\n</write_to_file>\\n\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: [DONE]\n\n",
+		validCode, loopingProse, loopingProse, loopingProse,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	var violationReason string
+	for {
+		_, err := norm.Read(buf)
+		if v, r := norm.CheckCycleViolation(); v {
+			violated = true
+			violationReason = r
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if !violated {
+		t.Fatalf("expected prose loop following closed XML tool tag to trigger cycle killer, but it passed")
+	}
+	if violationReason != "ngram_repetition_loop_detected" {
+		t.Errorf("expected ngram_repetition_loop_detected, got %s", violationReason)
+	}
+}
+
+func TestStreamNormalizer_ClineXML_ChunkSplitTags(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	tableTestBoilerplate := "for _, tt := range tests { t.Run(tt.name, func(t *testing.T) { "
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"<write_\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"to_file>\\n<content>\\n\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"%s\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"</write_\"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"to_file>\"}}]}\n\n"+
+			"data: [DONE]\n\n",
+		tableTestBoilerplate, tableTestBoilerplate, tableTestBoilerplate,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	for {
+		_, err := norm.Read(buf)
+		if v, _ := norm.CheckCycleViolation(); v {
+			violated = true
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if violated {
+		t.Fatalf("expected chunk-split Cline <write_to_file> stream to be immune from cycle violation, but was severed")
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0 inside chunk-split <write_to_file>, got %d", cb.ToolTokens())
+	}
+}
+
+func TestStreamNormalizer_ClineXML_InWriteToolAndNonWriteTags(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled: &enabled,
+	})
+
+	rawSSE := "data: {\"choices\":[{\"delta\":{\"content\":\"Hello <custom_tag>inside custom</custom_tag> normal prose\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"<write_to_file>\\n<path>foo.go</path>\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"package main\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"</write_to_file>\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"Back to prose now.<write_\"}}]}\n\n" +
+		"data: [DONE]\n\n"
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 512)
+	for {
+		_, err := norm.Read(buf)
+		if err != nil {
+			break
+		}
+	}
+
+	if norm.InWriteTool() {
+		t.Errorf("expected InWriteTool() to be false after stream finished")
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0")
+	}
+	if cb.ProseTokens() == 0 {
+		t.Errorf("expected ProseTokens > 0")
+	}
+}
+
+func TestStreamNormalizer_ClineXML_MultipleWriteTagsAndEscapes(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled: &enabled,
+	})
+
+	rawSSE := "data: {\"choices\":[{\"delta\":{\"content\":\"<replace_in_file>\\n<path>a.go</path>\\ncodeA\\n</replace_in_file>\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"Between writes\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"<edit_file>\\ncodeB\\n</edit_file>\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"<create_file>\\ncodeC\\n</create_file>\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"<patch_file>\\ncodeD\\n</patch_file>\\n\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"Final thought\\n\"},\"finish_reason\":\"stop\"}]}\n\n" +
+		"data: [DONE]\n\n"
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 512)
+	for {
+		_, err := norm.Read(buf)
+		if err != nil {
+			break
+		}
+	}
+
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0 for multiple write tags")
+	}
+}
+
+func TestStreamNormalizer_ClineXML_UnclosedTagAndIncompleteTagAtDone(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled: &enabled,
+	})
+
+	// Stream ends with unclosed tag
+	rawSSE := "data: {\"choices\":[{\"delta\":{\"content\":\"<write_to_file>\\ncontent\"}}]}\n\n" +
+		"data: [DONE]\n\n"
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 512)
+	for {
+		_, err := norm.Read(buf)
+		if err != nil {
+			break
+		}
+	}
+
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0")
+	}
+}
+
+func TestStreamNormalizer_ClineXML_PartialTagHelpers(t *testing.T) {
+	// Test findPartialOpenTagSuffix
+	if p := findPartialOpenTagSuffix("hello <write_"); p != "<write_" {
+		t.Errorf("expected <write_, got %s", p)
+	}
+	if p := findPartialOpenTagSuffix("x < 10"); p != "" {
+		t.Errorf("expected empty string for x < 10, got %s", p)
+	}
+	if p := findPartialOpenTagSuffix("done </write_to_file>"); p != "" {
+		t.Errorf("expected empty string for closed tag, got %s", p)
+	}
+
+	// Test findPartialCloseTagSuffix
+	if p := findPartialCloseTagSuffix("code </edit_"); p != "</edit_" {
+		t.Errorf("expected </edit_, got %s", p)
+	}
+	if p := findPartialCloseTagSuffix("code </div"); p != "" {
+		t.Errorf("expected empty string for non-write close tag, got %s", p)
+	}
+
+	// Test findEarliestOpenTag with attributes and whitespace
+	start, end, name := findEarliestOpenTag("prefix <write_to_file path=\"x\">content")
+	if start != 7 || end != 31 || name != "write_to_file" {
+		t.Errorf("unexpected open tag result: %d, %d, %s", start, end, name)
+	}
+
+	// Test findEarliestCloseTag
+	start, end, name = findEarliestCloseTag("prefix </write_to_file>suffix")
+	if start != 7 || end != 23 || name != "write_to_file" {
+		t.Errorf("unexpected close tag result: %d, %d, %s", start, end, name)
+	}
+}
+
+func TestStreamNormalizer_FastPassBranches(t *testing.T) {
+	// 1. fastPassProse with tool_calls
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader("")))
+	defer norm.Close()
+
+	lineWithTool := []byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"test_fn\",\"arguments\":\"{}\"}}]}}]}\n\n")
+	payloadWithTool := lineWithTool[6 : len(lineWithTool)-2]
+	norm.fastPassProse(lineWithTool, payloadWithTool)
+
+	// 2. fastPassProse with partial tag in content
+	lineWithPartial := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"prefix <write_\"}}]}\n\n")
+	payloadWithPartial := lineWithPartial[6 : len(lineWithPartial)-2]
+	norm.fastPassProse(lineWithPartial, payloadWithPartial)
+	if norm.pendingWriteTagBuf != "<write_" {
+		t.Errorf("expected pendingWriteTagBuf <write_, got %s", norm.pendingWriteTagBuf)
+	}
+
+	// 3. fastPassWrite with tool_calls
+	norm.inWriteTool = true
+	norm.fastPassWrite(lineWithTool, payloadWithTool)
+
+	// 4. fastPassWrite with partial close tag in content
+	lineWithPartialClose := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"code </write_\"}}]}\n\n")
+	payloadWithPartialClose := lineWithPartialClose[6 : len(lineWithPartialClose)-2]
+	norm.fastPassWrite(lineWithPartialClose, payloadWithPartialClose)
+	if norm.pendingWriteTagBuf != "</write_" {
+		t.Errorf("expected pendingWriteTagBuf </write_, got %s", norm.pendingWriteTagBuf)
+	}
+}
+
+func TestProxy_FormatCycleKillReasonAndGetters(t *testing.T) {
+	if r := formatCycleKillReason("thinking_repetition_loop_detected"); r != "repetitive reasoning loop detected" {
+		t.Errorf("unexpected format: %s", r)
+	}
+	if r := formatCycleKillReason("prose_budget_exceeded_with_repetition"); r != "prose token budget exceeded with repetition" {
+		t.Errorf("unexpected format: %s", r)
+	}
+	if r := formatCycleKillReason("thinking_budget_exceeded_with_repetition"); r != "thinking token budget exceeded with repetition" {
+		t.Errorf("unexpected format: %s", r)
+	}
+	if r := formatCycleKillReason("custom_error_code"); r != "custom error code" {
+		t.Errorf("unexpected format: %s", r)
+	}
+
+	srv := &Server{}
+	srv.SetLastDiskWriteUnixNano(12345)
+	if srv.GetLastDiskWriteUnixNano() != 12345 {
+		t.Errorf("expected 12345, got %d", srv.GetLastDiskWriteUnixNano())
+	}
+}
+
+
+

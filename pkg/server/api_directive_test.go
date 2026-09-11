@@ -762,3 +762,41 @@ func TestAPI_DirectCORS_Handlers(t *testing.T) {
 	srv.handleAPIPricing(rec, optReq)
 	srv.handleAPIStatsReset(rec, optReq)
 }
+
+func TestAPI_Directive_Shutdown(t *testing.T) {
+	srv, _, _ := setupTestServer(t)
+
+	exitCalled := make(chan int, 1)
+	srv.SetExitFunc(func(code int) {
+		exitCalled <- code
+	})
+
+	req := httptest.NewRequest(http.MethodPost, contract.PathAPIDirective, bytes.NewReader([]byte(`{"action":"SHUTDOWN"}`)))
+	req.Header.Set(contract.HeaderAuthorization, contract.AuthSchemeBearer+"test-secret-token")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var resp DirectiveResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Action != contract.DirectiveActionShutdown {
+		t.Errorf("expected action %s, got %s", contract.DirectiveActionShutdown, resp.Action)
+	}
+	if resp.Status != "acknowledged" {
+		t.Errorf("expected status acknowledged, got %s", resp.Status)
+	}
+
+	select {
+	case code := <-exitCalled:
+		if code != 0 {
+			t.Errorf("expected exit code 0, got %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for exitFunc to be called")
+	}
+}

@@ -182,6 +182,14 @@ describe('DashboardPanel', () => {
       // Subsequent calls do not call postMessage
       dashboardPanel.updateDeals({ deals: [] });
     });
+
+    it('should post setTimeWindow message', () => {
+      dashboardPanel.setTimeWindow('this_week');
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'setTimeWindow',
+        data: { timeWindow: 'this_week' }
+      });
+    });
   });
 
   describe('dispose', () => {
@@ -200,6 +208,13 @@ describe('DashboardPanel', () => {
       }
       expect(onDisposeMock).toHaveBeenCalled();
       expect(mockWebviewPanel.dispose).toHaveBeenCalled();
+    });
+
+    it('should clean up any registered disposables on dispose', () => {
+      const mockDisposable = { dispose: jest.fn() };
+      (dashboardPanel as any).disposables.push(mockDisposable);
+      dashboardPanel.dispose();
+      expect(mockDisposable.dispose).toHaveBeenCalled();
     });
   });
 });

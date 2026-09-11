@@ -8,15 +8,15 @@ import (
 	"sync/atomic"
 	"unicode"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
 type RequestClassifier struct {
-	mu                  sync.RWMutex
-	estimator           *TokenEstimator
-	errorSignatures     []string
-	kickstartWriteTools []string
-	writeToolsLookup    atomic.Pointer[map[string]bool]
+	estimator        atomic.Pointer[TokenEstimator]
+	errorSignatures  atomic.Pointer[[]string]
+	writeToolsLookup atomic.Pointer[map[string]bool]
+	initMu           sync.Mutex
 }
 
 // defaultAgentErrorSignatures are fallback error patterns injected by agent clients
@@ -45,45 +45,38 @@ func NewClassifierWithEstimator(e *TokenEstimator) contract.Classifier {
 	if e == nil {
 		e = NewTokenEstimator()
 	}
-	return &RequestClassifier{
-		estimator: e,
-	}
+	c := &RequestClassifier{}
+	c.estimator.Store(e)
+	return c
 }
 
 // SetErrorSignatures configures custom error patterns from config.yaml.
 func (c *RequestClassifier) SetErrorSignatures(signatures []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if len(signatures) == 0 {
-		c.errorSignatures = nil
+		c.errorSignatures.Store(nil)
 		return
 	}
-	c.errorSignatures = make([]string, len(signatures))
-	copy(c.errorSignatures, signatures)
+	copied := make([]string, len(signatures))
+	copy(copied, signatures)
+	c.errorSignatures.Store(&copied)
 }
 
 // GetErrorSignatures returns active error signatures or default fallback.
+// Completely lock-free using RCU atomic pointer load.
 func (c *RequestClassifier) GetErrorSignatures() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if len(c.errorSignatures) == 0 {
+	ptr := c.errorSignatures.Load()
+	if ptr == nil || len(*ptr) == 0 {
 		return defaultAgentErrorSignatures
 	}
-	return c.errorSignatures
+	return *ptr
 }
 
 // SetKickstartWriteTools configures custom write-tool names from config.yaml.
 func (c *RequestClassifier) SetKickstartWriteTools(tools []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(tools) == 0 {
-		c.kickstartWriteTools = nil
+	if tools == nil {
 		c.writeToolsLookup.Store(nil)
 		return
 	}
-	c.kickstartWriteTools = make([]string, len(tools))
-	copy(c.kickstartWriteTools, tools)
-
 	lookup := make(map[string]bool, len(tools))
 	for _, t := range tools {
 		lookup[strings.ToLower(strings.TrimSpace(t))] = true
@@ -103,20 +96,19 @@ func (c *RequestClassifier) GetKickstartWriteTools() map[string]bool {
 }
 
 // GetEstimator returns the active TokenEstimator instance for dynamic calibration.
+// Completely lock-free on the hot path via atomic pointer load.
 func (c *RequestClassifier) GetEstimator() *TokenEstimator {
-	c.mu.RLock()
-	if c.estimator != nil {
-		defer c.mu.RUnlock()
-		return c.estimator
+	if est := c.estimator.Load(); est != nil {
+		return est
 	}
-	c.mu.RUnlock()
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.estimator == nil {
-		c.estimator = NewTokenEstimator()
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+	if est := c.estimator.Load(); est != nil {
+		return est
 	}
-	return c.estimator
+	est := NewTokenEstimator()
+	c.estimator.Store(est)
+	return est
 }
 
 type classifyPayload struct {
@@ -202,7 +194,8 @@ func (p *classifyContentPart) UnmarshalJSON(data []byte) error {
 	if len(p.Content) > 0 {
 		trimmed := bytes.TrimSpace(p.Content)
 		if len(trimmed) > 0 {
-			if trimmed[0] == '"' {
+			switch trimmed[0] {
+			case '"':
 				var s string
 				if err := json.Unmarshal(trimmed, &s); err == nil {
 					if p.Text == "" {
@@ -211,7 +204,7 @@ func (p *classifyContentPart) UnmarshalJSON(data []byte) error {
 						p.Text = p.Text + " " + s
 					}
 				}
-			} else if trimmed[0] == '[' {
+			case '[':
 				var blocks []struct {
 					Type string `json:"type"`
 					Text string `json:"text"`
@@ -297,8 +290,14 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 				reqCtx.InteractiveTool = fnName
 			}
 
-			if !reqCtx.HasWriteCapability && writeLookup != nil && writeLookup[strings.ToLower(strings.TrimSpace(fnName))] {
-				reqCtx.HasWriteCapability = true
+			if !reqCtx.HasWriteCapability {
+				if writeLookup != nil {
+					if writeLookup[strings.ToLower(strings.TrimSpace(fnName))] {
+						reqCtx.HasWriteCapability = true
+					}
+				} else if IsBuiltinWriteTool(fnName) {
+					reqCtx.HasWriteCapability = true
+				}
 			}
 		}
 	}
@@ -405,7 +404,13 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 					fnName = tc.Function.Name
 				}
 				fnLower := strings.ToLower(strings.TrimSpace(fnName))
-				if writeTools != nil && writeTools[fnLower] {
+				isWrite := false
+				if writeTools != nil {
+					isWrite = writeTools[fnLower]
+				} else {
+					isWrite = IsBuiltinWriteTool(fnLower)
+				}
+				if isWrite {
 					if tc.ID != "" {
 						writeCallIDs = append(writeCallIDs, tc.ID)
 					}
@@ -440,7 +445,13 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 			for _, p := range msg.Content.Parts {
 				if p.Type == "tool_use" {
 					pLower := strings.ToLower(strings.TrimSpace(p.Name))
-					if writeTools != nil && writeTools[pLower] {
+					isWrite := false
+					if writeTools != nil {
+						isWrite = writeTools[pLower]
+					} else {
+						isWrite = IsBuiltinWriteTool(pLower)
+					}
+					if isWrite {
 						if p.ID != "" {
 							writeCallIDs = append(writeCallIDs, p.ID)
 						}
@@ -775,6 +786,11 @@ func isShellTool(name string) bool {
 	}
 }
 
+// IsBuiltinWriteTool checks if the tool name represents a structured file writing or editing tool.
+func IsBuiltinWriteTool(name string) bool {
+	return agentregistry.DefaultRegistry().IsWriteTool(name)
+}
+
 // extractCommandFromRaw pulls the shell command string from tool call argument payloads.
 func extractCommandFromRaw(raw json.RawMessage) string {
 	if len(raw) == 0 {
@@ -829,171 +845,12 @@ func extractXMLCommand(text string) string {
 	return ""
 }
 
+// DetectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
+func DetectShellWrite(cmd string) bool {
+	return agentregistry.DefaultRegistry().DetectShellWrite(cmd)
+}
+
 // detectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
 func detectShellWrite(cmd string) bool {
-	trimmed := strings.TrimSpace(cmd)
-	if trimmed == "" {
-		return false
-	}
-
-	// 1. Redirection checks: > and >> (ignoring comparisons/scripts inside quotes)
-	if strings.Contains(trimmed, ">") {
-		var inSingleQuote, inDoubleQuote bool
-		for i := 0; i < len(trimmed); i++ {
-			ch := trimmed[i]
-			if ch == '\\' && i+1 < len(trimmed) {
-				i++
-				continue
-			}
-			if ch == '\'' && !inDoubleQuote {
-				inSingleQuote = !inSingleQuote
-				continue
-			}
-			if ch == '"' && !inSingleQuote {
-				inDoubleQuote = !inDoubleQuote
-				continue
-			}
-			if inSingleQuote || inDoubleQuote {
-				continue
-			}
-			if ch == '>' {
-				// Guard: process substitution <( or redirection descriptor &>
-				if i > 0 && (trimmed[i-1] == '&' || trimmed[i-1] == '<') {
-					continue
-				}
-				// Guard: >&2 (stdout to stderr)
-				if i+1 < len(trimmed) && trimmed[i+1] == '&' {
-					continue
-				}
-				// Skip second '>' if '>>'
-				targetIdx := i + 1
-				if targetIdx < len(trimmed) && trimmed[targetIdx] == '>' {
-					targetIdx++
-				}
-				// Guard: >= comparison operator
-				if targetIdx < len(trimmed) && trimmed[targetIdx] == '=' {
-					continue
-				}
-				target := strings.TrimSpace(trimmed[targetIdx:])
-				if endIdx := strings.IndexAny(target, " \t\r\n|;&"); endIdx != -1 {
-					target = target[:endIdx]
-				}
-				target = strings.TrimSpace(target)
-				if isNullTarget(target) {
-					continue
-				}
-				if target != "" {
-					return true
-				}
-			}
-		}
-	}
-
-	lower := strings.ToLower(trimmed)
-
-	// 2. Pipe to file-writing tools
-	if strings.Contains(lower, "| tee") ||
-		strings.Contains(lower, "|tee") ||
-		strings.Contains(lower, "| dd of=") ||
-		strings.Contains(lower, "| out-file") ||
-		strings.Contains(lower, "| set-content") ||
-		strings.Contains(lower, "| add-content") {
-		return true
-	}
-
-	// 3. Heredocs combined with file writing
-	if strings.Contains(trimmed, "<<") {
-		if strings.Contains(trimmed, ">") || strings.Contains(lower, "| tee") {
-			return true
-		}
-	}
-
-	// 4. File-modifying CLI tools
-	if containsCommandWord(lower, "sed") && strings.Contains(lower, "-i") {
-		return true
-	}
-
-	modifyingTools := [...]string{
-		"patch", "touch", "mkdir", "rm", "rmdir", "cp", "mv",
-		"truncate", "install", "unzip", "gunzip",
-		"copy", "move", "del", "erase", "ren", "rename", "md", "rd",
-		"new-item", "copy-item", "move-item", "remove-item", "set-content", "add-content", "out-file",
-	}
-	for _, tool := range modifyingTools {
-		if containsCommandWord(lower, tool) {
-			return true
-		}
-	}
-
-	// tar extraction
-	if containsCommandWord(lower, "tar") && (strings.Contains(lower, "-x") || strings.Contains(lower, " x")) {
-		return true
-	}
-
-	// git file-modifying commands (narrowed to concrete file writes; avoids merge/rebase false positives)
-	if containsCommandWord(lower, "git") {
-		if strings.Contains(lower, "checkout --") ||
-			strings.Contains(lower, "checkout .") ||
-			strings.Contains(lower, "restore ") ||
-			strings.Contains(lower, "restore\t") ||
-			strings.Contains(lower, "apply ") ||
-			strings.Contains(lower, "apply\t") {
-			return true
-		}
-	}
-
-	// Project and package scaffolding commands that generate/modify configuration and source files
-	if (containsCommandWord(lower, "go") && (strings.Contains(lower, "mod init") || strings.Contains(lower, "mod tidy"))) ||
-		(containsCommandWord(lower, "npm") && (strings.Contains(lower, "init") || strings.Contains(lower, "create "))) ||
-		(containsCommandWord(lower, "cargo") && (strings.Contains(lower, "new ") || strings.Contains(lower, "init"))) {
-		return true
-	}
-
-	return false
-}
-
-func isNullTarget(target string) bool {
-	lower := strings.ToLower(target)
-	switch lower {
-	case "/dev/null", "/dev/zero", "nul", "$null", "&1", "&2":
-		return true
-	default:
-		return false
-	}
-}
-
-func containsCommandWord(s, word string) bool {
-	idx := 0
-	for {
-		pos := strings.Index(s[idx:], word)
-		if pos == -1 {
-			return false
-		}
-		actualPos := idx + pos
-		prefixOK := false
-		if actualPos == 0 {
-			prefixOK = true
-		} else {
-			prev := s[actualPos-1]
-			if prev == ' ' || prev == '\t' || prev == ';' || prev == '|' || prev == '&' || prev == '`' || prev == '(' || prev == '\n' {
-				prefixOK = true
-			}
-		}
-
-		afterPos := actualPos + len(word)
-		suffixOK := false
-		if afterPos >= len(s) {
-			suffixOK = true
-		} else {
-			next := s[afterPos]
-			if next == ' ' || next == '\t' || next == ';' || next == '|' || next == '&' || next == '`' || next == ')' || next == '\n' || next == '\r' {
-				suffixOK = true
-			}
-		}
-
-		if prefixOK && suffixOK {
-			return true
-		}
-		idx = actualPos + 1
-	}
+	return agentregistry.DefaultRegistry().DetectShellWrite(cmd)
 }

@@ -1610,7 +1610,7 @@ default_tier:
       (extensionController as any).context.extensionUri = origExt;
     });
 
-    it('should resolve preset from workspace folder if present', async () => {
+    it('should prioritize .nacho hidden folder preset override if present', async () => {
       (vscode.workspace as any).workspaceFolders = [
         { uri: { path: '/workspace' } }
       ];
@@ -1618,6 +1618,21 @@ default_tier:
 
       const res = await (extensionController as any).resolvePresetUri('cline');
       expect(res.isWorkspace).toBe(true);
+      expect(res.uri.path).toContain('.nacho');
+      expect(res.uri.path).toContain('config.cline.yaml');
+    });
+
+    it('should fallback to root workspace preset if .nacho is absent but root preset exists', async () => {
+      (vscode.workspace as any).workspaceFolders = [
+        { uri: { path: '/workspace' } }
+      ];
+      (vscode.workspace.fs.stat as jest.Mock)
+        .mockRejectedValueOnce(new Error('File not found')) // .nacho fails
+        .mockResolvedValueOnce({}); // root succeeds
+
+      const res = await (extensionController as any).resolvePresetUri('cline');
+      expect(res.isWorkspace).toBe(true);
+      expect(res.uri.path).not.toContain('.nacho');
       expect(res.uri.path).toContain('config.cline.yaml');
     });
 

@@ -96,6 +96,7 @@ type CycleBreakerConfig struct {
 	MaxProseTokens              int      `yaml:"max_prose_tokens,omitempty" json:"max_prose_tokens,omitempty"`
 	MaxThinkingTokens           int      `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
 	MaxToolTokens               int      `yaml:"max_tool_tokens,omitempty" json:"max_tool_tokens,omitempty"`
+	MaxWriteTokens              int      `yaml:"max_write_tokens,omitempty" json:"max_write_tokens,omitempty"`
 	RepetitionWindow            int      `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
 	RepetitionThreshold         int      `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
 	ThinkingRepetitionThreshold int      `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
@@ -103,6 +104,7 @@ type CycleBreakerConfig struct {
 	CorrectionPrompt            string   `yaml:"correction_prompt,omitempty" json:"correction_prompt,omitempty"`
 	KickstartThreshold          int      `yaml:"kickstart_threshold,omitempty" json:"kickstart_threshold,omitempty"`
 	KickstartWriteOnly          bool     `yaml:"kickstart_write_only,omitempty" json:"kickstart_write_only,omitempty"`
+	WriteTools                  []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
 	KickstartWriteTools         []string `yaml:"kickstart_write_tools,omitempty" json:"kickstart_write_tools,omitempty"`
 	KickstartPrompt             string   `yaml:"kickstart_prompt,omitempty" json:"kickstart_prompt,omitempty"`
 	KickstartMaxCount           int      `yaml:"kickstart_max_count,omitempty" json:"kickstart_max_count,omitempty"`

@@ -89,12 +89,12 @@ agent_shield:
 # =============================================================================
 cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
-  max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
+  max_prose_tokens: 6144            # Max non-tool prose before intervention (<think> is exempt; relaxed for XML)
   max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
   max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
   repetition_window: 6              # Sliding n-gram window size (words) for loop detection
-  repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
-  thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks (higher = more lenient)
+  repetition_threshold: 8           # Relaxed threshold (8): allows batch shell ops without false positives
+  thinking_repetition_threshold: 6  # Lenient reasoning repetition for deep architecture plans
   max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
   model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
   retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
@@ -102,8 +102,11 @@ cycle_killer:
   kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
   kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
   kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
-  # 🛡️ Plan Mode Guard: When agent declares 0 write tools, Kickstart automatically suspends idle escalation
-  kickstart_write_tools:            # Tools that count as "real progress" (read-only tools are ignored)
+  # 🛡️ File Write & Progress Tools: Category A immunity & Kickstart progress
+  write_tools:
+    - editor
+    - str_replace_editor
+    - text_editor
     - write_to_file
     - replace_in_file
     - replace_file_content
@@ -119,11 +122,33 @@ cycle_killer:
     - patch_file
     - run_command
     - run_terminal_command
+    - run_commands
     - terminal
     - bash
     - exec
+  kickstart_write_tools:            # Preserved for backward compatibility
     - editor
+    - str_replace_editor
+    - text_editor
+    - write_to_file
+    - replace_in_file
+    - replace_file_content
+    - multi_replace_file_content
+    - execute_command
+    - apply_diff
+    - insert_code_block
+    - create_file
+    - create_or_update_file
+    - write_file
+    - edit_file
+    - delete_file
+    - patch_file
+    - run_command
+    - run_terminal_command
     - run_commands
+    - terminal
+    - bash
+    - exec
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
@@ -219,26 +244,21 @@ fairy_dust:
       max_per_session: 5
       priority: 10
       prompt: >
-        [ADVERSARIAL CODE REVIEW] You are a hostile senior reviewer whose job is
-        to FIND BUGS, not confirm correctness. Systematically check for:
-        (1) STUB FUNCTIONS: Methods that accept parameters but silently discard
-        them or return without doing meaningful work (e.g., an Insurance() that
-        never stores the bet). Flag any function where the implementation does
-        not match the contract implied by its signature and docstring.
-        (2) DEAD CODE & UNREACHABLE BRANCHES: Logic that can never execute due
-        to earlier returns, tautological conditions, or short-circuit evaluation.
-        (3) COPY-PASTE DUPLICATION: The same logic (e.g., hand value calculation,
-        soft-hand detection) reimplemented across multiple packages. If found,
-        refactor into a shared utility.
-        (4) OFF-BY-ONE & INDEX BUGS: Array index manipulation after splits,
-        insertions, or deletions. Verify loop bounds and slice operations.
-        (5) STATE MACHINE VIOLATIONS: Recursive state transitions where method A
-        calls method B which transitions state back through A. State machines
-        must be driven by callers, not by recursive internal calls.
-        (6) MISSING ERROR PROPAGATION: Errors caught but swallowed with _ or
-        ignored with empty catch blocks.
-        Fix every issue found with tool calls. Do NOT say "looks good" unless
-        you have verified every function body against its signature contract.
+        [ADVERSARIAL BUG FIXER: ZERO-PROSE ACTION REQUIRED]
+        You are an elite adversarial bug hunter. Your value is CODE FIXES, NOT ESSAYS.
+        CRITICAL: Do NOT write long explanations, code reviews, or prose summaries.
+        Every token spent on conversational prose is wasted. State any bug in at most
+        1-2 concise bullet points and IMMEDIATELY emit tool calls (write_to_file,
+        replace_in_file, execute_command) to fix it.
+        Check for:
+        (1) STUB FUNCTIONS: Methods that discard parameters or return dummy values.
+        (2) DEAD CODE / UNREACHABLE BRANCHES.
+        (3) COPY-PASTE DUPLICATION: Refactor duplicated logic into shared helpers.
+        (4) OFF-BY-ONE & SLICE/INDEX BUGS.
+        (5) STATE MACHINE VIOLATIONS: Recursive re-entrancy vs caller-driven transitions.
+        (6) SWALLOWED / UNCHECKED ERRORS.
+        Fix every issue directly with tool calls now. If no bugs exist, output at most
+        1 sentence confirming correctness and continue the next task step with tools.
 
     # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
@@ -249,23 +269,12 @@ fairy_dust:
       max_per_session: 1
       priority: 100
       prompt: >
-        [SPEC TRACEABILITY AUDIT] You are the QA lead performing a requirements
-        gap analysis. Your job is NOT to review code style — it is to verify
-        that every requirement in the original task prompt has been IMPLEMENTED
-        AND TESTED, not just stubbed. Perform these steps:
-        (1) EXTRACT REQUIREMENTS: Parse the original task/prompt into a numbered
-        checklist of concrete deliverables (e.g., "Monte Carlo simulation running
-        10,000+ hands", "Hi-Lo/KO/Omega II counting", ">= 90% test coverage").
-        (2) TRACE EACH REQUIREMENT: For each item, find the file(s) that implement
-        it. Verify the implementation is FUNCTIONAL, not a stub or no-op. If a
-        method exists but does nothing meaningful, mark it RED.
-        (3) CHECK TEST COVERAGE: For each requirement, verify a corresponding
-        test exists AND exercises the actual logic (not just the happy path).
-        If coverage is below the stated target, write the missing tests.
-        (4) VERIFY NUMERIC CLAIMS: If the spec requires specific outputs (e.g.,
-        house edge within expected range, correct payout ratios), run or trace
-        the calculations to confirm they produce correct results.
-        (5) REPORT: List each requirement as GREEN (implemented + tested),
-        YELLOW (implemented but untested), or RED (missing/stubbed). Fix all
-        RED items with tool calls before continuing.
+        [SPEC TRACEABILITY AUDIT: ACTION REQUIRED - ZERO ESSAYS]
+        You are the QA lead performing requirements verification.
+        CRITICAL: Do NOT write lengthy analysis essays or commentary.
+        Your value is IMPLEMENTATION AND TESTS. Verify that all requirements in the
+        task prompt are fully implemented and tested (not stubbed).
+        If any requirement or test is missing or untested, output at most a compact
+        3-5 line checklist of gaps, then IMMEDIATELY emit tool calls (write_to_file,
+        replace_in_file, execute_command) to write the missing code and tests.
 `

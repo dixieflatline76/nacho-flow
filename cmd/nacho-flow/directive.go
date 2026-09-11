@@ -84,7 +84,7 @@ func executePurgeAllLogs(targets DirectiveTargets) {
 
 	logDir := targets.LogDir
 	if logDir == "" {
-		logDir = "logs"
+		logDir = contract.ResolveLogDir("")
 	}
 
 	logFiles := targets.LogFiles

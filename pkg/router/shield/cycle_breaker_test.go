@@ -564,3 +564,288 @@ func TestCycleBreaker_ToolLane_IsolationAndReset(t *testing.T) {
 		t.Errorf("expected disabled cb not to trigger, got %v %s", trig, r)
 	}
 }
+
+func TestCycleBreaker_ToolLane_TableDrivenTests(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxToolTokens:       4096,
+		MaxWriteTokens:      32768,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// Realistic Go table-driven unit test file (like N-Queens board_test.go)
+	tableTestCode := `package board_test
+
+import (
+	"testing"
+	"github.com/example/nqueens/pkg/board"
+)
+
+func TestSolveNQueens(t *testing.T) {
+	tests := []struct {
+		name     string
+		n        int
+		expected int
+		hasError bool
+	}{
+		{name: "n=1 single queen", n: 1, expected: 1, hasError: false},
+		{name: "n=2 no solution", n: 2, expected: 0, hasError: false},
+		{name: "n=3 no solution", n: 3, expected: 0, hasError: false},
+		{name: "n=4 two solutions", n: 4, expected: 2, hasError: false},
+		{name: "n=5 ten solutions", n: 5, expected: 10, hasError: false},
+		{name: "n=6 four solutions", n: 6, expected: 4, hasError: false},
+		{name: "n=7 forty solutions", n: 7, expected: 40, hasError: false},
+		{name: "n=8 standard chessboard", n: 8, expected: 92, hasError: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			solutions, err := board.Solve(tc.n)
+			if (err != nil) != tc.hasError {
+				t.Fatalf("expected error: %v, got: %v", tc.hasError, err)
+			}
+			if len(solutions) != tc.expected {
+				t.Fatalf("expected %d solutions, got %d", tc.expected, len(solutions))
+			}
+		})
+	}
+}
+`
+	// In ToolCategoryFileWrite, table-driven unit tests must NEVER trigger tool repetition!
+	triggered, reason := cb.ProcessToolDelta(tableTestCode, ToolCategoryFileWrite)
+	if triggered {
+		t.Fatalf("expected table-driven unit test to NOT trigger repetition in file write category, but got: %s", reason)
+	}
+}
+
+func TestCycleBreaker_ToolLane_WindowsPowerShellWrite(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxToolTokens:       4096,
+		MaxWriteTokens:      32768,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// PowerShell script with repetitive assertions/objects
+	psContent := `$tests = @(
+		@{ Name = "Test1"; Status = "Pass"; Count = 10; Enabled = $true },
+		@{ Name = "Test2"; Status = "Pass"; Count = 20; Enabled = $true },
+		@{ Name = "Test3"; Status = "Pass"; Count = 30; Enabled = $true },
+		@{ Name = "Test4"; Status = "Pass"; Count = 40; Enabled = $true }
+	)
+	$tests | ForEach-Object {
+		Assert-MockCalled -CommandName Write-Host -Times $_.Count
+	}
+`
+	triggered, reason := cb.ProcessToolDelta(psContent, ToolCategoryFileWrite)
+	if triggered {
+		t.Fatalf("expected PowerShell test write to NOT trigger repetition in file write category, got: %s", reason)
+	}
+}
+
+func TestCycleBreaker_ToolLane_LargeSourceFile_32kCeiling(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:        &enabled,
+		MaxToolTokens:  4096,
+		MaxWriteTokens: 32768,
+	})
+
+	// Generate ~10,000 tokens (~40,000 bytes) of file write content
+	var largeSb strings.Builder
+	for i := 0; i < 500; i++ {
+		largeSb.WriteString(fmt.Sprintf("func HandleItem%d(w http.ResponseWriter, r *http.Request) { fmt.Fprintf(w, \"item %d\") }\n", i, i))
+	}
+	largeCode := largeSb.String()
+
+	triggered, reason := cb.ProcessToolDelta(largeCode, ToolCategoryFileWrite)
+	if triggered {
+		t.Fatalf("expected 10k token file write to pass under 32k ceiling, got: %s", reason)
+	}
+
+	// Exceed 32,768 tokens (~131,072 bytes)
+	var runawaySb strings.Builder
+	for i := 0; i < 3000; i++ {
+		runawaySb.WriteString(fmt.Sprintf("func RunawayItem%d(w http.ResponseWriter, r *http.Request) { fmt.Fprintf(w, \"item %d\") }\n", i, i))
+	}
+	triggered, reason = cb.ProcessToolDelta(runawaySb.String(), ToolCategoryFileWrite)
+	if !triggered {
+		t.Fatalf("expected runaway file write exceeding 32k ceiling to trigger")
+	}
+	if reason != "write_budget_exceeded" {
+		t.Fatalf("expected reason 'write_budget_exceeded', got: %s", reason)
+	}
+}
+
+func TestCycleBreaker_ToolLane_DegenerateCommandLoop_Severed(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxToolTokens:       4096,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// Degenerate repeating pipeline in command category
+	pipeline := "echo test | sed 's/test/prod/' | awk '{print $1}' && "
+	cb.ProcessToolDelta(pipeline, ToolCategoryCommand)
+	cb.ProcessToolDelta(pipeline, ToolCategoryCommand)
+	triggered, reason := cb.ProcessToolDelta(pipeline, ToolCategoryCommand)
+
+	if !triggered {
+		t.Fatalf("expected degenerate repeating command pipeline to be caught in command category")
+	}
+	if reason != "tool_repetition_loop_detected" {
+		t.Fatalf("expected tool_repetition_loop_detected, got: %s", reason)
+	}
+}
+
+func TestCycleBreaker_ToolLane_ValidTestCommand_NotTriggered(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxToolTokens:       4096,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	commands := []string{
+		"go test -v -race ./pkg/board/...",
+		"dotnet test --filter FullyQualifiedName~NQueens.Tests",
+		"swift test --filter BoardTests",
+		"mvn test -Dtest=BoardTest",
+		"cargo test --package nqueens --test board_test",
+	}
+
+	for _, cmd := range commands {
+		triggered, reason := cb.ProcessToolDelta(cmd, ToolCategoryCommand)
+		if triggered {
+			t.Fatalf("expected valid command %q to not trigger, got %s", cmd, reason)
+		}
+	}
+}
+
+func TestCycleBreaker_ProcessToolDelta_FileWrite_ZeroAllocs(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:        &enabled,
+		MaxToolTokens:  4096,
+		MaxWriteTokens: 32768,
+	})
+
+	chunk := `{"name": "board_test.go", "content": "func TestBoard(t *testing.T) { ... }"}`
+	allocs := testing.AllocsPerRun(1000, func() {
+		cb.ProcessToolDelta(chunk, ToolCategoryFileWrite)
+	})
+
+	if allocs > 0 {
+		t.Fatalf("expected 0 allocs on ToolCategoryFileWrite fast path, got %f", allocs)
+	}
+}
+
+func BenchmarkCycleBreaker_ProcessToolDelta_FileWrite(b *testing.B) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:        &enabled,
+		MaxToolTokens:  4096,
+		MaxWriteTokens: 32768000,
+	})
+
+	chunk := `{"name": "board_test.go", "content": "func TestBoard(t *testing.T) { ... }"}`
+	b.ReportAllocs()
+	for b.Loop() {
+		cb.ProcessToolDelta(chunk, ToolCategoryFileWrite)
+	}
+}
+
+func TestCycleBreaker_PoolAcquireRelease_CleanState(t *testing.T) {
+	enabled := true
+	cfg1 := &contract.CycleBreakerConfig{
+		Enabled:        &enabled,
+		MaxProseTokens: 1000,
+		MaxWriteTokens: 20000,
+	}
+
+	cb1 := GetCycleBreaker(cfg1)
+	cb1.ProcessDelta("word1 word2 word3 word4 word5 word6", false)
+	cb1.ProcessDelta("thinking step 1 2 3 4 5", true)
+	cb1.ProcessToolDelta("cmd arg1 arg2", ToolCategoryCommand)
+
+	if cb1.ProseTokens() == 0 || cb1.ThinkingTokens() == 0 || cb1.ToolTokens() == 0 {
+		t.Fatalf("expected non-zero counters before release")
+	}
+
+	PutCycleBreaker(cb1)
+
+	// Re-acquire from pool with different config
+	disabled := false
+	cfg2 := &contract.CycleBreakerConfig{
+		Enabled:        &disabled,
+		MaxProseTokens: 500,
+		MaxWriteTokens: 16000,
+	}
+	cb2 := GetCycleBreaker(cfg2)
+	defer PutCycleBreaker(cb2)
+
+	if cb2.IsEnabled() {
+		t.Errorf("expected cb2.IsEnabled() == false")
+	}
+	if cb2.MaxWriteTokens() != 16000 {
+		t.Errorf("expected MaxWriteTokens == 16000, got %d", cb2.MaxWriteTokens())
+	}
+	if cb2.ProseTokens() != 0 {
+		t.Errorf("expected ProseTokens == 0 after pool reset, got %d", cb2.ProseTokens())
+	}
+	if cb2.ThinkingTokens() != 0 {
+		t.Errorf("expected ThinkingTokens == 0 after pool reset, got %d", cb2.ThinkingTokens())
+	}
+	if cb2.ToolTokens() != 0 {
+		t.Errorf("expected ToolTokens == 0 after pool reset, got %d", cb2.ToolTokens())
+	}
+	if cb2.MaxNgramFreq() != 0 {
+		t.Errorf("expected MaxNgramFreq == 0 after pool reset, got %d", cb2.MaxNgramFreq())
+	}
+}
+
+func TestCycleBreaker_Reset_ZeroAllocations(t *testing.T) {
+	enabled := true
+	cb := GetCycleBreaker(&contract.CycleBreakerConfig{Enabled: &enabled})
+	defer PutCycleBreaker(cb)
+
+	// Populate entries in all lanes
+	cb.ProcessDelta("alpha beta gamma delta epsilon zeta eta theta", false)
+	cb.ProcessDelta("think one think two think three think four", true)
+	cb.ProcessToolDelta("exec command arg1 arg2 arg3", ToolCategoryCommand)
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		cb.Reset()
+	})
+
+	if allocs > 0 {
+		t.Fatalf("expected 0 allocs on cb.Reset() in-place map clear, got %f", allocs)
+	}
+}
+
+func TestCycleBreaker_PutCycleBreaker_NilSafe(t *testing.T) {
+	// Should not panic on nil
+	PutCycleBreaker(nil)
+}
+
+func BenchmarkCycleBreaker_PoolAcquireRelease(b *testing.B) {
+	enabled := true
+	cfg := &contract.CycleBreakerConfig{
+		Enabled:        &enabled,
+		MaxProseTokens: 4096,
+		MaxWriteTokens: 32768,
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		cb := GetCycleBreaker(cfg)
+		PutCycleBreaker(cb)
+	}
+}
