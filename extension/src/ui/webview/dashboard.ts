@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { DashboardSnapshot } from '../../core/types/nacho-types';
 
 export class DashboardPanel {
 	private panel: vscode.WebviewPanel;
@@ -205,6 +206,10 @@ export class DashboardPanel {
 
 	public setOffline(reason?: string): void {
 		this.safePostMessage({ command: 'setOffline', data: { reason } });
+	}
+
+	public syncSnapshot(data: DashboardSnapshot): void {
+		this.safePostMessage({ command: 'syncSnapshot', data });
 	}
 
 	public get isVisible(): boolean {

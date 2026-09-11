@@ -101,44 +101,47 @@ For developers hosting Nacho Flow on a dedicated GPU server, home lab workstatio
 
 ---
 
-### 3.2 Routing Presets & 1-Click Hot-Swap (Standard, Zoo Code, Cline)
+### 3.2 User-Configurable Profiles & 1-Click Switching (Profile 1, Profile 2, Profile 3)
 
-Different autonomous coding agents produce vastly different prompt and tool structures. Nacho Flow features tailored configuration presets that can be swapped live with **zero daemon restarts and zero dropped connections**:
+Nacho Flow features three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) that can be switched on the fly with **native process isolation and zero configuration drift**:
 
 ```text
 [⚡ 2. Routing Configuration]                     [📝 Edit YAML]
-  Active Routing Preset:
-  [ 🤖 Zoo Code                    ▼ ] [⚡ Hot-Swap]
+  Active Routing Profile:
+  [ 📋 Profile 1                   ▼ ] [⚡ Switch]
 ```
 
-#### Available Presets:
+#### Available Profiles:
 
-| Preset | Target File | Ideal For | Key Tuning Characteristics |
+| Profile | Target File | Suggested Use Case | Customizable Capabilities |
 | :--- | :--- | :--- | :--- |
-| **🌮 Standard** | `config.yaml` | General use, Aider, Cursor, Continue | Balanced context limits (16k local), standard prose token ceilings, standard tool detection. |
-| **🤖 Zoo Code** | `config.zoo.yaml` | Zoo Code | Strict OpenAI JSON tool calling, tighter prose limits (800 words), aggressive Cycle Killer loop murder. |
-| **🛠️ Cline (XML-Native)** | `config.cline.yaml` | Cline, Claude Dev | Relaxed prose ceilings (`max_prose_tokens: 6144`), streaming tool argument repetition guard (`max_tool_tokens: 8192`), and Zod schema failure signatures. |
+| **🌮 Profile 1** | `profile1.yaml` (`config.yaml`) | General-purpose coding, Aider, Cursor, Continue | Fully user-configurable; suggested for balanced local/cloud context boundaries and default coding workflows. |
+| **🤖 Profile 2** | `profile2.yaml` | Multi-agent workflows (e.g. Zoo Code) | Fully user-configurable; suggested for strict OpenAI JSON tool calling and aggressive loop prevention. |
+| **🛠️ Profile 3** | `profile3.yaml` | XML tool agents (e.g. Cline, Claude Dev) | Fully user-configurable; suggested for relaxed prose token ceilings and XML write tool extraction. |
+
+> [!TIP]
+> **Total Customization Freedom**: Profiles 1, 2, and 3 are independent configuration slots for you to customize however you like. You can configure any profile with your preferred local models (Ollama, vLLM, llama.cpp), cloud endpoints (OpenRouter, DeepSeek, Anthropic), context boundaries, and custom AST rules.
 
 > [!NOTE]
-> **Loopback Security Isolation**: All bundled extension presets strictly enforce `host: "127.0.0.1"` to provide local machine isolation and prevent Windows Defender Firewall network permission prompts. If you require LAN access for remote machines, set `host: "0.0.0.0"` in your workspace config.
+> **Loopback Security Isolation**: All bundled extension profile templates strictly enforce `host: "127.0.0.1"` to provide local machine isolation and prevent Windows Defender Firewall network permission prompts. If you require LAN access for remote machines, set `host: "0.0.0.0"` in your workspace config.
 
-#### 1-Click Hot-Swap (`⚡ Hot-Swap`):
-1. Select your target preset from the dropdown (`Standard`, `Zoo Code`, or `Cline`).
-2. Click **`⚡ Hot-Swap`**.
-3. The extension reads the preset YAML and sends an atomic payload update to the running gateway via `POST /api/v1/config`.
-4. The Go daemon executes an **in-memory Read-Copy-Update (RCU)** swap in $< 1\text{ ms}$. In-flight streams complete uninterrupted, while new turns instantly evaluate the new rule set!
-5. Any environment variable placeholders (`ENV_<KEY>`) in the preset are automatically expanded from the host process environment, keeping API authentication seamless.
-6. A transient confirmation toast appears: `🌮 Switched to 🤖 Zoo Code routing preset!`.
+#### 1-Click Profile Switching:
+1. Select your target profile from the dropdown (`Profile 1`, `Profile 2`, or `Profile 3`).
+2. Click **`⚡ Switch`** (or select from the dropdown).
+3. **If the Local Engine is running**: The extension cleanly restarts the native Go daemon, passing the resolved absolute configuration path directly via the native `--config <path>` flag. In-flight processes terminate gracefully, and the engine boots immediately with the selected profile.
+4. **If the Local Engine is offline**: The extension updates your active profile selection so that the next time you click **`▶ Start`**, the engine automatically initializes with the chosen profile.
+5. **In Remote Server Mode**: Local profile switching is disabled to prevent accidental reconfiguration of remote or shared servers; the UI clearly displays `🌐 Remote Server`.
+6. Environment variable placeholders (`ENV_<KEY>`) in the profile are automatically expanded from the host process environment, keeping API authentication seamless.
+7. A transient confirmation toast appears: `🌮 Switched to Profile 1!`.
 
-#### Preset Resolution Hierarchy:
-When resolving preset files, the extension checks:
-1. **Explicit Project Override** (`.nacho/` or workspace root): Checks `./.nacho/config.yaml` (or `./config.yaml` if previously present). Storing project overrides in the hidden `.nacho/` directory prevents workspace clutter, ensures Git cleanliness, and avoids accidental credential commits.
-2. **Global Storage Presets (Default)**: `<globalStorage>/presets/` (1 level up from `presets/logs/`). Stores your active personalized `config.yaml`, `config.zoo.yaml`, and `config.cline.yaml` centrally so all your workspace projects share your tuned models, API keys, and routing rules without repo pollution.
+#### Profile Resolution Hierarchy:
+When resolving profile files, the extension checks:
+1. **Explicit Project Override** (`.nacho/` or workspace root): Checks `./.nacho/profile<N>.yaml` (or `./profile<N>.yaml` / `./config.yaml` if previously present). Storing project overrides in the hidden `.nacho/` directory prevents workspace clutter, ensures Git cleanliness, and avoids accidental credential commits.
+2. **Global Storage Profiles (Default)**: `<globalStorage>/profiles/` (e.g. `<globalStorage>/profiles/profile1.yaml`, `profile2.yaml`, `profile3.yaml`). Stores your active personalized configuration centrally so all your workspace projects share your tuned models, API keys, and routing rules without repo pollution.
 3. **Bundled Factory Templates**: Built-in, factory-calibrated templates packaged directly with the extension resources.
 
 #### Dynamic Sync & Live Editing (`📝 Edit YAML`):
-Click **`📝 Edit YAML`** next to the section header to open the active preset file directly in VS Code with syntax highlighting.
-- The extension watches the active configuration document.
+Click **`📝 Edit YAML`** next to the section header (or the dynamic **`[📝 Profile X (YAML)]`** button in the dashboard) to open the active profile file directly in VS Code with full YAML syntax highlighting and schema validation.
 - Saving changes automatically hot-reloads the daemon in real time.
 
 ---
@@ -185,15 +188,26 @@ Nacho Flow: Show Dashboard
 ```
 *(Or click **Open Full Analytics Dashboard** in the sidebar).*
 
-The dashboard provides a mission-control view divided into two primary sections:
+The dashboard provides a mission-control view powered by an atomic top-down state architecture:
+
+---
+
+### 4.0 Unified Top-Down State Snapshot Architecture
+
+To guarantee zero visual race conditions, no stale telemetry cards, and instant state synchronization across different agent profiles:
+- **Atomic Snapshot Delivery (`DashboardSnapshot`)**: The backend aggregates engine status, telemetry statistics, active deals, routes, circuits, and configuration in parallel using non-blocking promises (`Promise.all`). The resulting immutable snapshot is dispatched to the webview runtime as a single atomic event.
+- **Monotonic Timestamp Sequencing**: Each snapshot carries an epoch timestamp. The webview runtime enforces monotonic ordering: any late or out-of-order responses caused by network latency or rapid profile switching are safely discarded before rendering.
+- **Top-Down Single-State Store**: The webview runtime maintains a single source of truth persisted in `vscode.setState()`. Every snapshot cleanly re-renders the active profile badge, the configuration button, connection state banners, financial KPI cards, and data tables top-down.
+- **Clean Disconnect & Offline Purge**: When transitioning between a live remote daemon and an offline local engine, the snapshot pipeline atomically purges all data caches and renders clean offline banners simultaneously, completely preventing "ghost" cards from previous connections.
 
 ---
 
 ### 4.1 Flight Instruments & Time-Window Telemetry
 
-At the top of the dashboard, live instrumentation cards display your financial and computational metrics:
+At the top of the dashboard, live instrumentation cards display your financial and computational metrics, accompanied by live profile and configuration management controls:
 
 ```text
+[📋 Profile 1: Standard] [📝 Profile 1 (YAML)]
 [📊 Statistics & Cost Savings]
   [All Time]  [Today]  [Yesterday]  [This Week]  [This Month]
   ─────────────────────────────────────────────────────────────
@@ -202,6 +216,8 @@ At the top of the dashboard, live instrumentation cards display your financial a
   Tokens Billed: 380k           │  Tokens Saved: 3.8M
 ```
 
+- **Active Profile Badge**: Reflects the current engine profile (`📋 Profile 1`, `📋 Profile 2`, `📋 Profile 3`, or `🌐 Remote Server`).
+- **1-Click Config Editor Button**: Displays `[📝 Profile X (YAML)]` in local mode (or `[📝 Remote config.yaml]` when connected to a remote host), opening the exact active file directly in VS Code.
 - **Time-Window Tabs**: Toggle between `All Time`, `Today`, `Yesterday`, `This Week`, and `This Month` to inspect session velocity and historical return on investment.
 - **Auto-Refresh Controls**: Set background route polling to `15s`, `30s`, `60s`, or `Off`, or click `Refresh Now`.
 - **Counterfactual Savings Engine**: Every turn processed by your local GPU computes what that prompt turn *would have cost* on frontier cloud models (Claude Sonnet 5 / DeepSeek-R1), accounting for prompt cache discounts.

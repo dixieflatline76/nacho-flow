@@ -43,13 +43,15 @@ Manage your agent supervisor and model dispatcher directly from your editor side
 
 - **Local vs. Remote Gateway**:
   - **This Machine**: 1-click `▶ Start`, `⏹ Stop`, `🔄 Restart`, and interactive streaming `📄 Logs` for the bundled native Go engine.
-  - **Remote Server**: Connect across LAN or Tailscale (e.g. `http://192.168.1.100:8000` or `http://gpu-box.internal:8000`) with optional Bearer Auth Token and instant `⚡ Test` ping.
-- **Routing Presets with 1-Click Hot-Swap (`⚡ Hot-Swap`)**:
-  - Switch between tailored agent configurations with **zero daemon restarts and zero dropped streams**:
-    - **🌮 Standard** (`config.yaml`): Balanced context bounds (16k local), general-purpose coding rules for Cursor, Aider, and Continue.
-    - **🤖 Zoo Code** (`config.zoo.yaml`): Calibrated for strict OpenAI JSON tool calling, tighter prose limits (800 words), and aggressive Cycle Killer loop murder.
-    - **🛠️ Cline XML-Native** (`config.cline.yaml`): Relaxed prose token ceilings (`max_prose_tokens: 6144`) and XML tool extraction (`<write_to_file>`, `<replace_in_file>`), preventing false stream severing during conversational XML drafting.
-  - Click **`📝 Edit YAML`** to open the active preset in the editor with auto-reload on save.
+  - **Remote Server**: Connect across LAN or Tailscale (e.g. `http://192.168.1.100:8000` or `http://gpu-box.internal:8000`) with optional Bearer Auth Token and instant `⚡ Test` ping. When switching to Remote Server, the local engine is cleanly stopped to free GPU memory, and automatically resumed when you switch back to This Machine.
+- **Configurable Routing Profiles with 1-Click Switching (`⚡ Switch`)**:
+  - Switch on the fly between three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with native process isolation:
+    - **🌮 Profile 1** (`profile1.yaml` / `config.yaml`): Fully customizable configuration slot (e.g. general-purpose coding rules and balanced local/cloud routing).
+    - **🤖 Profile 2** (`profile2.yaml`): Fully customizable configuration slot (e.g. tuned for multi-agent workflows like Zoo Code with strict JSON tool calling).
+    - **🛠️ Profile 3** (`profile3.yaml`): Fully customizable configuration slot (e.g. tuned for XML-based tool agents like Cline with relaxed prose ceilings).
+  - You have total freedom to customize each profile for any combination of models, providers, context thresholds, and routing rules you prefer.
+  - In local mode, switching cleanly restarts the native engine with the `--config <path>` flag. In remote mode, local profile mutation is safely disabled.
+  - Click **`📝 Edit YAML`** (or the dashboard **`[📝 Profile X (YAML)]`** button) to open the active profile in the editor with auto-reload on save.
 - **Provider Status Monitoring**: Real-time discovery and health chips for local engines (Ollama, vLLM, llama.cpp) and cloud APIs (OpenRouter, DeepSeek, Anthropic).
 - **1-Click Agent Setup**: Instant copy buttons for Base URL, API Key, and Model ID, plus marketplace install buttons for Zoo Code and Cline.
 - **Maintenance & Recovery**: 1-click buttons to recalculate stats from logs, reset tripped circuit breakers, or zero accumulators.
@@ -58,8 +60,12 @@ Manage your agent supervisor and model dispatcher directly from your editor side
 
 ### 📊 2. Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`)
 
-A mission-control flight instrument webview providing total visibility into your AI agent economics:
+A mission-control flight instrument webview built on a **Unified Top-Down State Snapshot Architecture**:
 
+- **Unified State Snapshot & Monotonic Rendering**:
+  - Atomic snapshot delivery (`DashboardSnapshot`) with monotonic timestamp sequencing, eliminating visual race conditions, ghost cards, or out-of-order deliveries during rapid switches.
+  - **Active Profile Badge & Config Button**: Dynamic header indicators (`📋 Profile X` / `🌐 Remote Server`) with a 1-click **`[📝 Profile X (YAML)]`** / **`[📝 Remote config.yaml]`** editor button.
+  - **Clean Offline Transitions**: Disconnecting or stopping the engine atomically purges all data caches and displays clean offline status banners.
 - **Financial Telemetry & Time Windows**:
   - Filter metrics by **All Time**, **Today**, **Yesterday**, **This Week**, or **This Month**.
   - Displays Total Spend, Total Savings ($ and %), Local GPU Turns ($0.00), Cloud Turns, and Billed vs. Avoided Token volume.

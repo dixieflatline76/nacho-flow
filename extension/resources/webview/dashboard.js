@@ -43,6 +43,9 @@
 			case 'setOffline':
 				setOffline(message.data);
 				break;
+			case 'syncSnapshot':
+				syncSnapshot(message.data);
+				break;
 		}
 	});
 
@@ -101,6 +104,68 @@
 			vscode.postMessage({ command: 'setRoutesRefreshInterval', interval: activeRefreshInterval });
 		}
 	};
+
+	function syncSnapshot(snapshot) {
+		if (!snapshot) return;
+
+		// Discard stale out-of-order snapshots
+		if (snapshot.timestamp && currentState.timestamp && snapshot.timestamp < currentState.timestamp) {
+			return;
+		}
+
+		currentState = {
+			...currentState,
+			timestamp: snapshot.timestamp || Date.now(),
+			timeWindow: snapshot.timeWindow || activeTimeWindow,
+			routesRefreshInterval: typeof snapshot.routesRefreshInterval !== 'undefined' ? snapshot.routesRefreshInterval : activeRefreshInterval
+		};
+		vscode.setState(currentState);
+
+		// Synchronize active time window and routes refresh interval controls if specified
+		if (snapshot.timeWindow) {
+			window.setTimeWindow(snapshot.timeWindow, false);
+		}
+		if (typeof snapshot.routesRefreshInterval !== 'undefined') {
+			window.setRoutesRefreshInterval(snapshot.routesRefreshInterval, false);
+		}
+
+		// Synchronize header badge and config button
+		if (snapshot.engine) {
+			updateActivePreset({
+				label: snapshot.engine.profileLabel || (snapshot.engine.isRemote ? 'Remote Server' : 'Profile 1'),
+				isRemote: Boolean(snapshot.engine.isRemote)
+			});
+		}
+
+		// Branching render pipeline: offline vs live
+		if (!snapshot.engine || !snapshot.engine.isOnline) {
+			setOffline({ reason: snapshot.engine?.offlineReason });
+			return;
+		}
+
+		// Live online render pipeline
+		if (snapshot.stats) {
+			updateStats(snapshot.stats);
+		}
+		if (snapshot.routes) {
+			updateRoutes(snapshot.routes);
+		}
+		if (snapshot.circuits) {
+			updateCircuits(snapshot.circuits);
+		}
+		if (snapshot.deals) {
+			updateDeals(snapshot.deals);
+		}
+		if (snapshot.config) {
+			updateConfig(snapshot.config);
+		}
+		if (snapshot.optimization) {
+			updateOptimization(snapshot.optimization);
+		} else {
+			const banner = document.getElementById('tuner-banner');
+			if (banner) banner.style.display = 'none';
+		}
+	}
 
 	function updateStats(stats) {
 		currentState.stats = stats;
