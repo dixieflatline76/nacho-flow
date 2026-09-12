@@ -119,6 +119,11 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 	var total ReductionResult
 	modified := false
 
+	var staleIDs map[string]struct{}
+	if t.pipeline.config.CompactStaleFileReads {
+		staleIDs = IdentifyStaleToolCallIDs(msgs)
+	}
+
 	for _, msgItem := range msgs {
 		msg, ok := msgItem.(map[string]interface{})
 		if !ok {
@@ -127,8 +132,31 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 
 		// Format A: OpenAI role == "tool"
 		if role, _ := msg["role"].(string); role == "tool" {
-			toolName := resolveToolName(msg["name"], msg["tool_call_id"], toolNames)
+			toolCallID, _ := msg["tool_call_id"].(string)
+			toolName := resolveToolName(msg["name"], toolCallID, toolNames)
 			hasCache := hasCacheControl(msg)
+
+			// Evict stale file reads before standard compaction
+			if staleIDs != nil && toolCallID != "" {
+				if _, isStale := staleIDs[toolCallID]; isStale {
+					if !t.pipeline.config.PreserveCacheControl || !hasCache {
+						origBytes := calculateContentLength(msg["content"])
+						msg["content"] = StaleFileReadNotice
+						reducedBytes := len(StaleFileReadNotice)
+						saved := origBytes - reducedBytes
+						if saved > 0 {
+							total.merge(ReductionResult{
+								OriginalBytes: origBytes,
+								ReducedBytes:  reducedBytes,
+								BytesSaved:    saved,
+								TokensSaved:   (saved + 3) / 4,
+							})
+							modified = true
+							continue
+						}
+					}
+				}
+			}
 
 			newContent, res, changed := t.compactToolContent(msg["content"], toolName, hasCache)
 			if changed {
@@ -151,8 +179,31 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				continue
 			}
 
-			toolName := resolveToolName(part["tool_name"], part["tool_use_id"], toolNames)
+			toolUseID, _ := part["tool_use_id"].(string)
+			toolName := resolveToolName(part["tool_name"], toolUseID, toolNames)
 			hasCache := hasCacheControl(part)
+
+			// Evict stale file reads before standard compaction
+			if staleIDs != nil && toolUseID != "" {
+				if _, isStale := staleIDs[toolUseID]; isStale {
+					if !t.pipeline.config.PreserveCacheControl || !hasCache {
+						origBytes := calculateContentLength(part["content"])
+						part["content"] = StaleFileReadNotice
+						reducedBytes := len(StaleFileReadNotice)
+						saved := origBytes - reducedBytes
+						if saved > 0 {
+							total.merge(ReductionResult{
+								OriginalBytes: origBytes,
+								ReducedBytes:  reducedBytes,
+								BytesSaved:    saved,
+								TokensSaved:   (saved + 3) / 4,
+							})
+							modified = true
+							continue
+						}
+					}
+				}
+			}
 
 			newContent, res, changed := t.compactToolContent(part["content"], toolName, hasCache)
 			if changed {
@@ -319,4 +370,25 @@ func (r *ReductionResult) merge(other ReductionResult) {
 	r.BytesSaved += other.BytesSaved
 	r.TokensSaved += other.TokensSaved
 	r.Duration += other.Duration
+}
+
+func calculateContentLength(content interface{}) int {
+	switch v := content.(type) {
+	case string:
+		return len(v)
+	case []byte:
+		return len(v)
+	case []interface{}:
+		total := 0
+		for _, item := range v {
+			if part, ok := item.(map[string]interface{}); ok {
+				if text, ok := part["text"].(string); ok {
+					total += len(text)
+				}
+			}
+		}
+		return total
+	default:
+		return 0
+	}
 }

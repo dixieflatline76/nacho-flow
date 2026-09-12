@@ -321,6 +321,9 @@ func NewServerWithTelemetryAndRegistry(
 	if cfg.NTS.PreserveCacheControl != nil {
 		ntsCfg.PreserveCacheControl = *cfg.NTS.PreserveCacheControl
 	}
+	if cfg.NTS.CompactStaleFileReads != nil {
+		ntsCfg.CompactStaleFileReads = *cfg.NTS.CompactStaleFileReads
+	}
 	ntsTr := nts.NewTransformer(ntsCfg)
 
 	srv := &Server{

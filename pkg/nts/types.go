@@ -27,21 +27,23 @@ type Config struct {
 	PreserveFileReads    bool `json:"preserve_file_reads" yaml:"preserve_file_reads"`
 	PreserveFileWrites   bool `json:"preserve_file_writes" yaml:"preserve_file_writes"`
 	PreserveCacheControl bool `json:"preserve_cache_control" yaml:"preserve_cache_control"`
+	CompactStaleFileReads bool `json:"compact_stale_file_reads" yaml:"compact_stale_file_reads"`
 }
 
 // DefaultConfig returns the production default configuration for NTS.
 func DefaultConfig() Config {
 	return Config{
-		Enabled:              true,
-		StripANSI:            true,
-		ResolveCR:            true,
-		DeduplicateLines:     true,
-		DedupThreshold:       3,
-		StripBoilerplate:     true,
-		NormalizeWhitespace:  true,
-		PreserveFileReads:    true,
-		PreserveFileWrites:   true,
-		PreserveCacheControl: true,
+		Enabled:               true,
+		StripANSI:             true,
+		ResolveCR:             true,
+		DeduplicateLines:      true,
+		DedupThreshold:        3,
+		StripBoilerplate:      true,
+		NormalizeWhitespace:   true,
+		PreserveFileReads:     true,
+		PreserveFileWrites:    true,
+		PreserveCacheControl:  true,
+		CompactStaleFileReads: true,
 	}
 }
 
