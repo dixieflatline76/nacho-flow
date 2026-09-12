@@ -6,7 +6,7 @@ import (
 )
 
 // StaleFileReadNotice is the constant replacement string for superseded historical file reads.
-const StaleFileReadNotice = "[NTS: File content superseded by later read/write in conversation history]"
+const StaleFileReadNotice = "[NTS: File content superseded by later read/write]"
 
 // fnv64 computes a 64-bit FNV-1a hash of a string with zero heap allocation.
 func fnv64(s string) uint64 {

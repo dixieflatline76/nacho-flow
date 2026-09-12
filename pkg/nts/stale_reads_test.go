@@ -573,3 +573,172 @@ func BenchmarkIdentifyStaleToolCallIDs(b *testing.B) {
 		_ = IdentifyStaleToolCallIDs(msgs)
 	}
 }
+
+func TestTransformer_RealBenchmark_ClineAndZooTurns(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CompactStaleFileReads = true
+	tr := NewTransformer(cfg)
+
+	// Realistic multi-turn sequence matching Cline (OpenAI tool_calls) and Zoo (Anthropic tool_use)
+	// on real benchmark files (tsconfig.json, src/index.ts, vitest.config.ts)
+	t.Run("Cline real benchmark turns: read tsconfig, edit, re-read", func(t *testing.T) {
+		clinePayload := map[string]interface{}{
+			"messages": []interface{}{
+				// Turn 2: Cline reads tsconfig.json
+				map[string]interface{}{
+					"role": "assistant",
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"id":   "call_cline_read1",
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "read_file",
+								"arguments": `{"path": "tsconfig.json"}`,
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": "call_cline_read1",
+					"content":      "{\n  \"compilerOptions\": {\n    \"moduleResolution\": \"node\",\n    \"baseUrl\": \".\"\n  }\n}",
+				},
+				// Turn 5: Cline uses editor to modify tsconfig.json
+				map[string]interface{}{
+					"role": "assistant",
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"id":   "call_cline_edit",
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "editor",
+								"arguments": `{"path": "tsconfig.json", "operation": "modified"}`,
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": "call_cline_edit",
+					"content":      `{"path":"tsconfig.json","operation":"modified","notice":"You do not need to re-read the file"}`,
+				},
+				// Turn 8: Cline reads vitest.config.ts (first & only read)
+				map[string]interface{}{
+					"role": "assistant",
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"id":   "call_cline_vitest",
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "read_file",
+								"arguments": `{"path": "vitest.config.ts"}`,
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": "call_cline_vitest",
+					"content":      "import { defineConfig } from 'vitest/config';\nexport default defineConfig({});",
+				},
+			},
+		}
+
+		raw, _ := json.Marshal(clinePayload)
+		transformed, res, err := tr.TransformOpenAI(raw)
+		if err != nil {
+			t.Fatalf("TransformOpenAI error: %v", err)
+		}
+
+		if res.BytesSaved <= 0 {
+			t.Errorf("expected positive bytes saved for superseded tsconfig.json read")
+		}
+
+		var parsed map[string]interface{}
+		_ = json.Unmarshal(transformed, &parsed)
+		msgs := parsed["messages"].([]interface{})
+
+		// First tsconfig read (index 1) MUST be evicted
+		read1Content := msgs[1].(map[string]interface{})["content"].(string)
+		if read1Content != StaleFileReadNotice {
+			t.Errorf("expected Turn 2 read_file to be evicted, got: %s", read1Content)
+		}
+
+		// Vitest read (index 5) MUST be untouched
+		vitestContent := msgs[5].(map[string]interface{})["content"].(string)
+		if !strings.Contains(vitestContent, "defineConfig") {
+			t.Errorf("expected vitest read to remain completely untouched")
+		}
+	})
+
+	t.Run("Zoo Code real benchmark turns: Anthropic tool_use and apply_diff", func(t *testing.T) {
+		zooPayload := map[string]interface{}{
+			"messages": []interface{}{
+				// Turn 3: Zoo reads src/index.ts
+				map[string]interface{}{
+					"role": "assistant",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type":  "tool_use",
+							"id":    "tu_zoo_read1",
+							"name":  "read_file",
+							"input": map[string]interface{}{"path": "src/index.ts"},
+						},
+					},
+				},
+				map[string]interface{}{
+					"role": "user",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type":        "tool_result",
+							"tool_use_id": "tu_zoo_read1",
+							"content":     "import './models/Card';\nimport './models/Deck';\n// 200 lines of game logic",
+						},
+					},
+				},
+				// Turn 10: Zoo applies diff to src/index.ts
+				map[string]interface{}{
+					"role": "assistant",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type":  "tool_use",
+							"id":    "tu_zoo_diff",
+							"name":  "apply_diff",
+							"input": map[string]interface{}{"path": "src/index.ts", "diff": "-old\n+new"},
+						},
+					},
+				},
+				map[string]interface{}{
+					"role": "user",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type":        "tool_result",
+							"tool_use_id": "tu_zoo_diff",
+							"content":     "Successfully applied diff to src/index.ts",
+						},
+					},
+				},
+			},
+		}
+
+		raw, _ := json.Marshal(zooPayload)
+		transformed, res, err := tr.TransformAnthropic(raw)
+		if err != nil {
+			t.Fatalf("TransformAnthropic error: %v", err)
+		}
+
+		if res.BytesSaved <= 0 {
+			t.Errorf("expected positive bytes saved for Zoo Code apply_diff superseding read")
+		}
+
+		var parsed map[string]interface{}
+		_ = json.Unmarshal(transformed, &parsed)
+		msgs := parsed["messages"].([]interface{})
+		userContent := msgs[1].(map[string]interface{})["content"].([]interface{})
+		part := userContent[0].(map[string]interface{})
+
+		if part["content"] != StaleFileReadNotice {
+			t.Errorf("expected Zoo Code read to be evicted to notice, got: %v", part["content"])
+		}
+	})
+}

@@ -144,16 +144,17 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 						msg["content"] = StaleFileReadNotice
 						reducedBytes := len(StaleFileReadNotice)
 						saved := origBytes - reducedBytes
-						if saved > 0 {
-							total.merge(ReductionResult{
-								OriginalBytes: origBytes,
-								ReducedBytes:  reducedBytes,
-								BytesSaved:    saved,
-								TokensSaved:   (saved + 3) / 4,
-							})
-							modified = true
-							continue
+						if saved < 0 {
+							saved = 0
 						}
+						total.merge(ReductionResult{
+							OriginalBytes: origBytes,
+							ReducedBytes:  reducedBytes,
+							BytesSaved:    saved,
+							TokensSaved:   (saved + 3) / 4,
+						})
+						modified = true
+						continue
 					}
 				}
 			}
@@ -191,16 +192,17 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 						part["content"] = StaleFileReadNotice
 						reducedBytes := len(StaleFileReadNotice)
 						saved := origBytes - reducedBytes
-						if saved > 0 {
-							total.merge(ReductionResult{
-								OriginalBytes: origBytes,
-								ReducedBytes:  reducedBytes,
-								BytesSaved:    saved,
-								TokensSaved:   (saved + 3) / 4,
-							})
-							modified = true
-							continue
+						if saved < 0 {
+							saved = 0
 						}
+						total.merge(ReductionResult{
+							OriginalBytes: origBytes,
+							ReducedBytes:  reducedBytes,
+							BytesSaved:    saved,
+							TokensSaved:   (saved + 3) / 4,
+						})
+						modified = true
+						continue
 					}
 				}
 			}
