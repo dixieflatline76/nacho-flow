@@ -28,6 +28,7 @@ type Config struct {
 	PreserveFileWrites   bool `json:"preserve_file_writes" yaml:"preserve_file_writes"`
 	PreserveCacheControl bool `json:"preserve_cache_control" yaml:"preserve_cache_control"`
 	CompactStaleFileReads bool `json:"compact_stale_file_reads" yaml:"compact_stale_file_reads"`
+	StaleReadDepth        int  `json:"stale_read_depth" yaml:"stale_read_depth"` // Number of recent reads to preserve per file (default: 3)
 }
 
 // DefaultConfig returns the production default configuration for NTS.
@@ -44,6 +45,7 @@ func DefaultConfig() Config {
 		PreserveFileWrites:    true,
 		PreserveCacheControl:  true,
 		CompactStaleFileReads: true,
+		StaleReadDepth:        3,
 	}
 }
 

@@ -29,10 +29,15 @@ type fileToolCall struct {
 
 // IdentifyStaleToolCallIDs inspects conversation messages in chronological order,
 // then scans backwards to identify tool call IDs of file reads that were superseded
-// by later reads or writes of the same file.
-func IdentifyStaleToolCallIDs(msgs []interface{}) map[string]struct{} {
+// by later reads or writes of the same file. It preserves up to depth recent reads (default: 1).
+func IdentifyStaleToolCallIDs(msgs []interface{}, depth ...int) map[string]struct{} {
 	if len(msgs) == 0 {
 		return nil
+	}
+
+	retentionDepth := 1
+	if len(depth) > 0 && depth[0] > 0 {
+		retentionDepth = depth[0]
 	}
 
 	// 1. Collect all file read/write tool calls across assistant messages
@@ -114,10 +119,15 @@ func IdentifyStaleToolCallIDs(msgs []interface{}) map[string]struct{} {
 	}
 
 	// 2. Scan backwards to identify superseded reads
+	var seenWrites [64]uint64
+	seenWritesCount := 0
+
 	var seenFullFiles [64]uint64
+	var seenFullCounts [64]uint8
 	seenFullCount := 0
 
 	var seenRangedFiles [64]uint64
+	var seenRangedCounts [64]uint8
 	seenRangedCount := 0
 
 	staleIDs := make(map[string]struct{})
@@ -128,37 +138,57 @@ func IdentifyStaleToolCallIDs(msgs []interface{}) map[string]struct{} {
 		keyHash := fnv64(c.pathKey)
 
 		if c.isWrite {
-			// A write modifies the underlying file, superseding all previous reads
-			if !containsHash(seenFullFiles[:seenFullCount], baseHash) {
-				if seenFullCount < len(seenFullFiles) {
-					seenFullFiles[seenFullCount] = baseHash
-					seenFullCount++
+			// A write modifies the file on disk. Any reads prior to this write are obsolete.
+			if !containsHash(seenWrites[:seenWritesCount], baseHash) {
+				if seenWritesCount < len(seenWrites) {
+					seenWrites[seenWritesCount] = baseHash
+					seenWritesCount++
 				}
 			}
 			continue
 		}
 
 		if c.isRead {
-			// Check if this read was superseded by:
-			// 1. A later write or full read of the same file
-			isSupersededByFull := containsHash(seenFullFiles[:seenFullCount], baseHash)
-			// 2. A later read of the exact same line range
-			isSupersededByRange := containsHash(seenRangedFiles[:seenRangedCount], keyHash)
-
-			if isSupersededByFull || isSupersededByRange {
+			// Check if a later write modified this file
+			if containsHash(seenWrites[:seenWritesCount], baseHash) {
 				staleIDs[c.id] = struct{}{}
-			} else {
-				// This is the active/latest read of this file or range
-				if c.basePath == c.pathKey {
-					// Full read (no line range specified)
-					if seenFullCount < len(seenFullFiles) {
-						seenFullFiles[seenFullCount] = baseHash
-						seenFullCount++
+				continue
+			}
+
+			if c.basePath == c.pathKey {
+				// Full file read
+				idx := findHashIndex(seenFullFiles[:seenFullCount], baseHash)
+				if idx >= 0 {
+					seenFullCounts[idx]++
+					if int(seenFullCounts[idx]) > retentionDepth {
+						staleIDs[c.id] = struct{}{}
 					}
 				} else {
-					// Specific line range
+					if seenFullCount < len(seenFullFiles) {
+						seenFullFiles[seenFullCount] = baseHash
+						seenFullCounts[seenFullCount] = 1
+						seenFullCount++
+					}
+				}
+			} else {
+				// Specific line range read
+				// If full reads of this file already exceeded retention depth, range is stale
+				idxFull := findHashIndex(seenFullFiles[:seenFullCount], baseHash)
+				if idxFull >= 0 && int(seenFullCounts[idxFull]) >= retentionDepth {
+					staleIDs[c.id] = struct{}{}
+					continue
+				}
+
+				idx := findHashIndex(seenRangedFiles[:seenRangedCount], keyHash)
+				if idx >= 0 {
+					seenRangedCounts[idx]++
+					if int(seenRangedCounts[idx]) > retentionDepth {
+						staleIDs[c.id] = struct{}{}
+					}
+				} else {
 					if seenRangedCount < len(seenRangedFiles) {
 						seenRangedFiles[seenRangedCount] = keyHash
+						seenRangedCounts[seenRangedCount] = 1
 						seenRangedCount++
 					}
 				}
@@ -177,6 +207,39 @@ func containsHash(slice []uint64, target uint64) bool {
 		if h == target {
 			return true
 		}
+	}
+	return false
+}
+
+func findHashIndex(slice []uint64, target uint64) int {
+	for i, h := range slice {
+		if h == target {
+			return i
+		}
+	}
+	return -1
+}
+
+// IsToolError checks whether a tool output represents an execution error or failure.
+// Tool errors are immune to stale eviction and must always remain visible to the agent.
+func IsToolError(content string, isError bool) bool {
+	if isError {
+		return true
+	}
+	trimmed := strings.TrimSpace(content)
+	if len(trimmed) == 0 {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "error:") ||
+		strings.HasPrefix(lower, "fatal:") ||
+		strings.HasPrefix(lower, "[syntax error]") ||
+		strings.HasPrefix(lower, "exit code:") ||
+		strings.Contains(lower, "command execution was not successful") ||
+		strings.Contains(lower, "not recognized as an internal or external command") ||
+		(strings.Contains(lower, "the process") && strings.Contains(lower, "not found")) ||
+		strings.Contains(lower, "unable to apply diff") {
+		return true
 	}
 	return false
 }

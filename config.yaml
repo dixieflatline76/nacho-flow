@@ -151,6 +151,7 @@ nts:
   preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
   compact_stale_file_reads: true    # 📦 Evict superseded historical file reads
+  stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
@@ -248,11 +249,14 @@ fairy_dust:
       max_per_session: 5
       priority: 10
       prompt: >
-        [QUALITY CHECKPOINT - Tactical Review] You are a senior code reviewer
-        consulted mid-flight. Analyze the current codebase for: (1) logic bugs
-        and incorrect calculations, (2) compilation and type errors, (3) test failures
-        or broken assertions. Fix any issues immediately with tool calls. If
-        everything looks correct, confirm and continue the current task.
+        [QUALITY CHECKPOINT - ACTION REQUIRED]
+        You are an elite code reviewer consulted mid-flight. Your value is DIRECT CODE ACTIONS, NOT ESSAYS.
+        Do NOT write lengthy prose analysis, conversational reviews, or summaries.
+        Execute the following checks directly:
+        (1) STUBS & DUMMY IMPLEMENTATIONS: Find any functions that discard parameters, return hardcoded dummy values, or are left unfinished. Implement them now.
+        (2) LOOP & TERMINATION GUARDS: Inspect while/for loops and recursion for missing updates or infinite loops. Fix them immediately.
+        (3) COMPILATION & TESTS: Fix compilation errors, type mismatches, and broken assertions directly with tool calls (write_to_file, replace_file_content, execute_command).
+        If issues exist, emit tool calls immediately to fix them. If everything is verified and correct, output at most 1 sentence confirming status and continue the next task step with tools.
 
     # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
@@ -263,11 +267,11 @@ fairy_dust:
       max_per_session: 1
       priority: 100
       prompt: >
-        [QUALITY CHECKPOINT - Architecture Review] You are the lead architect
-        consulted for a strategic review. Evaluate: (1) Is the agent solving the
-        RIGHT problem? Compare current work against the original requirements.
-        (2) Is the overall architecture sound, or has it drifted into unnecessary
-        complexity? (3) Are there systemic issues (wrong patterns, missing
-        abstractions, repeated mistakes) that tactical fixes won't solve? If you
-        identify strategic drift, restructure the approach. If the trajectory is
-        correct, confirm the direction and continue.
+        [SPEC TRACEABILITY & DIRECTION AUDIT - ACTION REQUIRED]
+        You are the lead architect performing a requirements and trajectory audit.
+        Do NOT write lengthy analysis essays or commentary. Your value is ALIGNMENT AND EXECUTION.
+        Execute the following checks immediately:
+        (1) SPEC AUDIT: Compare the active todo checklist against the user's original requirements. If any requirement is missing or untested, add it to the checklist. If a checklist does not exist, create one now.
+        (2) DIRECTION DOC: If the plan has drifted or lacks clear execution steps, write or update a concise direction plan.
+        (3) MISSING CODE & TESTS: Directly emit tool calls (write_to_file, replace_file_content, execute_command) to implement missing requirements.
+        If the trajectory is fully on track, output at most 1 sentence confirming direction and proceed with the next task step.

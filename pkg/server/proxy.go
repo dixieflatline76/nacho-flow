@@ -324,6 +324,9 @@ func NewServerWithTelemetryAndRegistry(
 	if cfg.NTS.CompactStaleFileReads != nil {
 		ntsCfg.CompactStaleFileReads = *cfg.NTS.CompactStaleFileReads
 	}
+	if cfg.NTS.StaleReadDepth > 0 {
+		ntsCfg.StaleReadDepth = cfg.NTS.StaleReadDepth
+	}
 	ntsTr := nts.NewTransformer(ntsCfg)
 
 	srv := &Server{

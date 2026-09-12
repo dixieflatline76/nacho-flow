@@ -121,7 +121,11 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 
 	var staleIDs map[string]struct{}
 	if t.pipeline.config.CompactStaleFileReads {
-		staleIDs = IdentifyStaleToolCallIDs(msgs)
+		depth := t.pipeline.config.StaleReadDepth
+		if depth <= 0 {
+			depth = 3
+		}
+		staleIDs = IdentifyStaleToolCallIDs(msgs, depth)
 	}
 
 	for _, msgItem := range msgs {
@@ -136,10 +140,12 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 			toolName := resolveToolName(msg["name"], toolCallID, toolNames)
 			hasCache := hasCacheControl(msg)
 
-			// Evict stale file reads before standard compaction
+			// Evict stale file reads before standard compaction (with tool error immunity)
 			if staleIDs != nil && toolCallID != "" {
 				if _, isStale := staleIDs[toolCallID]; isStale {
-					if !t.pipeline.config.PreserveCacheControl || !hasCache {
+					contentStr := extractContentString(msg["content"])
+					isErr, _ := msg["is_error"].(bool)
+					if !IsToolError(contentStr, isErr) && (!t.pipeline.config.PreserveCacheControl || !hasCache) {
 						origBytes := calculateContentLength(msg["content"])
 						msg["content"] = StaleFileReadNotice
 						reducedBytes := len(StaleFileReadNotice)
@@ -184,10 +190,12 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 			toolName := resolveToolName(part["tool_name"], toolUseID, toolNames)
 			hasCache := hasCacheControl(part)
 
-			// Evict stale file reads before standard compaction
+			// Evict stale file reads before standard compaction (with tool error immunity)
 			if staleIDs != nil && toolUseID != "" {
 				if _, isStale := staleIDs[toolUseID]; isStale {
-					if !t.pipeline.config.PreserveCacheControl || !hasCache {
+					contentStr := extractContentString(part["content"])
+					isErr, _ := part["is_error"].(bool)
+					if !IsToolError(contentStr, isErr) && (!t.pipeline.config.PreserveCacheControl || !hasCache) {
 						origBytes := calculateContentLength(part["content"])
 						part["content"] = StaleFileReadNotice
 						reducedBytes := len(StaleFileReadNotice)
@@ -392,5 +400,26 @@ func calculateContentLength(content interface{}) int {
 		return total
 	default:
 		return 0
+	}
+}
+
+func extractContentString(content interface{}) string {
+	switch v := content.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	case []interface{}:
+		var sb strings.Builder
+		for _, item := range v {
+			if part, ok := item.(map[string]interface{}); ok {
+				if text, ok := part["text"].(string); ok {
+					sb.WriteString(text)
+				}
+			}
+		}
+		return sb.String()
+	default:
+		return ""
 	}
 }

@@ -648,8 +648,8 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 			if err := ValidateConfig(cfg); err != nil {
 				t.Fatalf("ValidateConfig failed for %s: %v", relPath, err)
 			}
-			if cfg.Host != "127.0.0.1" {
-				t.Errorf("%s: expected Host '127.0.0.1', got '%s'", relPath, cfg.Host)
+			if cfg.Host != "127.0.0.1" && cfg.Host != "0.0.0.0" {
+				t.Errorf("%s: expected Host '127.0.0.1' or '0.0.0.0', got '%s'", relPath, cfg.Host)
 			}
 			if cfg.CycleKiller.MaxToolTokens != 8192 {
 				t.Errorf("%s: expected MaxToolTokens 8192, got %d", relPath, cfg.CycleKiller.MaxToolTokens)

@@ -188,6 +188,7 @@ func TestIdentifyStaleToolCallIDs_LineRanges(t *testing.T) {
 func TestTransformer_StaleFileReadEviction_OpenAI(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.CompactStaleFileReads = true
+	cfg.StaleReadDepth = 1
 	tr := NewTransformer(cfg)
 
 	largeFileContent := strings.Repeat("package board\nfunc Solve() bool { return true }\n", 100) // ~4,000 bytes
@@ -297,6 +298,7 @@ func TestTransformer_StaleFileReadEviction_OpenAI(t *testing.T) {
 func TestTransformer_StaleFileReadEviction_Anthropic(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.CompactStaleFileReads = true
+	cfg.StaleReadDepth = 1
 	tr := NewTransformer(cfg)
 
 	largeFileContent := strings.Repeat("export const Card = () => {};\n", 80)
@@ -372,6 +374,7 @@ func TestTransformer_StaleFileRead_PreserveCacheControl(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.CompactStaleFileReads = true
 	cfg.PreserveCacheControl = true
+	cfg.StaleReadDepth = 1
 	tr := NewTransformer(cfg)
 
 	payload := map[string]interface{}{
@@ -867,6 +870,282 @@ func TestTransformer_RealTasksDatasetReplay(t *testing.T) {
 
 	if tasksWithCompaction == 0 || totalBytesSaved == 0 {
 		t.Errorf("expected real tasks dataset to produce positive savings, got 0 bytes")
+	}
+}
+
+func TestIdentifyStaleToolCallIDs_ConfigurableDepth(t *testing.T) {
+	msgs := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call_1",
+					"function": map[string]interface{}{
+						"name":      "read_file",
+						"arguments": `{"path": "pkg/solver/solver.go"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call_1",
+			"content":      "content 1",
+		},
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call_2",
+					"function": map[string]interface{}{
+						"name":      "read_file",
+						"arguments": `{"path": "pkg/solver/solver.go"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call_2",
+			"content":      "content 2",
+		},
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call_3",
+					"function": map[string]interface{}{
+						"name":      "read_file",
+						"arguments": `{"path": "pkg/solver/solver.go"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call_3",
+			"content":      "content 3",
+		},
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call_4",
+					"function": map[string]interface{}{
+						"name":      "read_file",
+						"arguments": `{"path": "pkg/solver/solver.go"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call_4",
+			"content":      "content 4",
+		},
+	}
+
+	// 1. With depth = 3: only call_1 is stale, call_2, call_3, call_4 are retained
+	staleDepth3 := IdentifyStaleToolCallIDs(msgs, 3)
+	if staleDepth3 == nil {
+		t.Fatalf("expected staleDepth3 to be non-nil")
+	}
+	if _, ok := staleDepth3["call_1"]; !ok {
+		t.Errorf("expected call_1 to be stale with depth 3")
+	}
+	if _, ok := staleDepth3["call_2"]; ok {
+		t.Errorf("expected call_2 to NOT be stale with depth 3")
+	}
+	if _, ok := staleDepth3["call_3"]; ok {
+		t.Errorf("expected call_3 to NOT be stale with depth 3")
+	}
+	if _, ok := staleDepth3["call_4"]; ok {
+		t.Errorf("expected call_4 to NOT be stale with depth 3")
+	}
+
+	// 2. With default (depth <= 0 or 1): call_1, call_2, call_3 are stale
+	staleDepth1 := IdentifyStaleToolCallIDs(msgs, 1)
+	if _, ok := staleDepth1["call_1"]; !ok {
+		t.Errorf("expected call_1 to be stale with depth 1")
+	}
+	if _, ok := staleDepth1["call_2"]; !ok {
+		t.Errorf("expected call_2 to be stale with depth 1")
+	}
+	if _, ok := staleDepth1["call_3"]; !ok {
+		t.Errorf("expected call_3 to be stale with depth 1")
+	}
+	if _, ok := staleDepth1["call_4"]; ok {
+		t.Errorf("expected call_4 to NOT be stale with depth 1")
+	}
+}
+
+func TestTransformer_ToolErrorImmunity(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CompactStaleFileReads = true
+	cfg.StaleReadDepth = 1 // strict depth 1
+	tr := NewTransformer(cfg)
+
+	// An error response followed by a successful read
+	payload := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "call_err",
+						"function": map[string]interface{}{
+							"name":      "read_file",
+							"arguments": `{"path": "pkg/solver/solver.go", "anchor_line": 0}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_err",
+				"content":      "Error: anchor_line must be a 1-indexed line number (got 0). Line numbers start at 1.",
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "call_ok",
+						"function": map[string]interface{}{
+							"name":      "read_file",
+							"arguments": `{"path": "pkg/solver/solver.go", "anchor_line": 1}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_ok",
+				"content":      "package solver\nfunc Solve() {}",
+			},
+		},
+	}
+
+	rawBytes, _ := json.Marshal(payload)
+	transformed, _, err := tr.TransformOpenAI(rawBytes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	transStr := string(transformed)
+	if !strings.Contains(transStr, "anchor_line must be a 1-indexed line number") {
+		t.Errorf("tool error was incorrectly evicted or compacted by NTS: %s", transStr)
+	}
+	if strings.Contains(transStr, StaleFileReadNotice) {
+		t.Errorf("error tool result should not be marked as StaleFileReadNotice: %s", transStr)
+	}
+}
+
+func TestTransformer_ConfigurableDepth(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CompactStaleFileReads = true
+	cfg.StaleReadDepth = 3
+	tr := NewTransformer(cfg)
+
+	payload := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "c1",
+						"function": map[string]interface{}{
+							"name":      "read_file",
+							"arguments": `{"path": "pkg/foo.go"}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "c1",
+				"content":      "read 1 content that is long enough to compact 1234567890",
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "c2",
+						"function": map[string]interface{}{
+							"name":      "read_file",
+							"arguments": `{"path": "pkg/foo.go"}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "c2",
+				"content":      "read 2 content that is long enough to compact 1234567890",
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "c3",
+						"function": map[string]interface{}{
+							"name":      "read_file",
+							"arguments": `{"path": "pkg/foo.go"}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "c3",
+				"content":      "read 3 content that is long enough to compact 1234567890",
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "c4",
+						"function": map[string]interface{}{
+							"name":      "read_file",
+							"arguments": `{"path": "pkg/foo.go"}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "c4",
+				"content":      "read 4 content that is long enough to compact 1234567890",
+			},
+		},
+	}
+
+	rawBytes, _ := json.Marshal(payload)
+	transformed, res, err := tr.TransformOpenAI(rawBytes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.BytesSaved == 0 {
+		t.Fatalf("expected bytes saved from c1 eviction")
+	}
+
+	var parsed map[string]interface{}
+	json.Unmarshal(transformed, &parsed)
+	msgs := parsed["messages"].([]interface{})
+
+	// c1 (msg index 1) should be evicted
+	if content := msgs[1].(map[string]interface{})["content"].(string); content != StaleFileReadNotice {
+		t.Errorf("expected c1 to be evicted, got: %s", content)
+	}
+	// c2, c3, c4 (msg index 3, 5, 7) should NOT be evicted
+	if content := msgs[3].(map[string]interface{})["content"].(string); content == StaleFileReadNotice {
+		t.Errorf("expected c2 to be preserved with depth 3")
+	}
+	if content := msgs[5].(map[string]interface{})["content"].(string); content == StaleFileReadNotice {
+		t.Errorf("expected c3 to be preserved with depth 3")
+	}
+	if content := msgs[7].(map[string]interface{})["content"].(string); content == StaleFileReadNotice {
+		t.Errorf("expected c4 to be preserved with depth 3")
 	}
 }
 

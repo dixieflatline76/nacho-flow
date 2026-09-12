@@ -227,6 +227,7 @@ type NTSConfig struct {
 	PreserveFileWrites   *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
 	PreserveCacheControl *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
 	CompactStaleFileReads *bool `yaml:"compact_stale_file_reads,omitempty" json:"compact_stale_file_reads,omitempty"`
+	StaleReadDepth        int   `yaml:"stale_read_depth,omitempty" json:"stale_read_depth,omitempty"`
 }
 
 // Config defines the top-level configuration loaded from config.yaml.
