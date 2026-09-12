@@ -978,3 +978,146 @@ body {
 	font-weight: 500;
 	cursor: help;
 }
+
+/* ==========================================================================
+   Proactive Agent Supervisor Brackets
+   ========================================================================== */
+.supervisor-panel {
+	grid-column: span 2;
+}
+
+.supervisor-brackets {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.supervisor-bracket {
+	border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.12));
+	border-radius: 8px;
+	padding: 12px 14px;
+	background: rgba(255, 255, 255, 0.02);
+}
+
+.bracket-header {
+	margin-bottom: 10px;
+}
+
+.bracket-title {
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.3px;
+	color: var(--vscode-foreground);
+}
+
+.bracket-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 12px;
+}
+
+/* ==========================================================================
+   Nacho Token Saver (NTS) Panel & Badges
+   ========================================================================== */
+.nts-panel {
+	grid-column: span 2;
+}
+
+.nts-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 16px;
+}
+
+.nts-item {
+	background-color: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-widget-border, #333);
+	border-radius: 8px;
+	padding: 16px 12px;
+	text-align: center;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	transition: all 0.2s ease;
+}
+
+.nts-item.highlight {
+	border-color: #06b6d4;
+	background: rgba(6, 182, 212, 0.08);
+}
+
+.nts-item.token-chip {
+	border-color: #3b82f6;
+	background: rgba(59, 130, 246, 0.08);
+}
+
+.nts-item.byte-chip {
+	border-color: #10b981;
+	background: rgba(16, 185, 129, 0.08);
+}
+
+.nts-item.turn-chip {
+	border-color: #8b5cf6;
+	background: rgba(139, 92, 246, 0.08);
+}
+
+.nts-value {
+	font-size: 26px;
+	font-weight: 700;
+	color: var(--vscode-foreground);
+	margin-bottom: 4px;
+	line-height: 1.2;
+}
+
+.nts-item.highlight .nts-value {
+	color: #06b6d4;
+}
+
+.nts-item.token-chip .nts-value {
+	color: #3b82f6;
+}
+
+.nts-item.byte-chip .nts-value {
+	color: #10b981;
+}
+
+.nts-item.turn-chip .nts-value {
+	color: #a78bfa;
+}
+
+.nts-unit {
+	font-size: 15px;
+	font-weight: 500;
+	opacity: 0.9;
+}
+
+.nts-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-top: 2px;
+}
+
+.nts-sub {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-top: 4px;
+}
+
+.badge-nts {
+	background: rgba(6, 182, 212, 0.2);
+	color: #22d3ee;
+	border: 1px solid rgba(6, 182, 212, 0.4);
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: 500;
+	cursor: help;
+}

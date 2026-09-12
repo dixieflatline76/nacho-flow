@@ -27,18 +27,22 @@ type FairyDustMetrics struct {
 
 // TimeWindowMetrics captures aggregated volume, financial, and defense telemetry for a discrete timeframe.
 type TimeWindowMetrics struct {
-	Requests         int64              `json:"requests"`
-	TokensTotal      int64              `json:"tokens_total"`
-	TokensLocal      int64              `json:"tokens_local"`
-	CostSpentUSD     float64            `json:"cost_spent_usd"`
-	CostSavedUSD     float64            `json:"cost_saved_usd"`
-	CostReductionPct float64            `json:"cost_reduction_pct"`
-	CycleKiller      CycleKillerMetrics `json:"cycle_killer"`
-	FairyDust        FairyDustMetrics   `json:"fairy_dust"`
+	Requests          int64              `json:"requests"`
+	TokensTotal       int64              `json:"tokens_total"`
+	TokensLocal       int64              `json:"tokens_local"`
+	CostSpentUSD      float64            `json:"cost_spent_usd"`
+	CostSavedUSD      float64            `json:"cost_saved_usd"`
+	CostReductionPct  float64            `json:"cost_reduction_pct"`
+	CycleKiller       CycleKillerMetrics `json:"cycle_killer"`
+	FairyDust         FairyDustMetrics   `json:"fairy_dust"`
+	NTSTokensSaved    int64              `json:"nts_tokens_saved"`
+	NTSBytesSaved     int64              `json:"nts_bytes_saved"`
+	NTSCompactedTurns int64              `json:"nts_compacted_turns"`
 }
 
 // TimeWindowSnapshot holds pre-aggregated metrics across standard time horizons.
 type TimeWindowSnapshot struct {
+	Past1Hour TimeWindowMetrics `json:"past_1_hour"`
 	Today     TimeWindowMetrics `json:"today"`
 	Yesterday TimeWindowMetrics `json:"yesterday"`
 	ThisWeek  TimeWindowMetrics `json:"this_week"`
@@ -78,6 +82,9 @@ type StatsSnapshot struct {
 	CostReductionPct         float64                      `json:"cost_reduction_pct"`
 	CycleKiller              CycleKillerMetrics           `json:"cycle_killer"`
 	FairyDust                FairyDustMetrics             `json:"fairy_dust"`
+	TotalNTSTokensSaved      int64                        `json:"total_nts_tokens_saved"`
+	TotalNTSBytesSaved       int64                        `json:"total_nts_bytes_saved"`
+	TotalNTSCompactedTurns   int64                        `json:"total_nts_compacted_turns"`
 	Windows                  TimeWindowSnapshot           `json:"windows"`
 	DailyBuckets             map[string]TimeWindowMetrics `json:"daily_buckets,omitempty"`
 }
@@ -122,6 +129,11 @@ type Observation struct {
 	ObservedAt                time.Time
 }
 
+type minuteBucket struct {
+	minuteEpoch int64
+	metrics     TimeWindowMetrics
+}
+
 // StatsTracker processes proxy telemetry asynchronously via a dedicated background channel.
 type StatsTracker struct {
 	obsChan       chan Observation
@@ -133,9 +145,11 @@ type StatsTracker struct {
 	sinks         atomic.Pointer[[]ObservationSink]
 	closed        bool
 
-	activeDay   string
-	activeWeek  string
-	activeMonth string
+	activeDay        string
+	activeWeek       string
+	activeMonth      string
+	minuteRing       [60]minuteBucket
+	lastObservedTime time.Time
 }
 
 // NewStatsTracker initializes and starts the background metrics aggregator.
@@ -181,8 +195,12 @@ func NewStatsTrackerWithInitialSnapshot(bufferSize int, initial StatsSnapshot) *
 			TokensLocal:      tracker.stats.TotalTokensRoutedLocally,
 			CostSpentUSD:     tracker.stats.TotalCostSpentUSD,
 			CostSavedUSD:     tracker.stats.EstimatedCostSavedUSD,
-			CostReductionPct: allPct,
-			CycleKiller:      tracker.stats.CycleKiller,
+			CostReductionPct:  allPct,
+			CycleKiller:       tracker.stats.CycleKiller,
+			FairyDust:         tracker.stats.FairyDust,
+			NTSTokensSaved:    tracker.stats.TotalNTSTokensSaved,
+			NTSBytesSaved:     tracker.stats.TotalNTSBytesSaved,
+			NTSCompactedTurns: tracker.stats.TotalNTSCompactedTurns,
 		}
 	}
 
@@ -305,8 +323,11 @@ func (s *StatsTracker) restoreWindowsFromBuckets(now time.Time) {
 		CostSpentUSD:     s.stats.TotalCostSpentUSD,
 		CostSavedUSD:     s.stats.EstimatedCostSavedUSD,
 		CostReductionPct: allPct,
-		CycleKiller:      s.stats.CycleKiller,
-		FairyDust:        s.stats.FairyDust,
+		CycleKiller:       s.stats.CycleKiller,
+		FairyDust:         s.stats.FairyDust,
+		NTSTokensSaved:    s.stats.TotalNTSTokensSaved,
+		NTSBytesSaved:     s.stats.TotalNTSBytesSaved,
+		NTSCompactedTurns: s.stats.TotalNTSCompactedTurns,
 	}
 }
 
@@ -384,6 +405,22 @@ func (s *StatsTracker) updateWindowsLocked(obs Observation, observedAt time.Time
 		addToWindow(&s.stats.Windows.ThisMonth, obs, tokens, localTokens)
 	}
 
+	// Update 60-slot rolling minute ring
+	minuteEpoch := observedAt.Unix() / 60
+	slotIdx := minuteEpoch % 60
+	if slotIdx < 0 {
+		slotIdx = -slotIdx
+	}
+	if s.minuteRing[slotIdx].minuteEpoch != minuteEpoch {
+		s.minuteRing[slotIdx] = minuteBucket{
+			minuteEpoch: minuteEpoch,
+		}
+	}
+	addToWindow(&s.minuteRing[slotIdx].metrics, obs, tokens, localTokens)
+	if observedAt.After(s.lastObservedTime) {
+		s.lastObservedTime = observedAt
+	}
+
 	// Incremental O(1) AllTime accumulation (0 struct allocations)
 	addToWindow(&s.stats.Windows.AllTime, obs, tokens, localTokens)
 	s.allTimeTokens += tokens
@@ -414,6 +451,11 @@ func addToWindow(w *TimeWindowMetrics, obs Observation, tokens, localTokens int6
 	if obs.FairyDusted {
 		w.FairyDust.TotalTriggers++
 	}
+	if obs.NTSTokensSaved > 0 || obs.NTSBytesSaved > 0 {
+		w.NTSTokensSaved += int64(obs.NTSTokensSaved)
+		w.NTSBytesSaved += int64(obs.NTSBytesSaved)
+		w.NTSCompactedTurns++
+	}
 }
 
 func addBucketToWindow(w *TimeWindowMetrics, b TimeWindowMetrics) {
@@ -431,6 +473,9 @@ func addBucketToWindow(w *TimeWindowMetrics, b TimeWindowMetrics) {
 	w.CycleKiller.Stage2CloudEscalations += b.CycleKiller.Stage2CloudEscalations
 	w.CycleKiller.SessionKickstarts += b.CycleKiller.SessionKickstarts
 	w.FairyDust.TotalTriggers += b.FairyDust.TotalTriggers
+	w.NTSTokensSaved += b.NTSTokensSaved
+	w.NTSBytesSaved += b.NTSBytesSaved
+	w.NTSCompactedTurns += b.NTSCompactedTurns
 }
 
 func computeHealRate(ck *CycleKillerMetrics) {
@@ -516,6 +561,13 @@ func (s *StatsTracker) worker() {
 			s.stats.FairyDust.TotalTriggers++
 		}
 
+		// NTS telemetry accumulation
+		if obs.NTSTokensSaved > 0 || obs.NTSBytesSaved > 0 {
+			s.stats.TotalNTSTokensSaved += int64(obs.NTSTokensSaved)
+			s.stats.TotalNTSBytesSaved += int64(obs.NTSBytesSaved)
+			s.stats.TotalNTSCompactedTurns++
+		}
+
 		s.updateWindowsLocked(obs, observedAt)
 		s.mu.Unlock()
 
@@ -589,6 +641,8 @@ func (s *StatsTracker) Reset() {
 	year, week := now.ISOWeek()
 	s.activeWeek = fmt.Sprintf("%d-W%02d", year, week)
 	s.activeMonth = now.Format("2006-01")
+	s.minuteRing = [60]minuteBucket{}
+	s.lastObservedTime = time.Time{}
 }
 
 // RecalculateFromRecords rebuilds all cumulative and windowed stats from an array of TurnRecord entries.
@@ -614,6 +668,8 @@ func (s *StatsTracker) RecalculateFromRecordsAt(records []TurnRecord, oracle *Pr
 	year, week := now.ISOWeek()
 	s.activeWeek = fmt.Sprintf("%d-W%02d", year, week)
 	s.activeMonth = now.Format("2006-01")
+	s.minuteRing = [60]minuteBucket{}
+	s.lastObservedTime = time.Time{}
 
 	for _, rec := range records {
 		observedAt := rec.Timestamp
@@ -685,6 +741,13 @@ func (s *StatsTracker) RecalculateFromRecordsAt(records []TurnRecord, oracle *Pr
 			s.stats.FairyDust.TotalTriggers++
 		}
 
+		// NTS recalculation from historical records
+		if rec.NTSTokensSaved > 0 || rec.NTSBytesSaved > 0 {
+			s.stats.TotalNTSTokensSaved += int64(rec.NTSTokensSaved)
+			s.stats.TotalNTSBytesSaved += int64(rec.NTSBytesSaved)
+			s.stats.TotalNTSCompactedTurns++
+		}
+
 		obs := Observation{
 			TierName:              rec.SelectedTier,
 			Model:                 rec.TargetModel,
@@ -698,6 +761,8 @@ func (s *StatsTracker) RecalculateFromRecordsAt(records []TurnRecord, oracle *Pr
 			SessionKickstarted:    rec.SessionKickstarted,
 			FairyDusted:           rec.FairyDusted,
 			FairyDustEntry:        rec.FairyDustEntry,
+			NTSTokensSaved:        rec.NTSTokensSaved,
+			NTSBytesSaved:         rec.NTSBytesSaved,
 		}
 		s.updateWindowsLocked(obs, observedAt)
 	}
@@ -719,6 +784,24 @@ func (s *StatsTracker) GetStats() StatsSnapshot {
 	computeHealRate(&snap.Windows.ThisWeek.CycleKiller)
 	computeHealRate(&snap.Windows.ThisMonth.CycleKiller)
 	computeHealRate(&snap.Windows.AllTime.CycleKiller)
+
+	// Rolling Past 1 Hour calculation from 60-minute bucket ring
+	nowMinute := time.Now().UTC().Unix() / 60
+	if !s.lastObservedTime.IsZero() {
+		lastMin := s.lastObservedTime.Unix() / 60
+		if lastMin > nowMinute {
+			nowMinute = lastMin
+		}
+	}
+	snap.Windows.Past1Hour = TimeWindowMetrics{}
+	for i := 0; i < 60; i++ {
+		slot := s.minuteRing[i]
+		if slot.minuteEpoch > 0 && nowMinute >= slot.minuteEpoch && (nowMinute-slot.minuteEpoch) < 60 {
+			addBucketToWindow(&snap.Windows.Past1Hour, slot.metrics)
+		}
+	}
+	computeHealRate(&snap.Windows.Past1Hour.CycleKiller)
+
 	if s.stats.DailyBuckets != nil {
 		snap.DailyBuckets = make(map[string]TimeWindowMetrics, len(s.stats.DailyBuckets))
 		for k, bucket := range s.stats.DailyBuckets {

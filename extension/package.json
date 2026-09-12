@@ -68,6 +68,10 @@
         "title": "Nacho Flow: Open Controls in Sidebar"
       },
       {
+        "command": "nacho-flow.setTimeWindowPast1Hour",
+        "title": "Nacho Flow: Set Timeframe to Past 1 Hour"
+      },
+      {
         "command": "nacho-flow.setTimeWindowToday",
         "title": "Nacho Flow: Set Timeframe to Today"
       },

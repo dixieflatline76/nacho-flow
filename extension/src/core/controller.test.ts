@@ -232,6 +232,7 @@ describe('ExtensionController', () => {
       const openDocsCmd = calls.find(c => c[0] === 'nacho-flow.openDocs')[1];
       const openSupportCmd = calls.find(c => c[0] === 'nacho-flow.openSupport')[1];
       const openSettingsCmd = calls.find(c => c[0] === 'nacho-flow.openSettings')[1];
+      const setTimePast1HourCmd = calls.find(c => c[0] === 'nacho-flow.setTimeWindowPast1Hour')[1];
       const setTimeTodayCmd = calls.find(c => c[0] === 'nacho-flow.setTimeWindowToday')[1];
       const setTimeWeekCmd = calls.find(c => c[0] === 'nacho-flow.setTimeWindowWeek')[1];
       const setTimeMonthCmd = calls.find(c => c[0] === 'nacho-flow.setTimeWindowMonth')[1];
@@ -240,6 +241,7 @@ describe('ExtensionController', () => {
       openDocsCmd();
       openSupportCmd();
       openSettingsCmd();
+      setTimePast1HourCmd();
       setTimeTodayCmd();
       setTimeWeekCmd();
       setTimeMonthCmd();
@@ -1548,6 +1550,7 @@ default_tier:
       expect(openSettingsSpy).toHaveBeenCalled();
 
       // Test timeframe registered command handlers
+      const setPast1HourCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowPast1Hour');
       const setTodayCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowToday');
       const setYesterdayCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowYesterday');
       const setWeekCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowWeek');
@@ -1555,6 +1558,8 @@ default_tier:
       const setAllTimeCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.setTimeWindowAllTime');
       
       const setTimeWindowSpy = jest.spyOn(extensionController, 'setTimeWindow').mockResolvedValue(undefined);
+      setPast1HourCall[1]();
+      expect(setTimeWindowSpy).toHaveBeenCalledWith('past_1_hour');
       setTodayCall[1]();
       expect(setTimeWindowSpy).toHaveBeenCalledWith('today');
       setYesterdayCall[1]();

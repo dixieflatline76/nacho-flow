@@ -88,7 +88,8 @@ describe('DashboardPanel', () => {
       expect(mockWebviewPanel.webview.html).toContain('control-center-section');
       expect(mockWebviewPanel.webview.html).toContain('cycle-killer-panel');
       expect(mockWebviewPanel.webview.html).toContain('id="cycle-killer-content"');
-      expect(mockWebviewPanel.webview.html).toContain('id="tab-yesterday"');
+      expect(mockWebviewPanel.webview.html).toContain('id="nts-content"');
+      expect(mockWebviewPanel.webview.html).toContain('id="tab-past_1_hour"');
     });
 
     it('should set up message listener when onMessage is provided', () => {

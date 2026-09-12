@@ -1077,3 +1077,124 @@ func TestStatsTracker_CycleKiller_LegacyMigrationBackfillsBuckets(t *testing.T) 
 			b29r.CycleKiller.TotalInterventions)
 	}
 }
+
+func TestStatsTracker_Past1Hour_And_NTS(t *testing.T) {
+	tracker := NewStatsTracker(20)
+	defer tracker.Close()
+
+	sink := &mockSink{}
+	tracker.AddSink(sink)
+
+	now := time.Now().UTC()
+	t15m := now.Add(-15 * time.Minute)
+	t45m := now.Add(-45 * time.Minute)
+	t90m := now.Add(-90 * time.Minute)
+
+	// Obs 1: 15 minutes ago (inside Past1Hour)
+	tracker.Record(Observation{
+		Tokens:         2000,
+		CostSpent:      0.01,
+		CostSaved:      0.02,
+		NTSTokensSaved: 1200,
+		NTSBytesSaved:  4800,
+		ObservedAt:     t15m,
+	})
+
+	// Obs 2: 45 minutes ago (inside Past1Hour)
+	tracker.Record(Observation{
+		Tokens:         1500,
+		CostSpent:      0.008,
+		CostSaved:      0.015,
+		NTSTokensSaved: 800,
+		NTSBytesSaved:  3200,
+		ObservedAt:     t45m,
+	})
+
+	// Obs 3: 90 minutes ago (today, but outside Past1Hour)
+	tracker.Record(Observation{
+		Tokens:         1800,
+		CostSpent:      0.009,
+		CostSaved:      0.018,
+		NTSTokensSaved: 1000,
+		NTSBytesSaved:  4000,
+		ObservedAt:     t90m,
+	})
+
+	tracker.Flush()
+	stats := tracker.GetStats()
+
+	// 1. Verify Past1Hour (only 15m and 45m records)
+	p1h := stats.Windows.Past1Hour
+	if p1h.Requests != 2 {
+		t.Errorf("expected 2 requests in Past1Hour, got %d", p1h.Requests)
+	}
+	if p1h.TokensTotal != 3500 {
+		t.Errorf("expected 3500 tokens in Past1Hour, got %d", p1h.TokensTotal)
+	}
+	if p1h.NTSTokensSaved != 2000 {
+		t.Errorf("expected 2000 NTSTokensSaved in Past1Hour, got %d", p1h.NTSTokensSaved)
+	}
+	if p1h.NTSBytesSaved != 8000 {
+		t.Errorf("expected 8000 NTSBytesSaved in Past1Hour, got %d", p1h.NTSBytesSaved)
+	}
+	if p1h.NTSCompactedTurns != 2 {
+		t.Errorf("expected 2 NTSCompactedTurns in Past1Hour, got %d", p1h.NTSCompactedTurns)
+	}
+
+	// 2. Verify Today (all 3 records)
+	today := stats.Windows.Today
+	if today.Requests != 3 {
+		t.Errorf("expected 3 requests in Today, got %d", today.Requests)
+	}
+	if today.TokensTotal != 5300 {
+		t.Errorf("expected 5300 tokens in Today, got %d", today.TokensTotal)
+	}
+	if today.NTSTokensSaved != 3000 {
+		t.Errorf("expected 3000 NTSTokensSaved in Today, got %d", today.NTSTokensSaved)
+	}
+	if today.NTSBytesSaved != 12000 {
+		t.Errorf("expected 12000 NTSBytesSaved in Today, got %d", today.NTSBytesSaved)
+	}
+	if today.NTSCompactedTurns != 3 {
+		t.Errorf("expected 3 NTSCompactedTurns in Today, got %d", today.NTSCompactedTurns)
+	}
+
+	// 3. Verify Root Snapshot
+	if stats.TotalNTSTokensSaved != 3000 {
+		t.Errorf("expected 3000 TotalNTSTokensSaved, got %d", stats.TotalNTSTokensSaved)
+	}
+	if stats.TotalNTSBytesSaved != 12000 {
+		t.Errorf("expected 12000 TotalNTSBytesSaved, got %d", stats.TotalNTSBytesSaved)
+	}
+	if stats.TotalNTSCompactedTurns != 3 {
+		t.Errorf("expected 3 TotalNTSCompactedTurns, got %d", stats.TotalNTSCompactedTurns)
+	}
+
+	// 4. Verify Sink Records
+	sink.mu.Lock()
+	recordsCount := len(sink.records)
+	recordsCopy := make([]TurnRecord, recordsCount)
+	copy(recordsCopy, sink.records)
+	sink.mu.Unlock()
+
+	if recordsCount != 3 {
+		t.Fatalf("expected 3 emitted turn records, got %d", recordsCount)
+	}
+	if recordsCopy[0].NTSTokensSaved != 1200 || recordsCopy[0].NTSBytesSaved != 4800 {
+		t.Errorf("sink record 0 NTS mismatch: tokens=%d, bytes=%d", recordsCopy[0].NTSTokensSaved, recordsCopy[0].NTSBytesSaved)
+	}
+
+	// 5. Verify RecalculateFromRecordsAt maintains Past1Hour & NTS rollups
+	tracker.RecalculateFromRecordsAt(recordsCopy, nil, 0, now)
+	recalcStats := tracker.GetStats()
+	if recalcStats.Windows.Past1Hour.NTSTokensSaved != 2000 {
+		t.Errorf("expected 2000 Past1Hour NTSTokensSaved after recalc, got %d", recalcStats.Windows.Past1Hour.NTSTokensSaved)
+	}
+	if recalcStats.Windows.Today.NTSTokensSaved != 3000 {
+		t.Errorf("expected 3000 Today NTSTokensSaved after recalc, got %d", recalcStats.Windows.Today.NTSTokensSaved)
+	}
+	if recalcStats.TotalNTSTokensSaved != 3000 {
+		t.Errorf("expected 3000 TotalNTSTokensSaved after recalc, got %d", recalcStats.TotalNTSTokensSaved)
+	}
+}
+

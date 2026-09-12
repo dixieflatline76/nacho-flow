@@ -86,20 +86,25 @@ export class DashboardPanel {
 				<div class="panel-header-with-tabs">
 					<h2>📊 Statistics & Cost Savings</h2>
 					<div class="time-window-tabs">
-						<button id="tab-all_time" class="tab-btn active" onclick="setTimeWindow('all_time')">All Time</button>
+						<button id="tab-past_1_hour" class="tab-btn" onclick="setTimeWindow('past_1_hour')">Past 1h</button>
 						<button id="tab-today" class="tab-btn" onclick="setTimeWindow('today')">Today</button>
-						<button id="tab-yesterday" class="tab-btn" onclick="setTimeWindow('yesterday')">Yesterday</button>
 						<button id="tab-this_week" class="tab-btn" onclick="setTimeWindow('this_week')">This Week</button>
 						<button id="tab-this_month" class="tab-btn" onclick="setTimeWindow('this_month')">This Month</button>
+						<button id="tab-all_time" class="tab-btn active" onclick="setTimeWindow('all_time')">All Time</button>
 					</div>
 				</div>
 				<div id="stats-timeframe-info" class="timeframe-info"></div>
 				<div id="stats-content">Loading...</div>
 			</div>
 
-			<div class="panel cycle-killer-panel">
-				<h2>🎸 Cycle Killer (Qu'est-ce que c'est?): In-Flight Stream Breaker</h2>
+			<div class="panel cycle-killer-panel supervisor-panel">
+				<h2>🛡️ Proactive Agent Supervisor: Runtime Stream & Loop Defense</h2>
 				<div id="cycle-killer-content">Loading defense telemetry...</div>
+			</div>
+
+			<div class="panel nts-panel">
+				<h2>🗜️ Nacho Token Saver (NTS): In-Place Tool Compaction Engine</h2>
+				<div id="nts-content">Loading token saver telemetry...</div>
 			</div>
 
 			<div class="panel routes-panel">

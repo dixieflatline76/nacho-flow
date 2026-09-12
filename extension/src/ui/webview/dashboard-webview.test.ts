@@ -46,6 +46,25 @@ function makeStats(overrides: Record<string, unknown> = {}): unknown {
       local_heal_success_rate_pct: 83,
     },
     windows: {
+      past_1_hour: {
+        requests: 2,
+        tokens_total: 4000,
+        tokens_local: 3200,
+        cost_spent_usd: 0.02,
+        cost_saved_usd: 0.18,
+        cost_reduction_pct: 90,
+        cycle_killer: {
+          total_interventions: 1,
+          avoided_runaway_tokens: 8000,
+          avoided_gpu_seconds: 240,
+          stage1_local_heals: 1,
+          stage2_cloud_escalations: 0,
+          local_heal_success_rate_pct: 100,
+        },
+        nts_tokens_saved: 1200,
+        nts_bytes_saved: 4800,
+        nts_compacted_turns: 2,
+      },
       today: {
         requests: 5,
         tokens_total: 10000,
@@ -187,6 +206,7 @@ function buildDOM(): void {
     <div id="stats-content"></div>
     <div id="stats-timeframe-info"></div>
     <div id="cycle-killer-content"></div>
+    <div id="nts-content"></div>
     <div id="routes-content"></div>
     <div id="circuits-content"></div>
     <div id="deals-content"></div>
@@ -194,6 +214,7 @@ function buildDOM(): void {
     <div id="tuner-banner" style="display:none"></div>
     <span id="active-preset-badge"></span>
     <button id="btn-edit-config"><svg></svg> config.yaml</button>
+    <button id="tab-past_1_hour"></button>
     <button id="tab-all_time"></button>
     <button id="tab-today"></button>
     <button id="tab-yesterday"></button>
@@ -312,6 +333,25 @@ describe('windowCycleKiller — timeframe selection (v0.8.4 daemon, all windows 
     setWindow('all_time');
     expect(ckContent()).toContain('12 <span class="ck-unit">Loops</span>');
   });
+
+  it('Past 1 Hour: renders 1 intervention and NTS tokens from past_1_hour window', () => {
+    setWindow('past_1_hour');
+    expect(ckContent()).toContain('1 <span class="ck-unit">Loops</span>');
+    expect(document.getElementById('nts-content')?.innerHTML).toContain('+1.2k <span class="nts-unit">Tokens</span>');
+  });
+
+  it('Past 1 Hour: timeframe label mentions Past 1 Hour', () => {
+    setWindow('past_1_hour');
+    const info = document.getElementById('stats-timeframe-info')?.textContent ?? '';
+    expect(info).toContain('Past 1 Hour');
+  });
+
+  it('renders supervisor sub-brackets with Qu\'est-ce que c\'est?, Kickstart, and Fairy Dust', () => {
+    setWindow('all_time');
+    expect(ckContent()).toContain("Cycle Killer (Qu'est-ce que c'est?): In-Flight Stream Breaker");
+    expect(ckContent()).toContain('Kickstart: Stall Resuscitation Engine');
+    expect(ckContent()).toContain('Fairy Dust: Programmable Quality Checkpoints');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -375,6 +415,13 @@ describe('renderCycleKiller — null or incomplete stats', () => {
 // ---------------------------------------------------------------------------
 
 describe('setTimeWindow — tab button active class', () => {
+  it('marks past_1_hour tab active and clears others', () => {
+    setWindow('past_1_hour');
+    expect(document.getElementById('tab-past_1_hour')?.classList.contains('active')).toBe(true);
+    expect(document.getElementById('tab-today')?.classList.contains('active')).toBe(false);
+    expect(document.getElementById('tab-all_time')?.classList.contains('active')).toBe(false);
+  });
+
   it('marks yesterday tab active and clears others', () => {
     setWindow('yesterday');
     expect(document.getElementById('tab-yesterday')?.classList.contains('active')).toBe(true);
@@ -440,6 +487,7 @@ describe('setOffline command in webview', () => {
 
     expect(document.getElementById('stats-content')?.textContent).toContain('Local engine is offline');
     expect(document.getElementById('cycle-killer-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('nts-content')?.textContent).toContain('Engine is offline');
     expect(document.getElementById('routes-content')?.textContent).toContain('Engine is offline');
     expect(document.getElementById('circuits-content')?.textContent).toContain('Engine is offline');
     expect(document.getElementById('deals-content')?.textContent).toContain('Engine is offline');

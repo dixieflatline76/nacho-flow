@@ -15,6 +15,9 @@ export interface TurnRecord {
 	status_code: number;
 	is_retry: boolean;
 	cost_saved_usd: number;
+	cost_spent_usd?: number;
+	nts_tokens_saved?: number;
+	nts_bytes_saved?: number;
 }
 
 // Circuit Information
@@ -70,6 +73,12 @@ export interface StatsSnapshot {
 	tier_breakdown: TierMetrics;
 	total_tokens_routed_locally: number;
 	estimated_cost_saved_usd: number;
+	total_cost_spent_usd?: number;
+	cost_reduction_pct?: number;
+	total_nts_tokens_saved?: number;
+	total_nts_bytes_saved?: number;
+	total_nts_compacted_turns?: number;
+	windows?: Record<string, any>;
 }
 
 // Pricing

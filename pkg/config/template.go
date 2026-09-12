@@ -151,6 +151,22 @@ cycle_killer:
     - exec
 
 # =============================================================================
+# 🗜️ NACHO TOKEN SAVER (NTS)
+# Wire-speed, zero-allocation in-place tool output compaction engine
+# =============================================================================
+nts:
+  enabled: true                     # Master switch for tool output compaction
+  strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
+  resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
+  deduplicate_lines: true           # Pass 3: Collapse repeated consecutive lines (>3 times)
+  dedup_threshold: 3                # Consecutive duplicate threshold before collapse
+  strip_boilerplate: true           # Pass 4: Strip IDE tool boilerplate notices
+  normalize_whitespace: true        # Pass 5: Collapse multiple empty lines
+  preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
+  preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
+  preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
+
+# =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
 # =============================================================================
 tiers:

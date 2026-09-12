@@ -68,7 +68,7 @@
 		vscode.setState(currentState);
 		try { localStorage.setItem('nacho_flow_time_window', windowKey); } catch (_) {}
 
-		['all_time', 'today', 'yesterday', 'this_week', 'this_month'].forEach(k => {
+		['past_1_hour', 'all_time', 'today', 'yesterday', 'this_week', 'this_month'].forEach(k => {
 			const btn = document.getElementById(`tab-${k}`);
 			if (btn) {
 				if (k === windowKey) btn.classList.add('active');
@@ -173,6 +173,13 @@
 		renderStats(stats);
 	}
 
+	function formatBytes(bytes) {
+		if (!bytes || bytes <= 0) return '0 B';
+		if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+		if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+		return bytes + ' B';
+	}
+
 	function renderStats(stats) {
 		const statsContent = document.getElementById('stats-content');
 		const timeframeInfo = document.getElementById('stats-timeframe-info');
@@ -182,6 +189,8 @@
 			if (timeframeInfo) timeframeInfo.textContent = '';
 			const ckContent = document.getElementById('cycle-killer-content');
 			if (ckContent) ckContent.innerHTML = '<div class="loading">Engine is offline. Start the engine to activate stream defense watchdog.</div>';
+			const ntsContent = document.getElementById('nts-content');
+			if (ntsContent) ntsContent.innerHTML = '<div class="loading">Engine is offline. Token saver activates with proxy traffic.</div>';
 			return;
 		}
 
@@ -196,7 +205,17 @@
 
 		const startedDate = stats.started_at ? new Date(stats.started_at).toLocaleString() : 'Engine startup';
 
-		if (activeTimeWindow === 'today') {
+		if (activeTimeWindow === 'past_1_hour') {
+			const w = stats.windows?.past_1_hour;
+			totalReqs = w?.requests || 0;
+			totalTokens = w?.tokens_total || 0;
+			localTokens = w?.tokens_local || 0;
+			spentUSD = w?.cost_spent_usd || 0;
+			savedUSD = w?.cost_saved_usd || 0;
+			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
+			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			timeframeLabel = `⏱️ Past 1 Hour Telemetry (Rolling 60m ring buffer)`;
+		} else if (activeTimeWindow === 'today') {
 			const w = stats.windows?.today;
 			totalReqs = w?.requests || 0;
 			totalTokens = w?.tokens_total || 0;
@@ -271,7 +290,7 @@
 					</div>
 					<div class="stat-item local-chip">
 						<div class="stat-value">${localReqs} <span class="stat-unit">turns (${localPct}%)</span></div>
-						<div class="stat-label">⚡ Local GPU ($0.00)</div>
+						<div class="stat-label">🖥️ Local GPU ($0.00)</div>
 						<div class="stat-sub">${localTokens > 0 ? localTokenStr + ' tokens routed locally for free' : 'Zero cloud cost'}</div>
 					</div>
 					<div class="stat-item volume-chip">
@@ -283,35 +302,13 @@
 			`;
 		}
 
-		// ─── FOOTGUN WARNING (for LLM agents and contributors) ──────────────────────
-		// The /v1/stats payload has TWO locations for CycleKiller AND FairyDust data:
-		//
-		//   stats.cycle_killer              ← ROOT-LEVEL all-time global accumulator.
-		//   stats.fairy_dust               ← ROOT-LEVEL all-time global accumulator.
-		//                                     NEVER use these for windowed display.
-		//   stats.windows.<window>.cycle_killer  ← Per-window object (correct source).
-		//   stats.windows.<window>.fairy_dust    ← Per-window object (correct source).
-		//
-		// renderDefensePanel() must ALWAYS be called via windowCycleKiller() and
-		// windowFairyDust() below, never directly with the root-level fields.
-		// Using the root-level fields is a recurring bug: it makes Today/Yesterday
-		// show all-time cumulative totals regardless of the active tab.
-		// ─────────────────────────────────────────────────────────────────────────────
-
-		// windowCycleKiller: returns the per-window CK object when it exists (including
-		// when it is legitimately zero — a quiet window is not the same as "no data").
-		// Falls back to the root accumulator ONLY for legacy daemons (pre-v0.8.4) that
-		// never populated per-window CK fields.
 		function windowCycleKiller(windowCK) {
 			if (windowCK != null) {
 				return windowCK;
 			}
-			// Legacy daemon: window object was never populated — fall back to root accumulator.
 			return stats.cycle_killer ?? null;
 		}
 
-		// windowFairyDust: same per-window selection logic for FairyDust metrics.
-		// Falls back to root stats.fairy_dust ONLY for legacy daemons.
 		function windowFairyDust(windowFD) {
 			if (windowFD != null) {
 				return windowFD;
@@ -319,33 +316,53 @@
 			return stats.fairy_dust ?? null;
 		}
 
+		function windowNTS(w) {
+			return {
+				tokens_saved: w?.nts_tokens_saved || 0,
+				bytes_saved: w?.nts_bytes_saved || 0,
+				compacted_turns: w?.nts_compacted_turns || 0,
+				total_tokens: w?.tokens_total || 0
+			};
+		}
+
 		let currentCycleKiller = null;
 		let currentFairyDust = null;
-		if (activeTimeWindow === 'today') {
+		let currentNTS = null;
+		if (activeTimeWindow === 'past_1_hour') {
+			currentCycleKiller = windowCycleKiller(stats.windows?.past_1_hour?.cycle_killer);
+			currentFairyDust = windowFairyDust(stats.windows?.past_1_hour?.fairy_dust);
+			currentNTS = windowNTS(stats.windows?.past_1_hour);
+		} else if (activeTimeWindow === 'today') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.today?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.today?.fairy_dust);
+			currentNTS = windowNTS(stats.windows?.today);
 		} else if (activeTimeWindow === 'yesterday') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.yesterday?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.yesterday?.fairy_dust);
+			currentNTS = windowNTS(stats.windows?.yesterday);
 		} else if (activeTimeWindow === 'this_week') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.this_week?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.this_week?.fairy_dust);
+			currentNTS = windowNTS(stats.windows?.this_week);
 		} else if (activeTimeWindow === 'this_month') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.this_month?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.this_month?.fairy_dust);
+			currentNTS = windowNTS(stats.windows?.this_month);
 		} else {
 			currentCycleKiller = windowCycleKiller(stats.windows?.all_time?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.all_time?.fairy_dust);
+			currentNTS = {
+				tokens_saved: stats.windows?.all_time?.nts_tokens_saved || stats.total_nts_tokens_saved || 0,
+				bytes_saved: stats.windows?.all_time?.nts_bytes_saved || stats.total_nts_bytes_saved || 0,
+				compacted_turns: stats.windows?.all_time?.nts_compacted_turns || stats.total_nts_compacted_turns || 0,
+				total_tokens: stats.windows?.all_time?.tokens_total || stats.all_time_tokens || stats.total_tokens || 0
+			};
 		}
 
 		renderDefensePanel(currentCycleKiller, currentFairyDust);
+		renderNTSPanel(currentNTS);
 	}
 
-	// ─── renderDefensePanel ──────────────────────────────────────────────────────
-	// ALWAYS call this function through renderStats() → windowCycleKiller() and
-	// windowFairyDust(), which select the correct per-window objects based on
-	// activeTimeWindow. Direct calls with root-level accumulators are a bug.
-	// ─────────────────────────────────────────────────────────────────────────────
 	function renderDefensePanel(ck, fd) {
 		const ckContent = document.getElementById('cycle-killer-content');
 		if (!ckContent) return;
@@ -370,7 +387,6 @@
 			? (avoidedTokens / 1000000).toFixed(1) + 'M'
 			: (avoidedTokens >= 1000 ? (avoidedTokens / 1000).toFixed(0) + 'k' : avoidedTokens.toString());
 
-		// Calculate verified clean streams from recent route telemetry
 		let verifiedCleanCount = 0;
 		let peakObservedNgram = 1;
 		const routesList = (currentState.routes && currentState.routes.routes) ? currentState.routes.routes : (Array.isArray(currentState.routes) ? currentState.routes : []);
@@ -394,42 +410,112 @@
 			: (verifiedCleanCount > 0 ? `0 <span class="ck-unit">(${verifiedCleanCount} Clean)</span>` : '0 <span class="ck-unit">Loops</span>');
 
 		ckContent.innerHTML = `
-			<div class="cycle-killer-grid">
-				<div class="ck-item ${totalInterventions > 0 ? 'highlight' : 'heal-chip'}">
-					<div class="ck-value">${loopsLabel}</div>
-					<div class="ck-label">🛡️ Interventions Executed</div>
-					<div class="ck-sub">${totalInterventions > 0 ? 'Runaway monologues & deliberation loops intercepted' : 'Zero false positives on unique code streams'}</div>
+			<div class="supervisor-brackets">
+				<div class="supervisor-bracket bracket-cycle-killer">
+					<div class="bracket-header">
+						<span class="bracket-title">🎸 Cycle Killer (Qu'est-ce que c'est?): In-Flight Stream Breaker</span>
+					</div>
+					<div class="bracket-cards">
+						<div class="ck-item ${totalInterventions > 0 ? 'highlight' : 'heal-chip'}">
+							<div class="ck-value">${loopsLabel}</div>
+							<div class="ck-label">🛡️ Interventions Executed</div>
+							<div class="ck-sub">${totalInterventions > 0 ? 'Runaway monologues & deliberation loops intercepted' : 'Zero false positives on unique code streams'}</div>
+						</div>
+						<div class="ck-item token-chip">
+							<div class="ck-value">${avoidedTokensStr} <span class="ck-unit">Tokens (${gpuMinutes}m)</span></div>
+							<div class="ck-label">🪙 Avoided Runaway Tokens</div>
+							<div class="ck-sub">${gpuMinutes} min GPU compute waste prevented before context burn</div>
+						</div>
+						<div class="ck-item heal-chip">
+							<div class="ck-value">${Math.round(healRate)}% <span class="ck-unit">(${stage1Heals}/${totalInterventions})</span></div>
+							<div class="ck-label">⚡ Stage 1 Local Heal Rate</div>
+							<div class="ck-sub">Steered with [SYSTEM OVERRIDE] @ $0.00</div>
+						</div>
+					</div>
 				</div>
-				<div class="ck-item gpu-chip">
-					<div class="ck-value">${gpuMinutes} <span class="ck-unit">Min</span></div>
-					<div class="ck-label">⏱️ GPU Lockup Rescued</div>
-					<div class="ck-sub">Compute saved from infinite token generation</div>
+
+				<div class="supervisor-bracket bracket-kickstart">
+					<div class="bracket-header">
+						<span class="bracket-title">⚡ Kickstart: Stall Resuscitation Engine</span>
+					</div>
+					<div class="bracket-cards">
+						<div class="ck-item kickstart-chip">
+							<div class="ck-value">${kickstarts} <span class="ck-unit">Sessions</span></div>
+							<div class="ck-label">⚡ Kickstart Resuscitations</div>
+							<div class="ck-sub">Stalled sessions rescued out of passive read/plan procrastination</div>
+						</div>
+					</div>
 				</div>
-				<div class="ck-item token-chip">
-					<div class="ck-value">${avoidedTokensStr} <span class="ck-unit">Tokens</span></div>
-					<div class="ck-label">🪙 Avoided Runaway Tokens</div>
-					<div class="ck-sub">$0.00 compute waste prevented before context burn</div>
-				</div>
-				<div class="ck-item heal-chip">
-					<div class="ck-value">${Math.round(healRate)}% <span class="ck-unit">(${stage1Heals}/${totalInterventions})</span></div>
-					<div class="ck-label">⚡ Stage 1 Local Heal Rate</div>
-					<div class="ck-sub">Steered with [SYSTEM OVERRIDE] @ $0.00</div>
-				</div>
-				<div class="ck-item kickstart-chip">
-					<div class="ck-value">${kickstarts} <span class="ck-unit">Sessions</span></div>
-					<div class="ck-label">⚡ Kickstart Resuscitations</div>
-					<div class="ck-sub">Stalled sessions rescued out of passive read/plan procrastination</div>
-				</div>
-				<div class="ck-item fairy-chip">
-					<div class="ck-value">${fairyTriggers} <span class="ck-unit">Checkpoints</span></div>
-					<div class="ck-label">🧚 Fairy Dust Checkpoints</div>
-					<div class="ck-sub">Cadenced milestone checkpoints on productive file writes</div>
+
+				<div class="supervisor-bracket bracket-fairy-dust">
+					<div class="bracket-header">
+						<span class="bracket-title">🧚 Fairy Dust: Programmable Quality Checkpoints</span>
+					</div>
+					<div class="bracket-cards">
+						<div class="ck-item fairy-chip">
+							<div class="ck-value">${fairyTriggers} <span class="ck-unit">Checkpoints</span></div>
+							<div class="ck-label">🧚 Fairy Dust Checkpoints</div>
+							<div class="ck-sub">Cadenced milestone checkpoints on productive file writes</div>
+						</div>
+					</div>
 				</div>
 			</div>
 			<div class="ck-footer-row">
 				<div class="ck-status-pill ${totalInterventions > 0 ? 'active' : 'idle'}">
 					<span class="status-dot"></span>
 					${statusPillText}
+				</div>
+			</div>
+		`;
+	}
+
+	function renderNTSPanel(nts) {
+		const ntsContent = document.getElementById('nts-content');
+		if (!ntsContent) return;
+		if (!nts) {
+			ntsContent.innerHTML = '<div class="loading">No token saver telemetry recorded yet.</div>';
+			return;
+		}
+
+		const tokensSaved = nts.tokens_saved || 0;
+		const bytesSaved = nts.bytes_saved || 0;
+		const compactedTurns = nts.compacted_turns || 0;
+		const totalTokens = nts.total_tokens || 0;
+		const compressionRatio = (totalTokens + tokensSaved) > 0
+			? Math.round((tokensSaved / (totalTokens + tokensSaved)) * 100)
+			: 0;
+
+		const tokensSavedStr = tokensSaved >= 1000000
+			? (tokensSaved / 1000000).toFixed(1) + 'M'
+			: (tokensSaved >= 1000 ? (tokensSaved / 1000).toFixed(1) + 'k' : tokensSaved.toString());
+
+		ntsContent.innerHTML = `
+			<div class="nts-grid">
+				<div class="nts-item highlight">
+					<div class="nts-value">+${tokensSavedStr} <span class="nts-unit">Tokens</span></div>
+					<div class="nts-label">🗜️ Tokens Saved</div>
+					<div class="nts-sub">In-place payload shrinkage without context disruption</div>
+				</div>
+				<div class="nts-item byte-chip">
+					<div class="nts-value">${formatBytes(bytesSaved)} <span class="nts-unit">Reduced</span></div>
+					<div class="nts-label">📦 Payload Reduced</div>
+					<div class="nts-sub">Redundant whitespace & repetitive shell outputs compacted</div>
+				</div>
+				<div class="nts-item turn-chip">
+					<div class="nts-value">${compactedTurns} <span class="nts-unit">Turns</span></div>
+					<div class="nts-label">🔄 Compacted Turns</div>
+					<div class="nts-sub">Prompt turns with tool output compaction applied</div>
+				</div>
+				<div class="nts-item token-chip">
+					<div class="nts-value">${compressionRatio}% <span class="nts-unit">Saved</span></div>
+					<div class="nts-label">📉 Compression Ratio</div>
+					<div class="nts-sub">Context window headroom preserved</div>
+				</div>
+			</div>
+			<div class="ck-footer-row">
+				<div class="ck-status-pill ${tokensSaved > 0 ? 'active' : 'idle'}">
+					<span class="status-dot"></span>
+					🗜️ NTS Active &bull; Dual-Lane Immunity Guard &bull; Alphanumeric ASCII Protected
 				</div>
 			</div>
 		`;
@@ -538,6 +624,7 @@
 		const statsContent = document.getElementById('stats-content');
 		const timeframeInfo = document.getElementById('stats-timeframe-info');
 		const ckContent = document.getElementById('cycle-killer-content');
+		const ntsContent = document.getElementById('nts-content');
 		const routesContent = document.getElementById('routes-content');
 		const circuitsContent = document.getElementById('circuits-content');
 		const dealsContent = document.getElementById('deals-content');
@@ -552,6 +639,9 @@
 		}
 		if (ckContent) {
 			ckContent.innerHTML = `<div class="loading">Engine is offline. Start the engine to activate stream defense watchdog.</div>`;
+		}
+		if (ntsContent) {
+			ntsContent.innerHTML = `<div class="loading">Engine is offline. Token saver activates with proxy traffic.</div>`;
 		}
 		if (routesContent) {
 			routesContent.innerHTML = `<div class="loading">Engine is offline. No live route telemetry recorded.</div>`;
@@ -667,6 +757,15 @@
 				? `<span class="badge badge-kickstart" title="🚀 Kickstart: Tool-less session escalated to frontier reasoning model">🚀 Kick</span>`
 				: '';
 
+			let ntsBadge = '';
+			if (route.nts_tokens_saved && route.nts_tokens_saved > 0) {
+				const tokStr = route.nts_tokens_saved >= 1000 ? (route.nts_tokens_saved / 1000).toFixed(1) + 'k' : route.nts_tokens_saved;
+				const bytesStr = route.nts_bytes_saved >= 1024 ? (route.nts_bytes_saved / 1024).toFixed(0) + 'KB' : (route.nts_bytes_saved || 0) + 'B';
+				ntsBadge = `<span class="badge badge-nts" title="🗜️ Nacho Token Saver: Saved ${route.nts_tokens_saved} tokens (${bytesStr})">🗜️ -${tokStr}</span>`;
+			} else {
+				ntsBadge = `<span class="badge-cycle-none">--</span>`;
+			}
+
 			return `
 				<tr>
 					<td>${new Date(route.timestamp).toLocaleTimeString()}</td>
@@ -676,6 +775,7 @@
 					<td>${(route.latency_ms || 0).toFixed(0)}ms</td>
 					<td>${cycleBadge}</td>
 					<td>${fairyBadge}${kickstartBadge}</td>
+					<td>${ntsBadge}</td>
 					<td class="saved-val">$${(route.cost_saved_usd || 0).toFixed(4)}</td>
 				</tr>
 			`;
@@ -692,6 +792,7 @@
 						<th>Latency</th>
 						<th>Cycle Shield</th>
 						<th>Proactive</th>
+						<th>Compaction</th>
 						<th>Saved</th>
 					</tr>
 				</thead>

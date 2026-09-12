@@ -212,6 +212,10 @@ export class ExtensionController {
 				this.openSettings();
 			}),
 
+			vscode.commands.registerCommand('nacho-flow.setTimeWindowPast1Hour', () => {
+				this.setTimeWindow('past_1_hour');
+			}),
+
 			vscode.commands.registerCommand('nacho-flow.setTimeWindowToday', () => {
 				this.setTimeWindow('today');
 			}),

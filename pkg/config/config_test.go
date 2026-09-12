@@ -630,11 +630,9 @@ func TestResolveEnvVars(t *testing.T) {
 func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 	configFiles := []string{
 		"../../config.yaml",
-		"../../config.cline.yaml",
-		"../../config.zoo.yaml",
-		"../../extension/resources/presets/config.yaml",
-		"../../extension/resources/presets/config.cline.yaml",
-		"../../extension/resources/presets/config.zoo.yaml",
+		"../../extension/resources/profiles/profile1.yaml",
+		"../../extension/resources/profiles/profile2.yaml",
+		"../../extension/resources/profiles/profile3.yaml",
 	}
 
 	for _, relPath := range configFiles {
