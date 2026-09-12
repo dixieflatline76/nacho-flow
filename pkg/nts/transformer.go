@@ -1,6 +1,7 @@
 package nts
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 )
@@ -26,6 +27,16 @@ func (t *Transformer) Pipeline() *Pipeline {
 // TransformAnthropic parses an Anthropic Messages API payload, compacts any
 // tool_result content blocks in-place, and re-encodes the JSON.
 func (t *Transformer) TransformAnthropic(body []byte) ([]byte, ReductionResult, error) {
+	return t.transformCommon(body)
+}
+
+// TransformOpenAI parses an OpenAI Chat Completions payload, compacts any
+// role: "tool" messages or tool_result blocks in-place, and re-encodes the JSON.
+func (t *Transformer) TransformOpenAI(body []byte) ([]byte, ReductionResult, error) {
+	return t.transformCommon(body)
+}
+
+func (t *Transformer) transformCommon(body []byte) ([]byte, ReductionResult, error) {
 	var req map[string]interface{}
 	if err := json.Unmarshal(body, &req); err != nil {
 		return body, ReductionResult{Bypassed: true, BypassReason: "unmarshal_error"}, err
@@ -41,32 +52,71 @@ func (t *Transformer) TransformAnthropic(body []byte) ([]byte, ReductionResult, 
 		return body, ReductionResult{Bypassed: true, BypassReason: "invalid_messages"}, nil
 	}
 
-	// Index tool_use ids to tool names for resolution
-	toolUseNames := make(map[string]string)
+	toolNames := indexToolNames(msgs)
+	modified, totalResult := t.processMessages(msgs, toolNames)
+
+	if !modified {
+		return body, totalResult, nil
+	}
+
+	newBody, err := json.Marshal(req)
+	if err != nil {
+		return body, totalResult, err
+	}
+
+	return newBody, totalResult, nil
+}
+
+// indexToolNames extracts tool call IDs to tool names from both OpenAI tool_calls
+// and Anthropic tool_use content blocks across all assistant messages.
+func indexToolNames(msgs []interface{}) map[string]string {
+	toolNames := make(map[string]string)
 	for _, msgItem := range msgs {
 		msg, ok := msgItem.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		contentList, ok := msg["content"].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, partItem := range contentList {
-			part, ok := partItem.(map[string]interface{})
-			if !ok {
-				continue
+
+		// 1. OpenAI tool_calls
+		if toolCalls, ok := msg["tool_calls"].([]interface{}); ok {
+			for _, tcItem := range toolCalls {
+				tc, ok := tcItem.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				id, _ := tc["id"].(string)
+				fn, ok := tc["function"].(map[string]interface{})
+				if ok {
+					name, _ := fn["name"].(string)
+					if id != "" && name != "" {
+						toolNames[id] = name
+					}
+				}
 			}
-			if part["type"] == "tool_use" {
-				id, _ := part["id"].(string)
-				name, _ := part["name"].(string)
-				if id != "" && name != "" {
-					toolUseNames[id] = name
+		}
+
+		// 2. Anthropic content blocks: tool_use
+		if contentList, ok := msg["content"].([]interface{}); ok {
+			for _, partItem := range contentList {
+				part, ok := partItem.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if part["type"] == "tool_use" {
+					id, _ := part["id"].(string)
+					name, _ := part["name"].(string)
+					if id != "" && name != "" {
+						toolNames[id] = name
+					}
 				}
 			}
 		}
 	}
+	return toolNames
+}
 
+// processMessages walks message structures and compacts tool output payloads.
+func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]string) (bool, ReductionResult) {
 	var totalResult ReductionResult
 	modified := false
 
@@ -76,47 +126,27 @@ func (t *Transformer) TransformAnthropic(body []byte) ([]byte, ReductionResult, 
 			continue
 		}
 
-		contentRaw, ok := msg["content"]
-		if !ok {
-			continue
-		}
-
-		contentList, ok := contentRaw.([]interface{})
-		if !ok {
-			continue
-		}
-
-		for _, partItem := range contentList {
-			part, ok := partItem.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			if part["type"] != "tool_result" {
-				continue
-			}
-
-			// Check prompt caching immunity
+		// 1. OpenAI style: role == "tool"
+		role, _ := msg["role"].(string)
+		if role == "tool" {
 			if t.pipeline.config.PreserveCacheControl {
-				if _, hasCache := part["cache_control"]; hasCache {
+				if _, hasCache := msg["cache_control"]; hasCache {
 					continue
 				}
 			}
 
-			// Determine tool category for immunity
-			toolName, _ := part["tool_name"].(string)
+			toolName, _ := msg["name"].(string)
 			if toolName == "" {
-				toolUseID, _ := part["tool_use_id"].(string)
-				toolName = toolUseNames[toolUseID]
+				toolCallID, _ := msg["tool_call_id"].(string)
+				toolName = toolNames[toolCallID]
 			}
-			category := categorizeToolName(toolName)
+			cat := categorizeToolName(toolName)
 
-			textVal, isStr := part["content"].(string)
-			if isStr && len(textVal) > 0 {
-				buf := []byte(textVal)
-				res := t.pipeline.Process(buf, category)
+			// Content can be string or array of text parts
+			if textVal, isStr := msg["content"].(string); isStr && len(textVal) > 0 {
+				newText, res := t.processContentText(textVal, cat)
 				if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-					part["content"] = string(buf[:res.ReducedBytes])
+					msg["content"] = newText
 					totalResult.OriginalBytes += res.OriginalBytes
 					totalResult.ReducedBytes += res.ReducedBytes
 					totalResult.BytesSaved += res.BytesSaved
@@ -124,114 +154,168 @@ func (t *Transformer) TransformAnthropic(body []byte) ([]byte, ReductionResult, 
 					totalResult.Duration += res.Duration
 					modified = true
 				}
+			} else if parts, isList := msg["content"].([]interface{}); isList {
+				for _, pItem := range parts {
+					part, ok := pItem.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if part["type"] == "text" {
+						textVal, _ := part["text"].(string)
+						if len(textVal) > 0 {
+							newText, res := t.processContentText(textVal, cat)
+							if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
+								part["text"] = newText
+								totalResult.OriginalBytes += res.OriginalBytes
+								totalResult.ReducedBytes += res.ReducedBytes
+								totalResult.BytesSaved += res.BytesSaved
+								totalResult.TokensSaved += res.TokensSaved
+								totalResult.Duration += res.Duration
+								modified = true
+							}
+						}
+					}
+				}
 			}
 		}
-	}
 
-	if !modified {
-		return body, totalResult, nil
-	}
+		// 2. Anthropic style content blocks: type == "tool_result" (can be in user role)
+		if contentRaw, ok := msg["content"]; ok {
+			if contentList, ok := contentRaw.([]interface{}); ok {
+				for _, partItem := range contentList {
+					part, ok := partItem.(map[string]interface{})
+					if !ok {
+						continue
+					}
 
-	newBody, err := json.Marshal(req)
-	if err != nil {
-		return body, totalResult, err
-	}
+					if part["type"] != "tool_result" {
+						continue
+					}
 
-	return newBody, totalResult, nil
-}
+					if t.pipeline.config.PreserveCacheControl {
+						if _, hasCache := part["cache_control"]; hasCache {
+							continue
+						}
+					}
 
-// TransformOpenAI parses an OpenAI Chat Completions payload, compacts any
-// role: "tool" messages in-place, and re-encodes the JSON.
-func (t *Transformer) TransformOpenAI(body []byte) ([]byte, ReductionResult, error) {
-	var req map[string]interface{}
-	if err := json.Unmarshal(body, &req); err != nil {
-		return body, ReductionResult{Bypassed: true, BypassReason: "unmarshal_error"}, err
-	}
+					toolName, _ := part["tool_name"].(string)
+					if toolName == "" {
+						toolUseID, _ := part["tool_use_id"].(string)
+						toolName = toolNames[toolUseID]
+					}
+					cat := categorizeToolName(toolName)
 
-	msgsRaw, ok := req["messages"]
-	if !ok {
-		return body, ReductionResult{Bypassed: true, BypassReason: "no_messages"}, nil
-	}
-
-	msgs, ok := msgsRaw.([]interface{})
-	if !ok {
-		return body, ReductionResult{Bypassed: true, BypassReason: "invalid_messages"}, nil
-	}
-
-	// Index tool_call ids to tool names from assistant messages
-	toolCallNames := make(map[string]string)
-	for _, msgItem := range msgs {
-		msg, ok := msgItem.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		toolCalls, ok := msg["tool_calls"].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, tcItem := range toolCalls {
-			tc, ok := tcItem.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			id, _ := tc["id"].(string)
-			fn, ok := tc["function"].(map[string]interface{})
-			if ok {
-				name, _ := fn["name"].(string)
-				if id != "" && name != "" {
-					toolCallNames[id] = name
+					if textVal, isStr := part["content"].(string); isStr && len(textVal) > 0 {
+						newText, res := t.processContentText(textVal, cat)
+						if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
+							part["content"] = newText
+							totalResult.OriginalBytes += res.OriginalBytes
+							totalResult.ReducedBytes += res.ReducedBytes
+							totalResult.BytesSaved += res.BytesSaved
+							totalResult.TokensSaved += res.TokensSaved
+							totalResult.Duration += res.Duration
+							modified = true
+						}
+					} else if subList, isList := part["content"].([]interface{}); isList {
+						for _, subItem := range subList {
+							subPart, ok := subItem.(map[string]interface{})
+							if !ok {
+								continue
+							}
+							if subPart["type"] == "text" {
+								textVal, _ := subPart["text"].(string)
+								if len(textVal) > 0 {
+									newText, res := t.processContentText(textVal, cat)
+									if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
+										subPart["text"] = newText
+										totalResult.OriginalBytes += res.OriginalBytes
+										totalResult.ReducedBytes += res.ReducedBytes
+										totalResult.BytesSaved += res.BytesSaved
+										totalResult.TokensSaved += res.TokensSaved
+										totalResult.Duration += res.Duration
+										modified = true
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 		}
 	}
 
-	var totalResult ReductionResult
-	modified := false
+	return modified, totalResult
+}
 
-	for _, msgItem := range msgs {
-		msg, ok := msgItem.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		role, _ := msg["role"].(string)
-		if role != "tool" {
-			continue
-		}
-
-		toolName, _ := msg["name"].(string)
-		if toolName == "" {
-			toolCallID, _ := msg["tool_call_id"].(string)
-			toolName = toolCallNames[toolCallID]
-		}
-		category := categorizeToolName(toolName)
-
-		textVal, isStr := msg["content"].(string)
-		if isStr && len(textVal) > 0 {
-			buf := []byte(textVal)
-			res := t.pipeline.Process(buf, category)
-			if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-				msg["content"] = string(buf[:res.ReducedBytes])
-				totalResult.OriginalBytes += res.OriginalBytes
-				totalResult.ReducedBytes += res.ReducedBytes
-				totalResult.BytesSaved += res.BytesSaved
-				totalResult.TokensSaved += res.TokensSaved
-				totalResult.Duration += res.Duration
-				modified = true
+// processContentText compacts tool text output, unwrapping and re-wrapping inner JSON
+// payloads emitted by clients like Cline / Vercel AI SDK (e.g. [{"query":...,"result":"..."}]).
+func (t *Transformer) processContentText(text string, cat ToolCategory) (string, ReductionResult) {
+	trimmed := bytes.TrimSpace([]byte(text))
+	if len(trimmed) > 0 && (trimmed[0] == '[' || trimmed[0] == '{') {
+		if trimmed[0] == '[' {
+			var items []map[string]interface{}
+			if err := json.Unmarshal(trimmed, &items); err == nil {
+				var totalRes ReductionResult
+				modified := false
+				for _, item := range items {
+					for _, field := range []string{"result", "output", "text", "content"} {
+						if val, ok := item[field].(string); ok && len(val) > 0 {
+							buf := []byte(val)
+							res := t.pipeline.Process(buf, cat)
+							if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
+								item[field] = string(buf[:res.ReducedBytes])
+								totalRes.OriginalBytes += res.OriginalBytes
+								totalRes.ReducedBytes += res.ReducedBytes
+								totalRes.BytesSaved += res.BytesSaved
+								totalRes.TokensSaved += res.TokensSaved
+								totalRes.Duration += res.Duration
+								modified = true
+							}
+						}
+					}
+				}
+				if modified {
+					if newBytes, err := json.Marshal(items); err == nil {
+						return string(newBytes), totalRes
+					}
+				}
+			}
+		} else {
+			var item map[string]interface{}
+			if err := json.Unmarshal(trimmed, &item); err == nil {
+				var totalRes ReductionResult
+				modified := false
+				for _, field := range []string{"result", "output", "text", "content"} {
+					if val, ok := item[field].(string); ok && len(val) > 0 {
+						buf := []byte(val)
+						res := t.pipeline.Process(buf, cat)
+						if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
+							item[field] = string(buf[:res.ReducedBytes])
+							totalRes.OriginalBytes += res.OriginalBytes
+							totalRes.ReducedBytes += res.ReducedBytes
+							totalRes.BytesSaved += res.BytesSaved
+							totalRes.TokensSaved += res.TokensSaved
+							totalRes.Duration += res.Duration
+							modified = true
+						}
+					}
+				}
+				if modified {
+					if newBytes, err := json.Marshal(item); err == nil {
+						return string(newBytes), totalRes
+					}
+				}
 			}
 		}
 	}
 
-	if !modified {
-		return body, totalResult, nil
+	// Plain text processing
+	buf := []byte(text)
+	res := t.pipeline.Process(buf, cat)
+	if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
+		return string(buf[:res.ReducedBytes]), res
 	}
-
-	newBody, err := json.Marshal(req)
-	if err != nil {
-		return body, totalResult, err
-	}
-
-	return newBody, totalResult, nil
+	return text, res
 }
 
 func categorizeToolName(name string) ToolCategory {
@@ -239,7 +323,7 @@ func categorizeToolName(name string) ToolCategory {
 	if strings.Contains(nameLower, "read") || strings.Contains(nameLower, "view") || nameLower == "cat" {
 		return CategoryFileRead
 	}
-	if strings.Contains(nameLower, "write") || strings.Contains(nameLower, "replace") || strings.Contains(nameLower, "patch") {
+	if strings.Contains(nameLower, "write") || strings.Contains(nameLower, "replace") || strings.Contains(nameLower, "patch") || strings.Contains(nameLower, "diff") || strings.Contains(nameLower, "edit") {
 		return CategoryFileWrite
 	}
 	return CategoryGeneric

@@ -602,6 +602,152 @@ func TestEdgeCasesAndBranchCoverage(t *testing.T) {
 	})
 }
 
+func TestTransformer_ClineAndZooPayloads(t *testing.T) {
+	cfg := DefaultConfig()
+	tr := NewTransformer(cfg)
+
+	t.Run("Cline inner JSON tool results and editor immunity", func(t *testing.T) {
+		clineReq := map[string]interface{}{
+			"messages": []interface{}{
+				map[string]interface{}{
+					"role": "assistant",
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"id":   "call_cmd_1",
+							"type": "function",
+							"function": map[string]interface{}{
+								"name": "run_commands",
+							},
+						},
+						map[string]interface{}{
+							"id":   "call_edit_1",
+							"type": "function",
+							"function": map[string]interface{}{
+								"name": "editor",
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": "call_cmd_1",
+					"content":      `[{"query":"go test -v ./...","result":"[Command exited with code 1]\nFAIL\n:\\Program Files\\PowerShell\\7\\pwsh.exe\u001b\\"}]`,
+				},
+				map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": "call_edit_1",
+					"content":      "{\"query\":\"edit:foo.go\",\"result\":\"Edited foo.go\\n--- diff\\n-old\\n+new\\n\",\"success\":true}",
+				},
+			},
+		}
+
+		rawBody, err := json.Marshal(clineReq)
+		if err != nil {
+			t.Fatalf("marshal failed: %v", err)
+		}
+
+		resBody, res, err := tr.TransformOpenAI(rawBody)
+		if err != nil {
+			t.Fatalf("TransformOpenAI failed: %v", err)
+		}
+
+		if res.Bypassed {
+			t.Fatalf("expected not bypassed, got %s", res.BypassReason)
+		}
+		if res.TokensSaved <= 0 {
+			t.Errorf("expected positive tokens saved from run_commands, got %d", res.TokensSaved)
+		}
+
+		// Unmarshal and inspect
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(resBody, &parsed); err != nil {
+			t.Fatalf("unmarshal failed: %v", err)
+		}
+
+		msgs := parsed["messages"].([]interface{})
+		cmdMsg := msgs[1].(map[string]interface{})
+		cmdContent := cmdMsg["content"].(string)
+
+		if strings.Contains(cmdContent, `\u001b`) || strings.Contains(cmdContent, "\x1b") {
+			t.Errorf("ANSI escape not stripped from Cline inner JSON result: %s", cmdContent)
+		}
+
+		editMsg := msgs[2].(map[string]interface{})
+		editContent := editMsg["content"].(string)
+		if !strings.Contains(editContent, "Edited foo.go") {
+			t.Errorf("editor content corrupted: %s", editContent)
+		}
+	})
+
+	t.Run("Zoo Code Anthropic-in-OpenAI content blocks", func(t *testing.T) {
+		zooReq := map[string]interface{}{
+			"messages": []interface{}{
+				map[string]interface{}{
+					"role": "assistant",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type": "tool_use",
+							"id":   "call_zoo_exec",
+							"name": "execute_command",
+						},
+						map[string]interface{}{
+							"type": "tool_use",
+							"id":   "call_zoo_diff",
+							"name": "apply_diff",
+						},
+					},
+				},
+				map[string]interface{}{
+					"role": "user",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type":        "tool_result",
+							"tool_use_id": "call_zoo_exec",
+							"content": []interface{}{
+								map[string]interface{}{
+									"type": "text",
+									"text": "\x1b[31mFAIL\x1b[0m\n\n\n\nDone\n",
+								},
+							},
+						},
+						map[string]interface{}{
+							"type":        "tool_result",
+							"tool_use_id": "call_zoo_diff",
+							"content":     `{"path":"main.go","operation":"modified"}`,
+						},
+					},
+				},
+			},
+		}
+
+		rawBody, _ := json.Marshal(zooReq)
+		resBody, res, err := tr.TransformOpenAI(rawBody)
+		if err != nil {
+			t.Fatalf("TransformOpenAI failed: %v", err)
+		}
+
+		if res.Bypassed {
+			t.Fatalf("expected not bypassed, got %s", res.BypassReason)
+		}
+		if res.TokensSaved <= 0 {
+			t.Errorf("expected positive tokens saved from Zoo execute_command, got %d", res.TokensSaved)
+		}
+
+		var parsed map[string]interface{}
+		_ = json.Unmarshal(resBody, &parsed)
+		userMsg := parsed["messages"].([]interface{})[1].(map[string]interface{})
+		parts := userMsg["content"].([]interface{})
+		execPart := parts[0].(map[string]interface{})
+		subList := execPart["content"].([]interface{})
+		textVal := subList[0].(map[string]interface{})["text"].(string)
+
+		if strings.Contains(textVal, "\x1b[31m") {
+			t.Errorf("ANSI escape not stripped from Zoo content block: %s", textVal)
+		}
+	})
+}
+
+
 func BenchmarkNTS_InPlaceCompaction(t *testing.B) {
 	cfg := DefaultConfig()
 	pipeline := NewPipeline(cfg)
