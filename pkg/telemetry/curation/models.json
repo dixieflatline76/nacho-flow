@@ -292,6 +292,24 @@
         "tier_1_vision"
       ]
     },
+    "google/gemini-3.8-flash": {
+      "name": "Google: Gemini 3.8 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "google/gemini-3.8-flash:batch": {
+      "name": "Google: Gemini 3.8 Flash (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
     "kwaipilot/kat-coder-air-v2.5": {
       "name": "Kwaipilot: KAT-Coder-Air V2.5",
       "tier_role": "coding_workhorse",

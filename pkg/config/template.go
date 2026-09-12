@@ -173,17 +173,17 @@ tiers:
   # ---------------------------------------------------------------------------
   # ⚡ KICKSTART ESCALATION: Break read-only idle loops with Gemini Flash
   # ---------------------------------------------------------------------------
-  - name: "Kickstart Escalation (Gemini 3.7 Flash)"
+  - name: "Kickstart Escalation (Gemini 3.8 Flash)"
     provider: "openrouter"
-    model: "google/gemini-3.7-flash"
+    model: "google/gemini-3.8-flash"
     when: "SessionKickstarted && Retries < 3"
 
   # ---------------------------------------------------------------------------
   # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
   # ---------------------------------------------------------------------------
-  - name: "Tier: Multimodal Vision (Gemini 3.7 Flash)"
+  - name: "Tier: Multimodal Vision (Gemini 3.8 Flash)"
     provider: "openrouter"
-    model: "google/gemini-3.7-flash"
+    model: "google/gemini-3.8-flash"
     when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
@@ -205,11 +205,11 @@ tiers:
     when: "Tokens < 160000 && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash — $0.75 / $3.75 per 1M)
+  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash — $0.75 / $3.75 per 1M)
   # ---------------------------------------------------------------------------
-  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash)"
+  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash)"
     provider: "openrouter"
-    model: "google/gemini-3.7-flash"
+    model: "google/gemini-3.8-flash"
     when: "Tokens < 260000 && Retries < 5"
 
   # ---------------------------------------------------------------------------
@@ -252,9 +252,9 @@ default_tier:
 fairy_dust:
   enabled: true
   entries:
-    # Tactical Code Review (Claude Sonnet 5)
+    # Tactical Code Review (Gemini 3.8 Flash Batch)
     - name: "Tactical Code Review"
-      model: "anthropic/claude-sonnet-5"
+      model: "google/gemini-3.8-flash:batch"
       provider: "openrouter"
       frequency: 15
       max_per_session: 5
@@ -269,7 +269,7 @@ fairy_dust:
     # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
       # model: "anthropic/claude-opus-5"
-      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
+      model: "google/gemini-3.8-flash:batch" # swap in opus 5 for tough jobs
       provider: "openrouter"
       frequency: 60
       max_per_session: 1
