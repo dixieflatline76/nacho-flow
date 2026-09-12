@@ -660,8 +660,8 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 			if len(cfg.FairyDust.Entries) < 2 {
 				t.Fatalf("%s: expected at least 2 fairy_dust entries, got %d", relPath, len(cfg.FairyDust.Entries))
 			}
-			if cfg.FairyDust.Entries[1].Model != "google/gemini-3.8-flash:batch" {
-				t.Errorf("%s: expected Strategic Architecture Review to use google/gemini-3.8-flash:batch, got %s", relPath, cfg.FairyDust.Entries[1].Model)
+			if cfg.FairyDust.Entries[1].Model != "google/gemini-3.8-flash" {
+				t.Errorf("%s: expected Strategic Architecture Review to use google/gemini-3.8-flash, got %s", relPath, cfg.FairyDust.Entries[1].Model)
 			}
 		})
 	}

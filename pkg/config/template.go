@@ -252,9 +252,9 @@ default_tier:
 fairy_dust:
   enabled: true
   entries:
-    # Tactical Code Review (Gemini 3.8 Flash Batch)
+    # Tactical Code Review (Gemini 3.8 Flash)
     - name: "Tactical Code Review"
-      model: "google/gemini-3.8-flash:batch"
+      model: "google/gemini-3.8-flash"
       provider: "openrouter"
       frequency: 15
       max_per_session: 5
@@ -269,7 +269,7 @@ fairy_dust:
     # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
       # model: "anthropic/claude-opus-5"
-      model: "google/gemini-3.8-flash:batch" # swap in opus 5 for tough jobs
+      model: "google/gemini-3.8-flash" # swap in opus 5 for tough jobs
       provider: "openrouter"
       frequency: 60
       max_per_session: 1
