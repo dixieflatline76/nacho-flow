@@ -2,6 +2,8 @@ package nts
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -742,3 +744,129 @@ func TestTransformer_RealBenchmark_ClineAndZooTurns(t *testing.T) {
 		}
 	})
 }
+
+func TestIdentifyStaleToolCallIDs_OffsetLimitRanges(t *testing.T) {
+	// Test that Zoo Code style offset/limit slice parameters are parsed correctly
+	// Disjoint slices (1..30 vs 85..115) should NOT supersede each other.
+	msgs := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "tool_use",
+					"id":   "slice_1",
+					"name": "read_file",
+					"input": map[string]interface{}{
+						"path":   "server.go",
+						"mode":   "slice",
+						"offset": 1,
+						"limit":  30,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role": "assistant",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "tool_use",
+					"id":   "slice_2",
+					"name": "read_file",
+					"input": map[string]interface{}{
+						"path":   "server.go",
+						"mode":   "slice",
+						"offset": 85,
+						"limit":  30,
+					},
+				},
+			},
+		},
+	}
+
+	stale := IdentifyStaleToolCallIDs(msgs)
+	if stale != nil {
+		t.Errorf("expected disjoint offset/limit slices to NOT supersede each other, got: %v", stale)
+	}
+
+	// But an identical offset/limit slice DOES supersede
+	msgsIdentical := append(msgs, map[string]interface{}{
+		"role": "assistant",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type": "tool_use",
+				"id":   "slice_3",
+				"name": "read_file",
+				"input": map[string]interface{}{
+					"path":   "server.go",
+					"mode":   "slice",
+					"offset": 1,
+					"limit":  30,
+				},
+			},
+		},
+	})
+
+	stale2 := IdentifyStaleToolCallIDs(msgsIdentical)
+	if stale2 == nil || len(stale2) != 1 {
+		t.Fatalf("expected 1 stale ID, got: %v", stale2)
+	}
+	if _, ok := stale2["slice_1"]; !ok {
+		t.Errorf("expected slice_1 to be superseded by identical slice_3")
+	}
+}
+
+func TestTransformer_RealTasksDatasetReplay(t *testing.T) {
+	tasksDir := filepath.Join(os.Getenv("APPDATA"), "Code", "User", "globalStorage", "zoocodeorganization.zoo-code", "tasks")
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil {
+		t.Skip("skipping real tasks replay: tasks directory not found")
+	}
+
+	cfg := DefaultConfig()
+	cfg.CompactStaleFileReads = true
+	tr := NewTransformer(cfg)
+
+	totalBytesSaved := 0
+	tasksWithCompaction := 0
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		histPath := filepath.Join(tasksDir, e.Name(), "api_conversation_history.json")
+		data, err := os.ReadFile(histPath)
+		if err != nil {
+			continue
+		}
+
+		var rawMsgs []interface{}
+		if err := json.Unmarshal(data, &rawMsgs); err != nil {
+			continue
+		}
+
+		payload := map[string]interface{}{
+			"messages": rawMsgs,
+		}
+		rawPayload, _ := json.Marshal(payload)
+
+		transformed, res, err := tr.TransformAnthropic(rawPayload)
+		if err != nil {
+			t.Fatalf("task %s failed to transform: %v", e.Name(), err)
+		}
+
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(transformed, &parsed); err != nil {
+			t.Fatalf("task %s transformed output is invalid JSON: %v", e.Name(), err)
+		}
+
+		if res.BytesSaved > 0 {
+			tasksWithCompaction++
+			totalBytesSaved += res.BytesSaved
+		}
+	}
+
+	if tasksWithCompaction == 0 || totalBytesSaved == 0 {
+		t.Errorf("expected real tasks dataset to produce positive savings, got 0 bytes")
+	}
+}
+

@@ -227,8 +227,14 @@ func extractPathsFromMap(m map[string]interface{}) (string, string) {
 	basePath := normalizePath(rawPath)
 
 	// Extract optional line range
-	startLine := getIntFromMap(m, "startLine", "start_line", "StartLine")
-	endLine := getIntFromMap(m, "endLine", "end_line", "EndLine")
+	startLine := getIntFromMap(m, "startLine", "start_line", "StartLine", "offset", "start")
+	endLine := getIntFromMap(m, "endLine", "end_line", "EndLine", "end")
+	if endLine == 0 {
+		limit := getIntFromMap(m, "limit", "count", "lines")
+		if limit > 0 && startLine > 0 {
+			endLine = startLine + limit - 1
+		}
+	}
 
 	if startLine > 0 || endLine > 0 {
 		pathKey := basePath + "#L" + strconv.Itoa(startLine) + "-" + strconv.Itoa(endLine)
@@ -295,8 +301,14 @@ func extractPathsFromString(s string) (string, string) {
 	basePath := normalizePath(rawPath)
 
 	// Quick check for startLine and endLine
-	startLine := extractIntField(s, `"startLine":`, `"start_line":`, `"StartLine":`)
-	endLine := extractIntField(s, `"endLine":`, `"end_line":`, `"EndLine":`)
+	startLine := extractIntField(s, `"startLine":`, `"start_line":`, `"StartLine":`, `"offset":`, `"start":`)
+	endLine := extractIntField(s, `"endLine":`, `"end_line":`, `"EndLine":`, `"end":`)
+	if endLine == 0 {
+		limit := extractIntField(s, `"limit":`, `"count":`, `"lines":`)
+		if limit > 0 && startLine > 0 {
+			endLine = startLine + limit - 1
+		}
+	}
 
 	if startLine > 0 || endLine > 0 {
 		pathKey := basePath + "#L" + strconv.Itoa(startLine) + "-" + strconv.Itoa(endLine)
