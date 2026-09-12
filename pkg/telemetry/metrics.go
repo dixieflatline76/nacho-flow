@@ -117,6 +117,8 @@ type Observation struct {
 	UpstreamCost              float64
 	FairyDusted               bool
 	FairyDustEntry            string
+	NTSTokensSaved            int
+	NTSBytesSaved             int
 	ObservedAt                time.Time
 }
 
@@ -553,6 +555,8 @@ func (s *StatsTracker) worker() {
 				UpstreamCost:              obs.UpstreamCost,
 				FairyDusted:               obs.FairyDusted,
 				FairyDustEntry:            obs.FairyDustEntry,
+				NTSTokensSaved:            obs.NTSTokensSaved,
+				NTSBytesSaved:             obs.NTSBytesSaved,
 			}
 			for _, sink := range *sinksPtr {
 				sink.Emit(record)

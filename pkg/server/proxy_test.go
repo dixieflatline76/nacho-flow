@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1512,12 +1513,12 @@ func TestProxy_RecordTelemetry_VisionTier4(t *testing.T) {
 	p := provider.NewGenericLLMProvider("google", contract.ProviderConfig{Type: "cloud"})
 	reqCtx := contract.RequestContext{Tokens: 1000}
 	usage := StreamUsage{PromptTokens: 800, CompletionTokens: 200, TotalTokens: 1000}
-	srv.recordTelemetry(tier, p, reqCtx, usage, 200, time.Now(), false, slog.Default())
+	srv.recordTelemetry(tier, p, reqCtx, usage, 200, time.Now(), false, slog.Default(), 0, 0)
 
 	// Also local tier 1
 	pLocal := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{Type: "local"})
 	tierLocal := contract.Tier{Name: "Local Default", Model: "qwen", Provider: "ollama"}
-	srv.recordTelemetry(tierLocal, pLocal, reqCtx, usage, 200, time.Now(), false, slog.Default())
+	srv.recordTelemetry(tierLocal, pLocal, reqCtx, usage, 200, time.Now(), false, slog.Default(), 0, 0)
 }
 
 func TestProxy_IsDefectiveEmptyContent_DeepBranches(t *testing.T) {
@@ -2160,3 +2161,235 @@ func TestResolveTierVision(t *testing.T) {
 		})
 	}
 }
+
+type ntsCaptureSink struct {
+	mu      sync.Mutex
+	records []telemetry.TurnRecord
+}
+
+func (c *ntsCaptureSink) Emit(r telemetry.TurnRecord) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.records = append(c.records, r)
+}
+
+func (c *ntsCaptureSink) Close() error { return nil }
+
+func TestProxy_NTSTokenSaver_CompactsToolOutputAndRecordsTelemetry(t *testing.T) {
+	var receivedBody []byte
+	var bodyMu sync.Mutex
+
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyMu.Lock()
+		receivedBody, _ = io.ReadAll(r.Body)
+		bodyMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-test",
+			"choices": [{
+				"finish_reason": "stop",
+				"message": {"role": "assistant", "content": "Done"}
+			}],
+			"usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110}
+		}`))
+	}))
+	defer mockUpstream.Close()
+
+	bTrue := true
+	cfg := &contract.Config{
+		Port: 8000,
+		NTS: contract.NTSConfig{
+			Enabled: &bTrue,
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {
+				BaseURL: mockUpstream.URL,
+				Type:    "cloud",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Cloud Tier",
+				Model:    "claude-3-5-sonnet",
+				Provider: "mock",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	oracle := telemetry.NewPricingOracle()
+	tracker := telemetry.NewStatsTracker(10)
+	sink := &ntsCaptureSink{}
+	tracker.AddSink(sink)
+
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, nil, slog.Default())
+
+	// Request with tool response containing:
+	// 1. ANSI escapes: \x1b[31mError\x1b[0m
+	// 2. Carriage return overwrite: Loading...\rComplete!
+	// 3. Duplicate warning storm: Warning: Deprecated API repeated 4 times
+	// And a read_file tool response which must be 100% immune!
+	toolOutputContent := "\x1b[31mError: build failed\x1b[0m\nLoading...\rComplete!\nWarning: Deprecated API\nWarning: Deprecated API\nWarning: Deprecated API\nWarning: Deprecated API\n"
+	fileReadContent := "package main\n\n// Intentionally has \x1b[31m escaped comments\nfunc main() {}\n"
+
+	reqPayload := map[string]interface{}{
+		"model": "nacho-hybrid",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "call_bash_1",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name": "execute_command",
+							"arguments": `{"command":"go build"}`,
+						},
+					},
+					map[string]interface{}{
+						"id": "call_read_1",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name": "read_file",
+							"arguments": `{"path":"main.go"}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_bash_1",
+				"content":      toolOutputContent,
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_read_1",
+				"content":      fileReadContent,
+			},
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(reqPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(payloadBytes))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	bodyMu.Lock()
+	upstreamBytes := receivedBody
+	bodyMu.Unlock()
+
+	// 1. Tool output should have ANSI stripped
+	if bytes.Contains(upstreamBytes, []byte("\x1b[31mError")) {
+		t.Errorf("Expected ANSI codes to be stripped from tool output, but found in upstream body: %s", string(upstreamBytes))
+	}
+	// 2. Duplicate warnings should be collapsed
+	if !bytes.Contains(upstreamBytes, []byte("identical line repeated 3 times")) {
+		t.Errorf("Expected duplicate warnings to be collapsed, but notice not found: %s", string(upstreamBytes))
+	}
+	// 3. File read tool output MUST be preserved bit-for-bit (immunity test)
+	if !bytes.Contains(upstreamBytes, []byte(`\u001b[31m escaped comments`)) {
+		t.Errorf("Expected read_file output to retain ANSI codes (immune), but it was stripped: %s", string(upstreamBytes))
+	}
+
+	tracker.Flush()
+
+	sink.mu.Lock()
+	records := sink.records
+	sink.mu.Unlock()
+
+	if len(records) == 0 {
+		t.Fatalf("Expected telemetry turn record to be emitted, got none")
+	}
+
+	rec0 := records[0]
+	if rec0.NTSTokensSaved <= 0 {
+		t.Errorf("Expected NTSTokensSaved > 0, got %d", rec0.NTSTokensSaved)
+	}
+	if rec0.NTSBytesSaved <= 0 {
+		t.Errorf("Expected NTSBytesSaved > 0, got %d", rec0.NTSBytesSaved)
+	}
+}
+
+func TestProxy_NTSTokenSaver_AnthropicMessages(t *testing.T) {
+	var receivedBody []byte
+	var bodyMu sync.Mutex
+
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyMu.Lock()
+		receivedBody, _ = io.ReadAll(r.Body)
+		bodyMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "msg-test",
+			"type": "message",
+			"role": "assistant",
+			"content": [{"type": "text", "text": "OK"}],
+			"usage": {"input_tokens": 50, "output_tokens": 10}
+		}`))
+	}))
+	defer mockUpstream.Close()
+
+	bTrue2 := true
+	cfg := &contract.Config{
+		Port: 8000,
+		NTS:  contract.NTSConfig{Enabled: &bTrue2},
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {BaseURL: mockUpstream.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Sonnet", Model: "claude-3-5-sonnet", Provider: "mock", When: "true"},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, router.NewClassifier(), router.NewSanitizer(), telemetry.NewPricingOracle(), telemetry.NewStatsTracker(10), nil, slog.Default())
+
+	reqPayload := map[string]interface{}{
+		"model": "claude-3-5-sonnet",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "toolu_exec_1",
+						"content":     "\x1b[32mBuild Success!\x1b[0m\n\n\n\n\nDone\n",
+					},
+				},
+			},
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(reqPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(payloadBytes))
+	req.Header.Set("anthropic-version", "2023-06-01")
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	bodyMu.Lock()
+	upstreamBytes := receivedBody
+	bodyMu.Unlock()
+
+	if bytes.Contains(upstreamBytes, []byte("\x1b[32m")) {
+		t.Errorf("Expected ANSI stripped from Anthropic tool_result, got: %s", string(upstreamBytes))
+	}
+	if bytes.Contains(upstreamBytes, []byte("\n\n\n\n")) {
+		t.Errorf("Expected blank line cascade collapsed in Anthropic tool_result, got: %s", string(upstreamBytes))
+	}
+}
+

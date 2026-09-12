@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/nts"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
@@ -46,6 +47,7 @@ type Server struct {
 	eventBroker              *telemetry.EventBroker
 	tuner                    *tuner.CostPenaltyOptimizer
 	diskStore                *store.DiskStore
+	ntsTransformer           *nts.Transformer
 	trafficLogPath           string
 	configPath               string
 	lastDiskWriteUnixNano    atomic.Int64
@@ -288,6 +290,39 @@ func NewServerWithTelemetryAndRegistry(
 		}
 	}
 
+	ntsCfg := nts.DefaultConfig()
+	if cfg.NTS.Enabled != nil {
+		ntsCfg.Enabled = *cfg.NTS.Enabled
+	}
+	if cfg.NTS.StripANSI != nil {
+		ntsCfg.StripANSI = *cfg.NTS.StripANSI
+	}
+	if cfg.NTS.ResolveCR != nil {
+		ntsCfg.ResolveCR = *cfg.NTS.ResolveCR
+	}
+	if cfg.NTS.DeduplicateLines != nil {
+		ntsCfg.DeduplicateLines = *cfg.NTS.DeduplicateLines
+	}
+	if cfg.NTS.DedupThreshold > 0 {
+		ntsCfg.DedupThreshold = cfg.NTS.DedupThreshold
+	}
+	if cfg.NTS.StripBoilerplate != nil {
+		ntsCfg.StripBoilerplate = *cfg.NTS.StripBoilerplate
+	}
+	if cfg.NTS.NormalizeWhitespace != nil {
+		ntsCfg.NormalizeWhitespace = *cfg.NTS.NormalizeWhitespace
+	}
+	if cfg.NTS.PreserveFileReads != nil {
+		ntsCfg.PreserveFileReads = *cfg.NTS.PreserveFileReads
+	}
+	if cfg.NTS.PreserveFileWrites != nil {
+		ntsCfg.PreserveFileWrites = *cfg.NTS.PreserveFileWrites
+	}
+	if cfg.NTS.PreserveCacheControl != nil {
+		ntsCfg.PreserveCacheControl = *cfg.NTS.PreserveCacheControl
+	}
+	ntsTr := nts.NewTransformer(ntsCfg)
+
 	srv := &Server{
 		classifier:     class,
 		sanitizer:      san,
@@ -299,6 +334,7 @@ func NewServerWithTelemetryAndRegistry(
 		logger:         logger,
 		transport:      transport,
 		tuner:          tuner.NewCostPenaltyOptimizer(),
+		ntsTransformer: ntsTr,
 		startTime:      time.Now(),
 	}
 
@@ -933,6 +969,23 @@ func (s *Server) dispatchTier(
 	}
 	preparedBody, _ = s.sanitizer.SanitizePayload(preparedBody, hasVision)
 
+	var ntsTokensSaved, ntsBytesSaved int
+	if s.ntsTransformer != nil {
+		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
+			if transformed, res, err := s.ntsTransformer.TransformAnthropic(preparedBody); err == nil && !res.Bypassed {
+				preparedBody = transformed
+				ntsTokensSaved = res.TokensSaved
+				ntsBytesSaved = res.BytesSaved
+			}
+		} else {
+			if transformed, res, err := s.ntsTransformer.TransformOpenAI(preparedBody); err == nil && !res.Bypassed {
+				preparedBody = transformed
+				ntsTokensSaved = res.TokensSaved
+				ntsBytesSaved = res.BytesSaved
+			}
+		}
+	}
+
 	targetURL, err := url.Parse(targetProvider.BaseURL())
 	if err != nil {
 		reqLogger.Error("Invalid target URL for provider", slog.String("provider", targetTier.Provider), slog.Any("error", err))
@@ -1180,7 +1233,7 @@ func (s *Server) dispatchTier(
 		}
 		_ = normalizer.Close()
 
-		s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger)
+		s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger, ntsTokensSaved, ntsBytesSaved)
 		return
 	}
 
@@ -1330,7 +1383,7 @@ func (s *Server) dispatchTier(
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(bodyBytes)
 
-	s.recordTelemetry(targetTier, targetProvider, reqCtx, nonStreamUsage, resp.StatusCode, startTime, isFallback, reqLogger)
+	s.recordTelemetry(targetTier, targetProvider, reqCtx, nonStreamUsage, resp.StatusCode, startTime, isFallback, reqLogger, ntsTokensSaved, ntsBytesSaved)
 }
 
 func (s *Server) allowProvider(p provider.LLMProvider) bool {
@@ -1387,6 +1440,8 @@ func (s *Server) recordTelemetry(
 	startTime time.Time,
 	isFallback bool,
 	reqLogger *slog.Logger,
+	ntsTokensSaved int,
+	ntsBytesSaved int,
 ) {
 	latency := float64(time.Since(startTime).Milliseconds())
 	isLocal := targetProvider.IsLocal()
@@ -1459,6 +1514,8 @@ func (s *Server) recordTelemetry(
 		UpstreamCost:              upstreamCost,
 		FairyDusted:               reqCtx.FairyDusted,
 		FairyDustEntry:            reqCtx.FairyDustEntry,
+		NTSTokensSaved:            ntsTokensSaved,
+		NTSBytesSaved:             ntsBytesSaved,
 	})
 
 	reqLogger.Info("Completed proxy request",

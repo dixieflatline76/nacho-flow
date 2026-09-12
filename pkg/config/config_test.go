@@ -668,3 +668,50 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 		})
 	}
 }
+
+func TestConfig_NTS_Parsing(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 9000
+nts:
+  enabled: true
+  deduplicate_lines: true
+  dedup_threshold: 4
+  strip_ansi: true
+  strip_boilerplate: true
+  normalize_whitespace: true
+  preserve_cache_control: true
+providers:
+  local_gpu:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+tiers:
+  - name: "Local"
+    model: "qwen2.5-coder:14b"
+    provider: "local_gpu"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.NTS.Enabled == nil || !*cfg.NTS.Enabled {
+		t.Errorf("Expected NTS.Enabled to be true")
+	}
+	if cfg.NTS.DedupThreshold != 4 {
+		t.Errorf("Expected DedupThreshold 4, got %d", cfg.NTS.DedupThreshold)
+	}
+	if cfg.NTS.StripANSI == nil || !*cfg.NTS.StripANSI ||
+		cfg.NTS.StripBoilerplate == nil || !*cfg.NTS.StripBoilerplate ||
+		cfg.NTS.NormalizeWhitespace == nil || !*cfg.NTS.NormalizeWhitespace ||
+		cfg.NTS.PreserveCacheControl == nil || !*cfg.NTS.PreserveCacheControl {
+		t.Errorf("Expected all NTS boolean flags to be true")
+	}
+}
+

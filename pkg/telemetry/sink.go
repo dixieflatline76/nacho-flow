@@ -38,6 +38,8 @@ type TurnRecord struct {
 	UpstreamCost              float64   `json:"upstream_cost,omitempty"`
 	FairyDusted               bool      `json:"fairy_dusted,omitempty"`
 	FairyDustEntry            string    `json:"fairy_dust_entry,omitempty"`
+	NTSTokensSaved            int       `json:"nts_tokens_saved,omitempty"`
+	NTSBytesSaved             int       `json:"nts_bytes_saved,omitempty"`
 }
 
 // ObservationSink defines a decoupled consumer of observation events.

@@ -214,6 +214,20 @@ type FairyDustConfig struct {
 	Entries []FairyDustEntry `yaml:"entries,omitempty" json:"entries,omitempty"`
 }
 
+// NTSConfig configures the Nacho Token Saver (NTS) in-place compaction engine.
+type NTSConfig struct {
+	Enabled              *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	StripANSI            *bool `yaml:"strip_ansi,omitempty" json:"strip_ansi,omitempty"`
+	ResolveCR            *bool `yaml:"resolve_cr,omitempty" json:"resolve_cr,omitempty"`
+	DeduplicateLines     *bool `yaml:"deduplicate_lines,omitempty" json:"deduplicate_lines,omitempty"`
+	DedupThreshold       int   `yaml:"dedup_threshold,omitempty" json:"dedup_threshold,omitempty"`
+	StripBoilerplate     *bool `yaml:"strip_boilerplate,omitempty" json:"strip_boilerplate,omitempty"`
+	NormalizeWhitespace  *bool `yaml:"normalize_whitespace,omitempty" json:"normalize_whitespace,omitempty"`
+	PreserveFileReads    *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
+	PreserveFileWrites   *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
+	PreserveCacheControl *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
+}
+
 // Config defines the top-level configuration loaded from config.yaml.
 type Config struct {
 	Port         int                       `yaml:"port" json:"port"`
@@ -225,6 +239,7 @@ type Config struct {
 	CycleKiller  CycleBreakerConfig        `yaml:"cycle_killer,omitempty" json:"cycle_killer,omitempty"`
 	CycleBreaker CycleBreakerConfig        `yaml:"cycle_breaker,omitempty" json:"cycle_breaker,omitempty"`
 	FairyDust    FairyDustConfig           `yaml:"fairy_dust,omitempty" json:"fairy_dust,omitempty"`
+	NTS          NTSConfig                 `yaml:"nts,omitempty" json:"nts,omitempty"`
 	Providers    map[string]ProviderConfig `yaml:"providers" json:"providers"`
 	Tiers        []Tier                    `yaml:"tiers" json:"tiers"`
 	DefaultTier  Tier                      `yaml:"default_tier" json:"default_tier"`
