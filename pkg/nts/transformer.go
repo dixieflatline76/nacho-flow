@@ -6,8 +6,11 @@ import (
 	"strings"
 )
 
-// Transformer inspects incoming HTTP request JSON payloads (Anthropic / OpenAI)
-// and applies NTS compaction to tool responses with full immunity guards.
+// targetJSONFields are field names within inner-JSON payloads that carry tool output text.
+var targetJSONFields = []string{"result", "output", "text", "content"}
+
+// Transformer inspects incoming HTTP request JSON payloads (Anthropic Messages / OpenAI Chat)
+// and applies wire-speed NTS compaction to tool outputs with dual-lane immunity guards.
 type Transformer struct {
 	pipeline *Pipeline
 }
@@ -24,19 +27,17 @@ func (t *Transformer) Pipeline() *Pipeline {
 	return t.pipeline
 }
 
-// TransformAnthropic parses an Anthropic Messages API payload, compacts any
-// tool_result content blocks in-place, and re-encodes the JSON.
+// TransformAnthropic compacts tool responses in an Anthropic Messages API payload.
 func (t *Transformer) TransformAnthropic(body []byte) ([]byte, ReductionResult, error) {
-	return t.transformCommon(body)
+	return t.transformPayload(body)
 }
 
-// TransformOpenAI parses an OpenAI Chat Completions payload, compacts any
-// role: "tool" messages or tool_result blocks in-place, and re-encodes the JSON.
+// TransformOpenAI compacts tool responses in an OpenAI Chat Completions payload.
 func (t *Transformer) TransformOpenAI(body []byte) ([]byte, ReductionResult, error) {
-	return t.transformCommon(body)
+	return t.transformPayload(body)
 }
 
-func (t *Transformer) transformCommon(body []byte) ([]byte, ReductionResult, error) {
+func (t *Transformer) transformPayload(body []byte) ([]byte, ReductionResult, error) {
 	var req map[string]interface{}
 	if err := json.Unmarshal(body, &req); err != nil {
 		return body, ReductionResult{Bypassed: true, BypassReason: "unmarshal_error"}, err
@@ -54,7 +55,6 @@ func (t *Transformer) transformCommon(body []byte) ([]byte, ReductionResult, err
 
 	toolNames := indexToolNames(msgs)
 	modified, totalResult := t.processMessages(msgs, toolNames)
-
 	if !modified {
 		return body, totalResult, nil
 	}
@@ -67,17 +67,18 @@ func (t *Transformer) transformCommon(body []byte) ([]byte, ReductionResult, err
 	return newBody, totalResult, nil
 }
 
-// indexToolNames extracts tool call IDs to tool names from both OpenAI tool_calls
-// and Anthropic tool_use content blocks across all assistant messages.
+// indexToolNames indexes tool call IDs to tool names across all assistant messages,
+// supporting both OpenAI tool_calls and Anthropic tool_use content blocks.
 func indexToolNames(msgs []interface{}) map[string]string {
-	toolNames := make(map[string]string)
+	names := make(map[string]string)
+
 	for _, msgItem := range msgs {
 		msg, ok := msgItem.(map[string]interface{})
 		if !ok {
 			continue
 		}
 
-		// 1. OpenAI tool_calls
+		// 1. OpenAI function calls: assistant.tool_calls[].function.name
 		if toolCalls, ok := msg["tool_calls"].([]interface{}); ok {
 			for _, tcItem := range toolCalls {
 				tc, ok := tcItem.(map[string]interface{})
@@ -86,38 +87,36 @@ func indexToolNames(msgs []interface{}) map[string]string {
 				}
 				id, _ := tc["id"].(string)
 				fn, ok := tc["function"].(map[string]interface{})
-				if ok {
-					name, _ := fn["name"].(string)
-					if id != "" && name != "" {
-						toolNames[id] = name
+				if ok && id != "" {
+					if name, ok := fn["name"].(string); ok && name != "" {
+						names[id] = name
 					}
 				}
 			}
 		}
 
-		// 2. Anthropic content blocks: tool_use
+		// 2. Anthropic content blocks: assistant.content[type == "tool_use"].name
 		if contentList, ok := msg["content"].([]interface{}); ok {
 			for _, partItem := range contentList {
 				part, ok := partItem.(map[string]interface{})
-				if !ok {
+				if !ok || part["type"] != "tool_use" {
 					continue
 				}
-				if part["type"] == "tool_use" {
-					id, _ := part["id"].(string)
-					name, _ := part["name"].(string)
-					if id != "" && name != "" {
-						toolNames[id] = name
-					}
+				id, _ := part["id"].(string)
+				name, _ := part["name"].(string)
+				if id != "" && name != "" {
+					names[id] = name
 				}
 			}
 		}
 	}
-	return toolNames
+
+	return names
 }
 
-// processMessages walks message structures and compacts tool output payloads.
+// processMessages traverses messages, identifies tool outputs, and applies compaction in-place.
 func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]string) (bool, ReductionResult) {
-	var totalResult ReductionResult
+	var total ReductionResult
 	modified := false
 
 	for _, msgItem := range msgs {
@@ -126,205 +125,198 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 			continue
 		}
 
-		// 1. OpenAI style: role == "tool"
-		role, _ := msg["role"].(string)
-		if role == "tool" {
-			if t.pipeline.config.PreserveCacheControl {
-				if _, hasCache := msg["cache_control"]; hasCache {
-					continue
-				}
-			}
+		// Format A: OpenAI role == "tool"
+		if role, _ := msg["role"].(string); role == "tool" {
+			toolName := resolveToolName(msg["name"], msg["tool_call_id"], toolNames)
+			hasCache := hasCacheControl(msg)
 
-			toolName, _ := msg["name"].(string)
-			if toolName == "" {
-				toolCallID, _ := msg["tool_call_id"].(string)
-				toolName = toolNames[toolCallID]
+			newContent, res, changed := t.compactToolContent(msg["content"], toolName, hasCache)
+			if changed {
+				msg["content"] = newContent
+				total.merge(res)
+				modified = true
 			}
-			cat := categorizeToolName(toolName)
-
-			// Content can be string or array of text parts
-			if textVal, isStr := msg["content"].(string); isStr && len(textVal) > 0 {
-				newText, res := t.processContentText(textVal, cat)
-				if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-					msg["content"] = newText
-					totalResult.OriginalBytes += res.OriginalBytes
-					totalResult.ReducedBytes += res.ReducedBytes
-					totalResult.BytesSaved += res.BytesSaved
-					totalResult.TokensSaved += res.TokensSaved
-					totalResult.Duration += res.Duration
-					modified = true
-				}
-			} else if parts, isList := msg["content"].([]interface{}); isList {
-				for _, pItem := range parts {
-					part, ok := pItem.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					if part["type"] == "text" {
-						textVal, _ := part["text"].(string)
-						if len(textVal) > 0 {
-							newText, res := t.processContentText(textVal, cat)
-							if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-								part["text"] = newText
-								totalResult.OriginalBytes += res.OriginalBytes
-								totalResult.ReducedBytes += res.ReducedBytes
-								totalResult.BytesSaved += res.BytesSaved
-								totalResult.TokensSaved += res.TokensSaved
-								totalResult.Duration += res.Duration
-								modified = true
-							}
-						}
-					}
-				}
-			}
+			continue
 		}
 
-		// 2. Anthropic style content blocks: type == "tool_result" (can be in user role)
-		if contentRaw, ok := msg["content"]; ok {
-			if contentList, ok := contentRaw.([]interface{}); ok {
-				for _, partItem := range contentList {
-					part, ok := partItem.(map[string]interface{})
-					if !ok {
-						continue
-					}
+		// Format B: Content blocks with type == "tool_result" (Anthropic / Zoo Code / Vercel AI)
+		contentList, ok := msg["content"].([]interface{})
+		if !ok {
+			continue
+		}
 
-					if part["type"] != "tool_result" {
-						continue
-					}
+		for _, partItem := range contentList {
+			part, ok := partItem.(map[string]interface{})
+			if !ok || part["type"] != "tool_result" {
+				continue
+			}
 
-					if t.pipeline.config.PreserveCacheControl {
-						if _, hasCache := part["cache_control"]; hasCache {
-							continue
-						}
-					}
+			toolName := resolveToolName(part["tool_name"], part["tool_use_id"], toolNames)
+			hasCache := hasCacheControl(part)
 
-					toolName, _ := part["tool_name"].(string)
-					if toolName == "" {
-						toolUseID, _ := part["tool_use_id"].(string)
-						toolName = toolNames[toolUseID]
-					}
-					cat := categorizeToolName(toolName)
-
-					if textVal, isStr := part["content"].(string); isStr && len(textVal) > 0 {
-						newText, res := t.processContentText(textVal, cat)
-						if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-							part["content"] = newText
-							totalResult.OriginalBytes += res.OriginalBytes
-							totalResult.ReducedBytes += res.ReducedBytes
-							totalResult.BytesSaved += res.BytesSaved
-							totalResult.TokensSaved += res.TokensSaved
-							totalResult.Duration += res.Duration
-							modified = true
-						}
-					} else if subList, isList := part["content"].([]interface{}); isList {
-						for _, subItem := range subList {
-							subPart, ok := subItem.(map[string]interface{})
-							if !ok {
-								continue
-							}
-							if subPart["type"] == "text" {
-								textVal, _ := subPart["text"].(string)
-								if len(textVal) > 0 {
-									newText, res := t.processContentText(textVal, cat)
-									if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-										subPart["text"] = newText
-										totalResult.OriginalBytes += res.OriginalBytes
-										totalResult.ReducedBytes += res.ReducedBytes
-										totalResult.BytesSaved += res.BytesSaved
-										totalResult.TokensSaved += res.TokensSaved
-										totalResult.Duration += res.Duration
-										modified = true
-									}
-								}
-							}
-						}
-					}
-				}
+			newContent, res, changed := t.compactToolContent(part["content"], toolName, hasCache)
+			if changed {
+				part["content"] = newContent
+				total.merge(res)
+				modified = true
 			}
 		}
 	}
 
-	return modified, totalResult
+	return modified, total
 }
 
-// processContentText compacts tool text output, unwrapping and re-wrapping inner JSON
-// payloads emitted by clients like Cline / Vercel AI SDK (e.g. [{"query":...,"result":"..."}]).
-func (t *Transformer) processContentText(text string, cat ToolCategory) (string, ReductionResult) {
+// compactToolContent handles tool content in both string form and content-block list form.
+func (t *Transformer) compactToolContent(content interface{}, toolName string, hasCache bool) (interface{}, ReductionResult, bool) {
+	if t.pipeline.config.PreserveCacheControl && hasCache {
+		return content, ReductionResult{}, false
+	}
+
+	category := categorizeToolName(toolName)
+
+	switch val := content.(type) {
+	case string:
+		if len(val) == 0 {
+			return content, ReductionResult{}, false
+		}
+		newText, res, changed := t.compactText(val, category)
+		return newText, res, changed
+
+	case []interface{}:
+		var total ReductionResult
+		modified := false
+		for _, item := range val {
+			part, ok := item.(map[string]interface{})
+			if !ok || part["type"] != "text" {
+				continue
+			}
+			text, ok := part["text"].(string)
+			if !ok || len(text) == 0 {
+				continue
+			}
+			newText, res, changed := t.compactText(text, category)
+			if changed {
+				part["text"] = newText
+				total.merge(res)
+				modified = true
+			}
+		}
+		return val, total, modified
+
+	default:
+		return content, ReductionResult{}, false
+	}
+}
+
+// compactText compacts a tool text string. If the string is serialized inner-JSON
+// (emitted by agents like Cline / Roo Code), it unpacks, compacts the inner fields,
+// and re-marshals the JSON. Otherwise, it processes the raw text directly.
+func (t *Transformer) compactText(text string, cat ToolCategory) (string, ReductionResult, bool) {
 	trimmed := bytes.TrimSpace([]byte(text))
+
+	// Attempt inner-JSON compaction if text resembles an array or object
 	if len(trimmed) > 0 && (trimmed[0] == '[' || trimmed[0] == '{') {
-		if trimmed[0] == '[' {
-			var items []map[string]interface{}
-			if err := json.Unmarshal(trimmed, &items); err == nil {
-				var totalRes ReductionResult
-				modified := false
-				for _, item := range items {
-					for _, field := range []string{"result", "output", "text", "content"} {
-						if val, ok := item[field].(string); ok && len(val) > 0 {
-							buf := []byte(val)
-							res := t.pipeline.Process(buf, cat)
-							if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-								item[field] = string(buf[:res.ReducedBytes])
-								totalRes.OriginalBytes += res.OriginalBytes
-								totalRes.ReducedBytes += res.ReducedBytes
-								totalRes.BytesSaved += res.BytesSaved
-								totalRes.TokensSaved += res.TokensSaved
-								totalRes.Duration += res.Duration
-								modified = true
-							}
-						}
-					}
-				}
-				if modified {
-					if newBytes, err := json.Marshal(items); err == nil {
-						return string(newBytes), totalRes
-					}
-				}
-			}
-		} else {
-			var item map[string]interface{}
-			if err := json.Unmarshal(trimmed, &item); err == nil {
-				var totalRes ReductionResult
-				modified := false
-				for _, field := range []string{"result", "output", "text", "content"} {
-					if val, ok := item[field].(string); ok && len(val) > 0 {
-						buf := []byte(val)
-						res := t.pipeline.Process(buf, cat)
-						if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-							item[field] = string(buf[:res.ReducedBytes])
-							totalRes.OriginalBytes += res.OriginalBytes
-							totalRes.ReducedBytes += res.ReducedBytes
-							totalRes.BytesSaved += res.BytesSaved
-							totalRes.TokensSaved += res.TokensSaved
-							totalRes.Duration += res.Duration
-							modified = true
-						}
-					}
-				}
-				if modified {
-					if newBytes, err := json.Marshal(item); err == nil {
-						return string(newBytes), totalRes
-					}
-				}
-			}
+		if newJSON, res, ok := t.compactInnerJSON(trimmed, cat); ok {
+			return newJSON, res, true
 		}
 	}
 
-	// Plain text processing
+	// Direct string compaction
 	buf := []byte(text)
 	res := t.pipeline.Process(buf, cat)
 	if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
-		return string(buf[:res.ReducedBytes]), res
+		return string(buf[:res.ReducedBytes]), res, true
 	}
-	return text, res
+
+	return text, res, false
+}
+
+// compactInnerJSON parses and compacts text fields inside JSON strings.
+func (t *Transformer) compactInnerJSON(raw []byte, cat ToolCategory) (string, ReductionResult, bool) {
+	var total ReductionResult
+	modified := false
+
+	if raw[0] == '[' {
+		var items []map[string]interface{}
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return "", ReductionResult{}, false
+		}
+		for _, item := range items {
+			if t.compactItemFields(item, cat, &total) {
+				modified = true
+			}
+		}
+		if modified {
+			if reencoded, err := json.Marshal(items); err == nil {
+				return string(reencoded), total, true
+			}
+		}
+	} else {
+		var item map[string]interface{}
+		if err := json.Unmarshal(raw, &item); err != nil {
+			return "", ReductionResult{}, false
+		}
+		if t.compactItemFields(item, cat, &total) {
+			if reencoded, err := json.Marshal(item); err == nil {
+				return string(reencoded), total, true
+			}
+		}
+	}
+
+	return "", ReductionResult{}, false
+}
+
+// compactItemFields scans known output fields in an object map and compacts them.
+func (t *Transformer) compactItemFields(item map[string]interface{}, cat ToolCategory, total *ReductionResult) bool {
+	itemModified := false
+	for _, field := range targetJSONFields {
+		val, ok := item[field].(string)
+		if !ok || len(val) == 0 {
+			continue
+		}
+		buf := []byte(val)
+		res := t.pipeline.Process(buf, cat)
+		if !res.Bypassed && res.ReducedBytes < res.OriginalBytes {
+			item[field] = string(buf[:res.ReducedBytes])
+			total.merge(res)
+			itemModified = true
+		}
+	}
+	return itemModified
+}
+
+func resolveToolName(explicitName, callID interface{}, toolNames map[string]string) string {
+	if name, ok := explicitName.(string); ok && name != "" {
+		return name
+	}
+	if id, ok := callID.(string); ok && id != "" {
+		return toolNames[id]
+	}
+	return ""
+}
+
+func hasCacheControl(m map[string]interface{}) bool {
+	_, ok := m["cache_control"]
+	return ok
 }
 
 func categorizeToolName(name string) ToolCategory {
-	nameLower := strings.ToLower(name)
-	if strings.Contains(nameLower, "read") || strings.Contains(nameLower, "view") || nameLower == "cat" {
+	n := strings.ToLower(name)
+	switch {
+	case strings.Contains(n, "read") || strings.Contains(n, "view") || n == "cat":
 		return CategoryFileRead
-	}
-	if strings.Contains(nameLower, "write") || strings.Contains(nameLower, "replace") || strings.Contains(nameLower, "patch") || strings.Contains(nameLower, "diff") || strings.Contains(nameLower, "edit") {
+	case strings.Contains(n, "write") || strings.Contains(n, "edit") ||
+		strings.Contains(n, "replace") || strings.Contains(n, "patch") || strings.Contains(n, "diff"):
 		return CategoryFileWrite
+	default:
+		return CategoryGeneric
 	}
-	return CategoryGeneric
+}
+
+func (r *ReductionResult) merge(other ReductionResult) {
+	r.OriginalBytes += other.OriginalBytes
+	r.ReducedBytes += other.ReducedBytes
+	r.BytesSaved += other.BytesSaved
+	r.TokensSaved += other.TokensSaved
+	r.Duration += other.Duration
 }
