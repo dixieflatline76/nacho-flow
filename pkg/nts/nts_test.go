@@ -124,6 +124,12 @@ func TestCollapseDuplicatesInPlace(t *testing.T) {
 			input:     "\n\n\n\ncode\n",
 			expected:  "\n\n\n\ncode\n", // Whitespace normalizer handles empty lines
 		},
+		{
+			name:      "ascii box rows not collapsed",
+			threshold: 3,
+			input:     "+---------------+\n|               |\n|               |\n|               |\n|               |\n+---------------+\n",
+			expected:  "+---------------+\n|               |\n|               |\n|               |\n|               |\n+---------------+\n",
+		},
 	}
 
 	for _, tt := range tests {

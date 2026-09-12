@@ -39,9 +39,10 @@ func CollapseDuplicatesInPlace(b []byte, threshold int) []byte {
 			r = lineEnd
 		}
 
-		// Check if current line is identical to lastLine
+		// Check if current line is identical to lastLine.
 		// Only consider non-empty lines with meaningful content (> 3 bytes)
-		isRepeat := lastLine != nil && len(currLine) > 3 && bytes.Equal(currLine, lastLine)
+		// and at least one alphanumeric character (preserving ASCII art, empty UI boxes, and borders).
+		isRepeat := lastLine != nil && len(currLine) > 3 && hasAlphanumeric(currLine) && bytes.Equal(currLine, lastLine)
 
 		if isRepeat {
 			repeatCount++
@@ -111,4 +112,14 @@ func appendCollapseNotice(b []byte, w int, numStr []byte) int {
 	w += len(suffix)
 
 	return w
+}
+
+// hasAlphanumeric returns true if b contains at least one ASCII letter or digit.
+func hasAlphanumeric(b []byte) bool {
+	for _, c := range b {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			return true
+		}
+	}
+	return false
 }
