@@ -656,23 +656,29 @@
 		chip.className = 'status-chip';
 		if (status.connected) {
 			chip.classList.add('chip-green');
-			const ver = status.version || currentState.engineVersion || 'Online';
-			chip.textContent = `🟢 Engine Active (${ver})`;
+			const rawVer = status.version || currentState.engineVersion || 'Online';
+			const ver = (rawVer.startsWith('v') || rawVer === 'Online') ? rawVer : 'v' + rawVer;
+			chip.textContent = `🟢 ${ver}`;
+			chip.title = `Model Dispatcher Engine Active (${rawVer})`;
 		} else if (status.starting) {
 			chip.classList.add('chip-gray');
-			chip.textContent = '⚡ Starting Model Dispatcher...';
+			chip.textContent = '⚡ Starting...';
+			chip.title = 'Starting Model Dispatcher...';
 		} else if (status.testing) {
 			chip.classList.add('chip-gray');
-			chip.textContent = '⚡ Checking Connection...';
+			chip.textContent = '⚡ Connecting...';
+			chip.title = 'Verifying Server Connection...';
 		} else {
 			const isRemote = currentState.isRemote;
 			const isConnRefused = status.error && (status.error.includes('ECONNREFUSED') || status.error.includes('Connection refused') || status.error.includes('fetch failed'));
 			if (!isRemote && (isConnRefused || !status.error || status.error === 'Offline' || status.error === 'Stopped by user')) {
 				chip.classList.add('chip-gray');
-				chip.textContent = status.error === 'Stopped by user' ? '⚪ Engine Stopped' : '⚪ Engine Offline';
+				chip.textContent = '⚪ Offline';
+				chip.title = status.error === 'Stopped by user' ? 'Engine Stopped by user' : 'Local Engine Offline (Click Start in sidebar)';
 			} else {
 				chip.classList.add('chip-red');
-				chip.textContent = `🔴 Offline (${status.error || 'Connection refused'})`;
+				chip.textContent = '🔴 Offline';
+				chip.title = `Server connection failed: ${status.error || 'Connection refused'}`;
 			}
 		}
 	}
@@ -690,7 +696,8 @@
 		const chip = document.getElementById('server-version-chip');
 		if (chip) {
 			chip.className = 'status-chip chip-gray';
-			chip.textContent = '⚪ Engine Offline';
+			chip.textContent = '⚪ Offline';
+			chip.title = offlineMsg;
 		}
 
 		const statsContent = document.getElementById('stats-content');

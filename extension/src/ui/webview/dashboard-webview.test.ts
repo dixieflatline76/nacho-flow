@@ -478,23 +478,24 @@ describe('updateActivePreset and profile / remote indicators', () => {
 
 describe('updateEngineStatus and server version chip', () => {
   it('updates server version chip to active green with version text', () => {
-    postMessage('updateEngineStatus', { connected: true, version: 'v1.1.0' });
+    postMessage('updateEngineStatus', { connected: true, version: '1.1.0' });
     const chip = document.getElementById('server-version-chip');
-    expect(chip?.textContent).toBe('🟢 Engine Active (v1.1.0)');
+    expect(chip?.textContent).toBe('🟢 v1.1.0');
     expect(chip?.classList.contains('chip-green')).toBe(true);
+    expect(chip?.title).toContain('1.1.0');
   });
 
   it('updates server version chip when starting', () => {
     postMessage('updateEngineStatus', { starting: true });
     const chip = document.getElementById('server-version-chip');
-    expect(chip?.textContent).toBe('⚡ Starting Model Dispatcher...');
+    expect(chip?.textContent).toBe('⚡ Starting...');
     expect(chip?.classList.contains('chip-gray')).toBe(true);
   });
 
   it('updates server version chip when testing connection', () => {
     postMessage('updateEngineStatus', { testing: true });
     const chip = document.getElementById('server-version-chip');
-    expect(chip?.textContent).toBe('⚡ Checking Connection...');
+    expect(chip?.textContent).toBe('⚡ Connecting...');
     expect(chip?.classList.contains('chip-gray')).toBe(true);
   });
 
@@ -502,7 +503,8 @@ describe('updateEngineStatus and server version chip', () => {
     postMessage('updateActivePreset', { label: 'Remote Server', isRemote: true });
     postMessage('updateEngineStatus', { connected: false, error: 'Connection refused' });
     const chip = document.getElementById('server-version-chip');
-    expect(chip?.textContent).toContain('🔴 Offline (Connection refused)');
+    expect(chip?.textContent).toBe('🔴 Offline');
+    expect(chip?.title).toContain('Connection refused');
     expect(chip?.classList.contains('chip-red')).toBe(true);
   });
 
@@ -510,7 +512,7 @@ describe('updateEngineStatus and server version chip', () => {
     postMessage('updateActivePreset', { label: 'Profile 1', isRemote: false });
     postMessage('updateEngineStatus', { connected: false, error: 'Connection refused' });
     const chip = document.getElementById('server-version-chip');
-    expect(chip?.textContent).toBe('⚪ Engine Offline');
+    expect(chip?.textContent).toBe('⚪ Offline');
     expect(chip?.classList.contains('chip-gray')).toBe(true);
   });
 
@@ -518,7 +520,7 @@ describe('updateEngineStatus and server version chip', () => {
     postMessage('updateEngineStatus', { connected: true, version: 'v1.1.0' });
     postMessage('setOffline', { reason: 'Engine stopped' });
     const chip = document.getElementById('server-version-chip');
-    expect(chip?.textContent).toBe('⚪ Engine Offline');
+    expect(chip?.textContent).toBe('⚪ Offline');
     expect(chip?.classList.contains('chip-gray')).toBe(true);
   });
 });
@@ -600,7 +602,7 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
     postMessage('syncSnapshot', remoteSnapshot);
 
     expect(document.getElementById('active-preset-badge')?.textContent).toBe('🌐 Remote Server');
-    expect(document.getElementById('server-version-chip')?.textContent).toBe('🟢 Engine Active (v1.1.0-nts-hardened)');
+    expect(document.getElementById('server-version-chip')?.textContent).toBe('🟢 v1.1.0-nts-hardened');
     expect(document.getElementById('server-version-chip')?.classList.contains('chip-green')).toBe(true);
     expect(document.getElementById('btn-edit-config')?.textContent).toContain('Remote config.yaml');
   });
