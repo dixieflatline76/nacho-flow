@@ -8,5 +8,26 @@
     "apply_diff", "create_or_update_file", "put_file", "apply_patch"
   ],
   "read_tools": ["read_file", "view_file", "cat", "list_files", "search_files"],
-  "command_tools": ["bash", "sh", "terminal", "exec", "cmd", "pwsh", "powershell", "run_command", "execute_command"]
+  "command_tools": ["bash", "sh", "terminal", "exec", "cmd", "pwsh", "powershell", "run_command", "execute_command"],
+  "interactive_tools": ["ask_question", "ask_followup_question", "user_prompt"],
+  "question_heuristics": [
+    "are you satisfied",
+    "would you like",
+    "should i",
+    "do you approve",
+    "please confirm",
+    "let me know if",
+    "how would you like to proceed",
+    "shall i proceed",
+    "do you want me to"
+  ],
+  "error_signatures": [
+    "Missing value for required parameter",
+    "The tool execution failed",
+    "<error_details>",
+    "Command failed with exit code",
+    "Please retry with complete response",
+    "Command not executed:",
+    "tool execution error"
+  ]
 }

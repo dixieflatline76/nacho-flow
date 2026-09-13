@@ -112,7 +112,7 @@ type Observation struct {
 	DirectiveUsed             string
 	CycleBreakerTriggered     bool
 	CycleBreakerReason        string
-	CycleProseTokens          int
+	CycleContentTokens        int
 	CycleMaxNgramFreq         int
 	CycleThinkingTokens       int
 	CycleMaxThinkingNgramFreq int
@@ -595,7 +595,7 @@ func (s *StatsTracker) worker() {
 				DirectiveUsed:             obs.DirectiveUsed,
 				CycleBreakerTriggered:     obs.CycleBreakerTriggered,
 				CycleBreakerReason:        obs.CycleBreakerReason,
-				CycleProseTokens:          obs.CycleProseTokens,
+				CycleContentTokens:        obs.CycleContentTokens,
 				CycleMaxNgramFreq:         obs.CycleMaxNgramFreq,
 				CycleThinkingTokens:       obs.CycleThinkingTokens,
 				CycleMaxThinkingNgramFreq: obs.CycleMaxThinkingNgramFreq,

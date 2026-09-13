@@ -20,5 +20,22 @@
   ],
   "command_tools": [
     "execute_command"
+  ],
+  "interactive_tools": [
+    "ask_followup_question"
+  ],
+  "mode_tool": "switch_mode",
+  "mode_heuristics": [
+    "switch to code mode",
+    "switch to architect mode",
+    "ready to implement"
+  ],
+  "error_signatures": [
+    "[ERROR] You did not use a tool",
+    "Missing value for required parameter",
+    "The tool execution failed",
+    "<error_details>",
+    "Editor operation failed",
+    "No sufficiently similar match found"
   ]
 }

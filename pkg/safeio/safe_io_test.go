@@ -195,3 +195,13 @@ func TestSafeBoundedDir_ConstructorAndEdgeCases(t *testing.T) {
 		t.Errorf("expected error in AtomicWrite when target is a non-empty directory")
 	}
 }
+
+func TestSafeBoundedDir_EmptyBaseDir(t *testing.T) {
+	cases := []string{"", "   ", "\t\n"}
+	for _, c := range cases {
+		if _, err := NewSafeBoundedDir(c); err == nil {
+			t.Errorf("expected error for empty base dir %q, got nil", c)
+		}
+	}
+}
+

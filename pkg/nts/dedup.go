@@ -48,7 +48,7 @@ func CollapseDuplicatesInPlace(b []byte, threshold int) []byte {
 			repeatCount++
 		} else {
 			// Process any pending repeats from the previous block
-			w = flushRepeats(b, w, lastLine, repeatCount, threshold)
+			w = flushRepeats(b, w, lastLine, repeatCount, threshold, true)
 
 			// Write the current line
 			copy(b[w:], currLine)
@@ -64,43 +64,52 @@ func CollapseDuplicatesInPlace(b []byte, threshold int) []byte {
 	}
 
 	// Flush trailing repeats if any
-	w = flushRepeats(b, w, lastLine, repeatCount, threshold)
+	trailingNewline := n > 0 && b[n-1] == '\n'
+	w = flushRepeats(b, w, lastLine, repeatCount, threshold, trailingNewline)
 
 	return b[:w]
 }
 
-func flushRepeats(b []byte, w int, line []byte, repeatCount int, threshold int) int {
+func flushRepeats(b []byte, w int, line []byte, repeatCount int, threshold int, trailingNewline bool) int {
 	if repeatCount <= 1 {
 		return w
 	}
 
 	collapsedRepeats := repeatCount - 1
 	droppedBytes := collapsedRepeats * (len(line) + 1)
+	if !trailingNewline {
+		droppedBytes = (collapsedRepeats-1)*(len(line)+1) + len(line)
+	}
 
 	// Calculate notice length without allocations
 	var numBuf [16]byte
 	numStr := strconv.AppendInt(numBuf[:0], int64(collapsedRepeats), 10)
-	noticeLen := len("  [... identical line repeated ") + len(numStr) + len(" times ...]\n")
+	noticeLen := len("  [... identical line repeated ") + len(numStr) + len(" times ...]")
+	if trailingNewline {
+		noticeLen++
+	}
 
 	// Strict compaction invariant: only emit notice if it strictly shrinks data
 	if repeatCount >= threshold && droppedBytes > noticeLen {
-		w = appendCollapseNotice(b, w, numStr)
+		w = appendCollapseNotice(b, w, numStr, trailingNewline)
 	} else {
 		// Re-emit lines that were held back
 		for k := 0; k < collapsedRepeats; k++ {
 			copy(b[w:], line)
 			w += len(line)
-			b[w] = '\n'
-			w++
+			if (k < collapsedRepeats-1 || trailingNewline) && w < len(b) {
+				b[w] = '\n'
+				w++
+			}
 		}
 	}
 
 	return w
 }
 
-func appendCollapseNotice(b []byte, w int, numStr []byte) int {
+func appendCollapseNotice(b []byte, w int, numStr []byte, trailingNewline bool) int {
 	prefix := []byte("  [... identical line repeated ")
-	suffix := []byte(" times ...]\n")
+	suffix := []byte(" times ...]")
 
 	copy(b[w:], prefix)
 	w += len(prefix)
@@ -110,6 +119,11 @@ func appendCollapseNotice(b []byte, w int, numStr []byte) int {
 
 	copy(b[w:], suffix)
 	w += len(suffix)
+
+	if trailingNewline && w < len(b) {
+		b[w] = '\n'
+		w++
+	}
 
 	return w
 }

@@ -277,26 +277,34 @@ agent_shield:
 
 # 🎸 Cycle Killer & ⚡ Kickstart: In-Flight Stream Defense & Session Resuscitation
 cycle_killer:
-  enabled: true
-  max_prose_tokens: 4096            # Max non-tool prose before intervention (<think> is exempt)
-  max_thinking_tokens: 1500         # Max reasoning tokens before repetition enforcement kicks in
-  max_tool_tokens: 4096             # Max command/tool invocation arguments before repetition enforcement
-  max_write_tokens: 32768           # 🛡️ File Write Ceiling: file writes bypass N-gram repetition with a 32k ceiling
-  repetition_window: 6              # Sliding n-gram window size (words) for loop detection
-  repetition_threshold: 3           # Kill stream if same n-gram repeats this many times
-  thinking_repetition_threshold: 5  # Same, but for <think> reasoning blocks
-  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+  enabled: true                     # Master switch for all in-flight stream defense
+  phrase_length: 6                  # Default sliding n-gram window size (words) across lanes
+  budget_max_repeats: 5             # Default repeat threshold once lane token budget is exceeded
   model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
   retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
-  kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
-  kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
-  kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
-  kickstart_write_tools:            # Tools that count as "real progress" (read-only tools are ignored)
-    - write_to_file
-    - replace_in_file
-    - replace_file_content
-    - execute_command
-    - apply_diff
+  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+
+  thinking_lane:
+    max_tokens: 4096                # Max reasoning tokens before budget repetition check
+    max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
+
+  content_lane:
+    max_tokens: 6144                # Max non-tool content before budget repetition check
+    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
+
+  tool_lane:
+    max_tokens: 8192                # Max streaming tool call arguments before repetition enforcement
+    max_write_tokens: 32768         # Max size for Category A file writes (zero-alloc fast path)
+    phrase_length: 4                # Tighter n-gram window to catch repeating 4-word shell commands
+    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
+
+kickstart:
+  enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
+  threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
+  max_count: 10                     # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
+  max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+  write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
+  # custom_write_tools: []          # Standard write tools are auto-discovered from agentregistry catalog
 
 # 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
 # Routes every N write-progress turns to frontier models with injected quality review prompts

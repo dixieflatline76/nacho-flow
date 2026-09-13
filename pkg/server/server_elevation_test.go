@@ -204,7 +204,7 @@ func TestServer_ResolveCycleBreaker_And_InjectCorrection(t *testing.T) {
 		tierCustom := contract.Tier{
 			CycleKiller: &contract.CycleBreakerConfig{
 				Enabled:             &trueVal,
-				MaxProseTokens:      400,
+				MaxContentTokens:      400,
 				RepetitionWindow:    50,
 				RepetitionThreshold: 3,
 				MaxRetries:          2,

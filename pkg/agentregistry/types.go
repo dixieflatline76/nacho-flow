@@ -5,12 +5,17 @@ package agentregistry
 
 // AgentProfile defines the tool capabilities and tool names of a specific AI coding agent.
 type AgentProfile struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	WriteTools   []string `json:"write_tools"`
-	ReadTools    []string `json:"read_tools"`
-	CommandTools []string `json:"command_tools"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Version            string   `json:"version"`
+	WriteTools         []string `json:"write_tools"`
+	ReadTools          []string `json:"read_tools"`
+	CommandTools       []string `json:"command_tools"`
+	InteractiveTools   []string `json:"interactive_tools,omitempty"`
+	ModeTool           string   `json:"mode_tool,omitempty"`
+	ModeHeuristics     []string `json:"mode_heuristics,omitempty"`
+	QuestionHeuristics []string `json:"question_heuristics,omitempty"`
+	ErrorSignatures    []string `json:"error_signatures,omitempty"`
 }
 
 // Manifest defines the versioned index of all agent profiles, shell catalog, and reasoning catalog.

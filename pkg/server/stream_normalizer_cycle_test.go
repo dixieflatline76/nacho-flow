@@ -14,7 +14,7 @@ func TestStreamNormalizer_CycleBreaker_Detection(t *testing.T) {
 	enabled := true
 	cbCfg := &contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxProseTokens:      800,
+		MaxContentTokens:      800,
 		RepetitionWindow:    5,
 		RepetitionThreshold: 3,
 	}
@@ -152,7 +152,7 @@ func TestStreamNormalizer_CycleBreaker_CleanStream(t *testing.T) {
 	enabled := true
 	cbCfg := &contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxProseTokens:      800,
+		MaxContentTokens:      800,
 		RepetitionWindow:    5,
 		RepetitionThreshold: 3,
 	}

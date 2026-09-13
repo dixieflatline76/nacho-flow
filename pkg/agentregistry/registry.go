@@ -23,12 +23,17 @@ type Registry struct {
 	shellWriteCommands  map[string]struct{}
 	shellWritePipes     []string
 	contextualCommands  map[string][]string
-	redirections        []string
-	writeTagByteMarkers [][]byte
-	manifest            Manifest
-	reasoningCatalog    ReasoningCatalog
-	tagReplacer         *strings.Replacer
-	reasoningByteMarkers [][]byte
+	redirections           []string
+	writeTagByteMarkers    [][]byte
+	interactiveToolsLookup map[string]struct{}
+	interactiveToolsList   []string
+	modeHeuristicsList     []string
+	questionHeuristicsList []string
+	errorSignaturesList    []string
+	manifest               Manifest
+	reasoningCatalog       ReasoningCatalog
+	tagReplacer            *strings.Replacer
+	reasoningByteMarkers   [][]byte
 }
 
 var (
@@ -86,6 +91,11 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 		return fmt.Errorf("failed to read agents directory: %w", err)
 	}
 
+	interactiveToolsMap := make(map[string]struct{})
+	modeHeuristicsMap := make(map[string]struct{})
+	questionHeuristicsMap := make(map[string]struct{})
+	errorSignaturesMap := make(map[string]struct{})
+
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -130,7 +140,46 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 				r.allKnownTools[lower] = struct{}{}
 			}
 		}
+		for _, tool := range profile.InteractiveTools {
+			lower := strings.ToLower(strings.TrimSpace(tool))
+			if lower != "" {
+				interactiveToolsMap[lower] = struct{}{}
+				r.allKnownTools[lower] = struct{}{}
+			}
+		}
+		if profile.ModeTool != "" {
+			lower := strings.ToLower(strings.TrimSpace(profile.ModeTool))
+			if lower != "" {
+				interactiveToolsMap[lower] = struct{}{}
+				r.allKnownTools[lower] = struct{}{}
+			}
+		}
+		for _, h := range profile.ModeHeuristics {
+			trimmed := strings.ToLower(strings.TrimSpace(h))
+			if trimmed != "" {
+				modeHeuristicsMap[trimmed] = struct{}{}
+			}
+		}
+		for _, q := range profile.QuestionHeuristics {
+			trimmed := strings.ToLower(strings.TrimSpace(q))
+			if trimmed != "" {
+				questionHeuristicsMap[trimmed] = struct{}{}
+			}
+		}
+		for _, s := range profile.ErrorSignatures {
+			trimmed := strings.TrimSpace(s)
+			if trimmed != "" {
+				errorSignaturesMap[trimmed] = struct{}{}
+			}
+		}
 	}
+
+	r.interactiveToolsLookup = interactiveToolsMap
+	r.interactiveToolsList = mapToSortedSlice(interactiveToolsMap)
+	r.modeHeuristicsList = mapToSortedSlice(modeHeuristicsMap)
+	r.questionHeuristicsList = mapToSortedSlice(questionHeuristicsMap)
+	r.errorSignaturesList = mapToSortedSlice(errorSignaturesMap)
+
 	return nil
 }
 
@@ -177,6 +226,11 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 	r.contextualCommands = newReg.contextualCommands
 	r.redirections = newReg.redirections
 	r.writeTagByteMarkers = newReg.writeTagByteMarkers
+	r.interactiveToolsLookup = newReg.interactiveToolsLookup
+	r.interactiveToolsList = newReg.interactiveToolsList
+	r.modeHeuristicsList = newReg.modeHeuristicsList
+	r.questionHeuristicsList = newReg.questionHeuristicsList
+	r.errorSignaturesList = newReg.errorSignaturesList
 	r.manifest = newReg.manifest
 	r.reasoningCatalog = newReg.reasoningCatalog
 	r.tagReplacer = newReg.tagReplacer
@@ -186,6 +240,9 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 
 // IsWriteTool checks if the tool name represents a known structured file writing or editing tool.
 func (r *Registry) IsWriteTool(toolName string) bool {
+	if r == nil {
+		return false
+	}
 	lower := strings.ToLower(strings.TrimSpace(toolName))
 	if lower == "" {
 		return false
@@ -201,6 +258,26 @@ func (r *Registry) IsWriteTool(toolName string) bool {
 	// Dynamic suffix/prefix heuristics for unregistered custom tools
 	return strings.HasSuffix(lower, "_editor") || strings.HasPrefix(lower, "edit_") ||
 		strings.Contains(lower, "write") || strings.Contains(lower, "patch") || strings.Contains(lower, "diff")
+}
+
+// IsInteractiveTool checks if the tool name represents a known conversational or mode switching tool.
+// Lock-free, zero heap allocation.
+func (r *Registry) IsInteractiveTool(toolName string) bool {
+	if r == nil {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(toolName))
+	if lower == "" {
+		return false
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.interactiveToolsLookup == nil {
+		return false
+	}
+	_, exists := r.interactiveToolsLookup[lower]
+	return exists
 }
 
 // IsKnownTool checks if a tool is recognized in any category across registered agent profiles.
@@ -238,6 +315,30 @@ func (r *Registry) TagReplacer() *strings.Replacer {
 // Lock-free, zero heap allocation.
 func (r *Registry) ReasoningByteMarkers() [][]byte {
 	return r.reasoningByteMarkers
+}
+
+// InteractiveToolsList returns an immutable, pre-sorted slice of known interactive/followup tool names.
+// Lock-free, zero heap allocation.
+func (r *Registry) InteractiveToolsList() []string {
+	return r.interactiveToolsList
+}
+
+// ModeHeuristicsList returns an immutable, pre-sorted slice of mode-switching phrases.
+// Lock-free, zero heap allocation.
+func (r *Registry) ModeHeuristicsList() []string {
+	return r.modeHeuristicsList
+}
+
+// QuestionHeuristicsList returns an immutable, pre-sorted slice of conversational question heuristics.
+// Lock-free, zero heap allocation.
+func (r *Registry) QuestionHeuristicsList() []string {
+	return r.questionHeuristicsList
+}
+
+// ErrorSignaturesList returns an immutable, pre-sorted slice of known agent error signatures.
+// Lock-free, zero heap allocation.
+func (r *Registry) ErrorSignaturesList() []string {
+	return r.errorSignaturesList
 }
 
 // DetectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
@@ -531,5 +632,17 @@ func compileReasoning(cat ReasoningCatalog) (*strings.Replacer, [][]byte) {
 	}
 
 	return replacer, markers
+}
+
+func mapToSortedSlice(m map[string]struct{}) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	s := make([]string, 0, len(m))
+	for k := range m {
+		s = append(s, k)
+	}
+	sort.Strings(s)
+	return s
 }
 

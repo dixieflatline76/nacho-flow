@@ -1250,7 +1250,7 @@ func TestStreamNormalizer_ClineXML_InWriteToolAndNonWriteTags(t *testing.T) {
 	if cb.ToolTokens() == 0 {
 		t.Errorf("expected ToolTokens > 0")
 	}
-	if cb.ProseTokens() == 0 {
+	if cb.ContentTokens() == 0 {
 		t.Errorf("expected ProseTokens > 0")
 	}
 }
@@ -1382,7 +1382,7 @@ func TestProxy_FormatCycleKillReasonAndGetters(t *testing.T) {
 	if r := formatCycleKillReason("thinking_repetition_loop_detected"); r != "repetitive reasoning loop detected" {
 		t.Errorf("unexpected format: %s", r)
 	}
-	if r := formatCycleKillReason("prose_budget_exceeded_with_repetition"); r != "prose token budget exceeded with repetition" {
+	if r := formatCycleKillReason("content_budget_exceeded_with_repetition"); r != "content token budget exceeded with repetition" {
 		t.Errorf("unexpected format: %s", r)
 	}
 	if r := formatCycleKillReason("thinking_budget_exceeded_with_repetition"); r != "thinking token budget exceeded with repetition" {
@@ -1396,6 +1396,37 @@ func TestProxy_FormatCycleKillReasonAndGetters(t *testing.T) {
 	srv.SetLastDiskWriteUnixNano(12345)
 	if srv.GetLastDiskWriteUnixNano() != 12345 {
 		t.Errorf("expected 12345, got %d", srv.GetLastDiskWriteUnixNano())
+	}
+}
+
+func TestStreamNormalizer_GemmaControlTokenStripping(t *testing.T) {
+	rawSSE := `data: {"id":"gen-gemma","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}
+
+data: {"id":"gen-gemma","choices":[{"index":0,"delta":{"content":"Finished file edit.<|\"|><|tool_response>"}}]}
+
+data: {"id":"gen-gemma","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+	var out bytes.Buffer
+	_, err := io.Copy(&out, norm)
+	if err != nil {
+		t.Fatalf("unexpected copy error: %v", err)
+	}
+
+	result := out.String()
+	if strings.Contains(result, `<|tool_response>`) {
+		t.Errorf("expected <|tool_response> to be stripped, got: %s", result)
+	}
+	if strings.Contains(result, `<|"|>`) {
+		t.Errorf(`expected <|"|> to be stripped, got: %s`, result)
+	}
+	if !strings.Contains(result, "Finished file edit.") {
+		t.Errorf("expected prose 'Finished file edit.' to be preserved, got: %s", result)
 	}
 }
 

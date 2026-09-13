@@ -800,3 +800,26 @@ func TestAPI_Directive_Shutdown(t *testing.T) {
 		t.Fatalf("timed out waiting for exitFunc to be called")
 	}
 }
+
+func TestAPI_Directive_MkdirAllFailure(t *testing.T) {
+	srv, _, _ := setupTestServer(t)
+
+	tempDir := t.TempDir()
+	blockerFile := filepath.Join(tempDir, "blocker")
+	if err := os.WriteFile(blockerFile, []byte("block"), 0600); err != nil {
+		t.Fatalf("failed to create blocker file: %v", err)
+	}
+
+	// Make directive path have blockerFile as parent dir
+	srv.SetDirectivePath(filepath.Join(blockerFile, "directive.json"))
+
+	req := httptest.NewRequest(http.MethodPost, contract.PathAPIDirective, bytes.NewReader([]byte(`{"action":"PURGE_ALL_LOGS"}`)))
+	req.Header.Set(contract.HeaderAuthorization, contract.AuthSchemeBearer+"test-secret-token")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500 on MkdirAll failure, got %d", w.Code)
+	}
+}
+

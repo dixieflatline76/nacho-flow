@@ -747,6 +747,44 @@ func TestTransformer_ClineAndZooPayloads(t *testing.T) {
 	})
 }
 
+func TestCollapseDuplicatesInPlace_NoTrailingNewlinePanic(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		threshold int
+		expected  string
+	}{
+		{
+			name:      "Cline 3x False panic regression - no trailing newline",
+			input:     "False\nFalse\nFalse",
+			threshold: 3,
+			expected:  "False\nFalse\nFalse",
+		},
+		{
+			name:      "2x test without trailing newline",
+			input:     "test\ntest",
+			threshold: 3,
+			expected:  "test\ntest",
+		},
+		{
+			name:      "Collapsible repeat without trailing newline",
+			input:     "This is a very long line that exceeds the collapse notice length\nThis is a very long line that exceeds the collapse notice length\nThis is a very long line that exceeds the collapse notice length",
+			threshold: 3,
+			expected:  "This is a very long line that exceeds the collapse notice length\n  [... identical line repeated 2 times ...]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := []byte(tt.input)
+			res := CollapseDuplicatesInPlace(buf, tt.threshold)
+			if string(res) != tt.expected {
+				t.Fatalf("expected:\n%q\ngot:\n%q", tt.expected, string(res))
+			}
+		})
+	}
+}
+
 
 func BenchmarkNTS_InPlaceCompaction(t *testing.B) {
 	cfg := DefaultConfig()

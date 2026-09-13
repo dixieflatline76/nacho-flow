@@ -391,7 +391,7 @@
 		let peakObservedNgram = 1;
 		const routesList = (currentState.routes && currentState.routes.routes) ? currentState.routes.routes : (Array.isArray(currentState.routes) ? currentState.routes : []);
 		routesList.forEach(r => {
-			if (!r.cycle_breaker_triggered && (r.cycle_prose_tokens > 0 || r.cycle_max_ngram_freq > 0)) {
+			if (!r.cycle_breaker_triggered && ((r.cycle_content_tokens || r.cycle_prose_tokens) > 0 || r.cycle_max_ngram_freq > 0)) {
 				verifiedCleanCount++;
 				if (r.cycle_max_ngram_freq && r.cycle_max_ngram_freq > peakObservedNgram) {
 					peakObservedNgram = r.cycle_max_ngram_freq;
@@ -742,10 +742,10 @@
 				const reason = route.cycle_breaker_reason || 'runaway loop';
 				const nFreq = route.cycle_max_ngram_freq ? ` (${route.cycle_max_ngram_freq}x)` : '';
 				cycleBadge = `<span class="badge badge-cycle" title="⚠️ Cycle Killer Intercepted: ${reason}${nFreq}">⚠️ Loop${nFreq}</span>`;
-			} else if ((route.cycle_prose_tokens && route.cycle_prose_tokens > 0) || (route.cycle_max_ngram_freq && route.cycle_max_ngram_freq > 0)) {
-				const proseTk = (route.cycle_prose_tokens || 0).toLocaleString();
+			} else if (((route.cycle_content_tokens || route.cycle_prose_tokens) > 0) || (route.cycle_max_ngram_freq && route.cycle_max_ngram_freq > 0)) {
+				const contentTk = (route.cycle_content_tokens || route.cycle_prose_tokens || 0).toLocaleString();
 				const nFreq = route.cycle_max_ngram_freq || 1;
-				cycleBadge = `<span class="badge badge-cycle-clean" title="🛡️ Cycle Defense Verified: ${proseTk} prose tokens, max N-gram: ${nFreq}x (Clean Pass)">🛡️ Clean ${nFreq}x</span>`;
+				cycleBadge = `<span class="badge badge-cycle-clean" title="🛡️ Cycle Defense Verified: ${contentTk} content tokens, max N-gram: ${nFreq}x (Clean Pass)">🛡️ Clean ${nFreq}x</span>`;
 			} else {
 				cycleBadge = `<span class="badge-cycle-none">--</span>`;
 			}

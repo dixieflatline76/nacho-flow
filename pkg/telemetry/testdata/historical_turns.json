@@ -18,7 +18,7 @@
     "cost_spent_usd": 0.022265999999999998,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -40,7 +40,7 @@
     "cost_spent_usd": 0.04273,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -336,7 +336,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -650,7 +650,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -1310,7 +1310,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -1332,7 +1332,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -2358,7 +2358,7 @@
     "cost_spent_usd": 0.081514,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -2854,7 +2854,7 @@
     "cost_spent_usd": 0.052052,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -3624,7 +3624,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -3646,7 +3646,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -3998,7 +3998,7 @@
     "cost_spent_usd": 0.098812,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -4330,7 +4330,7 @@
     "cost_spent_usd": 0.077276,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -4554,7 +4554,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -4778,7 +4778,7 @@
     "cost_spent_usd": 0.015288,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -4910,7 +4910,7 @@
     "cost_spent_usd": 0.069688,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -5170,7 +5170,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -5830,7 +5830,7 @@
     "cost_spent_usd": 0.05951,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -5998,7 +5998,7 @@
     "cost_spent_usd": 0.013418,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -7006,7 +7006,7 @@
     "cost_spent_usd": 0,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {
@@ -7028,7 +7028,7 @@
     "cost_spent_usd": 0.074622,
     "cycle_breaker_triggered": true,
     "cycle_breaker_reason": "repetition_ngram_loop",
-    "cycle_prose_tokens": 350,
+    "cycle_content_tokens": 350,
     "cycle_max_ngram_freq": 8
   },
   {

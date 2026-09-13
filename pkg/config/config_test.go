@@ -654,8 +654,8 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 			if cfg.CycleKiller.MaxToolTokens != 8192 {
 				t.Errorf("%s: expected MaxToolTokens 8192, got %d", relPath, cfg.CycleKiller.MaxToolTokens)
 			}
-			if len(cfg.AgentShield.ErrorSignatures) == 0 {
-				t.Errorf("%s: expected non-empty error_signatures", relPath)
+			if cfg.AgentShield.Enabled == nil {
+				t.Errorf("%s: expected agent_shield to be configured", relPath)
 			}
 			if len(cfg.FairyDust.Entries) < 2 {
 				t.Fatalf("%s: expected at least 2 fairy_dust entries, got %d", relPath, len(cfg.FairyDust.Entries))
@@ -712,4 +712,60 @@ tiers:
 		t.Errorf("Expected all NTS boolean flags to be true")
 	}
 }
+
+func TestConfig_YDriveValidation(t *testing.T) {
+	yPath := `Y:\projects\nacho-flow\config.yaml`
+	if _, err := os.Stat(yPath); os.IsNotExist(err) {
+		t.Skip("Y: drive config not mounted/available, skipping test")
+	}
+
+	cfg, err := LoadConfig(yPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed for %s: %v", yPath, err)
+	}
+
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("ValidateConfig failed for %s: %v", yPath, err)
+	}
+
+	// Verify structured 3-lane normalization
+	if cfg.CycleKiller.ResolveContentMaxTokens() != 6144 {
+		t.Errorf("expected content max tokens 6144, got %d", cfg.CycleKiller.ResolveContentMaxTokens())
+	}
+	if cfg.CycleKiller.ResolveThinkingMaxTokens() != 4096 {
+		t.Errorf("expected thinking max tokens 4096, got %d", cfg.CycleKiller.ResolveThinkingMaxTokens())
+	}
+	if cfg.CycleKiller.ResolveToolMaxTokens() != 8192 {
+		t.Errorf("expected tool max tokens 8192, got %d", cfg.CycleKiller.ResolveToolMaxTokens())
+	}
+	if cfg.CycleKiller.ResolveToolMaxWriteTokens() != 32768 {
+		t.Errorf("expected tool max write tokens 32768, got %d", cfg.CycleKiller.ResolveToolMaxWriteTokens())
+	}
+
+	// Verify decoupled kickstart
+	if cfg.Kickstart.Enabled == nil || !*cfg.Kickstart.Enabled {
+		t.Errorf("expected kickstart to be enabled")
+	}
+	if cfg.Kickstart.Threshold != 5 {
+		t.Errorf("expected kickstart threshold 5, got %d", cfg.Kickstart.Threshold)
+	}
+
+	// Verify tier preservation
+	if len(cfg.Tiers) == 0 {
+		t.Fatalf("expected non-empty tiers list")
+	}
+	foundLocalTier := false
+	for _, tier := range cfg.Tiers {
+		if tier.Name == "Tier 1: Local GPU Workhorse" {
+			foundLocalTier = true
+			if tier.Model == "" {
+				t.Errorf("expected non-empty Local GPU Workhorse model, got '%s'", tier.Model)
+			}
+		}
+	}
+	if !foundLocalTier {
+		t.Errorf("Tier 1: Local GPU Workhorse was not found")
+	}
+}
+
 

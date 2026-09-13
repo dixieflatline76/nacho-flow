@@ -74,15 +74,25 @@ agent_shield:
 # =============================================================================
 cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
-  max_prose_tokens: 6144            # Max non-tool prose before intervention (<think> is exempt; relaxed for XML)
-  max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
-  max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
-  repetition_window: 6              # Sliding n-gram window size (words) for loop detection
-  repetition_threshold: 8           # Relaxed threshold (8): allows batch shell ops without false positives
-  thinking_repetition_threshold: 6  # Lenient reasoning repetition for deep architecture plans
-  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+  phrase_length: 6                  # Default sliding n-gram window size (words) across lanes
+  budget_max_repeats: 5             # Default repeat threshold once lane token budget is exceeded
   model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
   retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
+  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+
+  thinking_lane:
+    max_tokens: 4096                # Max reasoning tokens before budget repetition check
+    max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
+
+  content_lane:
+    max_tokens: 6144                # Max non-tool content before budget repetition check
+    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
+
+  tool_lane:
+    max_tokens: 8192                # Max streaming tool call arguments before repetition enforcement
+    max_write_tokens: 32768         # Max size for Category A file writes (zero-alloc fast path)
+    phrase_length: 4                # Tighter n-gram window to catch repeating 4-word shell commands
+    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
   kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
   kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
   kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
@@ -151,6 +161,7 @@ nts:
   preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
   compact_stale_file_reads: true    # 📦 Evict superseded historical file reads
+  stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)

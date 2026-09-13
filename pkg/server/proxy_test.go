@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
@@ -1739,6 +1740,168 @@ func TestServer_NonStreamingAgentShieldFallback(t *testing.T) {
 	srvDisabled := NewServer(cfgDisabled, evaluator, router.NewClassifier(), router.NewSanitizer())
 	if srvDisabled.shieldMgr != nil {
 		t.Fatal("expected nil shieldMgr when enabled=false")
+	}
+}
+
+func TestMergeUniqueSlices(t *testing.T) {
+	// 1. Both empty
+	if res := mergeUniqueSlices(nil, nil); len(res) != 0 {
+		t.Errorf("expected empty slice, got %v", res)
+	}
+
+	// 2. Custom empty returns base
+	base := []string{"a", "b"}
+	if res := mergeUniqueSlices(base, nil); len(res) != 2 || res[0] != "a" {
+		t.Errorf("expected base slice, got %v", res)
+	}
+
+	// 3. Base empty returns custom
+	custom := []string{"c", "d"}
+	if res := mergeUniqueSlices(nil, custom); len(res) != 2 || res[0] != "c" {
+		t.Errorf("expected custom slice, got %v", res)
+	}
+
+	// 4. Merge with duplicates, whitespace, and empty strings
+	b := []string{"  alpha  ", "beta", "gamma", ""}
+	c := []string{"beta", "  delta  ", "alpha", "", "   "}
+	res := mergeUniqueSlices(b, c)
+	expected := []string{"alpha", "beta", "gamma", "delta"}
+	if len(res) != len(expected) {
+		t.Fatalf("expected len %d, got %d (%v)", len(expected), len(res), res)
+	}
+	for i, v := range expected {
+		if res[i] != v {
+			t.Errorf("expected index %d to be %q, got %q", i, v, res[i])
+		}
+	}
+}
+
+func TestServer_AgentShield_RegistryIntegration(t *testing.T) {
+	// 1. Test initialization with zero overrides in config: pulls all from agentregistry
+	cfg := &contract.Config{
+		AgentShield: contract.AgentShieldConfig{
+			// Leave question_heuristics, mode_switch_heuristics, and error_signatures empty
+		},
+		DefaultTier: contract.Tier{
+			Model: "mock-model",
+		},
+	}
+	clf := router.NewClassifier().(*router.RequestClassifier)
+	srv := NewServer(cfg, nil, clf, nil)
+
+	if srv.shieldMgr == nil {
+		t.Fatal("expected srv.shieldMgr to be initialized from agentregistry defaults")
+	}
+
+	// Classifier error signatures should match agentregistry.DefaultRegistry().ErrorSignaturesList()
+	sigs := clf.GetErrorSignatures()
+	expectedSigs := agentregistry.DefaultRegistry().ErrorSignaturesList()
+	if len(sigs) != len(expectedSigs) {
+		t.Errorf("expected %d error signatures from registry, got %d", len(expectedSigs), len(sigs))
+	}
+
+	// 2. Test initialization with custom overrides: merged without duplicates
+	cfgCustom := &contract.Config{
+		AgentShield: contract.AgentShieldConfig{
+			QuestionHeuristics:   []string{"custom question?", "should i"},
+			ModeSwitchHeuristics: []string{"custom mode switch"},
+			ErrorSignatures:      []string{"CUSTOM_ERROR_CODE", "Missing value for required parameter"},
+		},
+		Kickstart: contract.KickstartConfig{
+			CustomWriteTools: []string{"custom_patcher", "editor"},
+		},
+		DefaultTier: contract.Tier{
+			Model: "mock-model",
+		},
+	}
+	clfCustom := router.NewClassifier().(*router.RequestClassifier)
+	srvCustom := NewServer(cfgCustom, nil, clfCustom, nil)
+
+	if srvCustom.shieldMgr == nil {
+		t.Fatal("expected non-nil shieldMgr")
+	}
+	customSigs := clfCustom.GetErrorSignatures()
+	foundCustom := false
+	for _, s := range customSigs {
+		if s == "CUSTOM_ERROR_CODE" {
+			foundCustom = true
+			break
+		}
+	}
+	if !foundCustom {
+		t.Errorf("expected CUSTOM_ERROR_CODE in merged error signatures")
+	}
+
+	// 3. Verify hot-reload updates shieldMgr and classifier
+	disabled := false
+	newCfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {Type: "local", BaseURL: "http://localhost:8000"},
+		},
+		DefaultTier: contract.Tier{
+			Model:    "mock-model",
+			Provider: "mock",
+		},
+		AgentShield: contract.AgentShieldConfig{
+			Enabled: &disabled,
+		},
+	}
+	if _, err := srvCustom.ApplyConfig(newCfg, false); err != nil {
+		t.Fatalf("ApplyConfig failed: %v", err)
+	}
+	if srvCustom.shieldMgr != nil {
+		t.Errorf("expected shieldMgr to be nil after disabling via ApplyConfig")
+	}
+}
+
+func TestServer_NTSConfigInitialization(t *testing.T) {
+	bTrue := true
+	cfg := &contract.Config{
+		NTS: contract.NTSConfig{
+			Enabled:               &bTrue,
+			StripANSI:             &bTrue,
+			ResolveCR:             &bTrue,
+			DeduplicateLines:      &bTrue,
+			DedupThreshold:        3,
+			StripBoilerplate:      &bTrue,
+			NormalizeWhitespace:   &bTrue,
+			PreserveFileReads:     &bTrue,
+			PreserveFileWrites:    &bTrue,
+			PreserveCacheControl:  &bTrue,
+			CompactStaleFileReads: &bTrue,
+			StaleReadDepth:        4,
+		},
+		DefaultTier: contract.Tier{
+			Model: "mock-model",
+		},
+	}
+	srv := NewServer(cfg, nil, nil, nil)
+	if srv.ntsTransformer == nil {
+		t.Fatal("expected non-nil ntsTransformer")
+	}
+}
+
+func TestServer_ConstructorNilAndFallbackBranches(t *testing.T) {
+	// 1. All nil arguments to NewServerWithTelemetryAndRegistry
+	srv := NewServerWithTelemetryAndRegistry(nil, nil, nil, nil, nil, nil, nil, nil)
+	if srv == nil {
+		t.Fatal("expected non-nil server")
+	}
+
+	// 2. Test each fallback alias branch for write tools
+	aliasConfigs := []*contract.Config{
+		{Kickstart: contract.KickstartConfig{WriteTools: []string{"tool_ks_w"}}},
+		{CycleKiller: contract.CycleBreakerConfig{WriteTools: []string{"tool_ck_w"}}},
+		{CycleKiller: contract.CycleBreakerConfig{KickstartWriteTools: []string{"tool_ck_ksw"}}},
+		{CycleBreaker: contract.CycleBreakerConfig{WriteTools: []string{"tool_cb_w"}}},
+		{CycleBreaker: contract.CycleBreakerConfig{KickstartWriteTools: []string{"tool_cb_ksw"}}},
+	}
+	for i, cfg := range aliasConfigs {
+		clf := router.NewClassifier().(*router.RequestClassifier)
+		s := NewServerWithTelemetryAndRegistry(cfg, nil, clf, nil, nil, nil, nil, nil)
+		if s == nil {
+			t.Fatalf("case %d: expected non-nil server", i)
+		}
 	}
 }
 

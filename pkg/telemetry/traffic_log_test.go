@@ -203,7 +203,7 @@ func TestTrafficLogger_CycleBreakerMetrics_Roundtrip(t *testing.T) {
 		RequestID:                 "req-cycle-telemetry",
 		Tokens:                    4096,
 		CycleBreakerTriggered:     false,
-		CycleProseTokens:          2847,
+		CycleContentTokens:        2847,
 		CycleMaxNgramFreq:         1,
 		CycleThinkingTokens:       1203,
 		CycleMaxThinkingNgramFreq: 1,
@@ -231,8 +231,8 @@ func TestTrafficLogger_CycleBreakerMetrics_Roundtrip(t *testing.T) {
 	}
 
 	got := records[0]
-	if got.CycleProseTokens != 2847 {
-		t.Errorf("Expected CycleProseTokens 2847, got %d", got.CycleProseTokens)
+	if got.CycleContentTokens != 2847 {
+		t.Errorf("Expected CycleContentTokens 2847, got %d", got.CycleContentTokens)
 	}
 	if got.CycleMaxNgramFreq != 1 {
 		t.Errorf("Expected CycleMaxNgramFreq 1, got %d", got.CycleMaxNgramFreq)

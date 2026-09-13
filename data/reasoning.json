@@ -29,7 +29,12 @@
     "<channel>",
     "</channel>",
     "<start_of_turn>",
-    "<end_of_turn>"
+    "<end_of_turn>",
+    "<|tool_call>",
+    "<tool_call|>",
+    "<|tool_response>",
+    "<tool_response|>",
+    "<|\"|>"
   ],
   "reasoning_fields": [
     "reasoning_content",
@@ -41,6 +46,8 @@
     "end_of_turn",
     "<channel",
     "channel|",
-    "|channel"
+    "|channel",
+    "tool_call",
+    "tool_response"
   ]
 }

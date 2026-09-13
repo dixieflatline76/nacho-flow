@@ -26,7 +26,7 @@ type TurnRecord struct {
 	DirectiveUsed             string    `json:"directive_used,omitempty"`
 	CycleBreakerTriggered     bool      `json:"cycle_breaker_triggered,omitempty"`
 	CycleBreakerReason        string    `json:"cycle_breaker_reason,omitempty"`
-	CycleProseTokens          int       `json:"cycle_prose_tokens,omitempty"`
+	CycleContentTokens        int       `json:"cycle_content_tokens,omitempty"`
 	CycleMaxNgramFreq         int       `json:"cycle_max_ngram_freq,omitempty"`
 	CycleThinkingTokens       int       `json:"cycle_thinking_tokens,omitempty"`
 	CycleMaxThinkingNgramFreq int       `json:"cycle_max_thinking_ngram_freq,omitempty"`

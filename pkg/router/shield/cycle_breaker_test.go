@@ -40,7 +40,7 @@ func TestCycleBreaker_NgramRepetitionDetection(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxProseTokens:      800,
+		MaxContentTokens:      800,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 3,
 	})
@@ -67,11 +67,11 @@ func TestCycleBreaker_NgramRepetitionDetection(t *testing.T) {
 	}
 }
 
-func TestCycleBreaker_ProseTokenCeiling(t *testing.T) {
+func TestCycleBreaker_ContentTokenCeiling(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxProseTokens:      50,
+		MaxContentTokens:      50,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 5, // High threshold so ngram loop doesn't fire first
 	})
@@ -85,19 +85,19 @@ func TestCycleBreaker_ProseTokenCeiling(t *testing.T) {
 		}
 	}
 
-	if cb.ProseTokens() <= 50 {
-		t.Fatalf("expected ProseTokens() > 50 (budget ceiling), got %d", cb.ProseTokens())
+	if cb.ContentTokens() <= 50 {
+		t.Fatalf("expected ContentTokens() > 50 (budget ceiling), got %d", cb.ContentTokens())
 	}
 	if cb.MaxNgramFreq() > 1 {
 		t.Fatalf("expected MaxNgramFreq() <= 1 for all unique words, got %d", cb.MaxNgramFreq())
 	}
 }
 
-func TestCycleBreaker_CooperativeProseBudget(t *testing.T) {
+func TestCycleBreaker_CooperativeContentBudget(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxProseTokens:      200,
+		MaxContentTokens:      200,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 100, // Set very high so ngram loop never fires
 	})
@@ -117,8 +117,8 @@ func TestCycleBreaker_CooperativeProseBudget(t *testing.T) {
 	if !triggered {
 		t.Fatalf("expected cooperative budget to trigger on semi-repetitive content exceeding budget")
 	}
-	if reason != "prose_budget_exceeded_with_repetition" {
-		t.Fatalf("expected prose_budget_exceeded_with_repetition, got %s", reason)
+	if reason != "content_budget_exceeded_with_repetition" {
+		t.Fatalf("expected content_budget_exceeded_with_repetition, got %s", reason)
 	}
 }
 
@@ -145,8 +145,8 @@ func TestCycleBreaker_ThinkingTokenBudget(t *testing.T) {
 	if cb.MaxThinkingNgramFreq() > 1 {
 		t.Fatalf("expected MaxThinkingNgramFreq() <= 1 for all unique thinking words, got %d", cb.MaxThinkingNgramFreq())
 	}
-	if cb.ProseTokens() != 0 {
-		t.Fatalf("expected ProseTokens() == 0 during thinking, got %d", cb.ProseTokens())
+	if cb.ContentTokens() != 0 {
+		t.Fatalf("expected ContentTokens() == 0 during thinking, got %d", cb.ContentTokens())
 	}
 }
 
@@ -210,7 +210,7 @@ func TestCycleBreaker_DualLaneIsolation(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:                     &enabled,
-		MaxProseTokens:              1000,
+		MaxContentTokens:              1000,
 		MaxThinkingTokens:           1000,
 		RepetitionWindow:            6,
 		RepetitionThreshold:         3,
@@ -236,9 +236,9 @@ func TestCycleBreaker_DualLaneIsolation(t *testing.T) {
 	}
 
 	// Neither lane triggered because their N-gram tables are completely isolated!
-	if cb.ThinkingTokens() == 0 || cb.ProseTokens() == 0 {
+	if cb.ThinkingTokens() == 0 || cb.ContentTokens() == 0 {
 		t.Fatalf("expected non-zero token counts in both lanes, got thinking=%d, prose=%d",
-			cb.ThinkingTokens(), cb.ProseTokens())
+			cb.ThinkingTokens(), cb.ContentTokens())
 	}
 }
 
@@ -246,7 +246,7 @@ func TestCycleBreaker_ResetClearsBothLanes(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:                     &enabled,
-		MaxProseTokens:              50,
+		MaxContentTokens:              50,
 		MaxThinkingTokens:           50,
 		RepetitionWindow:            4,
 		RepetitionThreshold:         3,
@@ -257,7 +257,7 @@ func TestCycleBreaker_ResetClearsBothLanes(t *testing.T) {
 	cb.ProcessDelta("repeat this word phrase repeat this word phrase ", false)
 	cb.ProcessDelta("thinking about this word phrase thinking about this word phrase ", true)
 
-	if cb.ProseTokens() == 0 || cb.ThinkingTokens() == 0 {
+	if cb.ContentTokens() == 0 || cb.ThinkingTokens() == 0 {
 		t.Fatalf("expected non-zero counts before reset")
 	}
 	if cb.MaxNgramFreq() < 2 {
@@ -269,8 +269,8 @@ func TestCycleBreaker_ResetClearsBothLanes(t *testing.T) {
 
 	cb.Reset()
 
-	if cb.ProseTokens() != 0 {
-		t.Fatalf("expected 0 prose tokens after reset, got %d", cb.ProseTokens())
+	if cb.ContentTokens() != 0 {
+		t.Fatalf("expected 0 prose tokens after reset, got %d", cb.ContentTokens())
 	}
 	if cb.ThinkingTokens() != 0 {
 		t.Fatalf("expected 0 thinking tokens after reset, got %d", cb.ThinkingTokens())
@@ -296,7 +296,7 @@ func TestCycleBreaker_LocalityGuard_DistantRepetitionsDoNotTrigger(t *testing.T)
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxProseTokens:      4000,
+		MaxContentTokens:      4000,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 3,
 	})
@@ -333,11 +333,11 @@ func TestCycleBreaker_LocalityGuard_DistantRepetitionsDoNotTrigger(t *testing.T)
 	}
 }
 
-func TestCycleBreaker_NQueensAlgorithmicProse(t *testing.T) {
+func TestCycleBreaker_NQueensAlgorithmicContent(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxProseTokens:      4000,
+		MaxContentTokens:      4000,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 3,
 	})
@@ -398,7 +398,7 @@ func TestCycleBreaker_ToolLane_LargeCodePayload_NoFalsePositive(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxProseTokens:      100, // tight prose budget
+		MaxContentTokens:      100, // tight prose budget
 		MaxThinkingTokens:   100, // tight thinking budget
 		MaxToolTokens:       8192,
 		RepetitionWindow:    6,
@@ -499,8 +499,8 @@ func (s *Server) handleGetConfiguration(w http.ResponseWriter, r *http.Request) 
 	if cb.ToolTokens() == 0 {
 		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
 	}
-	if cb.ProseTokens() != 0 {
-		t.Errorf("expected ProseTokens == 0, got %d", cb.ProseTokens())
+	if cb.ContentTokens() != 0 {
+		t.Errorf("expected ContentTokens == 0, got %d", cb.ContentTokens())
 	}
 	if cb.ThinkingTokens() != 0 {
 		t.Errorf("expected ThinkingTokens == 0, got %d", cb.ThinkingTokens())
@@ -510,10 +510,11 @@ func (s *Server) handleGetConfiguration(w http.ResponseWriter, r *http.Request) 
 func TestCycleBreaker_ToolLane_BudgetExceededWithRepetition(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
-		Enabled:             &enabled,
-		MaxToolTokens:       50,
-		RepetitionWindow:    5,
-		RepetitionThreshold: 5, // high threshold, won't trip loop
+		Enabled:                   &enabled,
+		MaxToolTokens:             50,
+		RepetitionWindow:          5,
+		RepetitionThreshold:       10, // high threshold, won't trip loop
+		BudgetRepetitionThreshold: 2,  // tests explicit budget repetition threshold
 	})
 
 	// Send repeating phrase twice to get max freq >= 2
@@ -766,7 +767,7 @@ func TestCycleBreaker_PoolAcquireRelease_CleanState(t *testing.T) {
 	enabled := true
 	cfg1 := &contract.CycleBreakerConfig{
 		Enabled:        &enabled,
-		MaxProseTokens: 1000,
+		MaxContentTokens: 1000,
 		MaxWriteTokens: 20000,
 	}
 
@@ -775,7 +776,7 @@ func TestCycleBreaker_PoolAcquireRelease_CleanState(t *testing.T) {
 	cb1.ProcessDelta("thinking step 1 2 3 4 5", true)
 	cb1.ProcessToolDelta("cmd arg1 arg2", ToolCategoryCommand)
 
-	if cb1.ProseTokens() == 0 || cb1.ThinkingTokens() == 0 || cb1.ToolTokens() == 0 {
+	if cb1.ContentTokens() == 0 || cb1.ThinkingTokens() == 0 || cb1.ToolTokens() == 0 {
 		t.Fatalf("expected non-zero counters before release")
 	}
 
@@ -785,7 +786,7 @@ func TestCycleBreaker_PoolAcquireRelease_CleanState(t *testing.T) {
 	disabled := false
 	cfg2 := &contract.CycleBreakerConfig{
 		Enabled:        &disabled,
-		MaxProseTokens: 500,
+		MaxContentTokens: 500,
 		MaxWriteTokens: 16000,
 	}
 	cb2 := GetCycleBreaker(cfg2)
@@ -797,8 +798,8 @@ func TestCycleBreaker_PoolAcquireRelease_CleanState(t *testing.T) {
 	if cb2.MaxWriteTokens() != 16000 {
 		t.Errorf("expected MaxWriteTokens == 16000, got %d", cb2.MaxWriteTokens())
 	}
-	if cb2.ProseTokens() != 0 {
-		t.Errorf("expected ProseTokens == 0 after pool reset, got %d", cb2.ProseTokens())
+	if cb2.ContentTokens() != 0 {
+		t.Errorf("expected ContentTokens == 0 after pool reset, got %d", cb2.ContentTokens())
 	}
 	if cb2.ThinkingTokens() != 0 {
 		t.Errorf("expected ThinkingTokens == 0 after pool reset, got %d", cb2.ThinkingTokens())
@@ -839,7 +840,7 @@ func BenchmarkCycleBreaker_PoolAcquireRelease(b *testing.B) {
 	enabled := true
 	cfg := &contract.CycleBreakerConfig{
 		Enabled:        &enabled,
-		MaxProseTokens: 4096,
+		MaxContentTokens: 4096,
 		MaxWriteTokens: 32768,
 	}
 
@@ -847,5 +848,101 @@ func BenchmarkCycleBreaker_PoolAcquireRelease(b *testing.B) {
 	for b.Loop() {
 		cb := GetCycleBreaker(cfg)
 		PutCycleBreaker(cb)
+	}
+}
+
+func TestCycleBreaker_LaneConfig_StructuredResolution(t *testing.T) {
+	enabled := true
+	cfg := &contract.CycleBreakerConfig{
+		Enabled:          &enabled,
+		PhraseLength:     6,
+		BudgetMaxRepeats: 5,
+		ThinkingLane: contract.LaneConfig{
+			MaxTokens:  8192,
+			MaxRepeats: 6,
+		},
+		ContentLane: contract.LaneConfig{
+			MaxTokens:  6144,
+			MaxRepeats: 8,
+		},
+		ToolLane: contract.ToolLaneConfig{
+			LaneConfig: contract.LaneConfig{
+				MaxTokens:    8192,
+				PhraseLength: 4, // per-lane override!
+				MaxRepeats:   8,
+			},
+			MaxWriteTokens: 32768,
+		},
+	}
+
+	cb := NewCycleBreaker(cfg)
+
+	if cb.cfg.ThinkingPhraseLength != 6 {
+		t.Errorf("expected ThinkingPhraseLength 6, got %d", cb.cfg.ThinkingPhraseLength)
+	}
+	if cb.cfg.ContentPhraseLength != 6 {
+		t.Errorf("expected ContentPhraseLength 6, got %d", cb.cfg.ContentPhraseLength)
+	}
+	if cb.cfg.ToolPhraseLength != 4 {
+		t.Errorf("expected ToolPhraseLength 4, got %d", cb.cfg.ToolPhraseLength)
+	}
+	if cb.cfg.ThinkingBudgetMaxRepeats != 5 {
+		t.Errorf("expected ThinkingBudgetMaxRepeats 5, got %d", cb.cfg.ThinkingBudgetMaxRepeats)
+	}
+	if cb.cfg.ContentBudgetMaxRepeats != 5 {
+		t.Errorf("expected ContentBudgetMaxRepeats 5, got %d", cb.cfg.ContentBudgetMaxRepeats)
+	}
+	if cb.cfg.ToolBudgetMaxRepeats != 5 {
+		t.Errorf("expected ToolBudgetMaxRepeats 5, got %d", cb.cfg.ToolBudgetMaxRepeats)
+	}
+	if cb.cfg.MaxThinkingTokens != 8192 {
+		t.Errorf("expected MaxThinkingTokens 8192, got %d", cb.cfg.MaxThinkingTokens)
+	}
+	if cb.cfg.MaxContentTokens != 6144 {
+		t.Errorf("expected MaxContentTokens 6144, got %d", cb.cfg.MaxContentTokens)
+	}
+	if cb.cfg.MaxToolTokens != 8192 {
+		t.Errorf("expected MaxToolTokens 8192, got %d", cb.cfg.MaxToolTokens)
+	}
+	if cb.cfg.MaxWriteTokens != 32768 {
+		t.Errorf("expected MaxWriteTokens 32768, got %d", cb.cfg.MaxWriteTokens)
+	}
+}
+
+func TestCycleBreaker_CooperativeBudget_DefaultThreshold5(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:          &enabled,
+		PhraseLength:     6,
+		BudgetMaxRepeats: 5,
+		ThinkingLane: contract.LaneConfig{
+			MaxTokens:  50,
+			MaxRepeats: 10, // high so fast-kill doesn't trigger
+		},
+	})
+
+	phrase := "analyze the recursive branch search order "
+
+	// Emit phrase 4 times (under threshold 5)
+	for i := 0; i < 4; i++ {
+		cb.ProcessDelta(fmt.Sprintf("uniqueStepBefore%d ", i), true)
+		cb.ProcessDelta(phrase, true)
+	}
+
+	// Exceed token budget with unique words
+	for i := 0; i < 60; i++ {
+		triggered, reason := cb.ProcessDelta(fmt.Sprintf("uniqueStepAfter%d ", i), true)
+		if triggered {
+			t.Fatalf("should not trigger with only 4 repeats, got reason %s", reason)
+		}
+	}
+
+	// 5th repeat crosses the budget_max_repeats threshold while over budget -> triggers!
+	triggered, reason := cb.ProcessDelta(phrase, true)
+	if !triggered {
+		t.Fatalf("expected trigger on 5th repeat after exceeding budget")
+	}
+	if reason != "thinking_budget_exceeded_with_repetition" {
+		t.Fatalf("expected thinking_budget_exceeded_with_repetition, got %s", reason)
 	}
 }

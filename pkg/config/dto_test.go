@@ -70,7 +70,7 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 		},
 		CycleKiller: contract.CycleBreakerConfig{
 			Enabled:              &enableDirectives,
-			MaxProseTokens:       4096,
+			MaxContentTokens:     4096,
 			MaxToolTokens:        8192,
 			ModelCooldownSeconds: 120,
 			RetryFloor:           3,

@@ -318,3 +318,56 @@ func BenchmarkRegistry_WriteToolsList(b *testing.B) {
 		_ = reg.WriteToolsList()
 	}
 }
+
+func TestRegistry_InteractiveToolsAndShieldHeuristics(t *testing.T) {
+	reg := DefaultRegistry()
+
+	// 1. Verify IsInteractiveTool
+	interactive := []string{
+		"ask_followup_question", "ask_question", "switch_mode", "user_prompt",
+		"Ask_Followup_Question", " ASK_QUESTION ",
+	}
+	for _, tool := range interactive {
+		if !reg.IsInteractiveTool(tool) {
+			t.Errorf("expected %q to be recognized as interactive tool", tool)
+		}
+	}
+
+	nonInteractive := []string{"read_file", "write_to_file", "bash", "unknown_tool", "", "   "}
+	for _, tool := range nonInteractive {
+		if reg.IsInteractiveTool(tool) {
+			t.Errorf("did not expect %q to be recognized as interactive tool", tool)
+		}
+	}
+
+	// 2. Verify List getters return non-empty slices
+	if list := reg.InteractiveToolsList(); len(list) == 0 {
+		t.Error("expected non-empty InteractiveToolsList")
+	}
+	if list := reg.ModeHeuristicsList(); len(list) == 0 {
+		t.Error("expected non-empty ModeHeuristicsList")
+	}
+	if list := reg.QuestionHeuristicsList(); len(list) == 0 {
+		t.Error("expected non-empty QuestionHeuristicsList")
+	}
+	if list := reg.ErrorSignaturesList(); len(list) == 0 {
+		t.Error("expected non-empty ErrorSignaturesList")
+	}
+
+	// 3. Nil receiver safety
+	var nilReg *Registry
+	if nilReg.IsInteractiveTool("ask_question") {
+		t.Error("expected nil registry to return false")
+	}
+}
+
+func BenchmarkRegistry_IsInteractiveTool(b *testing.B) {
+	reg := DefaultRegistry()
+	tool := "ask_followup_question"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = reg.IsInteractiveTool(tool)
+	}
+}
+

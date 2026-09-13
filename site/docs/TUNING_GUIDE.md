@@ -74,7 +74,7 @@ flowchart TD
   - `react` (`bool`): Normalizes ReAct `Action: / Action Input:` patterns into OpenAI tool calls.
 - `cycle_breaker` (`object`): In-Flight Stream Guard and Monologue Breaker settings:
   - `enabled` (`bool`): Toggles real-time repetition and prose monologue detection.
-  - `max_prose_tokens` (`int`): Soft ceiling for pure prose tokens before triggering (default: `800`).
+  - `max_content_tokens` (`int`): Soft ceiling for conversational/text content tokens before triggering (default: `4096`).
   - `repetition_window` (`int`): Word window for N-gram sliding hash detector (default: `6`).
   - `repetition_threshold` (`int`): Repetition match threshold for instant stream abort (default: `3`).
   - `max_retries` (`int`): Number of Stage 1 local `$0.00` self-correction retries before cloud failover (default: `1`).
@@ -264,14 +264,20 @@ tiers:
     when: "Tokens < 16000 && Retries == 0"
     cycle_killer:
       enabled: true
-      max_prose_tokens: 4096    # Max non-tool prose tokens (reasoning <think> is 100% exempt)
-      max_thinking_tokens: 1500 # Max thinking token budget before repetition enforcement
-      repetition_window: 6      # Sliding N-gram window (6 words)
-      repetition_threshold: 3   # Murders stream if same 6-word phrase repeats 3x (<3s)
+      phrase_length: 6          # Default sliding N-gram window (words)
+      budget_max_repeats: 5     # Cooperative budget repeat limit
+      thinking_lane:
+        max_tokens: 4096        # Max reasoning token budget
+        max_repeats: 6          # Fast-kill reasoning repetition loop
+      content_lane:
+        max_tokens: 6144        # Max non-tool content tokens
+        max_repeats: 8          # Fast-kill content repetition loop
+      tool_lane:
+        max_tokens: 8192        # Max command/tool invocation arguments
+        max_write_tokens: 32768 # Category A file writes ceiling (exempt from N-gram check)
+        phrase_length: 4        # Tighter 4-word window for shell command loops
+        max_repeats: 8          # Fast-kill tool repetition loop
       max_retries: 1            # Stage 1: retries locally with [SYSTEM OVERRIDE] @ $0.00
-      kickstart_threshold: 5    # ⚡ Kickstart: fires after 5 consecutive turns without tool progress (0 = disabled)
-      # kickstart_write_only: true # Only count file writes / terminal commands as progress (ignores read-only tools)
-      # kickstart_write_tools:     # Optional custom write tools list (defaults cover major agents)
 ```
 *(Also supports `cycle_breaker:` as a backwards-compatible alias, and works across both local and cloud tiers).*
 
@@ -483,7 +489,7 @@ Different autonomous coding agents interact with LLMs using fundamentally differ
 | **Context Accumulation** | Compact sliding transcript + pruned tools | Full multi-turn conversation transcripts re-sent every turn |
 | **Average Turn 50+ Context** | ~35k–45k tokens | ~80k–110k tokens |
 | **Local Model Compatibility** | Gemma 4 12B, Qwen 2.5/3 (native JSON function calling) | Qwen 3 14B, Devstral (XML agent-trained models) |
-| **Cycle Killer Prose Threshold** | `max_prose_tokens: 4096` | `max_prose_tokens: 6144` (relaxed for prose-embedded XML) |
+| **Cycle Killer Content Threshold** | `max_content_tokens: 4096` | `max_content_tokens: 6144` (relaxed for XML preambles) |
 | **Kickstart Recommendation** | **Enabled** (`kickstart_threshold: 5`) | **Disabled or High** (`kickstart_threshold: 0` / off) |
 
 ### 8.2 Zoo Code Tuning Profile (`config.zoo.yaml`)
@@ -491,7 +497,7 @@ Zoo Code uses native OpenAI tool calling. Local models like Gemma 4 produce JSON
 ```yaml
 cycle_killer:
   enabled: true
-  max_prose_tokens: 4096
+  max_content_tokens: 4096
   max_thinking_tokens: 1500
   max_tool_tokens: 8192        # In-flight tool argument repetition breaker (RFC-002)
   repetition_threshold: 3
@@ -504,7 +510,7 @@ Cline models output XML tags within prose explanations. To avoid false-positive 
 ```yaml
 cycle_killer:
   enabled: true
-  max_prose_tokens: 6144       # Relaxed for prose XML preambles
+  max_content_tokens: 6144       # Relaxed for XML preambles
   max_thinking_tokens: 2000    # Extra planning runway
   max_tool_tokens: 8192        # In-flight tool argument repetition breaker (RFC-002)
   repetition_threshold: 4      # XML formats are naturally more repetitive

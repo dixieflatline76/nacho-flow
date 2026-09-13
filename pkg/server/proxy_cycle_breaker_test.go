@@ -59,7 +59,7 @@ func TestProxy_CycleBreaker_Stage1_LocalRetry(t *testing.T) {
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
 			Enabled:             &enabled,
-			MaxProseTokens:      800,
+			MaxContentTokens:      800,
 			RepetitionWindow:    5,
 			RepetitionThreshold: 3,
 			MaxRetries:          1,
@@ -151,7 +151,7 @@ func TestProxy_CycleBreaker_Stage2_CloudFailover(t *testing.T) {
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
 			Enabled:             &enabled,
-			MaxProseTokens:      800,
+			MaxContentTokens:      800,
 			RepetitionWindow:    5,
 			RepetitionThreshold: 3,
 			MaxRetries:          1,
@@ -258,7 +258,7 @@ func TestProxy_CycleBreaker_NonStreaming_LocalRetry(t *testing.T) {
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
 			Enabled:             &enabled,
-			MaxProseTokens:      800,
+			MaxContentTokens:      800,
 			RepetitionWindow:    5,
 			RepetitionThreshold: 3,
 			MaxRetries:          1,
@@ -405,7 +405,7 @@ func TestProxy_CycleBreaker_Phase2_MidStreamSevering(t *testing.T) {
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
 			Enabled:             &enabled,
-			MaxProseTokens:      800,
+			MaxContentTokens:      800,
 			RepetitionWindow:    5,
 			RepetitionThreshold: 3,
 			MaxRetries:          1,
@@ -1255,8 +1255,8 @@ func TestProxy_ToolTokens_Telemetry_EndToEnd(t *testing.T) {
 		if obs.CycleMaxToolNgramFreq != 0 {
 			t.Errorf("Expected CycleMaxToolNgramFreq == 0 for write_to_file, got: %d", obs.CycleMaxToolNgramFreq)
 		}
-		if obs.CycleProseTokens != 0 {
-			t.Errorf("Expected CycleProseTokens == 0 for pure tool stream, got: %d", obs.CycleProseTokens)
+		if obs.CycleContentTokens != 0 {
+			t.Errorf("Expected CycleContentTokens == 0 for pure tool stream, got: %d", obs.CycleContentTokens)
 		}
 		if obs.HasShellWrite {
 			t.Errorf("Expected HasShellWrite == false for write_to_file, got: true")

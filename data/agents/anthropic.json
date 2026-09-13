@@ -4,5 +4,10 @@
   "version": "1.0.0",
   "write_tools": ["str_replace_editor", "text_editor"],
   "read_tools": ["view"],
-  "command_tools": ["bash"]
+  "command_tools": ["bash"],
+  "error_signatures": [
+    "Parameter 'old_str' is required",
+    "Parameter 'new_str' is required",
+    "No replacement was performed"
+  ]
 }
