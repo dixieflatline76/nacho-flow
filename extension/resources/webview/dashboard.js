@@ -434,28 +434,30 @@
 					</div>
 				</div>
 
-				<div class="supervisor-bracket bracket-kickstart">
-					<div class="bracket-header">
-						<span class="bracket-title">⚡ Kickstart: Stall Resuscitation Engine</span>
-					</div>
-					<div class="bracket-cards">
-						<div class="ck-item kickstart-chip">
-							<div class="ck-value">${kickstarts} <span class="ck-unit">Sessions</span></div>
-							<div class="ck-label">⚡ Kickstart Resuscitations</div>
-							<div class="ck-sub">Stalled sessions rescued out of passive read/plan procrastination</div>
+				<div class="supervisor-row">
+					<div class="supervisor-bracket bracket-kickstart">
+						<div class="bracket-header">
+							<span class="bracket-title">⚡ Kickstart: Stall Resuscitation Engine</span>
+						</div>
+						<div class="bracket-cards">
+							<div class="ck-item kickstart-chip">
+								<div class="ck-value">${kickstarts} <span class="ck-unit">Sessions</span></div>
+								<div class="ck-label">⚡ Kickstart Resuscitations</div>
+								<div class="ck-sub">Stalled sessions rescued out of passive read/plan procrastination</div>
+							</div>
 						</div>
 					</div>
-				</div>
 
-				<div class="supervisor-bracket bracket-fairy-dust">
-					<div class="bracket-header">
-						<span class="bracket-title">🧚 Fairy Dust: Programmable Quality Checkpoints</span>
-					</div>
-					<div class="bracket-cards">
-						<div class="ck-item fairy-chip">
-							<div class="ck-value">${fairyTriggers} <span class="ck-unit">Checkpoints</span></div>
-							<div class="ck-label">🧚 Fairy Dust Checkpoints</div>
-							<div class="ck-sub">Cadenced milestone checkpoints on productive file writes</div>
+					<div class="supervisor-bracket bracket-fairy-dust">
+						<div class="bracket-header">
+							<span class="bracket-title">🧚 Fairy Dust: Programmable Quality Checkpoints</span>
+						</div>
+						<div class="bracket-cards">
+							<div class="ck-item fairy-chip">
+								<div class="ck-value">${fairyTriggers} <span class="ck-unit">Checkpoints</span></div>
+								<div class="ck-label">🧚 Fairy Dust Checkpoints</div>
+								<div class="ck-sub">Cadenced milestone checkpoints on productive file writes</div>
+							</div>
 						</div>
 					</div>
 				</div>
