@@ -106,6 +106,7 @@ export interface DashboardEngineState {
 	activeProfile: 'profile1' | 'profile2' | 'profile3';
 	profileLabel: string;
 	isRemote: boolean;
+	version?: string;
 	offlineReason?: string;
 }
 

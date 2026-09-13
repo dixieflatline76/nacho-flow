@@ -27,6 +27,7 @@ export class ExtensionController {
 	private activeTimeWindow: string = 'all_time';
 	private routesRefreshInterval: RefreshIntervalSeconds = 60;
 	private activeProfile: 'profile1' | 'profile2' | 'profile3' = 'profile1';
+	private lastKnownServerVersion: string = '';
 
 	public get activePreset(): string {
 		return this.activeProfile;
@@ -287,6 +288,9 @@ export class ExtensionController {
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
 						}
+						if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+							(this.dashboardPanel as any).updateEngineStatus({ starting: true });
+						}
 						this.showTransientToast('▶️ Nacho Flow: Starting Model Dispatcher...');
 						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
 						const configPath = profileUri.fsPath;
@@ -310,6 +314,9 @@ export class ExtensionController {
 						}
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ starting: true });
+						}
+						if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+							(this.dashboardPanel as any).updateEngineStatus({ starting: true });
 						}
 						this.showTransientToast('🔄 Nacho Flow: Restarting Model Dispatcher...');
 						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
@@ -338,6 +345,9 @@ export class ExtensionController {
 						this.showTransientToast('⏹️ Nacho Flow: Model Dispatcher stopped');
 						if (this.sidebarProvider) {
 							this.sidebarProvider.updateEngineStatus({ connected: false, error: 'Stopped by user' });
+						}
+						if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+							(this.dashboardPanel as any).updateEngineStatus({ connected: false, error: 'Stopped by user' });
 						}
 						this.statusBar.updateStats(null);
 						break;
@@ -480,6 +490,9 @@ export class ExtensionController {
 			try {
 				const health = await this.restClient.getHealth();
 				engineStatus = { connected: true, version: health?.version || 'Online', error: '' };
+				if (health?.version) {
+					this.lastKnownServerVersion = health.version;
+				}
 			} catch (err: any) {
 				engineStatus = { connected: false, version: '', error: err.message || 'Connection refused' };
 			}
@@ -576,6 +589,10 @@ export class ExtensionController {
 			activeProfile: this.activeProfile,
 			activePreset: this.activeProfile
 		});
+
+		if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+			(this.dashboardPanel as any).updateEngineStatus(engineStatus);
+		}
 	}
 
 	private async initializeClients(): Promise<void> {
@@ -1294,6 +1311,9 @@ export class ExtensionController {
 			if (this.sidebarProvider) {
 				this.sidebarProvider.updateEngineStatus({ starting: true });
 			}
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+				(this.dashboardPanel as any).updateEngineStatus({ starting: true });
+			}
 			this.showTransientToast(`🔄 Restarting Nacho Flow with ${profileLabel}${locationHint}...`);
 			const result = await this.processManager.restart(daemonUrl, configPath);
 			if (result.success) {
@@ -1378,14 +1398,23 @@ export class ExtensionController {
 		const configPromise = typeof this.restClient.getConfig === 'function'
 			? Promise.resolve().then(() => this.restClient!.getConfig()).catch(() => null)
 			: Promise.resolve(null);
+		const healthPromise = typeof this.restClient.getHealth === 'function'
+			? Promise.resolve().then(() => this.restClient!.getHealth()).catch(() => null)
+			: Promise.resolve(null);
 
-		const [stats, deals, routes, circuits, config] = await Promise.all([
+		const [stats, deals, routes, circuits, config, health] = await Promise.all([
 			statsPromise,
 			dealsPromise,
 			routesPromise,
 			circuitsPromise,
-			configPromise
+			configPromise,
+			healthPromise
 		]);
+
+		const serverVersion = health?.version || this.lastKnownServerVersion || '';
+		if (serverVersion) {
+			this.lastKnownServerVersion = serverVersion;
+		}
 
 		if (!stats) {
 			const reason = isRemote ? 'Remote server is unreachable' : 'Local engine is offline';
@@ -1394,7 +1423,8 @@ export class ExtensionController {
 				engine: {
 					...baseEngineState,
 					isOnline: false,
-					offlineReason: reason
+					offlineReason: reason,
+					version: ''
 				},
 				stats: null,
 				deals: null,
@@ -1408,7 +1438,8 @@ export class ExtensionController {
 			timestamp: Date.now(),
 			engine: {
 				...baseEngineState,
-				isOnline: true
+				isOnline: true,
+				version: serverVersion || 'Online'
 			},
 			stats,
 			deals,
@@ -1434,6 +1465,13 @@ export class ExtensionController {
 		}
 		if (typeof (this.dashboardPanel as any).updateActivePreset === 'function') {
 			(this.dashboardPanel as any).updateActivePreset({ label: snapshot.engine.profileLabel, isRemote: snapshot.engine.isRemote });
+		}
+		if (typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+			(this.dashboardPanel as any).updateEngineStatus({
+				connected: snapshot.engine.isOnline,
+				version: snapshot.engine.version || 'Online',
+				error: snapshot.engine.isOnline ? '' : (snapshot.engine.offlineReason || 'Offline')
+			});
 		}
 
 		if (!snapshot.engine.isOnline) {
@@ -1511,12 +1549,24 @@ export class ExtensionController {
 		if (this.sidebarProvider) {
 			this.sidebarProvider.updateEngineStatus({ testing: true });
 		}
+		if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+			(this.dashboardPanel as any).updateEngineStatus({ testing: true });
+		}
 
 		const testClient = new RestClient(targetUrl, targetToken);
 		try {
 			const health = await testClient.getHealth();
+			if (health?.version) {
+				this.lastKnownServerVersion = health.version;
+			}
 			if (this.sidebarProvider) {
 				this.sidebarProvider.updateEngineStatus({
+					connected: true,
+					version: health?.version || 'Online'
+				});
+			}
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+				(this.dashboardPanel as any).updateEngineStatus({
 					connected: true,
 					version: health?.version || 'Online'
 				});
@@ -1525,6 +1575,12 @@ export class ExtensionController {
 		} catch (err: any) {
 			if (this.sidebarProvider) {
 				this.sidebarProvider.updateEngineStatus({
+					connected: false,
+					error: err.message || 'Connection refused'
+				});
+			}
+			if (this.dashboardPanel && typeof (this.dashboardPanel as any).updateEngineStatus === 'function') {
+				(this.dashboardPanel as any).updateEngineStatus({
 					connected: false,
 					error: err.message || 'Connection refused'
 				});

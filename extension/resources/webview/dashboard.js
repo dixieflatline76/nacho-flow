@@ -40,6 +40,9 @@
 			case 'updateActivePreset':
 				updateActivePreset(message.data);
 				break;
+			case 'updateEngineStatus':
+				updateEngineStatus(message.data);
+				break;
 			case 'setOffline':
 				setOffline(message.data);
 				break;
@@ -131,10 +134,26 @@
 
 		// Synchronize header badge and config button
 		if (snapshot.engine) {
+			if (snapshot.engine.version) {
+				currentState.engineVersion = snapshot.engine.version;
+			}
 			updateActivePreset({
 				label: snapshot.engine.profileLabel || (snapshot.engine.isRemote ? 'Remote Server' : 'Profile 1'),
-				isRemote: Boolean(snapshot.engine.isRemote)
+				isRemote: Boolean(snapshot.engine.isRemote),
+				version: snapshot.engine.version,
+				isOnline: snapshot.engine.isOnline
 			});
+			if (snapshot.engine.isOnline) {
+				updateEngineStatus({
+					connected: true,
+					version: snapshot.engine.version || 'Online'
+				});
+			} else {
+				updateEngineStatus({
+					connected: false,
+					error: snapshot.engine.offlineReason || 'Offline'
+				});
+			}
 		}
 
 		// Branching render pipeline: offline vs live
@@ -597,11 +616,21 @@
 		if (!data || !data.label) return;
 		currentState.isRemote = Boolean(data.isRemote);
 		currentState.activeProfileLabel = data.label;
+		if (data.version) {
+			currentState.engineVersion = data.version;
+		}
 		vscode.setState(currentState);
 
 		const badge = document.getElementById('active-preset-badge');
 		if (badge) {
 			badge.textContent = (data.isRemote ? '🌐 ' : '📋 ') + data.label;
+		}
+		if (data.version || data.isOnline !== undefined) {
+			if (data.isOnline) {
+				updateEngineStatus({ connected: true, version: data.version || 'Online' });
+			} else if (data.isOnline === false) {
+				updateEngineStatus({ connected: false, error: 'Offline' });
+			}
 		}
 		const btnEdit = document.getElementById('btn-edit-config');
 		if (btnEdit) {
@@ -610,6 +639,41 @@
 			btnEdit.innerHTML = '';
 			if (svg) btnEdit.appendChild(svg);
 			btnEdit.append(' ' + configText);
+		}
+	}
+
+	function updateEngineStatus(status) {
+		if (!status) return;
+		currentState.engineStatus = status;
+		if (status.version && status.version !== 'Online') {
+			currentState.engineVersion = status.version;
+		}
+		vscode.setState(currentState);
+
+		const chip = document.getElementById('server-version-chip');
+		if (!chip) return;
+
+		chip.className = 'status-chip';
+		if (status.connected) {
+			chip.classList.add('chip-green');
+			const ver = status.version || currentState.engineVersion || 'Online';
+			chip.textContent = `🟢 Engine Active (${ver})`;
+		} else if (status.starting) {
+			chip.classList.add('chip-gray');
+			chip.textContent = '⚡ Starting Model Dispatcher...';
+		} else if (status.testing) {
+			chip.classList.add('chip-gray');
+			chip.textContent = '⚡ Checking Connection...';
+		} else {
+			const isRemote = currentState.isRemote;
+			const isConnRefused = status.error && (status.error.includes('ECONNREFUSED') || status.error.includes('Connection refused') || status.error.includes('fetch failed'));
+			if (!isRemote && (isConnRefused || !status.error || status.error === 'Offline' || status.error === 'Stopped by user')) {
+				chip.classList.add('chip-gray');
+				chip.textContent = status.error === 'Stopped by user' ? '⚪ Engine Stopped' : '⚪ Engine Offline';
+			} else {
+				chip.classList.add('chip-red');
+				chip.textContent = `🔴 Offline (${status.error || 'Connection refused'})`;
+			}
 		}
 	}
 
@@ -622,6 +686,12 @@
 		currentState.optimization = null;
 		currentState.offlineReason = offlineMsg;
 		vscode.setState(currentState);
+
+		const chip = document.getElementById('server-version-chip');
+		if (chip) {
+			chip.className = 'status-chip chip-gray';
+			chip.textContent = '⚪ Engine Offline';
+		}
 
 		const statsContent = document.getElementById('stats-content');
 		const timeframeInfo = document.getElementById('stats-timeframe-info');
@@ -952,6 +1022,9 @@
 	document.addEventListener('DOMContentLoaded', () => {
 		window.setTimeWindow(activeTimeWindow);
 		window.setRoutesRefreshInterval(activeRefreshInterval);
+		if (currentState.engineStatus) {
+			updateEngineStatus(currentState.engineStatus);
+		}
 		vscode.postMessage({ command: 'initialize' });
 	});
 })();

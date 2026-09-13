@@ -175,6 +175,14 @@ describe('DashboardPanel', () => {
       });
     });
 
+    it('should post updateEngineStatus message', () => {
+      dashboardPanel.updateEngineStatus({ connected: true, version: 'v1.1.0' });
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'updateEngineStatus',
+        data: { connected: true, version: 'v1.1.0' }
+      });
+    });
+
     it('should post setOffline message', () => {
       dashboardPanel.setOffline('Local engine is offline');
       expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({

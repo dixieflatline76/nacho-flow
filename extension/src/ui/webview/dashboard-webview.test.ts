@@ -213,6 +213,7 @@ function buildDOM(): void {
     <div id="config-content"></div>
     <div id="tuner-banner" style="display:none"></div>
     <span id="active-preset-badge"></span>
+    <span id="server-version-chip"></span>
     <button id="btn-edit-config"><svg></svg> config.yaml</button>
     <button id="tab-past_1_hour"></button>
     <button id="tab-all_time"></button>
@@ -475,6 +476,53 @@ describe('updateActivePreset and profile / remote indicators', () => {
   });
 });
 
+describe('updateEngineStatus and server version chip', () => {
+  it('updates server version chip to active green with version text', () => {
+    postMessage('updateEngineStatus', { connected: true, version: 'v1.1.0' });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('🟢 Engine Active (v1.1.0)');
+    expect(chip?.classList.contains('chip-green')).toBe(true);
+  });
+
+  it('updates server version chip when starting', () => {
+    postMessage('updateEngineStatus', { starting: true });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('⚡ Starting Model Dispatcher...');
+    expect(chip?.classList.contains('chip-gray')).toBe(true);
+  });
+
+  it('updates server version chip when testing connection', () => {
+    postMessage('updateEngineStatus', { testing: true });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('⚡ Checking Connection...');
+    expect(chip?.classList.contains('chip-gray')).toBe(true);
+  });
+
+  it('updates server version chip when offline error occurs in remote mode', () => {
+    postMessage('updateActivePreset', { label: 'Remote Server', isRemote: true });
+    postMessage('updateEngineStatus', { connected: false, error: 'Connection refused' });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toContain('🔴 Offline (Connection refused)');
+    expect(chip?.classList.contains('chip-red')).toBe(true);
+  });
+
+  it('updates server version chip to offline gray when connection refused in local mode', () => {
+    postMessage('updateActivePreset', { label: 'Profile 1', isRemote: false });
+    postMessage('updateEngineStatus', { connected: false, error: 'Connection refused' });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('⚪ Engine Offline');
+    expect(chip?.classList.contains('chip-gray')).toBe(true);
+  });
+
+  it('updates server version chip to offline gray on setOffline', () => {
+    postMessage('updateEngineStatus', { connected: true, version: 'v1.1.0' });
+    postMessage('setOffline', { reason: 'Engine stopped' });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('⚪ Engine Offline');
+    expect(chip?.classList.contains('chip-gray')).toBe(true);
+  });
+});
+
 describe('setOffline command in webview', () => {
   it('clears stale remote data across all panels and displays offline placeholders', () => {
     // Populate with stats first
@@ -539,7 +587,8 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
         isOnline: true,
         activeProfile: 'profile1',
         profileLabel: 'Remote Server',
-        isRemote: true
+        isRemote: true,
+        version: 'v1.1.0-nts-hardened'
       },
       stats: makeStats(),
       routes: { routes: [] },
@@ -551,6 +600,8 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
     postMessage('syncSnapshot', remoteSnapshot);
 
     expect(document.getElementById('active-preset-badge')?.textContent).toBe('🌐 Remote Server');
+    expect(document.getElementById('server-version-chip')?.textContent).toBe('🟢 Engine Active (v1.1.0-nts-hardened)');
+    expect(document.getElementById('server-version-chip')?.classList.contains('chip-green')).toBe(true);
     expect(document.getElementById('btn-edit-config')?.textContent).toContain('Remote config.yaml');
   });
 
