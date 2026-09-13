@@ -494,7 +494,7 @@
 		ntsContent.innerHTML = `
 			<div class="nts-grid">
 				<div class="nts-item highlight">
-					<div class="nts-value">+${tokensSavedStr} <span class="nts-unit">Tokens</span></div>
+					<div class="nts-value">${tokensSavedStr} <span class="nts-unit">Tokens</span></div>
 					<div class="nts-label">🗜️ Tokens Saved</div>
 					<div class="nts-sub">In-place payload shrinkage without context disruption</div>
 				</div>
@@ -758,6 +758,9 @@
 			const kickstartBadge = route.session_kickstarted
 				? `<span class="badge badge-kickstart" title="🚀 Kickstart: Tool-less session escalated to frontier reasoning model">🚀 Kick</span>`
 				: '';
+			const proactiveBadge = (fairyBadge || kickstartBadge)
+				? `${fairyBadge}${kickstartBadge}`
+				: `<span class="badge-cycle-none">--</span>`;
 
 			let ntsBadge = '';
 			if (route.nts_tokens_saved && route.nts_tokens_saved > 0) {
@@ -776,7 +779,7 @@
 					<td>${(route.tokens || 0).toLocaleString()}</td>
 					<td>${(route.latency_ms || 0).toFixed(0)}ms</td>
 					<td>${cycleBadge}</td>
-					<td>${fairyBadge}${kickstartBadge}</td>
+					<td>${proactiveBadge}</td>
 					<td>${ntsBadge}</td>
 					<td class="saved-val">$${(route.cost_saved_usd || 0).toFixed(4)}</td>
 				</tr>

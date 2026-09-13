@@ -337,7 +337,7 @@ describe('windowCycleKiller — timeframe selection (v0.8.4 daemon, all windows 
   it('Past 1 Hour: renders 1 intervention and NTS tokens from past_1_hour window', () => {
     setWindow('past_1_hour');
     expect(ckContent()).toContain('1 <span class="ck-unit">Loops</span>');
-    expect(document.getElementById('nts-content')?.innerHTML).toContain('+1.2k <span class="nts-unit">Tokens</span>');
+    expect(document.getElementById('nts-content')?.innerHTML).toContain('1.2k <span class="nts-unit">Tokens</span>');
   });
 
   it('Past 1 Hour: timeframe label mentions Past 1 Hour', () => {

@@ -241,7 +241,7 @@ export class StatusBarManager {
 		md.appendMarkdown(`💵 **Est. Cost Saved**: \`+$${m.savedUSD.toFixed(2)}\` *(${Math.round(m.reductionPct)}% saved)*\n\n`);
 		md.appendMarkdown(`📉 **Cloud API Spend**: \`$${m.spentUSD.toFixed(2)}\`\n\n`);
 		md.appendMarkdown(`🖥️ **Local GPU ($0.00)**: \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)*\n\n`);
-		md.appendMarkdown(`🗜️ **Nacho Token Saver**: \`+${m.ntsTokens.toLocaleString()} tokens\` *(${formatBytes(m.ntsBytes)} saved • ${m.ntsCompactedTurns} turns)*\n\n`);
+		md.appendMarkdown(`🗜️ **Nacho Token Saver**: \`${m.ntsTokens.toLocaleString()} tokens\` *(${formatBytes(m.ntsBytes)} saved • ${m.ntsCompactedTurns} turns)*\n\n`);
 		md.appendMarkdown(`🛡️ **Agent Supervisor**: \`${m.ckHeals} loops healed • ${m.ckKicks} kicks • ${m.fdTriggers} fairy dust\`\n\n`);
 		md.appendMarkdown(`🪙 **Total Prompt Turns**: \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)*\n\n`);
 		md.appendMarkdown(`🛣️ **Model Dispatcher**: \`${this.getBaseUrl()}\`\n\n`);
