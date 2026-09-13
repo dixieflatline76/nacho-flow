@@ -3,10 +3,31 @@ package nts
 import (
 	"strconv"
 	"strings"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 )
 
 // StaleFileReadNotice is the constant replacement string for superseded historical file reads.
 const StaleFileReadNotice = "[NTS: File content superseded by later read/write]"
+
+var (
+	rawPathCandidates = []string{
+		"path", "filePath", "file_path", "target_file", "TargetFile",
+		"file", "filename", "file_name", "uri", "AbsolutePath",
+	}
+	mapStartLineKeys = []string{"startLine", "start_line", "StartLine", "offset", "start"}
+	mapEndLineKeys   = []string{"endLine", "end_line", "EndLine", "end"}
+	mapLimitKeys     = []string{"limit", "count", "lines"}
+
+	jsonQuotedPathCandidates = []string{
+		`"path":`, `"filePath":`, `"file_path":`, `"target_file":`,
+		`"TargetFile":`, `"file":`, `"filename":`, `"file_name":`,
+		`"uri":`, `"AbsolutePath":`,
+	}
+	jsonQuotedStartLineKeys = []string{`"startLine":`, `"start_line":`, `"StartLine":`, `"offset":`, `"start":`}
+	jsonQuotedEndLineKeys   = []string{`"endLine":`, `"end_line":`, `"EndLine":`, `"end":`}
+	jsonQuotedLimitKeys     = []string{`"limit":`, `"count":`, `"lines":`}
+)
 
 // fnv64 computes a 64-bit FNV-1a hash of a string with zero heap allocation.
 func fnv64(s string) uint64 {
@@ -40,7 +61,15 @@ func IdentifyStaleToolCallIDs(msgs []interface{}, depth ...int) map[string]struc
 		retentionDepth = depth[0]
 	}
 
-	// 1. Collect all file read/write tool calls across assistant messages
+	calls := collectFileToolCalls(msgs)
+	if len(calls) <= 1 {
+		return nil
+	}
+
+	return identifySupersededCalls(calls, retentionDepth)
+}
+
+func collectFileToolCalls(msgs []interface{}) []fileToolCall {
 	var calls []fileToolCall
 
 	for _, msgItem := range msgs {
@@ -114,20 +143,19 @@ func IdentifyStaleToolCallIDs(msgs []interface{}, depth ...int) map[string]struc
 		}
 	}
 
-	if len(calls) <= 1 {
-		return nil
-	}
+	return calls
+}
 
-	// 2. Scan backwards to identify superseded reads
-	var seenWrites [64]uint64
+func identifySupersededCalls(calls []fileToolCall, retentionDepth int) map[string]struct{} {
+	var seenWrites [256]uint64
 	seenWritesCount := 0
 
-	var seenFullFiles [64]uint64
-	var seenFullCounts [64]uint8
+	var seenFullFiles [256]uint64
+	var seenFullCounts [256]uint8
 	seenFullCount := 0
 
-	var seenRangedFiles [64]uint64
-	var seenRangedCounts [64]uint8
+	var seenRangedFiles [256]uint64
+	var seenRangedCounts [256]uint8
 	seenRangedCount := 0
 
 	staleIDs := make(map[string]struct{})
@@ -223,38 +251,22 @@ func findHashIndex(slice []uint64, target uint64) int {
 // IsToolError checks whether a tool output represents an execution error or failure.
 // Tool errors are immune to stale eviction and must always remain visible to the agent.
 func IsToolError(content string, isError bool) bool {
-	if isError {
-		return true
-	}
-	trimmed := strings.TrimSpace(content)
-	if len(trimmed) == 0 {
-		return false
-	}
-	lower := strings.ToLower(trimmed)
-	if strings.HasPrefix(lower, "error:") ||
-		strings.HasPrefix(lower, "fatal:") ||
-		strings.HasPrefix(lower, "[syntax error]") ||
-		strings.HasPrefix(lower, "exit code:") ||
-		strings.Contains(lower, "command execution was not successful") ||
-		strings.Contains(lower, "not recognized as an internal or external command") ||
-		(strings.Contains(lower, "the process") && strings.Contains(lower, "not found")) ||
-		strings.Contains(lower, "unable to apply diff") {
-		return true
-	}
-	return false
+	return agentregistry.DefaultRegistry().IsToolError(content, isError)
 }
 
 func isFileReadTool(name string) bool {
-	n := strings.ToLower(name)
-	return strings.Contains(n, "read") || strings.Contains(n, "view") || n == "cat" || strings.Contains(n, "open")
+	return agentregistry.DefaultRegistry().IsFileReadTool(name)
 }
 
 func isFileWriteTool(name string) bool {
-	n := strings.ToLower(name)
-	return strings.Contains(n, "write") || strings.Contains(n, "edit") ||
-		strings.Contains(n, "replace") || strings.Contains(n, "patch") ||
-		strings.Contains(n, "diff") || strings.Contains(n, "insert") ||
-		strings.Contains(n, "create")
+	return agentregistry.DefaultRegistry().IsWriteTool(name)
+}
+
+func formatPathKey(basePath string, startLine, endLine int) string {
+	if startLine > 0 || endLine > 0 {
+		return basePath + "#L" + strconv.Itoa(startLine) + "-" + strconv.Itoa(endLine)
+	}
+	return basePath
 }
 
 // extractFilePaths extracts the normalized basePath and pathKey (with optional range) from tool arguments.
@@ -271,12 +283,7 @@ func extractFilePaths(args interface{}) (string, string) {
 
 func extractPathsFromMap(m map[string]interface{}) (string, string) {
 	var rawPath string
-	candidates := []string{
-		"path", "filePath", "file_path", "target_file", "TargetFile",
-		"file", "filename", "file_name", "uri", "AbsolutePath",
-	}
-
-	for _, k := range candidates {
+	for _, k := range rawPathCandidates {
 		if val, ok := m[k].(string); ok && val != "" {
 			rawPath = val
 			break
@@ -290,21 +297,16 @@ func extractPathsFromMap(m map[string]interface{}) (string, string) {
 	basePath := normalizePath(rawPath)
 
 	// Extract optional line range
-	startLine := getIntFromMap(m, "startLine", "start_line", "StartLine", "offset", "start")
-	endLine := getIntFromMap(m, "endLine", "end_line", "EndLine", "end")
+	startLine := getIntFromMap(m, mapStartLineKeys...)
+	endLine := getIntFromMap(m, mapEndLineKeys...)
 	if endLine == 0 {
-		limit := getIntFromMap(m, "limit", "count", "lines")
+		limit := getIntFromMap(m, mapLimitKeys...)
 		if limit > 0 && startLine > 0 {
 			endLine = startLine + limit - 1
 		}
 	}
 
-	if startLine > 0 || endLine > 0 {
-		pathKey := basePath + "#L" + strconv.Itoa(startLine) + "-" + strconv.Itoa(endLine)
-		return basePath, pathKey
-	}
-
-	return basePath, basePath
+	return basePath, formatPathKey(basePath, startLine, endLine)
 }
 
 func getIntFromMap(m map[string]interface{}, keys ...string) int {
@@ -330,14 +332,8 @@ func extractPathsFromString(s string) (string, string) {
 		return "", ""
 	}
 
-	candidates := []string{
-		`"path":`, `"filePath":`, `"file_path":`, `"target_file":`,
-		`"TargetFile":`, `"file":`, `"filename":`, `"file_name":`,
-		`"uri":`, `"AbsolutePath":`,
-	}
-
 	var rawPath string
-	for _, key := range candidates {
+	for _, key := range jsonQuotedPathCandidates {
 		idx := strings.Index(s, key)
 		if idx == -1 {
 			continue
@@ -364,21 +360,16 @@ func extractPathsFromString(s string) (string, string) {
 	basePath := normalizePath(rawPath)
 
 	// Quick check for startLine and endLine
-	startLine := extractIntField(s, `"startLine":`, `"start_line":`, `"StartLine":`, `"offset":`, `"start":`)
-	endLine := extractIntField(s, `"endLine":`, `"end_line":`, `"EndLine":`, `"end":`)
+	startLine := extractIntField(s, jsonQuotedStartLineKeys...)
+	endLine := extractIntField(s, jsonQuotedEndLineKeys...)
 	if endLine == 0 {
-		limit := extractIntField(s, `"limit":`, `"count":`, `"lines":`)
+		limit := extractIntField(s, jsonQuotedLimitKeys...)
 		if limit > 0 && startLine > 0 {
 			endLine = startLine + limit - 1
 		}
 	}
 
-	if startLine > 0 || endLine > 0 {
-		pathKey := basePath + "#L" + strconv.Itoa(startLine) + "-" + strconv.Itoa(endLine)
-		return basePath, pathKey
-	}
-
-	return basePath, basePath
+	return basePath, formatPathKey(basePath, startLine, endLine)
 }
 
 func extractIntField(s string, keys ...string) int {

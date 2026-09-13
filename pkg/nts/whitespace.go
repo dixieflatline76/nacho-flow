@@ -1,9 +1,11 @@
 package nts
 
-// NormalizeWhitespaceInPlace strips trailing spaces/tabs on each line, collapses
-// consecutive runs of blank lines down to a single blank line, and cleans excessive
+import "bytes"
+
+// NormalizeWhitespaceInPlace strips trailing spaces, tabs, and carriage returns on each line,
+// collapses consecutive runs of blank lines down to a single blank line, and cleans excessive
 // trailing newlines at the end of the buffer.
-// Operates in-place with zero heap allocations (0 B/op) maintaining w <= r.
+// Operates in-place with guaranteed zero heap allocations (0 B/op) maintaining w <= r.
 func NormalizeWhitespaceInPlace(b []byte) []byte {
 	w := 0
 	r := 0
@@ -12,17 +14,21 @@ func NormalizeWhitespaceInPlace(b []byte) []byte {
 
 	for r < n {
 		lineStart := r
-		for r < n && b[r] != '\n' {
-			r++
-		}
-		lineEnd := r
-		hasNewline := r < n && b[r] == '\n'
-		if hasNewline {
-			r++
+		idx := bytes.IndexByte(b[r:], '\n')
+		var lineEnd int
+		var hasNewline bool
+		if idx >= 0 {
+			lineEnd = r + idx
+			r = lineEnd + 1
+			hasNewline = true
+		} else {
+			lineEnd = n
+			r = n
+			hasNewline = false
 		}
 
-		// Trim trailing spaces and tabs from the line
-		for lineEnd > lineStart && (b[lineEnd-1] == ' ' || b[lineEnd-1] == '\t') {
+		// Trim trailing spaces, tabs, and carriage returns from the line
+		for lineEnd > lineStart && (b[lineEnd-1] == ' ' || b[lineEnd-1] == '\t' || b[lineEnd-1] == '\r') {
 			lineEnd--
 		}
 
@@ -36,7 +42,9 @@ func NormalizeWhitespaceInPlace(b []byte) []byte {
 			}
 		} else {
 			consecutiveBlankLines = 0
-			copy(b[w:], b[lineStart:lineEnd])
+			if w != lineStart {
+				copy(b[w:], b[lineStart:lineEnd])
+			}
 			w += lineLen
 			if hasNewline {
 				b[w] = '\n'

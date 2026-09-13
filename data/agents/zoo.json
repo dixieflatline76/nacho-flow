@@ -18,6 +18,9 @@
     "search_files",
     "list_code_definition_names"
   ],
+  "file_read_tools": [
+    "read_file"
+  ],
   "command_tools": [
     "execute_command"
   ],
@@ -36,6 +39,11 @@
     "The tool execution failed",
     "<error_details>",
     "Editor operation failed",
-    "No sufficiently similar match found"
+    "No sufficiently similar match found",
+    "Unable to apply diff to file:",
+    "File does not exist at path:",
+    "offset must be a 1-indexed line number",
+    "anchor_line must be a 1-indexed line number",
+    "The file path is invalid"
   ]
 }

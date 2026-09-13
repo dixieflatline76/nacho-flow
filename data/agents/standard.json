@@ -7,6 +7,7 @@
     "write_to_file", "replace_file_content", "multi_replace_file_content",
     "apply_diff", "create_or_update_file", "put_file", "apply_patch"
   ],
+  "file_read_tools": ["read_file", "view_file", "cat", "view", "open_file"],
   "read_tools": ["read_file", "view_file", "cat", "list_files", "search_files"],
   "command_tools": ["bash", "sh", "terminal", "exec", "cmd", "pwsh", "powershell", "run_command", "execute_command"],
   "interactive_tools": ["ask_question", "ask_followup_question", "user_prompt"],
@@ -28,6 +29,16 @@
     "Command failed with exit code",
     "Please retry with complete response",
     "Command not executed:",
-    "tool execution error"
+    "tool execution error",
+    "error:",
+    "fatal:",
+    "[syntax error]",
+    "exit code:",
+    "command execution was not successful",
+    "not recognized as an internal or external command",
+    "unable to apply diff",
+    "no such file or directory",
+    "permission denied",
+    "is a directory"
   ]
 }

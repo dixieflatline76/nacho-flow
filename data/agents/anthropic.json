@@ -3,11 +3,15 @@
   "name": "Anthropic Computer Use & Text Editor",
   "version": "1.0.0",
   "write_tools": ["str_replace_editor", "text_editor"],
+  "file_read_tools": ["view"],
   "read_tools": ["view"],
   "command_tools": ["bash"],
   "error_signatures": [
     "Parameter 'old_str' is required",
     "Parameter 'new_str' is required",
-    "No replacement was performed"
+    "No replacement was performed",
+    "Error: ",
+    "File does not exist",
+    "is a directory, not a file"
   ]
 }

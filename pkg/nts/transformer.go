@@ -1,9 +1,10 @@
 package nts
 
 import (
-	"bytes"
 	"encoding/json"
 	"strings"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 )
 
 // targetJSONFields are field names within inner-JSON payloads that carry tool output text.
@@ -70,7 +71,7 @@ func (t *Transformer) transformPayload(body []byte) ([]byte, ReductionResult, er
 // indexToolNames indexes tool call IDs to tool names across all assistant messages,
 // supporting both OpenAI tool_calls and Anthropic tool_use content blocks.
 func indexToolNames(msgs []interface{}) map[string]string {
-	names := make(map[string]string)
+	var names map[string]string
 
 	for _, msgItem := range msgs {
 		msg, ok := msgItem.(map[string]interface{})
@@ -89,6 +90,9 @@ func indexToolNames(msgs []interface{}) map[string]string {
 				fn, ok := tc["function"].(map[string]interface{})
 				if ok && id != "" {
 					if name, ok := fn["name"].(string); ok && name != "" {
+						if names == nil {
+							names = make(map[string]string)
+						}
 						names[id] = name
 					}
 				}
@@ -105,6 +109,9 @@ func indexToolNames(msgs []interface{}) map[string]string {
 				id, _ := part["id"].(string)
 				name, _ := part["name"].(string)
 				if id != "" && name != "" {
+					if names == nil {
+						names = make(map[string]string)
+					}
 					names[id] = name
 				}
 			}
@@ -139,30 +146,14 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 			toolCallID, _ := msg["tool_call_id"].(string)
 			toolName := resolveToolName(msg["name"], toolCallID, toolNames)
 			hasCache := hasCacheControl(msg)
+			isErr, _ := msg["is_error"].(bool)
 
 			// Evict stale file reads before standard compaction (with tool error immunity)
-			if staleIDs != nil && toolCallID != "" {
-				if _, isStale := staleIDs[toolCallID]; isStale {
-					contentStr := extractContentString(msg["content"])
-					isErr, _ := msg["is_error"].(bool)
-					if !IsToolError(contentStr, isErr) && (!t.pipeline.config.PreserveCacheControl || !hasCache) {
-						origBytes := calculateContentLength(msg["content"])
-						msg["content"] = StaleFileReadNotice
-						reducedBytes := len(StaleFileReadNotice)
-						saved := origBytes - reducedBytes
-						if saved < 0 {
-							saved = 0
-						}
-						total.merge(ReductionResult{
-							OriginalBytes: origBytes,
-							ReducedBytes:  reducedBytes,
-							BytesSaved:    saved,
-							TokensSaved:   (saved + 3) / 4,
-						})
-						modified = true
-						continue
-					}
-				}
+			if res, evicted := t.tryEvictStaleRead(msg["content"], toolCallID, isErr, hasCache, staleIDs); evicted {
+				msg["content"] = StaleFileReadNotice
+				total.merge(res)
+				modified = true
+				continue
 			}
 
 			newContent, res, changed := t.compactToolContent(msg["content"], toolName, hasCache)
@@ -189,30 +180,14 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 			toolUseID, _ := part["tool_use_id"].(string)
 			toolName := resolveToolName(part["tool_name"], toolUseID, toolNames)
 			hasCache := hasCacheControl(part)
+			isErr, _ := part["is_error"].(bool)
 
 			// Evict stale file reads before standard compaction (with tool error immunity)
-			if staleIDs != nil && toolUseID != "" {
-				if _, isStale := staleIDs[toolUseID]; isStale {
-					contentStr := extractContentString(part["content"])
-					isErr, _ := part["is_error"].(bool)
-					if !IsToolError(contentStr, isErr) && (!t.pipeline.config.PreserveCacheControl || !hasCache) {
-						origBytes := calculateContentLength(part["content"])
-						part["content"] = StaleFileReadNotice
-						reducedBytes := len(StaleFileReadNotice)
-						saved := origBytes - reducedBytes
-						if saved < 0 {
-							saved = 0
-						}
-						total.merge(ReductionResult{
-							OriginalBytes: origBytes,
-							ReducedBytes:  reducedBytes,
-							BytesSaved:    saved,
-							TokensSaved:   (saved + 3) / 4,
-						})
-						modified = true
-						continue
-					}
-				}
+			if res, evicted := t.tryEvictStaleRead(part["content"], toolUseID, isErr, hasCache, staleIDs); evicted {
+				part["content"] = StaleFileReadNotice
+				total.merge(res)
+				modified = true
+				continue
 			}
 
 			newContent, res, changed := t.compactToolContent(part["content"], toolName, hasCache)
@@ -225,6 +200,35 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 	}
 
 	return modified, total
+}
+
+func (t *Transformer) tryEvictStaleRead(content interface{}, id string, isError, hasCache bool, staleIDs map[string]struct{}) (ReductionResult, bool) {
+	if staleIDs == nil || id == "" {
+		return ReductionResult{}, false
+	}
+	if _, isStale := staleIDs[id]; !isStale {
+		return ReductionResult{}, false
+	}
+	if t.pipeline.config.PreserveCacheControl && hasCache {
+		return ReductionResult{}, false
+	}
+	contentStr := extractContentString(content)
+	if IsToolError(contentStr, isError) {
+		return ReductionResult{}, false
+	}
+
+	origBytes := calculateContentLength(content)
+	reducedBytes := len(StaleFileReadNotice)
+	saved := origBytes - reducedBytes
+	if saved < 0 {
+		saved = 0
+	}
+	return ReductionResult{
+		OriginalBytes: origBytes,
+		ReducedBytes:  reducedBytes,
+		BytesSaved:    saved,
+		TokensSaved:   (saved + 3) / 4,
+	}, true
 }
 
 // compactToolContent handles tool content in both string form and content-block list form.
@@ -273,11 +277,11 @@ func (t *Transformer) compactToolContent(content interface{}, toolName string, h
 // (emitted by agents like Cline / Roo Code), it unpacks, compacts the inner fields,
 // and re-marshals the JSON. Otherwise, it processes the raw text directly.
 func (t *Transformer) compactText(text string, cat ToolCategory) (string, ReductionResult, bool) {
-	trimmed := bytes.TrimSpace([]byte(text))
+	trimmed := strings.TrimSpace(text)
 
 	// Attempt inner-JSON compaction if text resembles an array or object
 	if len(trimmed) > 0 && (trimmed[0] == '[' || trimmed[0] == '{') {
-		if newJSON, res, ok := t.compactInnerJSON(trimmed, cat); ok {
+		if newJSON, res, ok := t.compactInnerJSON([]byte(trimmed), cat); ok {
 			return newJSON, res, true
 		}
 	}
@@ -350,7 +354,7 @@ func resolveToolName(explicitName, callID interface{}, toolNames map[string]stri
 	if name, ok := explicitName.(string); ok && name != "" {
 		return name
 	}
-	if id, ok := callID.(string); ok && id != "" {
+	if id, ok := callID.(string); ok && id != "" && toolNames != nil {
 		return toolNames[id]
 	}
 	return ""
@@ -362,16 +366,14 @@ func hasCacheControl(m map[string]interface{}) bool {
 }
 
 func categorizeToolName(name string) ToolCategory {
-	n := strings.ToLower(name)
-	switch {
-	case strings.Contains(n, "read") || strings.Contains(n, "view") || n == "cat":
-		return CategoryFileRead
-	case strings.Contains(n, "write") || strings.Contains(n, "edit") ||
-		strings.Contains(n, "replace") || strings.Contains(n, "patch") || strings.Contains(n, "diff"):
+	reg := agentregistry.DefaultRegistry()
+	if reg.IsWriteTool(name) {
 		return CategoryFileWrite
-	default:
-		return CategoryGeneric
 	}
+	if reg.IsFileReadTool(name) {
+		return CategoryFileRead
+	}
+	return CategoryGeneric
 }
 
 func (r *ReductionResult) merge(other ReductionResult) {
@@ -410,6 +412,13 @@ func extractContentString(content interface{}) string {
 	case []byte:
 		return string(v)
 	case []interface{}:
+		if len(v) == 1 {
+			if part, ok := v[0].(map[string]interface{}); ok {
+				if text, ok := part["text"].(string); ok {
+					return text
+				}
+			}
+		}
 		var sb strings.Builder
 		for _, item := range v {
 			if part, ok := item.(map[string]interface{}); ok {

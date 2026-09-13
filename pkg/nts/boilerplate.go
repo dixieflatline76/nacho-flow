@@ -21,12 +21,11 @@ func StripToolBoilerplateInPlace(b []byte) []byte {
 
 	for r < n {
 		lineStart := r
-		for r < n && b[r] != '\n' {
-			r++
-		}
-		hasNewline := r < n && b[r] == '\n'
-		if hasNewline {
-			r++ // include newline
+		idx := bytes.IndexByte(b[r:], '\n')
+		if idx >= 0 {
+			r += idx + 1 // include newline
+		} else {
+			r = n
 		}
 		line := b[lineStart:r]
 
@@ -50,11 +49,11 @@ func StripToolBoilerplateInPlace(b []byte) []byte {
 			// Skip lines until </error_details>
 			for r < n {
 				subStart := r
-				for r < n && b[r] != '\n' {
-					r++
-				}
-				if r < n && b[r] == '\n' {
-					r++
+				subIdx := bytes.IndexByte(b[r:], '\n')
+				if subIdx >= 0 {
+					r += subIdx + 1
+				} else {
+					r = n
 				}
 				subLine := b[subStart:r]
 				if bytes.Contains(subLine, errorDetailsClose) {
@@ -74,8 +73,10 @@ func StripToolBoilerplateInPlace(b []byte) []byte {
 			inErrorDetails = false
 		}
 
-		// Copy line
-		copy(b[w:], line)
+		// Copy line: skip self-copy if no prior lines were stripped
+		if w != lineStart {
+			copy(b[w:], line)
+		}
 		w += len(line)
 	}
 

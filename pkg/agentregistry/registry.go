@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Karl Kwong / Spicebox. Licensed under AGPL-3.0.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Package agentregistry provides an in-memory, zero-allocation registry of AI agent
+// tool capabilities, shell command write signatures, and model reasoning tags.
 package agentregistry
 
 import (
@@ -16,13 +18,15 @@ import (
 
 // Registry maintains an in-memory index of agent profiles, tool categories, and shell commands.
 type Registry struct {
-	mu                  sync.RWMutex
-	writeTools          map[string]struct{}
-	writeToolsList      []string
-	allKnownTools       map[string]struct{}
-	shellWriteCommands  map[string]struct{}
-	shellWritePipes     []string
-	contextualCommands  map[string][]string
+	mu                     sync.RWMutex
+	writeTools             map[string]struct{}
+	writeToolsList         []string
+	fileReadTools          map[string]struct{}
+	fileReadToolsList      []string
+	allKnownTools          map[string]struct{}
+	shellWriteCommands     map[string]struct{}
+	shellWritePipes        []string
+	contextualCommands     map[string][]string
 	redirections           []string
 	writeTagByteMarkers    [][]byte
 	interactiveToolsLookup map[string]struct{}
@@ -30,6 +34,7 @@ type Registry struct {
 	modeHeuristicsList     []string
 	questionHeuristicsList []string
 	errorSignaturesList    []string
+	errorSignaturesLower   []string
 	manifest               Manifest
 	reasoningCatalog       ReasoningCatalog
 	tagReplacer            *strings.Replacer
@@ -57,6 +62,7 @@ func DefaultRegistry() *Registry {
 func NewRegistryFromFS(sysFS fs.FS) (*Registry, error) {
 	reg := &Registry{
 		writeTools:         make(map[string]struct{}),
+		fileReadTools:      make(map[string]struct{}),
 		allKnownTools:      make(map[string]struct{}),
 		shellWriteCommands: make(map[string]struct{}),
 		contextualCommands: make(map[string][]string),
@@ -83,6 +89,14 @@ func NewRegistryFromFS(sysFS fs.FS) (*Registry, error) {
 	reg.writeTagByteMarkers = compileWriteByteMarkers(reg.writeToolsList)
 
 	return reg, nil
+}
+
+func addNormalized(target map[string]struct{}, items ...string) {
+	for _, item := range items {
+		if lower := strings.ToLower(strings.TrimSpace(item)); lower != "" {
+			target[lower] = struct{}{}
+		}
+	}
 }
 
 func (r *Registry) loadAgents(sysFS fs.FS) error {
@@ -121,64 +135,37 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 			return fmt.Errorf("failed to parse agent profile %s: %w", entry.Name(), err)
 		}
 
-		for _, tool := range profile.WriteTools {
-			lower := strings.ToLower(strings.TrimSpace(tool))
-			if lower != "" {
-				r.writeTools[lower] = struct{}{}
-				r.allKnownTools[lower] = struct{}{}
-			}
-		}
-		for _, tool := range profile.ReadTools {
-			lower := strings.ToLower(strings.TrimSpace(tool))
-			if lower != "" {
-				r.allKnownTools[lower] = struct{}{}
-			}
-		}
-		for _, tool := range profile.CommandTools {
-			lower := strings.ToLower(strings.TrimSpace(tool))
-			if lower != "" {
-				r.allKnownTools[lower] = struct{}{}
-			}
-		}
-		for _, tool := range profile.InteractiveTools {
-			lower := strings.ToLower(strings.TrimSpace(tool))
-			if lower != "" {
-				interactiveToolsMap[lower] = struct{}{}
-				r.allKnownTools[lower] = struct{}{}
-			}
-		}
+		addNormalized(r.writeTools, profile.WriteTools...)
+		addNormalized(r.fileReadTools, profile.FileReadTools...)
+		addNormalized(r.allKnownTools, profile.WriteTools...)
+		addNormalized(r.allKnownTools, profile.FileReadTools...)
+		addNormalized(r.allKnownTools, profile.ReadTools...)
+		addNormalized(r.allKnownTools, profile.CommandTools...)
+		addNormalized(interactiveToolsMap, profile.InteractiveTools...)
+		addNormalized(r.allKnownTools, profile.InteractiveTools...)
 		if profile.ModeTool != "" {
-			lower := strings.ToLower(strings.TrimSpace(profile.ModeTool))
-			if lower != "" {
-				interactiveToolsMap[lower] = struct{}{}
-				r.allKnownTools[lower] = struct{}{}
-			}
+			addNormalized(interactiveToolsMap, profile.ModeTool)
+			addNormalized(r.allKnownTools, profile.ModeTool)
 		}
-		for _, h := range profile.ModeHeuristics {
-			trimmed := strings.ToLower(strings.TrimSpace(h))
-			if trimmed != "" {
-				modeHeuristicsMap[trimmed] = struct{}{}
-			}
-		}
-		for _, q := range profile.QuestionHeuristics {
-			trimmed := strings.ToLower(strings.TrimSpace(q))
-			if trimmed != "" {
-				questionHeuristicsMap[trimmed] = struct{}{}
-			}
-		}
+		addNormalized(modeHeuristicsMap, profile.ModeHeuristics...)
+		addNormalized(questionHeuristicsMap, profile.QuestionHeuristics...)
 		for _, s := range profile.ErrorSignatures {
-			trimmed := strings.TrimSpace(s)
-			if trimmed != "" {
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
 				errorSignaturesMap[trimmed] = struct{}{}
 			}
 		}
 	}
 
+	r.fileReadToolsList = mapToSortedSlice(r.fileReadTools)
 	r.interactiveToolsLookup = interactiveToolsMap
 	r.interactiveToolsList = mapToSortedSlice(interactiveToolsMap)
 	r.modeHeuristicsList = mapToSortedSlice(modeHeuristicsMap)
 	r.questionHeuristicsList = mapToSortedSlice(questionHeuristicsMap)
 	r.errorSignaturesList = mapToSortedSlice(errorSignaturesMap)
+	r.errorSignaturesLower = make([]string, len(r.errorSignaturesList))
+	for i, s := range r.errorSignaturesList {
+		r.errorSignaturesLower[i] = strings.ToLower(s)
+	}
 
 	return nil
 }
@@ -220,6 +207,9 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.writeTools = newReg.writeTools
+	r.writeToolsList = newReg.writeToolsList
+	r.fileReadTools = newReg.fileReadTools
+	r.fileReadToolsList = newReg.fileReadToolsList
 	r.allKnownTools = newReg.allKnownTools
 	r.shellWriteCommands = newReg.shellWriteCommands
 	r.shellWritePipes = newReg.shellWritePipes
@@ -231,6 +221,7 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 	r.modeHeuristicsList = newReg.modeHeuristicsList
 	r.questionHeuristicsList = newReg.questionHeuristicsList
 	r.errorSignaturesList = newReg.errorSignaturesList
+	r.errorSignaturesLower = newReg.errorSignaturesLower
 	r.manifest = newReg.manifest
 	r.reasoningCatalog = newReg.reasoningCatalog
 	r.tagReplacer = newReg.tagReplacer
@@ -239,6 +230,7 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 }
 
 // IsWriteTool checks if the tool name represents a known structured file writing or editing tool.
+// Lock-free, zero heap allocation.
 func (r *Registry) IsWriteTool(toolName string) bool {
 	if r == nil {
 		return false
@@ -248,16 +240,39 @@ func (r *Registry) IsWriteTool(toolName string) bool {
 		return false
 	}
 
-	r.mu.RLock()
-	_, exists := r.writeTools[lower]
-	r.mu.RUnlock()
-	if exists {
+	if _, exists := r.writeTools[lower]; exists {
 		return true
 	}
 
 	// Dynamic suffix/prefix heuristics for unregistered custom tools
 	return strings.HasSuffix(lower, "_editor") || strings.HasPrefix(lower, "edit_") ||
-		strings.Contains(lower, "write") || strings.Contains(lower, "patch") || strings.Contains(lower, "diff")
+		strings.Contains(lower, "write") || strings.Contains(lower, "patch") || strings.Contains(lower, "diff") ||
+		strings.Contains(lower, "edit") || strings.Contains(lower, "replace") || strings.Contains(lower, "insert") ||
+		strings.Contains(lower, "create")
+}
+
+// IsFileReadTool checks if the tool name represents a known file-content reading tool.
+// Lock-free, zero heap allocation.
+func (r *Registry) IsFileReadTool(toolName string) bool {
+	if r == nil {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(toolName))
+	if lower == "" {
+		return false
+	}
+
+	if _, exists := r.fileReadTools[lower]; exists {
+		return true
+	}
+
+	// Dynamic heuristics for unregistered custom tools (excluding directory/search tools)
+	if strings.Contains(lower, "dir") || strings.Contains(lower, "list") ||
+		strings.Contains(lower, "search") || strings.Contains(lower, "find") {
+		return false
+	}
+	return strings.Contains(lower, "read") || strings.Contains(lower, "view") ||
+		lower == "cat" || strings.Contains(lower, "open")
 }
 
 // IsInteractiveTool checks if the tool name represents a known conversational or mode switching tool.
@@ -271,8 +286,6 @@ func (r *Registry) IsInteractiveTool(toolName string) bool {
 		return false
 	}
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	if r.interactiveToolsLookup == nil {
 		return false
 	}
@@ -281,14 +294,16 @@ func (r *Registry) IsInteractiveTool(toolName string) bool {
 }
 
 // IsKnownTool checks if a tool is recognized in any category across registered agent profiles.
+// Lock-free, zero heap allocation.
 func (r *Registry) IsKnownTool(toolName string) bool {
+	if r == nil {
+		return false
+	}
 	lower := strings.ToLower(strings.TrimSpace(toolName))
 	if lower == "" {
 		return false
 	}
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	_, exists := r.allKnownTools[lower]
 	return exists
 }
@@ -296,53 +311,162 @@ func (r *Registry) IsKnownTool(toolName string) bool {
 // WriteToolsList returns an immutable, pre-sorted slice of all registered file write tool names.
 // Lock-free, zero heap allocation.
 func (r *Registry) WriteToolsList() []string {
+	if r == nil {
+		return nil
+	}
 	return r.writeToolsList
+}
+
+// FileReadToolsList returns an immutable, pre-sorted slice of all registered file read tool names.
+// Lock-free, zero heap allocation.
+func (r *Registry) FileReadToolsList() []string {
+	if r == nil {
+		return nil
+	}
+	return r.fileReadToolsList
 }
 
 // WriteTagByteMarkers returns the precompiled byte signatures for in-flight XML write tool demuxing.
 // Lock-free, zero heap allocation.
 func (r *Registry) WriteTagByteMarkers() [][]byte {
+	if r == nil {
+		return nil
+	}
 	return r.writeTagByteMarkers
 }
 
 // TagReplacer returns the precompiled string replacer for canonicalizing thinking/turn tags.
 // Lock-free, zero heap allocation.
 func (r *Registry) TagReplacer() *strings.Replacer {
+	if r == nil {
+		return nil
+	}
 	return r.tagReplacer
 }
 
 // ReasoningByteMarkers returns the precompiled byte signatures for identifying reasoning chunks.
 // Lock-free, zero heap allocation.
 func (r *Registry) ReasoningByteMarkers() [][]byte {
+	if r == nil {
+		return nil
+	}
 	return r.reasoningByteMarkers
 }
 
 // InteractiveToolsList returns an immutable, pre-sorted slice of known interactive/followup tool names.
 // Lock-free, zero heap allocation.
 func (r *Registry) InteractiveToolsList() []string {
+	if r == nil {
+		return nil
+	}
 	return r.interactiveToolsList
 }
 
 // ModeHeuristicsList returns an immutable, pre-sorted slice of mode-switching phrases.
 // Lock-free, zero heap allocation.
 func (r *Registry) ModeHeuristicsList() []string {
+	if r == nil {
+		return nil
+	}
 	return r.modeHeuristicsList
 }
 
 // QuestionHeuristicsList returns an immutable, pre-sorted slice of conversational question heuristics.
 // Lock-free, zero heap allocation.
 func (r *Registry) QuestionHeuristicsList() []string {
+	if r == nil {
+		return nil
+	}
 	return r.questionHeuristicsList
 }
 
 // ErrorSignaturesList returns an immutable, pre-sorted slice of known agent error signatures.
 // Lock-free, zero heap allocation.
 func (r *Registry) ErrorSignaturesList() []string {
+	if r == nil {
+		return nil
+	}
 	return r.errorSignaturesList
+}
+
+// IsToolError checks whether a tool output represents an execution error or failure.
+// It inspects boolean flags, cataloged agent error signatures, and common failure prefixes.
+// Lock-free, zero heap allocation.
+func (r *Registry) IsToolError(content string, isError bool) bool {
+	if isError {
+		return true
+	}
+	if r == nil {
+		return false
+	}
+	trimmed := strings.TrimSpace(content)
+	if len(trimmed) == 0 {
+		return false
+	}
+
+	// 1. Catalog signatures lookup (zero-alloc case folding)
+	for _, sig := range r.errorSignaturesList {
+		if containsFold(trimmed, sig) {
+			return true
+		}
+	}
+
+	// 2. Generic heuristics fallback for unregistered agents / uncataloged errors
+	if hasPrefixFold(trimmed, "error:") ||
+		hasPrefixFold(trimmed, "fatal:") ||
+		hasPrefixFold(trimmed, "[syntax error]") ||
+		hasPrefixFold(trimmed, "exit code:") ||
+		containsFold(trimmed, "command execution was not successful") ||
+		containsFold(trimmed, "not recognized as an internal or external command") ||
+		(containsFold(trimmed, "the process") && containsFold(trimmed, "not found")) ||
+		containsFold(trimmed, "unable to apply diff") {
+		return true
+	}
+
+	return false
+}
+
+func hasPrefixFold(s, prefix string) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	return strings.EqualFold(s[:len(prefix)], prefix)
+}
+
+func containsFold(s, substr string) bool {
+	if len(substr) == 0 {
+		return true
+	}
+	if len(s) < len(substr) {
+		return false
+	}
+	b0 := substr[0]
+	var b0Alt byte
+	if b0 >= 'a' && b0 <= 'z' {
+		b0Alt = b0 - ('a' - 'A')
+	} else if b0 >= 'A' && b0 <= 'Z' {
+		b0Alt = b0 + ('a' - 'A')
+	} else {
+		b0Alt = b0
+	}
+
+	limit := len(s) - len(substr)
+	for i := 0; i <= limit; i++ {
+		c := s[i]
+		if c == b0 || c == b0Alt {
+			if strings.EqualFold(s[i:i+len(substr)], substr) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // DetectShellWrite inspects shell command lines for file-writing operations using zero-alloc string parsing.
 func (r *Registry) DetectShellWrite(cmd string) bool {
+	if r == nil {
+		return false
+	}
 	trimmed := strings.TrimSpace(cmd)
 	if trimmed == "" {
 		return false
@@ -399,9 +523,6 @@ func (r *Registry) DetectShellWrite(cmd string) bool {
 
 	lower := strings.ToLower(trimmed)
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	// 2. Check shell write pipes
 	for _, pipe := range r.shellWritePipes {
 		if strings.Contains(lower, strings.ToLower(pipe)) {
@@ -447,6 +568,24 @@ func isNullTarget(target string) bool {
 	}
 }
 
+func isCmdPrefixBoundary(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', ';', '|', '&', '`', '(':
+		return true
+	default:
+		return false
+	}
+}
+
+func isCmdSuffixBoundary(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', ';', '|', '&', '`', ')':
+		return true
+	default:
+		return false
+	}
+}
+
 func containsCommandWord(s, word string) bool {
 	idx := 0
 	for {
@@ -455,26 +594,10 @@ func containsCommandWord(s, word string) bool {
 			return false
 		}
 		actualPos := idx + pos
-		prefixOK := false
-		if actualPos == 0 {
-			prefixOK = true
-		} else {
-			prev := s[actualPos-1]
-			if prev == ' ' || prev == '\t' || prev == ';' || prev == '|' || prev == '&' || prev == '`' || prev == '(' || prev == '\n' {
-				prefixOK = true
-			}
-		}
+		prefixOK := actualPos == 0 || isCmdPrefixBoundary(s[actualPos-1])
 
 		afterPos := actualPos + len(word)
-		suffixOK := false
-		if afterPos >= len(s) {
-			suffixOK = true
-		} else {
-			next := s[afterPos]
-			if next == ' ' || next == '\t' || next == ';' || next == '|' || next == '&' || next == '`' || next == ')' || next == '\n' || next == '\r' {
-				suffixOK = true
-			}
-		}
+		suffixOK := afterPos >= len(s) || isCmdSuffixBoundary(s[afterPos])
 
 		if prefixOK && suffixOK {
 			return true

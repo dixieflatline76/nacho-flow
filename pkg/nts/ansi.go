@@ -51,15 +51,27 @@ func StripANSIInPlace(b []byte) []byte {
 				}
 			case '(', ')', '*', '+':
 				// Character set designator: ESC ( [charset]
-				r += 2
+				if r+1 < n {
+					r += 2
+				} else {
+					r = n
+				}
 			default:
 				// 2-character escape sequence: ESC <char>
 				r++
 			}
 		} else {
-			b[w] = b[r]
-			w++
-			r++
+			nextEsc := bytes.IndexByte(b[r:], 0x1b)
+			if nextEsc == -1 {
+				// No more escapes in remaining buffer: bulk copy remaining bytes and finish
+				copy(b[w:], b[r:])
+				w += n - r
+				break
+			}
+			// Copy chunk up to next escape byte
+			copy(b[w:], b[r:r+nextEsc])
+			w += nextEsc
+			r += nextEsc
 		}
 	}
 

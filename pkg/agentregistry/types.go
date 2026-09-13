@@ -9,6 +9,7 @@ type AgentProfile struct {
 	Name               string   `json:"name"`
 	Version            string   `json:"version"`
 	WriteTools         []string `json:"write_tools"`
+	FileReadTools      []string `json:"file_read_tools,omitempty"`
 	ReadTools          []string `json:"read_tools"`
 	CommandTools       []string `json:"command_tools"`
 	InteractiveTools   []string `json:"interactive_tools,omitempty"`

@@ -4,8 +4,13 @@
 package agentregistry
 
 import (
+	"encoding/json"
+	"io/fs"
+	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/dixieflatline76/nacho-flow/data"
 )
 
 func TestDefaultRegistry_EmbeddedCatalog(t *testing.T) {
@@ -133,6 +138,9 @@ func TestRegistry_DetectShellWrite(t *testing.T) {
 		{"cmd >&2", false},
 		{"if [ $x >= 5 ]; then echo ok; fi", false},
 		{"echo 'hi' >", false},
+		{"cmd\r\ntouch file.txt", true},
+		{"echo 'test'\r\nrm file.txt", true},
+		{"git status\r\nls -la", false},
 	}
 
 	for _, tt := range tests {
@@ -357,7 +365,140 @@ func TestRegistry_InteractiveToolsAndShieldHeuristics(t *testing.T) {
 	// 3. Nil receiver safety
 	var nilReg *Registry
 	if nilReg.IsInteractiveTool("ask_question") {
-		t.Error("expected nil registry to return false")
+		t.Error("expected nil registry to return false for IsInteractiveTool")
+	}
+	if nilReg.IsWriteTool("write_to_file") {
+		t.Error("expected nil registry to return false for IsWriteTool")
+	}
+	if nilReg.IsKnownTool("read_file") {
+		t.Error("expected nil registry to return false for IsKnownTool")
+	}
+	if nilReg.DetectShellWrite("touch file.txt") {
+		t.Error("expected nil registry to return false for DetectShellWrite")
+	}
+	if nilReg.WriteToolsList() != nil {
+		t.Error("expected nil registry to return nil for WriteToolsList")
+	}
+	if nilReg.WriteTagByteMarkers() != nil {
+		t.Error("expected nil registry to return nil for WriteTagByteMarkers")
+	}
+	if nilReg.TagReplacer() != nil {
+		t.Error("expected nil registry to return nil for TagReplacer")
+	}
+	if nilReg.ReasoningByteMarkers() != nil {
+		t.Error("expected nil registry to return nil for ReasoningByteMarkers")
+	}
+	if nilReg.InteractiveToolsList() != nil {
+		t.Error("expected nil registry to return nil for InteractiveToolsList")
+	}
+	if nilReg.ModeHeuristicsList() != nil {
+		t.Error("expected nil registry to return nil for ModeHeuristicsList")
+	}
+	if nilReg.QuestionHeuristicsList() != nil {
+		t.Error("expected nil registry to return nil for QuestionHeuristicsList")
+	}
+	if nilReg.ErrorSignaturesList() != nil {
+		t.Error("expected nil registry to return nil for ErrorSignaturesList")
+	}
+	if nilReg.IsFileReadTool("read_file") {
+		t.Error("expected nil registry to return false for IsFileReadTool")
+	}
+	if nilReg.FileReadToolsList() != nil {
+		t.Error("expected nil registry to return nil for FileReadToolsList")
+	}
+	if nilReg.IsToolError("error: something failed", false) {
+		t.Error("expected nil registry to return false for IsToolError when isError is false")
+	}
+	if !nilReg.IsToolError("error: something failed", true) {
+		t.Error("expected nil registry to return true for IsToolError when isError is true")
+	}
+}
+
+func TestRegistry_FileReadToolsAndIsToolError(t *testing.T) {
+	reg := DefaultRegistry()
+
+	// 1. FileReadTools tests
+	readTools := []string{"read_file", "read_files", "view", "view_file", "cat", "open_file"}
+	for _, tool := range readTools {
+		if !reg.IsFileReadTool(tool) {
+			t.Errorf("expected %s to be recognized as a file read tool", tool)
+		}
+		if !reg.IsFileReadTool("  " + strings.ToUpper(tool) + "  ") {
+			t.Errorf("expected whitespace/cased %s to be recognized as a file read tool", tool)
+		}
+	}
+
+	// Dynamic fallback
+	if !reg.IsFileReadTool("custom_read_file") {
+		t.Error("expected custom_read_file to be recognized via fallback")
+	}
+
+	// Non-file-read tools
+	nonReadTools := []string{"list_files", "search_files", "read_dir", "find_files", "bash", "write_to_file", "", "   "}
+	for _, tool := range nonReadTools {
+		if reg.IsFileReadTool(tool) {
+			t.Errorf("expected %q NOT to be recognized as a file read tool", tool)
+		}
+	}
+
+	if list := reg.FileReadToolsList(); len(list) == 0 {
+		t.Error("expected non-empty FileReadToolsList")
+	}
+
+	// 2. IsToolError tests
+	// Explicit boolean error
+	if !reg.IsToolError("", true) {
+		t.Error("expected true when isError is true")
+	}
+	if !reg.IsToolError("all good", true) {
+		t.Error("expected true when isError is true regardless of content")
+	}
+
+	// Catalog error signatures
+	catalogErrors := []string{
+		"Editor operation failed",
+		"Unable to apply diff to file: syntax error",
+		"Parameter 'old_str' is required",
+		"File not found",
+		"Missing value for required parameter",
+		"The tool execution failed",
+		"<error_details>something broke</error_details>",
+	}
+	for _, errStr := range catalogErrors {
+		if !reg.IsToolError(errStr, false) {
+			t.Errorf("expected catalog error %q to be recognized", errStr)
+		}
+	}
+
+	// Generic error prefixes & substrings
+	genericErrors := []string{
+		"error: syntax error at line 5",
+		"fatal: out of memory",
+		"[syntax error] missing semicolon",
+		"exit code: 1",
+		"command execution was not successful",
+		"not recognized as an internal or external command",
+		"the process was terminated because not found",
+		"unable to apply diff to target",
+	}
+	for _, errStr := range genericErrors {
+		if !reg.IsToolError(errStr, false) {
+			t.Errorf("expected generic error %q to be recognized", errStr)
+		}
+	}
+
+	// Non-errors
+	nonErrors := []string{
+		"File saved successfully",
+		"Compilation succeeded in 1.2s",
+		"Reading 24 lines from file.go",
+		"",
+		"   ",
+	}
+	for _, okStr := range nonErrors {
+		if reg.IsToolError(okStr, false) {
+			t.Errorf("expected %q NOT to be recognized as tool error", okStr)
+		}
 	}
 }
 
@@ -368,6 +509,82 @@ func BenchmarkRegistry_IsInteractiveTool(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = reg.IsInteractiveTool(tool)
+	}
+}
+
+func BenchmarkRegistry_IsFileReadTool(b *testing.B) {
+	reg := DefaultRegistry()
+	tool := "read_file"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = reg.IsFileReadTool(tool)
+	}
+}
+
+func BenchmarkRegistry_IsToolError(b *testing.B) {
+	reg := DefaultRegistry()
+	content := "Editor operation failed: file locked"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = reg.IsToolError(content, false)
+	}
+}
+
+func TestAgentRegistry_AllToolProfilesContract(t *testing.T) {
+	reg := DefaultRegistry()
+
+	entries, err := fs.ReadDir(data.CatalogFS, "agents")
+	if err != nil {
+		t.Fatalf("failed to read agents dir: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "manifest.json" {
+			continue
+		}
+
+		raw, err := fs.ReadFile(data.CatalogFS, "agents/"+entry.Name())
+		if err != nil {
+			t.Fatalf("failed to read agent profile %s: %v", entry.Name(), err)
+		}
+
+		var profile AgentProfile
+		if err := json.Unmarshal(raw, &profile); err != nil {
+			t.Fatalf("failed to parse agent profile %s: %v", entry.Name(), err)
+		}
+
+		t.Run(profile.ID+"/FileReadTools", func(t *testing.T) {
+			for _, tool := range profile.FileReadTools {
+				if !reg.IsFileReadTool(tool) {
+					t.Errorf("agent %s: expected %q to be recognized as file read tool", profile.ID, tool)
+				}
+				if reg.IsWriteTool(tool) {
+					t.Errorf("agent %s: tool %q is a read tool, must NOT be recognized as write tool", profile.ID, tool)
+				}
+			}
+		})
+
+		t.Run(profile.ID+"/FileWriteTools", func(t *testing.T) {
+			for _, tool := range profile.WriteTools {
+				if !reg.IsWriteTool(tool) {
+					t.Errorf("agent %s: expected %q to be recognized as write tool", profile.ID, tool)
+				}
+				if reg.IsFileReadTool(tool) {
+					t.Errorf("agent %s: tool %q is a write tool, must NOT be recognized as read tool", profile.ID, tool)
+				}
+			}
+		})
+
+		t.Run(profile.ID+"/ErrorSignatures", func(t *testing.T) {
+			for _, sig := range profile.ErrorSignatures {
+				content := "Error context prefix: " + sig + " suffix"
+				if !reg.IsToolError(content, false) {
+					t.Errorf("agent %s: expected error signature %q to be detected", profile.ID, sig)
+				}
+			}
+		})
 	}
 }
 

@@ -3,10 +3,14 @@ package nts
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dixieflatline76/nacho-flow/data"
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 )
 
 func TestStripANSIInPlace(t *testing.T) {
@@ -203,6 +207,61 @@ func TestNormalizeWhitespaceInPlace(t *testing.T) {
 			input:    "line 1\nline 2\n\n\n\n",
 			expected: "line 1\nline 2\n",
 		},
+		{
+			name:     "crlf lines with trailing spaces and tabs",
+			input:    "line 1   \t\r\nline 2  \r\nline 3\r\n",
+			expected: "line 1\nline 2\nline 3\n",
+		},
+		{
+			name:     "collapse consecutive crlf blank lines",
+			input:    "start\r\n\r\n\r\n\r\nend\r\n",
+			expected: "start\n\nend\n",
+		},
+		{
+			name:     "strip excessive trailing crlf blank lines at end",
+			input:    "line 1\r\nline 2\r\n\r\n\r\n\r\n",
+			expected: "line 1\nline 2\n",
+		},
+		{
+			name:     "pure whitespace with crlf and spaces",
+			input:    "   \r\n\t\r\n   \r\n",
+			expected: "\n",
+		},
+		{
+			name:     "pure newlines only",
+			input:    "\n\n\n\n",
+			expected: "\n",
+		},
+		{
+			name:     "empty buffer",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "single line without trailing newline",
+			input:    "no newline   \t",
+			expected: "no newline",
+		},
+		{
+			name:     "multiple lines without trailing newline at eof",
+			input:    "line 1   \nno newline  ",
+			expected: "line 1\nno newline",
+		},
+		{
+			name:     "leading blank lines collapsed",
+			input:    "\n\n\n\nstart\n",
+			expected: "\nstart\n",
+		},
+		{
+			name:     "clean text preserved without modification",
+			input:    "clean line 1\nclean line 2\n",
+			expected: "clean line 1\nclean line 2\n",
+		},
+		{
+			name:     "trailing carriage return only without lf at eof",
+			input:    "trailing cr\r",
+			expected: "trailing cr",
+		},
 	}
 
 	for _, tt := range tests {
@@ -213,6 +272,84 @@ func TestNormalizeWhitespaceInPlace(t *testing.T) {
 				t.Errorf("got %q, want %q", string(out), tt.expected)
 			}
 		})
+	}
+}
+
+func BenchmarkNormalizeWhitespaceInPlace_ZeroAlloc(b *testing.B) {
+	input := []byte("func Process(ctx context.Context) error {   \t\r\n\r\n\r\n\treturn nil\r\n}\r\n\r\n\r\n")
+	buf := make([]byte, len(input))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		copy(buf, input)
+		_ = NormalizeWhitespaceInPlace(buf)
+	}
+}
+
+func BenchmarkStripANSIInPlace_ZeroAlloc(b *testing.B) {
+	input := []byte("\x1b[31;1mError:\x1b[0m Failed to compile module '\x1b[33mmain.ts\x1b[0m' at line 42:10\nNormal text continues here.")
+	buf := make([]byte, len(input))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		copy(buf, input)
+		_ = StripANSIInPlace(buf)
+	}
+}
+
+func BenchmarkResolveCarriageReturnsInPlace_ZeroAlloc(b *testing.B) {
+	input := []byte("Downloading:  10%\rDownloading:  50%\rDownloading: 100%\nCompleted successfully.\r\nNext line.\n")
+	buf := make([]byte, len(input))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		copy(buf, input)
+		_ = ResolveCarriageReturnsInPlace(buf)
+	}
+}
+
+func BenchmarkStripToolBoilerplateInPlace_ZeroAlloc(b *testing.B) {
+	input := []byte("<notice>Making multiple related changes in a single apply_diff is more efficient</notice>\n(Use `node --trace-warnings ...` to show where the warning was created)\n<error_details>\nSearch Content:\nline 1\nline 2\n</error_details>\nValid output line.")
+	buf := make([]byte, len(input))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		copy(buf, input)
+		_ = StripToolBoilerplateInPlace(buf)
+	}
+}
+
+func BenchmarkCollapseDuplicatesInPlace_ZeroAlloc(b *testing.B) {
+	input := []byte("ts-jest (WARN): Using hybrid module\nts-jest (WARN): Using hybrid module\nts-jest (WARN): Using hybrid module\nts-jest (WARN): Using hybrid module\nUnique line.\n")
+	buf := make([]byte, len(input))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		copy(buf, input)
+		_ = CollapseDuplicatesInPlace(buf, 3)
+	}
+}
+
+func BenchmarkPipeline_Process_ZeroAlloc(b *testing.B) {
+	pipeline := NewPipeline(DefaultConfig())
+	input := []byte("\x1b[31mts-jest (WARN)\x1b[0m\rts-jest (WARN): Using hybrid module\n" +
+		"ts-jest (WARN): Using hybrid module\n" +
+		"ts-jest (WARN): Using hybrid module\n" +
+		"ts-jest (WARN): Using hybrid module   \t\n\n\n\n" +
+		"<notice>Making multiple related changes in a single apply_diff is more efficient</notice>\n" +
+		"Tests passed.\n\n\n")
+	buf := make([]byte, len(input))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		copy(buf, input)
+		_ = pipeline.Process(buf, CategoryGeneric)
 	}
 }
 
@@ -299,6 +436,135 @@ func TestDualLaneImmunity(t *testing.T) {
 	}
 }
 
+func TestPipeline_RealToolSamplesDataset(t *testing.T) {
+	samplesPath := filepath.Join(".", "testdata", "real_tool_samples.json")
+	data, err := os.ReadFile(samplesPath)
+	if err != nil {
+		t.Fatalf("failed to read real_tool_samples.json: %v", err)
+	}
+
+	var samples []struct {
+		Source   string `json:"source"`
+		Category string `json:"category"`
+		Output   string `json:"output"`
+		Length   int    `json:"length"`
+		Lines    int    `json:"lines"`
+	}
+	if err := json.Unmarshal(data, &samples); err != nil {
+		t.Fatalf("failed to unmarshal real_tool_samples.json: %v", err)
+	}
+
+	if len(samples) < 1000 {
+		t.Fatalf("expected at least 1000 real-world tool samples, got %d", len(samples))
+	}
+
+	cfg := DefaultConfig()
+	pipeline := NewPipeline(cfg)
+
+	sourceCodeReadsChecked := 0
+
+	for i, s := range samples {
+		var cat ToolCategory
+		switch s.Category {
+		case "source_code_read":
+			cat = CategoryFileRead
+		case "file_write":
+			cat = CategoryFileWrite
+		default:
+			cat = CategoryGeneric
+		}
+
+		raw := []byte(s.Output)
+		origLen := len(raw)
+
+		// Assert 0 panics
+		buf := append([]byte(nil), raw...)
+		res := pipeline.Process(buf, cat)
+
+		// Assert invariant w <= r
+		if res.ReducedBytes > origLen {
+			t.Fatalf("sample #%d (%s): invariant w <= r violated! reduced %d > original %d",
+				i, s.Category, res.ReducedBytes, origLen)
+		}
+
+		pass1Output := append([]byte(nil), buf[:res.ReducedBytes]...)
+
+		// Assert Dual-Lane Immunity: source_code_read must be 100% unmutated
+		if cat == CategoryFileRead {
+			sourceCodeReadsChecked++
+			if !res.Bypassed {
+				t.Fatalf("sample #%d (%s): expected source_code_read to be bypassed", i, s.Category)
+			}
+			if !bytes.Equal(pass1Output, raw) {
+				t.Fatalf("sample #%d (%s): source_code_read was mutated! Got %d bytes, want %d bytes",
+					i, s.Category, len(pass1Output), len(raw))
+			}
+		}
+
+		// Assert Strict Idempotency: Process(Process(sample)) == Process(sample)
+		buf2 := append([]byte(nil), pass1Output...)
+		res2 := pipeline.Process(buf2, cat)
+		pass2Output := buf2[:res2.ReducedBytes]
+
+		if !bytes.Equal(pass1Output, pass2Output) {
+			t.Fatalf("sample #%d (%s): idempotency violation!\nPass 1 (%d bytes)\nPass 2 (%d bytes)",
+				i, s.Category, len(pass1Output), len(pass2Output))
+		}
+	}
+
+	if sourceCodeReadsChecked < 50 {
+		t.Errorf("expected at least 50 source code reads tested, got %d", sourceCodeReadsChecked)
+	}
+}
+
+func TestPipeline_RTKDefectImmunity(t *testing.T) {
+	groundTruthPath := filepath.Join(".", "testdata", "rtk_ground_truth.json")
+	data, err := os.ReadFile(groundTruthPath)
+	if err != nil {
+		t.Fatalf("failed to read rtk_ground_truth.json: %v", err)
+	}
+
+	var fixtures []struct {
+		ID             string `json:"id"`
+		Category       string `json:"category"`
+		RawInput       string `json:"raw_input"`
+		ExpectedOutput string `json:"expected_output"`
+		RawLen         int    `json:"raw_len"`
+		ReducedLen     int    `json:"reduced_len"`
+	}
+	if err := json.Unmarshal(data, &fixtures); err != nil {
+		t.Fatalf("failed to unmarshal rtk_ground_truth.json: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	pipeline := NewPipeline(cfg)
+
+	for _, fix := range fixtures {
+		var cat ToolCategory
+		if fix.Category == "source_code_read" {
+			cat = CategoryFileRead
+		} else {
+			cat = CategoryGeneric
+		}
+
+		raw := []byte(fix.RawInput)
+		res := pipeline.Process(append([]byte(nil), raw...), cat)
+
+		// Crucial negative-control assertion:
+		// RTK's flawed algorithm truncated source code reads (fixtures 13, 14, 15) from 6.5KB to 71 bytes!
+		// Nacho Flow MUST NOT reproduce this defect: source code reads MUST be 100% preserved.
+		if fix.Category == "source_code_read" {
+			if !res.Bypassed {
+				t.Errorf("[%s] expected source_code_read to be bypassed by Dual-Lane Immunity", fix.ID)
+			}
+			if res.ReducedBytes != len(raw) {
+				t.Fatalf("[%s] DEFECT DETECTED: Nacho Flow reduced source code from %d to %d bytes (RTK flawed target was %d)",
+					fix.ID, len(raw), res.ReducedBytes, fix.ReducedLen)
+			}
+		}
+	}
+}
+
 func TestIdempotency(t *testing.T) {
 	cfg := DefaultConfig()
 	pipeline := NewPipeline(cfg)
@@ -321,6 +587,21 @@ func TestIdempotency(t *testing.T) {
 	if !bytes.Equal(pass1Output, pass2Output) {
 		t.Errorf("NTS is not idempotent!\nPass 1 (%d bytes):\n%s\nPass 2 (%d bytes):\n%s",
 			len(pass1Output), string(pass1Output), len(pass2Output), string(pass2Output))
+	}
+
+	// Subtest: CRLF multi-line idempotency
+	sampleCRLF := []byte("line 1   \t\r\n\r\n\r\n\r\nline 2  \r\nDone.\r\n\r\n\r\n")
+	firstPassCRLF := append([]byte(nil), sampleCRLF...)
+	resCRLF1 := pipeline.Process(firstPassCRLF, CategoryGeneric)
+	pass1CRLFOutput := append([]byte(nil), firstPassCRLF[:resCRLF1.ReducedBytes]...)
+
+	secondPassCRLF := append([]byte(nil), pass1CRLFOutput...)
+	resCRLF2 := pipeline.Process(secondPassCRLF, CategoryGeneric)
+	pass2CRLFOutput := secondPassCRLF[:resCRLF2.ReducedBytes]
+
+	if !bytes.Equal(pass1CRLFOutput, pass2CRLFOutput) {
+		t.Errorf("NTS CRLF is not idempotent!\nPass 1 (%d bytes):\n%s\nPass 2 (%d bytes):\n%s",
+			len(pass1CRLFOutput), string(pass1CRLFOutput), len(pass2CRLFOutput), string(pass2CRLFOutput))
 	}
 }
 
@@ -806,4 +1087,351 @@ func BenchmarkNTS_InPlaceCompaction(t *testing.B) {
 		_ = pipeline.Process(scratch, CategoryGeneric)
 	}
 }
+
+func TestTransformer_ToolImmunity_CatalogAlignment(t *testing.T) {
+	cfg := DefaultConfig()
+	tr := NewTransformer(cfg)
+
+	// Catalog write tools: editor (Cline/Zoo), insert_code_block (Zoo), reapply (Cursor), create_file (Standard/Cursor/Zoo)
+	catalogWriteTools := []string{"editor", "insert_code_block", "reapply", "create_file", "write_to_file"}
+	for _, tool := range catalogWriteTools {
+		cat := categorizeToolName(tool)
+		if cat != CategoryFileWrite {
+			t.Errorf("expected tool %s to be categorized as CategoryFileWrite, got %s", tool, cat)
+		}
+
+		// Verify dual-lane write immunity at pipeline level
+		pipelineRes := tr.Pipeline().Process([]byte("+line1\n+line1\n+line1\n+line1\n"), cat)
+		if !pipelineRes.Bypassed || pipelineRes.BypassReason != "category_file_write" {
+			t.Errorf("expected pipeline bypass for %s with category_file_write, got %+v", tool, pipelineRes)
+		}
+
+		// Verify dual-lane write immunity end-to-end: repetitive diff lines must NOT be deduplicated
+		req := map[string]interface{}{
+			"messages": []interface{}{
+				map[string]interface{}{
+					"role":    "tool",
+					"name":    tool,
+					"content": "+line1\n+line1\n+line1\n+line1\n",
+				},
+			},
+		}
+		body, _ := json.Marshal(req)
+		resBody, res, err := tr.TransformOpenAI(body)
+		if err != nil {
+			t.Fatalf("TransformOpenAI failed for %s: %v", tool, err)
+		}
+		if res.TokensSaved != 0 {
+			t.Errorf("expected 0 tokens saved for bypassed write tool %s, got %d", tool, res.TokensSaved)
+		}
+		if string(resBody) != string(body) {
+			t.Errorf("expected body to be unmodified for write tool %s", tool)
+		}
+	}
+
+	// Catalog read tools: read_files (Cline), view (Anthropic), open_file (Standard), read_file (Standard)
+	catalogReadTools := []string{"read_files", "view", "open_file", "read_file"}
+	for _, tool := range catalogReadTools {
+		cat := categorizeToolName(tool)
+		if cat != CategoryFileRead {
+			t.Errorf("expected tool %s to be categorized as CategoryFileRead, got %s", tool, cat)
+		}
+	}
+
+	// Command / generic tools: bash, run_commands, execute_command
+	genericTools := []string{"bash", "run_commands", "execute_command", "terminal"}
+	for _, tool := range genericTools {
+		cat := categorizeToolName(tool)
+		if cat != CategoryGeneric {
+			t.Errorf("expected tool %s to be categorized as CategoryGeneric, got %s", tool, cat)
+		}
+	}
+}
+
+func TestTransformer_AllAgentToolLanesContract(t *testing.T) {
+	entries, err := fs.ReadDir(data.CatalogFS, "agents")
+	if err != nil {
+		t.Fatalf("failed to read agents dir: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "manifest.json" {
+			continue
+		}
+
+		raw, err := fs.ReadFile(data.CatalogFS, "agents/"+entry.Name())
+		if err != nil {
+			t.Fatalf("failed to read agent profile %s: %v", entry.Name(), err)
+		}
+
+		var profile agentregistry.AgentProfile
+		if err := json.Unmarshal(raw, &profile); err != nil {
+			t.Fatalf("failed to parse agent profile %s: %v", entry.Name(), err)
+		}
+
+		t.Run(profile.ID+"/FileReadTools_Lane", func(t *testing.T) {
+			for _, tool := range profile.FileReadTools {
+				cat := categorizeToolName(tool)
+				if cat != CategoryFileRead {
+					t.Errorf("agent %s: tool %q must be categorized as CategoryFileRead, got %v", profile.ID, tool, cat)
+				}
+			}
+		})
+
+		t.Run(profile.ID+"/FileWriteTools_Lane", func(t *testing.T) {
+			for _, tool := range profile.WriteTools {
+				cat := categorizeToolName(tool)
+				if cat != CategoryFileWrite {
+					t.Errorf("agent %s: tool %q must be categorized as CategoryFileWrite, got %v", profile.ID, tool, cat)
+				}
+			}
+		})
+	}
+}
+
+func TestTransformer_SingleBlockFastPath(t *testing.T) {
+	// Single block
+	singleBlock := []interface{}{
+		map[string]interface{}{
+			"type": "text",
+			"text": "error: cannot find module 'foo'",
+		},
+	}
+	if str := extractContentString(singleBlock); str != "error: cannot find module 'foo'" {
+		t.Errorf("expected single block extraction, got %q", str)
+	}
+
+	// Multi block fallback
+	multiBlock := []interface{}{
+		map[string]interface{}{
+			"type": "text",
+			"text": "part1: ",
+		},
+		map[string]interface{}{
+			"type": "text",
+			"text": "part2",
+		},
+	}
+	if str := extractContentString(multiBlock); str != "part1: part2" {
+		t.Errorf("expected multi block concatenation, got %q", str)
+	}
+
+	// Empty and non-text
+	emptyBlock := []interface{}{}
+	if str := extractContentString(emptyBlock); str != "" {
+		t.Errorf("expected empty string for empty block, got %q", str)
+	}
+}
+
+func TestTransformer_LazyIndexToolNames(t *testing.T) {
+	cfg := DefaultConfig()
+	tr := NewTransformer(cfg)
+
+	// Pure chat payload without any tool calls
+	chatReq := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": "Hello world, what is Go?",
+			},
+			map[string]interface{}{
+				"role":    "assistant",
+				"content": "Go is an open-source programming language.",
+			},
+		},
+	}
+	body, _ := json.Marshal(chatReq)
+
+	resBody, res, err := tr.TransformOpenAI(body)
+	if err != nil {
+		t.Fatalf("TransformOpenAI failed: %v", err)
+	}
+	if res.TokensSaved != 0 {
+		t.Errorf("expected 0 tokens saved for chat payload, got %d", res.TokensSaved)
+	}
+	if string(resBody) != string(body) {
+		t.Errorf("expected unmodified body for chat payload")
+	}
+
+	// Verify indexToolNames returns nil for messages with no tools
+	msgs := chatReq["messages"].([]interface{})
+	names := indexToolNames(msgs)
+	if names != nil {
+		t.Errorf("expected nil names map for chat-only messages, got %+v", names)
+	}
+}
+
+func TestTransformer_StaleReadEviction_Parity(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CompactStaleFileReads = true
+	cfg.StaleReadDepth = 1
+	tr := NewTransformer(cfg)
+
+	// OpenAI Format
+	openAIReq := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "tc1",
+						"function": map[string]interface{}{
+							"name":      "read_file",
+							"arguments": `{"path":"main.go"}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "tc1",
+				"content":      "package main\n\nfunc main() {\n\tprintln(1)\n}\n",
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "tc2",
+						"function": map[string]interface{}{
+							"name":      "write_to_file",
+							"arguments": `{"path":"main.go"}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "tc2",
+				"content":      "File saved successfully",
+			},
+		},
+	}
+	openAIBody, _ := json.Marshal(openAIReq)
+	_, resOAI, err := tr.TransformOpenAI(openAIBody)
+	if err != nil {
+		t.Fatalf("TransformOpenAI failed: %v", err)
+	}
+
+	// Anthropic Format with equivalent turns
+	anthropicReq := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":  "tool_use",
+						"id":    "tc1",
+						"name":  "read_file",
+						"input": map[string]interface{}{"path": "main.go"},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":         "tool_result",
+						"tool_use_id":  "tc1",
+						"content":      "package main\n\nfunc main() {\n\tprintln(1)\n}\n",
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":  "tool_use",
+						"id":    "tc2",
+						"name":  "write_to_file",
+						"input": map[string]interface{}{"path": "main.go"},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "tc2",
+						"content":     "File saved successfully",
+					},
+				},
+			},
+		},
+	}
+	anthropicBody, _ := json.Marshal(anthropicReq)
+	_, resAnthropic, err := tr.TransformAnthropic(anthropicBody)
+	if err != nil {
+		t.Fatalf("TransformAnthropic failed: %v", err)
+	}
+
+	if resOAI.OriginalBytes != resAnthropic.OriginalBytes {
+		t.Errorf("OriginalBytes mismatch: OAI=%d, Anthropic=%d", resOAI.OriginalBytes, resAnthropic.OriginalBytes)
+	}
+	if resOAI.BytesSaved != resAnthropic.BytesSaved {
+		t.Errorf("BytesSaved mismatch: OAI=%d, Anthropic=%d", resOAI.BytesSaved, resAnthropic.BytesSaved)
+	}
+	if resOAI.TokensSaved != resAnthropic.TokensSaved {
+		t.Errorf("TokensSaved mismatch: OAI=%d, Anthropic=%d", resOAI.TokensSaved, resAnthropic.TokensSaved)
+	}
+}
+
+func BenchmarkTransformer_TransformOpenAI_ToolOutput(b *testing.B) {
+	cfg := DefaultConfig()
+	tr := NewTransformer(cfg)
+
+	req := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id": "c1",
+						"function": map[string]interface{}{
+							"name": "bash",
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "c1",
+				"content":      "\x1b[31mFAIL: test_api.go\x1b[0m\rFAIL: test_api.go\nFAIL: test_api.go\nFAIL: test_api.go\n\n\n\nDone.\n",
+			},
+		},
+	}
+	raw, _ := json.Marshal(req)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _, _ = tr.TransformOpenAI(raw)
+	}
+}
+
+func BenchmarkTransformer_TransformOpenAI_ChatOnly(b *testing.B) {
+	cfg := DefaultConfig()
+	tr := NewTransformer(cfg)
+
+	req := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": "Explain quicksort in simple terms.",
+			},
+			map[string]interface{}{
+				"role":    "assistant",
+				"content": "Quicksort is a divide-and-conquer algorithm.",
+			},
+		},
+	}
+	raw, _ := json.Marshal(req)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _, _ = tr.TransformOpenAI(raw)
+	}
+}
+
 

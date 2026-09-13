@@ -18,12 +18,10 @@ func ResolveCarriageReturnsInPlace(b []byte) []byte {
 	n := len(b)
 	lineStart := 0
 
-	// Find the start of the line where the first \r occurred
-	for i := firstCR - 1; i >= 0; i-- {
-		if b[i] == '\n' {
-			lineStart = i + 1
-			break
-		}
+	// Find the start of the line where the first \r occurred using SIMD
+	lastLF := bytes.LastIndexByte(b[:firstCR], '\n')
+	if lastLF >= 0 {
+		lineStart = lastLF + 1
 	}
 
 	for r < n {
@@ -46,9 +44,17 @@ func ResolveCarriageReturnsInPlace(b []byte) []byte {
 			r++
 			lineStart = w
 		default:
-			b[w] = b[r]
-			w++
-			r++
+			nextControl := bytes.IndexAny(b[r:], "\r\n")
+			if nextControl == -1 {
+				// No more \r or \n: bulk copy all remaining bytes and finish
+				copy(b[w:], b[r:])
+				w += n - r
+				r = n
+				break
+			}
+			copy(b[w:], b[r:r+nextControl])
+			w += nextControl
+			r += nextControl
 		}
 	}
 

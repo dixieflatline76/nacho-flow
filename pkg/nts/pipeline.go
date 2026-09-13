@@ -63,22 +63,22 @@ func (p *Pipeline) Process(b []byte, category ToolCategory) ReductionResult {
 	}
 
 	// Pass 2: Carriage return overwrite normalization
-	if p.config.ResolveCR {
+	if len(b) > 0 && p.config.ResolveCR {
 		b = ResolveCarriageReturnsInPlace(b)
 	}
 
 	// Pass 3: Tool boilerplate & notice stripping
-	if p.config.StripBoilerplate {
+	if len(b) > 0 && p.config.StripBoilerplate {
 		b = StripToolBoilerplateInPlace(b)
 	}
 
 	// Pass 4: Whitespace cascade & trailing empty line normalization
-	if p.config.NormalizeWhitespace {
+	if len(b) > 0 && p.config.NormalizeWhitespace {
 		b = NormalizeWhitespaceInPlace(b)
 	}
 
 	// Pass 5: Consecutive duplicate lines collapsing
-	if p.config.DeduplicateLines {
+	if len(b) > 0 && p.config.DeduplicateLines {
 		b = CollapseDuplicatesInPlace(b, p.config.DedupThreshold)
 	}
 
