@@ -23,8 +23,14 @@ body {
 
 .header-brand-row {
 	display: flex;
-	justify-content: space-between;
 	align-items: center;
+}
+
+.header-title {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
 }
 
 .header-title h1 {
@@ -37,19 +43,10 @@ body {
 	gap: 8px;
 }
 
-.version-tag {
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
-	margin-top: 4px;
-	display: block;
-	font-weight: 500;
-}
-
 .header-badges {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	margin-top: 6px;
 	flex-wrap: wrap;
 }
 

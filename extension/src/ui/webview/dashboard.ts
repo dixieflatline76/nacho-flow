@@ -55,7 +55,6 @@ export class DashboardPanel {
 			<div class="header-brand-row">
 				<div class="header-title">
 					<h1>🌮 Nacho Flow Dashboard</h1>
-					<span class="version-tag">Agent Supervisor & Model Dispatcher</span>
 					<div class="header-badges">
 						<span id="active-preset-badge" class="preset-badge">📋 Profile 1</span>
 						<span id="server-version-chip" class="status-chip chip-gray" title="Engine Offline">⚪ Offline</span>
