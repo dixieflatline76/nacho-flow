@@ -801,7 +801,7 @@ func BenchmarkNTS_InPlaceCompaction(t *testing.B) {
 	t.ReportAllocs()
 
 	scratch := make([]byte, len(raw))
-	for i := 0; i < t.N; i++ {
+	for t.Loop() {
 		copy(scratch, raw)
 		_ = pipeline.Process(scratch, CategoryGeneric)
 	}

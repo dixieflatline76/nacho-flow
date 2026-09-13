@@ -27,7 +27,8 @@ func ResolveCarriageReturnsInPlace(b []byte) []byte {
 	}
 
 	for r < n {
-		if b[r] == '\r' {
+		switch b[r] {
+		case '\r':
 			if r+1 < n && b[r+1] == '\n' {
 				// CRLF -> normalize to \n
 				b[w] = '\n'
@@ -39,12 +40,12 @@ func ResolveCarriageReturnsInPlace(b []byte) []byte {
 				w = lineStart
 				r++
 			}
-		} else if b[r] == '\n' {
+		case '\n':
 			b[w] = '\n'
 			w++
 			r++
 			lineStart = w
-		} else {
+		default:
 			b[w] = b[r]
 			w++
 			r++
