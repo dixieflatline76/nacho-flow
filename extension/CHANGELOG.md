@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **🗜️ Nacho Token Saver (NTS) Live Telemetry Panel**: Live flight instruments in the webview dashboard visualizing real-time context compaction: Total Tokens Saved (1.4M+), Payload Reduced (5.4 MB+), and Compacted Turns.
+- **Zero-Allocation In-Flight Compaction Core (`pkg/nts`)**:
+  - In-place ANSI escape code & terminal spinner purge (`|/-\`).
+  - Carriage return (`\r`) progress overwrite collapse.
+  - Superseded file-read compaction collapsing stale multi-turn reads into structural notices with configurable retention depth.
+  - Harness shield stripping IDE boilerplate (`<notice>`, `<error_details>` search dumps).
+  - Alphanumeric-guarded whitespace and log deduplication preserving ASCII boxes and art.
+- **Agent Registry & Dynamic Multi-Agent Profiles (`pkg/agentregistry`, `data/agents/`)**: First-class capability detection for Zoo Code, Cline, Cursor, Aider, Anthropic, and standard OpenAI.
+- **Status Bar HUD Revamp**: Interactive Markdown hover tooltip widget displaying server URL, active profile, dollar savings, NTS tokens saved, and loop breaker statistics.
+- **Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, and Anthropic, cleanly normalizing thoughts into `<think>...</think>` tags for UI accordions.
+- **HotSauce In-Chat Directives**: Steer routing tiers and guardrails on-the-fly directly from prompt text (`@nacho:local`, `@nacho:cloud`, `@nacho:kickstart-off`, `@nacho:reset`).
+- **Rolling 1-Hour Window**: Added `Past 1 Hour` rolling window to telemetry aggregator alongside Today, This Week, and All Time.
+- **LAN Multi-Device Access**: Gateway server binds to `0.0.0.0` by default for local network agent pairing.
+
+### Changed
+- **Dashboard UI Polish**: Modernized webview layout with right-aligned status chips, responsive flex header, minimalist server version badge, and single-row Kickstart & Fairy Dust supervisor layout.
+- **Cleaner Number Formatting**: Removed ambiguous `+` prefix in front of savings amounts.
+- **Landing Page Architecture Symmetry**: Synchronized Section A (Active Runtime Supervisors) and Section B (Nacho Token Saver) two-tier containers on `site/` and root landing pages.
+- **Developer Control Plane**: Upgraded extension showcase into a balanced 4-card 2x2 grid.
+
+### Fixed
+- **Stream-End Context Healing**: Fixed reasoning context drops on streaming `[DONE]` events.
+- **Dual-Lane Immunity Guard**: Ensured supervisor system prompts and tool error responses are never stripped by compaction.
+
 ## [1.1.0] - 2026-09-11
 
 ## [1.0.3] - 2026-09-08
