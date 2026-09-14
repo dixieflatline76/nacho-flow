@@ -170,7 +170,7 @@ func TestStripToolBoilerplateInPlace(t *testing.T) {
 		},
 		{
 			name:     "compact error_details diff match dump",
-			input: "<error_details>\nNo sufficiently similar match found (99% similar, needs 100%)\nDebug Info:\n- Similarity Score: 99%\n- Required Threshold: 100%\nSearch Content:\nline 1\nline 2\nBest Match Found:\nline 1\nline 2\n</error_details>\n",
+			input:    "<error_details>\nNo sufficiently similar match found (99% similar, needs 100%)\nDebug Info:\n- Similarity Score: 99%\n- Required Threshold: 100%\nSearch Content:\nline 1\nline 2\nBest Match Found:\nline 1\nline 2\n</error_details>\n",
 			expected: "<error_details>\nNo sufficiently similar match found (99% similar, needs 100%)\nDebug Info:\n- Similarity Score: 99%\n- Required Threshold: 100%\n</error_details>\n",
 		},
 	}
@@ -1066,7 +1066,6 @@ func TestCollapseDuplicatesInPlace_NoTrailingNewlinePanic(t *testing.T) {
 	}
 }
 
-
 func BenchmarkNTS_InPlaceCompaction(t *testing.B) {
 	cfg := DefaultConfig()
 	pipeline := NewPipeline(cfg)
@@ -1330,9 +1329,9 @@ func TestTransformer_StaleReadEviction_Parity(t *testing.T) {
 				"role": "user",
 				"content": []interface{}{
 					map[string]interface{}{
-						"type":         "tool_result",
-						"tool_use_id":  "tc1",
-						"content":      "package main\n\nfunc main() {\n\tprintln(1)\n}\n",
+						"type":        "tool_result",
+						"tool_use_id": "tc1",
+						"content":     "package main\n\nfunc main() {\n\tprintln(1)\n}\n",
 					},
 				},
 			},
@@ -1433,5 +1432,3 @@ func BenchmarkTransformer_TransformOpenAI_ChatOnly(b *testing.B) {
 		_, _, _ = tr.TransformOpenAI(raw)
 	}
 }
-
-

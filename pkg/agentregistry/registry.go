@@ -768,4 +768,3 @@ func mapToSortedSlice(m map[string]struct{}) []string {
 	sort.Strings(s)
 	return s
 }
-

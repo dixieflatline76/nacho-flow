@@ -1429,6 +1429,3 @@ data: [DONE]
 		t.Errorf("expected prose 'Finished file edit.' to be preserved, got: %s", result)
 	}
 }
-
-
-

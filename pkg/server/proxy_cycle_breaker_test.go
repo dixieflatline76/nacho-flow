@@ -59,7 +59,7 @@ func TestProxy_CycleBreaker_Stage1_LocalRetry(t *testing.T) {
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
 			Enabled:             &enabled,
-			MaxContentTokens:      800,
+			MaxContentTokens:    800,
 			RepetitionWindow:    5,
 			RepetitionThreshold: 3,
 			MaxRetries:          1,
@@ -151,7 +151,7 @@ func TestProxy_CycleBreaker_Stage2_CloudFailover(t *testing.T) {
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
 			Enabled:             &enabled,
-			MaxContentTokens:      800,
+			MaxContentTokens:    800,
 			RepetitionWindow:    5,
 			RepetitionThreshold: 3,
 			MaxRetries:          1,
@@ -258,7 +258,7 @@ func TestProxy_CycleBreaker_NonStreaming_LocalRetry(t *testing.T) {
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
 			Enabled:             &enabled,
-			MaxContentTokens:      800,
+			MaxContentTokens:    800,
 			RepetitionWindow:    5,
 			RepetitionThreshold: 3,
 			MaxRetries:          1,
@@ -405,7 +405,7 @@ func TestProxy_CycleBreaker_Phase2_MidStreamSevering(t *testing.T) {
 		Port: 8000,
 		CycleBreaker: contract.CycleBreakerConfig{
 			Enabled:             &enabled,
-			MaxContentTokens:      800,
+			MaxContentTokens:    800,
 			RepetitionWindow:    5,
 			RepetitionThreshold: 3,
 			MaxRetries:          1,

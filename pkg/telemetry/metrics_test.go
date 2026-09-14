@@ -1197,4 +1197,3 @@ func TestStatsTracker_Past1Hour_And_NTS(t *testing.T) {
 		t.Errorf("expected 3000 TotalNTSTokensSaved after recalc, got %d", recalcStats.TotalNTSTokensSaved)
 	}
 }
-

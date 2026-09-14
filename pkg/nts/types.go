@@ -24,9 +24,9 @@ type Config struct {
 	NormalizeWhitespace bool `json:"normalize_whitespace" yaml:"normalize_whitespace"`
 
 	// Dual-lane immunity options (always recommended true)
-	PreserveFileReads    bool `json:"preserve_file_reads" yaml:"preserve_file_reads"`
-	PreserveFileWrites   bool `json:"preserve_file_writes" yaml:"preserve_file_writes"`
-	PreserveCacheControl bool `json:"preserve_cache_control" yaml:"preserve_cache_control"`
+	PreserveFileReads     bool `json:"preserve_file_reads" yaml:"preserve_file_reads"`
+	PreserveFileWrites    bool `json:"preserve_file_writes" yaml:"preserve_file_writes"`
+	PreserveCacheControl  bool `json:"preserve_cache_control" yaml:"preserve_cache_control"`
 	CompactStaleFileReads bool `json:"compact_stale_file_reads" yaml:"compact_stale_file_reads"`
 	StaleReadDepth        int  `json:"stale_read_depth" yaml:"stale_read_depth"` // Number of recent reads to preserve per file (default: 3)
 }

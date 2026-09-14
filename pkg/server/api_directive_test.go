@@ -822,4 +822,3 @@ func TestAPI_Directive_MkdirAllFailure(t *testing.T) {
 		t.Fatalf("expected status 500 on MkdirAll failure, got %d", w.Code)
 	}
 }
-

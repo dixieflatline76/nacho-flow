@@ -119,15 +119,15 @@ func TestCycleBreakerConfig_ResolveMethods(t *testing.T) {
 
 	// 2. Global fallback overrides
 	global := &contract.CycleBreakerConfig{
-		PhraseLength:                       4,
-		BudgetMaxRepeats:                   3,
-		MaxThinkingTokens:                  2048,
-		ThinkingRepetitionThreshold:        4,
+		PhraseLength:                      4,
+		BudgetMaxRepeats:                  3,
+		MaxThinkingTokens:                 2048,
+		ThinkingRepetitionThreshold:       4,
 		ThinkingBudgetRepetitionThreshold: 2,
-		MaxContentTokens:                     3072,
-		RepetitionThreshold:                5,
-		MaxToolTokens:                      4096,
-		MaxWriteTokens:                     16384,
+		MaxContentTokens:                  3072,
+		RepetitionThreshold:               5,
+		MaxToolTokens:                     4096,
+		MaxWriteTokens:                    16384,
 	}
 	if global.ResolvePhraseLength() != 4 {
 		t.Errorf("expected phrase length 4, got %d", global.ResolvePhraseLength())
@@ -319,7 +319,7 @@ func TestCycleBreakerConfig_Normalize(t *testing.T) {
 	// 1. Flat fields to structured lane fields
 	cfg1 := &contract.CycleBreakerConfig{
 		MaxThinkingTokens:           2048,
-		MaxContentTokens:              4096,
+		MaxContentTokens:            4096,
 		MaxToolTokens:               8192,
 		MaxWriteTokens:              16384,
 		PhraseLength:                5,
@@ -447,4 +447,3 @@ func TestConfig_Normalize(t *testing.T) {
 		t.Errorf("expected normalized Tier CycleBreaker")
 	}
 }
-

@@ -767,5 +767,3 @@ func TestConfig_YDriveValidation(t *testing.T) {
 		t.Errorf("Tier 1: Local GPU Workhorse was not found")
 	}
 }
-
-

@@ -587,4 +587,3 @@ func TestAgentRegistry_AllToolProfilesContract(t *testing.T) {
 		})
 	}
 }
-

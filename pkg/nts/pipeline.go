@@ -28,6 +28,7 @@ func (p *Pipeline) Process(b []byte, category ToolCategory) ReductionResult {
 	origLen := len(b)
 
 	if !p.config.Enabled || origLen == 0 {
+		// #nosec G101 - BypassReason indicates telemetry bypass reason, not hardcoded credentials
 		return ReductionResult{
 			OriginalBytes: origLen,
 			ReducedBytes:  origLen,
@@ -81,7 +82,6 @@ func (p *Pipeline) Process(b []byte, category ToolCategory) ReductionResult {
 	if len(b) > 0 && p.config.DeduplicateLines {
 		b = CollapseDuplicatesInPlace(b, p.config.DedupThreshold)
 	}
-
 
 	duration := time.Since(start)
 	reducedLen := len(b)

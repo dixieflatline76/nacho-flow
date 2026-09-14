@@ -122,17 +122,17 @@ type KickstartConfig struct {
 
 // CycleBreakerConfig configures active inference stream loop and monologue detection.
 type CycleBreakerConfig struct {
-	Enabled                     *bool          `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	PhraseLength                int            `yaml:"phrase_length,omitempty" json:"phrase_length,omitempty"`
-	BudgetMaxRepeats            int            `yaml:"budget_max_repeats,omitempty" json:"budget_max_repeats,omitempty"`
-	ThinkingLane                LaneConfig     `yaml:"thinking_lane,omitempty" json:"thinking_lane,omitempty"`
-	ReasoningLane               LaneConfig     `yaml:"reasoning_lane,omitempty" json:"reasoning_lane,omitempty"`
-	ContentLane                 LaneConfig     `yaml:"content_lane,omitempty" json:"content_lane,omitempty"`
-	ToolLane                    ToolLaneConfig `yaml:"tool_lane,omitempty" json:"tool_lane,omitempty"`
-	MaxRetries                  int            `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`
-	CorrectionPrompt            string         `yaml:"correction_prompt,omitempty" json:"correction_prompt,omitempty"`
-	ModelCooldownSeconds        int            `yaml:"model_cooldown_seconds,omitempty" json:"model_cooldown_seconds,omitempty"`
-	RetryFloor                  int            `yaml:"retry_floor,omitempty" json:"retry_floor,omitempty"`
+	Enabled              *bool          `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	PhraseLength         int            `yaml:"phrase_length,omitempty" json:"phrase_length,omitempty"`
+	BudgetMaxRepeats     int            `yaml:"budget_max_repeats,omitempty" json:"budget_max_repeats,omitempty"`
+	ThinkingLane         LaneConfig     `yaml:"thinking_lane,omitempty" json:"thinking_lane,omitempty"`
+	ReasoningLane        LaneConfig     `yaml:"reasoning_lane,omitempty" json:"reasoning_lane,omitempty"`
+	ContentLane          LaneConfig     `yaml:"content_lane,omitempty" json:"content_lane,omitempty"`
+	ToolLane             ToolLaneConfig `yaml:"tool_lane,omitempty" json:"tool_lane,omitempty"`
+	MaxRetries           int            `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`
+	CorrectionPrompt     string         `yaml:"correction_prompt,omitempty" json:"correction_prompt,omitempty"`
+	ModelCooldownSeconds int            `yaml:"model_cooldown_seconds,omitempty" json:"model_cooldown_seconds,omitempty"`
+	RetryFloor           int            `yaml:"retry_floor,omitempty" json:"retry_floor,omitempty"`
 
 	// Flat fields for direct overrides and tests
 	MaxContentTokens                  int      `yaml:"max_content_tokens,omitempty" json:"max_content_tokens,omitempty"`
@@ -490,16 +490,16 @@ type FairyDustConfig struct {
 
 // NTSConfig configures the Nacho Token Saver (NTS) in-place compaction engine.
 type NTSConfig struct {
-	Enabled              *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	StripANSI            *bool `yaml:"strip_ansi,omitempty" json:"strip_ansi,omitempty"`
-	ResolveCR            *bool `yaml:"resolve_cr,omitempty" json:"resolve_cr,omitempty"`
-	DeduplicateLines     *bool `yaml:"deduplicate_lines,omitempty" json:"deduplicate_lines,omitempty"`
-	DedupThreshold       int   `yaml:"dedup_threshold,omitempty" json:"dedup_threshold,omitempty"`
-	StripBoilerplate     *bool `yaml:"strip_boilerplate,omitempty" json:"strip_boilerplate,omitempty"`
-	NormalizeWhitespace  *bool `yaml:"normalize_whitespace,omitempty" json:"normalize_whitespace,omitempty"`
-	PreserveFileReads    *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
-	PreserveFileWrites   *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
-	PreserveCacheControl *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
+	Enabled               *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	StripANSI             *bool `yaml:"strip_ansi,omitempty" json:"strip_ansi,omitempty"`
+	ResolveCR             *bool `yaml:"resolve_cr,omitempty" json:"resolve_cr,omitempty"`
+	DeduplicateLines      *bool `yaml:"deduplicate_lines,omitempty" json:"deduplicate_lines,omitempty"`
+	DedupThreshold        int   `yaml:"dedup_threshold,omitempty" json:"dedup_threshold,omitempty"`
+	StripBoilerplate      *bool `yaml:"strip_boilerplate,omitempty" json:"strip_boilerplate,omitempty"`
+	NormalizeWhitespace   *bool `yaml:"normalize_whitespace,omitempty" json:"normalize_whitespace,omitempty"`
+	PreserveFileReads     *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
+	PreserveFileWrites    *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
+	PreserveCacheControl  *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
 	CompactStaleFileReads *bool `yaml:"compact_stale_file_reads,omitempty" json:"compact_stale_file_reads,omitempty"`
 	StaleReadDepth        int   `yaml:"stale_read_depth,omitempty" json:"stale_read_depth,omitempty"`
 }

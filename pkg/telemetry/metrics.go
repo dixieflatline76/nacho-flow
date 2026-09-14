@@ -190,11 +190,11 @@ func NewStatsTrackerWithInitialSnapshot(bufferSize int, initial StatsSnapshot) *
 		allPct := reductionPct(tracker.stats.EstimatedCostSavedUSD, tracker.stats.TotalCostSpentUSD)
 		tracker.stats.CostReductionPct = allPct
 		tracker.stats.Windows.AllTime = TimeWindowMetrics{
-			Requests:         tracker.stats.TotalRequests,
-			TokensTotal:      tracker.allTimeTokens,
-			TokensLocal:      tracker.stats.TotalTokensRoutedLocally,
-			CostSpentUSD:     tracker.stats.TotalCostSpentUSD,
-			CostSavedUSD:     tracker.stats.EstimatedCostSavedUSD,
+			Requests:          tracker.stats.TotalRequests,
+			TokensTotal:       tracker.allTimeTokens,
+			TokensLocal:       tracker.stats.TotalTokensRoutedLocally,
+			CostSpentUSD:      tracker.stats.TotalCostSpentUSD,
+			CostSavedUSD:      tracker.stats.EstimatedCostSavedUSD,
 			CostReductionPct:  allPct,
 			CycleKiller:       tracker.stats.CycleKiller,
 			FairyDust:         tracker.stats.FairyDust,
@@ -317,12 +317,12 @@ func (s *StatsTracker) restoreWindowsFromBuckets(now time.Time) {
 	allPct := reductionPct(s.stats.EstimatedCostSavedUSD, s.stats.TotalCostSpentUSD)
 	s.stats.CostReductionPct = allPct
 	s.stats.Windows.AllTime = TimeWindowMetrics{
-		Requests:         s.stats.TotalRequests,
-		TokensTotal:      s.allTimeTokens,
-		TokensLocal:      s.stats.TotalTokensRoutedLocally,
-		CostSpentUSD:     s.stats.TotalCostSpentUSD,
-		CostSavedUSD:     s.stats.EstimatedCostSavedUSD,
-		CostReductionPct: allPct,
+		Requests:          s.stats.TotalRequests,
+		TokensTotal:       s.allTimeTokens,
+		TokensLocal:       s.stats.TotalTokensRoutedLocally,
+		CostSpentUSD:      s.stats.TotalCostSpentUSD,
+		CostSavedUSD:      s.stats.EstimatedCostSavedUSD,
+		CostReductionPct:  allPct,
 		CycleKiller:       s.stats.CycleKiller,
 		FairyDust:         s.stats.FairyDust,
 		NTSTokensSaved:    s.stats.TotalNTSTokensSaved,

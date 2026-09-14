@@ -7,4 +7,3 @@ import "embed"
 
 //go:embed agents/*.json shell.json reasoning.json
 var CatalogFS embed.FS
-

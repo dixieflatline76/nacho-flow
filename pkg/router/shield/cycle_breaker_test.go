@@ -40,7 +40,7 @@ func TestCycleBreaker_NgramRepetitionDetection(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxContentTokens:      800,
+		MaxContentTokens:    800,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 3,
 	})
@@ -71,7 +71,7 @@ func TestCycleBreaker_ContentTokenCeiling(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxContentTokens:      50,
+		MaxContentTokens:    50,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 5, // High threshold so ngram loop doesn't fire first
 	})
@@ -97,7 +97,7 @@ func TestCycleBreaker_CooperativeContentBudget(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxContentTokens:      200,
+		MaxContentTokens:    200,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 100, // Set very high so ngram loop never fires
 	})
@@ -210,7 +210,7 @@ func TestCycleBreaker_DualLaneIsolation(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:                     &enabled,
-		MaxContentTokens:              1000,
+		MaxContentTokens:            1000,
 		MaxThinkingTokens:           1000,
 		RepetitionWindow:            6,
 		RepetitionThreshold:         3,
@@ -246,7 +246,7 @@ func TestCycleBreaker_ResetClearsBothLanes(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:                     &enabled,
-		MaxContentTokens:              50,
+		MaxContentTokens:            50,
 		MaxThinkingTokens:           50,
 		RepetitionWindow:            4,
 		RepetitionThreshold:         3,
@@ -296,7 +296,7 @@ func TestCycleBreaker_LocalityGuard_DistantRepetitionsDoNotTrigger(t *testing.T)
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxContentTokens:      4000,
+		MaxContentTokens:    4000,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 3,
 	})
@@ -337,7 +337,7 @@ func TestCycleBreaker_NQueensAlgorithmicContent(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxContentTokens:      4000,
+		MaxContentTokens:    4000,
 		RepetitionWindow:    6,
 		RepetitionThreshold: 3,
 	})
@@ -398,7 +398,7 @@ func TestCycleBreaker_ToolLane_LargeCodePayload_NoFalsePositive(t *testing.T) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
 		Enabled:             &enabled,
-		MaxContentTokens:      100, // tight prose budget
+		MaxContentTokens:    100, // tight prose budget
 		MaxThinkingTokens:   100, // tight thinking budget
 		MaxToolTokens:       8192,
 		RepetitionWindow:    6,
@@ -766,9 +766,9 @@ func BenchmarkCycleBreaker_ProcessToolDelta_FileWrite(b *testing.B) {
 func TestCycleBreaker_PoolAcquireRelease_CleanState(t *testing.T) {
 	enabled := true
 	cfg1 := &contract.CycleBreakerConfig{
-		Enabled:        &enabled,
+		Enabled:          &enabled,
 		MaxContentTokens: 1000,
-		MaxWriteTokens: 20000,
+		MaxWriteTokens:   20000,
 	}
 
 	cb1 := GetCycleBreaker(cfg1)
@@ -785,9 +785,9 @@ func TestCycleBreaker_PoolAcquireRelease_CleanState(t *testing.T) {
 	// Re-acquire from pool with different config
 	disabled := false
 	cfg2 := &contract.CycleBreakerConfig{
-		Enabled:        &disabled,
+		Enabled:          &disabled,
 		MaxContentTokens: 500,
-		MaxWriteTokens: 16000,
+		MaxWriteTokens:   16000,
 	}
 	cb2 := GetCycleBreaker(cfg2)
 	defer PutCycleBreaker(cb2)
@@ -839,9 +839,9 @@ func TestCycleBreaker_PutCycleBreaker_NilSafe(t *testing.T) {
 func BenchmarkCycleBreaker_PoolAcquireRelease(b *testing.B) {
 	enabled := true
 	cfg := &contract.CycleBreakerConfig{
-		Enabled:        &enabled,
+		Enabled:          &enabled,
 		MaxContentTokens: 4096,
-		MaxWriteTokens: 32768,
+		MaxWriteTokens:   32768,
 	}
 
 	b.ReportAllocs()

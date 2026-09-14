@@ -324,9 +324,9 @@ func TestTransformer_StaleFileReadEviction_Anthropic(t *testing.T) {
 				"role": "user",
 				"content": []interface{}{
 					map[string]interface{}{
-						"type":         "tool_result",
-						"tool_use_id":  "toolu_1",
-						"content":      largeFileContent,
+						"type":        "tool_result",
+						"tool_use_id": "toolu_1",
+						"content":     largeFileContent,
 					},
 				},
 			},
@@ -1148,4 +1148,3 @@ func TestTransformer_ConfigurableDepth(t *testing.T) {
 		t.Errorf("expected c4 to be preserved with depth 3")
 	}
 }
-

@@ -15,11 +15,11 @@ import (
 )
 
 // TestProxy_FairyDust_Immunity_CycleKillerAndNextTurnReset verifies:
-// 1. On a normal turn (FairyDusted == false), Cycle Killer severs repetitive command tool calls.
-// 2. On a turn where Fairy Dust triggers (FairyDusted == true), Cycle Killer is bypassed and
-//    the stream is NOT severed despite heavy tool argument repetition.
-// 3. On the immediate next turn on the same session (FairyDusted == false), Cycle Killer is
-//    fully re-armed, and the exact same repetitive tool payload is actively severed.
+//  1. On a normal turn (FairyDusted == false), Cycle Killer severs repetitive command tool calls.
+//  2. On a turn where Fairy Dust triggers (FairyDusted == true), Cycle Killer is bypassed and
+//     the stream is NOT severed despite heavy tool argument repetition.
+//  3. On the immediate next turn on the same session (FairyDusted == false), Cycle Killer is
+//     fully re-armed, and the exact same repetitive tool payload is actively severed.
 func TestProxy_FairyDust_Immunity_CycleKillerAndNextTurnReset(t *testing.T) {
 	var turnCounter atomic.Int32
 

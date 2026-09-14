@@ -2407,18 +2407,18 @@ func TestProxy_NTSTokenSaver_CompactsToolOutputAndRecordsTelemetry(t *testing.T)
 				"role": "assistant",
 				"tool_calls": []interface{}{
 					map[string]interface{}{
-						"id": "call_bash_1",
+						"id":   "call_bash_1",
 						"type": "function",
 						"function": map[string]interface{}{
-							"name": "execute_command",
+							"name":      "execute_command",
 							"arguments": `{"command":"go build"}`,
 						},
 					},
 					map[string]interface{}{
-						"id": "call_read_1",
+						"id":   "call_read_1",
 						"type": "function",
 						"function": map[string]interface{}{
-							"name": "read_file",
+							"name":      "read_file",
 							"arguments": `{"path":"main.go"}`,
 						},
 					},
@@ -2555,4 +2555,3 @@ func TestProxy_NTSTokenSaver_AnthropicMessages(t *testing.T) {
 		t.Errorf("Expected blank line cascade collapsed in Anthropic tool_result, got: %s", string(upstreamBytes))
 	}
 }
-

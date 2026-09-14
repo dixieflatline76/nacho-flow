@@ -37,7 +37,6 @@ type ReasoningCatalog struct {
 	ExtraByteMarkers []string            `json:"extra_byte_markers"`
 }
 
-
 // ShellCatalog defines the platform-specific commands and pipes that perform file writes.
 type ShellCatalog struct {
 	Version string           `json:"version"`
