@@ -76,7 +76,7 @@ export class StatusBarManager {
 			const md = new vscode.MarkdownString(undefined, true);
 			md.isTrusted = true;
 			md.supportThemeIcons = true;
-			md.appendMarkdown(`**🌮 Nacho Flow: Offline**\n\n`);
+			md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`⚪ Offline\`\n\n`);
 			md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
 			md.appendMarkdown(`---\n\n[🔄 Open Dashboard / Retry](command:nacho-flow.showDashboard)`);
 			this.item.tooltip = md;
@@ -228,28 +228,40 @@ export class StatusBarManager {
 		md.supportThemeIcons = true;
 
 		if (!this.stats) {
-			md.appendMarkdown('**🌮 Nacho Flow** • Agent Supervisor & Model Dispatcher');
+			md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`⚪ Offline\`\n\n`);
+			md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
+			md.appendMarkdown(`---\n\n[🔄 Open Dashboard / Retry](command:nacho-flow.showDashboard)`);
 			return md;
 		}
 
 		const m = metrics || this.extractMetricsForTimeWindow();
 		const presetLabel = StatusBarManager.PRESET_LABELS[this.activePreset] || this.activePreset;
+
+		const tw = this.timeWindow;
+		const link1h = tw === 'past_1_hour' ? '**✓ [1h](command:nacho-flow.setTimeWindowPast1Hour)**' : '[1h](command:nacho-flow.setTimeWindowPast1Hour)';
+		const linkToday = tw === 'today' ? '**✓ [Today](command:nacho-flow.setTimeWindowToday)**' : '[Today](command:nacho-flow.setTimeWindowToday)';
+		const linkWeek = tw === 'this_week' ? '**✓ [This Week](command:nacho-flow.setTimeWindowWeek)**' : '[This Week](command:nacho-flow.setTimeWindowWeek)';
+		const linkMonth = tw === 'this_month' ? '**✓ [This Month](command:nacho-flow.setTimeWindowMonth)**' : '[This Month](command:nacho-flow.setTimeWindowMonth)';
+		const linkAll = tw === 'all_time' ? '**✓ [All Time](command:nacho-flow.setTimeWindowAllTime)**' : '[All Time](command:nacho-flow.setTimeWindowAllTime)';
+
+		let switchLinks = `${link1h} &nbsp;|&nbsp; ${linkToday} &nbsp;|&nbsp; ${linkWeek} &nbsp;|&nbsp; ${linkMonth} &nbsp;|&nbsp; ${linkAll}`;
+		if (tw === 'yesterday') {
+			switchLinks = `${link1h} &nbsp;|&nbsp; **✓ [Yesterday](command:nacho-flow.setTimeWindowYesterday)** &nbsp;|&nbsp; ${linkToday} &nbsp;|&nbsp; ${linkWeek} &nbsp;|&nbsp; ${linkMonth} &nbsp;|&nbsp; ${linkAll}`;
+		}
 		
-		md.appendMarkdown(`**🌮 Nacho Flow** • Agent Supervisor & Model Dispatcher\n\n`);
-		md.appendMarkdown(`🕒 **Timeframe**: ${m.timeframeTitle}\n\n`);
+		md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`🟢 Online\`\n\n`);
+		md.appendMarkdown(`**${presetLabel}** &nbsp;•&nbsp; \`${this.getBaseUrl()}\`\n\n`);
+		md.appendMarkdown(`| Metric | ${m.timeframeTitle} |\n`);
+		md.appendMarkdown(`| :--- | :--- |\n`);
+		md.appendMarkdown(`| **Est. Cost Saved** | **\`+$${m.savedUSD.toFixed(2)}\`** *(${Math.round(m.reductionPct)}% saved)* |\n`);
+		md.appendMarkdown(`| **Cloud API Spend** | \`$${m.spentUSD.toFixed(2)}\` |\n`);
+		md.appendMarkdown(`| **Local GPU ($0.00)** | \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)* |\n`);
+		md.appendMarkdown(`| **Nacho Token Saver** | \`${m.ntsTokens.toLocaleString()} tokens\` *(${formatBytes(m.ntsBytes)} saved • ${m.ntsCompactedTurns} turns)* |\n`);
+		md.appendMarkdown(`| **Agent Supervisor** | \`${m.ckHeals} loops healed • ${m.ckKicks} kicks • ${m.fdTriggers} fairy dust\` |\n`);
+		md.appendMarkdown(`| **Total Prompt Turns** | \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)* |\n\n`);
+		md.appendMarkdown(`Timeframe: ${switchLinks}\n\n`);
 		md.appendMarkdown(`---\n\n`);
-		md.appendMarkdown(`💵 **Est. Cost Saved**: \`+$${m.savedUSD.toFixed(2)}\` *(${Math.round(m.reductionPct)}% saved)*\n\n`);
-		md.appendMarkdown(`📉 **Cloud API Spend**: \`$${m.spentUSD.toFixed(2)}\`\n\n`);
-		md.appendMarkdown(`🖥️ **Local GPU ($0.00)**: \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)*\n\n`);
-		md.appendMarkdown(`🗜️ **Nacho Token Saver**: \`${m.ntsTokens.toLocaleString()} tokens\` *(${formatBytes(m.ntsBytes)} saved • ${m.ntsCompactedTurns} turns)*\n\n`);
-		md.appendMarkdown(`🛡️ **Agent Supervisor**: \`${m.ckHeals} loops healed • ${m.ckKicks} kicks • ${m.fdTriggers} fairy dust\`\n\n`);
-		md.appendMarkdown(`🪙 **Total Prompt Turns**: \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)*\n\n`);
-		md.appendMarkdown(`🛣️ **Model Dispatcher**: \`${this.getBaseUrl()}\`\n\n`);
-		md.appendMarkdown(`📋 **Active Profile**: \`${presetLabel}\`\n\n`);
-		md.appendMarkdown(`---\n\n`);
-		md.appendMarkdown(`Switch: [1h](command:nacho-flow.setTimeWindowPast1Hour) &nbsp;|&nbsp; [Today](command:nacho-flow.setTimeWindowToday) &nbsp;|&nbsp; [This Week](command:nacho-flow.setTimeWindowWeek) &nbsp;|&nbsp; [This Month](command:nacho-flow.setTimeWindowMonth) &nbsp;|&nbsp; [All Time](command:nacho-flow.setTimeWindowAllTime)\n\n`);
-		md.appendMarkdown(`---\n\n`);
-		md.appendMarkdown(`[📊 Dashboard](command:nacho-flow.showDashboard) &nbsp;|&nbsp; [⚡ Auto-Tune](command:nacho-flow.runOptimizer) &nbsp;|&nbsp; [🔥 Heat Seeker](command:nacho-flow.refreshDeals) &nbsp;|&nbsp; [⚙️ Settings](command:nacho-flow.openSettings)`);
+		md.appendMarkdown(`[📊 Dashboard](command:nacho-flow.showDashboard) &nbsp;&nbsp;•&nbsp;&nbsp; [⚡ Auto-Tune](command:nacho-flow.runOptimizer) &nbsp;&nbsp;•&nbsp;&nbsp; [🔥 Deals](command:nacho-flow.refreshDeals) &nbsp;&nbsp;•&nbsp;&nbsp; [⚙ Settings](command:nacho-flow.openSettings)`);
 
 		return md;
 	}
