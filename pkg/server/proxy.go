@@ -1004,7 +1004,7 @@ func (s *Server) dispatchTier(
 	preparedBody, _ = s.sanitizer.SanitizePayload(preparedBody, hasVision)
 
 	var ntsTokensSaved, ntsBytesSaved int
-	if s.ntsTransformer != nil && bytes.Contains(preparedBody, []byte("tool")) {
+	if s.ntsTransformer != nil {
 		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
 			if transformed, res, err := s.ntsTransformer.TransformAnthropic(preparedBody); err == nil && !res.Bypassed {
 				preparedBody = transformed
