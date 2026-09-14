@@ -758,7 +758,7 @@
 		}
 
 		const savingsVal = optData.projected_savings_usd !== undefined ? optData.projected_savings_usd : (optData.projected_savings || 0);
-		const savingsFormatted = typeof savingsVal === 'number' ? `+$${savingsVal.toFixed(2)}` : savingsVal;
+		const savingsFormatted = typeof savingsVal === 'number' ? `$${savingsVal.toFixed(2)}` : savingsVal;
 		const rule = optData.synthesized_rule || optData.rule || 'Tokens < 64000 && Retries == 0';
 		const tierName = optData.target_tier_name || 'Tier 1 (Local GPU)';
 		const sampleSize = optData.total_sample_turns || optData.sample_size || 0;

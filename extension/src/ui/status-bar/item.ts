@@ -253,7 +253,7 @@ export class StatusBarManager {
 		md.appendMarkdown(`**${presetLabel}** &nbsp;•&nbsp; \`${this.getBaseUrl()}\`\n\n`);
 		md.appendMarkdown(`| Metric | ${m.timeframeTitle} |\n`);
 		md.appendMarkdown(`| :--- | :--- |\n`);
-		md.appendMarkdown(`| **Est. Cost Saved** | **\`+$${m.savedUSD.toFixed(2)}\`** *(${Math.round(m.reductionPct)}% saved)* |\n`);
+		md.appendMarkdown(`| **Est. Cost Saved** | **\`$${m.savedUSD.toFixed(2)}\`** *(${Math.round(m.reductionPct)}% saved)* |\n`);
 		md.appendMarkdown(`| **Cloud API Spend** | \`$${m.spentUSD.toFixed(2)}\` |\n`);
 		md.appendMarkdown(`| **Local GPU ($0.00)** | \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)* |\n`);
 		md.appendMarkdown(`| **Nacho Token Saver** | \`${m.ntsTokens.toLocaleString()} tokens\` *(${formatBytes(m.ntsBytes)} saved • ${m.ntsCompactedTurns} turns)* |\n`);

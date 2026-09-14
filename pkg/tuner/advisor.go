@@ -41,7 +41,7 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 	b.WriteString("\n📈 PROJECTED MONTHLY IMPACT:\n")
 	b.WriteString(fmt.Sprintf("  • Developer Retries Avoided: ~%d retries eliminated\n", res.RetriesEliminated))
 	if res.ProjectedSavingsUSD > 0 {
-		b.WriteString(fmt.Sprintf("  • Net Monthly Cost Optimization: +$%.2f USD saved\n", res.ProjectedSavingsUSD))
+		b.WriteString(fmt.Sprintf("  • Net Monthly Cost Optimization: $%.2f USD saved\n", res.ProjectedSavingsUSD))
 	}
 
 	// Find the local tier in current config to show diff
