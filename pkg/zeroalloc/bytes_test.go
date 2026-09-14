@@ -109,6 +109,11 @@ func TestStripSubslicesInPlace(t *testing.T) {
 			input:    "<not_a_tag> keeps existing <think> removed </think>",
 			expected: "<not_a_tag> keeps existing  removed ",
 		},
+		{
+			name:     "empty input",
+			input:    "",
+			expected: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -119,6 +124,42 @@ func TestStripSubslicesInPlace(t *testing.T) {
 				t.Fatalf("expected %q, got %q", tt.expected, string(res))
 			}
 		})
+	}
+}
+
+func TestStripSubslicesInPlace_MultipleTriggers(t *testing.T) {
+	targets := [][]byte{
+		[]byte("<tag>"),
+		[]byte("[tool]"),
+		[]byte("{json}"),
+	}
+
+	// 1. Empty targets or empty input
+	if string(StripSubslicesInPlace([]byte("hello"), nil)) != "hello" {
+		t.Errorf("expected original on nil targets")
+	}
+	if string(StripSubslicesInPlace(nil, targets)) != "" {
+		t.Errorf("expected empty on nil input")
+	}
+
+	// 2. No triggers present
+	input := "No matches here."
+	if string(StripSubslicesInPlace([]byte(input), targets)) != input {
+		t.Errorf("expected unchanged when no triggers present")
+	}
+
+	// 3. Multi-trigger stripping and advancing
+	multiInput := "Start <tag> middle [tool] and {json} end."
+	expected := "Start  middle  and  end."
+	res := string(StripSubslicesInPlace([]byte(multiInput), targets))
+	if res != expected {
+		t.Errorf("expected %q, got %q", expected, res)
+	}
+
+	// 4. Trigger byte present without target match
+	unmatched := "[not a tool] <not a tag> {not json}"
+	if string(StripSubslicesInPlace([]byte(unmatched), targets)) != unmatched {
+		t.Errorf("expected %q, got %q", unmatched, string(StripSubslicesInPlace([]byte(unmatched), targets)))
 	}
 }
 
@@ -144,6 +185,12 @@ func TestFindTrailingPrefix(t *testing.T) {
 			expected: -1,
 		},
 		{
+			name:     "empty input",
+			input:    "",
+			maxLen:   24,
+			expected: -1,
+		},
+		{
 			name:      "exact trailing prefix match",
 			input:     "Here is some text ending in <|channel",
 			maxLen:    24,
@@ -163,6 +210,13 @@ func TestFindTrailingPrefix(t *testing.T) {
 			expected:  3,
 			matchText: "<think",
 		},
+		{
+			name:      "checkLen greater than n",
+			input:     "<think",
+			maxLen:    100,
+			expected:  0,
+			matchText: "<think",
+		},
 	}
 
 	for _, tt := range tests {
@@ -176,6 +230,10 @@ func TestFindTrailingPrefix(t *testing.T) {
 				t.Fatalf("expected trailing text %q, got %q", tt.matchText, string(buf[idx:]))
 			}
 		})
+	}
+
+	if FindTrailingPrefix([]byte("test"), 10, nil) != -1 {
+		t.Errorf("expected -1 for nil prefixes")
 	}
 }
 

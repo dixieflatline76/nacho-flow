@@ -822,3 +822,29 @@ func TestAPI_Directive_MkdirAllFailure(t *testing.T) {
 		t.Fatalf("expected status 500 on MkdirAll failure, got %d", w.Code)
 	}
 }
+
+func TestAPI_Directive_PurgeAllLogs_CustomPaths(t *testing.T) {
+	srv, _, _ := setupTestServer(t)
+	exitChan := make(chan int, 1)
+	srv.SetExitFunc(func(code int) {
+		exitChan <- code
+	})
+	tempDir := t.TempDir()
+	dPath := filepath.Join(tempDir, "custom_directive.json")
+	srv.SetDirectivePath(dPath)
+	srv.SetTrafficLogPath(filepath.Join(tempDir, "traffic.jsonl"))
+
+	req := httptest.NewRequest(http.MethodPost, contract.PathAPIDirective, bytes.NewReader([]byte(`{"action":"PURGE_ALL_LOGS"}`)))
+	req.Header.Set(contract.HeaderAuthorization, contract.AuthSchemeBearer+"test-secret-token")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	select {
+	case <-exitChan:
+	case <-time.After(1 * time.Second):
+	}
+}

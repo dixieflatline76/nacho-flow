@@ -1499,3 +1499,153 @@ data: [DONE]
 	}
 }
 
+func TestStreamNormalizer_SplitDelimiter_EmptyChunkAndDone(t *testing.T) {
+	// Tests:
+	// Chunk 1: only prefix "<|channel" -> buffered, chunk becomes empty
+	// Chunk 2: remainder ">thoughthello" -> stripped, "hello" emitted
+	// Chunk 3: trailing non-delimiter "<span" before [DONE] -> emitted as prose on [DONE]
+	rawSSE := `data: {"choices":[{"index":0,"delta":{"content":"<|channel"}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":">thoughthello"}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":" text <span"}}]}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+	var out bytes.Buffer
+	_, err := io.Copy(&out, norm)
+	if err != nil {
+		t.Fatalf("unexpected copy error: %v", err)
+	}
+
+	result := out.String()
+	if strings.Contains(result, "<|channel>thought") {
+		t.Errorf("expected <|channel>thought to be stripped, got:\n%s", result)
+	}
+	if !strings.Contains(result, "hello") {
+		t.Errorf("expected 'hello' to be preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "<span") {
+		t.Errorf("expected non-delimiter '<span' to be emitted on DONE, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_SplitDelimiter_DoneDropsKnownPrefix(t *testing.T) {
+	// Tests trailing known prefix "<|channel" dropped on [DONE]
+	rawSSE := `data: {"choices":[{"index":0,"delta":{"content":"goodbye <|channel"}}]}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+	var out bytes.Buffer
+	_, err := io.Copy(&out, norm)
+	if err != nil {
+		t.Fatalf("unexpected copy error: %v", err)
+	}
+
+	result := out.String()
+	if strings.Contains(result, "<|channel") {
+		t.Errorf("expected trailing <|channel to be dropped on DONE, got:\n%s", result)
+	}
+	if !strings.Contains(result, "goodbye") {
+		t.Errorf("expected 'goodbye' to be preserved, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_HandleDone_PendingBuffers(t *testing.T) {
+	// 1. In thinking with non-delimiter buffer
+	rawSSE1 := `data: {"choices":[{"index":0,"delta":{"content":"<think>thinking <unknown"}}]}
+
+data: [DONE]
+
+`
+	r1 := io.NopCloser(strings.NewReader(rawSSE1))
+	norm1 := NewStreamNormalizer(r1)
+	defer norm1.Close()
+	var out1 bytes.Buffer
+	io.Copy(&out1, norm1)
+
+	// 2. In write tool with pending write tag buffer
+	rawSSE2 := `data: {"choices":[{"index":0,"delta":{"content":"<write_to_file>file content</write"}}]}
+
+data: [DONE]
+
+`
+	r2 := io.NopCloser(strings.NewReader(rawSSE2))
+	norm2 := NewStreamNormalizer(r2)
+	defer norm2.Close()
+	var out2 bytes.Buffer
+	io.Copy(&out2, norm2)
+
+	// 3. Not in write tool with pending open tag buffer
+	rawSSE3 := `data: {"choices":[{"index":0,"delta":{"content":"prose ending with <write"}}]}
+
+data: [DONE]
+
+`
+	r3 := io.NopCloser(strings.NewReader(rawSSE3))
+	norm3 := NewStreamNormalizer(r3)
+	defer norm3.Close()
+	var out3 bytes.Buffer
+	io.Copy(&out3, norm3)
+}
+
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("simulated network read error")
+}
+
+func TestStreamNormalizer_AbruptEOF_AndError(t *testing.T) {
+	// 1. Abrupt EOF with known delimiter prefix (should be dropped)
+	rawSSE1 := `data: {"choices":[{"index":0,"delta":{"content":"hello <|channel"}}]}
+`
+	norm1 := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE1)))
+	var out1 bytes.Buffer
+	io.Copy(&out1, norm1)
+	norm1.Close()
+	if strings.Contains(out1.String(), "<|channel") {
+		t.Errorf("expected trailing <|channel dropped on abrupt EOF")
+	}
+
+	// 2. Abrupt EOF with unknown delimiter prefix (should be flushed)
+	rawSSE2 := `data: {"choices":[{"index":0,"delta":{"content":"world <span"}}]}
+`
+	norm2 := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE2)))
+	var out2 bytes.Buffer
+	io.Copy(&out2, norm2)
+	norm2.Close()
+	if !strings.Contains(out2.String(), "<span") {
+		t.Errorf("expected <span flushed on abrupt EOF")
+	}
+
+	// 3. I/O Error
+	norm3 := NewStreamNormalizer(io.NopCloser(&errorReader{}))
+	buf := make([]byte, 100)
+	_, err := norm3.Read(buf)
+	if err == nil || !strings.Contains(err.Error(), "simulated network read error") {
+		t.Errorf("expected simulated network read error, got %v", err)
+	}
+	norm3.Close()
+}
+
+func TestStreamNormalizer_HandleDone_DirectPendingDelimiter(t *testing.T) {
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader("")))
+	norm.inThinking = true
+	norm.pendingDelimiterBuf = "<custom"
+	norm.handleDone([]byte("data: [DONE]\n\n"))
+	norm.Close()
+
+	norm2 := NewStreamNormalizer(io.NopCloser(strings.NewReader("")))
+	norm2.inThinking = false
+	norm2.pendingDelimiterBuf = "<custom"
+	norm2.handleDone([]byte("data: [DONE]\n\n"))
+	norm2.Close()
+}

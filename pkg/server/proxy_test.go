@@ -2555,3 +2555,61 @@ func TestProxy_NTSTokenSaver_AnthropicMessages(t *testing.T) {
 		t.Errorf("Expected blank line cascade collapsed in Anthropic tool_result, got: %s", string(upstreamBytes))
 	}
 }
+
+func TestInjectCorrectionPrompt(t *testing.T) {
+	// 1. Valid body with messages
+	body := []byte(`{"messages":[{"role":"user","content":"hi"}]}`)
+	res := injectCorrectionPrompt(body, "Please stop looping")
+	if !strings.Contains(string(res), "Please stop looping") {
+		t.Errorf("expected injected prompt, got %s", string(res))
+	}
+
+	// 2. Empty prompt falls back to default
+	resDefault := injectCorrectionPrompt(body, "")
+	if !strings.Contains(string(resDefault), contract.CycleBreakerDefaultCorrectionPrompt) {
+		t.Errorf("expected default correction prompt, got %s", string(resDefault))
+	}
+
+	// 3. Invalid JSON returns body unchanged
+	invalidJSON := []byte(`{invalid`)
+	if string(injectCorrectionPrompt(invalidJSON, "prompt")) != string(invalidJSON) {
+		t.Errorf("expected invalid JSON returned unchanged")
+	}
+
+	// 4. Missing messages field returns body unchanged
+	noMessages := []byte(`{"model":"gpt-4"}`)
+	if string(injectCorrectionPrompt(noMessages, "prompt")) != string(noMessages) {
+		t.Errorf("expected payload without messages returned unchanged")
+	}
+}
+
+func TestServer_ServeHTTP_EdgeBranches(t *testing.T) {
+	srv, _, _ := setupTestServer(t)
+	srv.startTime = time.Now().Add(-10 * time.Minute)
+
+	// 1. /v1/health with uptime populated
+	recHealth := httptest.NewRecorder()
+	reqHealth := httptest.NewRequest(http.MethodGet, contract.PathV1Health, nil)
+	srv.ServeHTTP(recHealth, reqHealth)
+	if recHealth.Code != http.StatusOK || !strings.Contains(recHealth.Body.String(), "uptime") {
+		t.Errorf("expected 200 with uptime, got %d: %s", recHealth.Code, recHealth.Body.String())
+	}
+
+	// 2. GET /v1/chat/completions -> 405 Method Not Allowed
+	recChatGet := httptest.NewRecorder()
+	reqChatGet := httptest.NewRequest(http.MethodGet, contract.PathChatCompletions, nil)
+	reqChatGet.Header.Set("Authorization", "Bearer test-secret-token")
+	srv.ServeHTTP(recChatGet, reqChatGet)
+	if recChatGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET chat completions, got %d", recChatGet.Code)
+	}
+
+	// 3. /v1/stats
+	recStats := httptest.NewRecorder()
+	reqStats := httptest.NewRequest(http.MethodGet, contract.PathStats, nil)
+	reqStats.Header.Set("Authorization", "Bearer test-secret-token")
+	srv.ServeHTTP(recStats, reqStats)
+	if recStats.Code != http.StatusOK {
+		t.Errorf("expected 200 for /v1/stats, got %d", recStats.Code)
+	}
+}

@@ -661,4 +661,3 @@ func TestAgentRegistry_ControlTokensAndPrefixes(t *testing.T) {
 		t.Errorf("expected -1 for unknown tag prefix, got %d", idx2)
 	}
 }
-

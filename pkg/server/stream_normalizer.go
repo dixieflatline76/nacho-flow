@@ -686,12 +686,13 @@ func (s *StreamNormalizer) emitChunk(chunk fastStreamChunk) {
 
 // handleDone finalizes the stream on [DONE] and synthesizes an agent tool call if required.
 func (s *StreamNormalizer) handleDone(doneLine []byte) {
+	wasInThinking := s.inThinking
 	s.inThinking = false
 	s.inStructuredReasoning = false
 	s.hasActiveToolCall = false
 	if s.pendingDelimiterBuf != "" {
 		if !agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(s.pendingDelimiterBuf)) {
-			if s.inThinking {
+			if wasInThinking {
 				s.recordReasoning(s.pendingDelimiterBuf)
 			} else {
 				s.recordProse(s.pendingDelimiterBuf)

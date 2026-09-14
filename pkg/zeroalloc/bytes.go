@@ -45,9 +45,9 @@ func StripSubsliceInPlace(b []byte, target []byte) []byte {
 // from b in-place in a single forward pass.
 //
 // Invariants & Requirements:
-// 1. targets MUST be sorted descending by length to ensure maximal greedy matching.
-// 2. Operates strictly in-place with zero heap allocations (0 B/op, 0 allocs/op),
-//    guaranteeing write cursor w <= read cursor r at all times.
+//  1. targets MUST be sorted descending by length to ensure maximal greedy matching.
+//  2. Operates strictly in-place with zero heap allocations (0 B/op, 0 allocs/op),
+//     guaranteeing write cursor w <= read cursor r at all times.
 func StripSubslicesInPlace(b []byte, targets [][]byte) []byte {
 	n := len(b)
 	if n == 0 || len(targets) == 0 {
