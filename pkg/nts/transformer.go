@@ -274,7 +274,7 @@ func (t *Transformer) compactToolContent(content interface{}, toolName string, h
 }
 
 // compactText compacts a tool text string. If the string is serialized inner-JSON
-// (emitted by agents like Cline / Roo Code), it unpacks, compacts the inner fields,
+// (emitted by agents like Cline / Zoo Code), it unpacks, compacts the inner fields,
 // and re-marshals the JSON. Otherwise, it processes the raw text directly.
 func (t *Transformer) compactText(text string, cat ToolCategory) (string, ReductionResult, bool) {
 	trimmed := strings.TrimSpace(text)

@@ -318,6 +318,29 @@ nacho-flow -config config.cline.yaml
 nacho-flow
 ```
 
+### 4.6 Tuning Nacho Token Saver (NTS)
+Nacho Flow includes **NTS** (`nts:` in `config.yaml`) to combat the token snowball in multi-turn sessions:
+
+* **Prompt Caching Compatibility (`preserve_cache_control: true`)**:
+  When using cloud providers with prompt caching (e.g. OpenRouter, DeepSeek, Anthropic), NTS preserves ephemeral cache breakpoints. Leave `preserve_cache_control: true` so your requests continue to qualify for up to 80% prompt token discounts.
+* **Stale Read Depth (`stale_read_depth: 3`)**:
+  Agents frequently inspect the same file across multiple turns. Setting `stale_read_depth: 3` retains the 3 most recent inspections of any file path while pruning older historical turns. If your agent is working on a 50+ turn task that references very old file contents, increase to `4` or `5`. For maximum token savings on routine tasks, keep at `3`.
+* **Zero Corruption Guarantee (`preserve_file_writes: true`)**:
+  Always keep `preserve_file_writes: true`. This ensures `write_to_file`, `replace_in_file`, and diff patches are never modified by the compaction passes.
+
+### 4.7 Universal Agent Registry (`pkg/agentregistry`)
+Instead of manually tuning `question_heuristics`, `mode_switch_heuristics`, or `error_signatures` in `config.yaml`, Nacho Flow embeds canonical agent profiles (`data/agents/*.json`) for **Zoo Code**, **Cline**, **Cursor**, **Windsurf**, **Claude Code**, **Aider**, **Continue**, **OpenCode**, and **Goose**.
+
+The registry automatically identifies:
+1. **Write Tools**: Maps agent-specific write tools (`write_to_file`, `replace_in_file`, `apply_diff`, `execute_command`) to drive Kickstart resuscitation and Fairy Dusting without manual tool lists.
+2. **Error Signatures**: Maps agent validation errors (e.g., Cline Zod schemas, missing `old_text`, syntax failures) into `HistoryErrors` for autonomous cloud auto-escalation.
+3. **Control Tokens**: Strips proprietary agent control tokens in-place with zero heap allocations.
+
+You only need to define `question_heuristics` or `error_signatures` in `config.yaml` if you are writing custom, proprietary agent extensions.
+
+> [!TIP]
+> **Community Contributions**: Notice an unhandled error signature that caused your agent to spin without escalating, or a new agent tool name? Submit a PR updating [`data/agents/<agent>.json`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/data/agents) or share your `logs/traffic.jsonl` snippet in [GitHub Discussions](https://github.com/dixieflatline76/nacho-flow/discussions) so we can include it in the core catalog!
+
 ---
 
 ## 5. Testing & Validating Your Rules
@@ -533,6 +556,13 @@ agent_shield:
 ```
 
 Cline validates model tool arguments using strict Zod schemas. When a model omits required parameters (e.g. `old_text` in diff tools) or produces unexpected types, Cline writes validation error messages into the conversation history. Configuring `error_signatures` allows Nacho Flow to detect these failures as `historyErrors`, increment retry tracking, and auto-escalate to Tier 4 / Cloud Fallback before the agent gets stuck in a loop.
+
+> [!TIP]
+> **Built-in Agent Registry**: You no longer need to manually copy `error_signatures` or `kickstart_write_tools` into `config.yaml`. Nacho Flow automatically loads `data/agents/cline.json` and `data/agents/zoo.json`, discovering write tools and validation signatures out of the box.
+
+### 8.4 NTS Token Compaction Impact across Agent Harnesses
+* **Zoo Code**: NTS collapses repeated test execution logs and prunes superseded historical `read_file` turns (`compact_stale_file_reads: true`, `stale_read_depth: 3`), reclaiming 25%–35% input tokens over 30+ turn sessions.
+* **Cline**: Because Cline re-transmits full execution logs with ANSI escape sequences and terminal progress spinners, NTS strips escape codes and resolves `\r` carriage returns, delivering up to **41%+ input token reduction** on long refactoring tasks.
 
 ---
 

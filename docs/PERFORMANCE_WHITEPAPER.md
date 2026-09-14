@@ -356,5 +356,6 @@ By applying classic systems engineering principles in Go:
 3. **Use fixed-size circular ring buffers** to inspect the tail of streaming generations with zero heap allocations.
 4. **Use lock-free Read-Copy-Update (RCU) atomic pointers** for routing and pricing tables to eliminate mutex contention.
 5. **Pool buffers across worker goroutines** (`sync.Pool`) to eliminate memory pressure.
+6. **Execute multi-pass token compaction in-place** using single-pass read/write cursors ($w \le r$) and stack-allocated 256-byte trigger tables (`pkg/zeroalloc`) to eliminate token bloat before upstream transmission.
 
-Nacho Flow demonstrates that an **autonomous agent runtime supervisor can perform real-time stream surgery, tool schema repair, and cycle defense at wire speed ($< 0.2\text{ ms}$ overhead)**, delivering bulletproof stability and $90\%+$ cloud spend reductions without sacrificing a single millisecond of developer performance.
+Nacho Flow demonstrates that an **autonomous agent runtime supervisor can perform real-time stream surgery, tool schema repair, cycle defense, and token compaction at wire speed ($< 0.2\text{ ms}$ overhead)**, delivering bulletproof stability, up to $41\%+$ token reduction, and $90\%+$ cloud spend reductions without sacrificing a single millisecond of developer performance.

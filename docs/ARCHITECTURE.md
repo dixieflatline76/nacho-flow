@@ -21,9 +21,10 @@ flowchart TD
         Auth["1. Inbound Auth & Session Tracker (5m Sliding TTL)"]:::core
         Classifier["2. Scoped Classifier & Adaptive Token EMA Estimator"]:::core
         Evaluator["3. AST Bytecode Rule Engine & Context Window Guards"]:::core
-        CircuitBreaker["4. Local Circuit Breaker & Sub-Millisecond Failover Dispatcher"]:::core
+        NTSCompactor["4. Nacho Token Saver (NTS Zero-Alloc Compaction)"]:::tool
+        CircuitBreaker["5. Local Circuit Breaker & Sub-Millisecond Failover Dispatcher"]:::core
         
-        Auth --> Classifier --> Evaluator --> CircuitBreaker
+        Auth --> Classifier --> Evaluator --> NTSCompactor --> CircuitBreaker
     end
 
     subgraph Endpoints ["Execution Backends"]
@@ -118,6 +119,17 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - This prevents `400 Bad Request` crashes on cheaper cloud models or local models that lack vision encoders.
 - The top-level `"model"` field in the JSON payload is rewritten to the target tier's upstream model ID.
 
+### Stage 3.5: Nacho Token Saver (NTS) In-Flight Compaction (`pkg/nts`, `pkg/zeroalloc`)
+- **Multi-Pass Request Compaction**: Before transmitting payloads upstream, `ntsTransformer.TransformOpenAI` or `TransformAnthropic` evaluates historical tool outputs and command execution logs in-place.
+- **Pass 1 (ANSI / OSC Escapes)**: Strips terminal color codes and window title sequences.
+- **Pass 2 (Carriage Returns)**: Overwrites `\r` progress spinners from build tools (`npm`, `pip`, `docker`) in-place, keeping only final progress lines.
+- **Pass 3 (Duplicate Deduplication)**: Collapses consecutive identical log lines exceeding `dedup_threshold` (default: 3).
+- **Pass 4 (IDE Boilerplate)**: Strips repetitive parameter notices and agent tool wrapper banners.
+- **Pass 5 (Whitespace)**: Normalizes excessive empty lines.
+- **Dual-Lane Immunity**: Strictly preserves code modification tools (`write_to_file`, `replace_in_file`, `apply_diff`), active file reads, and upstream prompt caching breakpoints (`cache_control: {"type": "ephemeral"}`).
+- **Stale Read Eviction (`stale_read_depth: 3`)**: Automatically prunes older historical versions of superseded file reads, reclaiming **25%–41%+ of context tokens** per session while preventing model amnesia.
+- **Zero-Allocation Byte Pipeline (`pkg/zeroalloc`)**: Operates strictly in-place with single-pass read/write cursors ($w \le r$), delivering wire-speed performance with zero heap churn.
+
 ### Stage 4: Circuit-Breaker-Aware Dispatch & Strict Fallback Bypass (`pkg/server/proxy.go`, `pkg/provider/circuit_breaker.go`)
 - Resolves the target provider from the `provider.Registry`.
 - **Escalation Budget & Anti-Runaway Protection**: When requests route to the `DefaultTier` (Claude Sonnet 5), `RecordEscalation` enforces a hard ceiling of `MaxEscalationTurns = 3`. If an error proves unfixable after 3 consecutive frontier turns, the proxy automatically de-escalates to Tier 2 (Gemini Flash), capping worst-case failure costs at ~**$0.21**.
@@ -175,7 +187,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
   4. **Tool Argument Lane & Dual-Category Separation**: Monitors in-flight tool call arguments (`delta.tool_calls[].function.arguments`) with zero extra heap allocations on the fast path using `toolChunksScratch`:
      - **Category A (File Writes - `ToolCategoryFileWrite`)**: For structured write tools (`write_to_file`, `replace_file_content`, `create_file`, etc.) and shell redirections (`> file`), sliding N-gram loop detection is bypassed entirely. This grants complete immunity to table-driven unit tests, repetitive struct fixtures, and large code diffs, bounded by a spacious `max_write_tokens` ceiling (default 32,768) with zero-alloc fast exit.
      - **Category B (Commands & Invocations - `ToolCategoryCommand`)**: For shell commands and general tool invocations, sliding N-gram repetition checks and `max_tool_tokens` (default 4,096) apply to intercept runaway command pipelines (e.g. infinite `sed -i` loops).
-  5. **Dynamic XML Write Tag Demuxer (`xml_demuxer.go`)**: For autonomous coding agents that draft tool invocations using XML tags within the prose stream (such as Cline, Claude Dev, or Roo Code writing `<write_to_file path="...">` or `<replace_in_file>`), the demuxer inspects in-flight text deltas. Upon encountering an open write tag, it dynamically shifts the lane classification to `ToolCategoryFileWrite`, granting write immunity to large multi-hundred-line source code diffs embedded in prose without tripping loop detection.
+  5. **Dynamic XML Write Tag Demuxer (`xml_demuxer.go`)**: For autonomous coding agents that draft tool invocations using XML tags within the prose stream (such as Cline or community forks writing `<write_to_file path="...">` or `<replace_in_file>`), the demuxer inspects in-flight text deltas. Upon encountering an open write tag, it dynamically shifts the lane classification to `ToolCategoryFileWrite`, granting write immunity to large multi-hundred-line source code diffs embedded in prose without tripping loop detection.
   6. **Frontier Model Cycle Immunity (`frontier_immunity`)**: Frontier reasoning models (`claude-3-7-sonnet`, `claude-3-5-sonnet`, `o1`, `gpt-4o`, `deepseek-r1`) are granted cycle immunity by default or via configuration. This ensures that deep, complex reasoning and architectural synthesis are never prematurely killed by aggressive repetition thresholds designed for small open-weight 7B-14B models.
   7. **Modular Agent Catalog (`pkg/agentregistry`)**: Built-in and dynamically loaded agent profiles (`data/agents/manifest.json`, `data/agents/*.json`) define tool signatures, write tags, and shell write patterns dynamically, eliminating hardcoded agent checks across the codebase.
 - **Two-Phase Stream Defense Architecture**:

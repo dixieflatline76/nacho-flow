@@ -7,6 +7,10 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 ## Table of Contents
 1. [Installation & Setup](#1-installation--setup)
 2. [Configuration Reference (`config.yaml`)](#2-configuration-reference-configyaml)
+   - [2.4 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints](#24--fairy-dusting-periodic-proactive-frontier-quality-checkpoints)
+   - [2.5 ⚡ Kickstart Resuscitation & Write-Only Filtering](#25--kickstart-resuscitation--write-only-filtering)
+   - [2.6 🛡️ Cost-Safe Default Tier & 🌶️ Spicy-Only Tiers](#26-️-cost-safe-default-tier--️-spicy-only-tiers-when-false)
+   - [2.7 🗜️ Nacho Token Saver (NTS): Wire-Speed Tool Output Compaction](#27-️-nacho-token-saver-nts-wire-speed-tool-output-compaction)
 3. [Writing Custom Routing Tiers (`expr` Rules)](#3-writing-custom-routing-tiers-expr-rules)
 4. [Running Modes & OS Background Service Installation](#4-running-modes--os-background-service-installation)
 5. [IDE & Agent Integrations (Local & Multi-Device LAN)](#5-ide--agent-integrations-local--multi-device-lan)
@@ -335,6 +339,24 @@ fairy_dust:
         Perform a high-level architectural audit: (1) Does implementation match
         original requirements? (2) Has technical debt accumulated? (3) Restructure
         if necessary, or confirm trajectory and continue.
+
+# =============================================================================
+# 🗜️ NACHO TOKEN SAVER (NTS)
+# Wire-speed, zero-allocation in-place tool output compaction engine
+# =============================================================================
+nts:
+  enabled: true                     # Master switch for tool output compaction
+  strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
+  resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
+  deduplicate_lines: true           # Pass 3: Collapse repeated consecutive lines (>3 times)
+  dedup_threshold: 3                # Consecutive duplicate threshold before collapse
+  strip_boilerplate: true           # Pass 4: Strip IDE tool boilerplate notices
+  normalize_whitespace: true        # Pass 5: Collapse multiple empty lines
+  preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
+  preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
+  preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
+  compact_stale_file_reads: true    # 📦 Evict superseded historical file reads
+  stale_read_depth: 3               # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 ```
 
 > [!TIP]
@@ -348,6 +370,7 @@ By default, Nacho Flow acts as an intelligent proxy that actively optimizes and 
 1. **Universal Tool Normalizer**: Converts 8 raw tool formats (Hermes XML, Mistral arrays, bare JSON, Markdown fences) into OpenAI-standard `tool_calls`.
 2. **Reasoning Stream Formatter**: Formats raw `<|im_start|>think` and `<thinking>` streams into `<think>...</think>` tags for IDE UI accordions.
 3. **Agentic Fallback Shield**: Detects trailing conversational questions/plans from local models in Zoo Code / Cline and synthesizes dual-schema `ask_followup_question` / `ask_question` tool calls to prevent agent deadlocks.
+4. **Nacho Token Saver (NTS)**: Compresses historical tool outputs and conversation history in-flight (cleaning ANSI escapes, collapsing duplicate lines, resolving carriage returns, and pruning stale file reads) for **25%–41%+ token reduction** without degrading reasoning accuracy.
 4. **Anti-Runaway Escalation Budget**: Caps consecutive frontier tier executions at `MaxEscalationTurns = 3` before automatically de-escalating to cloud workhorse tiers.
 
 However, different workflows and engineering personas require different levels of proxy intervention. Nacho Flow provides granular controls to selectively tune or completely bypass these transformations.
@@ -474,6 +497,58 @@ To protect your wallet from runaway loops while preserving on-demand access to f
   Setting `when: "false"` guarantees that automatic tier routing **never** selects this model. It is reachable strictly through:
   1. **Fairy Dusting**: Strategic architecture reviews (e.g. max 2 per session).
   2. **HotSauce In-Prompt Directives**: `@nacho:model="anthropic/claude-opus-5"` or HTTP header `X-Spicy-Model`.
+
+---
+
+### 2.7 🗜️ Nacho Token Saver (NTS): Wire-Speed Tool Output Compaction
+
+Autonomous coding agents accumulate historical conversation baggage rapidly. Every shell command output, build progress spinner, `git diff`, and repeated file read stays in the conversation context forever. By Turn 20, an agent may be resending 40,000–80,000+ tokens with every single user prompt.
+
+**Nacho Token Saver (NTS)** is an in-flight, zero-allocation token reduction engine that executes directly on incoming request payloads before they are forwarded to upstream models.
+
+```mermaid
+flowchart LR
+    Raw["Raw Request Payload<br/>(45,000 Tokens)"] --> NTS["🗜️ NTS Pipeline<br/>1. Strip ANSI Escapes<br/>2. Resolve CR Overwrites<br/>3. Deduplicate Lines<br/>4. Strip IDE Boilerplate<br/>5. Normalize Whitespace<br/>6. Prune Stale File Reads"]
+    NTS --> Compacted["Compacted Payload<br/>(27,000 Tokens)<br/><b>~40% Token Reduction</b>"]
+    Compacted --> Upstream["Upstream LLM Provider"]
+```
+
+#### The 5-Pass Compaction Pipeline:
+1. **Pass 1: ANSI & OSC Sequence Stripping (`strip_ansi: true`)**:
+   Terminal commands (e.g. `npm test`, `cargo build`, `pytest`) output color codes, cursor repositioning sequences, and terminal window titles. NTS cleans these out using zero-allocation byte slice scanning.
+2. **Pass 2: Carriage Return Resolution (`resolve_cr: true`)**:
+   CLI progress bars and spinners (such as `vite`, `pip`, or `docker pull`) update terminal lines using `\r` (carriage return). Traditional proxies send every intermediate progress percentage to the LLM (hundreds of useless tokens). NTS evaluates `\r` in-place, preserving only the final completed line state.
+3. **Pass 3: Duplicate Line Collapsing (`deduplicate_lines: true`, `dedup_threshold: 3`)**:
+   Long logs with repetitive warnings or empty progress markers are collapsed to the threshold with a concise truncation notice.
+4. **Pass 4: IDE Tool Boilerplate Removal (`strip_boilerplate: true`)**:
+   Coding agents inject repetitive tool headers and notices (e.g., Cline parameter instructions, Zoo Code notices, or agent status messages). NTS strips non-semantic boilerplate.
+5. **Pass 5: Whitespace Normalization (`normalize_whitespace: true`)**:
+   Collapses runs of empty lines and extraneous trailing whitespace.
+
+#### 🛡️ Dual-Lane Immunity: Zero Risk of Context Corruption
+To guarantee that the LLM never loses critical reasoning context:
+* **`preserve_file_writes: true`**: File modifications (`write_to_file`, `replace_in_file`, `apply_diff`) are **never** altered or compacted. Every written character remains bit-for-bit pristine.
+* **`preserve_file_reads: true`**: Active file reads currently referenced by the agent are preserved.
+* **`preserve_cache_control: true`**: Upstream prompt-cache breakpoints (e.g., Anthropic `cache_control: {"type": "ephemeral"}`) are strictly protected so prompt caching remains 100% effective.
+
+#### 📦 Stale Read Elimination (`compact_stale_file_reads: true`, `stale_read_depth: 3`):
+When an agent inspects a file multiple times across a long session (e.g., reading `models.go` on Turn 2, Turn 8, and Turn 19), historical earlier versions of that file read are superseded. NTS retains the **3 most recent reads** (`stale_read_depth: 3`) of each file path, safely evicting older historical duplicates to reclaim thousands of tokens while preventing model amnesia.
+
+#### Configuration Options:
+| Setting | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enabled` | `bool` | `true` | Master switch for tool output compaction. |
+| `strip_ansi` | `bool` | `true` | Strips ANSI escape codes from shell and command execution logs. |
+| `resolve_cr` | `bool` | `true` | Resolves terminal `\r` progress spinners to their final line state. |
+| `deduplicate_lines` | `bool` | `true` | Collapses consecutive identical lines exceeding the threshold. |
+| `dedup_threshold` | `int` | `3` | Number of consecutive identical lines permitted before collapsing. |
+| `strip_boilerplate` | `bool` | `true` | Strips repetitive IDE agent tool wrappers and status boilerplate. |
+| `normalize_whitespace` | `bool` | `true` | Trims trailing spaces and collapses consecutive empty lines. |
+| `preserve_file_writes` | `bool` | `true` | Full immunity for code writing tools (`write_to_file`, `apply_diff`). |
+| `preserve_file_reads` | `bool` | `true` | Protects active file inspection turns from corruption. |
+| `preserve_cache_control`| `bool` | `true` | Preserves Anthropic/OpenRouter prompt cache annotations. |
+| `compact_stale_file_reads`| `bool` | `true` | Reclaims tokens by pruning superseded historical reads of the same file. |
+| `stale_read_depth` | `int` | `3` | Number of recent reads to keep per file before historical eviction. |
 
 ---
 
@@ -654,6 +729,30 @@ Install Nacho Flow as a `systemd` service on Ubuntu, Debian, Arch, Fedora, or Ro
 ## 5. IDE & Agent Integrations (Local & Multi-Device LAN)
 
 Nacho Flow exposes a standard OpenAI-compatible API on `http://127.0.0.1:8000/v1` (or your host LAN / Tailscale IP, e.g. `http://192.168.1.100:8000/v1`). Because Nacho Flow intercepts requests and dynamically rewrites models according to your tier rules, you can use `nacho-hybrid` (or any string) as your Model ID.
+
+### 🌐 Universal Agent Registry (`pkg/agentregistry`)
+Nacho Flow embeds canonical agent specifications (`data/agents/*.json`) that automatically recognize the tool schemas, write capabilities, question heuristics, error patterns, and control tokens of all leading autonomous coding frameworks:
+
+| Agent Framework | Format / Channel | Write Tools Auto-Detected | Error Signatures Tracked |
+| :--- | :--- | :--- | :--- |
+| **Zoo Code** | OpenAI / Anthropic JSON | `write_to_file`, `execute_command` | Stalls, tool validation |
+| **Cline** | XML / SSE delta streams | `write_to_file`, `replace_in_file`, `execute_command` | Zod schemas, `old_text` mismatch |
+| **Claude Code** | Anthropic wire / CLI | `str_replace_editor`, `text_editor`, `bash` | Parameter errors, `old_str` mismatch |
+| **Cursor** | Native OpenAI tools | `edit_file`, `run_terminal_cmd` | Schema mismatches |
+| **Windsurf** | Tool definitions | `write_code`, `run_command` | Execution failures |
+| **Aider** | Git repo diff / edit blocks| Diff write formats, shell commands | Search/replace hunk failures |
+| **Continue** | OpenAI tool calls | `edit`, `cmd` | Format errors |
+| **OpenCode** | OpenAI SDK JSON | `file_write`, `bash` | Tool parameter errors |
+| **Goose** | OpenAI function calls | `developer__text_editor`, `developer__shell` | Syntax and parameter errors |
+
+Because the Agent Registry runs out of the box, you do not need to manually configure write tool lists or error signatures in `config.yaml`—Nacho Flow recognizes your agent automatically.
+
+> [!TIP]
+> **Help Us Expand the Agent Catalog!**
+> Did your agent encounter an unhandled validation error, a missing tool name, or an unsupported coding framework? We actively invite community contributions:
+> - Submit PRs adding or refining JSON specs in [`data/agents/<agent-name>.json`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/data/agents).
+> - Share sanitized error logs, unexpected tool payloads, or suggestions in [GitHub Discussions](https://github.com/dixieflatline76/nacho-flow/discussions) or [Issues](https://github.com/dixieflatline76/nacho-flow/issues).
+> - Adding your agent's `write_tools` and `error_signatures` ensures instant failover escalation and stall protection for everyone.
 
 ### 1. Zoo Code & Cline (VS Code)
 In **Settings** (Gear Icon $\rightarrow$ API Configuration):

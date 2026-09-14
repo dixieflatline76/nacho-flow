@@ -219,6 +219,7 @@ At the top of the dashboard, live instrumentation cards display your financial a
 - **Active Profile Badge**: Reflects the current engine profile (`📋 Profile 1`, `📋 Profile 2`, `📋 Profile 3`, or `🌐 Remote Server`).
 - **1-Click Config Editor Button**: Displays `[📝 Profile X (YAML)]` in local mode (or `[📝 Remote config.yaml]` when connected to a remote host), opening the exact active file directly in VS Code.
 - **Time-Window Tabs**: Toggle between `All Time`, `Today`, `Yesterday`, `This Week`, and `This Month` to inspect session velocity and historical return on investment.
+- **Nacho Token Saver (NTS) Instrumentation**: Shows cumulative prompt tokens avoided, bytes cleaned from CLI logs/spinners, and total compacted turns across the selected time horizon.
 - **Auto-Refresh Controls**: Set background route polling to `15s`, `30s`, `60s`, or `Off`, or click `Refresh Now`.
 - **Counterfactual Savings Engine**: Every turn processed by your local GPU computes what that prompt turn *would have cost* on frontier cloud models (Claude Sonnet 5 / DeepSeek-R1), accounting for prompt cache discounts.
 
@@ -323,23 +324,42 @@ The **Circuit Breaker** panel displays the live health of all configured inferen
 Nacho Flow integrates a high-visibility status widget directly in the VS Code Status Bar (bottom right):
 
 ```text
-🌮 $14.20 svd | 78% Local [Zoo Code]
+🌮 $14.20 Saved Today (78% Local)
 ```
 
 ### Hover Telemetry Card:
-Hovering over the status bar item displays a rich Markdown tooltip showing:
-- Active daemon engine status & version.
-- Current active preset (`🌮 Standard`, `🤖 Zoo Code`, or `🛠️ Cline`).
-- Today's spend, savings, and local vs. cloud turn distribution.
-- Provider circuit breaker health summary.
+Hovering over the status bar item displays a rich, interactive Markdown HUD featuring a live metrics table and direct timeframe switching:
+
+```markdown
+### 🌮 Nacho Flow `🟢 Online`
+**🤖 Zoo Code** • `http://127.0.0.1:8000/v1`
+
+| Metric | Today (Rolling 24h) |
+| :--- | :--- |
+| **Est. Cost Saved** | **`$14.20`** *(88% saved)* |
+| **Cloud API Spend** | `$1.85` |
+| **Local GPU ($0.00)** | `78%` *(39/50 turns)* |
+| **Nacho Token Saver** | `42,850 tokens` *(168.2 KB saved • 18 turns)* |
+| **Agent Supervisor** | `2 loops healed • 1 kicks • 3 fairy dust` |
+| **Total Prompt Turns** | `50` *(214,000 tokens)* |
+
+Timeframe: [1h] | **✓ [Today]** | [This Week] | [This Month] | [All Time]
+
+---
+[📊 Dashboard] • [⚡ Auto-Tune] • [🔥 Deals] • [⚙ Settings]
+```
+
+- **Interactive Timeframe Links**: Click **`[1h]`**, **`[Today]`**, **`[This Week]`**, **`[This Month]`**, or **`[All Time]`** directly inside the tooltip to recalculate and display savings metrics across that specific horizon.
+- **Nacho Token Saver Telemetry**: Tracks cumulative tokens and bytes stripped from historical turns without opening the full dashboard.
+- **Agent Supervisor Statistics**: Real-time counter of Cycle Killer stream severances, Kickstart idle resuscitations, and Fairy Dusting proactive checkpoints.
 
 ### Interactive QuickPick Menu:
 Clicking the status bar item opens a quick-action menu:
-- **Open Dashboard**: Opens the full telemetry webview.
-- **Switch Routing Preset**: Quick-switch between Standard, Zoo Code, and Cline.
+- **Open Dashboard**: Opens the full telemetry webview (`Ctrl+Shift+P` $\rightarrow$ `Nacho Flow: Open Dashboard`).
+- **Switch Routing Preset**: Quick-switch between Standard (`config.yaml`), Zoo Code (`config.yaml`), and Cline (`config.cline.yaml`).
 - **Start / Stop / Restart Engine**: Instant lifecycle controls.
-- **Open config.yaml**: Opens the active configuration document.
-- **Reset Circuit Breaker**: Restores tripped providers.
+- **Open config.yaml**: Opens the active configuration document in your editor.
+- **Reset Circuit Breaker**: Restores tripped providers to `CLOSED` state.
 - **Refresh Deals**: Forces an immediate scan of spot market discounts.
 
 ---
