@@ -1429,3 +1429,73 @@ data: [DONE]
 		t.Errorf("expected prose 'Finished file edit.' to be preserved, got: %s", result)
 	}
 }
+
+func TestStreamNormalizer_ZeroAlloc_StructuredReasoningHealing(t *testing.T) {
+	// Tests reasoning deltas containing single, repeated, and Japanese text from real Cline run
+	rawSSE := `data: {"choices":[{"index":0,"delta":{"reasoning_content":"itivos.br.content.json\n\"title\": \"Plan\"\n}\n<|channel>thought miras.json\n\"title\": \"UI\"\n}\n<|channel>thought<|channel>thought<|channel>thought日本語テキスト"}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":"Clean prose completion."}}]}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+	var out bytes.Buffer
+	_, err := io.Copy(&out, norm)
+	if err != nil {
+		t.Fatalf("unexpected copy error: %v", err)
+	}
+
+	result := out.String()
+	if strings.Contains(result, `<|channel>thought`) {
+		t.Errorf("expected all occurrences of <|channel>thought to be stripped from reasoning, got:\n%s", result)
+	}
+	if strings.Contains(result, `<|channel>`) {
+		t.Errorf("expected <|channel> to be stripped from reasoning, got:\n%s", result)
+	}
+	if !strings.Contains(result, "miras.json") {
+		t.Errorf("expected 'miras.json' to be preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "日本語テキスト") {
+		t.Errorf("expected '日本語テキスト' to be preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Clean prose completion.") {
+		t.Errorf("expected prose completion preserved, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_Split_ChannelThought_Across_Chunks(t *testing.T) {
+	// Tests <|channel in chunk 1 followed by >thought in chunk 2
+	rawSSE := `data: {"choices":[{"index":0,"delta":{"content":"Before split <|channel"}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":">thought after split"}}]}
+
+data: [DONE]
+
+`
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	defer norm.Close()
+	var out bytes.Buffer
+	_, err := io.Copy(&out, norm)
+	if err != nil {
+		t.Fatalf("unexpected copy error: %v", err)
+	}
+
+	result := out.String()
+	if strings.Contains(result, `<|channel`) {
+		t.Errorf("expected <|channel to be stripped, got:\n%s", result)
+	}
+	if strings.Contains(result, `>thought`) {
+		t.Errorf("expected >thought to be stripped, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Before split") {
+		t.Errorf("expected 'Before split' preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "after split") {
+		t.Errorf("expected 'after split' preserved, got:\n%s", result)
+	}
+}
+

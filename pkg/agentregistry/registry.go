@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/dixieflatline76/nacho-flow/data"
+	"github.com/dixieflatline76/nacho-flow/pkg/zeroalloc"
 )
 
 // Registry maintains an in-memory index of agent profiles, tool categories, and shell commands.
@@ -39,6 +40,8 @@ type Registry struct {
 	reasoningCatalog       ReasoningCatalog
 	tagReplacer            *strings.Replacer
 	reasoningByteMarkers   [][]byte
+	controlTokensBytes     [][]byte
+	delimiterPrefixes      [][]byte
 }
 
 var (
@@ -226,6 +229,8 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 	r.reasoningCatalog = newReg.reasoningCatalog
 	r.tagReplacer = newReg.tagReplacer
 	r.reasoningByteMarkers = newReg.reasoningByteMarkers
+	r.controlTokensBytes = newReg.controlTokensBytes
+	r.delimiterPrefixes = newReg.delimiterPrefixes
 	return nil
 }
 
@@ -351,6 +356,50 @@ func (r *Registry) ReasoningByteMarkers() [][]byte {
 		return nil
 	}
 	return r.reasoningByteMarkers
+}
+
+// ControlTokensByteList returns the precompiled immutable slice of control token byte markers.
+// Pre-sorted descending by length for maximal greedy matching.
+// Lock-free, zero heap allocation.
+func (r *Registry) ControlTokensByteList() [][]byte {
+	if r == nil {
+		return nil
+	}
+	return r.controlTokensBytes
+}
+
+// StripControlTokensInPlace removes all cataloged reasoning tags and control tokens in-place.
+// Lock-free, zero heap allocation.
+func (r *Registry) StripControlTokensInPlace(b []byte) []byte {
+	if r == nil || len(b) == 0 {
+		return b
+	}
+	return zeroalloc.StripSubslicesInPlace(b, r.controlTokensBytes)
+}
+
+// FindTrailingDelimiterPrefix checks if the tail of b (up to maxLen bytes) matches
+// any valid proper prefix of a cataloged reasoning/control delimiter.
+// Returns the byte offset in b where the earliest matching prefix begins, or -1 if none.
+// Lock-free, zero heap allocation.
+func (r *Registry) FindTrailingDelimiterPrefix(b []byte, maxLen int) int {
+	if r == nil || len(b) == 0 {
+		return -1
+	}
+	return zeroalloc.FindTrailingPrefix(b, maxLen, r.delimiterPrefixes)
+}
+
+// IsKnownDelimiterPrefix checks whether b matches any cataloged delimiter prefix.
+// Lock-free, zero heap allocation.
+func (r *Registry) IsKnownDelimiterPrefix(b []byte) bool {
+	if r == nil || len(b) == 0 {
+		return false
+	}
+	for _, p := range r.delimiterPrefixes {
+		if string(p) == string(b) {
+			return true
+		}
+	}
+	return false
 }
 
 // InteractiveToolsList returns an immutable, pre-sorted slice of known interactive/followup tool names.
@@ -662,11 +711,11 @@ func (r *Registry) loadReasoning(sysFS fs.FS) error {
 	}
 
 	r.reasoningCatalog = catalog
-	r.tagReplacer, r.reasoningByteMarkers = compileReasoning(catalog)
+	r.tagReplacer, r.reasoningByteMarkers, r.controlTokensBytes, r.delimiterPrefixes = compileReasoning(catalog)
 	return nil
 }
 
-func compileReasoning(cat ReasoningCatalog) (*strings.Replacer, [][]byte) {
+func compileReasoning(cat ReasoningCatalog) (*strings.Replacer, [][]byte, [][]byte, [][]byte) {
 	type pair struct {
 		from string
 		to   string
@@ -754,7 +803,74 @@ func compileReasoning(cat ReasoningCatalog) (*strings.Replacer, [][]byte) {
 		}
 	}
 
-	return replacer, markers
+	// Build complete control token slice for zero-allocation in-place stripping
+	seenControl := make(map[string]struct{})
+	addControlToken := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			seenControl[s] = struct{}{}
+		}
+	}
+
+	for _, p := range pairs {
+		addControlToken(p.from)
+	}
+
+	// Expand unicode escapes for tokens starting with '<'
+	controlSnapshot := make([]string, 0, len(seenControl))
+	for s := range seenControl {
+		controlSnapshot = append(controlSnapshot, s)
+	}
+	for _, s := range controlSnapshot {
+		if strings.HasPrefix(s, "<") {
+			base := s[1:]
+			addControlToken(`\u003c` + base)
+			addControlToken(`\u003C` + base)
+		}
+	}
+
+	var controlTokensList []string
+	for s := range seenControl {
+		controlTokensList = append(controlTokensList, s)
+	}
+	sort.Slice(controlTokensList, func(i, j int) bool {
+		if len(controlTokensList[i]) != len(controlTokensList[j]) {
+			return len(controlTokensList[i]) > len(controlTokensList[j])
+		}
+		return controlTokensList[i] < controlTokensList[j]
+	})
+
+	var controlTokensBytes [][]byte
+	for _, s := range controlTokensList {
+		controlTokensBytes = append(controlTokensBytes, []byte(s))
+	}
+
+	// Build delimiter proper prefixes (length strictly < len(tok)) for chunk-boundary split matching
+	seenPrefixes := make(map[string]struct{})
+	for _, tok := range controlTokensList {
+		if strings.HasPrefix(tok, "<") {
+			maxP := len(tok) - 1
+			if maxP > 24 {
+				maxP = 24
+			}
+			for l := 1; l <= maxP; l++ {
+				seenPrefixes[tok[:l]] = struct{}{}
+			}
+		}
+	}
+
+	var delimiterPrefixes [][]byte
+	for p := range seenPrefixes {
+		delimiterPrefixes = append(delimiterPrefixes, []byte(p))
+	}
+	sort.Slice(delimiterPrefixes, func(i, j int) bool {
+		if len(delimiterPrefixes[i]) != len(delimiterPrefixes[j]) {
+			return len(delimiterPrefixes[i]) > len(delimiterPrefixes[j])
+		}
+		return string(delimiterPrefixes[i]) < string(delimiterPrefixes[j])
+	})
+
+	return replacer, markers, controlTokensBytes, delimiterPrefixes
 }
 
 func mapToSortedSlice(m map[string]struct{}) []string {

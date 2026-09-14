@@ -587,3 +587,78 @@ func TestAgentRegistry_AllToolProfilesContract(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentRegistry_ControlTokensAndPrefixes(t *testing.T) {
+	reg := DefaultRegistry()
+	if reg == nil {
+		t.Fatal("expected non-nil default registry")
+	}
+
+	tokens := reg.ControlTokensByteList()
+	if len(tokens) == 0 {
+		t.Fatal("expected non-empty control tokens list")
+	}
+
+	// Verify key tokens from reasoning.json exist
+	expectedTokens := []string{
+		"<|channel|>thought",
+		"<|channel>thought",
+		"<channel|thought>",
+		"<channel|thought",
+		"<|channel|>",
+		"<|channel>",
+		"<channel|>",
+		"<channel|",
+		"<|tool_response>",
+		`<|"|>`,
+		"<start_of_turn>",
+		"<end_of_turn>",
+	}
+
+	for _, exp := range expectedTokens {
+		found := false
+		for _, tok := range tokens {
+			if string(tok) == exp {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected control token %q to be compiled in ControlTokensByteList", exp)
+		}
+	}
+
+	// Verify descending length sort
+	for i := 1; i < len(tokens); i++ {
+		if len(tokens[i]) > len(tokens[i-1]) {
+			t.Errorf("control tokens not sorted descending by length at index %d: %q (%d) > %q (%d)",
+				i, string(tokens[i]), len(tokens[i]), string(tokens[i-1]), len(tokens[i-1]))
+		}
+	}
+
+	// Verify in-place control token stripping
+	input := []byte("<|channel>thought miras.json\n<|channel>thought<|channel>thought<|channel>thought日本語テキスト")
+	cleaned := reg.StripControlTokensInPlace(input)
+	expectedCleaned := " miras.json\n日本語テキスト"
+	if string(cleaned) != expectedCleaned {
+		t.Errorf("StripControlTokensInPlace mismatch:\nGot:  %q\nWant: %q", string(cleaned), expectedCleaned)
+	}
+
+	// Verify trailing delimiter prefix detection
+	trailingInput := []byte("Some stream text ending in <|channel")
+	idx := reg.FindTrailingDelimiterPrefix(trailingInput, 24)
+	if idx != 27 {
+		t.Errorf("expected trailing prefix at index 27, got %d", idx)
+	}
+	if string(trailingInput[idx:]) != "<|channel" {
+		t.Errorf("expected trailing prefix %q, got %q", "<|channel", string(trailingInput[idx:]))
+	}
+
+	// Non-matching tail
+	noMatch := []byte("Some stream text ending in <unknown_tag")
+	idx2 := reg.FindTrailingDelimiterPrefix(noMatch, 24)
+	if idx2 != -1 {
+		t.Errorf("expected -1 for unknown tag prefix, got %d", idx2)
+	}
+}
+
