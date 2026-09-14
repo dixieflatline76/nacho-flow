@@ -18,10 +18,11 @@ The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-
 4. [Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Show Dashboard`)](#4-real-time-analytics-dashboard)
    - [4.1 Flight Instruments & Time-Window Telemetry](#41-flight-instruments--time-window-telemetry)
    - [4.2 Cycle Killer Defense & Local Self-Healing](#42-cycle-killer-defense--local-self-healing)
-   - [4.3 Live Route History Inspector](#43-live-route-history-inspector)
-   - [4.4 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption](#44--heat-seeker-live-model-deals--1-click-tier-adoption)
-   - [4.5 🎛️ 1-Click Auto-Tuning Optimizer](#45-️-1-click-auto-tuning-optimizer)
-   - [4.6 Interactive Circuit Breaker Management](#46-interactive-circuit-breaker-management)
+   - [4.3 🗜️ Nacho Token Saver (NTS) Live Telemetry Panel](#43-nacho-token-saver-nts-live-telemetry-panel)
+   - [4.4 Live Route History Inspector](#44-live-route-history-inspector)
+   - [4.5 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption](#45--heat-seeker-live-model-deals--1-click-tier-adoption)
+   - [4.6 🎛️ 1-Click Auto-Tuning Optimizer](#46-️-1-click-auto-tuning-optimizer)
+   - [4.7 Interactive Circuit Breaker Management](#47-interactive-circuit-breaker-management)
 5. [Status Bar HUD & QuickPick Menu](#5-status-bar-hud--quickpick-menu)
 6. [Direct In-Chat Control Directives (`@nacho:`)](#6-direct-in-chat-control-directives-nacho)
 7. [Command Palette Reference](#7-command-palette-reference)
@@ -236,7 +237,19 @@ The **Cycle Killer** panel visualizes real-time protection against runaway agent
 
 ---
 
-### 4.3 Live Route History Inspector
+### 4.3 🗜️ Nacho Token Saver (NTS) Live Telemetry Panel
+
+The **Nacho Token Saver (NTS)** panel monitors real-time in-flight context compaction before prompts reach inference engines:
+
+- **Total Tokens Saved (Avoided Context)**: Cumulative count of token payload eliminated across all evaluated turns (e.g., `1,426,821 tokens saved`).
+- **Payload Reduced (Wire Volume)**: Total bytes stripped from raw upstream buffers (e.g., `5.4 MB payload saved`), lowering round-trip network latency and memory overhead.
+- **Compacted Turns**: Number of agent request turns where redundant file reads or ANSI console noise were compacted (e.g., `852 compacted turns`).
+- **Dual-Lane Immunity Guard**: Zero-alloc safe path ensuring that code syntax, table-driven unit tests, Markdown structures, and file edits are 100% preserved while purging repetitive terminal spinners, carriage returns (`\r`), and redundant ANSI escapes.
+- **Structural File Deduplication**: When an autonomous agent re-reads the same repository file across multiple conversation turns without interim modifications, NTS maintains semantic validity while compacting stale read outputs into structural digests.
+
+---
+
+### 4.4 Live Route History Inspector
 
 Inspect the last 500 LLM requests processed by the gateway in real time:
 
@@ -252,7 +265,7 @@ TIME      TIER              MODEL                     TOKENS   LATENCY   REASON
 
 ---
 
-### 4.4 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption
+### 4.5 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption
 
 **Heat Seeker** is an autonomous market scout integrated directly into the dashboard. It continuously scans 300+ cloud models on OpenRouter, discovering flash discounts, subsidized capacity, and free endpoints:
 
@@ -267,7 +280,7 @@ TIME      TIER              MODEL                     TOKENS   LATENCY   REASON
   ─────────────────────────────────────────────────────────────
   dots-studio/dots-3-note:free                    [ 100% FREE ]
   Input: $0.00/1M  │  Output: $0.00/1M
-  [🧠 Index 64.0] [openrouter]
+  [🔧 Tools] [🧠 Index 52.4] [openrouter]
   [📋 Copy]  [⚡ Adopt]
 ```
 
@@ -299,7 +312,7 @@ Click **`📋 Copy`** on any deal card to copy the exact model ID (e.g. `google/
 
 ---
 
-### 4.5 🎛️ 1-Click Auto-Tuning Optimizer
+### 4.6 🎛️ 1-Click Auto-Tuning Optimizer
 
 Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns from `traffic.jsonl`:
 - Uses statistical odds-ratio analysis to find the optimal token boundary where local model failure odds increase.
@@ -309,7 +322,7 @@ Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns 
 
 ---
 
-### 4.6 Interactive Circuit Breaker Management
+### 4.7 Interactive Circuit Breaker Management
 
 The **Circuit Breaker** panel displays the live health of all configured inference providers:
 - **CLOSED (Green)**: Provider is healthy; traffic flows normally.

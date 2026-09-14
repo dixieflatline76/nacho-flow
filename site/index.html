@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🌮 Nacho Flow - Agent Supervisor &amp; Model Dispatcher</title>
-    <meta name="description" content="Agent Supervisor &amp; Model Dispatcher in Go. Runs routine turns on your local GPU for free, kicks your agent when it stalls reading files, and only spends money on Claude when things get hard.">
+    <title>🌮 Nacho Flow - Active Execution Runtime &amp; Model Dispatcher</title>
+    <meta name="description" content="The active execution runtime for autonomous coding agents. Safely chews through 90% of routine grunt work on local GPUs, bringing in frontier intelligence only when architectural genius is required. Grab some nachos, pet your cat. Trust the build.">
     
     <!-- Open Graph / Social Meta Tags -->
-    <meta property="og:title" content="Nacho Flow - Agent Supervisor &amp; Model Dispatcher">
-    <meta property="og:description" content="Runs simple turns on your GPU for free, kicks your agent when it gets stuck reading files, and only spends money on Claude when things get hard.">
+    <meta property="og:title" content="Nacho Flow - Active Execution Runtime &amp; Model Dispatcher">
+    <meta property="og:description" content="The active execution runtime for autonomous coding agents. Tames local GPUs for routine grunt work, bringing in frontier intelligence only when architectural genius is required. Grab some nachos, pet your cat. Trust the build.">
     <meta property="og:image" content="images/hero-mascot.png">
     <meta property="og:url" content="https://spicebox.dev/nacho-flow/">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="canonical" href="https://spicebox.dev/nacho-flow/">
-    <link rel="stylesheet" href="index.css">
+    <link rel="stylesheet" href="index.css?v=1.1.6">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -109,31 +109,42 @@
         <div class="hero-badge">
             Open Source &nbsp;·&nbsp; Zero Runtime Dependencies &nbsp;·&nbsp; Pure Go Static Binary
         </div>
-        <div class="hero-mascot-container" onclick="toggleMascotAnimation()">
+        <div class="hero-mascot-container" onclick="toggleMascotAnimation()" title="Click to watch the 9-second story!">
             <img id="hero-img" src="images/hero-mascot.png?v=0.8.0" alt="Nacho Flow Mascot" class="hero-banner">
+            <div class="hero-play-pill">
+                <span class="play-icon">▶</span>
+                <span>Watch Story (9s)</span>
+            </div>
             <video id="hero-video" class="hero-banner hero-video" playsinline preload="auto">
-                <source src="images/hero-animated.mp4?v=0.8.0" type="video/mp4">
+                <source src="images/hero-animated.mp4?v=1.1.0" type="video/mp4">
             </video>
         </div>
-        <h1>Don't give up on local models and open-source coding agents just yet.</h1>
-        <p class="subtitle">Stop letting tools like Cline and Zoo Code burn your credit card on infinite loops.</p>
-        <p class="explainer">
-            Nacho Flow runs the simple stuff on your own GPU for free, kicks your agent when it gets stuck reading files, and only spends money on Claude when things get hard.
-        </p>
+        <h1>Coding agents were supposed to be fire-and-forget.</h1>
+        <p class="subtitle">They promised you 10x efficiency. Instead, they turned you into an anxious babysitter sitting in an idling cab with the meter running, watching a ticking time bomb.</p>
+
+        <div class="hero-punchline glass">
+            <p class="punchline-text">
+                <span class="punchline-highlight">Nacho Flow unites local mini-models, budget cloud workers, and frontier brains into a single cohesive, OpenAI-compatible hybrid model that any coding agent understands.</span> It seamlessly stabilizes small models so they stop crashing your harness, crushes the token snowball with in-flight context compression, and routes to frontier models only when deep reasoning is genuinely required&mdash;zero babysitting needed.
+            </p>
+            <div class="hero-closer-multiline">
+                <div class="closer-line">🌮 🐱 So grab some nachos and pet your cat.</div>
+                <div class="closer-line highlight">And let Nacho Flow get your coding groove back!</div>
+            </div>
+        </div>
 
         <div class="cta-group">
             <a href="#quickstart" class="btn-primary">
-                <span>🚀 Quick Install</span>
+                <span>⚡ Quick Install</span>
             </a>
-            <a href="docs.html?doc=extension_guide" class="btn-secondary" style="border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.1); display: inline-flex; align-items: center; gap: 8px;">
+            <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.1); display: inline-flex; align-items: center; gap: 8px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="#007ACC" style="flex-shrink:0;"><path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/></svg>
-                <span>VS Code Extension</span>
+                <span>🔌 VS Code Extension</span>
             </a>
             <a href="docs.html?doc=user_guide" class="btn-secondary">
                 <span>📖 Documentation</span>
             </a>
             <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-secondary">
-                <span>⭐ Star on GitHub</span>
+                <span>★ Star on GitHub</span>
             </a>
         </div>
     </header>
@@ -146,22 +157,22 @@
                     <span class="badge-dot"></span>
                     <span>THE REALITY GAP</span>
                 </div>
-                <h2 class="agent-trap-title">The Autonomous Agent Trap</h2>
-                <p class="agent-trap-subtitle">Why open-weight and cheap models fail outside of $200/mo proprietary silos.</p>
+                <h2 class="agent-trap-title">The "Fire-and-Forget" Mirage</h2>
+                <p class="agent-trap-subtitle">Why autonomous coding agents force a brutal choice between meter panic and open-weight collapse.</p>
             </div>
             
             <div class="agent-trap-body">
-                <p class="agent-trap-intro">Outside of expensive closed ecosystems, running coding agents like Cline and Zoo Code on open weights quickly turns into an exercise in frustration:</p>
+                <p class="agent-trap-intro">Agent harnesses like Cline, Zoo Code, and OpenCode promised true hands-off coding. But outside closed $200/mo enterprise silos, developers hit a wall:</p>
                 
                 <div class="trap-grid">
                     <div class="trap-card">
                         <div class="trap-icon-box">🔄</div>
                         <div class="trap-content">
                             <div class="trap-card-header">
-                                <h3 class="trap-title">Infinite Repetition</h3>
+                                <h3 class="trap-title">Repetition Death Spirals</h3>
                                 <span class="trap-tag">Stream Loop</span>
                             </div>
-                            <p class="trap-desc">Models loop on the exact same failed edit 12 times in a row without making real file progress.</p>
+                            <p class="trap-desc">Models loop on the exact same failed edit 12 times in a row without making real file progress, burning context while you watch.</p>
                         </div>
                     </div>
                     <div class="trap-card">
@@ -171,38 +182,38 @@
                                 <h3 class="trap-title">Analysis Paralysis</h3>
                                 <span class="trap-tag">Idle Burn</span>
                             </div>
-                            <p class="trap-desc">Agents spin in 10-turn &ldquo;read-only planning loops&rdquo; without writing a single line of code.</p>
+                            <p class="trap-desc">Agents stall out in passive read-only loops, endlessly drafting markdown plans and inspecting files without writing a single line of code.</p>
                         </div>
                     </div>
                     <div class="trap-card">
                         <div class="trap-icon-box">💥</div>
                         <div class="trap-content">
                             <div class="trap-card-header">
-                                <h3 class="trap-title">Schema Breakage</h3>
+                                <h3 class="trap-title">Harness Schema Breakage</h3>
                                 <span class="trap-tag">3-Strike Crash</span>
                             </div>
-                            <p class="trap-desc">Malformed tool calls and hallucinated parameters trigger 3-strike crashes that abort your session.</p>
+                            <p class="trap-desc">Smaller models output conversational chatter or hallucinated parameters instead of valid tool calls, triggering 3-strike harness crashes.</p>
                         </div>
                     </div>
                     <div class="trap-card">
                         <div class="trap-icon-box">💸</div>
                         <div class="trap-content">
                             <div class="trap-card-header">
-                                <h3 class="trap-title">The Token Snowball</h3>
-                                <span class="trap-tag">Context Bleed</span>
+                                <h3 class="trap-title">The Context Snowball</h3>
+                                <span class="trap-tag">Meter Panic</span>
                             </div>
-                            <p class="trap-desc">Context balloons by 50k tokens per turn, leaving you paying $15 for broken, abandoned code.</p>
+                            <p class="trap-desc">By Turn 20, re-transmitting 80k+ token histories for trivial grep or lint checks bills you $2+ per turn on frontier models just for file reads.</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="agent-trap-punchline">
                     <div class="punchline-badge">
-                        <span class="punchline-icon">🛡️</span>
-                        <span class="punchline-label">THE SOLUTION</span>
+                        <span class="punchline-icon">⚡</span>
+                        <span class="punchline-label">THE WORKLOAD DIVISION</span>
                     </div>
                     <div class="punchline-text">
-                        <strong>Nacho Flow actively supervises your local and cloud open-weight models</strong> &mdash; severing repetition loops mid-stream, kickstarting idle agents, and auto-escalating to Claude only when a turn fails.
+                        <strong>Nacho Flow bridges the gap with an active execution runtime.</strong> Your workstation GPU handles 90% of routine reconnaissance turns at $0.00, while in-flight stream breakers and tool normalizers prevent open-weight models from crashing your harness. When real architectural reasoning is required, it escalates to frontier models automatically.
                     </div>
                 </div>
             </div>
@@ -251,10 +262,10 @@
         </div>
     </section>
 
-    <!-- Section 1: The Three Fixes -->
+    <!-- Section A: How We Made Cheaper Models Actually Work -->
     <section class="three-fixes-section" id="mechanisms">
-        <h2 class="section-title">Why Your Autonomous Agent Finally Works</h2>
-        <p class="section-subtitle">Three active runtime supervisors that eliminate the catastrophic failure modes of local models.</p>
+        <h2 class="section-title">How We Made Cheaper Models Actually Work</h2>
+        <p class="section-subtitle">Four active runtime supervisors that stabilize local GPUs and budget cloud models into a dependable engineering tier.</p>
 
         <!-- Centered 16:9 Widescreen Video Showcase -->
         <div class="cycle-killer-video-container">
@@ -266,33 +277,177 @@
             </div>
         </div>
 
-        <!-- The Three Fixes Mechanism Cards -->
-        <div class="three-fixes-grid">
-            <div class="fix-card glass">
-                <div class="fix-badge badge-killer">🎸 IN-FLIGHT STREAM BREAKER</div>
-                <h3>Cycle Killer</h3>
-                <p class="fix-superpower">Kills runaway philosophical rants that waste tokens (your money).</p>
-                <p class="fix-mechanism">
-                    Monitors the live token stream in real time. Terminates repetitive N-gram loops (<em>W=6, T=3</em>) and runaway prose in &lt;3s, cleanly self-healing the session at $0.00 with a steer prompt instead of throwing blunt HTTP 500 errors that crash your agent session.
-                </p>
+        <!-- Metric Proof Row for Section A -->
+        <div class="proof-metric-row">
+            <div class="proof-metric-box" style="border-color: rgba(245, 158, 11, 0.3);">
+                <div class="proof-metric-val" style="color: #fbbf24;">&lt; 3s</div>
+                <div class="proof-metric-lbl">Loop Interception &amp; Severance</div>
+            </div>
+            <div class="proof-metric-box" style="border-color: rgba(59, 130, 246, 0.3);">
+                <div class="proof-metric-val" style="color: #60a5fa;">100%</div>
+                <div class="proof-metric-lbl">Harness Crash Immunity</div>
+            </div>
+            <div class="proof-metric-box" style="border-color: rgba(16, 185, 129, 0.3);">
+                <div class="proof-metric-val" style="color: #34d399;">$0.00</div>
+                <div class="proof-metric-lbl">Local In-Flight Self-Healing</div>
+            </div>
+        </div>
+
+        <!-- Four Active Runtime Supervisors Master Container Box -->
+        <div class="supervisors-feature-box glass">
+            <div class="nts-box-header">
+                <div class="nts-box-header-top">
+                    <div class="supervisors-master-badge">
+                        <span class="supervisors-badge-dot"></span>
+                        <span>ACTIVE EXECUTION RUNTIME</span>
+                    </div>
+                    <div class="supervisors-meta-chip">SUB-3S IN-FLIGHT RESCUE</div>
+                </div>
+                <h3 class="nts-box-title">🛡️ Active Runtime Supervisors</h3>
+                <p class="nts-box-subtitle">Four real-time stream interceptors that stabilize local GPUs and budget cloud models—killing runaway loops, normalizing malformed tool tags, unsticking stalled plans, and checkpointing logic.</p>
             </div>
 
-            <div class="fix-card glass">
-                <div class="fix-badge badge-kickstart">⚡ STALL RESUSCITATION ENGINE</div>
-                <h3>Kickstart</h3>
-                <p class="fix-superpower">Tells the AI to continue when the job is not yet done.</p>
-                <p class="fix-mechanism">
-                    Monitors consecutive non-write turns. Auto-suspends during exploration via <strong>extensible schema detection</strong> (<code>HasWriteCapability</code>), and jolts agents out of passive read/plan procrastination—bursting to a frontier model for a single turn to unstick execution, then handing control straight back to your local GPU.
-                </p>
+            <!-- The Four Supervisors Grid (2x2) -->
+            <div class="supervisors-grid">
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-killer">🎸 IN-FLIGHT STREAM BREAKER</span>
+                        <span class="fix-card-icon">🎸</span>
+                    </div>
+                    <h3>Cycle Killer <em>(Qu'est-ce que c'est?)</em></h3>
+                    <p class="fix-superpower">Kills circular inner monologues and runaway hallucination loops.</p>
+                    <div class="fix-pain">❌ Why cheap models fail: Trapped in endless &lt;think&gt; deliberation and runaway rants that burn tokens while your IDE sits frozen.</div>
+                    <p class="fix-solution">
+                        Monitors live SSE streams with 3-lane isolation (thinking vs. prose vs. tools). Slices through repetitive loops in &lt;3s and injects a local $0.00 steer prompt to force an immediate tool action without aborting your agent session.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-normalizer">🛠️ AGENT HARNESS SHIELD</span>
+                        <span class="fix-card-icon">🛠️</span>
+                    </div>
+                    <h3>Tool Normalizer</h3>
+                    <p class="fix-superpower">Stops 3-strike harness crashes before they abort your run.</p>
+                    <div class="fix-pain">❌ Why cheap models fail: Omitting closing XML tags or outputting conversational chatter instead of raw JSON tools.</div>
+                    <p class="fix-solution">
+                        Translates between XML and JSON on the fly, auto-closes unclosed tool tags (<code>&lt;/write_to_file&gt;</code>), and repairs hallucinated parameters so Cline, Zoo Code, and OpenCode never crash.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-kickstart">⚡ STALL RESUSCITATION ENGINE</span>
+                        <span class="fix-card-icon">⚡</span>
+                    </div>
+                    <h3>Kickstart</h3>
+                    <p class="fix-superpower">Tells the AI to continue when the job is not yet done.</p>
+                    <div class="fix-pain">❌ Why cheap models fail: Analysis paralysis—spinning in 10-turn read-only planning loops without writing code.</div>
+                    <p class="fix-solution">
+                        Monitors consecutive non-write turns. When an agent stalls, Kickstart bursts a single turn to a frontier brain to unstick execution, then immediately hands control back to your cheap model.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-fairydust">🧚 PROGRAMMABLE CHECKPOINTS</span>
+                        <span class="fix-card-icon">🧚</span>
+                    </div>
+                    <h3>Fairy Dust</h3>
+                    <p class="fix-superpower">Sprinkles in frontier brains at critical quality milestones.</p>
+                    <div class="fix-pain">❌ Why cheap models fail: Subtle logic bugs and silent <code>// TODO</code> stubs that compound into wreckage.</div>
+                    <p class="fix-solution">
+                        A cadenced audit harness. Deploys frontier reasoning models (Claude, DeepSeek-R1) every <em>N</em> writes to audit code and catch logic drift before errors compound—without running expensive models all day.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section B: How We Fight the Context Snowball -->
+    <section class="nts-section" id="context-snowball">
+        <h2 class="section-title">How We Fight the Context Snowball</h2>
+        <p class="section-subtitle">Autonomous coding agents re-send 50k–120k+ tokens of conversation history, file dumps, and terminal noise on <em>every single turn</em>. Here is how Nacho Token Saver (NTS) compacts the bloat in-flight before the model ever sees it.</p>
+
+        <!-- Metric Proof Row for Section B -->
+        <div class="proof-metric-row">
+            <div class="proof-metric-box" style="border-color: rgba(16, 185, 129, 0.3);">
+                <div class="proof-metric-val" style="color: #34d399;">30%–60%</div>
+                <div class="proof-metric-lbl">Context Bloat Eliminated</div>
+            </div>
+            <div class="proof-metric-box" style="border-color: rgba(59, 130, 246, 0.3);">
+                <div class="proof-metric-val" style="color: #60a5fa;">&lt; 0.1ms</div>
+                <div class="proof-metric-lbl">Zero-Alloc Go Overhead</div>
+            </div>
+            <div class="proof-metric-box" style="border-color: rgba(168, 85, 247, 0.3);">
+                <div class="proof-metric-val" style="color: #c084fc;">Zero Loss</div>
+                <div class="proof-metric-lbl">Semantic &amp; Code Fidelity</div>
+            </div>
+        </div>
+
+        <!-- Nacho Token Saver Master Container Box -->
+        <div class="nts-feature-box glass">
+            <div class="nts-box-header">
+                <div class="nts-box-header-top">
+                    <div class="nts-master-badge">
+                        <span class="nts-badge-dot"></span>
+                        <span>KEY FEATURE AREA</span>
+                    </div>
+                    <div class="nts-meta-chip">WIRE-SPEED IN-FLIGHT COMPACTION</div>
+                </div>
+                <h3 class="nts-box-title">🗜️ Nacho Token Saver (NTS)</h3>
+                <p class="nts-box-subtitle">Four active, zero-alloc stream processors that sanitize terminal noise, deduplicate redundant tool reads, and shield model attention before prompts ever hit the model.</p>
             </div>
 
-            <div class="fix-card glass">
-                <div class="fix-badge badge-fairydust">🧚 PROGRAMMABLE CHECKPOINTS</div>
-                <h3>Fairy Dust</h3>
-                <p class="fix-superpower">Intelligently sprinkles in help from the big-gun models you can't run all day.</p>
-                <p class="fix-mechanism">
-                    A programmable intervention harness. You define the cadence (every <em>N</em> writes), audit prompt, target model, and spend cap—deploying frontier reasoning models precisely when and where quality verification matters to catch silent <code>// TODO</code> stubs, logic deadlocks, and spec drift before errors compound.
-                </p>
+            <!-- The Four NTS Feature Cards (2x2) -->
+            <div class="nts-grid">
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-nts-ansi">🧹 TERMINAL SANITIZER</span>
+                        <span class="fix-card-icon">🧹</span>
+                    </div>
+                    <h3>ANSI &amp; Spinner Purge</h3>
+                    <p class="fix-superpower">Purges progress spinner garbage and terminal spam in-place.</p>
+                    <p class="fix-solution">
+                        Terminal commands spit out thousands of raw ANSI escape sequences, spinner animations (<code>|/-\</code>), and carriage returns (<code>\r</code>). NTS purges them cleanly in-place with zero heap allocations.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-nts-dedup">📑 STALE READ COMPACTOR</span>
+                        <span class="fix-card-icon">📑</span>
+                    </div>
+                    <h3>Superseded Read Compaction</h3>
+                    <p class="fix-superpower">Folds stale file-reads once a file is edited or re-read.</p>
+                    <p class="fix-solution">
+                        When an agent inspects the same 1,000-line file across 20 turns, older reads become dead weight. NTS compacts superseded reads into structural notices while keeping the active turn fresh.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-nts-boilerplate">🛡️ HARNESS SHIELD</span>
+                        <span class="fix-card-icon">🛡️</span>
+                    </div>
+                    <h3>IDE Boilerplate Pruning</h3>
+                    <p class="fix-superpower">Strips repetitive extension notices and runaway diff dumps.</p>
+                    <p class="fix-solution">
+                        Cline and Zoo Code inject multi-line <code>&lt;notice&gt;</code> hints and massive <code>&lt;error_details&gt;</code> search blocks on diff misses. NTS strips this harness bloat before it hits the model.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-nts-whitespace">📐 STREAM NORMALIZER</span>
+                        <span class="fix-card-icon">📐</span>
+                    </div>
+                    <h3>Whitespace &amp; Log Dedup</h3>
+                    <p class="fix-superpower">Collapses runaway blank lines and identical output bursts.</p>
+                    <p class="fix-solution">
+                        Long test runs and file reads often leak thousands of blank lines and duplicate linter spam. NTS normalizes whitespace and deduplicates repeating chunks with zero memory allocation.
+                    </p>
+                </div>
             </div>
         </div>
     </section>
@@ -349,7 +504,7 @@
                 <div class="extension-preview-title">Visual Studio Code — Nacho Flow Dashboard &amp; Sidebar Hub</div>
                 <div class="extension-preview-badge">● LIVE SSE CONTROL PLANE</div>
             </div>
-            <img src="images/vscode-extension-showcase.png?v=0.9.1" alt="Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub, and Cline Pairing" class="extension-preview-img" loading="lazy">
+            <img src="images/vscode-extension-showcase.png?v=1.1.0" alt="Nacho Flow Visual Studio Code Extension - Live Dashboard, Sidebar Control Hub, and Cline Pairing" class="extension-preview-img" loading="lazy">
         </div>
 
         <div class="extension-grid">
@@ -365,6 +520,28 @@
             </div>
 
             <div class="extension-card glass">
+                <div class="extension-badge">📊 LIVE WEBVIEW DASHBOARD</div>
+                <h3>Real-Time Financial &amp; NTS Telemetry</h3>
+                <p>Track dollar-accurate cloud savings, token volumes, and latency across custom time windows (Today, This Week, All Time). Inspect in-flight Cycle Killer loop interventions and live Nacho Token Saver (NTS) compression ratios per turn.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">💰 Dollar-Accurate Savings</span>
+                    <span class="ext-tag">🗜️ Live NTS Metrics</span>
+                    <span class="ext-tag">🔍 Route History Inspector</span>
+                </div>
+            </div>
+
+            <div class="extension-card glass">
+                <div class="extension-badge">⚡ AGENT PAIRING &amp; REMOTE GATEWAY</div>
+                <h3>Instant Setup for Zoo Code, Cline &amp; Cursor</h3>
+                <p>1-click copy pre-configured OpenAI Base URLs, API keys, and model identifiers directly into your agent harness. Seamlessly switch between local GPU inference and remote home-lab/team GPU servers with Bearer Auth.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">📋 1-Click Agent Pairing</span>
+                    <span class="ext-tag">🌐 Remote GPU Server Hub</span>
+                    <span class="ext-tag">🔒 Local Security Isolation</span>
+                </div>
+            </div>
+
+            <div class="extension-card glass">
                 <div class="extension-badge">🌶️ HOTSAUCE DIRECTIVES</div>
                 <h3>In-Prompt Stream Steering &amp; Bypass</h3>
                 <p>Override routing right inside your chat turn with sub-microsecond directive evaluation. Directives like <code>@nacho:local</code>, <code>@nacho:cloud</code>, <code>@nacho:kickstart-off</code>, <code>@nacho:toggles</code>, and <code>@nacho:reset</code> are stripped cleanly before upstream dispatch.</p>
@@ -376,7 +553,11 @@
             </div>
         </div>
 
-        <div style="text-align: center; margin-top: 2rem;">
+        <div style="text-align: center; margin-top: 2rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+            <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-marketplace" style="margin-bottom: 0;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="#007ACC"><path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/></svg>
+                <span>Install from VS Code Marketplace →</span>
+            </a>
             <a href="docs.html?doc=extension_guide" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 8px;">
                 <span>📖 Read the VS Code Extension Guide →</span>
             </a>
@@ -441,20 +622,20 @@
                     <div class="trust-lbl">Peak Req / Sec</div>
                 </div>
                 <div class="trust-item">
-                    <div class="trust-top"><span class="trust-icon">🛠️</span> <span class="trust-val">Universal</span></div>
-                    <div class="trust-lbl">Tool Normalization</div>
+                    <div class="trust-top"><span class="trust-icon">🗜️</span> <span class="trust-val">30%–60%</span></div>
+                    <div class="trust-lbl">In-Flight NTS Compactor</div>
                 </div>
                 <div class="trust-item">
-                    <div class="trust-top"><span class="trust-icon">🛡️</span> <span class="trust-val">Self-Healing</span></div>
-                    <div class="trust-lbl">Stream Recovery</div>
+                    <div class="trust-top"><span class="trust-icon">🛠️</span> <span class="trust-val">8 Formats</span></div>
+                    <div class="trust-lbl">Tool Normalizer</div>
                 </div>
                 <div class="trust-item">
-                    <div class="trust-top"><span class="trust-icon">📏</span> <span class="trust-val">Context</span></div>
-                    <div class="trust-lbl">Boundary Guards</div>
+                    <div class="trust-top"><span class="trust-icon">⏱️</span> <span class="trust-val">&lt; 3s</span></div>
+                    <div class="trust-lbl">Loop Interception</div>
                 </div>
                 <div class="trust-item">
-                    <div class="trust-top"><span class="trust-icon">📐</span> <span class="trust-val">O(1)</span></div>
-                    <div class="trust-lbl">Physical Limit Guards</div>
+                    <div class="trust-top"><span class="trust-icon">📦</span> <span class="trust-val">Zero Deps</span></div>
+                    <div class="trust-lbl">Single Go Binary</div>
                 </div>
             </div>
         </div>
@@ -487,6 +668,11 @@
                     <span class="term-time">19:42:14</span>
                     <span class="term-tag tag-coder">CLOUD WORKHORSE</span>
                     <span class="term-msg">Turn 3 (Tokens: 24,100, Tools: ['edit_file']) ➔ <span class="term-highlight">openrouter/qwen3-coder-480b</span> <span class="tag-cache">89.4% KV CACHE HIT</span></span>
+                </div>
+                <div class="term-line">
+                    <span class="term-time">19:42:33</span>
+                    <span class="term-tag tag-nts">TOKEN SAVER</span>
+                    <span class="term-msg">Turn 8 (ANSI: 14.2k purged, Superseded reads: 2) ➔ <span class="term-highlight">pkg/nts</span> <span class="tag-nts-compaction">58.4% COMPACTED (18,400 TOKENS SAVED)</span></span>
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:42:50</span>
@@ -531,8 +717,15 @@
                 </button>
             </div>
 
+            <div id="vscode-marketplace-cta" style="margin-bottom: 1.25rem; text-align: center;">
+                <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-marketplace" style="margin-bottom: 0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#007ACC"><path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/></svg>
+                    <span>Install from Visual Studio Marketplace →</span>
+                </a>
+            </div>
+
             <div class="code-container">
-                <code class="code-text" id="install-command">code --install-extension nacho-flow-*.vsix</code>
+                <code class="code-text" id="install-command">code --install-extension dixieflatline76.nacho-flow</code>
                 <button class="btn-copy" onclick="copyInstallCommand()">Copy</button>
             </div>
         </div>
@@ -584,7 +777,7 @@ Model ID: nacho-hybrid</code></pre>
     <!-- Interactive Scripts -->
     <script>
         const installCommands = {
-            vscode: 'code --install-extension nacho-flow-*.vsix',
+            vscode: 'code --install-extension dixieflatline76.nacho-flow',
             winget: 'winget install dixieflatline76.NachoFlow',
             brew: 'brew tap dixieflatline76/nacho-flow && brew install nacho-flow',
             curl: 'curl -fsSL https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/scripts/install.sh | bash',
@@ -603,6 +796,10 @@ Model ID: nacho-hybrid</code></pre>
             document.querySelectorAll('.install-tabs .tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById('install-command').innerText = installCommands[type];
+            const mktCta = document.getElementById('vscode-marketplace-cta');
+            if (mktCta) {
+                mktCta.style.display = (type === 'vscode') ? 'block' : 'none';
+            }
         }
 
         function copyInstallCommand() {
@@ -668,8 +865,10 @@ Model ID: nacho-hybrid</code></pre>
             const container = document.querySelector('.hero-mascot-container');
             if (video && container) {
                 video.addEventListener('ended', () => {
-                    container.classList.remove('playing');
-                    video.currentTime = 0;
+                    setTimeout(() => {
+                        container.classList.remove('playing');
+                        video.currentTime = 0;
+                    }, 2500);
                 });
             }
 
