@@ -1,27 +1,40 @@
-# 🌮 Nacho Flow: VS Code & Cursor Companion Extension
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/hero-mascot.png" alt="Nacho Flow" width="700" />
+</p>
+
+# 🌮 Nacho Flow: Active Execution Runtime & Autonomous Agent Supervisor
 
 <p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow"><img src="https://img.shields.io/github/v/release/dixieflatline76/nacho-flow?color=007ACC&label=VS%20Code%20Marketplace&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow"><img src="https://img.shields.io/visual-studio-marketplace/v/dixieflatline76.nacho-flow?color=007ACC&label=VS%20Code%20Marketplace&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace"></a>
   <a href="https://github.com/dixieflatline76/nacho-flow"><img src="https://img.shields.io/badge/Platform-VS%20Code%20%7C%20Cursor-blue" alt="Platform: VS Code | Cursor"></a>
+  <a href="https://github.com/dixieflatline76/nacho-flow"><img src="https://img.shields.io/badge/Bundled%20Runtime-Pure%20Go%20(Zero%20Setup)-success" alt="Bundled Pure Go Binary"></a>
   <a href="https://github.com/dixieflatline76/nacho-flow"><img src="https://img.shields.io/github/stars/dixieflatline76/nacho-flow?style=social" alt="GitHub Stars"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/dixieflatline76/nacho-flow/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
 
-> **You just paid $2.00 to ask your AI agent to check a log file. There's a better way.**
+> ### Coding agents were supposed to be fire-and-forget.
 >
-> Route routine prompt turns (log inspections, file searches, syntax fixes) to your **local workstation GPU ($0.00)** and automatically burst complex multi-file reasoning to **frontier cloud APIs** with 100% reasoning fidelity and up to **94.7% cost reduction**.
-
-The **Nacho Flow VS Code Companion Extension** delivers a high-visibility control hub, real-time financial telemetry dashboard, preset hot-swapper, and market deal scout for autonomous coding agents ([Zoo Code](https://github.com/zoocodeorganization/zoo-code), [Cline](https://github.com/cline/cline), [Cursor](https://www.cursor.com), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Continue](https://continue.dev)).
+> *They promised you 10x efficiency. Instead, they turned you into an anxious babysitter sitting in an idling cab with the meter running, watching a ticking time bomb.*
+>
+> **Nacho Flow unites local mini-models, budget cloud workers, and frontier brains into a single cohesive, OpenAI-compatible hybrid model that any coding agent understands.** It seamlessly stabilizes small models so they stop crashing your harness, crushes the token snowball with in-flight context compression, and routes to frontier models only when deep reasoning is genuinely required—zero babysitting needed.
+>
+> 🌮 🐱 **So grab some nachos and pet your cat.**  
+> **And let Nacho Flow get your coding groove back!**
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Analytics Dashboard, Sidebar Control Hub, and Cline Pairing" width="800" />
+  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Analytics Dashboard, Sidebar Control Hub, and Cline Pairing" width="900" />
 </p>
+
+The **Nacho Flow VS Code Companion Extension** is the official in-editor control center for autonomous coding agents ([Cline](https://github.com/cline/cline), [Zoo Code](https://www.zoocode.dev), [Cursor](https://cursor.com), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Continue](https://continue.dev)). It bundles the compiled Go execution runtime directly inside the extension—giving you instant loop defense, in-flight context compaction, real-time financial telemetry, and zero-downtime preset switching with **zero CLI setup**.
+
+🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)  
+Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
 
 ---
 
-## ⚡ 60-Second Quickstart (Zero CLI Required)
+## ⚡ 60-Second Quickstart (Zero CLI or Go Toolchain Required)
 
-The extension **bundles the native high-performance Go dispatch binary directly**. You do not need Go installed or any command-line setup:
+The extension **bundles the native high-performance Go dispatch binary directly**. You do not need Go, Node servers, or Python runtimes installed:
 
 1. **Open the Nacho Flow Sidebar**: Click the **🌮 Nacho Flow** icon in the VS Code Activity Bar (left sidebar).
 2. **Launch the Engine**: Under **1. Model Dispatcher**, click **`▶ Start`**. The status chip turns `🟢 Engine Online`.
@@ -29,15 +42,52 @@ The extension **bundles the native high-performance Go dispatch binary directly*
    - **Base URL**: `http://127.0.0.1:8000/v1`
    - **Model ID**: `nacho-hybrid`
    - *(Optional API Key: `sk-nacho-secret-key`)*
-4. **Paste into Your Agent**: Open **Zoo Code**, **Cline**, or **Cursor** settings $\rightarrow$ set Provider to **OpenAI Compatible** $\rightarrow$ paste the copied values.
+4. **Paste into Your Agent**: Open **Cline**, **Zoo Code**, or **Cursor** settings → set Provider to **OpenAI Compatible** → paste the copied values.
 
 Routine turns now run on your GPU for **$0.00**, while complex reasoning automatically escalates to Claude or DeepSeek-R1!
 
 ---
 
+## 🥊 Why Autonomous Agents Need an Active Runtime (Not Just a Proxy)
+
+Passive proxies like LiteLLM just blindly forward prompts. Nacho Flow actively supervises token streams, compacts context in-flight, and sanitizes tool calls so agents don't crash or burn your credit card:
+
+| Agent Failure Mode | What Happens Without Nacho Flow | How Nacho Flow Solves It |
+| :--- | :--- | :--- |
+| **Runaway Loops** | Agent repeats identical broken edits 12 times, burning hours and dollars. | **Cycle Killer**: Detects n-gram loops in < 3s and severs the stream with a protocol-safe override. |
+| **Context Snowball** | Every turn re-transmits 60k+ tokens of repetitive ANSI spinner logs & stale files. | **Nacho Token Saver (NTS)**: In-flight ANSI de-noising & stale read deduplication (30%–60% bloat cut). |
+| **Open-Weight Crashes** | Small local models output malformed XML or bare JSON, causing 3-strike harness deadlocks. | **Strategy-Pipeline Normalizer**: Converts 8 format families into valid OpenAI `tool_calls` JSON on the fly. |
+| **Planning Stalls** | Agent procrastinates in 10-turn read-only analysis without editing code. | **Kickstart**: Injects authoritative resuscitation prompts when implementation stalls. |
+| **Meter Panic** | Paying $3.00/M tokens to Claude just to check `git status` or inspect a 10-line file. | **Hybrid Tier Dispatch**: Routine work runs on local GPUs for **$0.00**; bursts to Claude only when needed. |
+
+---
+
 ## ✨ Features
 
-### 🎛️ 1. Sidebar Control Hub (Activity Bar)
+### 🗜️ 1. Nacho Token Saver (NTS — In-Flight Context Compaction)
+
+Autonomous coding agents re-send 50k–120k+ tokens of conversation history, file dumps, and terminal noise on *every single turn*. NTS compacts the bloat in-flight before the model ever sees it:
+
+- **Zero-Alloc In-Place ANSI De-Noising**: Terminal test executions spit out thousands of raw ANSI escape sequences, spinner animations, and carriage returns (`\r`). The NTS de-noising fast path (`pkg/nts`) purges them cleanly in-flight with zero heap allocation using mutable byte slices.
+- **Redundant File-Read Compaction**: When an agent inspects the same 1,000-line file four times across 20 turns, re-transmitting it burns 8,000 wasted tokens. NTS compacts stale read outputs into structural digests while keeping the active turn fresh.
+- **Attention Defense for Open Weights**: Smaller open-weight models (8B–14B) suffer sharp reasoning degradation when prompt context exceeds 32k tokens. By stripping noise and deduplicating reads, NTS keeps smaller models working inside their high-accuracy attention zone.
+- **Direct Cloud Invoice Protection**: When turns escalate to frontier models like Claude or DeepSeek-R1, you aren't paying $3.00/M tokens for repetitive linter logs already sent five turns ago. NTS stops the context bill from snowballing.
+- **Empirical Impact**: **30%–60% context bloat eliminated** at **< 0.1ms zero-alloc Go overhead** with **zero loss** in semantic or code fidelity.
+
+---
+
+### 🛡️ 2. Proactive Agent Supervision (Runtime Stream & Loop Defense)
+
+Nacho Flow supervises local and cloud open-weight models in real time, eliminating common agent failure loops:
+
+- 🎸 **Cycle Killer (In-Flight Stream Breaker)**: Monitors live token streams across prose, thinking, and tool lanes in real time (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in < 3s, injecting a protocol-safe local $0.00 system override before escalating to cloud. Grants file writes full immunity so table-driven unit tests, repetitive structs, and boilerplate code are never falsely interrupted.
+- ⚡ **Kickstart (Stall Resuscitation Engine)**: Monitors consecutive non-write turns. Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), and jolts agents out of passive read/plan procrastination when implementation stalls.
+- 🧚 **Fairy Dust (Programmable Milestone Checkpoints)**: A cadenced intervention engine. You control the trigger interval (every N writes), the model, the audit prompt, and the spend cap—deploying frontier reasoning models precisely when and where quality verification matters.
+- 🛡️ **Agentic Tool Fallback Shield**: Sub-nanosecond sliding tail-buffer analysis (4.67 ns/op, 0 B/op) intercepting conversational plans or questions from local models (Gemma 2, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
+
+---
+
+### 🎛️ 3. Sidebar Control Hub (Activity Bar)
 
 Manage your agent supervisor and model dispatcher directly from your editor sidebar without obscuring your code:
 
@@ -45,11 +95,7 @@ Manage your agent supervisor and model dispatcher directly from your editor side
   - **This Machine**: 1-click `▶ Start`, `⏹ Stop`, `🔄 Restart`, and interactive streaming `📄 Logs` for the bundled native Go engine.
   - **Remote Server**: Connect across LAN or Tailscale (e.g. `http://192.168.1.100:8000` or `http://gpu-box.internal:8000`) with optional Bearer Auth Token and instant `⚡ Test` ping. When switching to Remote Server, the local engine is cleanly stopped to free GPU memory, and automatically resumed when you switch back to This Machine.
 - **Configurable Routing Profiles with 1-Click Switching (`⚡ Switch`)**:
-  - Switch on the fly between three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with native process isolation:
-    - **🌮 Profile 1** (`profile1.yaml` / `config.yaml`): Fully customizable configuration slot (e.g. general-purpose coding rules and balanced local/cloud routing).
-    - **🤖 Profile 2** (`profile2.yaml`): Fully customizable configuration slot (e.g. tuned for multi-agent workflows like Zoo Code with strict JSON tool calling).
-    - **🛠️ Profile 3** (`profile3.yaml`): Fully customizable configuration slot (e.g. tuned for XML-based tool agents like Cline with relaxed prose ceilings).
-  - You have total freedom to customize each profile for any combination of models, providers, context thresholds, and routing rules you prefer.
+  - Switch on the fly between three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with native process isolation.
   - In local mode, switching cleanly restarts the native engine with the `--config <path>` flag. In remote mode, local profile mutation is safely disabled.
   - Click **`📝 Edit YAML`** (or the dashboard **`[📝 Profile X (YAML)]`** button) to open the active profile in the editor with auto-reload on save.
 - **Provider Status Monitoring**: Real-time discovery and health chips for local engines (Ollama, vLLM, llama.cpp) and cloud APIs (OpenRouter, DeepSeek, Anthropic).
@@ -58,40 +104,20 @@ Manage your agent supervisor and model dispatcher directly from your editor side
 
 ---
 
-### 📊 2. Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`)
+### 📊 4. Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`)
 
 A mission-control flight instrument webview built on a **Unified Top-Down State Snapshot Architecture**:
 
-- **Unified State Snapshot & Monotonic Rendering**:
-  - Atomic snapshot delivery (`DashboardSnapshot`) with monotonic timestamp sequencing, eliminating visual race conditions, ghost cards, or out-of-order deliveries during rapid switches.
-  - **Active Profile Badge & Config Button**: Dynamic header indicators (`📋 Profile X` / `🌐 Remote Server`) with a 1-click **`[📝 Profile X (YAML)]`** / **`[📝 Remote config.yaml]`** editor button.
-  - **Clean Offline Transitions**: Disconnecting or stopping the engine atomically purges all data caches and displays clean offline status banners.
-- **Financial Telemetry & Time Windows**:
-  - Filter metrics by **All Time**, **Today**, **Yesterday**, **This Week**, or **This Month**.
-  - Displays Total Spend, Total Savings ($ and %), Local GPU Turns ($0.00), Cloud Turns, and Billed vs. Avoided Token volume.
-  - **Counterfactual Savings Engine**: Calculates true mathematical cost savings comparing local turns against frontier cloud pricing, including prompt cache discounts.
-- **Live Route Inspector**:
-  - Inspect the last 500 LLM requests processed by the gateway in real time.
-  - View exact token estimates, round-trip latency, matching tier rule, provider, model ID, and retry recovery steps.
+- **Unified State Snapshot & Monotonic Rendering**: Atomic snapshot delivery (`DashboardSnapshot`) with monotonic timestamp sequencing, eliminating visual race conditions, ghost cards, or out-of-order deliveries during rapid switches.
+- **Financial Telemetry & Time Windows**: Filter metrics by **All Time**, **Today**, **Yesterday**, **This Week**, or **This Month**. Displays Total Spend, Total Savings ($ and %), Local GPU Turns ($0.00), Cloud Turns, and Billed vs. Avoided Token volume.
+- **Counterfactual Savings Engine**: Calculates true mathematical cost savings comparing local turns against frontier cloud pricing, including prompt cache discounts.
+- **🗜️ Nacho Token Saver (NTS) Live Telemetry Panel**: Displays real-time context compaction: **Total Tokens Saved** (1.4M+), **Payload Reduced** (5.4 MB+), and **Compacted Turns**. Visualizes active in-flight de-noising guardrails (*Dual-Lane Immunity Guard* & *Alphanumeric ASCII Protection*).
+- **Live Route Inspector**: Inspect the last 500 LLM requests processed by the gateway in real time. View exact token estimates, round-trip latency, matching tier rule, provider, model ID, compaction savings, and retry recovery steps.
 - **Auto-Refresh Controls**: Set background route updates to `15s`, `30s`, `60s`, or `Off`, or click `Refresh Now`.
 
 ---
 
-### 🛡️ 3. "The Three Fixes" Live Defense Telemetry
-
-Nacho Flow supervises local and cloud open-weight models in real time, eliminating common agent failure loops:
-
-- 🎸 **Cycle Killer (In-Flight Stream Breaker)**:
-  - Monitors the live token stream in real time. Kills repetitive N-gram loops and runaway prose in $<3$s, injecting a local $0.00 system override before escalating to cloud.
-  - Visualizes intercepted loops, avoided runaway GPU minutes, and local self-healing rate ($0.00 recovery via `[SYSTEM OVERRIDE]` prompts).
-- ⚡ **Kickstart (Stall Resuscitation Engine)**:
-  - Monitors consecutive non-write turns. Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), and jolts agents out of passive read/plan procrastination when implementation stalls.
-- 🧚 **Fairy Dust (Programmable Milestone Checkpoints)**:
-  - A cadenced intervention engine. You control the trigger interval (every $N$ writes), the model, the audit prompt, and the spend cap—deploying frontier reasoning models precisely when and where quality verification matters.
-
----
-
-### 🔥 4. Heat Seeker: Live Model Deals & 1-Click Tier Adoption
+### 🔥 5. Heat Seeker: Live Model Deals & 1-Click Tier Adoption
 
 Heat Seeker continuously scans 300+ cloud models on OpenRouter, discovering flash discounts, subsidized capacity, and 100% free endpoints:
 
@@ -104,7 +130,7 @@ Heat Seeker continuously scans 300+ cloud models on OpenRouter, discovering flas
 
 ---
 
-### 🎛️ 5. 1-Click Auto-Tuning Optimizer
+### 🎛️ 6. 1-Click Auto-Tuning Optimizer
 
 Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns from `traffic.jsonl`:
 - Statistical odds-ratio analysis calculates the optimal context boundary where local model error rates rise.
@@ -113,18 +139,22 @@ Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns 
 
 ---
 
-### 🚦 6. Status Bar HUD & Hover Card
+### 🚦 7. Status Bar HUD & Live Telemetry Widget
 
 A lightweight widget in your VS Code Status Bar (bottom right):
 ```text
-🌮 $45.81 Saved Today (2% Local)
+🌮 Nacho Flow ● Online | $193.74 Saved All Time (5% Local)
 ```
-- **Hover Card**: Rich Markdown tooltip displaying active daemon status, active preset (`Cline`), today's spend/savings (`+$45.81 / 75% saved`), token volume, and quick links.
-- **Click QuickPick**: Opens a quick menu to open the dashboard, switch presets, start/stop/restart the engine, open `config.yaml`, or reset circuit breakers.
+- **Rich Hover Card**: Interactive tooltip displaying:
+  - Active profile & server URL (`Profile 1 · http://127.0.0.1:8000`)
+  - Cost metrics: Est. Cost Saved ($193.74 / 81% saved), Cloud Spend ($44.79), Local GPU share
+  - **Nacho Token Saver Telemetry**: 1,426,821 tokens saved (5.4 MB saved across 852 turns)
+  - **Supervisor Defense Telemetry**: 22 loops healed, 24 kickstarts, 87 fairy dust checkpoints
+- **Click QuickPick**: Instant access to open the dashboard, switch presets, start/stop/restart the engine, open `config.yaml`, or reset circuit breakers.
 
 ---
 
-### 🌶️ 7. Direct In-Chat Control Directives (`@nacho:`)
+### 🌶️ 8. Direct In-Chat Control Directives (`@nacho:`)
 
 Steer routing and toggle session guardrails directly from your prompt in **Zoo Code**, **Cline**, or **Cursor** without opening settings:
 
@@ -144,13 +174,14 @@ Steer routing and toggle session guardrails directly from your prompt in **Zoo C
 
 ---
 
-## 🏛️ Architecture: Thin-Client Doctrine
+## 🏛️ Architecture: Thin-Client Doctrine & Zero-Alloc Systems Core
 
 This extension strictly adheres to the **Thin-Client Doctrine**:
 
-1. **Single Source of Truth**: All configuration resides in `config.yaml`—zero duplicate settings in VS Code workspace state.
-2. **Zero Core Logic in TypeScript**: All routing evaluations, token estimations, normalizers, and cost calculations execute in compiled Go inside the daemon.
-3. **Reactive SSE Transport**: Consumes server-sent events with zero polling loops, preserving editor battery and CPU cycles (**0.0% CPU when idle**).
+1. **Bundled Native Go Core (Zero Go Setup Required)**: The extension ships and manages a pre-compiled native Go static binary with wire-speed zero-alloc fast paths (`pkg/zeroalloc`). You do not need Go, Node servers, or Python runtimes installed.
+2. **Sub-Millisecond Routing & Lock-Free RCU**: All routing evaluations (< 0.19 ms), token estimations, format normalizations, and cost calculations execute in compiled Go with lock-free atomic RCU (Read-Copy-Update) state synchronization.
+3. **Single Source of Truth**: All configuration resides in `config.yaml`—zero duplicate settings in VS Code workspace state.
+4. **Reactive SSE Transport**: Consumes server-sent events with zero polling loops, preserving editor battery and CPU cycles (**0.0% CPU when idle**).
 
 ---
 
@@ -176,7 +207,7 @@ All features can be triggered via `Ctrl+Shift+P` / `Cmd+Shift+P`:
 
 ## ⚙️ Extension Settings
 
-Configure extension behaviors in VS Code Settings (`Ctrl+,` $\rightarrow$ search `Nacho Flow`):
+Configure extension behaviors in VS Code Settings (`Ctrl+,` → search `Nacho Flow`):
 
 | Setting | Default | Description |
 | :--- | :--- | :--- |
@@ -190,9 +221,9 @@ Configure extension behaviors in VS Code Settings (`Ctrl+,` $\rightarrow$ search
 
 ## 📚 Documentation & Community
 
-- **Official Website & Docs Hub**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)
-- **Interactive Documentation**: [spicebox.dev/nacho-flow/docs.html](https://spicebox.dev/nacho-flow/docs.html)
-- **Full Extension User Guide**: [docs/EXTENSION_USER_GUIDE.md](https://github.com/dixieflatline76/nacho-flow/blob/main/docs/EXTENSION_USER_GUIDE.md)
+- **Official Website**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)
+- **Extension User Guide**: [spicebox.dev/nacho-flow/docs.html?doc=extension_guide](https://spicebox.dev/nacho-flow/docs.html?doc=extension_guide)
+- **Core Engine & CLI Guide**: [spicebox.dev/nacho-flow/docs.html?doc=user_guide](https://spicebox.dev/nacho-flow/docs.html?doc=user_guide)
 - **GitHub Repository**: [github.com/dixieflatline76/nacho-flow](https://github.com/dixieflatline76/nacho-flow)
 - **Support & Community**: [spicebox.dev/nacho-flow/support.html](https://spicebox.dev/nacho-flow/support.html)
 
@@ -208,5 +239,5 @@ If Nacho Flow saved your sanity, your workflow, or your API bill:
 
 ## 📄 License
 
-- The VS Code Companion Extension is open source under the **[MIT License](LICENSE)**.
+- The VS Code Companion Extension is open source under the **[MIT License](https://github.com/dixieflatline76/nacho-flow/blob/main/LICENSE)**.
 - The core Nacho Flow gateway daemon is licensed under **GNU AGPL-3.0** with API Interoperability Exception.

@@ -18,10 +18,11 @@ The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-
 4. [Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Show Dashboard`)](#4-real-time-analytics-dashboard)
    - [4.1 Flight Instruments & Time-Window Telemetry](#41-flight-instruments--time-window-telemetry)
    - [4.2 Cycle Killer Defense & Local Self-Healing](#42-cycle-killer-defense--local-self-healing)
-   - [4.3 Live Route History Inspector](#43-live-route-history-inspector)
-   - [4.4 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption](#44--heat-seeker-live-model-deals--1-click-tier-adoption)
-   - [4.5 🎛️ 1-Click Auto-Tuning Optimizer](#45-️-1-click-auto-tuning-optimizer)
-   - [4.6 Interactive Circuit Breaker Management](#46-interactive-circuit-breaker-management)
+   - [4.3 🗜️ Nacho Token Saver (NTS) Live Telemetry Panel](#43-nacho-token-saver-nts-live-telemetry-panel)
+   - [4.4 Live Route History Inspector](#44-live-route-history-inspector)
+   - [4.5 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption](#45--heat-seeker-live-model-deals--1-click-tier-adoption)
+   - [4.6 🎛️ 1-Click Auto-Tuning Optimizer](#46-️-1-click-auto-tuning-optimizer)
+   - [4.7 Interactive Circuit Breaker Management](#47-interactive-circuit-breaker-management)
 5. [Status Bar HUD & QuickPick Menu](#5-status-bar-hud--quickpick-menu)
 6. [Direct In-Chat Control Directives (`@nacho:`)](#6-direct-in-chat-control-directives-nacho)
 7. [Command Palette Reference](#7-command-palette-reference)
@@ -219,6 +220,7 @@ At the top of the dashboard, live instrumentation cards display your financial a
 - **Active Profile Badge**: Reflects the current engine profile (`📋 Profile 1`, `📋 Profile 2`, `📋 Profile 3`, or `🌐 Remote Server`).
 - **1-Click Config Editor Button**: Displays `[📝 Profile X (YAML)]` in local mode (or `[📝 Remote config.yaml]` when connected to a remote host), opening the exact active file directly in VS Code.
 - **Time-Window Tabs**: Toggle between `All Time`, `Today`, `Yesterday`, `This Week`, and `This Month` to inspect session velocity and historical return on investment.
+- **Nacho Token Saver (NTS) Instrumentation**: Shows cumulative prompt tokens avoided, bytes cleaned from CLI logs/spinners, and total compacted turns across the selected time horizon.
 - **Auto-Refresh Controls**: Set background route polling to `15s`, `30s`, `60s`, or `Off`, or click `Refresh Now`.
 - **Counterfactual Savings Engine**: Every turn processed by your local GPU computes what that prompt turn *would have cost* on frontier cloud models (Claude Sonnet 5 / DeepSeek-R1), accounting for prompt cache discounts.
 
@@ -235,7 +237,19 @@ The **Cycle Killer** panel visualizes real-time protection against runaway agent
 
 ---
 
-### 4.3 Live Route History Inspector
+### 4.3 🗜️ Nacho Token Saver (NTS) Live Telemetry Panel
+
+The **Nacho Token Saver (NTS)** panel monitors real-time in-flight context compaction before prompts reach inference engines:
+
+- **Total Tokens Saved (Avoided Context)**: Cumulative count of token payload eliminated across all evaluated turns (e.g., `1,426,821 tokens saved`).
+- **Payload Reduced (Wire Volume)**: Total bytes stripped from raw upstream buffers (e.g., `5.4 MB payload saved`), lowering round-trip network latency and memory overhead.
+- **Compacted Turns**: Number of agent request turns where redundant file reads or ANSI console noise were compacted (e.g., `852 compacted turns`).
+- **Dual-Lane Immunity Guard**: Zero-alloc safe path ensuring that code syntax, table-driven unit tests, Markdown structures, and file edits are 100% preserved while purging repetitive terminal spinners, carriage returns (`\r`), and redundant ANSI escapes.
+- **Structural File Deduplication**: When an autonomous agent re-reads the same repository file across multiple conversation turns without interim modifications, NTS maintains semantic validity while compacting stale read outputs into structural digests.
+
+---
+
+### 4.4 Live Route History Inspector
 
 Inspect the last 500 LLM requests processed by the gateway in real time:
 
@@ -251,7 +265,7 @@ TIME      TIER              MODEL                     TOKENS   LATENCY   REASON
 
 ---
 
-### 4.4 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption
+### 4.5 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption
 
 **Heat Seeker** is an autonomous market scout integrated directly into the dashboard. It continuously scans 300+ cloud models on OpenRouter, discovering flash discounts, subsidized capacity, and free endpoints:
 
@@ -266,7 +280,7 @@ TIME      TIER              MODEL                     TOKENS   LATENCY   REASON
   ─────────────────────────────────────────────────────────────
   dots-studio/dots-3-note:free                    [ 100% FREE ]
   Input: $0.00/1M  │  Output: $0.00/1M
-  [🧠 Index 64.0] [openrouter]
+  [🔧 Tools] [🧠 Index 52.4] [openrouter]
   [📋 Copy]  [⚡ Adopt]
 ```
 
@@ -298,7 +312,7 @@ Click **`📋 Copy`** on any deal card to copy the exact model ID (e.g. `google/
 
 ---
 
-### 4.5 🎛️ 1-Click Auto-Tuning Optimizer
+### 4.6 🎛️ 1-Click Auto-Tuning Optimizer
 
 Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns from `traffic.jsonl`:
 - Uses statistical odds-ratio analysis to find the optimal token boundary where local model failure odds increase.
@@ -308,7 +322,7 @@ Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns 
 
 ---
 
-### 4.6 Interactive Circuit Breaker Management
+### 4.7 Interactive Circuit Breaker Management
 
 The **Circuit Breaker** panel displays the live health of all configured inference providers:
 - **CLOSED (Green)**: Provider is healthy; traffic flows normally.
@@ -323,23 +337,42 @@ The **Circuit Breaker** panel displays the live health of all configured inferen
 Nacho Flow integrates a high-visibility status widget directly in the VS Code Status Bar (bottom right):
 
 ```text
-🌮 $14.20 svd | 78% Local [Zoo Code]
+🌮 $14.20 Saved Today (78% Local)
 ```
 
 ### Hover Telemetry Card:
-Hovering over the status bar item displays a rich Markdown tooltip showing:
-- Active daemon engine status & version.
-- Current active preset (`🌮 Standard`, `🤖 Zoo Code`, or `🛠️ Cline`).
-- Today's spend, savings, and local vs. cloud turn distribution.
-- Provider circuit breaker health summary.
+Hovering over the status bar item displays a rich, interactive Markdown HUD featuring a live metrics table and direct timeframe switching:
+
+```markdown
+### 🌮 Nacho Flow `🟢 Online`
+**🤖 Zoo Code** • `http://127.0.0.1:8000/v1`
+
+| Metric | Today (Rolling 24h) |
+| :--- | :--- |
+| **Est. Cost Saved** | **`$14.20`** *(88% saved)* |
+| **Cloud API Spend** | `$1.85` |
+| **Local GPU ($0.00)** | `78%` *(39/50 turns)* |
+| **Nacho Token Saver** | `42,850 tokens` *(168.2 KB saved • 18 turns)* |
+| **Agent Supervisor** | `2 loops healed • 1 kicks • 3 fairy dust` |
+| **Total Prompt Turns** | `50` *(214,000 tokens)* |
+
+Timeframe: [1h] | **✓ [Today]** | [This Week] | [This Month] | [All Time]
+
+---
+[📊 Dashboard] • [⚡ Auto-Tune] • [🔥 Deals] • [⚙ Settings]
+```
+
+- **Interactive Timeframe Links**: Click **`[1h]`**, **`[Today]`**, **`[This Week]`**, **`[This Month]`**, or **`[All Time]`** directly inside the tooltip to recalculate and display savings metrics across that specific horizon.
+- **Nacho Token Saver Telemetry**: Tracks cumulative tokens and bytes stripped from historical turns without opening the full dashboard.
+- **Agent Supervisor Statistics**: Real-time counter of Cycle Killer stream severances, Kickstart idle resuscitations, and Fairy Dusting proactive checkpoints.
 
 ### Interactive QuickPick Menu:
 Clicking the status bar item opens a quick-action menu:
-- **Open Dashboard**: Opens the full telemetry webview.
-- **Switch Routing Preset**: Quick-switch between Standard, Zoo Code, and Cline.
+- **Open Dashboard**: Opens the full telemetry webview (`Ctrl+Shift+P` $\rightarrow$ `Nacho Flow: Open Dashboard`).
+- **Switch Routing Preset**: Quick-switch between Standard (`config.yaml`), Zoo Code (`config.yaml`), and Cline (`config.cline.yaml`).
 - **Start / Stop / Restart Engine**: Instant lifecycle controls.
-- **Open config.yaml**: Opens the active configuration document.
-- **Reset Circuit Breaker**: Restores tripped providers.
+- **Open config.yaml**: Opens the active configuration document in your editor.
+- **Reset Circuit Breaker**: Restores tripped providers to `CLOSED` state.
 - **Refresh Deals**: Forces an immediate scan of spot market discounts.
 
 ---

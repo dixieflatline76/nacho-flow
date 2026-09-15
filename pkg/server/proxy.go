@@ -15,7 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/nts"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
@@ -46,6 +48,7 @@ type Server struct {
 	eventBroker              *telemetry.EventBroker
 	tuner                    *tuner.CostPenaltyOptimizer
 	diskStore                *store.DiskStore
+	ntsTransformer           *nts.Transformer
 	trafficLogPath           string
 	configPath               string
 	lastDiskWriteUnixNano    atomic.Int64
@@ -225,18 +228,34 @@ func NewServerWithTelemetryAndRegistry(
 	if class == nil {
 		class = router.NewClassifier()
 	}
+	// Error signatures: pull canonical error signatures from agentregistry
+	// and merge any user-configured custom overrides if specified.
+	errorSignatures := agentregistry.DefaultRegistry().ErrorSignaturesList()
+	if len(cfg.AgentShield.ErrorSignatures) > 0 {
+		errorSignatures = mergeUniqueSlices(errorSignatures, cfg.AgentShield.ErrorSignatures)
+	}
 	if classWithSigs, ok := class.(interface{ SetErrorSignatures([]string) }); ok {
-		classWithSigs.SetErrorSignatures(cfg.AgentShield.ErrorSignatures)
+		classWithSigs.SetErrorSignatures(errorSignatures)
 	}
-	writeTools := cfg.CycleKiller.WriteTools
-	if len(writeTools) == 0 {
-		writeTools = cfg.CycleKiller.KickstartWriteTools
+	// Kickstart write tools: pull canonical zero-allocation write tools from agentregistry
+	// and merge any user-configured custom overrides if specified.
+	writeTools := agentregistry.DefaultRegistry().WriteToolsList()
+	var custom []string
+	if len(cfg.Kickstart.CustomWriteTools) > 0 {
+		custom = cfg.Kickstart.CustomWriteTools
+	} else if len(cfg.Kickstart.WriteTools) > 0 {
+		custom = cfg.Kickstart.WriteTools
+	} else if len(cfg.CycleKiller.WriteTools) > 0 {
+		custom = cfg.CycleKiller.WriteTools
+	} else if len(cfg.CycleKiller.KickstartWriteTools) > 0 {
+		custom = cfg.CycleKiller.KickstartWriteTools
+	} else if len(cfg.CycleBreaker.WriteTools) > 0 {
+		custom = cfg.CycleBreaker.WriteTools
+	} else if len(cfg.CycleBreaker.KickstartWriteTools) > 0 {
+		custom = cfg.CycleBreaker.KickstartWriteTools
 	}
-	if len(writeTools) == 0 && len(cfg.CycleBreaker.WriteTools) > 0 {
-		writeTools = cfg.CycleBreaker.WriteTools
-	}
-	if len(writeTools) == 0 && len(cfg.CycleBreaker.KickstartWriteTools) > 0 {
-		writeTools = cfg.CycleBreaker.KickstartWriteTools
+	if len(custom) > 0 {
+		writeTools = mergeUniqueSlices(writeTools, custom)
 	}
 	if classWithWriteTools, ok := class.(interface{ SetKickstartWriteTools([]string) }); ok {
 		classWithWriteTools.SetKickstartWriteTools(writeTools)
@@ -281,12 +300,49 @@ func NewServerWithTelemetryAndRegistry(
 
 	var shieldMgr *shield.ShieldManager
 	if cfg.AgentShield.Enabled == nil || *cfg.AgentShield.Enabled {
-		if len(cfg.AgentShield.QuestionHeuristics) > 0 || len(cfg.AgentShield.ModeSwitchHeuristics) > 0 {
-			shieldMgr = shield.NewShieldManager(cfg.AgentShield.QuestionHeuristics, cfg.AgentShield.ModeSwitchHeuristics)
-		} else {
-			shieldMgr = shield.NewDefaultShieldManager()
-		}
+		questions := mergeUniqueSlices(agentregistry.DefaultRegistry().QuestionHeuristicsList(), cfg.AgentShield.QuestionHeuristics)
+		modes := mergeUniqueSlices(agentregistry.DefaultRegistry().ModeHeuristicsList(), cfg.AgentShield.ModeSwitchHeuristics)
+		shieldMgr = shield.NewShieldManager(questions, modes)
 	}
+
+	ntsCfg := nts.DefaultConfig()
+	if cfg.NTS.Enabled != nil {
+		ntsCfg.Enabled = *cfg.NTS.Enabled
+	}
+	if cfg.NTS.StripANSI != nil {
+		ntsCfg.StripANSI = *cfg.NTS.StripANSI
+	}
+	if cfg.NTS.ResolveCR != nil {
+		ntsCfg.ResolveCR = *cfg.NTS.ResolveCR
+	}
+	if cfg.NTS.DeduplicateLines != nil {
+		ntsCfg.DeduplicateLines = *cfg.NTS.DeduplicateLines
+	}
+	if cfg.NTS.DedupThreshold > 0 {
+		ntsCfg.DedupThreshold = cfg.NTS.DedupThreshold
+	}
+	if cfg.NTS.StripBoilerplate != nil {
+		ntsCfg.StripBoilerplate = *cfg.NTS.StripBoilerplate
+	}
+	if cfg.NTS.NormalizeWhitespace != nil {
+		ntsCfg.NormalizeWhitespace = *cfg.NTS.NormalizeWhitespace
+	}
+	if cfg.NTS.PreserveFileReads != nil {
+		ntsCfg.PreserveFileReads = *cfg.NTS.PreserveFileReads
+	}
+	if cfg.NTS.PreserveFileWrites != nil {
+		ntsCfg.PreserveFileWrites = *cfg.NTS.PreserveFileWrites
+	}
+	if cfg.NTS.PreserveCacheControl != nil {
+		ntsCfg.PreserveCacheControl = *cfg.NTS.PreserveCacheControl
+	}
+	if cfg.NTS.CompactStaleFileReads != nil {
+		ntsCfg.CompactStaleFileReads = *cfg.NTS.CompactStaleFileReads
+	}
+	if cfg.NTS.StaleReadDepth > 0 {
+		ntsCfg.StaleReadDepth = cfg.NTS.StaleReadDepth
+	}
+	ntsTr := nts.NewTransformer(ntsCfg)
 
 	srv := &Server{
 		classifier:     class,
@@ -299,6 +355,7 @@ func NewServerWithTelemetryAndRegistry(
 		logger:         logger,
 		transport:      transport,
 		tuner:          tuner.NewCostPenaltyOptimizer(),
+		ntsTransformer: ntsTr,
 		startTime:      time.Now(),
 	}
 
@@ -529,7 +586,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// In write-only mode, genuine forward progress requires write progress or passing tests,
 	// preventing read-only command loops from resetting retries while tests fail.
 	turnProgress := reqCtx.HasToolProgress
-	if cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+	writeOnly := cfg.Kickstart.WriteOnly || cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly
+	if writeOnly {
 		turnProgress = reqCtx.HasWriteProgress || reqCtx.HasShellWrite || reqCtx.HasTestProgress
 		if reqCtx.HasTools && !reqCtx.HasWriteCapability {
 			turnProgress = turnProgress || reqCtx.HasToolProgress
@@ -539,29 +597,36 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqCtx.CoolingDownModels = s.sessionTracker.GetCoolingDownModels(sessionKey)
 
 	// Kickstart: detect semantic stall/idle loop across consecutive turns
-	kickstartThreshold := cfg.CycleKiller.KickstartThreshold
+	kickstartThreshold := cfg.Kickstart.Threshold
+	if kickstartThreshold == 0 {
+		kickstartThreshold = cfg.CycleKiller.KickstartThreshold
+	}
 	if kickstartThreshold == 0 && cfg.CycleBreaker.KickstartThreshold > 0 {
 		kickstartThreshold = cfg.CycleBreaker.KickstartThreshold
 	}
 	if kickstartThreshold > 0 && !reqCtx.NoKickstart {
 		kickstartProgress := reqCtx.HasToolProgress
-		if cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+		if writeOnly {
 			// Legitimate progress requires concrete write activity OR a clean passing test suite.
 			// Failing tests require code edits to fix and do NOT prevent kickstart accumulation.
 			kickstartProgress = reqCtx.HasWriteProgress || reqCtx.HasShellWrite || reqCtx.HasTestProgress
 		}
 		// Part A Guard: Auto-suspend when agent has tools but zero write tools (Plan Mode)
-		if (cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly) && reqCtx.HasTools && !reqCtx.HasWriteCapability {
+		if writeOnly && reqCtx.HasTools && !reqCtx.HasWriteCapability {
 			kickstartProgress = true
 		}
-		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold, cfg.CycleKiller.KickstartMaxFailures+cfg.CycleBreaker.KickstartMaxFailures)
+		maxFailures := cfg.Kickstart.MaxFailures
+		if maxFailures == 0 {
+			maxFailures = cfg.CycleKiller.KickstartMaxFailures + cfg.CycleBreaker.KickstartMaxFailures
+		}
+		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold, maxFailures)
 		if isKickstarted {
 			reqCtx.SessionKickstarted = true
 			reqCtx.SessionKickstartCount = kickstartCount
 			reqLogger.Warn("Kickstart: agent idling without tool progress",
 				slog.Int("kickstart_count", kickstartCount),
 				slog.Int("kickstart_threshold", kickstartThreshold),
-				slog.Bool("write_only", cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly),
+				slog.Bool("write_only", writeOnly),
 				slog.Bool("has_test_pass", reqCtx.HasTestPass),
 				slog.Bool("has_test_fail", reqCtx.HasTestFail),
 				slog.String("session_key", sessionKey),
@@ -569,7 +634,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Kickstart max cap: force-escalate to default tier when kickstart count exceeds limit
-		maxKS := cfg.CycleKiller.KickstartMaxCount
+		maxKS := cfg.Kickstart.MaxCount
+		if maxKS == 0 {
+			maxKS = cfg.CycleKiller.KickstartMaxCount
+		}
 		if maxKS == 0 {
 			maxKS = cfg.CycleBreaker.KickstartMaxCount
 		}
@@ -734,7 +802,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Kickstart: inject prompt when idle loop detected
 	if reqCtx.SessionKickstarted && !reqCtx.NoKickstart {
 		kickstartPrompt := contract.DefaultKickstartPrompt
-		if cfg.CycleKiller.KickstartPrompt != "" {
+		if cfg.Kickstart.Prompt != "" {
+			kickstartPrompt = cfg.Kickstart.Prompt
+		} else if cfg.CycleKiller.KickstartPrompt != "" {
 			kickstartPrompt = cfg.CycleKiller.KickstartPrompt
 		} else if cfg.CycleBreaker.KickstartPrompt != "" {
 			kickstartPrompt = cfg.CycleBreaker.KickstartPrompt
@@ -932,6 +1002,23 @@ func (s *Server) dispatchTier(
 		hasVision = false
 	}
 	preparedBody, _ = s.sanitizer.SanitizePayload(preparedBody, hasVision)
+
+	var ntsTokensSaved, ntsBytesSaved int
+	if s.ntsTransformer != nil {
+		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
+			if transformed, res, err := s.ntsTransformer.TransformAnthropic(preparedBody); err == nil && !res.Bypassed {
+				preparedBody = transformed
+				ntsTokensSaved = res.TokensSaved
+				ntsBytesSaved = res.BytesSaved
+			}
+		} else {
+			if transformed, res, err := s.ntsTransformer.TransformOpenAI(preparedBody); err == nil && !res.Bypassed {
+				preparedBody = transformed
+				ntsTokensSaved = res.TokensSaved
+				ntsBytesSaved = res.BytesSaved
+			}
+		}
+	}
 
 	targetURL, err := url.Parse(targetProvider.BaseURL())
 	if err != nil {
@@ -1171,7 +1258,7 @@ func (s *Server) dispatchTier(
 			}
 		}
 		if cb != nil {
-			reqCtx.CycleProseTokens = cb.ProseTokens()
+			reqCtx.CycleContentTokens = cb.ContentTokens()
 			reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
 			reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
 			reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
@@ -1180,7 +1267,7 @@ func (s *Server) dispatchTier(
 		}
 		_ = normalizer.Close()
 
-		s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger)
+		s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger, ntsTokensSaved, ntsBytesSaved)
 		return
 	}
 
@@ -1267,7 +1354,7 @@ func (s *Server) dispatchTier(
 									slog.Int("cycle_retries", reqCtx.CycleRetries),
 								)
 							}
-							reqCtx.CycleProseTokens = cb.ProseTokens()
+							reqCtx.CycleContentTokens = cb.ContentTokens()
 							reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
 							reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
 							reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
@@ -1330,7 +1417,7 @@ func (s *Server) dispatchTier(
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(bodyBytes)
 
-	s.recordTelemetry(targetTier, targetProvider, reqCtx, nonStreamUsage, resp.StatusCode, startTime, isFallback, reqLogger)
+	s.recordTelemetry(targetTier, targetProvider, reqCtx, nonStreamUsage, resp.StatusCode, startTime, isFallback, reqLogger, ntsTokensSaved, ntsBytesSaved)
 }
 
 func (s *Server) allowProvider(p provider.LLMProvider) bool {
@@ -1387,6 +1474,8 @@ func (s *Server) recordTelemetry(
 	startTime time.Time,
 	isFallback bool,
 	reqLogger *slog.Logger,
+	ntsTokensSaved int,
+	ntsBytesSaved int,
 ) {
 	latency := float64(time.Since(startTime).Milliseconds())
 	isLocal := targetProvider.IsLocal()
@@ -1447,7 +1536,7 @@ func (s *Server) recordTelemetry(
 		DirectiveUsed:             reqCtx.MetaDirectiveRaw,
 		CycleBreakerTriggered:     reqCtx.CycleBreakerTriggered,
 		CycleBreakerReason:        reqCtx.CycleBreakerReason,
-		CycleProseTokens:          reqCtx.CycleProseTokens,
+		CycleContentTokens:        reqCtx.CycleContentTokens,
 		CycleMaxNgramFreq:         reqCtx.CycleMaxNgramFreq,
 		CycleThinkingTokens:       reqCtx.CycleThinkingTokens,
 		CycleMaxThinkingNgramFreq: reqCtx.CycleMaxThinkingNgramFreq,
@@ -1459,6 +1548,8 @@ func (s *Server) recordTelemetry(
 		UpstreamCost:              upstreamCost,
 		FairyDusted:               reqCtx.FairyDusted,
 		FairyDustEntry:            reqCtx.FairyDustEntry,
+		NTSTokensSaved:            ntsTokensSaved,
+		NTSBytesSaved:             ntsBytesSaved,
 	})
 
 	reqLogger.Info("Completed proxy request",
@@ -1471,7 +1562,7 @@ func (s *Server) recordTelemetry(
 		slog.Bool("is_fallback", isFallback),
 		slog.Bool("is_retry", reqCtx.IsRetry),
 		slog.Bool("cycle_breaker_triggered", reqCtx.CycleBreakerTriggered),
-		slog.Int("cycle_prose_tokens", reqCtx.CycleProseTokens),
+		slog.Int("cycle_content_tokens", reqCtx.CycleContentTokens),
 		slog.Int("cycle_max_ngram_freq", reqCtx.CycleMaxNgramFreq),
 		slog.Int("cycle_thinking_tokens", reqCtx.CycleThinkingTokens),
 		slog.Int("cycle_max_thinking_ngram_freq", reqCtx.CycleMaxThinkingNgramFreq),
@@ -1575,8 +1666,11 @@ func resolveCycleBreaker(tier contract.Tier, cfg *contract.Config) *shield.Cycle
 		if tierCb.Enabled != nil {
 			cbCfg.Enabled = tierCb.Enabled
 		}
-		if tierCb.MaxProseTokens > 0 {
-			cbCfg.MaxProseTokens = tierCb.MaxProseTokens
+		if tierCb.MaxContentTokens > 0 {
+			cbCfg.MaxContentTokens = tierCb.MaxContentTokens
+		}
+		if tierCb.ContentLane.MaxTokens > 0 {
+			cbCfg.ContentLane = tierCb.ContentLane
 		}
 		if tierCb.RepetitionWindow > 0 {
 			cbCfg.RepetitionWindow = tierCb.RepetitionWindow
@@ -1620,12 +1714,12 @@ func (s *Server) resolveCycleKillParams() (time.Duration, int) {
 
 func formatCycleKillReason(reason string) string {
 	switch reason {
-	case "ngram_repetition_loop_detected":
-		return "repetitive prose loop detected"
+	case "ngram_repetition_loop_detected", "content_repetition_loop_detected":
+		return "repetitive content loop detected"
 	case "thinking_repetition_loop_detected":
 		return "repetitive reasoning loop detected"
-	case "prose_budget_exceeded_with_repetition":
-		return "prose token budget exceeded with repetition"
+	case "content_budget_exceeded_with_repetition", "prose_budget_exceeded_with_repetition":
+		return "content token budget exceeded with repetition"
 	case "thinking_budget_exceeded_with_repetition":
 		return "thinking token budget exceeded with repetition"
 	default:
@@ -1686,4 +1780,35 @@ func extractSessionKey(r *http.Request) string {
 		return host
 	}
 	return r.RemoteAddr
+}
+
+// mergeUniqueSlices merges base and custom string slices without duplicates, preserving order.
+func mergeUniqueSlices(base, custom []string) []string {
+	if len(custom) == 0 {
+		return base
+	}
+	if len(base) == 0 {
+		return custom
+	}
+	set := make(map[string]struct{}, len(base)+len(custom))
+	result := make([]string, 0, len(base)+len(custom))
+	for _, s := range base {
+		trimmed := strings.TrimSpace(s)
+		if trimmed != "" {
+			if _, exists := set[trimmed]; !exists {
+				set[trimmed] = struct{}{}
+				result = append(result, trimmed)
+			}
+		}
+	}
+	for _, s := range custom {
+		trimmed := strings.TrimSpace(s)
+		if trimmed != "" {
+			if _, exists := set[trimmed]; !exists {
+				set[trimmed] = struct{}{}
+				result = append(result, trimmed)
+			}
+		}
+	}
+	return result
 }

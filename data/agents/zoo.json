@@ -18,7 +18,32 @@
     "search_files",
     "list_code_definition_names"
   ],
+  "file_read_tools": [
+    "read_file"
+  ],
   "command_tools": [
     "execute_command"
+  ],
+  "interactive_tools": [
+    "ask_followup_question"
+  ],
+  "mode_tool": "switch_mode",
+  "mode_heuristics": [
+    "switch to code mode",
+    "switch to architect mode",
+    "ready to implement"
+  ],
+  "error_signatures": [
+    "[ERROR] You did not use a tool",
+    "Missing value for required parameter",
+    "The tool execution failed",
+    "<error_details>",
+    "Editor operation failed",
+    "No sufficiently similar match found",
+    "Unable to apply diff to file:",
+    "File does not exist at path:",
+    "offset must be a 1-indexed line number",
+    "anchor_line must be a 1-indexed line number",
+    "The file path is invalid"
   ]
 }

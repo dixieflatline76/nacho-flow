@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
@@ -1512,12 +1514,12 @@ func TestProxy_RecordTelemetry_VisionTier4(t *testing.T) {
 	p := provider.NewGenericLLMProvider("google", contract.ProviderConfig{Type: "cloud"})
 	reqCtx := contract.RequestContext{Tokens: 1000}
 	usage := StreamUsage{PromptTokens: 800, CompletionTokens: 200, TotalTokens: 1000}
-	srv.recordTelemetry(tier, p, reqCtx, usage, 200, time.Now(), false, slog.Default())
+	srv.recordTelemetry(tier, p, reqCtx, usage, 200, time.Now(), false, slog.Default(), 0, 0)
 
 	// Also local tier 1
 	pLocal := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{Type: "local"})
 	tierLocal := contract.Tier{Name: "Local Default", Model: "qwen", Provider: "ollama"}
-	srv.recordTelemetry(tierLocal, pLocal, reqCtx, usage, 200, time.Now(), false, slog.Default())
+	srv.recordTelemetry(tierLocal, pLocal, reqCtx, usage, 200, time.Now(), false, slog.Default(), 0, 0)
 }
 
 func TestProxy_IsDefectiveEmptyContent_DeepBranches(t *testing.T) {
@@ -1738,6 +1740,168 @@ func TestServer_NonStreamingAgentShieldFallback(t *testing.T) {
 	srvDisabled := NewServer(cfgDisabled, evaluator, router.NewClassifier(), router.NewSanitizer())
 	if srvDisabled.shieldMgr != nil {
 		t.Fatal("expected nil shieldMgr when enabled=false")
+	}
+}
+
+func TestMergeUniqueSlices(t *testing.T) {
+	// 1. Both empty
+	if res := mergeUniqueSlices(nil, nil); len(res) != 0 {
+		t.Errorf("expected empty slice, got %v", res)
+	}
+
+	// 2. Custom empty returns base
+	base := []string{"a", "b"}
+	if res := mergeUniqueSlices(base, nil); len(res) != 2 || res[0] != "a" {
+		t.Errorf("expected base slice, got %v", res)
+	}
+
+	// 3. Base empty returns custom
+	custom := []string{"c", "d"}
+	if res := mergeUniqueSlices(nil, custom); len(res) != 2 || res[0] != "c" {
+		t.Errorf("expected custom slice, got %v", res)
+	}
+
+	// 4. Merge with duplicates, whitespace, and empty strings
+	b := []string{"  alpha  ", "beta", "gamma", ""}
+	c := []string{"beta", "  delta  ", "alpha", "", "   "}
+	res := mergeUniqueSlices(b, c)
+	expected := []string{"alpha", "beta", "gamma", "delta"}
+	if len(res) != len(expected) {
+		t.Fatalf("expected len %d, got %d (%v)", len(expected), len(res), res)
+	}
+	for i, v := range expected {
+		if res[i] != v {
+			t.Errorf("expected index %d to be %q, got %q", i, v, res[i])
+		}
+	}
+}
+
+func TestServer_AgentShield_RegistryIntegration(t *testing.T) {
+	// 1. Test initialization with zero overrides in config: pulls all from agentregistry
+	cfg := &contract.Config{
+		AgentShield: contract.AgentShieldConfig{
+			// Leave question_heuristics, mode_switch_heuristics, and error_signatures empty
+		},
+		DefaultTier: contract.Tier{
+			Model: "mock-model",
+		},
+	}
+	clf := router.NewClassifier().(*router.RequestClassifier)
+	srv := NewServer(cfg, nil, clf, nil)
+
+	if srv.shieldMgr == nil {
+		t.Fatal("expected srv.shieldMgr to be initialized from agentregistry defaults")
+	}
+
+	// Classifier error signatures should match agentregistry.DefaultRegistry().ErrorSignaturesList()
+	sigs := clf.GetErrorSignatures()
+	expectedSigs := agentregistry.DefaultRegistry().ErrorSignaturesList()
+	if len(sigs) != len(expectedSigs) {
+		t.Errorf("expected %d error signatures from registry, got %d", len(expectedSigs), len(sigs))
+	}
+
+	// 2. Test initialization with custom overrides: merged without duplicates
+	cfgCustom := &contract.Config{
+		AgentShield: contract.AgentShieldConfig{
+			QuestionHeuristics:   []string{"custom question?", "should i"},
+			ModeSwitchHeuristics: []string{"custom mode switch"},
+			ErrorSignatures:      []string{"CUSTOM_ERROR_CODE", "Missing value for required parameter"},
+		},
+		Kickstart: contract.KickstartConfig{
+			CustomWriteTools: []string{"custom_patcher", "editor"},
+		},
+		DefaultTier: contract.Tier{
+			Model: "mock-model",
+		},
+	}
+	clfCustom := router.NewClassifier().(*router.RequestClassifier)
+	srvCustom := NewServer(cfgCustom, nil, clfCustom, nil)
+
+	if srvCustom.shieldMgr == nil {
+		t.Fatal("expected non-nil shieldMgr")
+	}
+	customSigs := clfCustom.GetErrorSignatures()
+	foundCustom := false
+	for _, s := range customSigs {
+		if s == "CUSTOM_ERROR_CODE" {
+			foundCustom = true
+			break
+		}
+	}
+	if !foundCustom {
+		t.Errorf("expected CUSTOM_ERROR_CODE in merged error signatures")
+	}
+
+	// 3. Verify hot-reload updates shieldMgr and classifier
+	disabled := false
+	newCfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {Type: "local", BaseURL: "http://localhost:8000"},
+		},
+		DefaultTier: contract.Tier{
+			Model:    "mock-model",
+			Provider: "mock",
+		},
+		AgentShield: contract.AgentShieldConfig{
+			Enabled: &disabled,
+		},
+	}
+	if _, err := srvCustom.ApplyConfig(newCfg, false); err != nil {
+		t.Fatalf("ApplyConfig failed: %v", err)
+	}
+	if srvCustom.shieldMgr != nil {
+		t.Errorf("expected shieldMgr to be nil after disabling via ApplyConfig")
+	}
+}
+
+func TestServer_NTSConfigInitialization(t *testing.T) {
+	bTrue := true
+	cfg := &contract.Config{
+		NTS: contract.NTSConfig{
+			Enabled:               &bTrue,
+			StripANSI:             &bTrue,
+			ResolveCR:             &bTrue,
+			DeduplicateLines:      &bTrue,
+			DedupThreshold:        3,
+			StripBoilerplate:      &bTrue,
+			NormalizeWhitespace:   &bTrue,
+			PreserveFileReads:     &bTrue,
+			PreserveFileWrites:    &bTrue,
+			PreserveCacheControl:  &bTrue,
+			CompactStaleFileReads: &bTrue,
+			StaleReadDepth:        4,
+		},
+		DefaultTier: contract.Tier{
+			Model: "mock-model",
+		},
+	}
+	srv := NewServer(cfg, nil, nil, nil)
+	if srv.ntsTransformer == nil {
+		t.Fatal("expected non-nil ntsTransformer")
+	}
+}
+
+func TestServer_ConstructorNilAndFallbackBranches(t *testing.T) {
+	// 1. All nil arguments to NewServerWithTelemetryAndRegistry
+	srv := NewServerWithTelemetryAndRegistry(nil, nil, nil, nil, nil, nil, nil, nil)
+	if srv == nil {
+		t.Fatal("expected non-nil server")
+	}
+
+	// 2. Test each fallback alias branch for write tools
+	aliasConfigs := []*contract.Config{
+		{Kickstart: contract.KickstartConfig{WriteTools: []string{"tool_ks_w"}}},
+		{CycleKiller: contract.CycleBreakerConfig{WriteTools: []string{"tool_ck_w"}}},
+		{CycleKiller: contract.CycleBreakerConfig{KickstartWriteTools: []string{"tool_ck_ksw"}}},
+		{CycleBreaker: contract.CycleBreakerConfig{WriteTools: []string{"tool_cb_w"}}},
+		{CycleBreaker: contract.CycleBreakerConfig{KickstartWriteTools: []string{"tool_cb_ksw"}}},
+	}
+	for i, cfg := range aliasConfigs {
+		clf := router.NewClassifier().(*router.RequestClassifier)
+		s := NewServerWithTelemetryAndRegistry(cfg, nil, clf, nil, nil, nil, nil, nil)
+		if s == nil {
+			t.Fatalf("case %d: expected non-nil server", i)
+		}
 	}
 }
 
@@ -2158,5 +2322,294 @@ func TestResolveTierVision(t *testing.T) {
 				t.Errorf("ResolveTierVision(%s) = %v; want %v", tc.tier.Model, tierCopy.ResolvedHasVision, tc.expected)
 			}
 		})
+	}
+}
+
+type ntsCaptureSink struct {
+	mu      sync.Mutex
+	records []telemetry.TurnRecord
+}
+
+func (c *ntsCaptureSink) Emit(r telemetry.TurnRecord) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.records = append(c.records, r)
+}
+
+func (c *ntsCaptureSink) Close() error { return nil }
+
+func TestProxy_NTSTokenSaver_CompactsToolOutputAndRecordsTelemetry(t *testing.T) {
+	var receivedBody []byte
+	var bodyMu sync.Mutex
+
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyMu.Lock()
+		receivedBody, _ = io.ReadAll(r.Body)
+		bodyMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-test",
+			"choices": [{
+				"finish_reason": "stop",
+				"message": {"role": "assistant", "content": "Done"}
+			}],
+			"usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110}
+		}`))
+	}))
+	defer mockUpstream.Close()
+
+	bTrue := true
+	cfg := &contract.Config{
+		Port: 8000,
+		NTS: contract.NTSConfig{
+			Enabled: &bTrue,
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {
+				BaseURL: mockUpstream.URL,
+				Type:    "cloud",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Cloud Tier",
+				Model:    "claude-3-5-sonnet",
+				Provider: "mock",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	oracle := telemetry.NewPricingOracle()
+	tracker := telemetry.NewStatsTracker(10)
+	sink := &ntsCaptureSink{}
+	tracker.AddSink(sink)
+
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, classifier, sanitizer, oracle, tracker, nil, slog.Default())
+
+	// Request with tool response containing:
+	// 1. ANSI escapes: \x1b[31mError\x1b[0m
+	// 2. Carriage return overwrite: Loading...\rComplete!
+	// 3. Duplicate warning storm: Warning: Deprecated API repeated 4 times
+	// And a read_file tool response which must be 100% immune!
+	toolOutputContent := "\x1b[31mError: build failed\x1b[0m\nLoading...\rComplete!\nWarning: Deprecated API\nWarning: Deprecated API\nWarning: Deprecated API\nWarning: Deprecated API\n"
+	fileReadContent := "package main\n\n// Intentionally has \x1b[31m escaped comments\nfunc main() {}\n"
+
+	reqPayload := map[string]interface{}{
+		"model": "nacho-hybrid",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id":   "call_bash_1",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      "execute_command",
+							"arguments": `{"command":"go build"}`,
+						},
+					},
+					map[string]interface{}{
+						"id":   "call_read_1",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      "read_file",
+							"arguments": `{"path":"main.go"}`,
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_bash_1",
+				"content":      toolOutputContent,
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_read_1",
+				"content":      fileReadContent,
+			},
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(reqPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(payloadBytes))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	bodyMu.Lock()
+	upstreamBytes := receivedBody
+	bodyMu.Unlock()
+
+	// 1. Tool output should have ANSI stripped
+	if bytes.Contains(upstreamBytes, []byte("\x1b[31mError")) {
+		t.Errorf("Expected ANSI codes to be stripped from tool output, but found in upstream body: %s", string(upstreamBytes))
+	}
+	// 2. Duplicate warnings should be collapsed
+	if !bytes.Contains(upstreamBytes, []byte("identical line repeated 3 times")) {
+		t.Errorf("Expected duplicate warnings to be collapsed, but notice not found: %s", string(upstreamBytes))
+	}
+	// 3. File read tool output MUST be preserved bit-for-bit (immunity test)
+	if !bytes.Contains(upstreamBytes, []byte(`\u001b[31m escaped comments`)) {
+		t.Errorf("Expected read_file output to retain ANSI codes (immune), but it was stripped: %s", string(upstreamBytes))
+	}
+
+	tracker.Flush()
+
+	sink.mu.Lock()
+	records := sink.records
+	sink.mu.Unlock()
+
+	if len(records) == 0 {
+		t.Fatalf("Expected telemetry turn record to be emitted, got none")
+	}
+
+	rec0 := records[0]
+	if rec0.NTSTokensSaved <= 0 {
+		t.Errorf("Expected NTSTokensSaved > 0, got %d", rec0.NTSTokensSaved)
+	}
+	if rec0.NTSBytesSaved <= 0 {
+		t.Errorf("Expected NTSBytesSaved > 0, got %d", rec0.NTSBytesSaved)
+	}
+}
+
+func TestProxy_NTSTokenSaver_AnthropicMessages(t *testing.T) {
+	var receivedBody []byte
+	var bodyMu sync.Mutex
+
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyMu.Lock()
+		receivedBody, _ = io.ReadAll(r.Body)
+		bodyMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "msg-test",
+			"type": "message",
+			"role": "assistant",
+			"content": [{"type": "text", "text": "OK"}],
+			"usage": {"input_tokens": 50, "output_tokens": 10}
+		}`))
+	}))
+	defer mockUpstream.Close()
+
+	bTrue2 := true
+	cfg := &contract.Config{
+		Port: 8000,
+		NTS:  contract.NTSConfig{Enabled: &bTrue2},
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {BaseURL: mockUpstream.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Sonnet", Model: "claude-3-5-sonnet", Provider: "mock", When: "true"},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, router.NewClassifier(), router.NewSanitizer(), telemetry.NewPricingOracle(), telemetry.NewStatsTracker(10), nil, slog.Default())
+
+	reqPayload := map[string]interface{}{
+		"model": "claude-3-5-sonnet",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "toolu_exec_1",
+						"content":     "\x1b[32mBuild Success!\x1b[0m\n\n\n\n\nDone\n",
+					},
+				},
+			},
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(reqPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(payloadBytes))
+	req.Header.Set("anthropic-version", "2023-06-01")
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	bodyMu.Lock()
+	upstreamBytes := receivedBody
+	bodyMu.Unlock()
+
+	if bytes.Contains(upstreamBytes, []byte("\x1b[32m")) {
+		t.Errorf("Expected ANSI stripped from Anthropic tool_result, got: %s", string(upstreamBytes))
+	}
+	if bytes.Contains(upstreamBytes, []byte("\n\n\n\n")) {
+		t.Errorf("Expected blank line cascade collapsed in Anthropic tool_result, got: %s", string(upstreamBytes))
+	}
+}
+
+func TestInjectCorrectionPrompt(t *testing.T) {
+	// 1. Valid body with messages
+	body := []byte(`{"messages":[{"role":"user","content":"hi"}]}`)
+	res := injectCorrectionPrompt(body, "Please stop looping")
+	if !strings.Contains(string(res), "Please stop looping") {
+		t.Errorf("expected injected prompt, got %s", string(res))
+	}
+
+	// 2. Empty prompt falls back to default
+	resDefault := injectCorrectionPrompt(body, "")
+	if !strings.Contains(string(resDefault), contract.CycleBreakerDefaultCorrectionPrompt) {
+		t.Errorf("expected default correction prompt, got %s", string(resDefault))
+	}
+
+	// 3. Invalid JSON returns body unchanged
+	invalidJSON := []byte(`{invalid`)
+	if string(injectCorrectionPrompt(invalidJSON, "prompt")) != string(invalidJSON) {
+		t.Errorf("expected invalid JSON returned unchanged")
+	}
+
+	// 4. Missing messages field returns body unchanged
+	noMessages := []byte(`{"model":"gpt-4"}`)
+	if string(injectCorrectionPrompt(noMessages, "prompt")) != string(noMessages) {
+		t.Errorf("expected payload without messages returned unchanged")
+	}
+}
+
+func TestServer_ServeHTTP_EdgeBranches(t *testing.T) {
+	srv, _, _ := setupTestServer(t)
+	srv.startTime = time.Now().Add(-10 * time.Minute)
+
+	// 1. /v1/health with uptime populated
+	recHealth := httptest.NewRecorder()
+	reqHealth := httptest.NewRequest(http.MethodGet, contract.PathV1Health, nil)
+	srv.ServeHTTP(recHealth, reqHealth)
+	if recHealth.Code != http.StatusOK || !strings.Contains(recHealth.Body.String(), "uptime") {
+		t.Errorf("expected 200 with uptime, got %d: %s", recHealth.Code, recHealth.Body.String())
+	}
+
+	// 2. GET /v1/chat/completions -> 405 Method Not Allowed
+	recChatGet := httptest.NewRecorder()
+	reqChatGet := httptest.NewRequest(http.MethodGet, contract.PathChatCompletions, nil)
+	reqChatGet.Header.Set("Authorization", "Bearer test-secret-token")
+	srv.ServeHTTP(recChatGet, reqChatGet)
+	if recChatGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET chat completions, got %d", recChatGet.Code)
+	}
+
+	// 3. /v1/stats
+	recStats := httptest.NewRecorder()
+	reqStats := httptest.NewRequest(http.MethodGet, contract.PathStats, nil)
+	reqStats.Header.Set("Authorization", "Bearer test-secret-token")
+	srv.ServeHTTP(recStats, reqStats)
+	if recStats.Code != http.StatusOK {
+		t.Errorf("expected 200 for /v1/stats, got %d", recStats.Code)
 	}
 }

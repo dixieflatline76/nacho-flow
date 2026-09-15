@@ -3,6 +3,14 @@
   "name": "Cursor",
   "version": "1.0.0",
   "write_tools": ["edit_file", "create_file", "reapply", "insert_content", "modify_file"],
+  "file_read_tools": ["read_file"],
   "read_tools": ["read_file"],
-  "command_tools": ["run_terminal_command"]
+  "command_tools": ["run_terminal_command"],
+  "interactive_tools": ["ask_followup_question", "user_prompt"],
+  "error_signatures": [
+    "Command failed with exit code",
+    "The tool execution failed",
+    "Unable to read file",
+    "File not found"
+  ]
 }

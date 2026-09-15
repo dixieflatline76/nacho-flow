@@ -82,6 +82,9 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 	// Resolve ENV variables for auth_token and provider API keys
 	ResolveEnvVars(&cfg)
 
+	// Normalize cycle breaker structured lanes and legacy fields bidirectionally
+	cfg.Normalize()
+
 	// Boundary Schema Validation: Enforce mandatory provider types, base URLs, and tier references
 	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err

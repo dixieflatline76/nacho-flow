@@ -1,5 +1,12 @@
 import * as vscode from 'vscode';
 
+function formatBytes(bytes: number): string {
+	if (!bytes || bytes <= 0) return '0 B';
+	if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+	if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+	return bytes + ' B';
+}
+
 export class StatusBarManager {
 	private item: vscode.StatusBarItem;
 	private stats: any = null;
@@ -69,16 +76,17 @@ export class StatusBarManager {
 			const md = new vscode.MarkdownString(undefined, true);
 			md.isTrusted = true;
 			md.supportThemeIcons = true;
-			md.appendMarkdown(`**🌮 Nacho Flow: Offline**\n\n`);
+			md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`⚪ Offline\`\n\n`);
 			md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
 			md.appendMarkdown(`---\n\n[🔄 Open Dashboard / Retry](command:nacho-flow.showDashboard)`);
 			this.item.tooltip = md;
 		} else {
 			const metrics = this.extractMetricsForTimeWindow();
-			const suffix = this.timeWindow === 'today' ? ' Today' : 
+			const suffix = this.timeWindow === 'past_1_hour' ? ' Past 1h' :
+				(this.timeWindow === 'today' ? ' Today' : 
 				(this.timeWindow === 'yesterday' ? ' Yesterday' : 
 				(this.timeWindow === 'this_week' ? ' This Week' : 
-				(this.timeWindow === 'this_month' ? ' This Month' : '')));
+				(this.timeWindow === 'this_month' ? ' This Month' : ''))));
 
 			this.item.text = `🌮 $${metrics.savedUSD.toFixed(2)} Saved${suffix} (${metrics.localPct}% Local)`;
 			this.item.tooltip = this.buildTooltip(metrics);
@@ -94,13 +102,35 @@ export class StatusBarManager {
 		let spentUSD = 0;
 		let savedUSD = 0;
 		let reductionPct = 0;
+		let ntsTokens = 0;
+		let ntsBytes = 0;
+		let ntsCompactedTurns = 0;
+		let ckHeals = 0;
+		let ckKicks = 0;
+		let fdTriggers = 0;
 		let timeframeTitle = 'All Time (Cumulative)';
 
 		if (!this.stats) {
-			return { totalReqs, localReqs, totalTokens, localTokens, spentUSD, savedUSD, reductionPct, localPct: 0, timeframeTitle };
+			return { totalReqs, localReqs, totalTokens, localTokens, spentUSD, savedUSD, reductionPct, localPct: 0, timeframeTitle, ntsTokens, ntsBytes, ntsCompactedTurns, ckHeals, ckKicks, fdTriggers };
 		}
 
-		if (this.timeWindow === 'today') {
+		if (this.timeWindow === 'past_1_hour') {
+			const w = this.stats.windows?.past_1_hour;
+			totalReqs = w?.requests || 0;
+			totalTokens = w?.tokens_total || 0;
+			localTokens = w?.tokens_local || 0;
+			spentUSD = w?.cost_spent_usd || 0;
+			savedUSD = w?.cost_saved_usd || 0;
+			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
+			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			ntsTokens = w?.nts_tokens_saved || 0;
+			ntsBytes = w?.nts_bytes_saved || 0;
+			ntsCompactedTurns = w?.nts_compacted_turns || 0;
+			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
+			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
+			fdTriggers = w?.fairy_dust?.total_triggers || 0;
+			timeframeTitle = 'Past 1 Hour (Rolling 60m)';
+		} else if (this.timeWindow === 'today') {
 			const w = this.stats.windows?.today;
 			totalReqs = w?.requests || 0;
 			totalTokens = w?.tokens_total || 0;
@@ -109,6 +139,12 @@ export class StatusBarManager {
 			savedUSD = w?.cost_saved_usd || 0;
 			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
 			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			ntsTokens = w?.nts_tokens_saved || 0;
+			ntsBytes = w?.nts_bytes_saved || 0;
+			ntsCompactedTurns = w?.nts_compacted_turns || 0;
+			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
+			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
+			fdTriggers = w?.fairy_dust?.total_triggers || 0;
 			timeframeTitle = 'Today (Active 24h)';
 		} else if (this.timeWindow === 'yesterday') {
 			const w = this.stats.windows?.yesterday;
@@ -119,6 +155,12 @@ export class StatusBarManager {
 			savedUSD = w?.cost_saved_usd || 0;
 			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
 			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			ntsTokens = w?.nts_tokens_saved || 0;
+			ntsBytes = w?.nts_bytes_saved || 0;
+			ntsCompactedTurns = w?.nts_compacted_turns || 0;
+			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
+			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
+			fdTriggers = w?.fairy_dust?.total_triggers || 0;
 			timeframeTitle = 'Yesterday (Prior 24h)';
 		} else if (this.timeWindow === 'this_week') {
 			const w = this.stats.windows?.this_week;
@@ -129,6 +171,12 @@ export class StatusBarManager {
 			savedUSD = w?.cost_saved_usd || 0;
 			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
 			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			ntsTokens = w?.nts_tokens_saved || 0;
+			ntsBytes = w?.nts_bytes_saved || 0;
+			ntsCompactedTurns = w?.nts_compacted_turns || 0;
+			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
+			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
+			fdTriggers = w?.fairy_dust?.total_triggers || 0;
 			timeframeTitle = 'This Week (Current ISO Week)';
 		} else if (this.timeWindow === 'this_month') {
 			const w = this.stats.windows?.this_month;
@@ -139,6 +187,12 @@ export class StatusBarManager {
 			savedUSD = w?.cost_saved_usd || 0;
 			reductionPct = w?.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
 			localReqs = totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0;
+			ntsTokens = w?.nts_tokens_saved || 0;
+			ntsBytes = w?.nts_bytes_saved || 0;
+			ntsCompactedTurns = w?.nts_compacted_turns || 0;
+			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
+			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
+			fdTriggers = w?.fairy_dust?.total_triggers || 0;
 			timeframeTitle = 'This Month (Current Month)';
 		} else {
 			// All Time
@@ -150,12 +204,18 @@ export class StatusBarManager {
 			savedUSD = w?.cost_saved_usd || this.stats.estimated_cost_saved_usd || 0;
 			reductionPct = w?.cost_reduction_pct || this.stats.cost_reduction_pct || ((savedUSD + spentUSD) > 0 ? Math.round((savedUSD / (savedUSD + spentUSD)) * 100) : 0);
 			localReqs = this.stats.tier_breakdown?.tier1_local_free || (totalTokens > 0 ? Math.round((localTokens / totalTokens) * totalReqs) : 0);
+			ntsTokens = w?.nts_tokens_saved || this.stats.total_nts_tokens_saved || 0;
+			ntsBytes = w?.nts_bytes_saved || this.stats.total_nts_bytes_saved || 0;
+			ntsCompactedTurns = w?.nts_compacted_turns || this.stats.total_nts_compacted_turns || 0;
+			ckHeals = w?.cycle_killer?.stage1_local_heals || this.stats.cycle_killer?.stage1_local_heals || 0;
+			ckKicks = w?.cycle_killer?.session_kickstarts || this.stats.cycle_killer?.session_kickstarts || 0;
+			fdTriggers = w?.fairy_dust?.total_triggers || this.stats.fairy_dust?.total_triggers || 0;
 			timeframeTitle = 'All Time (Cumulative)';
 		}
 
 		const localPct = totalTokens > 0 ? Math.round((localTokens / totalTokens) * 100) : (totalReqs > 0 ? Math.round((localReqs / totalReqs) * 100) : 0);
 
-		return { totalReqs, localReqs, totalTokens, localTokens, spentUSD, savedUSD, reductionPct, localPct, timeframeTitle };
+		return { totalReqs, localReqs, totalTokens, localTokens, spentUSD, savedUSD, reductionPct, localPct, timeframeTitle, ntsTokens, ntsBytes, ntsCompactedTurns, ckHeals, ckKicks, fdTriggers };
 	}
 
 	private calculateLocalPercentage(): number {
@@ -168,26 +228,40 @@ export class StatusBarManager {
 		md.supportThemeIcons = true;
 
 		if (!this.stats) {
-			md.appendMarkdown('**🌮 Nacho Flow** • Agent Supervisor & Model Dispatcher');
+			md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`⚪ Offline\`\n\n`);
+			md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
+			md.appendMarkdown(`---\n\n[🔄 Open Dashboard / Retry](command:nacho-flow.showDashboard)`);
 			return md;
 		}
 
 		const m = metrics || this.extractMetricsForTimeWindow();
 		const presetLabel = StatusBarManager.PRESET_LABELS[this.activePreset] || this.activePreset;
+
+		const tw = this.timeWindow;
+		const link1h = tw === 'past_1_hour' ? '**✓ [1h](command:nacho-flow.setTimeWindowPast1Hour)**' : '[1h](command:nacho-flow.setTimeWindowPast1Hour)';
+		const linkToday = tw === 'today' ? '**✓ [Today](command:nacho-flow.setTimeWindowToday)**' : '[Today](command:nacho-flow.setTimeWindowToday)';
+		const linkWeek = tw === 'this_week' ? '**✓ [This Week](command:nacho-flow.setTimeWindowWeek)**' : '[This Week](command:nacho-flow.setTimeWindowWeek)';
+		const linkMonth = tw === 'this_month' ? '**✓ [This Month](command:nacho-flow.setTimeWindowMonth)**' : '[This Month](command:nacho-flow.setTimeWindowMonth)';
+		const linkAll = tw === 'all_time' ? '**✓ [All Time](command:nacho-flow.setTimeWindowAllTime)**' : '[All Time](command:nacho-flow.setTimeWindowAllTime)';
+
+		let switchLinks = `${link1h} &nbsp;|&nbsp; ${linkToday} &nbsp;|&nbsp; ${linkWeek} &nbsp;|&nbsp; ${linkMonth} &nbsp;|&nbsp; ${linkAll}`;
+		if (tw === 'yesterday') {
+			switchLinks = `${link1h} &nbsp;|&nbsp; **✓ [Yesterday](command:nacho-flow.setTimeWindowYesterday)** &nbsp;|&nbsp; ${linkToday} &nbsp;|&nbsp; ${linkWeek} &nbsp;|&nbsp; ${linkMonth} &nbsp;|&nbsp; ${linkAll}`;
+		}
 		
-		md.appendMarkdown(`**🌮 Nacho Flow** • Agent Supervisor & Model Dispatcher\n\n`);
-		md.appendMarkdown(`🕒 **Timeframe**: ${m.timeframeTitle}\n\n`);
+		md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`🟢 Online\`\n\n`);
+		md.appendMarkdown(`**${presetLabel}** &nbsp;•&nbsp; \`${this.getBaseUrl()}\`\n\n`);
+		md.appendMarkdown(`| Metric | ${m.timeframeTitle} |\n`);
+		md.appendMarkdown(`| :--- | :--- |\n`);
+		md.appendMarkdown(`| **Est. Cost Saved** | **\`$${m.savedUSD.toFixed(2)}\`** *(${Math.round(m.reductionPct)}% saved)* |\n`);
+		md.appendMarkdown(`| **Cloud API Spend** | \`$${m.spentUSD.toFixed(2)}\` |\n`);
+		md.appendMarkdown(`| **Local GPU ($0.00)** | \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)* |\n`);
+		md.appendMarkdown(`| **Nacho Token Saver** | \`${m.ntsTokens.toLocaleString()} tokens\` *(${formatBytes(m.ntsBytes)} saved • ${m.ntsCompactedTurns} turns)* |\n`);
+		md.appendMarkdown(`| **Agent Supervisor** | \`${m.ckHeals} loops healed • ${m.ckKicks} kicks • ${m.fdTriggers} fairy dust\` |\n`);
+		md.appendMarkdown(`| **Total Prompt Turns** | \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)* |\n\n`);
+		md.appendMarkdown(`Timeframe: ${switchLinks}\n\n`);
 		md.appendMarkdown(`---\n\n`);
-		md.appendMarkdown(`💵 **Est. Cost Saved**: \`+$${m.savedUSD.toFixed(2)}\` *(${Math.round(m.reductionPct)}% saved)*\n\n`);
-		md.appendMarkdown(`📉 **Cloud API Spend**: \`$${m.spentUSD.toFixed(2)}\`\n\n`);
-		md.appendMarkdown(`⚡ **Local GPU ($0.00)**: \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)*\n\n`);
-		md.appendMarkdown(`🪙 **Total Prompt Turns**: \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)*\n\n`);
-		md.appendMarkdown(`🛣️ **Model Dispatcher**: \`${this.getBaseUrl()}\`\n\n`);
-		md.appendMarkdown(`📋 **Active Profile**: \`${presetLabel}\`\n\n`);
-		md.appendMarkdown(`---\n\n`);
-		md.appendMarkdown(`Switch: [Today](command:nacho-flow.setTimeWindowToday) &nbsp;|&nbsp; [Yesterday](command:nacho-flow.setTimeWindowYesterday) &nbsp;|&nbsp; [This Week](command:nacho-flow.setTimeWindowWeek) &nbsp;|&nbsp; [This Month](command:nacho-flow.setTimeWindowMonth) &nbsp;|&nbsp; [All Time](command:nacho-flow.setTimeWindowAllTime)\n\n`);
-		md.appendMarkdown(`---\n\n`);
-		md.appendMarkdown(`[📊 Dashboard](command:nacho-flow.showDashboard) &nbsp;|&nbsp; [⚡ Auto-Tune](command:nacho-flow.runOptimizer) &nbsp;|&nbsp; [🔥 Heat Seeker](command:nacho-flow.refreshDeals) &nbsp;|&nbsp; [⚙️ Settings](command:nacho-flow.openSettings)`);
+		md.appendMarkdown(`[📊 Dashboard](command:nacho-flow.showDashboard) &nbsp;&nbsp;•&nbsp;&nbsp; [⚡ Auto-Tune](command:nacho-flow.runOptimizer) &nbsp;&nbsp;•&nbsp;&nbsp; [🔥 Deals](command:nacho-flow.refreshDeals) &nbsp;&nbsp;•&nbsp;&nbsp; [⚙ Settings](command:nacho-flow.openSettings)`);
 
 		return md;
 	}

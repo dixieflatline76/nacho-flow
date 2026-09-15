@@ -31,7 +31,7 @@ type RequestContext struct {
 	CycleRetries              int      `json:"cycle_retries,omitempty"`
 	CycleBreakerTriggered     bool     `json:"cycle_breaker_triggered,omitempty"`
 	CycleBreakerReason        string   `json:"cycle_breaker_reason,omitempty"`
-	CycleProseTokens          int      `json:"cycle_prose_tokens,omitempty"`
+	CycleContentTokens        int      `json:"cycle_content_tokens,omitempty"`
 	CycleMaxNgramFreq         int      `json:"cycle_max_ngram_freq,omitempty"`
 	CycleThinkingTokens       int      `json:"cycle_thinking_tokens,omitempty"`
 	CycleMaxThinkingNgramFreq int      `json:"cycle_max_thinking_ngram_freq,omitempty"`
@@ -90,27 +90,301 @@ const DefaultKickstartPrompt = "[SYSTEM OVERRIDE] You have not produced any file
 // when no custom prompt is configured.
 const DefaultFairyDustPrompt = "[QUALITY CHECKPOINT] You are being consulted as a senior reviewer. Analyze the current context, recent changes, and progression. Identify: (1) logic bugs, (2) architectural drift from requirements, (3) compilation/type errors introduced by prior turns. Fix issues immediately with tool calls. If trajectory is correct, confirm and continue."
 
+// LaneConfig configures a single stream inspection lane (thinking, prose, or tool).
+type LaneConfig struct {
+	MaxTokens                 int `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty"`
+	PhraseLength              int `yaml:"phrase_length,omitempty" json:"phrase_length,omitempty"`
+	MaxRepeats                int `yaml:"max_repeats,omitempty" json:"max_repeats,omitempty"`
+	BudgetMaxRepeats          int `yaml:"budget_max_repeats,omitempty" json:"budget_max_repeats,omitempty"`
+	RepetitionWindow          int `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
+	RepetitionThreshold       int `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
+	BudgetRepetitionThreshold int `yaml:"budget_repetition_threshold,omitempty" json:"budget_repetition_threshold,omitempty"`
+}
+
+// ToolLaneConfig configures the tool arguments streaming lane.
+type ToolLaneConfig struct {
+	LaneConfig     `yaml:",inline" json:",inline"`
+	MaxWriteTokens int      `yaml:"max_write_tokens,omitempty" json:"max_write_tokens,omitempty"`
+	WriteTools     []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
+}
+
+// KickstartConfig configures cross-turn idle session resuscitation.
+type KickstartConfig struct {
+	Enabled          *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Threshold        int      `yaml:"threshold,omitempty" json:"threshold,omitempty"`
+	MaxCount         int      `yaml:"max_count,omitempty" json:"max_count,omitempty"`
+	MaxFailures      int      `yaml:"max_failures,omitempty" json:"max_failures,omitempty"`
+	WriteOnly        bool     `yaml:"write_only,omitempty" json:"write_only,omitempty"`
+	WriteTools       []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
+	CustomWriteTools []string `yaml:"custom_write_tools,omitempty" json:"custom_write_tools,omitempty"`
+	Prompt           string   `yaml:"prompt,omitempty" json:"prompt,omitempty"`
+}
+
 // CycleBreakerConfig configures active inference stream loop and monologue detection.
 type CycleBreakerConfig struct {
-	Enabled                     *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	MaxProseTokens              int      `yaml:"max_prose_tokens,omitempty" json:"max_prose_tokens,omitempty"`
-	MaxThinkingTokens           int      `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
-	MaxToolTokens               int      `yaml:"max_tool_tokens,omitempty" json:"max_tool_tokens,omitempty"`
-	MaxWriteTokens              int      `yaml:"max_write_tokens,omitempty" json:"max_write_tokens,omitempty"`
-	RepetitionWindow            int      `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
-	RepetitionThreshold         int      `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
-	ThinkingRepetitionThreshold int      `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
-	MaxRetries                  int      `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`
-	CorrectionPrompt            string   `yaml:"correction_prompt,omitempty" json:"correction_prompt,omitempty"`
-	KickstartThreshold          int      `yaml:"kickstart_threshold,omitempty" json:"kickstart_threshold,omitempty"`
-	KickstartWriteOnly          bool     `yaml:"kickstart_write_only,omitempty" json:"kickstart_write_only,omitempty"`
-	WriteTools                  []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
-	KickstartWriteTools         []string `yaml:"kickstart_write_tools,omitempty" json:"kickstart_write_tools,omitempty"`
-	KickstartPrompt             string   `yaml:"kickstart_prompt,omitempty" json:"kickstart_prompt,omitempty"`
-	KickstartMaxCount           int      `yaml:"kickstart_max_count,omitempty" json:"kickstart_max_count,omitempty"`
-	KickstartMaxFailures        int      `yaml:"kickstart_max_failures,omitempty" json:"kickstart_max_failures,omitempty"`
-	ModelCooldownSeconds        int      `yaml:"model_cooldown_seconds,omitempty" json:"model_cooldown_seconds,omitempty"`
-	RetryFloor                  int      `yaml:"retry_floor,omitempty" json:"retry_floor,omitempty"`
+	Enabled              *bool          `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	PhraseLength         int            `yaml:"phrase_length,omitempty" json:"phrase_length,omitempty"`
+	BudgetMaxRepeats     int            `yaml:"budget_max_repeats,omitempty" json:"budget_max_repeats,omitempty"`
+	ThinkingLane         LaneConfig     `yaml:"thinking_lane,omitempty" json:"thinking_lane,omitempty"`
+	ReasoningLane        LaneConfig     `yaml:"reasoning_lane,omitempty" json:"reasoning_lane,omitempty"`
+	ContentLane          LaneConfig     `yaml:"content_lane,omitempty" json:"content_lane,omitempty"`
+	ToolLane             ToolLaneConfig `yaml:"tool_lane,omitempty" json:"tool_lane,omitempty"`
+	MaxRetries           int            `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`
+	CorrectionPrompt     string         `yaml:"correction_prompt,omitempty" json:"correction_prompt,omitempty"`
+	ModelCooldownSeconds int            `yaml:"model_cooldown_seconds,omitempty" json:"model_cooldown_seconds,omitempty"`
+	RetryFloor           int            `yaml:"retry_floor,omitempty" json:"retry_floor,omitempty"`
+
+	// Flat fields for direct overrides and tests
+	MaxContentTokens                  int      `yaml:"max_content_tokens,omitempty" json:"max_content_tokens,omitempty"`
+	MaxThinkingTokens                 int      `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
+	MaxToolTokens                     int      `yaml:"max_tool_tokens,omitempty" json:"max_tool_tokens,omitempty"`
+	MaxWriteTokens                    int      `yaml:"max_write_tokens,omitempty" json:"max_write_tokens,omitempty"`
+	RepetitionWindow                  int      `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
+	RepetitionThreshold               int      `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
+	ThinkingRepetitionThreshold       int      `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
+	BudgetRepetitionThreshold         int      `yaml:"budget_repetition_threshold,omitempty" json:"budget_repetition_threshold,omitempty"`
+	ThinkingBudgetRepetitionThreshold int      `yaml:"thinking_budget_repetition_threshold,omitempty" json:"thinking_budget_repetition_threshold,omitempty"`
+	KickstartThreshold                int      `yaml:"kickstart_threshold,omitempty" json:"kickstart_threshold,omitempty"`
+	KickstartWriteOnly                bool     `yaml:"kickstart_write_only,omitempty" json:"kickstart_write_only,omitempty"`
+	WriteTools                        []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
+	KickstartWriteTools               []string `yaml:"kickstart_write_tools,omitempty" json:"kickstart_write_tools,omitempty"`
+	KickstartPrompt                   string   `yaml:"kickstart_prompt,omitempty" json:"kickstart_prompt,omitempty"`
+	KickstartMaxCount                 int      `yaml:"kickstart_max_count,omitempty" json:"kickstart_max_count,omitempty"`
+	KickstartMaxFailures              int      `yaml:"kickstart_max_failures,omitempty" json:"kickstart_max_failures,omitempty"`
+}
+
+// ResolvePhraseLength returns the resolved phrase length (n-gram size) for a lane, falling back to global defaults.
+func (c *CycleBreakerConfig) ResolvePhraseLength(lane ...*LaneConfig) int {
+	if len(lane) > 0 && lane[0] != nil {
+		if lane[0].PhraseLength > 0 {
+			return lane[0].PhraseLength
+		}
+		if lane[0].RepetitionWindow > 0 {
+			return lane[0].RepetitionWindow
+		}
+	}
+	if c.PhraseLength > 0 {
+		return c.PhraseLength
+	}
+	if c.RepetitionWindow > 0 {
+		return c.RepetitionWindow
+	}
+	return 6
+}
+
+// ResolveBudgetMaxRepeats returns the resolved cooperative budget repetition threshold for a lane.
+func (c *CycleBreakerConfig) ResolveBudgetMaxRepeats(lane ...*LaneConfig) int {
+	if len(lane) > 0 && lane[0] != nil {
+		if lane[0].BudgetMaxRepeats > 0 {
+			return lane[0].BudgetMaxRepeats
+		}
+		if lane[0].BudgetRepetitionThreshold > 0 {
+			return lane[0].BudgetRepetitionThreshold
+		}
+	}
+	if c.BudgetMaxRepeats > 0 {
+		return c.BudgetMaxRepeats
+	}
+	if c.BudgetRepetitionThreshold > 0 {
+		return c.BudgetRepetitionThreshold
+	}
+	return 5
+}
+
+func (c *CycleBreakerConfig) ResolveThinkingMaxTokens() int {
+	if c.ThinkingLane.MaxTokens > 0 {
+		return c.ThinkingLane.MaxTokens
+	}
+	if c.ReasoningLane.MaxTokens > 0 {
+		return c.ReasoningLane.MaxTokens
+	}
+	if c.MaxThinkingTokens > 0 {
+		return c.MaxThinkingTokens
+	}
+	return 4096
+}
+
+func (c *CycleBreakerConfig) ResolveThinkingMaxRepeats() int {
+	if c.ThinkingLane.MaxRepeats > 0 {
+		return c.ThinkingLane.MaxRepeats
+	}
+	if c.ReasoningLane.MaxRepeats > 0 {
+		return c.ReasoningLane.MaxRepeats
+	}
+	if c.ThinkingLane.RepetitionThreshold > 0 {
+		return c.ThinkingLane.RepetitionThreshold
+	}
+	if c.ReasoningLane.RepetitionThreshold > 0 {
+		return c.ReasoningLane.RepetitionThreshold
+	}
+	if c.ThinkingRepetitionThreshold > 0 {
+		return c.ThinkingRepetitionThreshold
+	}
+	return 6
+}
+
+func (c *CycleBreakerConfig) ResolveThinkingPhraseLength() int {
+	if c.ThinkingLane.PhraseLength > 0 || c.ThinkingLane.RepetitionWindow > 0 {
+		return c.ResolvePhraseLength(&c.ThinkingLane)
+	}
+	if c.ReasoningLane.PhraseLength > 0 || c.ReasoningLane.RepetitionWindow > 0 {
+		return c.ResolvePhraseLength(&c.ReasoningLane)
+	}
+	return c.ResolvePhraseLength(&c.ThinkingLane)
+}
+
+func (c *CycleBreakerConfig) ResolveThinkingBudgetMaxRepeats() int {
+	if c.ThinkingBudgetRepetitionThreshold > 0 {
+		return c.ThinkingBudgetRepetitionThreshold
+	}
+	if c.ThinkingLane.BudgetMaxRepeats > 0 || c.ThinkingLane.BudgetRepetitionThreshold > 0 {
+		return c.ResolveBudgetMaxRepeats(&c.ThinkingLane)
+	}
+	if c.ReasoningLane.BudgetMaxRepeats > 0 || c.ReasoningLane.BudgetRepetitionThreshold > 0 {
+		return c.ResolveBudgetMaxRepeats(&c.ReasoningLane)
+	}
+	return c.ResolveBudgetMaxRepeats(&c.ThinkingLane)
+}
+
+func (c *CycleBreakerConfig) ResolveContentMaxTokens() int {
+	if c.ContentLane.MaxTokens > 0 {
+		return c.ContentLane.MaxTokens
+	}
+	if c.MaxContentTokens > 0 {
+		return c.MaxContentTokens
+	}
+	return 6144
+}
+
+func (c *CycleBreakerConfig) ResolveContentMaxRepeats() int {
+	if c.ContentLane.MaxRepeats > 0 {
+		return c.ContentLane.MaxRepeats
+	}
+	if c.ContentLane.RepetitionThreshold > 0 {
+		return c.ContentLane.RepetitionThreshold
+	}
+	if c.RepetitionThreshold > 0 {
+		return c.RepetitionThreshold
+	}
+	return 8
+}
+
+func (c *CycleBreakerConfig) ResolveContentPhraseLength() int {
+	return c.ResolvePhraseLength(&c.ContentLane)
+}
+
+func (c *CycleBreakerConfig) ResolveContentBudgetMaxRepeats() int {
+	return c.ResolveBudgetMaxRepeats(&c.ContentLane)
+}
+
+func (c *CycleBreakerConfig) ResolveToolMaxTokens() int {
+	if c.ToolLane.MaxTokens > 0 {
+		return c.ToolLane.MaxTokens
+	}
+	if c.MaxToolTokens > 0 {
+		return c.MaxToolTokens
+	}
+	return 8192
+}
+
+func (c *CycleBreakerConfig) ResolveToolMaxWriteTokens() int {
+	if c.ToolLane.MaxWriteTokens > 0 {
+		return c.ToolLane.MaxWriteTokens
+	}
+	if c.MaxWriteTokens > 0 {
+		return c.MaxWriteTokens
+	}
+	return 32768
+}
+
+func (c *CycleBreakerConfig) ResolveToolMaxRepeats() int {
+	if c.ToolLane.MaxRepeats > 0 {
+		return c.ToolLane.MaxRepeats
+	}
+	if c.ToolLane.RepetitionThreshold > 0 {
+		return c.ToolLane.RepetitionThreshold
+	}
+	if c.RepetitionThreshold > 0 {
+		return c.RepetitionThreshold
+	}
+	return 8
+}
+
+func (c *CycleBreakerConfig) ResolveToolPhraseLength() int {
+	return c.ResolvePhraseLength(&c.ToolLane.LaneConfig)
+}
+
+func (c *CycleBreakerConfig) ResolveToolBudgetMaxRepeats() int {
+	return c.ResolveBudgetMaxRepeats(&c.ToolLane.LaneConfig)
+}
+
+// Normalize synchronizes structured lane configs with flat legacy fields for bidirectional consistency.
+func (c *CycleBreakerConfig) Normalize() {
+	if c == nil {
+		return
+	}
+	if c.ThinkingLane.MaxTokens == 0 && c.ReasoningLane.MaxTokens > 0 {
+		c.ThinkingLane = c.ReasoningLane
+	}
+	if c.ReasoningLane.MaxTokens == 0 && c.ThinkingLane.MaxTokens > 0 {
+		c.ReasoningLane = c.ThinkingLane
+	}
+
+	if c.MaxThinkingTokens == 0 && c.ThinkingLane.MaxTokens > 0 {
+		c.MaxThinkingTokens = c.ThinkingLane.MaxTokens
+	}
+	if c.ThinkingLane.MaxTokens == 0 && c.MaxThinkingTokens > 0 {
+		c.ThinkingLane.MaxTokens = c.MaxThinkingTokens
+	}
+
+	if c.MaxContentTokens == 0 && c.ContentLane.MaxTokens > 0 {
+		c.MaxContentTokens = c.ContentLane.MaxTokens
+	}
+	if c.ContentLane.MaxTokens == 0 && c.MaxContentTokens > 0 {
+		c.ContentLane.MaxTokens = c.MaxContentTokens
+	}
+
+	if c.MaxToolTokens == 0 && c.ToolLane.MaxTokens > 0 {
+		c.MaxToolTokens = c.ToolLane.MaxTokens
+	}
+	if c.ToolLane.MaxTokens == 0 && c.MaxToolTokens > 0 {
+		c.ToolLane.MaxTokens = c.MaxToolTokens
+	}
+
+	if c.MaxWriteTokens == 0 && c.ToolLane.MaxWriteTokens > 0 {
+		c.MaxWriteTokens = c.ToolLane.MaxWriteTokens
+	}
+	if c.ToolLane.MaxWriteTokens == 0 && c.MaxWriteTokens > 0 {
+		c.ToolLane.MaxWriteTokens = c.MaxWriteTokens
+	}
+
+	if c.RepetitionWindow == 0 && c.PhraseLength > 0 {
+		c.RepetitionWindow = c.PhraseLength
+	}
+	if c.PhraseLength == 0 && c.RepetitionWindow > 0 {
+		c.PhraseLength = c.RepetitionWindow
+	}
+
+	if c.ThinkingRepetitionThreshold == 0 && c.ThinkingLane.MaxRepeats > 0 {
+		c.ThinkingRepetitionThreshold = c.ThinkingLane.MaxRepeats
+	}
+	if c.ThinkingLane.MaxRepeats == 0 && c.ThinkingRepetitionThreshold > 0 {
+		c.ThinkingLane.MaxRepeats = c.ThinkingRepetitionThreshold
+	}
+
+	if c.RepetitionThreshold == 0 && c.ContentLane.MaxRepeats > 0 {
+		c.RepetitionThreshold = c.ContentLane.MaxRepeats
+	}
+	if c.ContentLane.MaxRepeats == 0 && c.RepetitionThreshold > 0 {
+		c.ContentLane.MaxRepeats = c.RepetitionThreshold
+	}
+
+	if c.BudgetRepetitionThreshold == 0 && c.BudgetMaxRepeats > 0 {
+		c.BudgetRepetitionThreshold = c.BudgetMaxRepeats
+	}
+	if c.BudgetMaxRepeats == 0 && c.BudgetRepetitionThreshold > 0 {
+		c.BudgetMaxRepeats = c.BudgetRepetitionThreshold
+	}
 }
 
 // Tier defines a single model routing rule in the 1..N evaluation pipeline.
@@ -214,6 +488,22 @@ type FairyDustConfig struct {
 	Entries []FairyDustEntry `yaml:"entries,omitempty" json:"entries,omitempty"`
 }
 
+// NTSConfig configures the Nacho Token Saver (NTS) in-place compaction engine.
+type NTSConfig struct {
+	Enabled               *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	StripANSI             *bool `yaml:"strip_ansi,omitempty" json:"strip_ansi,omitempty"`
+	ResolveCR             *bool `yaml:"resolve_cr,omitempty" json:"resolve_cr,omitempty"`
+	DeduplicateLines      *bool `yaml:"deduplicate_lines,omitempty" json:"deduplicate_lines,omitempty"`
+	DedupThreshold        int   `yaml:"dedup_threshold,omitempty" json:"dedup_threshold,omitempty"`
+	StripBoilerplate      *bool `yaml:"strip_boilerplate,omitempty" json:"strip_boilerplate,omitempty"`
+	NormalizeWhitespace   *bool `yaml:"normalize_whitespace,omitempty" json:"normalize_whitespace,omitempty"`
+	PreserveFileReads     *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
+	PreserveFileWrites    *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
+	PreserveCacheControl  *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
+	CompactStaleFileReads *bool `yaml:"compact_stale_file_reads,omitempty" json:"compact_stale_file_reads,omitempty"`
+	StaleReadDepth        int   `yaml:"stale_read_depth,omitempty" json:"stale_read_depth,omitempty"`
+}
+
 // Config defines the top-level configuration loaded from config.yaml.
 type Config struct {
 	Port         int                       `yaml:"port" json:"port"`
@@ -224,10 +514,29 @@ type Config struct {
 	AgentShield  AgentShieldConfig         `yaml:"agent_shield,omitempty" json:"agent_shield,omitempty"`
 	CycleKiller  CycleBreakerConfig        `yaml:"cycle_killer,omitempty" json:"cycle_killer,omitempty"`
 	CycleBreaker CycleBreakerConfig        `yaml:"cycle_breaker,omitempty" json:"cycle_breaker,omitempty"`
+	Kickstart    KickstartConfig           `yaml:"kickstart,omitempty" json:"kickstart,omitempty"`
 	FairyDust    FairyDustConfig           `yaml:"fairy_dust,omitempty" json:"fairy_dust,omitempty"`
+	NTS          NTSConfig                 `yaml:"nts,omitempty" json:"nts,omitempty"`
 	Providers    map[string]ProviderConfig `yaml:"providers" json:"providers"`
 	Tiers        []Tier                    `yaml:"tiers" json:"tiers"`
 	DefaultTier  Tier                      `yaml:"default_tier" json:"default_tier"`
+}
+
+// Normalize ensures all nested structures (CycleKiller, CycleBreaker, Tiers) are normalized.
+func (c *Config) Normalize() {
+	if c == nil {
+		return
+	}
+	c.CycleKiller.Normalize()
+	c.CycleBreaker.Normalize()
+	for i := range c.Tiers {
+		if c.Tiers[i].CycleKiller != nil {
+			c.Tiers[i].CycleKiller.Normalize()
+		}
+		if c.Tiers[i].CycleBreaker != nil {
+			c.Tiers[i].CycleBreaker.Normalize()
+		}
+	}
 }
 
 // Evaluator evaluates N tiers sequentially to find the matching tier for a request.

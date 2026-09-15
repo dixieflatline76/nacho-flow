@@ -46,6 +46,25 @@ function makeStats(overrides: Record<string, unknown> = {}): unknown {
       local_heal_success_rate_pct: 83,
     },
     windows: {
+      past_1_hour: {
+        requests: 2,
+        tokens_total: 4000,
+        tokens_local: 3200,
+        cost_spent_usd: 0.02,
+        cost_saved_usd: 0.18,
+        cost_reduction_pct: 90,
+        cycle_killer: {
+          total_interventions: 1,
+          avoided_runaway_tokens: 8000,
+          avoided_gpu_seconds: 240,
+          stage1_local_heals: 1,
+          stage2_cloud_escalations: 0,
+          local_heal_success_rate_pct: 100,
+        },
+        nts_tokens_saved: 1200,
+        nts_bytes_saved: 4800,
+        nts_compacted_turns: 2,
+      },
       today: {
         requests: 5,
         tokens_total: 10000,
@@ -187,13 +206,16 @@ function buildDOM(): void {
     <div id="stats-content"></div>
     <div id="stats-timeframe-info"></div>
     <div id="cycle-killer-content"></div>
+    <div id="nts-content"></div>
     <div id="routes-content"></div>
     <div id="circuits-content"></div>
     <div id="deals-content"></div>
     <div id="config-content"></div>
     <div id="tuner-banner" style="display:none"></div>
     <span id="active-preset-badge"></span>
+    <span id="server-version-chip"></span>
     <button id="btn-edit-config"><svg></svg> config.yaml</button>
+    <button id="tab-past_1_hour"></button>
     <button id="tab-all_time"></button>
     <button id="tab-today"></button>
     <button id="tab-yesterday"></button>
@@ -312,6 +334,25 @@ describe('windowCycleKiller — timeframe selection (v0.8.4 daemon, all windows 
     setWindow('all_time');
     expect(ckContent()).toContain('12 <span class="ck-unit">Loops</span>');
   });
+
+  it('Past 1 Hour: renders 1 intervention and NTS tokens from past_1_hour window', () => {
+    setWindow('past_1_hour');
+    expect(ckContent()).toContain('1 <span class="ck-unit">Loops</span>');
+    expect(document.getElementById('nts-content')?.innerHTML).toContain('1.2k <span class="nts-unit">Tokens</span>');
+  });
+
+  it('Past 1 Hour: timeframe label mentions Past 1 Hour', () => {
+    setWindow('past_1_hour');
+    const info = document.getElementById('stats-timeframe-info')?.textContent ?? '';
+    expect(info).toContain('Past 1 Hour');
+  });
+
+  it('renders supervisor sub-brackets with Qu\'est-ce que c\'est?, Kickstart, and Fairy Dust', () => {
+    setWindow('all_time');
+    expect(ckContent()).toContain("Cycle Killer (Qu'est-ce que c'est?): In-Flight Stream Breaker");
+    expect(ckContent()).toContain('Kickstart: Stall Resuscitation Engine');
+    expect(ckContent()).toContain('Fairy Dust: Programmable Quality Checkpoints');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -375,6 +416,13 @@ describe('renderCycleKiller — null or incomplete stats', () => {
 // ---------------------------------------------------------------------------
 
 describe('setTimeWindow — tab button active class', () => {
+  it('marks past_1_hour tab active and clears others', () => {
+    setWindow('past_1_hour');
+    expect(document.getElementById('tab-past_1_hour')?.classList.contains('active')).toBe(true);
+    expect(document.getElementById('tab-today')?.classList.contains('active')).toBe(false);
+    expect(document.getElementById('tab-all_time')?.classList.contains('active')).toBe(false);
+  });
+
   it('marks yesterday tab active and clears others', () => {
     setWindow('yesterday');
     expect(document.getElementById('tab-yesterday')?.classList.contains('active')).toBe(true);
@@ -428,6 +476,55 @@ describe('updateActivePreset and profile / remote indicators', () => {
   });
 });
 
+describe('updateEngineStatus and server version chip', () => {
+  it('updates server version chip to active green with version text', () => {
+    postMessage('updateEngineStatus', { connected: true, version: '1.1.0' });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('🟢 v1.1.0');
+    expect(chip?.classList.contains('chip-green')).toBe(true);
+    expect(chip?.title).toContain('1.1.0');
+  });
+
+  it('updates server version chip when starting', () => {
+    postMessage('updateEngineStatus', { starting: true });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('⚡ Starting...');
+    expect(chip?.classList.contains('chip-gray')).toBe(true);
+  });
+
+  it('updates server version chip when testing connection', () => {
+    postMessage('updateEngineStatus', { testing: true });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('⚡ Connecting...');
+    expect(chip?.classList.contains('chip-gray')).toBe(true);
+  });
+
+  it('updates server version chip when offline error occurs in remote mode', () => {
+    postMessage('updateActivePreset', { label: 'Remote Server', isRemote: true });
+    postMessage('updateEngineStatus', { connected: false, error: 'Connection refused' });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('🔴 Offline');
+    expect(chip?.title).toContain('Connection refused');
+    expect(chip?.classList.contains('chip-red')).toBe(true);
+  });
+
+  it('updates server version chip to offline gray when connection refused in local mode', () => {
+    postMessage('updateActivePreset', { label: 'Profile 1', isRemote: false });
+    postMessage('updateEngineStatus', { connected: false, error: 'Connection refused' });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('⚪ Offline');
+    expect(chip?.classList.contains('chip-gray')).toBe(true);
+  });
+
+  it('updates server version chip to offline gray on setOffline', () => {
+    postMessage('updateEngineStatus', { connected: true, version: 'v1.1.0' });
+    postMessage('setOffline', { reason: 'Engine stopped' });
+    const chip = document.getElementById('server-version-chip');
+    expect(chip?.textContent).toBe('⚪ Offline');
+    expect(chip?.classList.contains('chip-gray')).toBe(true);
+  });
+});
+
 describe('setOffline command in webview', () => {
   it('clears stale remote data across all panels and displays offline placeholders', () => {
     // Populate with stats first
@@ -440,6 +537,7 @@ describe('setOffline command in webview', () => {
 
     expect(document.getElementById('stats-content')?.textContent).toContain('Local engine is offline');
     expect(document.getElementById('cycle-killer-content')?.textContent).toContain('Engine is offline');
+    expect(document.getElementById('nts-content')?.textContent).toContain('Engine is offline');
     expect(document.getElementById('routes-content')?.textContent).toContain('Engine is offline');
     expect(document.getElementById('circuits-content')?.textContent).toContain('Engine is offline');
     expect(document.getElementById('deals-content')?.textContent).toContain('Engine is offline');
@@ -491,7 +589,8 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
         isOnline: true,
         activeProfile: 'profile1',
         profileLabel: 'Remote Server',
-        isRemote: true
+        isRemote: true,
+        version: 'v1.1.0-nts-hardened'
       },
       stats: makeStats(),
       routes: { routes: [] },
@@ -503,6 +602,8 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
     postMessage('syncSnapshot', remoteSnapshot);
 
     expect(document.getElementById('active-preset-badge')?.textContent).toBe('🌐 Remote Server');
+    expect(document.getElementById('server-version-chip')?.textContent).toBe('🟢 v1.1.0-nts-hardened');
+    expect(document.getElementById('server-version-chip')?.classList.contains('chip-green')).toBe(true);
     expect(document.getElementById('btn-edit-config')?.textContent).toContain('Remote config.yaml');
   });
 

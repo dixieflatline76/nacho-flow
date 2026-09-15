@@ -88,7 +88,8 @@ describe('DashboardPanel', () => {
       expect(mockWebviewPanel.webview.html).toContain('control-center-section');
       expect(mockWebviewPanel.webview.html).toContain('cycle-killer-panel');
       expect(mockWebviewPanel.webview.html).toContain('id="cycle-killer-content"');
-      expect(mockWebviewPanel.webview.html).toContain('id="tab-yesterday"');
+      expect(mockWebviewPanel.webview.html).toContain('id="nts-content"');
+      expect(mockWebviewPanel.webview.html).toContain('id="tab-past_1_hour"');
     });
 
     it('should set up message listener when onMessage is provided', () => {
@@ -171,6 +172,14 @@ describe('DashboardPanel', () => {
       expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
         command: 'updateActivePreset',
         data: { label: '🌮 Standard' }
+      });
+    });
+
+    it('should post updateEngineStatus message', () => {
+      dashboardPanel.updateEngineStatus({ connected: true, version: 'v1.1.0' });
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'updateEngineStatus',
+        data: { connected: true, version: 'v1.1.0' }
       });
     });
 

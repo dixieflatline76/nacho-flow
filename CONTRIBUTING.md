@@ -47,6 +47,23 @@ Thank you for your interest in contributing to **Nacho Flow**! We welcome bug re
 
 ---
 
+## 🤖 Contributing Coding Agent Profiles (`data/agents/*.json`)
+
+Nacho Flow ships with built-in canonical profiles for leading autonomous coding agents (**Zoo Code**, **Cline**, **Cursor**, **Windsurf**, **Claude Code**, **Aider**, **Continue**, **OpenCode**, and **Goose**).
+
+We actively welcome community contributions to keep this catalog comprehensive and resilient:
+
+1. **Submitting Error Signatures**:
+   If your agent encounters an unhandled tool validation error, Zod schema failure, or search/replace mismatch that caused it to loop without auto-escalating, grab the error substring from your agent console or `logs/traffic.jsonl` and add it to `error_signatures` in the agent's JSON spec.
+2. **Adding Missing Write & Command Tools**:
+   If your agent adds a new tool name for modifying code or executing commands, add it to `write_tools` or `command_tools` so Kickstart idle resuscitation and Fairy Dusting track state modifications accurately.
+3. **Contributing New Agent Profiles**:
+   Create a new specification `data/agents/<agent-id>.json` following the schema in `data/agents/zoo.json` and submit a Pull Request!
+4. **Sharing Logs & Edge Cases**:
+   Feel free to share sanitized turn traces or raw tool outputs from `logs/traffic.jsonl` in [GitHub Discussions](https://github.com/dixieflatline76/nacho-flow/discussions) to help us refine delimiter stripping and question heuristics.
+
+---
+
 ## 💬 Community & Support
 
 - **Website**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)

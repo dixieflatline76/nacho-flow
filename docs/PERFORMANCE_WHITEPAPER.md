@@ -307,11 +307,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$24074.6\text{ req/s}$** | $2.01\text{ ms}$ | $11.38\text{ ms}$ | $110.7\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$27072.2\text{ req/s}$** | $3.07\text{ ms}$ | $14.54\text{ ms}$ | $128.4\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$27453.4\text{ req/s}$** | $7.70\text{ ms}$ | $33.55\text{ ms}$ | $132.2\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$25478.9\text{ req/s}$** | $14.13\text{ ms}$ | $88.13\text{ ms}$ | $190.9\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$21242.7\text{ req/s}$** | $33.85\text{ ms}$ | $169.37\text{ ms}$ | $149.9\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$25853.0\text{ req/s}$** | $2.01\text{ ms}$ | $8.37\text{ ms}$ | $101.1\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$21375.1\text{ req/s}$** | $3.65\text{ ms}$ | $19.88\text{ ms}$ | $205.9\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$26594.8\text{ req/s}$** | $7.94\text{ ms}$ | $40.09\text{ ms}$ | $168.0\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$23333.3\text{ req/s}$** | $17.64\text{ ms}$ | $80.58\text{ ms}$ | $126.7\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$24402.1\text{ req/s}$** | $38.49\text{ ms}$ | $73.09\text{ ms}$ | $187.8\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 #### High-Concurrency Scaling Analysis:
@@ -356,5 +356,6 @@ By applying classic systems engineering principles in Go:
 3. **Use fixed-size circular ring buffers** to inspect the tail of streaming generations with zero heap allocations.
 4. **Use lock-free Read-Copy-Update (RCU) atomic pointers** for routing and pricing tables to eliminate mutex contention.
 5. **Pool buffers across worker goroutines** (`sync.Pool`) to eliminate memory pressure.
+6. **Execute multi-pass token compaction in-place** using single-pass read/write cursors ($w \le r$) and stack-allocated 256-byte trigger tables (`pkg/zeroalloc`) to eliminate token bloat before upstream transmission.
 
-Nacho Flow demonstrates that an **autonomous agent runtime supervisor can perform real-time stream surgery, tool schema repair, and cycle defense at wire speed ($< 0.2\text{ ms}$ overhead)**, delivering bulletproof stability and $90\%+$ cloud spend reductions without sacrificing a single millisecond of developer performance.
+Nacho Flow demonstrates that an **autonomous agent runtime supervisor can perform real-time stream surgery, tool schema repair, cycle defense, and token compaction at wire speed ($< 0.2\text{ ms}$ overhead)**, delivering bulletproof stability, up to $41\%+$ token reduction, and $90\%+$ cloud spend reductions without sacrificing a single millisecond of developer performance.

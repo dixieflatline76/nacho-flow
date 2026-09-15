@@ -25,13 +25,16 @@ nacho-flow/
 │       ├── nacho_releaser/ # Automated multi-platform GitHub release tool
 │       └── version_bump/   # Semantic version bumping utility
 ├── data/
+│   ├── agents/             # Canonical agent specifications (Cline, Zoo Code, Cursor, Windsurf, Claude Code, Aider, Continue, OpenCode, Goose)
 │   └── models.json         # Canonical remote model catalog for GitHub OTA serving
 ├── docs/                   # Architecture, Benchmarks, Tuning Guide, User & Dev Guides
 ├── extension/              # VS Code Companion Extension (TypeScript thin client, Webview, SSE IPC)
 ├── logs/                   # Default directory for interactive log files
 ├── pkg/
+│   ├── agentregistry/      # Modular agent catalog, reasoning parser, tool schema adapters & control token compiler
 │   ├── config/             # YAML configuration parser, RCU reloader & validation
 │   ├── contract/           # Core interface definitions, ProviderType enum & bitmask DTOs
+│   ├── nts/                # Nacho Token Saver compactors, stale read eliminators & CR delimiting
 │   ├── provider/           # Capability interfaces (LLM, Auth, Header, Health, CircuitBreaker, Registry)
 │   ├── router/             # Context classifier (OpenAI/Anthropic/Cline XML), adaptive estimator, session tracker, Kickstart resuscitation & Fairy Dusting state, image sanitizer, tool normalizer
 │   │   └── shield/         # Cycle Killer in-flight stream defense, agentic fallback shield, sliding tail-buffer & question heuristic engine
@@ -41,7 +44,8 @@ nacho-flow/
 │   ├── strategy/           # Compiled expr-lang dynamic rule evaluator with MaxContext guards
 │   ├── telemetry/          # Pricing oracle, factory registry, OpenRouter plugin, StatsTracker, 3-tier classifier
 │   │   └── curation/       # Embedded baseline + OTA GitHub semver catalog manager
-│   └── tuner/              # Cost-penalty rule synthesizer & advisory engine
+│   ├── tuner/              # Cost-penalty rule synthesizer & advisory engine
+│   └── zeroalloc/          # Zero-allocation in-place byte manipulators & delimiter sanitizers
 ├── scripts/                # Universal Linux/macOS shell installer & test harness
 ├── site/                   # Static landing page, interactive documentation hub & benchmarks
 ├── .github/workflows/      # CI/CD pipeline, Docker GHCR publisher & Azure Trusted Signing

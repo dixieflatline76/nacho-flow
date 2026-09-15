@@ -21,7 +21,7 @@ const (
 )
 
 const (
-	defaultMaxProseTokens              = 4096
+	defaultMaxContentTokens            = 4096
 	defaultMaxThinkingTokens           = 1500
 	defaultMaxToolTokens               = 4096
 	defaultMaxWriteTokens              = 32768
@@ -40,16 +40,27 @@ type ngramOccurrence struct {
 // Config encapsulates the static, immutable settings of the cycle breaker.
 // Completely decoupled from ephemeral runtime stream counter maps.
 type Config struct {
-	Enabled                     bool
-	MaxProseTokens              int
-	MaxThinkingTokens           int
-	MaxToolTokens               int
-	MaxWriteTokens              int
+	Enabled                  bool
+	MaxContentTokens         int
+	MaxThinkingTokens        int
+	MaxToolTokens            int
+	MaxWriteTokens           int
+	ContentPhraseLength      int
+	ThinkingPhraseLength     int
+	ToolPhraseLength         int
+	ContentMaxRepeats        int
+	ThinkingMaxRepeats       int
+	ToolMaxRepeats           int
+	ContentBudgetMaxRepeats  int
+	ThinkingBudgetMaxRepeats int
+	ToolBudgetMaxRepeats     int
+	MaxRetries               int
+	CorrectionPrompt         string
+
+	// Legacy fields for backward compatibility with direct tests
 	RepetitionWindow            int
 	RepetitionThreshold         int
 	ThinkingRepetitionThreshold int
-	MaxRetries                  int
-	CorrectionPrompt            string
 }
 
 // streamLane encapsulates sliding N-gram frequency tracking and token accumulation for a single stream lane.
@@ -122,22 +133,22 @@ func (l *streamLane) addWord(word string, window int, threshold int) bool {
 	return consecutive >= threshold
 }
 
-// CycleBreaker monitors in-flight streaming deltas across isolated thinking, prose, and tool lanes
-// to detect and break infinite circular reasoning loops, runaway prose monologues, and cyclic tool calls in real-time.
+// CycleBreaker monitors in-flight streaming deltas across isolated thinking, content, and tool lanes
+// to detect and break infinite circular reasoning loops, runaway content monologues, and cyclic tool calls in real-time.
 // Request-scoped, lock-free, and recycled via sync.Pool.
 type CycleBreaker struct {
-	cfg   Config
-	prose streamLane
-	think streamLane
-	tool  streamLane
+	cfg     Config
+	content streamLane
+	think   streamLane
+	tool    streamLane
 }
 
 var cycleBreakerPool = sync.Pool{
 	New: func() any {
 		return &CycleBreaker{
-			prose: newAllocatedStreamLane(),
-			think: newAllocatedStreamLane(),
-			tool:  newAllocatedStreamLane(),
+			content: newAllocatedStreamLane(),
+			think:   newAllocatedStreamLane(),
+			tool:    newAllocatedStreamLane(),
 		}
 	},
 }
@@ -145,43 +156,45 @@ var cycleBreakerPool = sync.Pool{
 // Configure applies configuration values to this CycleBreaker without reallocating maps.
 func (cb *CycleBreaker) Configure(cfg *contract.CycleBreakerConfig) {
 	cb.cfg = Config{
-		Enabled:                     true,
-		MaxProseTokens:              defaultMaxProseTokens,
-		MaxThinkingTokens:           defaultMaxThinkingTokens,
-		MaxToolTokens:               defaultMaxToolTokens,
-		MaxWriteTokens:              defaultMaxWriteTokens,
-		RepetitionWindow:            defaultRepetitionWindow,
-		RepetitionThreshold:         defaultRepetitionThreshold,
-		ThinkingRepetitionThreshold: defaultThinkingRepetitionThreshold,
-		MaxRetries:                  defaultMaxRetries,
-		CorrectionPrompt:            contract.CycleBreakerDefaultCorrectionPrompt,
+		Enabled:                  true,
+		MaxContentTokens:         defaultMaxContentTokens,
+		MaxThinkingTokens:        defaultMaxThinkingTokens,
+		MaxToolTokens:            defaultMaxToolTokens,
+		MaxWriteTokens:           defaultMaxWriteTokens,
+		ContentPhraseLength:      defaultRepetitionWindow,
+		ThinkingPhraseLength:     defaultRepetitionWindow,
+		ToolPhraseLength:         4,
+		ContentMaxRepeats:        defaultRepetitionThreshold,
+		ThinkingMaxRepeats:       defaultThinkingRepetitionThreshold,
+		ToolMaxRepeats:           defaultRepetitionThreshold,
+		ContentBudgetMaxRepeats:  5,
+		ThinkingBudgetMaxRepeats: 5,
+		ToolBudgetMaxRepeats:     5,
+		MaxRetries:               defaultMaxRetries,
+		CorrectionPrompt:         contract.CycleBreakerDefaultCorrectionPrompt,
 	}
 
 	if cfg != nil {
 		if cfg.Enabled != nil {
 			cb.cfg.Enabled = *cfg.Enabled
 		}
-		if cfg.MaxProseTokens > 0 {
-			cb.cfg.MaxProseTokens = cfg.MaxProseTokens
-		}
-		if cfg.MaxThinkingTokens > 0 {
-			cb.cfg.MaxThinkingTokens = cfg.MaxThinkingTokens
-		}
-		if cfg.MaxToolTokens > 0 {
-			cb.cfg.MaxToolTokens = cfg.MaxToolTokens
-		}
-		if cfg.MaxWriteTokens > 0 {
-			cb.cfg.MaxWriteTokens = cfg.MaxWriteTokens
-		}
-		if cfg.RepetitionWindow > 0 {
-			cb.cfg.RepetitionWindow = cfg.RepetitionWindow
-		}
-		if cfg.RepetitionThreshold > 0 {
-			cb.cfg.RepetitionThreshold = cfg.RepetitionThreshold
-		}
-		if cfg.ThinkingRepetitionThreshold > 0 {
-			cb.cfg.ThinkingRepetitionThreshold = cfg.ThinkingRepetitionThreshold
-		}
+		cb.cfg.MaxThinkingTokens = cfg.ResolveThinkingMaxTokens()
+		cb.cfg.MaxContentTokens = cfg.ResolveContentMaxTokens()
+		cb.cfg.MaxToolTokens = cfg.ResolveToolMaxTokens()
+		cb.cfg.MaxWriteTokens = cfg.ResolveToolMaxWriteTokens()
+
+		cb.cfg.ThinkingPhraseLength = cfg.ResolveThinkingPhraseLength()
+		cb.cfg.ContentPhraseLength = cfg.ResolveContentPhraseLength()
+		cb.cfg.ToolPhraseLength = cfg.ResolveToolPhraseLength()
+
+		cb.cfg.ThinkingMaxRepeats = cfg.ResolveThinkingMaxRepeats()
+		cb.cfg.ContentMaxRepeats = cfg.ResolveContentMaxRepeats()
+		cb.cfg.ToolMaxRepeats = cfg.ResolveToolMaxRepeats()
+
+		cb.cfg.ThinkingBudgetMaxRepeats = cfg.ResolveThinkingBudgetMaxRepeats()
+		cb.cfg.ContentBudgetMaxRepeats = cfg.ResolveContentBudgetMaxRepeats()
+		cb.cfg.ToolBudgetMaxRepeats = cfg.ResolveToolBudgetMaxRepeats()
+
 		if cfg.MaxRetries > 0 {
 			cb.cfg.MaxRetries = cfg.MaxRetries
 		}
@@ -228,14 +241,19 @@ func (cb *CycleBreaker) MaxRetries() int {
 	return cb.cfg.MaxRetries
 }
 
-// ProseTokens returns the current accumulated non-thinking prose token count (lock-free).
-func (cb *CycleBreaker) ProseTokens() int {
-	return cb.prose.tokens
+// ContentTokens returns the current accumulated non-thinking content token count (lock-free).
+func (cb *CycleBreaker) ContentTokens() int {
+	return cb.content.tokens
 }
 
-// MaxNgramFreq returns the highest observed N-gram frequency in the prose lane (lock-free).
+// MaxNgramFreq returns the highest observed N-gram frequency in the content lane (lock-free).
 func (cb *CycleBreaker) MaxNgramFreq() int {
-	return cb.prose.maxNgramFreq
+	return cb.content.maxNgramFreq
+}
+
+// MaxContentNgramFreq returns the highest observed N-gram frequency in the content lane (lock-free).
+func (cb *CycleBreaker) MaxContentNgramFreq() int {
+	return cb.content.maxNgramFreq
 }
 
 // ThinkingTokens returns the current accumulated thinking token count (lock-free).
@@ -265,13 +283,13 @@ func (cb *CycleBreaker) MaxWriteTokens() int {
 
 // Reset clears accumulated words, n-grams, and token counters across all lanes in-place with 0 allocations.
 func (cb *CycleBreaker) Reset() {
-	cb.prose.reset()
+	cb.content.reset()
 	cb.think.reset()
 	cb.tool.reset()
 }
 
 // ProcessDelta parses a text delta chunk from the stream and checks for repetition loops or budget breaches.
-// Routes to either the thinking lane or prose lane based on isThinking. Lock-free hot path.
+// Routes to either the thinking lane or content lane based on isThinking. Lock-free hot path.
 func (cb *CycleBreaker) ProcessDelta(content string, isThinking bool) (triggered bool, reason string) {
 	if !cb.cfg.Enabled || content == "" {
 		return false, ""
@@ -280,6 +298,8 @@ func (cb *CycleBreaker) ProcessDelta(content string, isThinking bool) (triggered
 	if isThinking {
 		lane := &cb.think
 		lane.tokens += (len(content) + 3) / 4
+		phraseLen := cb.cfg.ThinkingPhraseLength
+		maxRepeats := cb.cfg.ThinkingMaxRepeats
 
 		for _, r := range content {
 			if unicode.IsLetter(r) || unicode.IsDigit(r) {
@@ -288,22 +308,24 @@ func (cb *CycleBreaker) ProcessDelta(content string, isThinking bool) (triggered
 				if lane.pendingWord.Len() > 0 {
 					word := lane.pendingWord.String()
 					lane.pendingWord.Reset()
-					if lane.addWord(word, cb.cfg.RepetitionWindow, cb.cfg.ThinkingRepetitionThreshold) {
+					if lane.addWord(word, phraseLen, maxRepeats) {
 						return true, "thinking_repetition_loop_detected"
 					}
 				}
 			}
 		}
 
-		if lane.tokens > cb.cfg.MaxThinkingTokens && lane.maxNgramFreq >= 2 {
+		if lane.tokens > cb.cfg.MaxThinkingTokens && lane.maxNgramFreq >= cb.cfg.ThinkingBudgetMaxRepeats {
 			return true, "thinking_budget_exceeded_with_repetition"
 		}
 
 		return false, ""
 	}
 
-	lane := &cb.prose
+	lane := &cb.content
 	lane.tokens += (len(content) + 3) / 4
+	phraseLen := cb.cfg.ContentPhraseLength
+	maxRepeats := cb.cfg.ContentMaxRepeats
 
 	for _, r := range content {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
@@ -312,15 +334,15 @@ func (cb *CycleBreaker) ProcessDelta(content string, isThinking bool) (triggered
 			if lane.pendingWord.Len() > 0 {
 				word := lane.pendingWord.String()
 				lane.pendingWord.Reset()
-				if lane.addWord(word, cb.cfg.RepetitionWindow, cb.cfg.RepetitionThreshold) {
+				if lane.addWord(word, phraseLen, maxRepeats) {
 					return true, "ngram_repetition_loop_detected"
 				}
 			}
 		}
 	}
 
-	if lane.tokens > cb.cfg.MaxProseTokens && lane.maxNgramFreq >= 2 {
-		return true, "prose_budget_exceeded_with_repetition"
+	if lane.tokens > cb.cfg.MaxContentTokens && lane.maxNgramFreq >= cb.cfg.ContentBudgetMaxRepeats {
+		return true, "content_budget_exceeded_with_repetition"
 	}
 
 	return false, ""
@@ -353,6 +375,9 @@ func (cb *CycleBreaker) ProcessToolDelta(content string, category ...ToolActivit
 	}
 
 	// Category B: Commands & tool invocations (bounded by maxToolTokens, sliding N-gram loop detection)
+	phraseLen := cb.cfg.ToolPhraseLength
+	maxRepeats := cb.cfg.ToolMaxRepeats
+
 	for _, r := range content {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			lane.pendingWord.WriteRune(unicode.ToLower(r))
@@ -360,14 +385,14 @@ func (cb *CycleBreaker) ProcessToolDelta(content string, category ...ToolActivit
 			if lane.pendingWord.Len() > 0 {
 				word := lane.pendingWord.String()
 				lane.pendingWord.Reset()
-				if lane.addWord(word, cb.cfg.RepetitionWindow, cb.cfg.RepetitionThreshold) {
+				if lane.addWord(word, phraseLen, maxRepeats) {
 					return true, "tool_repetition_loop_detected"
 				}
 			}
 		}
 	}
 
-	if lane.tokens > cb.cfg.MaxToolTokens && lane.maxNgramFreq >= 2 {
+	if lane.tokens > cb.cfg.MaxToolTokens && lane.maxNgramFreq >= cb.cfg.ToolBudgetMaxRepeats {
 		return true, "tool_budget_exceeded_with_repetition"
 	}
 

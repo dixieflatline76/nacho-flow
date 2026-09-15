@@ -53,35 +53,12 @@ deals:
 agent_shield:
   enabled: true
   tail_buffer_bytes: 256
-  question_heuristics:
-    - "are you satisfied"
-    - "would you like"
-    - "should i"
-    - "do you approve"
-    - "please confirm"
-    - "let me know if"
-    - "how would you like to proceed"
-  mode_switch_heuristics:
-    - "switch to code mode"
-    - "switch to architect mode"
-    - "ready to implement"
-  error_signatures:
-    - "[ERROR] You did not use a tool"
-    - "Missing value for required parameter"
-    - "The tool execution failed"
-    - "<error_details>"
-    - "No sufficiently similar match found"
-    - "Command failed with exit code"
-    - "Please retry with complete response"
-    - "Editor operation failed"
-    - "Parameter 'old_text' is required"
-    - "Parameter ` + "`old_text`" + ` is required"
-    - "Parameter old_text is required"
-    - "Command not executed:"
-    - "expected string, received undefined"
-    - "✖ Invalid input"
-    - "Invalid input:"
-    - "tool execution error"
+  # Canonical question heuristics, mode switch heuristics, and error signatures
+  # are automatically loaded from data/agents/*.json via agentregistry.
+  # Use these lists only to define custom user overrides/extensions.
+  # question_heuristics: []
+  # mode_switch_heuristics: []
+  # error_signatures: []
 
 # =============================================================================
 # 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
@@ -89,66 +66,51 @@ agent_shield:
 # =============================================================================
 cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
-  max_prose_tokens: 6144            # Max non-tool prose before intervention (<think> is exempt; relaxed for XML)
-  max_thinking_tokens: 4096         # Max reasoning tokens before repetition enforcement kicks in
-  max_tool_tokens: 8192             # Max streaming tool call arguments before repetition enforcement
-  repetition_window: 6              # Sliding n-gram window size (words) for loop detection
-  repetition_threshold: 8           # Relaxed threshold (8): allows batch shell ops without false positives
-  thinking_repetition_threshold: 6  # Lenient reasoning repetition for deep architecture plans
-  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+  phrase_length: 6                  # Default sliding n-gram window size (words) across lanes
+  budget_max_repeats: 5             # Default repeat threshold once lane token budget is exceeded
   model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
   retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
-  kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
-  kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
-  kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
-  kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
-  # 🛡️ File Write & Progress Tools: Category A immunity & Kickstart progress
-  write_tools:
-    - editor
-    - str_replace_editor
-    - text_editor
-    - write_to_file
-    - replace_in_file
-    - replace_file_content
-    - multi_replace_file_content
-    - execute_command
-    - apply_diff
-    - insert_code_block
-    - create_file
-    - create_or_update_file
-    - write_file
-    - edit_file
-    - delete_file
-    - patch_file
-    - run_command
-    - run_terminal_command
-    - run_commands
-    - terminal
-    - bash
-    - exec
-  kickstart_write_tools:            # Preserved for backward compatibility
-    - editor
-    - str_replace_editor
-    - text_editor
-    - write_to_file
-    - replace_in_file
-    - replace_file_content
-    - multi_replace_file_content
-    - execute_command
-    - apply_diff
-    - insert_code_block
-    - create_file
-    - create_or_update_file
-    - write_file
-    - edit_file
-    - delete_file
-    - patch_file
-    - run_command
-    - run_terminal_command
-    - run_commands
-    - terminal
-    - bash
-    - exec
+  max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+
+  thinking_lane:
+    max_tokens: 4096                # Max reasoning tokens before budget repetition check
+    max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
+
+  content_lane:
+    max_tokens: 6144                # Max non-tool content before budget repetition check
+    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
+
+  tool_lane:
+    max_tokens: 8192                # Max streaming tool call arguments before repetition enforcement
+    max_write_tokens: 32768         # Max size for Category A file writes (zero-alloc fast path)
+    phrase_length: 4                # Tighter n-gram window to catch repeating 4-word shell commands
+    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
+
+kickstart:
+  enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
+  threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
+  max_count: 10                     # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
+  max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+  write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
+  # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
+
+# =============================================================================
+# 🗜️ NACHO TOKEN SAVER (NTS)
+# Wire-speed, zero-allocation in-place tool output compaction engine
+# =============================================================================
+nts:
+  enabled: true                     # Master switch for tool output compaction
+  strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
+  resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
+  deduplicate_lines: true           # Pass 3: Collapse repeated consecutive lines (>3 times)
+  dedup_threshold: 3                # Consecutive duplicate threshold before collapse
+  strip_boilerplate: true           # Pass 4: Strip IDE tool boilerplate notices
+  normalize_whitespace: true        # Pass 5: Collapse multiple empty lines
+  preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
+  preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
+  preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
+  compact_stale_file_reads: true    # 📦 Evict superseded historical file reads
+  stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
@@ -157,17 +119,17 @@ tiers:
   # ---------------------------------------------------------------------------
   # ⚡ KICKSTART ESCALATION: Break read-only idle loops with Gemini Flash
   # ---------------------------------------------------------------------------
-  - name: "Kickstart Escalation (Gemini 3.7 Flash)"
+  - name: "Kickstart Escalation (Gemini 3.8 Flash)"
     provider: "openrouter"
-    model: "google/gemini-3.7-flash"
+    model: "google/gemini-3.8-flash"
     when: "SessionKickstarted && Retries < 3"
 
   # ---------------------------------------------------------------------------
   # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
   # ---------------------------------------------------------------------------
-  - name: "Tier: Multimodal Vision (Gemini 3.7 Flash)"
+  - name: "Tier: Multimodal Vision (Gemini 3.8 Flash)"
     provider: "openrouter"
-    model: "google/gemini-3.7-flash"
+    model: "google/gemini-3.8-flash"
     when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
@@ -189,11 +151,11 @@ tiers:
     when: "Tokens < 160000 && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash — $0.75 / $3.75 per 1M)
+  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash — $0.75 / $3.75 per 1M)
   # ---------------------------------------------------------------------------
-  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.7 Flash)"
+  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash)"
     provider: "openrouter"
-    model: "google/gemini-3.7-flash"
+    model: "google/gemini-3.8-flash"
     when: "Tokens < 260000 && Retries < 5"
 
   # ---------------------------------------------------------------------------
@@ -236,45 +198,35 @@ default_tier:
 fairy_dust:
   enabled: true
   entries:
-    # Tactical Code Review (Claude Sonnet 5) — ADVERSARIAL BUG HUNTER
+    # Tactical Code Review (Gemini 3.8 Flash)
     - name: "Tactical Code Review"
-      model: "anthropic/claude-sonnet-5"
+      model: "google/gemini-3.8-flash"
       provider: "openrouter"
       frequency: 15
       max_per_session: 5
       priority: 10
       prompt: >
-        [ADVERSARIAL BUG FIXER: ZERO-PROSE ACTION REQUIRED]
-        You are an elite adversarial bug hunter. Your value is CODE FIXES, NOT ESSAYS.
-        CRITICAL: Do NOT write long explanations, code reviews, or prose summaries.
-        Every token spent on conversational prose is wasted. State any bug in at most
-        1-2 concise bullet points and IMMEDIATELY emit tool calls (write_to_file,
-        replace_in_file, execute_command) to fix it.
-        Check for:
-        (1) STUB FUNCTIONS: Methods that discard parameters or return dummy values.
-        (2) DEAD CODE / UNREACHABLE BRANCHES.
-        (3) COPY-PASTE DUPLICATION: Refactor duplicated logic into shared helpers.
-        (4) OFF-BY-ONE & SLICE/INDEX BUGS.
-        (5) STATE MACHINE VIOLATIONS: Recursive re-entrancy vs caller-driven transitions.
-        (6) SWALLOWED / UNCHECKED ERRORS.
-        Fix every issue directly with tool calls now. If no bugs exist, output at most
-        1 sentence confirming correctness and continue the next task step with tools.
+        [QUALITY CHECKPOINT - Tactical Review] You are a senior code reviewer
+        consulted mid-flight. Analyze the current codebase for: (1) logic bugs
+        and incorrect calculations, (2) compilation and type errors, (3) test failures
+        or broken assertions. Fix any issues immediately with tool calls. If
+        everything looks correct, confirm and continue the current task.
 
     # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
       # model: "anthropic/claude-opus-5"
-      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
+      model: "google/gemini-3.8-flash" # swap in opus 5 for tough jobs
       provider: "openrouter"
       frequency: 60
       max_per_session: 1
       priority: 100
       prompt: >
-        [SPEC TRACEABILITY AUDIT: ACTION REQUIRED - ZERO ESSAYS]
-        You are the QA lead performing requirements verification.
-        CRITICAL: Do NOT write lengthy analysis essays or commentary.
-        Your value is IMPLEMENTATION AND TESTS. Verify that all requirements in the
-        task prompt are fully implemented and tested (not stubbed).
-        If any requirement or test is missing or untested, output at most a compact
-        3-5 line checklist of gaps, then IMMEDIATELY emit tool calls (write_to_file,
-        replace_in_file, execute_command) to write the missing code and tests.
+        [QUALITY CHECKPOINT - Architecture Review] You are the lead architect
+        consulted for a strategic review. Evaluate: (1) Is the agent solving the
+        RIGHT problem? Compare current work against the original requirements.
+        (2) Is the overall architecture sound, or has it drifted into unnecessary
+        complexity? (3) Are there systemic issues (wrong patterns, missing
+        abstractions, repeated mistakes) that tactical fixes won't solve? If you
+        identify strategic drift, restructure the approach. If the trajectory is
+        correct, confirm the direction and continue.
 `

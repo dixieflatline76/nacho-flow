@@ -19,21 +19,27 @@ type RequestClassifier struct {
 	initMu           sync.Mutex
 }
 
-// defaultAgentErrorSignatures are fallback error patterns injected by agent clients
-// (Cline, Zoo Code, OpenCode) when no custom error_signatures are specified in config.yaml.
-var defaultAgentErrorSignatures = []string{
-	"[ERROR] You did not use a tool",
-	"Missing value for required parameter",
-	"The tool execution failed",
-	"<error_details>",
-	"No sufficiently similar match found",
-	"Command failed with exit code",
-	"Please retry with complete response",
-	"Editor operation failed",
-	"Parameter `old_text` is required",
-	"Parameter old_text is required",
-	"Command not executed:",
-}
+// defaultAgentErrorSignatures are fallback error patterns loaded from agent profiles in agentregistry.
+var defaultAgentErrorSignatures = func() []string {
+	if reg := agentregistry.DefaultRegistry(); reg != nil {
+		if list := reg.ErrorSignaturesList(); len(list) > 0 {
+			return list
+		}
+	}
+	return []string{
+		"[ERROR] You did not use a tool",
+		"Missing value for required parameter",
+		"The tool execution failed",
+		"<error_details>",
+		"No sufficiently similar match found",
+		"Command failed with exit code",
+		"Please retry with complete response",
+		"Editor operation failed",
+		"Parameter `old_text` is required",
+		"Parameter old_text is required",
+		"Command not executed:",
+	}
+}()
 
 // NewClassifier initializes a default RequestClassifier with an adaptive TokenEstimator.
 func NewClassifier() contract.Classifier {
@@ -286,7 +292,7 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 			}
 
 			lower := strings.ToLower(fnName)
-			if reqCtx.InteractiveTool == "" && (lower == "ask_followup_question" || lower == "ask_question" || lower == "user_prompt" || lower == "interactive_input") {
+			if reqCtx.InteractiveTool == "" && (agentregistry.DefaultRegistry().IsInteractiveTool(lower) || lower == "interactive_input") {
 				reqCtx.InteractiveTool = fnName
 			}
 
@@ -757,7 +763,7 @@ func ExtractSupportedInteractiveTool(tools []interface{}) string {
 		}
 
 		lower := strings.ToLower(name)
-		if lower == "ask_followup_question" || lower == "ask_question" || lower == "user_prompt" || lower == "interactive_input" {
+		if agentregistry.DefaultRegistry().IsInteractiveTool(lower) || lower == "interactive_input" {
 			return name
 		}
 	}

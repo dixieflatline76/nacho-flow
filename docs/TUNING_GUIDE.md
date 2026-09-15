@@ -74,7 +74,7 @@ flowchart TD
   - `react` (`bool`): Normalizes ReAct `Action: / Action Input:` patterns into OpenAI tool calls.
 - `cycle_breaker` (`object`): In-Flight Stream Guard and Monologue Breaker settings:
   - `enabled` (`bool`): Toggles real-time repetition and prose monologue detection.
-  - `max_prose_tokens` (`int`): Soft ceiling for pure prose tokens before triggering (default: `800`).
+  - `max_content_tokens` (`int`): Soft ceiling for conversational/text content tokens before triggering (default: `4096`).
   - `repetition_window` (`int`): Word window for N-gram sliding hash detector (default: `6`).
   - `repetition_threshold` (`int`): Repetition match threshold for instant stream abort (default: `3`).
   - `max_retries` (`int`): Number of Stage 1 local `$0.00` self-correction retries before cloud failover (default: `1`).
@@ -264,14 +264,20 @@ tiers:
     when: "Tokens < 16000 && Retries == 0"
     cycle_killer:
       enabled: true
-      max_prose_tokens: 4096    # Max non-tool prose tokens (reasoning <think> is 100% exempt)
-      max_thinking_tokens: 1500 # Max thinking token budget before repetition enforcement
-      repetition_window: 6      # Sliding N-gram window (6 words)
-      repetition_threshold: 3   # Murders stream if same 6-word phrase repeats 3x (<3s)
+      phrase_length: 6          # Default sliding N-gram window (words)
+      budget_max_repeats: 5     # Cooperative budget repeat limit
+      thinking_lane:
+        max_tokens: 4096        # Max reasoning token budget
+        max_repeats: 6          # Fast-kill reasoning repetition loop
+      content_lane:
+        max_tokens: 6144        # Max non-tool content tokens
+        max_repeats: 8          # Fast-kill content repetition loop
+      tool_lane:
+        max_tokens: 8192        # Max command/tool invocation arguments
+        max_write_tokens: 32768 # Category A file writes ceiling (exempt from N-gram check)
+        phrase_length: 4        # Tighter 4-word window for shell command loops
+        max_repeats: 8          # Fast-kill tool repetition loop
       max_retries: 1            # Stage 1: retries locally with [SYSTEM OVERRIDE] @ $0.00
-      kickstart_threshold: 5    # ⚡ Kickstart: fires after 5 consecutive turns without tool progress (0 = disabled)
-      # kickstart_write_only: true # Only count file writes / terminal commands as progress (ignores read-only tools)
-      # kickstart_write_tools:     # Optional custom write tools list (defaults cover major agents)
 ```
 *(Also supports `cycle_breaker:` as a backwards-compatible alias, and works across both local and cloud tiers).*
 
@@ -311,6 +317,29 @@ nacho-flow -config config.cline.yaml
 # For Zoo Code / Aider / OpenCode users (default):
 nacho-flow
 ```
+
+### 4.6 Tuning Nacho Token Saver (NTS)
+Nacho Flow includes **NTS** (`nts:` in `config.yaml`) to combat the token snowball in multi-turn sessions:
+
+* **Prompt Caching Compatibility (`preserve_cache_control: true`)**:
+  When using cloud providers with prompt caching (e.g. OpenRouter, DeepSeek, Anthropic), NTS preserves ephemeral cache breakpoints. Leave `preserve_cache_control: true` so your requests continue to qualify for up to 80% prompt token discounts.
+* **Stale Read Depth (`stale_read_depth: 3`)**:
+  Agents frequently inspect the same file across multiple turns. Setting `stale_read_depth: 3` retains the 3 most recent inspections of any file path while pruning older historical turns. If your agent is working on a 50+ turn task that references very old file contents, increase to `4` or `5`. For maximum token savings on routine tasks, keep at `3`.
+* **Zero Corruption Guarantee (`preserve_file_writes: true`)**:
+  Always keep `preserve_file_writes: true`. This ensures `write_to_file`, `replace_in_file`, and diff patches are never modified by the compaction passes.
+
+### 4.7 Universal Agent Registry (`pkg/agentregistry`)
+Instead of manually tuning `question_heuristics`, `mode_switch_heuristics`, or `error_signatures` in `config.yaml`, Nacho Flow embeds canonical agent profiles (`data/agents/*.json`) for **Zoo Code**, **Cline**, **Cursor**, **Windsurf**, **Claude Code**, **Aider**, **Continue**, **OpenCode**, and **Goose**.
+
+The registry automatically identifies:
+1. **Write Tools**: Maps agent-specific write tools (`write_to_file`, `replace_in_file`, `apply_diff`, `execute_command`) to drive Kickstart resuscitation and Fairy Dusting without manual tool lists.
+2. **Error Signatures**: Maps agent validation errors (e.g., Cline Zod schemas, missing `old_text`, syntax failures) into `HistoryErrors` for autonomous cloud auto-escalation.
+3. **Control Tokens**: Strips proprietary agent control tokens in-place with zero heap allocations.
+
+You only need to define `question_heuristics` or `error_signatures` in `config.yaml` if you are writing custom, proprietary agent extensions.
+
+> [!TIP]
+> **Community Contributions**: Notice an unhandled error signature that caused your agent to spin without escalating, or a new agent tool name? Submit a PR updating [`data/agents/<agent>.json`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/data/agents) or share your `logs/traffic.jsonl` snippet in [GitHub Discussions](https://github.com/dixieflatline76/nacho-flow/discussions) so we can include it in the core catalog!
 
 ---
 
@@ -483,7 +512,7 @@ Different autonomous coding agents interact with LLMs using fundamentally differ
 | **Context Accumulation** | Compact sliding transcript + pruned tools | Full multi-turn conversation transcripts re-sent every turn |
 | **Average Turn 50+ Context** | ~35k–45k tokens | ~80k–110k tokens |
 | **Local Model Compatibility** | Gemma 4 12B, Qwen 2.5/3 (native JSON function calling) | Qwen 3 14B, Devstral (XML agent-trained models) |
-| **Cycle Killer Prose Threshold** | `max_prose_tokens: 4096` | `max_prose_tokens: 6144` (relaxed for prose-embedded XML) |
+| **Cycle Killer Content Threshold** | `max_content_tokens: 4096` | `max_content_tokens: 6144` (relaxed for XML preambles) |
 | **Kickstart Recommendation** | **Enabled** (`kickstart_threshold: 5`) | **Disabled or High** (`kickstart_threshold: 0` / off) |
 
 ### 8.2 Zoo Code Tuning Profile (`config.zoo.yaml`)
@@ -491,7 +520,7 @@ Zoo Code uses native OpenAI tool calling. Local models like Gemma 4 produce JSON
 ```yaml
 cycle_killer:
   enabled: true
-  max_prose_tokens: 4096
+  max_content_tokens: 4096
   max_thinking_tokens: 1500
   max_tool_tokens: 8192        # In-flight tool argument repetition breaker (RFC-002)
   repetition_threshold: 3
@@ -504,7 +533,7 @@ Cline models output XML tags within prose explanations. To avoid false-positive 
 ```yaml
 cycle_killer:
   enabled: true
-  max_prose_tokens: 6144       # Relaxed for prose XML preambles
+  max_content_tokens: 6144       # Relaxed for XML preambles
   max_thinking_tokens: 2000    # Extra planning runway
   max_tool_tokens: 8192        # In-flight tool argument repetition breaker (RFC-002)
   repetition_threshold: 4      # XML formats are naturally more repetitive
@@ -527,6 +556,13 @@ agent_shield:
 ```
 
 Cline validates model tool arguments using strict Zod schemas. When a model omits required parameters (e.g. `old_text` in diff tools) or produces unexpected types, Cline writes validation error messages into the conversation history. Configuring `error_signatures` allows Nacho Flow to detect these failures as `historyErrors`, increment retry tracking, and auto-escalate to Tier 4 / Cloud Fallback before the agent gets stuck in a loop.
+
+> [!TIP]
+> **Built-in Agent Registry**: You no longer need to manually copy `error_signatures` or `kickstart_write_tools` into `config.yaml`. Nacho Flow automatically loads `data/agents/cline.json` and `data/agents/zoo.json`, discovering write tools and validation signatures out of the box.
+
+### 8.4 NTS Token Compaction Impact across Agent Harnesses
+* **Zoo Code**: NTS collapses repeated test execution logs and prunes superseded historical `read_file` turns (`compact_stale_file_reads: true`, `stale_read_depth: 3`), reclaiming 25%–35% input tokens over 30+ turn sessions.
+* **Cline**: Because Cline re-transmits full execution logs with ANSI escape sequences and terminal progress spinners, NTS strips escape codes and resolves `\r` carriage returns, delivering up to **41%+ input token reduction** on long refactoring tasks.
 
 ---
 

@@ -3,6 +3,29 @@
   "name": "Cline / Claude Dev",
   "version": "1.0.0",
   "write_tools": ["editor", "write_to_file", "replace_in_file", "apply_patch"],
+  "file_read_tools": ["read_file", "read_files"],
   "read_tools": ["read_files", "read_file", "list_files", "search_files", "list_code_definition_names"],
-  "command_tools": ["run_commands", "execute_command"]
+  "command_tools": ["run_commands", "execute_command"],
+  "interactive_tools": ["ask_followup_question"],
+  "mode_tool": "switch_mode",
+  "mode_heuristics": [
+    "switch to code mode",
+    "switch to architect mode",
+    "ready to implement"
+  ],
+  "error_signatures": [
+    "[ERROR] You did not use a tool",
+    "Editor operation failed",
+    "Parameter 'old_text' is required",
+    "Parameter `old_text` is required",
+    "Parameter old_text is required",
+    "No sufficiently similar match found",
+    "expected string, received undefined",
+    "✖ Invalid input",
+    "Invalid input:",
+    "The 'command' parameter was empty",
+    "File does not exist",
+    "Error reading file",
+    "Command failed with exit code"
+  ]
 }

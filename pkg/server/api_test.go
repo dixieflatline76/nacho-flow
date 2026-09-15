@@ -27,10 +27,12 @@ func setupTestServer(t *testing.T) (*Server, *telemetry.RingBufferSink, *telemet
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434",
+				Type:    contract.ProviderTypeLocal,
 			},
 			"openrouter": {
 				BaseURL: "https://openrouter.ai/api/v1",
 				APIKey:  "sk-or-v1-real-secret-key-12345",
+				Type:    contract.ProviderTypeCloud,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -850,4 +852,44 @@ func TestAPI_AllEndpoints_MethodNotAllowed(t *testing.T) {
 			t.Errorf("expected 400 Bad Request, got %d", w.Code)
 		}
 	})
+}
+
+func TestServer_ApplyConfig_EdgeCases(t *testing.T) {
+	srv, _, _ := setupTestServer(t)
+
+	// 1. Invalid routing expression
+	curCfg := srv.GetConfig()
+	badCfg := &contract.Config{
+		Port:        curCfg.Port,
+		AuthToken:   curCfg.AuthToken,
+		Providers:   curCfg.Providers,
+		DefaultTier: curCfg.DefaultTier,
+		Tiers: []contract.Tier{
+			{
+				Name:     "Bad Tier",
+				Model:    "bad",
+				Provider: "openrouter",
+				When:     "syntax error ((",
+			},
+		},
+	}
+	_, err := srv.ApplyConfig(badCfg, false)
+	if err == nil {
+		t.Errorf("expected error for invalid routing expression")
+	}
+
+	// 2. Valid with rawYAML
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+	srv.configPath = configPath
+	_ = os.WriteFile(configPath, []byte("version: 1\n"), 0600)
+
+	validCfg := *curCfg
+	backup, err := srv.ApplyConfig(&validCfg, true, []byte("version: 2\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if backup == "" {
+		t.Errorf("expected backup file path")
+	}
 }

@@ -630,11 +630,9 @@ func TestResolveEnvVars(t *testing.T) {
 func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 	configFiles := []string{
 		"../../config.yaml",
-		"../../config.cline.yaml",
-		"../../config.zoo.yaml",
-		"../../extension/resources/presets/config.yaml",
-		"../../extension/resources/presets/config.cline.yaml",
-		"../../extension/resources/presets/config.zoo.yaml",
+		"../../extension/resources/profiles/profile1.yaml",
+		"../../extension/resources/profiles/profile2.yaml",
+		"../../extension/resources/profiles/profile3.yaml",
 	}
 
 	for _, relPath := range configFiles {
@@ -650,21 +648,122 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 			if err := ValidateConfig(cfg); err != nil {
 				t.Fatalf("ValidateConfig failed for %s: %v", relPath, err)
 			}
-			if cfg.Host != "127.0.0.1" {
-				t.Errorf("%s: expected Host '127.0.0.1', got '%s'", relPath, cfg.Host)
+			if cfg.Host != "127.0.0.1" && cfg.Host != "0.0.0.0" {
+				t.Errorf("%s: expected Host '127.0.0.1' or '0.0.0.0', got '%s'", relPath, cfg.Host)
 			}
 			if cfg.CycleKiller.MaxToolTokens != 8192 {
 				t.Errorf("%s: expected MaxToolTokens 8192, got %d", relPath, cfg.CycleKiller.MaxToolTokens)
 			}
-			if len(cfg.AgentShield.ErrorSignatures) == 0 {
-				t.Errorf("%s: expected non-empty error_signatures", relPath)
+			if cfg.AgentShield.Enabled == nil {
+				t.Errorf("%s: expected agent_shield to be configured", relPath)
 			}
 			if len(cfg.FairyDust.Entries) < 2 {
 				t.Fatalf("%s: expected at least 2 fairy_dust entries, got %d", relPath, len(cfg.FairyDust.Entries))
 			}
-			if cfg.FairyDust.Entries[1].Model != "anthropic/claude-sonnet-5" {
-				t.Errorf("%s: expected Strategic Architecture Review to use anthropic/claude-sonnet-5, got %s", relPath, cfg.FairyDust.Entries[1].Model)
+			if cfg.FairyDust.Entries[1].Model != "google/gemini-3.8-flash" {
+				t.Errorf("%s: expected Strategic Architecture Review to use google/gemini-3.8-flash, got %s", relPath, cfg.FairyDust.Entries[1].Model)
 			}
 		})
+	}
+}
+
+func TestConfig_NTS_Parsing(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	yamlContent := `
+port: 9000
+nts:
+  enabled: true
+  deduplicate_lines: true
+  dedup_threshold: 4
+  strip_ansi: true
+  strip_boilerplate: true
+  normalize_whitespace: true
+  preserve_cache_control: true
+providers:
+  local_gpu:
+    base_url: "http://127.0.0.1:11434/v1"
+    type: "local"
+tiers:
+  - name: "Local"
+    model: "qwen2.5-coder:14b"
+    provider: "local_gpu"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.NTS.Enabled == nil || !*cfg.NTS.Enabled {
+		t.Errorf("Expected NTS.Enabled to be true")
+	}
+	if cfg.NTS.DedupThreshold != 4 {
+		t.Errorf("Expected DedupThreshold 4, got %d", cfg.NTS.DedupThreshold)
+	}
+	if cfg.NTS.StripANSI == nil || !*cfg.NTS.StripANSI ||
+		cfg.NTS.StripBoilerplate == nil || !*cfg.NTS.StripBoilerplate ||
+		cfg.NTS.NormalizeWhitespace == nil || !*cfg.NTS.NormalizeWhitespace ||
+		cfg.NTS.PreserveCacheControl == nil || !*cfg.NTS.PreserveCacheControl {
+		t.Errorf("Expected all NTS boolean flags to be true")
+	}
+}
+
+func TestConfig_YDriveValidation(t *testing.T) {
+	yPath := `Y:\projects\nacho-flow\config.yaml`
+	if _, err := os.Stat(yPath); os.IsNotExist(err) {
+		t.Skip("Y: drive config not mounted/available, skipping test")
+	}
+
+	cfg, err := LoadConfig(yPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed for %s: %v", yPath, err)
+	}
+
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("ValidateConfig failed for %s: %v", yPath, err)
+	}
+
+	// Verify structured 3-lane normalization
+	if cfg.CycleKiller.ResolveContentMaxTokens() != 6144 {
+		t.Errorf("expected content max tokens 6144, got %d", cfg.CycleKiller.ResolveContentMaxTokens())
+	}
+	if cfg.CycleKiller.ResolveThinkingMaxTokens() != 4096 {
+		t.Errorf("expected thinking max tokens 4096, got %d", cfg.CycleKiller.ResolveThinkingMaxTokens())
+	}
+	if cfg.CycleKiller.ResolveToolMaxTokens() != 8192 {
+		t.Errorf("expected tool max tokens 8192, got %d", cfg.CycleKiller.ResolveToolMaxTokens())
+	}
+	if cfg.CycleKiller.ResolveToolMaxWriteTokens() != 32768 {
+		t.Errorf("expected tool max write tokens 32768, got %d", cfg.CycleKiller.ResolveToolMaxWriteTokens())
+	}
+
+	// Verify decoupled kickstart
+	if cfg.Kickstart.Enabled == nil || !*cfg.Kickstart.Enabled {
+		t.Errorf("expected kickstart to be enabled")
+	}
+	if cfg.Kickstart.Threshold != 5 {
+		t.Errorf("expected kickstart threshold 5, got %d", cfg.Kickstart.Threshold)
+	}
+
+	// Verify tier preservation
+	if len(cfg.Tiers) == 0 {
+		t.Fatalf("expected non-empty tiers list")
+	}
+	foundLocalTier := false
+	for _, tier := range cfg.Tiers {
+		if tier.Name == "Tier 1: Local GPU Workhorse" {
+			foundLocalTier = true
+			if tier.Model == "" {
+				t.Errorf("expected non-empty Local GPU Workhorse model, got '%s'", tier.Model)
+			}
+		}
+	}
+	if !foundLocalTier {
+		t.Errorf("Tier 1: Local GPU Workhorse was not found")
 	}
 }

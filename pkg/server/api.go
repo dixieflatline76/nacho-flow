@@ -12,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/config"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
+	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 	"github.com/dixieflatline76/nacho-flow/pkg/safeio"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -380,14 +382,41 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 
 	// 5c. Dynamically reconfigure Classifier error signatures and kickstart write tools upon hot-reload
 	if classWithSigs, ok := s.classifier.(interface{ SetErrorSignatures([]string) }); ok {
-		classWithSigs.SetErrorSignatures(merged.AgentShield.ErrorSignatures)
+		sigs := agentregistry.DefaultRegistry().ErrorSignaturesList()
+		if len(merged.AgentShield.ErrorSignatures) > 0 {
+			sigs = mergeUniqueSlices(sigs, merged.AgentShield.ErrorSignatures)
+		}
+		classWithSigs.SetErrorSignatures(sigs)
 	}
-	writeTools := merged.CycleKiller.KickstartWriteTools
-	if len(writeTools) == 0 && len(merged.CycleBreaker.KickstartWriteTools) > 0 {
-		writeTools = merged.CycleBreaker.KickstartWriteTools
+	writeTools := agentregistry.DefaultRegistry().WriteToolsList()
+	var custom []string
+	if len(merged.Kickstart.CustomWriteTools) > 0 {
+		custom = merged.Kickstart.CustomWriteTools
+	} else if len(merged.Kickstart.WriteTools) > 0 {
+		custom = merged.Kickstart.WriteTools
+	} else if len(merged.CycleKiller.WriteTools) > 0 {
+		custom = merged.CycleKiller.WriteTools
+	} else if len(merged.CycleKiller.KickstartWriteTools) > 0 {
+		custom = merged.CycleKiller.KickstartWriteTools
+	} else if len(merged.CycleBreaker.WriteTools) > 0 {
+		custom = merged.CycleBreaker.WriteTools
+	} else if len(merged.CycleBreaker.KickstartWriteTools) > 0 {
+		custom = merged.CycleBreaker.KickstartWriteTools
+	}
+	if len(custom) > 0 {
+		writeTools = mergeUniqueSlices(writeTools, custom)
 	}
 	if classWithWriteTools, ok := s.classifier.(interface{ SetKickstartWriteTools([]string) }); ok {
 		classWithWriteTools.SetKickstartWriteTools(writeTools)
+	}
+
+	// 5d. Dynamically reconfigure ShieldManager upon hot-reload
+	if merged.AgentShield.Enabled == nil || *merged.AgentShield.Enabled {
+		questions := mergeUniqueSlices(agentregistry.DefaultRegistry().QuestionHeuristicsList(), merged.AgentShield.QuestionHeuristics)
+		modes := mergeUniqueSlices(agentregistry.DefaultRegistry().ModeHeuristicsList(), merged.AgentShield.ModeSwitchHeuristics)
+		s.shieldMgr = shield.NewShieldManager(questions, modes)
+	} else {
+		s.shieldMgr = nil
 	}
 
 	// 6. Arm Watchdog for Auto-Rollback (if next proxy requests fail consecutively)

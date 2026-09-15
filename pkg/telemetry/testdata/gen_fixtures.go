@@ -179,7 +179,7 @@ func main() {
 			}
 			if isCK {
 				rec.CycleBreakerReason = "repetition_ngram_loop"
-				rec.CycleProseTokens = 350
+				rec.CycleContentTokens = 350
 				rec.CycleMaxNgramFreq = 8
 			}
 

@@ -251,7 +251,7 @@ type StreamNormalizer struct {
 	cycleViolated          bool
 	cycleViolationReason   string
 	features               uint16
-	pendingTagClosing      bool
+	pendingDelimiterBuf    string
 	toolChunksScratch      []fastToolCallChunk
 	currentToolCategory    shield.ToolActivityCategory
 	hasActiveToolCall      bool
@@ -323,6 +323,12 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 				s.eofReached = true
 				s.inThinking = false
 				s.inStructuredReasoning = false
+				if s.pendingDelimiterBuf != "" {
+					if !agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(s.pendingDelimiterBuf)) {
+						s.outBuf.WriteString(s.pendingDelimiterBuf)
+					}
+					s.pendingDelimiterBuf = ""
+				}
 			} else {
 				return 0, readErr
 			}
@@ -376,14 +382,14 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		s.captureUsage(payload)
 	}
 
-	// Fast path: if outside reasoning, outside write tools, no pending tag to close, and no markers detected, pass line through directly
-	if !s.inThinking && !s.inWriteTool && !s.pendingTagClosing && s.pendingWriteTagBuf == "" && !hasAnyReasoningMarker(payload) && !hasAnyWriteMarker(payload) {
+	// Fast path: if outside reasoning, outside write tools, no pending delimiter buffer, and no markers detected, pass line through directly
+	if !s.inThinking && !s.inWriteTool && s.pendingDelimiterBuf == "" && s.pendingWriteTagBuf == "" && !hasAnyReasoningMarker(payload) && !hasAnyWriteMarker(payload) {
 		s.fastPassProse(line, payload)
 		return
 	}
 
-	// Fast path: if inside write tools, outside reasoning, no pending tag to close, and no markers detected, pass line through directly as tool write
-	if s.inWriteTool && !s.inThinking && !s.pendingTagClosing && s.pendingWriteTagBuf == "" && !hasAnyReasoningMarker(payload) && !hasAnyWriteMarker(payload) {
+	// Fast path: if inside write tools, outside reasoning, no pending delimiter buffer, and no markers detected, pass line through directly as tool write
+	if s.inWriteTool && !s.inThinking && s.pendingDelimiterBuf == "" && s.pendingWriteTagBuf == "" && !hasAnyReasoningMarker(payload) && !hasAnyWriteMarker(payload) {
 		s.fastPassWrite(line, payload)
 		return
 	}
@@ -451,11 +457,32 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 	if reasoningText != "" {
 		s.inThinking = true
 		s.inStructuredReasoning = true
-		choice.Delta.ReasoningContent = reasoningText
+
+		if s.pendingDelimiterBuf != "" {
+			reasoningText = s.pendingDelimiterBuf + reasoningText
+			s.pendingDelimiterBuf = ""
+		}
+
+		if idx := agentregistry.DefaultRegistry().FindTrailingDelimiterPrefix([]byte(reasoningText), 24); idx != -1 {
+			s.pendingDelimiterBuf = reasoningText[idx:]
+			reasoningText = reasoningText[:idx]
+		}
+
+		if strings.IndexByte(reasoningText, '<') != -1 {
+			buf := bufPool.Get().(*bytes.Buffer)
+			buf.Reset()
+			buf.WriteString(reasoningText)
+			cleaned := agentregistry.DefaultRegistry().StripControlTokensInPlace(buf.Bytes())
+			choice.Delta.ReasoningContent = string(cleaned)
+			bufPool.Put(buf)
+		} else {
+			choice.Delta.ReasoningContent = reasoningText
+		}
+
 		choice.Delta.Reasoning = ""
 		choice.Delta.Reason = ""
 
-		s.recordReasoning(reasoningText)
+		s.recordReasoning(choice.Delta.ReasoningContent)
 		if choice.Delta.Content != "" {
 			s.routeContentDelta(choice.Delta.Content)
 		}
@@ -492,13 +519,22 @@ func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
 	}
 
 	raw := choice.Delta.Content
-	if s.pendingTagClosing {
-		s.pendingTagClosing = false
-		raw = strings.TrimPrefix(raw, ">")
+	if s.pendingDelimiterBuf != "" {
+		raw = s.pendingDelimiterBuf + raw
+		s.pendingDelimiterBuf = ""
 	}
 
-	if strings.HasSuffix(raw, "<channel|") || strings.HasSuffix(raw, "<|channel|") || strings.HasSuffix(raw, "<|channel") {
-		s.pendingTagClosing = true
+	if idx := agentregistry.DefaultRegistry().FindTrailingDelimiterPrefix([]byte(raw), 24); idx != -1 {
+		s.pendingDelimiterBuf = raw[idx:]
+		raw = raw[:idx]
+	}
+
+	if raw == "" {
+		choice.Delta.ReasoningContent = ""
+		choice.Delta.Content = ""
+		choice.Delta.Reasoning = ""
+		choice.Delta.Reason = ""
+		return
 	}
 
 	content := tagReplacer.Replace(raw)
@@ -530,6 +566,23 @@ func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
 		}
 	} else {
 		proseDelta = content
+	}
+
+	if reasoningDelta != "" && strings.IndexByte(reasoningDelta, '<') != -1 {
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		buf.WriteString(reasoningDelta)
+		cleaned := agentregistry.DefaultRegistry().StripControlTokensInPlace(buf.Bytes())
+		reasoningDelta = string(cleaned)
+		bufPool.Put(buf)
+	}
+	if proseDelta != "" && strings.IndexByte(proseDelta, '<') != -1 {
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		buf.WriteString(proseDelta)
+		cleaned := agentregistry.DefaultRegistry().StripControlTokensInPlace(buf.Bytes())
+		proseDelta = string(cleaned)
+		bufPool.Put(buf)
 	}
 
 	choice.Delta.ReasoningContent = reasoningDelta
@@ -633,10 +686,31 @@ func (s *StreamNormalizer) emitChunk(chunk fastStreamChunk) {
 
 // handleDone finalizes the stream on [DONE] and synthesizes an agent tool call if required.
 func (s *StreamNormalizer) handleDone(doneLine []byte) {
+	wasInThinking := s.inThinking
 	s.inThinking = false
 	s.inStructuredReasoning = false
-	s.pendingTagClosing = false
 	s.hasActiveToolCall = false
+	if s.pendingDelimiterBuf != "" {
+		if !agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(s.pendingDelimiterBuf)) {
+			if wasInThinking {
+				s.recordReasoning(s.pendingDelimiterBuf)
+			} else {
+				s.recordProse(s.pendingDelimiterBuf)
+			}
+			chunk := fastStreamChunk{
+				Choices: []fastStreamChoice{
+					{
+						Index: 0,
+						Delta: fastDelta{
+							Content: s.pendingDelimiterBuf,
+						},
+					},
+				},
+			}
+			s.emitChunk(chunk)
+		}
+		s.pendingDelimiterBuf = ""
+	}
 	if s.pendingWriteTagBuf != "" {
 		if s.inWriteTool {
 			s.recordToolDelta(s.pendingWriteTagBuf)
