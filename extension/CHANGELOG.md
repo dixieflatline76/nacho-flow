@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-15
+
 ### Added
 - **🗜️ Nacho Token Saver (NTS) Live Telemetry Panel**: Live flight instruments in the webview dashboard visualizing real-time context compaction: Total Tokens Saved (1.4M+), Payload Reduced (5.4 MB+), and Compacted Turns.
 - **Zero-Allocation In-Flight Compaction Core (`pkg/nts`)**:
