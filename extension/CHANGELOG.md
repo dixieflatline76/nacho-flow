@@ -22,7 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, and Anthropic, cleanly normalizing thoughts into `<think>...</think>` tags for UI accordions.
 - **HotSauce In-Chat Directives**: Steer routing tiers and guardrails on-the-fly directly from prompt text (`@nacho:local`, `@nacho:cloud`, `@nacho:kickstart-off`, `@nacho:reset`).
 - **Rolling 1-Hour Window**: Added `Past 1 Hour` rolling window to telemetry aggregator alongside Today, This Week, and All Time.
-- **LAN Multi-Device Access**: Gateway server binds to `0.0.0.0` by default for local network agent pairing.
 
 ### Changed
 - **Dashboard UI Polish**: Modernized webview layout with right-aligned status chips, responsive flex header, minimalist server version badge, and single-row Kickstart & Fairy Dust supervisor layout.
