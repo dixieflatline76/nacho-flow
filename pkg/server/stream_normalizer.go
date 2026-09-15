@@ -321,13 +321,32 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 		if readErr != nil {
 			if readErr == io.EOF {
 				s.eofReached = true
+				wasInThinking := s.inThinking
 				s.inThinking = false
 				s.inStructuredReasoning = false
 				if s.pendingDelimiterBuf != "" {
-					if !agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(s.pendingDelimiterBuf)) {
-						s.outBuf.WriteString(s.pendingDelimiterBuf)
-					}
+					buf := s.pendingDelimiterBuf
 					s.pendingDelimiterBuf = ""
+					suppress := len(buf) >= 2 && agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(buf))
+					if !suppress {
+						delta := fastDelta{}
+						if wasInThinking {
+							s.recordReasoning(buf)
+							delta.ReasoningContent = buf
+						} else {
+							s.recordProse(buf)
+							delta.Content = buf
+						}
+						chunk := fastStreamChunk{
+							Choices: []fastStreamChoice{
+								{
+									Index: 0,
+									Delta: delta,
+								},
+							},
+						}
+						s.emitChunk(chunk)
+					}
 				}
 			} else {
 				return 0, readErr
@@ -691,25 +710,28 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 	s.inStructuredReasoning = false
 	s.hasActiveToolCall = false
 	if s.pendingDelimiterBuf != "" {
-		if !agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(s.pendingDelimiterBuf)) {
+		buf := s.pendingDelimiterBuf
+		s.pendingDelimiterBuf = ""
+		suppress := len(buf) >= 2 && agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(buf))
+		if !suppress {
+			delta := fastDelta{}
 			if wasInThinking {
-				s.recordReasoning(s.pendingDelimiterBuf)
+				s.recordReasoning(buf)
+				delta.ReasoningContent = buf
 			} else {
-				s.recordProse(s.pendingDelimiterBuf)
+				s.recordProse(buf)
+				delta.Content = buf
 			}
 			chunk := fastStreamChunk{
 				Choices: []fastStreamChoice{
 					{
 						Index: 0,
-						Delta: fastDelta{
-							Content: s.pendingDelimiterBuf,
-						},
+						Delta: delta,
 					},
 				},
 			}
 			s.emitChunk(chunk)
 		}
-		s.pendingDelimiterBuf = ""
 	}
 	if s.pendingWriteTagBuf != "" {
 		if s.inWriteTool {
@@ -927,7 +949,7 @@ func (s *StreamNormalizer) GetUsage() (StreamUsage, bool) {
 		}
 		return StreamUsage{
 			CompletionTokens: estTokens,
-			TotalTokens:      estTokens,
+			TotalTokens:      0,
 		}, false
 	}
 	return StreamUsage{}, false

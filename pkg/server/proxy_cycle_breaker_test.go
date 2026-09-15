@@ -2,10 +2,12 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1593,4 +1595,254 @@ func TestSolveNQueens(t *testing.T) {
 			t.Errorf("Protocol violation: finish_reason 'stop' emitted on severed tool call! Causes client JSON.parse() crashes.")
 		}
 	})
+}
+
+type cycleTestCaptureSink struct {
+	records []telemetry.TurnRecord
+	mu      sync.Mutex
+}
+
+func (c *cycleTestCaptureSink) Emit(record telemetry.TurnRecord) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.records = append(c.records, record)
+}
+
+func (c *cycleTestCaptureSink) Close() error {
+	return nil
+}
+
+func TestProxy_CycleBreaker_TelemetryPreservesCycleStatsAndPromptTokens(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		// Emit repeating thinking phrase that triggers thinking_repetition_loop_detected
+		for i := 0; i < 8; i++ {
+			chunk := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<think>let us carefully check the queens column attacks now. </think>\"}}]}\n\n"
+			w.Write([]byte(chunk))
+		}
+		w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer mockUpstream.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		CycleBreaker: contract.CycleBreakerConfig{
+			Enabled:             &enabled,
+			RepetitionWindow:    5,
+			RepetitionThreshold: 3,
+			MaxRetries:          0,
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"mock-local": {
+				BaseURL: mockUpstream.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Local Worker",
+				Model:    "gemma4:12b",
+				Provider: "mock-local",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	sink := &cycleTestCaptureSink{}
+	srv.tracker.AddSink(sink)
+
+	// Create request with substantial prompt content (e.g. ~5000 chars -> ~1250 tokens)
+	longPrompt := strings.Repeat("Solve N-Queens using recursion with bitwise validation. ", 100)
+	reqPayload := fmt.Sprintf(`{
+		"model": "gemma4:12b",
+		"stream": true,
+		"messages": [{"role": "user", "content": %q}],
+		"tools": [{"type": "function", "function": {"name": "write_to_file"}}]
+	}`, longPrompt)
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	// Allow background tracker worker to flush observation
+	srv.tracker.Flush()
+	time.Sleep(50 * time.Millisecond)
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.records) == 0 {
+		t.Fatalf("expected at least 1 telemetry record emitted, got 0")
+	}
+
+	lastRecord := sink.records[len(sink.records)-1]
+	if !lastRecord.CycleBreakerTriggered {
+		t.Fatalf("expected CycleBreakerTriggered to be true, got false")
+	}
+
+	// 1. Bug 2 check: Cycle stats MUST be retained, NOT wiped to 0
+	if lastRecord.CycleThinkingTokens == 0 {
+		t.Errorf("expected CycleThinkingTokens > 0, but got 0 (stats were wiped before recording)")
+	}
+	if lastRecord.CycleMaxThinkingNgramFreq == 0 {
+		t.Errorf("expected CycleMaxThinkingNgramFreq > 0, but got 0")
+	}
+
+	// 2. Bug 1 check: Total tokens MUST preserve prompt tokens, NOT only completion tokens
+	if lastRecord.Tokens < 500 {
+		t.Errorf("expected Tokens to include prompt tokens (>500), but got %d (prompt tokens were dropped!)", lastRecord.Tokens)
+	}
+}
+
+func TestProxy_CycleBreaker_Phase2_MidStreamTelemetryPreservation(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		// 1. Emit enough unique prose to easily pass the 2048-byte peek window into Phase 2
+		for i := 0; i < 30; i++ {
+			chunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Step %d: Evaluating distinct state permutation on board layout.\n\"}}]}\n\n", i)
+			w.Write([]byte(chunk))
+		}
+
+		// 2. Emit repeating thinking phrase in Phase 2 to trigger mid-stream cycle severing
+		for i := 0; i < 8; i++ {
+			chunk := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<think>let us carefully check the queens column attacks now. </think>\"}}]}\n\n"
+			w.Write([]byte(chunk))
+		}
+		w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer mockUpstream.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		CycleBreaker: contract.CycleBreakerConfig{
+			Enabled:             &enabled,
+			RepetitionWindow:    5,
+			RepetitionThreshold: 3,
+			MaxRetries:          0,
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"mock-local": {
+				BaseURL: mockUpstream.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Local Worker",
+				Model:    "gemma4:12b",
+				Provider: "mock-local",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	sink := &cycleTestCaptureSink{}
+	srv.tracker.AddSink(sink)
+
+	longPrompt := strings.Repeat("Solve N-Queens using recursion with bitwise validation. ", 100)
+	reqPayload := fmt.Sprintf(`{
+		"model": "gemma4:12b",
+		"stream": true,
+		"messages": [{"role": "user", "content": %q}],
+		"tools": [{"type": "function", "function": {"name": "write_to_file"}}]
+	}`, longPrompt)
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	srv.tracker.Flush()
+	time.Sleep(50 * time.Millisecond)
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.records) == 0 {
+		t.Fatalf("expected at least 1 telemetry record emitted, got 0")
+	}
+
+	lastRecord := sink.records[len(sink.records)-1]
+	if !lastRecord.CycleBreakerTriggered {
+		t.Fatalf("expected CycleBreakerTriggered to be true in Phase 2, got false")
+	}
+	if lastRecord.CycleThinkingTokens == 0 {
+		t.Errorf("expected CycleThinkingTokens > 0 in Phase 2, got 0")
+	}
+	if lastRecord.CycleMaxThinkingNgramFreq == 0 {
+		t.Errorf("expected CycleMaxThinkingNgramFreq > 0 in Phase 2, got 0")
+	}
+	if lastRecord.Tokens < 500 {
+		t.Errorf("expected Tokens to include prompt tokens (>500), but got %d", lastRecord.Tokens)
+	}
+}
+
+func TestProxy_CycleBreaker_Phase1_ToolCallViolation(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_cmd_1","type":"function","function":{"name":"execute_command","arguments":"ls -la && ls -la && "}}]}}]}` + "\n\n"))
+		for i := 0; i < 6; i++ {
+			w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ls -la && ls -la && "}}]}}]}` + "\n\n"))
+		}
+		w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer mockUpstream.Close()
+
+	enabled := true
+	cfg := &contract.Config{
+		Port: 8000,
+		CycleBreaker: contract.CycleBreakerConfig{
+			Enabled:             &enabled,
+			RepetitionThreshold: 3,
+			RepetitionWindow:    4,
+			MaxRetries:          0,
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"mock-local": {
+				BaseURL: mockUpstream.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Local Worker",
+				Model:    "gemma4:12b",
+				Provider: "mock-local",
+				When:     "true",
+			},
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, contract.Tier{})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	reqPayload := `{
+		"model": "gemma4:12b",
+		"stream": true,
+		"messages": [{"role": "user", "content": "Run commands"}],
+		"tools": [{"type": "function", "function": {"name": "execute_command"}}]
+	}`
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	respBody := rec.Body.String()
+	if !strings.Contains(respBody, "tool_cycle_detected") {
+		t.Fatalf("expected tool_cycle_detected in Phase 1 severed tool stream, got:\n%s", respBody)
+	}
 }

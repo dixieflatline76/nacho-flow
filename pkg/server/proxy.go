@@ -1137,9 +1137,17 @@ func (s *Server) dispatchTier(
 		// Check Cycle Breaker violation on stream peek (Phase 1)
 		if cb != nil && cb.IsEnabled() && !isFallback {
 			if violated, reason := normalizer.CheckCycleViolation(); violated {
-				_ = normalizer.Close()
 				reqCtx.CycleBreakerTriggered = true
 				reqCtx.CycleBreakerReason = reason
+				if cb != nil {
+					reqCtx.CycleContentTokens = cb.ContentTokens()
+					reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
+					reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
+					reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+					reqCtx.CycleToolTokens = cb.ToolTokens()
+					reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
+				}
+				_ = normalizer.Close()
 				reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Runaway monologue intercepted",
 					slog.String("reason", reason),
 					slog.String("tier", targetTier.Name),
@@ -1168,6 +1176,39 @@ func (s *Server) dispatchTier(
 					s.dispatchTier(w, r, reqCtx, defaultTier, body, startTime, reqLogger, true)
 					return
 				}
+
+				// Stage 3: Sever stream immediately with loop notice if no cloud fallback tier is configured
+				w.Header().Set(contract.HeaderContentType, contract.ContentTypeEventStream)
+				w.Header().Set(contract.HeaderNachoRouterTier, targetTier.Name)
+				w.Header().Set(contract.HeaderSpiceRouterTier, targetTier.Name)
+				w.Header().Set(contract.HeaderNachoTargetModel, targetTier.Model)
+				w.Header().Set(contract.HeaderSpiceTargetModel, targetTier.Model)
+				w.WriteHeader(http.StatusOK)
+
+				isToolViolation := normalizer.HasActiveToolCall() || strings.HasPrefix(reason, "tool_") || strings.HasPrefix(reason, "write_")
+				if isToolViolation {
+					errPayload, _ := json.Marshal(map[string]any{
+						"error": map[string]any{
+							"message": fmt.Sprintf("Nacho Flow cycle breaker: model (%s) got stuck in a %s during tool call execution.", targetTier.Model, formatCycleKillReason(reason)),
+							"type":    "cycle_killer_error",
+							"code":    "tool_cycle_detected",
+						},
+					})
+					_, _ = w.Write(fmt.Appendf(nil, "data: %s\n\ndata: [DONE]\n\n", errPayload))
+				} else {
+					noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
+					escapedNotice, _ := json.Marshal(noticeText)
+					noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
+					finishChunk := "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+					_, _ = w.Write([]byte(noticeChunk))
+					_, _ = w.Write([]byte(finishChunk))
+				}
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+				usage, _ := normalizer.GetUsage()
+				s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, http.StatusOK, startTime, isFallback, reqLogger, ntsTokensSaved, ntsBytesSaved)
+				return
 			}
 		}
 
@@ -1206,6 +1247,14 @@ func (s *Server) dispatchTier(
 					cooldown, floor := s.resolveCycleKillParams()
 					if s.sessionTracker != nil {
 						s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
+					}
+					if cb != nil {
+						reqCtx.CycleContentTokens = cb.ContentTokens()
+						reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
+						reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
+						reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+						reqCtx.CycleToolTokens = cb.ToolTokens()
+						reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
 					}
 					isToolViolation := normalizer.HasActiveToolCall() || strings.HasPrefix(reason, "tool_") || strings.HasPrefix(reason, "write_")
 					_ = normalizer.Close()
@@ -1257,7 +1306,7 @@ func (s *Server) dispatchTier(
 				)
 			}
 		}
-		if cb != nil {
+		if cb != nil && !reqCtx.CycleBreakerTriggered {
 			reqCtx.CycleContentTokens = cb.ContentTokens()
 			reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
 			reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
@@ -1486,7 +1535,7 @@ func (s *Server) recordTelemetry(
 	}
 	completionTokens := usage.CompletionTokens
 	totalTokens := usage.TotalTokens
-	if totalTokens == 0 {
+	if totalTokens == 0 || usage.PromptTokens == 0 {
 		totalTokens = promptTokens + completionTokens
 	}
 

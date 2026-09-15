@@ -1649,3 +1649,38 @@ func TestStreamNormalizer_HandleDone_DirectPendingDelimiter(t *testing.T) {
 	norm2.handleDone([]byte("data: [DONE]\n\n"))
 	norm2.Close()
 }
+
+func TestStreamNormalizer_HandleDone_PreservesTrailingLessThan(t *testing.T) {
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<think>analyzing</think>for (int i = 0; i <\"}}]}\n\ndata: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if !strings.Contains(result, "for (int i = 0; i ") || !strings.Contains(result, "\"content\":\"<\"") {
+		t.Fatalf("expected output to preserve trailing '<' at stream end, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_HandleDone_PreservesTrailingLessThanInThinking(t *testing.T) {
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<think>checking if x <\"}}]}\n\ndata: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if !strings.Contains(result, "\"reasoning_content\":\"checking if x <\"") && !strings.Contains(result, "\"reasoning_content\":\"<\"") {
+		t.Fatalf("expected trailing '<' in thinking to flush to reasoning_content, got:\n%s", result)
+	}
+	if strings.Contains(result, "\"content\":\"<\"") {
+		t.Fatalf("trailing '<' from thinking was erroneously emitted into prose content: %s", result)
+	}
+}
