@@ -26,6 +26,7 @@ type SanitizedConfigDTO struct {
 	AgentShield contract.AgentShieldConfig
 	CycleKiller contract.CycleBreakerConfig
 	FairyDust   contract.FairyDustConfig
+	NTS         contract.NTSConfig
 	Providers   map[string]SanitizedProviderDTO
 	Tiers       []contract.Tier
 	DefaultTier contract.Tier
@@ -51,6 +52,7 @@ func ToPublicDTO(cfg *contract.Config) *SanitizedConfigDTO {
 		AgentShield: cfg.AgentShield,
 		CycleKiller: ck,
 		FairyDust:   cfg.FairyDust,
+		NTS:         cfg.NTS,
 		Providers:   make(map[string]SanitizedProviderDTO, len(cfg.Providers)),
 		Tiers:       make([]contract.Tier, len(cfg.Tiers)),
 		DefaultTier: cfg.DefaultTier,
@@ -122,6 +124,9 @@ func (d *SanitizedConfigDTO) ToMap() map[string]any {
 	if d.FairyDust.Enabled != nil {
 		res["fairy_dust"] = d.FairyDust
 	}
+	if d.NTS.Enabled != nil || d.NTS.StripANSI != nil || d.NTS.ResolveCR != nil || d.NTS.DeduplicateLines != nil || d.NTS.StripBoilerplate != nil || d.NTS.NormalizeWhitespace != nil || d.NTS.CompactStaleFileReads != nil {
+		res["nts"] = d.NTS
+	}
 	return res
 }
 
@@ -191,6 +196,9 @@ func SerializeConfigYAML(cfg *contract.Config) ([]byte, error) {
 	}
 	if cfg.FairyDust.Enabled != nil {
 		res["fairy_dust"] = cfg.FairyDust
+	}
+	if cfg.NTS.Enabled != nil || cfg.NTS.StripANSI != nil || cfg.NTS.ResolveCR != nil || cfg.NTS.DeduplicateLines != nil || cfg.NTS.StripBoilerplate != nil || cfg.NTS.NormalizeWhitespace != nil || cfg.NTS.CompactStaleFileReads != nil {
+		res["nts"] = cfg.NTS
 	}
 	return yaml.Marshal(res)
 }

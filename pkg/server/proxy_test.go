@@ -2613,3 +2613,102 @@ func TestServer_ServeHTTP_EdgeBranches(t *testing.T) {
 		t.Errorf("expected 200 for /v1/stats, got %d", recStats.Code)
 	}
 }
+
+func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
+	var mu sync.Mutex
+	var receivedBody []byte
+
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		receivedBody = body
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":"OK"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	bTrue := true
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {
+				BaseURL: mockUpstream.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Mock Tier",
+				Model:    "mock-model",
+				Provider: "mock",
+				When:     "true",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Mock Tier",
+			Model:    "mock-model",
+			Provider: "mock",
+		},
+		NTS: contract.NTSConfig{
+			Enabled:          &bTrue,
+			StripBoilerplate: &bTrue,
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier, cfg.Providers)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	testPayload := `{
+		"model": "mock-model",
+		"messages": [
+			{"role": "user", "content": "run tests"},
+			{"role": "assistant", "content": "", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "execute_command", "arguments": "{}"}}]},
+			{"role": "tool", "tool_call_id": "call_1", "name": "execute_command", "content": "Running test suite\n(Use ` + "`node --trace-warnings ...`" + ` to show where the warning was created)\nAll tests passed"}
+		]
+	}`
+
+	// 1. Turn 1: NTS enabled with strip_boilerplate: true
+	req1 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(testPayload))
+	rec1 := httptest.NewRecorder()
+	srv.ServeHTTP(rec1, req1)
+
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on turn 1, got %d: %s", rec1.Code, rec1.Body.String())
+	}
+	mu.Lock()
+	body1 := string(receivedBody)
+	mu.Unlock()
+	if strings.Contains(body1, "trace-warnings") {
+		t.Fatalf("expected boilerplate to be STRIPPED on turn 1, but upstream received:\n%s", body1)
+	}
+
+	// 2. Hot-Reload: Toggle NTS to enabled: false WITHOUT restarting server
+	bFalse := false
+	hotReloadCfg := *cfg
+	hotReloadCfg.NTS = contract.NTSConfig{
+		Enabled: &bFalse,
+	}
+	if _, err := srv.ApplyConfig(&hotReloadCfg, false); err != nil {
+		t.Fatalf("ApplyConfig failed: %v", err)
+	}
+
+	// 3. Turn 2: Exact same payload sent to running server
+	req2 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(testPayload))
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on turn 2, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+	mu.Lock()
+	body2 := string(receivedBody)
+	mu.Unlock()
+	if !strings.Contains(body2, "trace-warnings") {
+		t.Fatalf("expected boilerplate to be PRESERVED after hot-reload disabled NTS, but it was missing:\n%s", body2)
+	}
+}
+

@@ -28,9 +28,10 @@ import (
 )
 
 type runtimeState struct {
-	config    *contract.Config
-	evaluator contract.Evaluator
-	registry  *provider.Registry
+	config         *contract.Config
+	evaluator      contract.Evaluator
+	registry       *provider.Registry
+	ntsTransformer *nts.Transformer
 }
 
 type Server struct {
@@ -305,44 +306,7 @@ func NewServerWithTelemetryAndRegistry(
 		shieldMgr = shield.NewShieldManager(questions, modes)
 	}
 
-	ntsCfg := nts.DefaultConfig()
-	if cfg.NTS.Enabled != nil {
-		ntsCfg.Enabled = *cfg.NTS.Enabled
-	}
-	if cfg.NTS.StripANSI != nil {
-		ntsCfg.StripANSI = *cfg.NTS.StripANSI
-	}
-	if cfg.NTS.ResolveCR != nil {
-		ntsCfg.ResolveCR = *cfg.NTS.ResolveCR
-	}
-	if cfg.NTS.DeduplicateLines != nil {
-		ntsCfg.DeduplicateLines = *cfg.NTS.DeduplicateLines
-	}
-	if cfg.NTS.DedupThreshold > 0 {
-		ntsCfg.DedupThreshold = cfg.NTS.DedupThreshold
-	}
-	if cfg.NTS.StripBoilerplate != nil {
-		ntsCfg.StripBoilerplate = *cfg.NTS.StripBoilerplate
-	}
-	if cfg.NTS.NormalizeWhitespace != nil {
-		ntsCfg.NormalizeWhitespace = *cfg.NTS.NormalizeWhitespace
-	}
-	if cfg.NTS.PreserveFileReads != nil {
-		ntsCfg.PreserveFileReads = *cfg.NTS.PreserveFileReads
-	}
-	if cfg.NTS.PreserveFileWrites != nil {
-		ntsCfg.PreserveFileWrites = *cfg.NTS.PreserveFileWrites
-	}
-	if cfg.NTS.PreserveCacheControl != nil {
-		ntsCfg.PreserveCacheControl = *cfg.NTS.PreserveCacheControl
-	}
-	if cfg.NTS.CompactStaleFileReads != nil {
-		ntsCfg.CompactStaleFileReads = *cfg.NTS.CompactStaleFileReads
-	}
-	if cfg.NTS.StaleReadDepth > 0 {
-		ntsCfg.StaleReadDepth = cfg.NTS.StaleReadDepth
-	}
-	ntsTr := nts.NewTransformer(ntsCfg)
+	ntsTr := BuildNTSTransformer(cfg.NTS)
 
 	srv := &Server{
 		classifier:     class,
@@ -360,12 +324,67 @@ func NewServerWithTelemetryAndRegistry(
 	}
 
 	srv.state.Store(&runtimeState{
-		config:    cfg,
-		evaluator: eval,
-		registry:  reg,
+		config:         cfg,
+		evaluator:      eval,
+		registry:       reg,
+		ntsTransformer: ntsTr,
 	})
 
 	return srv
+}
+
+// BuildNTSTransformer builds an *nts.Transformer from contract.NTSConfig.
+// Returns nil if NTS is disabled.
+func BuildNTSTransformer(cfg contract.NTSConfig) *nts.Transformer {
+	ntsCfg := nts.DefaultConfig()
+	if cfg.Enabled != nil {
+		ntsCfg.Enabled = *cfg.Enabled
+	}
+	if !ntsCfg.Enabled {
+		return nil
+	}
+	if cfg.StripANSI != nil {
+		ntsCfg.StripANSI = *cfg.StripANSI
+	}
+	if cfg.ResolveCR != nil {
+		ntsCfg.ResolveCR = *cfg.ResolveCR
+	}
+	if cfg.DeduplicateLines != nil {
+		ntsCfg.DeduplicateLines = *cfg.DeduplicateLines
+	}
+	if cfg.DedupThreshold > 0 {
+		ntsCfg.DedupThreshold = cfg.DedupThreshold
+	}
+	if cfg.StripBoilerplate != nil {
+		ntsCfg.StripBoilerplate = *cfg.StripBoilerplate
+	}
+	if cfg.NormalizeWhitespace != nil {
+		ntsCfg.NormalizeWhitespace = *cfg.NormalizeWhitespace
+	}
+	if cfg.PreserveFileReads != nil {
+		ntsCfg.PreserveFileReads = *cfg.PreserveFileReads
+	}
+	if cfg.PreserveFileWrites != nil {
+		ntsCfg.PreserveFileWrites = *cfg.PreserveFileWrites
+	}
+	if cfg.PreserveCacheControl != nil {
+		ntsCfg.PreserveCacheControl = *cfg.PreserveCacheControl
+	}
+	if cfg.CompactStaleFileReads != nil {
+		ntsCfg.CompactStaleFileReads = *cfg.CompactStaleFileReads
+	}
+	if cfg.StaleReadDepth > 0 {
+		ntsCfg.StaleReadDepth = cfg.StaleReadDepth
+	}
+	return nts.NewTransformer(ntsCfg)
+}
+
+// GetNTSTransformer returns the active *nts.Transformer from runtimeState.
+func (s *Server) GetNTSTransformer() *nts.Transformer {
+	if st := s.state.Load(); st != nil {
+		return st.ntsTransformer
+	}
+	return nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -1004,15 +1023,15 @@ func (s *Server) dispatchTier(
 	preparedBody, _ = s.sanitizer.SanitizePayload(preparedBody, hasVision)
 
 	var ntsTokensSaved, ntsBytesSaved int
-	if s.ntsTransformer != nil {
+	if ntsTr := s.GetNTSTransformer(); ntsTr != nil {
 		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
-			if transformed, res, err := s.ntsTransformer.TransformAnthropic(preparedBody); err == nil && !res.Bypassed {
+			if transformed, res, err := ntsTr.TransformAnthropic(preparedBody); err == nil && !res.Bypassed {
 				preparedBody = transformed
 				ntsTokensSaved = res.TokensSaved
 				ntsBytesSaved = res.BytesSaved
 			}
 		} else {
-			if transformed, res, err := s.ntsTransformer.TransformOpenAI(preparedBody); err == nil && !res.Bypassed {
+			if transformed, res, err := ntsTr.TransformOpenAI(preparedBody); err == nil && !res.Bypassed {
 				preparedBody = transformed
 				ntsTokensSaved = res.TokensSaved
 				ntsBytesSaved = res.BytesSaved
