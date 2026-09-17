@@ -15,8 +15,17 @@ type AgentProfile struct {
 	InteractiveTools   []string `json:"interactive_tools,omitempty"`
 	ModeTool           string   `json:"mode_tool,omitempty"`
 	ModeHeuristics     []string `json:"mode_heuristics,omitempty"`
-	QuestionHeuristics []string `json:"question_heuristics,omitempty"`
-	ErrorSignatures    []string `json:"error_signatures,omitempty"`
+	QuestionHeuristics []string             `json:"question_heuristics,omitempty"`
+	ErrorSignatures    []string             `json:"error_signatures,omitempty"`
+	ParameterSanitizers []ParameterSanitizer `json:"parameter_sanitizers,omitempty"`
+}
+
+// ParameterSanitizer defines argument pattern replacements to heal model-generated parameter errors in-place.
+type ParameterSanitizer struct {
+	Tool            string   `json:"tool,omitempty"`
+	Parameter       string   `json:"parameter"`
+	InvalidPatterns []string `json:"invalid_patterns"`
+	Replacements    []string `json:"replacements"`
 }
 
 // Manifest defines the versioned index of all agent profiles, shell catalog, and reasoning catalog.
@@ -27,14 +36,20 @@ type Manifest struct {
 	Reasoning string            `json:"reasoning,omitempty"`
 }
 
+// ResuscitationCatalog defines prompt and message text to synthesize when a model turn concludes with reasoning only.
+type ResuscitationCatalog struct {
+	SilentTurnMessage string `json:"silent_turn_message,omitempty"`
+}
+
 // ReasoningCatalog defines model chat-template and thought delimiters to canonicalize or strip.
 type ReasoningCatalog struct {
-	Version          string              `json:"version"`
-	CanonicalOpen    map[string][]string `json:"canonical_open"`
-	CanonicalClose   map[string][]string `json:"canonical_close"`
-	StripDelimiters  []string            `json:"strip_delimiters"`
-	ReasoningFields  []string            `json:"reasoning_fields"`
-	ExtraByteMarkers []string            `json:"extra_byte_markers"`
+	Version          string               `json:"version"`
+	CanonicalOpen    map[string][]string  `json:"canonical_open"`
+	CanonicalClose   map[string][]string  `json:"canonical_close"`
+	StripDelimiters  []string             `json:"strip_delimiters"`
+	ReasoningFields  []string             `json:"reasoning_fields"`
+	ExtraByteMarkers []string             `json:"extra_byte_markers"`
+	Resuscitation    ResuscitationCatalog `json:"resuscitation,omitempty"`
 }
 
 // ShellCatalog defines the platform-specific commands and pipes that perform file writes.

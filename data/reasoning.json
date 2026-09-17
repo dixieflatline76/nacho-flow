@@ -15,14 +15,12 @@
     "</think>": [
       "</thinking>",
       "</thought>",
-      "<|im_end|>"
+      "<|im_end|>",
+      "<channel|>",
+      "<|channel|>"
     ]
   },
   "strip_delimiters": [
-    "<|call:",
-    "<call:",
-    "<channel|>",
-    "<|channel|>",
     "<|channel>",
     "<channel|",
     "<|channel|",
@@ -30,10 +28,11 @@
     "</channel>",
     "<start_of_turn>",
     "<end_of_turn>",
-    "<|tool_call>",
-    "<tool_call|>",
     "<|tool_response>",
     "<tool_response|>",
+    "<tool_call|>",
+    "</tool_call>",
+    "<|\"|>}",
     "<|\"|>"
   ],
   "reasoning_fields": [
@@ -49,5 +48,8 @@
     "|channel",
     "tool_call",
     "tool_response"
-  ]
+  ],
+  "resuscitation": {
+    "silent_turn_message": "Review and codebase verification completed. Proceeding with automated test verification and next implementation steps."
+  }
 }

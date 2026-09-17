@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -176,5 +177,41 @@ func TestStreamNormalizer_CycleBreaker_CleanStream(t *testing.T) {
 	violated, reason := normalizer.CheckCycleViolation()
 	if violated {
 		t.Fatalf("clean stream should not trigger violation, got: %s", reason)
+	}
+}
+
+func TestStreamNormalizer_CycleBreaker_FragmentedThinkingTag(t *testing.T) {
+	enabled := true
+	cbCfg := &contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		MaxContentTokens:    80,
+		RepetitionWindow:    5,
+		RepetitionThreshold: 3,
+	}
+	cb := shield.NewCycleBreaker(cbCfg)
+
+	// A stream where <think> is fragmented precisely across SSE boundaries
+	// creating a partial reasoning tag that used to bypass the fastPassProse logic.
+	streamData := ""
+	streamData += "data: {\"choices\":[{\"delta\":{\"content\":\"Let's evaluate. <thin\"}}]}\n\n"
+	streamData += "data: {\"choices\":[{\"delta\":{\"content\":\"k>\\nWe need to output a lot of reasoning tokens so the cycle breaker would trip if it thought this was prose. \"}}]}\n\n"
+	for i := 0; i < 20; i++ {
+		streamData += fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"content\":\"distinct_reasoning_token_%d \"}}]}\n\n", i)
+	}
+	streamData += "data: {\"choices\":[{\"delta\":{\"content\":\"</think>\\nFinal answer\"}}]}\n\n"
+	streamData += "data: [DONE]\n\n"
+
+	reader := io.NopCloser(bytes.NewReader([]byte(streamData)))
+	normalizer := NewStreamNormalizer(reader)
+	normalizer.SetCycleBreaker(cb)
+
+	_, err := io.ReadAll(normalizer)
+	if err != nil {
+		t.Fatalf("unexpected error reading stream: %v", err)
+	}
+
+	violated, reason := normalizer.CheckCycleViolation()
+	if violated {
+		t.Errorf("expected no violation since reasoning tokens are not counted towards prose monologue, but got violation: %v", reason)
 	}
 }

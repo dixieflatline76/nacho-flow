@@ -1590,6 +1590,9 @@ func TestSolveNQueens(t *testing.T) {
 		if !strings.Contains(respBody, "cycle_killer_error") {
 			t.Errorf("Expected cycle_killer_error type in severed response")
 		}
+		if !strings.Contains(respBody, "Tool Loop Intercepted") {
+			t.Errorf("Expected user-facing notice 'Tool Loop Intercepted' in severed response, got:\n%s", respBody)
+		}
 		// CRITICAL: finish_reason: "stop" must NEVER be emitted on severed tool calls!
 		if strings.Contains(respBody, `"finish_reason":"stop"`) {
 			t.Errorf("Protocol violation: finish_reason 'stop' emitted on severed tool call! Causes client JSON.parse() crashes.")

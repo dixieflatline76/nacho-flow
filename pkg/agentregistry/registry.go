@@ -6,6 +6,7 @@
 package agentregistry
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -42,6 +43,10 @@ type Registry struct {
 	reasoningByteMarkers   [][]byte
 	controlTokensBytes     [][]byte
 	delimiterPrefixes      [][]byte
+	sanitizerTargets       [][]byte
+	sanitizerReplacements  [][]byte
+	sanitizerMarkers       [][]byte
+	silentTurnChunkBytes   []byte
 }
 
 var (
@@ -113,6 +118,13 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 	questionHeuristicsMap := make(map[string]struct{})
 	errorSignaturesMap := make(map[string]struct{})
 
+	type sanitizerRule struct {
+		target      []byte
+		replacement []byte
+	}
+	var rawRules []sanitizerRule
+	markerSet := make(map[string]struct{})
+
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -157,6 +169,27 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 				errorSignaturesMap[trimmed] = struct{}{}
 			}
 		}
+
+		for _, ps := range profile.ParameterSanitizers {
+			if len(ps.InvalidPatterns) != len(ps.Replacements) {
+				return fmt.Errorf("agentregistry: invalid parameter sanitizer rule for tool %q, parameter %q: pattern count (%d) does not match replacement count (%d)", ps.Tool, ps.Parameter, len(ps.InvalidPatterns), len(ps.Replacements))
+			}
+			if ps.Parameter != "" {
+				markerSet[ps.Parameter] = struct{}{}
+			}
+			for i := range ps.InvalidPatterns {
+				pat := ps.InvalidPatterns[i]
+				rep := ps.Replacements[i]
+				if len(rep) > len(pat) {
+					return fmt.Errorf("agentregistry: invalid parameter sanitizer rule for tool %q, parameter %q: replacement %q (%d bytes) exceeds pattern %q (%d bytes); violates zero-alloc in-place invariant", ps.Tool, ps.Parameter, rep, len(rep), pat, len(pat))
+				}
+				rawRules = append(rawRules, sanitizerRule{
+					target:      []byte(pat),
+					replacement: []byte(rep),
+				})
+				markerSet[pat] = struct{}{}
+			}
+		}
 	}
 
 	r.fileReadToolsList = mapToSortedSlice(r.fileReadTools)
@@ -168,6 +201,25 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 	r.errorSignaturesLower = make([]string, len(r.errorSignaturesList))
 	for i, s := range r.errorSignaturesList {
 		r.errorSignaturesLower[i] = strings.ToLower(s)
+	}
+
+	sort.Slice(rawRules, func(i, j int) bool {
+		if len(rawRules[i].target) != len(rawRules[j].target) {
+			return len(rawRules[i].target) > len(rawRules[j].target)
+		}
+		return string(rawRules[i].target) < string(rawRules[j].target)
+	})
+
+	r.sanitizerTargets = make([][]byte, len(rawRules))
+	r.sanitizerReplacements = make([][]byte, len(rawRules))
+	for i, rule := range rawRules {
+		r.sanitizerTargets[i] = rule.target
+		r.sanitizerReplacements[i] = rule.replacement
+	}
+
+	r.sanitizerMarkers = make([][]byte, 0, len(markerSet))
+	for m := range markerSet {
+		r.sanitizerMarkers = append(r.sanitizerMarkers, []byte(m))
 	}
 
 	return nil
@@ -231,6 +283,10 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 	r.reasoningByteMarkers = newReg.reasoningByteMarkers
 	r.controlTokensBytes = newReg.controlTokensBytes
 	r.delimiterPrefixes = newReg.delimiterPrefixes
+	r.sanitizerTargets = newReg.sanitizerTargets
+	r.sanitizerReplacements = newReg.sanitizerReplacements
+	r.sanitizerMarkers = newReg.sanitizerMarkers
+	r.silentTurnChunkBytes = newReg.silentTurnChunkBytes
 	return nil
 }
 
@@ -375,6 +431,20 @@ func (r *Registry) StripControlTokensInPlace(b []byte) []byte {
 		return b
 	}
 	return zeroalloc.StripSubslicesInPlace(b, r.controlTokensBytes)
+}
+
+// HasControlTokenMarker reports whether payload contains any cataloged control token or delimiter marker.
+// Lock-free, zero heap allocation.
+func (r *Registry) HasControlTokenMarker(payload []byte) bool {
+	if r == nil || len(r.controlTokensBytes) == 0 || len(payload) == 0 {
+		return false
+	}
+	for _, marker := range r.controlTokensBytes {
+		if bytes.Contains(payload, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // FindTrailingDelimiterPrefix checks if the tail of b (up to maxLen bytes) matches
@@ -712,6 +782,14 @@ func (r *Registry) loadReasoning(sysFS fs.FS) error {
 
 	r.reasoningCatalog = catalog
 	r.tagReplacer, r.reasoningByteMarkers, r.controlTokensBytes, r.delimiterPrefixes = compileReasoning(catalog)
+
+	silentMsg := catalog.Resuscitation.SilentTurnMessage
+	if strings.TrimSpace(silentMsg) == "" {
+		silentMsg = "Review and codebase verification completed. Proceeding with automated test verification and next implementation steps."
+	}
+	escapedMsg, _ := json.Marshal(silentMsg)
+	r.silentTurnChunkBytes = fmt.Appendf(nil, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n", escapedMsg)
+
 	return nil
 }
 
@@ -816,7 +894,7 @@ func compileReasoning(cat ReasoningCatalog) (*strings.Replacer, [][]byte, [][]by
 		addControlToken(p.from)
 	}
 
-	// Expand unicode escapes for tokens starting with '<'
+	// Expand unicode escapes and JSON-escaped quotes (single and double escaped)
 	controlSnapshot := make([]string, 0, len(seenControl))
 	for s := range seenControl {
 		controlSnapshot = append(controlSnapshot, s)
@@ -826,6 +904,17 @@ func compileReasoning(cat ReasoningCatalog) (*strings.Replacer, [][]byte, [][]by
 			base := s[1:]
 			addControlToken(`\u003c` + base)
 			addControlToken(`\u003C` + base)
+		}
+		if strings.Contains(s, `"`) {
+			for _, repl := range []string{`\"`, `\\"`, `\\\"`, `\\\\\"`, `\\\\\\\"`} {
+				escaped := strings.ReplaceAll(s, `"`, repl)
+				addControlToken(escaped)
+				if strings.HasPrefix(s, "<") {
+					base := escaped[1:]
+					addControlToken(`\u003c` + base)
+					addControlToken(`\u003C` + base)
+				}
+			}
 		}
 	}
 
@@ -883,4 +972,36 @@ func mapToSortedSlice(m map[string]struct{}) []string {
 	}
 	sort.Strings(s)
 	return s
+}
+
+// HasParameterSanitizerMarker reports whether payload contains any parameter sanitizer target or parameter name.
+// Lock-free, zero heap allocation.
+func (r *Registry) HasParameterSanitizerMarker(payload []byte) bool {
+	if r == nil || len(r.sanitizerTargets) == 0 {
+		return false
+	}
+	for _, marker := range r.sanitizerMarkers {
+		if bytes.Contains(payload, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// SanitizeParametersInPlace rewrites invalid parameter values in-place within b.
+// Operates with zero heap allocations (0 B/op, 0 allocs/op) maintaining w <= r.
+func (r *Registry) SanitizeParametersInPlace(b []byte) []byte {
+	if r == nil || len(r.sanitizerTargets) == 0 {
+		return b
+	}
+	return zeroalloc.ReplaceSubslicesInPlace(b, r.sanitizerTargets, r.sanitizerReplacements)
+}
+
+// SilentTurnResuscitationChunk returns the precompiled SSE chunk bytes to emit when a model turn concludes with reasoning only.
+// Lock-free, zero heap allocation.
+func (r *Registry) SilentTurnResuscitationChunk() []byte {
+	if r == nil {
+		return nil
+	}
+	return r.silentTurnChunkBytes
 }

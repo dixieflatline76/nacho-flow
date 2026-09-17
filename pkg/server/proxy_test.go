@@ -2712,3 +2712,116 @@ func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
 	}
 }
 
+func TestProxy_LocalProvider_InboundHistoryScrubbed(t *testing.T) {
+	var receivedBody string
+	var mu sync.Mutex
+
+	mockOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		receivedBody = string(b)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer mockOllama.Close()
+
+	cfg := &contract.Config{
+		DefaultTier: contract.Tier{
+			Name:     "local-tier",
+			Provider: "ollama",
+			Model:    "gemma-4",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {
+				Type:    contract.ProviderTypeLocal,
+				BaseURL: mockOllama.URL,
+			},
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil, nil)
+
+	// Turn 3 historical payload with delimiter bleed in a tool message
+	payload := `{"model":"nacho-hybrid","messages":[` +
+		`{"role":"user","content":"create dir"},` +
+		`{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"execute_command","arguments":"{\"command\":\"mkdir internal_cli<|\\\"|>}\"}"}}]},` +
+		`{"role":"tool","tool_call_id":"call_1","content":"Set-Location: parameter error}]<|\"|>}"}` +
+		`]}`
+
+	req := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	mu.Lock()
+	body := receivedBody
+	mu.Unlock()
+
+	// Verify delimiter bleed is completely scrubbed before reaching local provider
+	if strings.Contains(body, `<|`) || strings.Contains(body, `|>`) {
+		t.Fatalf("expected control tokens to be scrubbed for local provider, got:\n%s", body)
+	}
+	if !strings.Contains(body, "parameter error}]") {
+		t.Fatalf("expected clean content to be preserved, got:\n%s", body)
+	}
+}
+
+func TestProxy_CloudProvider_HistoryPreserved(t *testing.T) {
+	var receivedBody string
+	var mu sync.Mutex
+
+	mockCloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		receivedBody = string(b)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer mockCloud.Close()
+
+	cfg := &contract.Config{
+		DefaultTier: contract.Tier{
+			Name:     "cloud-tier",
+			Provider: "openai",
+			Model:    "gpt-4o",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"openai": {
+				Type:    contract.ProviderTypeCloud,
+				BaseURL: mockCloud.URL,
+			},
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil, nil)
+
+	// Payload with literal prompt tutorial mentioning tokens
+	payload := `{"model":"nacho-hybrid","messages":[` +
+		`{"role":"user","content":"How does <start_of_turn> work in LLMs?"}` +
+		`]}`
+
+	req := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	mu.Lock()
+	body := receivedBody
+	mu.Unlock()
+
+	// Verify cloud provider requests do NOT strip prompt tokens from user prompt
+	if !strings.Contains(body, "<start_of_turn>") && !strings.Contains(body, `\u003cstart_of_turn\u003e`) {
+		t.Fatalf("expected user prompt to be preserved for cloud provider, got:\n%s", body)
+	}
+}
+

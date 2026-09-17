@@ -1022,6 +1022,12 @@ func (s *Server) dispatchTier(
 	}
 	preparedBody, _ = s.sanitizer.SanitizePayload(preparedBody, hasVision)
 
+	if targetProvider != nil && targetProvider.IsLocal() {
+		if reg := agentregistry.DefaultRegistry(); reg != nil && reg.HasControlTokenMarker(preparedBody) {
+			preparedBody = reg.StripControlTokensInPlace(preparedBody)
+		}
+	}
+
 	var ntsTokensSaved, ntsBytesSaved int
 	if ntsTr := s.GetNTSTransformer(); ntsTr != nil {
 		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
@@ -1158,14 +1164,12 @@ func (s *Server) dispatchTier(
 			if violated, reason := normalizer.CheckCycleViolation(); violated {
 				reqCtx.CycleBreakerTriggered = true
 				reqCtx.CycleBreakerReason = reason
-				if cb != nil {
-					reqCtx.CycleContentTokens = cb.ContentTokens()
-					reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
-					reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
-					reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
-					reqCtx.CycleToolTokens = cb.ToolTokens()
-					reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
-				}
+				reqCtx.CycleContentTokens = cb.ContentTokens()
+				reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
+				reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
+				reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+				reqCtx.CycleToolTokens = cb.ToolTokens()
+				reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
 				_ = normalizer.Close()
 				reqLogger.Warn("Cycle killer (qu'est-ce que c'est?): Runaway monologue intercepted",
 					slog.String("reason", reason),
@@ -1213,7 +1217,10 @@ func (s *Server) dispatchTier(
 							"code":    "tool_cycle_detected",
 						},
 					})
-					_, _ = w.Write(fmt.Appendf(nil, "data: %s\n\ndata: [DONE]\n\n", errPayload))
+					noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Tool Loop Intercepted**\n> The model (`%s`) got stuck in a %s during tool call execution. Stream was severed to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
+					escapedNotice, _ := json.Marshal(noticeText)
+					noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
+					_, _ = w.Write(fmt.Appendf(nil, "data: %s\n\n%sdata: [DONE]\n\n", errPayload, noticeChunk))
 				} else {
 					noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
 					escapedNotice, _ := json.Marshal(noticeText)
@@ -1267,14 +1274,12 @@ func (s *Server) dispatchTier(
 					if s.sessionTracker != nil {
 						s.sessionTracker.RecordCycleKill(extractSessionKey(r), targetTier.Model, cooldown, floor)
 					}
-					if cb != nil {
-						reqCtx.CycleContentTokens = cb.ContentTokens()
-						reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
-						reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
-						reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
-						reqCtx.CycleToolTokens = cb.ToolTokens()
-						reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
-					}
+					reqCtx.CycleContentTokens = cb.ContentTokens()
+					reqCtx.CycleMaxNgramFreq = cb.MaxNgramFreq()
+					reqCtx.CycleThinkingTokens = cb.ThinkingTokens()
+					reqCtx.CycleMaxThinkingNgramFreq = cb.MaxThinkingNgramFreq()
+					reqCtx.CycleToolTokens = cb.ToolTokens()
+					reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
 					isToolViolation := normalizer.HasActiveToolCall() || strings.HasPrefix(reason, "tool_") || strings.HasPrefix(reason, "write_")
 					_ = normalizer.Close()
 
@@ -1286,7 +1291,10 @@ func (s *Server) dispatchTier(
 								"code":    "tool_cycle_detected",
 							},
 						})
-						_, _ = w.Write(fmt.Appendf(nil, "data: %s\n\ndata: [DONE]\n\n", errPayload))
+						noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Tool Loop Intercepted**\n> The model (`%s`) got stuck in a %s during tool call execution. Stream was severed to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
+						escapedNotice, _ := json.Marshal(noticeText)
+						noticeChunk := fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", string(escapedNotice))
+						_, _ = w.Write(fmt.Appendf(nil, "data: %s\n\n%sdata: [DONE]\n\n", errPayload, noticeChunk))
 					} else {
 						noticeText := fmt.Sprintf("\n\n> 🌮 **Nacho Flow • Loop Detected**\n> The model (`%s`) got stuck in a %s. Generation was stopped to protect your token budget.\n> \n> 💡 **Next Steps:**\n> • Reply `continue` or click **Retry** — Nacho Flow will automatically escalate to a higher tier for this turn.\n> • Or override directly with HotSauce: `@nacho:cloud` or `@nacho:frontier`.\n", targetTier.Model, formatCycleKillReason(reason))
 						escapedNotice, _ := json.Marshal(noticeText)

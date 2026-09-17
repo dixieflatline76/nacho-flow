@@ -661,3 +661,256 @@ func TestAgentRegistry_ControlTokensAndPrefixes(t *testing.T) {
 		t.Errorf("expected -1 for unknown tag prefix, got %d", idx2)
 	}
 }
+
+func TestAgentRegistry_ParameterSanitizers(t *testing.T) {
+	reg := DefaultRegistry()
+	if reg == nil {
+		t.Fatal("expected non-nil default registry")
+	}
+
+	// 1. Marker check
+	hasMarker := reg.HasParameterSanitizerMarker([]byte(`{"insert_line": "None"}`))
+	if !hasMarker {
+		t.Errorf("expected true for payload with insert_line: None")
+	}
+	hasMarkerCompact := reg.HasParameterSanitizerMarker([]byte(`{"insert_line":"None"}`))
+	if !hasMarkerCompact {
+		t.Errorf("expected true for payload with insert_line:None")
+	}
+	hasNoMarker := reg.HasParameterSanitizerMarker([]byte(`{"path": "main.go"}`))
+	if hasNoMarker {
+		t.Errorf("expected false for payload without insert_line")
+	}
+
+	// Nil safety
+	if (*Registry)(nil).HasParameterSanitizerMarker([]byte("test")) {
+		t.Errorf("expected false for nil registry")
+	}
+
+	// 2. In-place sanitization
+	sampleSpaced := []byte(`{"insert_line": "None", "new_text": "package main"}`)
+	sanitizedSpaced := reg.SanitizeParametersInPlace(sampleSpaced)
+	if !strings.Contains(string(sanitizedSpaced), `"insert_line": null`) {
+		t.Errorf("expected spaced null replacement, got: %s", string(sanitizedSpaced))
+	}
+
+	sampleCompact := []byte(`{"insert_line":"None","new_text":"package main"}`)
+	sanitizedCompact := reg.SanitizeParametersInPlace(sampleCompact)
+	if !strings.Contains(string(sanitizedCompact), `"insert_line":null`) {
+		t.Errorf("expected compact null replacement, got: %s", string(sanitizedCompact))
+	}
+
+	sampleStringNull := []byte(`{"insert_line": "null"}`)
+	sanitizedStringNull := reg.SanitizeParametersInPlace(sampleStringNull)
+	if !strings.Contains(string(sanitizedStringNull), `"insert_line": null`) {
+		t.Errorf("expected null replacement for string null, got: %s", string(sanitizedStringNull))
+	}
+
+	sampleCompactStringNull := []byte(`{"insert_line":"null"}`)
+	sanitizedCompactStringNull := reg.SanitizeParametersInPlace(sampleCompactStringNull)
+	if !strings.Contains(string(sanitizedCompactStringNull), `"insert_line":null`) {
+		t.Errorf("expected compact null replacement for string null, got: %s", string(sanitizedCompactStringNull))
+	}
+
+	// Nil safety
+	if string((*Registry)(nil).SanitizeParametersInPlace([]byte("test"))) != "test" {
+		t.Errorf("expected unchanged for nil registry")
+	}
+}
+
+func TestAgentRegistry_SilentTurnResuscitation(t *testing.T) {
+	reg := DefaultRegistry()
+	if reg == nil {
+		t.Fatal("expected non-nil default registry")
+	}
+
+	chunk := reg.SilentTurnResuscitationChunk()
+	if len(chunk) == 0 {
+		t.Fatal("expected non-empty resuscitation chunk")
+	}
+	chunkStr := string(chunk)
+	if !strings.Contains(chunkStr, `data: {"choices":[{"index":0,"delta":{"content":`) {
+		t.Errorf("expected content delta chunk, got: %s", chunkStr)
+	}
+	if !strings.Contains(chunkStr, `"finish_reason":"stop"`) {
+		t.Errorf("expected finish_reason stop chunk, got: %s", chunkStr)
+	}
+
+	// Nil safety
+	if (*Registry)(nil).SilentTurnResuscitationChunk() != nil {
+		t.Errorf("expected nil for nil registry")
+	}
+}
+
+type mockTestFS struct {
+	files map[string][]byte
+}
+
+func (m *mockTestFS) Open(name string) (fs.File, error) {
+	return nil, fs.ErrNotExist
+}
+
+func (m *mockTestFS) ReadFile(name string) ([]byte, error) {
+	data, ok := m.files[name]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return data, nil
+}
+
+func (m *mockTestFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if name == "agents" {
+		return []fs.DirEntry{
+			&mockDirEntry{name: "invalid.json"},
+		}, nil
+	}
+	return nil, fs.ErrNotExist
+}
+
+type mockDirEntry struct {
+	name string
+}
+
+func (m *mockDirEntry) Name() string               { return m.name }
+func (m *mockDirEntry) IsDir() bool                { return false }
+func (m *mockDirEntry) Type() fs.FileMode          { return 0 }
+func (m *mockDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
+
+func TestAgentRegistry_ParameterSanitizer_ValidationErrors(t *testing.T) {
+	// 1. Count mismatch error
+	mismatchFS := &mockTestFS{
+		files: map[string][]byte{
+			"agents/invalid.json": []byte(`{
+				"id": "test_agent",
+				"write_tools": ["editor"],
+				"read_tools": ["read_file"],
+				"command_tools": ["run"],
+				"parameter_sanitizers": [
+					{
+						"tool": "editor",
+						"parameter": "insert_line",
+						"invalid_patterns": ["p1", "p2"],
+						"replacements": ["r1"]
+					}
+				]
+			}`),
+		},
+	}
+	_, err := NewRegistryFromFS(mismatchFS)
+	if err == nil || !strings.Contains(err.Error(), "pattern count (2) does not match replacement count (1)") {
+		t.Errorf("expected pattern count mismatch error, got: %v", err)
+	}
+
+	// 2. Length invariant violation error (replacement > pattern)
+	overflowFS := &mockTestFS{
+		files: map[string][]byte{
+			"agents/invalid.json": []byte(`{
+				"id": "test_agent",
+				"write_tools": ["editor"],
+				"read_tools": ["read_file"],
+				"command_tools": ["run"],
+				"parameter_sanitizers": [
+					{
+						"tool": "editor",
+						"parameter": "insert_line",
+						"invalid_patterns": ["short"],
+						"replacements": ["much_longer_replacement_string"]
+					}
+				]
+			}`),
+		},
+	}
+	_, err2 := NewRegistryFromFS(overflowFS)
+	if err2 == nil || !strings.Contains(err2.Error(), "violates zero-alloc in-place invariant") {
+		t.Errorf("expected length invariant violation error, got: %v", err2)
+	}
+}
+
+func TestRegistry_HasControlTokenMarker_EscapedLevels(t *testing.T) {
+	reg := DefaultRegistry()
+	if reg == nil {
+		t.Fatal("expected default registry")
+	}
+
+	// Nil safety
+	if (*Registry)(nil).HasControlTokenMarker([]byte("test")) {
+		t.Errorf("expected false for nil registry")
+	}
+	if reg.HasControlTokenMarker(nil) {
+		t.Errorf("expected false for nil payload")
+	}
+
+	testCases := []struct {
+		name     string
+		payload  string
+		expected bool
+	}{
+		{"CleanPayload", `{"arguments": "echo hello"}`, false},
+		{"RawDelimQuoteBrace", `{"arguments": "mkdir test<|\"|>}"}`, true},
+		{"SingleEscapedQuoteBrace", `{"arguments": "mkdir test<|\\\"|>}"}`, true},
+		{"DoubleEscapedQuoteBrace", `{"arguments": "mkdir test<|\\\\\\\"|>}"}`, true},
+		{"RawDelimQuote", `{"arguments": "echo <|\"|>"}`, true},
+		{"SingleEscapedQuote", `{"arguments": "echo <|\\\"|>"}`, true},
+		{"UnicodeRawDelim", `{"arguments": "echo \u003c|\"|>"}`, true},
+		{"UnicodeSingleEscaped", `{"arguments": "echo \u003c|\\\"|>"}`, true},
+		{"ToolCallTag", `{"arguments": "<tool_call|>"}`, true},
+		{"CloseToolCallTag", `{"arguments": "</tool_call>"}`, true},
+		{"ToolResponseTag", `{"arguments": "<tool_response|>"}`, true},
+		{"OpenToolResponseTag", `{"arguments": "<|tool_response>"}`, true},
+		{"ChannelTag", `{"arguments": "<channel|>"}`, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := reg.HasControlTokenMarker([]byte(tc.payload))
+			if got != tc.expected {
+				t.Errorf("HasControlTokenMarker(%q) = %v, want %v", tc.payload, got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestRegistry_StripControlTokensInPlace_DeepEscaped(t *testing.T) {
+	reg := DefaultRegistry()
+	if reg == nil {
+		t.Fatal("expected default registry")
+	}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "RawDelimQuoteBrace",
+			input:    `{"arguments": "mkdir internal<|\"|>}"}`,
+			expected: `{"arguments": "mkdir internal"}`,
+		},
+		{
+			name:     "SingleEscapedQuoteBrace",
+			input:    `{"arguments": "mkdir internal<|\\\"|>}"}`,
+			expected: `{"arguments": "mkdir internal"}`,
+		},
+		{
+			name:     "Turn3TurnBoundaryBleed",
+			input:    `...Command exited with code 1}]<|\"|>}<tool_response|><|channel>thought`,
+			expected: `...Command exited with code 1}]`,
+		},
+		{
+			name:     "DoubleEscapedQuote",
+			input:    `{"cmd": "<|\\\"|>"}`,
+			expected: `{"cmd": ""}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := []byte(tt.input)
+			cleaned := reg.StripControlTokensInPlace(buf)
+			if string(cleaned) != tt.expected {
+				t.Errorf("StripControlTokensInPlace mismatch:\nGot:  %q\nWant: %q", string(cleaned), tt.expected)
+			}
+		})
+	}
+}
+

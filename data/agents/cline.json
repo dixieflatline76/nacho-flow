@@ -27,5 +27,31 @@
     "File does not exist",
     "Error reading file",
     "Command failed with exit code"
+  ],
+  "parameter_sanitizers": [
+    {
+      "tool": "editor",
+      "parameter": "insert_line",
+      "invalid_patterns": [
+        "\\\"insert_line\\\": \\\"None\\\"",
+        "\\\"insert_line\\\":\\\"None\\\"",
+        "\\\"insert_line\\\": \\\"null\\\"",
+        "\\\"insert_line\\\":\\\"null\\\"",
+        "\"insert_line\": \"None\"",
+        "\"insert_line\":\"None\"",
+        "\"insert_line\": \"null\"",
+        "\"insert_line\":\"null\""
+      ],
+      "replacements": [
+        "\\\"insert_line\\\": null",
+        "\\\"insert_line\\\":null",
+        "\\\"insert_line\\\": null",
+        "\\\"insert_line\\\":null",
+        "\"insert_line\": null",
+        "\"insert_line\":null",
+        "\"insert_line\": null",
+        "\"insert_line\":null"
+      ]
+    }
   ]
 }

@@ -215,20 +215,20 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **98.8%** |
 | `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **98.0%** |
-| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **97.9%** |
 | `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **97.5%** |
 | `pkg/nts` | Nacho Token Saver Compactors, Stale Read Eliminators & CR Delimiting | **97.4%** |
 | `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
+| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **96.9%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
 | `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.6%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.9%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.3%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.2%** |
 | `pkg/agentregistry` | Modular Agent Catalog, Reasoning Parser & Tag Marker Compiler | **95.1%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.0%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
 #### VS Code Companion Extension Coverage:

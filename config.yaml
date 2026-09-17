@@ -69,7 +69,7 @@ cycle_killer:
     max_tokens: 8192                # Max streaming tool call arguments before repetition enforcement
     max_write_tokens: 32768         # Max size for Category A file writes (zero-alloc fast path)
     phrase_length: 4                # Tighter n-gram window to catch repeating 4-word shell commands
-    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
+    max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
 
 kickstart:
   enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
@@ -196,6 +196,7 @@ fairy_dust:
         [QUALITY CHECKPOINT - ACTION REQUIRED]
         You are an elite code reviewer consulted mid-flight. Your value is DIRECT CODE ACTIONS, NOT ESSAYS.
         Do NOT write lengthy prose analysis, conversational reviews, or summaries.
+        MANDATORY: You must always emit an active tool call (such as executing `go test ./...` or file edits) or an explicit status message. You must NEVER finish your turn with an empty response or reasoning only.
         Execute the following checks directly:
         (1) STUBS & DUMMY IMPLEMENTATIONS: Find any functions that discard parameters, return hardcoded dummy values, or are left unfinished. Implement them now.
         (2) LOOP & TERMINATION GUARDS: Inspect while/for loops and recursion for missing updates or infinite loops. Fix them immediately.
@@ -214,6 +215,7 @@ fairy_dust:
         [SPEC TRACEABILITY & DIRECTION AUDIT - ACTION REQUIRED]
         You are the lead architect performing a requirements and trajectory audit.
         Do NOT write lengthy analysis essays or commentary. Your value is ALIGNMENT AND EXECUTION.
+        MANDATORY: You must always emit an active tool call (such as executing tests or file edits) or an explicit status message. You must NEVER finish your turn with an empty response or reasoning only.
         Execute the following checks immediately:
         (1) SPEC AUDIT: Compare the active todo checklist against the user's original requirements. If any requirement is missing or untested, add it to the checklist. If a checklist does not exist, create one now.
         (2) DIRECTION DOC: If the plan has drifted or lacks clear execution steps, write or update a concise direction plan.
