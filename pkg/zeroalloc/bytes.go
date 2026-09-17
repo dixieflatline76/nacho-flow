@@ -184,3 +184,116 @@ func HasPrefixAny(b []byte, prefixes [][]byte) bool {
 	}
 	return false
 }
+
+// ReplaceSubslicesInPlace replaces all occurrences of byte sequences in targets
+// with corresponding byte sequences in replacements within b in-place in a single forward pass.
+//
+// Invariants & Requirements:
+//  1. len(targets) == len(replacements).
+//  2. For every index i, len(replacements[i]) <= len(targets[i]) MUST hold to guarantee
+//     that write cursor w <= read cursor r at all times (preventing buffer corruption).
+//  3. targets MUST be sorted descending by length to ensure maximal greedy matching.
+//  4. Operates strictly in-place with zero heap allocations (0 B/op, 0 allocs/op).
+func ReplaceSubslicesInPlace(b []byte, targets [][]byte, replacements [][]byte) []byte {
+	n := len(b)
+	if n == 0 || len(targets) == 0 || len(targets) != len(replacements) {
+		return b
+	}
+
+	// Build stack-allocated trigger table of initial bytes
+	var triggers [256]bool
+	singleTrigger := true
+	firstTriggerByte := byte(0)
+
+	for i, t := range targets {
+		if len(t) > 0 {
+			b0 := t[0]
+			triggers[b0] = true
+			if i == 0 {
+				firstTriggerByte = b0
+			} else if b0 != firstTriggerByte {
+				singleTrigger = false
+			}
+		}
+	}
+
+	var firstMatchIdx int
+	if singleTrigger {
+		firstMatchIdx = bytes.IndexByte(b, firstTriggerByte)
+	} else {
+		firstMatchIdx = -1
+		for i := 0; i < n; i++ {
+			if triggers[b[i]] {
+				firstMatchIdx = i
+				break
+			}
+		}
+	}
+
+	// Fast bailout: no candidate trigger byte exists in b
+	if firstMatchIdx == -1 {
+		return b
+	}
+
+	w := firstMatchIdx
+	r := firstMatchIdx
+
+	for r < n {
+		if triggers[b[r]] {
+			matchedIdx := -1
+			sub := b[r:]
+			for i, target := range targets {
+				tLen := len(target)
+				if tLen <= len(sub) && bytes.Equal(sub[:tLen], target) {
+					matchedIdx = i
+					break
+				}
+			}
+			if matchedIdx != -1 {
+				targetLen := len(targets[matchedIdx])
+				rep := replacements[matchedIdx]
+				repLen := len(rep)
+				// Enforce w <= r invariant safety guard
+				if repLen <= targetLen {
+					copy(b[w:], rep)
+					w += repLen
+					r += targetLen
+					continue
+				}
+			}
+
+			// Trigger byte did not lead to a target match; copy byte and advance
+			b[w] = b[r]
+			w++
+			r++
+		} else {
+			// Find next candidate trigger byte
+			var nextTrigger int
+			if singleTrigger {
+				nextTrigger = bytes.IndexByte(b[r:], firstTriggerByte)
+			} else {
+				nextTrigger = -1
+				for i := r; i < n; i++ {
+					if triggers[b[i]] {
+						nextTrigger = i - r
+						break
+					}
+				}
+			}
+
+			if nextTrigger == -1 {
+				// No more trigger bytes in remaining buffer; bulk copy and finish
+				copy(b[w:], b[r:])
+				w += n - r
+				break
+			}
+
+			// Bulk copy non-trigger slice
+			copy(b[w:], b[r:r+nextTrigger])
+			w += nextTrigger
+			r += nextTrigger
+		}
+	}
+
+	return b[:w]
+}

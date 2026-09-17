@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
@@ -1648,4 +1649,437 @@ func TestStreamNormalizer_HandleDone_DirectPendingDelimiter(t *testing.T) {
 	norm2.pendingDelimiterBuf = "<custom"
 	norm2.handleDone([]byte("data: [DONE]\n\n"))
 	norm2.Close()
+}
+
+func TestStreamNormalizer_HandleDone_PreservesTrailingLessThan(t *testing.T) {
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<think>analyzing</think>for (int i = 0; i <\"}}]}\n\ndata: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if !strings.Contains(result, "for (int i = 0; i ") || !strings.Contains(result, "\"content\":\"<\"") {
+		t.Fatalf("expected output to preserve trailing '<' at stream end, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_HandleDone_PreservesTrailingLessThanInThinking(t *testing.T) {
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<think>checking if x <\"}}]}\n\ndata: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if !strings.Contains(result, "\"reasoning_content\":\"checking if x <\"") && !strings.Contains(result, "\"reasoning_content\":\"<\"") {
+		t.Fatalf("expected trailing '<' in thinking to flush to reasoning_content, got:\n%s", result)
+	}
+	if strings.Contains(result, "\"content\":\"<\"") {
+		t.Fatalf("trailing '<' from thinking was erroneously emitted into prose content: %s", result)
+	}
+}
+
+func TestStreamNormalizer_Gemma4_NativeChannelLifecycle(t *testing.T) {
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<|channel>thought\\nReasoning about the solution space\\n<channel|>\\nHere is the answer.\"}}]}\n\ndata: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if !strings.Contains(result, "\"reasoning_content\":\"\\nReasoning about the solution space\\n\"") {
+		t.Fatalf("expected reasoning text in reasoning_content, got:\n%s", result)
+	}
+	if !strings.Contains(result, "\"content\":\"\\nHere is the answer.\"") {
+		t.Fatalf("expected answer text in content, got:\n%s", result)
+	}
+	if strings.Contains(result, "<channel|>") || strings.Contains(result, "<|channel>thought") || strings.Contains(result, "</think>") {
+		t.Fatalf("unexpected control tag leaked in output:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_Gemma4_OrphanedChannelClose(t *testing.T) {
+	// Orphaned <channel|> at beginning of turn or outside thinking
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<channel|>Starting solution directly without thinking.\"}}]}\n\ndata: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if !strings.Contains(result, "\"content\":\"Starting solution directly without thinking.\"") {
+		t.Fatalf("expected clean content without orphan tag, got:\n%s", result)
+	}
+	if strings.Contains(result, "<channel|>") || strings.Contains(result, "</think>") {
+		t.Fatalf("orphaned closing tag leaked into content:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_Gemma4_SplitChannelClose_AcrossChunks(t *testing.T) {
+	chunks := []string{
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<|channel>thought\\nReasoning step\"}}]}\n\n",
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<channel\"}}]}\n\n",
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"|>\\nFinal answer text.\"}}]}\n\n",
+		"data: [DONE]\n\n",
+	}
+	rawSSE := strings.Join(chunks, "")
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+
+	result := string(out)
+	if !strings.Contains(result, "Reasoning step") {
+		t.Fatalf("expected reasoning text in output, got:\n%s", result)
+	}
+	if !strings.Contains(result, "\"content\":\"\\nFinal answer text.\"") {
+		t.Fatalf("expected content text in output, got:\n%s", result)
+	}
+	if strings.Contains(result, "<channel|>") || strings.Contains(result, "<channel") || strings.Contains(result, "</think>") {
+		t.Fatalf("delimiter leaked into output:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_OrphanedThinkTag_SuffixAndEmbedded(t *testing.T) {
+	// Suffix </think> outside thinking
+	rawSSE1 := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello world</think>\"}}]}\n\ndata: [DONE]\n\n"
+	norm1 := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE1)))
+	out1, _ := io.ReadAll(norm1)
+	norm1.Close()
+	if !strings.Contains(string(out1), "\"content\":\"hello world\"") || strings.Contains(string(out1), "</think>") {
+		t.Fatalf("expected suffix </think> cleanly stripped, got: %s", string(out1))
+	}
+
+	// Embedded </think> in middle of content
+	rawSSE2 := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"prefix </think> suffix\"}}]}\n\ndata: [DONE]\n\n"
+	norm2 := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE2)))
+	out2, _ := io.ReadAll(norm2)
+	norm2.Close()
+	if strings.Contains(string(out2), "</think>") || !strings.Contains(string(out2), "prefix  suffix") {
+		t.Fatalf("expected embedded </think> cleanly stripped, got: %s", string(out2))
+	}
+}
+
+func TestStreamNormalizer_Read_PendingDelimiterAtEOF(t *testing.T) {
+	// EOF while pending non-delimiter buffer
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<xyz\"}}]}"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	out, _ := io.ReadAll(norm)
+	norm.Close()
+	if len(out) == 0 {
+		t.Fatalf("expected non-delimiter buffer to flush on EOF")
+	}
+
+	// EOF while in thinking with non-delimiter buffer
+	rawSSE2 := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<think>thinking <xyz\"}}]}"
+	norm2 := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE2)))
+	out2, _ := io.ReadAll(norm2)
+	norm2.Close()
+	if len(out2) == 0 {
+		t.Fatalf("expected thinking buffer to flush on EOF")
+	}
+}
+
+func TestStreamNormalizer_Read_ClosedAndSuppressedEOF(t *testing.T) {
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader("")))
+	norm.Close()
+	buf := make([]byte, 10)
+	n, err := norm.Read(buf)
+	if n != 0 || err != io.EOF {
+		t.Fatalf("expected 0, io.EOF on closed normalizer, got %d, %v", n, err)
+	}
+
+	// Delimiter prefix suppressed at EOF
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<|channel\"}}]}"
+	norm2 := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	out2, _ := io.ReadAll(norm2)
+	norm2.Close()
+	if strings.Contains(string(out2), "<|channel") {
+		t.Fatalf("expected known delimiter prefix suppressed at EOF, got: %s", string(out2))
+	}
+
+	// Status getters
+	norm3 := NewStreamNormalizer(io.NopCloser(strings.NewReader("")))
+	defer norm3.Close()
+	if norm3.InWriteTool() {
+		t.Fatalf("expected InWriteTool to be false")
+	}
+	if norm3.HasActiveToolCall() {
+		t.Fatalf("expected HasActiveToolCall to be false")
+	}
+}
+
+type testErrReader struct{}
+
+func (testErrReader) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("simulated network read error")
+}
+
+func (testErrReader) Close() error {
+	return nil
+}
+
+func TestStreamNormalizer_Read_ErrorBranch(t *testing.T) {
+	norm := NewStreamNormalizer(testErrReader{})
+	defer norm.Close()
+
+	buf := make([]byte, 1024)
+	_, err := norm.Read(buf)
+	if err == nil || !strings.Contains(err.Error(), "simulated network read error") {
+		t.Fatalf("expected simulated network read error, got: %v", err)
+	}
+}
+
+func TestStreamNormalizer_Read_PendingDelimiterAtEOFInThinking(t *testing.T) {
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader("")))
+	norm.inThinking = true
+	norm.pendingDelimiterBuf = "unmatched_delim"
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	res := string(out)
+	if !strings.Contains(res, "unmatched_delim") {
+		t.Fatalf("expected unmatched delimiter flushed at EOF, got: %s", res)
+	}
+	if !strings.Contains(res, "reasoning_content") {
+		t.Fatalf("expected flushed delimiter in reasoning_content, got: %s", res)
+	}
+}
+
+func TestStreamNormalizer_ParameterSanitization_InsertLineNone(t *testing.T) {
+	chunks := []string{
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"editor\",\"arguments\":\"{\\\"insert_line\\\": \\\"None\\\", \\\"new_text\\\": \\\"code\\\"}\"}}]}}]}\n\n",
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"call_2\",\"function\":{\"name\":\"editor\",\"arguments\":\"{\\\"insert_line\\\":\\\"None\\\",\\\"new_text\\\":\\\"code\\\"}\"}}]}}]}\n\n",
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":2,\"id\":\"call_3\",\"function\":{\"name\":\"editor\",\"arguments\":\"{\\\"insert_line\\\": \\\"null\\\", \\\"new_text\\\": \\\"code\\\"}\"}}]}}]}\n\n",
+		"data: [DONE]\n\n",
+	}
+	rawSSE := strings.Join(chunks, "")
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	result := string(out)
+
+	if strings.Contains(result, `"None"`) {
+		t.Errorf("expected all 'None' strings in tool arguments to be sanitized out, got:\n%s", result)
+	}
+	if strings.Contains(result, `"null"`) {
+		t.Errorf("expected string 'null' in tool arguments to be sanitized out, got:\n%s", result)
+	}
+	if !strings.Contains(result, `\"insert_line\": null`) {
+		t.Errorf("expected sanitized spaced null in output, got:\n%s", result)
+	}
+	if !strings.Contains(result, `\"insert_line\":null`) {
+		t.Errorf("expected sanitized compact null in output, got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_SilentTurnResuscitation_ThinkingOnly(t *testing.T) {
+	// A turn where the model outputs thinking but 0 content and 0 tool calls (like Turn 158)
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"I am thinking deeply about N-Queens constraints...\"}}]}\n\ndata: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	result := string(out)
+
+	if !strings.Contains(result, "I am thinking deeply about N-Queens constraints...") {
+		t.Errorf("expected original reasoning content to be preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Review and codebase verification completed") {
+		t.Errorf("expected synthesized resuscitation content chunk in output, got:\n%s", result)
+	}
+	if !strings.Contains(result, `"finish_reason":"stop"`) {
+		t.Errorf("expected finish_reason stop in output, got:\n%s", result)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(result), "data: [DONE]") {
+		t.Errorf("expected stream to conclude with [DONE], got:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_NormalTurn_NoResuscitation(t *testing.T) {
+	// A normal turn with thinking AND prose
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"thinking step\"}}]}\n\n" +
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Here is the real answer.\"}}]}\n\n" +
+		"data: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	result := string(out)
+
+	if !strings.Contains(result, "Here is the real answer.") {
+		t.Errorf("expected regular content in output, got:\n%s", result)
+	}
+	if strings.Contains(result, "Review and codebase verification completed") {
+		t.Errorf("unexpected resuscitation chunk emitted when content was present:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_ToolCallTurn_NoResuscitation(t *testing.T) {
+	// A turn with thinking AND a tool call
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"thinking about tool\"}}]}\n\n" +
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"run_commands\",\"arguments\":\"{\\\"commands\\\":[\\\"dir\\\"]}\"}}]}}]}\n\n" +
+		"data: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	result := string(out)
+
+	if !strings.Contains(result, "run_commands") {
+		t.Errorf("expected tool call in output, got:\n%s", result)
+	}
+	if strings.Contains(result, "Review and codebase verification completed") {
+		t.Errorf("unexpected resuscitation chunk emitted when tool call was present:\n%s", result)
+	}
+}
+
+func BenchmarkStreamNormalizer_ToolSanitizer_ZeroAlloc(b *testing.B) {
+	rawChunk := []byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"editor\",\"arguments\":\"{\\\"insert_line\\\": \\\"None\\\", \\\"new_text\\\": \\\"code\\\"}\"}}]}}]}\n\n")
+	line := make([]byte, len(rawChunk))
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		copy(line, rawChunk)
+		if agentregistry.DefaultRegistry().HasParameterSanitizerMarker(line) {
+			_ = agentregistry.DefaultRegistry().SanitizeParametersInPlace(line)
+		}
+	}
+}
+
+func TestStreamNormalizer_ToolCall_PurgesPendingDelimiter(t *testing.T) {
+	// Chunk 1: reasoning with trailing delimiter prefix "<|chan"
+	// Chunk 2: tool call chunk (must purge pending delimiter)
+	// Chunk 3: [DONE]
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"thinking step <|chan\"}}]}\n\n" +
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"run_commands\",\"arguments\":\"{\\\"commands\\\":[\\\"ls\\\"]}\"}}]}}]}\n\n" +
+		"data: [DONE]\n\n"
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	result := string(out)
+
+	if !strings.Contains(result, "run_commands") {
+		t.Fatalf("expected tool call to be preserved, got:\n%s", result)
+	}
+	// Verify that "<|chan" was NOT emitted as prose delta.Content
+	if strings.Contains(result, `"delta":{"content":"<|chan"`) || strings.Contains(result, `"content":"<`) {
+		t.Errorf("leaked trailing delimiter into prose content:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_HandleDone_NoDelimiterBleedOnToolCalls(t *testing.T) {
+	// Verifies that when hasEmittedToolCalls is true, handleDone will never flush
+	// any pendingDelimiterBuf or pendingWriteTagBuf into prose content.
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader("data: [DONE]\n\n")))
+	defer norm.Close()
+
+	norm.hasEmittedToolCalls = true
+	norm.pendingDelimiterBuf = "<"
+	norm.pendingWriteTagBuf = "<write"
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	result := string(out)
+
+	if strings.Contains(result, `"content":"<"`) || strings.Contains(result, `"content":"<write"`) {
+		t.Errorf("handleDone leaked pending delimiter/tag as prose when tool calls were present:\n%s", result)
+	}
+}
+
+func TestStreamNormalizer_ToolLane_TopLevelSanitization(t *testing.T) {
+	// Verifies that pure tool-call SSE chunks (no reasoningContent) with Gemma control tokens
+	// (<|\"|>}, <|\\\"|>}, <tool_response|>, etc.) have delimiters stripped in-place before json.Unmarshal,
+	// before metrics recording, and before emission to the client.
+	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"execute_command\",\"arguments\":\"{\\\"command\\\":\\\"mkdir internal_cli<|\\\\\\\"|>}\\\"}\"}}]}}]}\n\n" +
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_2\",\"function\":{\"name\":\"execute_command\",\"arguments\":\"echo clean<|\"|>}\"}}]}}]}\n\n" +
+		"data: [DONE]\n\n"
+
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
+	defer norm.Close()
+
+	out, err := io.ReadAll(norm)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	result := string(out)
+
+	if strings.Contains(result, `<|`) || strings.Contains(result, `|>`) {
+		t.Fatalf("emitted tool call chunk contained unstripped control token:\n%s", result)
+	}
+	if !strings.Contains(result, "mkdir internal_cli") {
+		t.Fatalf("expected arguments to retain command content, got:\n%s", result)
+	}
+	if !strings.Contains(result, "echo clean") {
+		t.Fatalf("expected arguments to retain second command content, got:\n%s", result)
+	}
+}
+
+func BenchmarkStreamNormalizer_ToolLane_ZeroAlloc(b *testing.B) {
+	rawChunk := []byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"execute_command\",\"arguments\":\"{\\\"command\\\":\\\"mkdir internal_cli<|\\\\\\\"|>}\\\"}\"}}]}}]}\n\n")
+	line := make([]byte, len(rawChunk)+32)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		copy(line, rawChunk)
+		payload := line[6 : len(rawChunk)-2]
+		reg := agentregistry.DefaultRegistry()
+		if reg != nil && reg.HasControlTokenMarker(payload) {
+			_ = reg.StripControlTokensInPlace(line)
+		}
+	}
+}
+
+func BenchmarkStreamNormalizer_ToolLane_Clean_ZeroAlloc(b *testing.B) {
+	rawChunk := []byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"execute_command\",\"arguments\":\"{\\\"command\\\":\\\"mkdir internal_cli\\\"}\"}}]}}]}\n\n")
+	line := make([]byte, len(rawChunk)+32)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		copy(line, rawChunk)
+		payload := line[6 : len(rawChunk)-2]
+		reg := agentregistry.DefaultRegistry()
+		if reg != nil && reg.HasControlTokenMarker(payload) {
+			_ = reg.StripControlTokensInPlace(line)
+		}
+	}
 }

@@ -2613,3 +2613,214 @@ func TestServer_ServeHTTP_EdgeBranches(t *testing.T) {
 		t.Errorf("expected 200 for /v1/stats, got %d", recStats.Code)
 	}
 }
+
+func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
+	var mu sync.Mutex
+	var receivedBody []byte
+
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		receivedBody = body
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":"OK"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	bTrue := true
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {
+				BaseURL: mockUpstream.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Mock Tier",
+				Model:    "mock-model",
+				Provider: "mock",
+				When:     "true",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Mock Tier",
+			Model:    "mock-model",
+			Provider: "mock",
+		},
+		NTS: contract.NTSConfig{
+			Enabled:          &bTrue,
+			StripBoilerplate: &bTrue,
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier, cfg.Providers)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	testPayload := `{
+		"model": "mock-model",
+		"messages": [
+			{"role": "user", "content": "run tests"},
+			{"role": "assistant", "content": "", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "execute_command", "arguments": "{}"}}]},
+			{"role": "tool", "tool_call_id": "call_1", "name": "execute_command", "content": "Running test suite\n(Use ` + "`node --trace-warnings ...`" + ` to show where the warning was created)\nAll tests passed"}
+		]
+	}`
+
+	// 1. Turn 1: NTS enabled with strip_boilerplate: true
+	req1 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(testPayload))
+	rec1 := httptest.NewRecorder()
+	srv.ServeHTTP(rec1, req1)
+
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on turn 1, got %d: %s", rec1.Code, rec1.Body.String())
+	}
+	mu.Lock()
+	body1 := string(receivedBody)
+	mu.Unlock()
+	if strings.Contains(body1, "trace-warnings") {
+		t.Fatalf("expected boilerplate to be STRIPPED on turn 1, but upstream received:\n%s", body1)
+	}
+
+	// 2. Hot-Reload: Toggle NTS to enabled: false WITHOUT restarting server
+	bFalse := false
+	hotReloadCfg := *cfg
+	hotReloadCfg.NTS = contract.NTSConfig{
+		Enabled: &bFalse,
+	}
+	if _, err := srv.ApplyConfig(&hotReloadCfg, false); err != nil {
+		t.Fatalf("ApplyConfig failed: %v", err)
+	}
+
+	// 3. Turn 2: Exact same payload sent to running server
+	req2 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(testPayload))
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on turn 2, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+	mu.Lock()
+	body2 := string(receivedBody)
+	mu.Unlock()
+	if !strings.Contains(body2, "trace-warnings") {
+		t.Fatalf("expected boilerplate to be PRESERVED after hot-reload disabled NTS, but it was missing:\n%s", body2)
+	}
+}
+
+func TestProxy_LocalProvider_InboundHistoryScrubbed(t *testing.T) {
+	var receivedBody string
+	var mu sync.Mutex
+
+	mockOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		receivedBody = string(b)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer mockOllama.Close()
+
+	cfg := &contract.Config{
+		DefaultTier: contract.Tier{
+			Name:     "local-tier",
+			Provider: "ollama",
+			Model:    "gemma-4",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {
+				Type:    contract.ProviderTypeLocal,
+				BaseURL: mockOllama.URL,
+			},
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil, nil)
+
+	// Turn 3 historical payload with delimiter bleed in a tool message
+	payload := `{"model":"nacho-hybrid","messages":[` +
+		`{"role":"user","content":"create dir"},` +
+		`{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"execute_command","arguments":"{\"command\":\"mkdir internal_cli<|\\\"|>}\"}"}}]},` +
+		`{"role":"tool","tool_call_id":"call_1","content":"Set-Location: parameter error}]<|\"|>}"}` +
+		`]}`
+
+	req := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	mu.Lock()
+	body := receivedBody
+	mu.Unlock()
+
+	// Verify delimiter bleed is completely scrubbed before reaching local provider
+	if strings.Contains(body, `<|`) || strings.Contains(body, `|>`) {
+		t.Fatalf("expected control tokens to be scrubbed for local provider, got:\n%s", body)
+	}
+	if !strings.Contains(body, "parameter error}]") {
+		t.Fatalf("expected clean content to be preserved, got:\n%s", body)
+	}
+}
+
+func TestProxy_CloudProvider_HistoryPreserved(t *testing.T) {
+	var receivedBody string
+	var mu sync.Mutex
+
+	mockCloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		receivedBody = string(b)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer mockCloud.Close()
+
+	cfg := &contract.Config{
+		DefaultTier: contract.Tier{
+			Name:     "cloud-tier",
+			Provider: "openai",
+			Model:    "gpt-4o",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"openai": {
+				Type:    contract.ProviderTypeCloud,
+				BaseURL: mockCloud.URL,
+			},
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil, nil)
+
+	// Payload with literal prompt tutorial mentioning tokens
+	payload := `{"model":"nacho-hybrid","messages":[` +
+		`{"role":"user","content":"How does <start_of_turn> work in LLMs?"}` +
+		`]}`
+
+	req := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	mu.Lock()
+	body := receivedBody
+	mu.Unlock()
+
+	// Verify cloud provider requests do NOT strip prompt tokens from user prompt
+	if !strings.Contains(body, "<start_of_turn>") && !strings.Contains(body, `\u003cstart_of_turn\u003e`) {
+		t.Fatalf("expected user prompt to be preserved for cloud provider, got:\n%s", body)
+	}
+}

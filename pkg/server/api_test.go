@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -366,6 +367,109 @@ func TestAPI_Config_PutHotReload_And_DryRun(t *testing.T) {
 	}
 	if srv.GetConfig().Providers["openrouter"].APIKey != "sk-or-v1-real-secret-key-12345" {
 		t.Errorf("expected merged openrouter API key to remain 'sk-or-v1-real-secret-key-12345', got '%s'", srv.GetConfig().Providers["openrouter"].APIKey)
+	}
+}
+
+func TestAPI_Config_NTS_HotReload(t *testing.T) {
+	srv, _, _ := setupTestServer(t)
+
+	// Verify NTS starts enabled by default
+	if srv.GetNTSTransformer() == nil {
+		t.Fatal("expected NTS transformer to be non-nil by default")
+	}
+
+	basePayload := `"port": 8000,
+		"auth_token": "test-secret-token",
+		"providers": {
+			"openrouter": {
+				"base_url": "https://openrouter.ai/api/v1",
+				"type": "cloud",
+				"api_key": "sk-or-v1-real-secret-key-12345"
+			}
+		},
+		"tiers": [
+			{
+				"name": "Tier 1",
+				"model": "model-1",
+				"provider": "openrouter",
+				"when": "true"
+			}
+		],
+		"default_tier": {
+			"name": "Tier 1",
+			"model": "model-1",
+			"provider": "openrouter",
+			"when": "true"
+		}`
+
+	// 1. Hot-reload disabling NTS completely
+	disableNTSPayload := fmt.Sprintf(`{%s, "nts": {"enabled": false}}`, basePayload)
+	req := httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(disableNTSPayload))
+	req.Header.Set("Authorization", "Bearer test-secret-token")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on NTS disable hot-reload, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if srv.GetNTSTransformer() != nil {
+		t.Fatal("expected NTS transformer to be nil after hot-reloading enabled=false")
+	}
+
+	// 2. Hot-reload re-enabling NTS with specific flags
+	enableNTSPayload := fmt.Sprintf(`{%s, "nts": {
+		"enabled": true,
+		"strip_ansi": true,
+		"resolve_cr": true,
+		"normalize_whitespace": true,
+		"deduplicate_lines": false,
+		"strip_boilerplate": false,
+		"compact_stale_file_reads": false
+	}}`, basePayload)
+	req = httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(enableNTSPayload))
+	req.Header.Set("Authorization", "Bearer test-secret-token")
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on NTS enable hot-reload, got %d: %s", w.Code, w.Body.String())
+	}
+
+	tr := srv.GetNTSTransformer()
+	if tr == nil {
+		t.Fatal("expected NTS transformer to be non-nil after hot-reload")
+	}
+	if !tr.Pipeline().Config().Enabled {
+		t.Errorf("expected NTS pipeline to be enabled, got false")
+	}
+	if !tr.Pipeline().Config().StripANSI {
+		t.Errorf("expected StripANSI to be true, got false")
+	}
+	if tr.Pipeline().Config().DeduplicateLines {
+		t.Errorf("expected DeduplicateLines to be false, got true")
+	}
+
+	// 3. Hot-reload toggling deduplicate_lines back to true
+	toggleDedupPayload := fmt.Sprintf(`{%s, "nts": {
+		"enabled": true,
+		"deduplicate_lines": true
+	}}`, basePayload)
+	req = httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(toggleDedupPayload))
+	req.Header.Set("Authorization", "Bearer test-secret-token")
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on NTS toggle dedup hot-reload, got %d: %s", w.Code, w.Body.String())
+	}
+
+	tr2 := srv.GetNTSTransformer()
+	if tr2 == nil {
+		t.Fatal("expected NTS transformer to be non-nil")
+	}
+	if !tr2.Pipeline().Config().DeduplicateLines {
+		t.Errorf("expected DeduplicateLines to be true after hot-reload toggle, got false")
 	}
 }
 

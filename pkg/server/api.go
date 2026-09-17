@@ -364,10 +364,12 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 	// 5. Atomic State Pointer Swap (RCU)
 	newReg := provider.NewRegistryFromConfig(merged)
 	mementoState := s.state.Load()
+	newNTSTransformer := BuildNTSTransformer(merged.NTS)
 	s.state.Store(&runtimeState{
-		config:    merged,
-		evaluator: newEval,
-		registry:  newReg,
+		config:         merged,
+		evaluator:      newEval,
+		registry:       newReg,
+		ntsTransformer: newNTSTransformer,
 	})
 
 	// 5b. Dynamically reconfigure PricingOracle providers upon hot-reload

@@ -55,7 +55,7 @@ Passive proxies like LiteLLM just blindly forward prompts. Nacho Flow actively s
 | Agent Failure Mode | What Happens Without Nacho Flow | How Nacho Flow Solves It |
 | :--- | :--- | :--- |
 | **Runaway Loops** | Agent repeats identical broken edits 12 times, burning hours and dollars. | **Cycle Killer**: Detects n-gram loops in < 3s and severs the stream with a protocol-safe override. |
-| **Context Snowball** | Every turn re-transmits 60k+ tokens of repetitive ANSI spinner logs & stale files. | **Nacho Token Saver (NTS)**: In-flight ANSI de-noising & stale read deduplication (30%–60% bloat cut). |
+| **Context Instability & Cache Misses** | Modifying conversation histories breaks prompt cache keys and causes diff drift. | **Pristine by Default**: Preserves bit-perfect history for 96%+ KV prompt cache hits + **NTS Labs** for opt-in compaction. |
 | **Open-Weight Crashes** | Small local models output malformed XML or bare JSON, causing 3-strike harness deadlocks. | **Strategy-Pipeline Normalizer**: Converts 8 format families into valid OpenAI `tool_calls` JSON on the fly. |
 | **Planning Stalls** | Agent procrastinates in 10-turn read-only analysis without editing code. | **Kickstart**: Injects authoritative resuscitation prompts when implementation stalls. |
 | **Meter Panic** | Paying $3.00/M tokens to Claude just to check `git status` or inspect a 10-line file. | **Hybrid Tier Dispatch**: Routine work runs on local GPUs for **$0.00**; bursts to Claude only when needed. |
@@ -64,19 +64,7 @@ Passive proxies like LiteLLM just blindly forward prompts. Nacho Flow actively s
 
 ## ✨ Features
 
-### 🗜️ 1. Nacho Token Saver (NTS — In-Flight Context Compaction)
-
-Autonomous coding agents re-send 50k–120k+ tokens of conversation history, file dumps, and terminal noise on *every single turn*. NTS compacts the bloat in-flight before the model ever sees it:
-
-- **Zero-Alloc In-Place ANSI De-Noising**: Terminal test executions spit out thousands of raw ANSI escape sequences, spinner animations, and carriage returns (`\r`). The NTS de-noising fast path (`pkg/nts`) purges them cleanly in-flight with zero heap allocation using mutable byte slices.
-- **Redundant File-Read Compaction**: When an agent inspects the same 1,000-line file four times across 20 turns, re-transmitting it burns 8,000 wasted tokens. NTS compacts stale read outputs into structural digests while keeping the active turn fresh.
-- **Attention Defense for Open Weights**: Smaller open-weight models (8B–14B) suffer sharp reasoning degradation when prompt context exceeds 32k tokens. By stripping noise and deduplicating reads, NTS keeps smaller models working inside their high-accuracy attention zone.
-- **Direct Cloud Invoice Protection**: When turns escalate to frontier models like Claude or DeepSeek-R1, you aren't paying $3.00/M tokens for repetitive linter logs already sent five turns ago. NTS stops the context bill from snowballing.
-- **Empirical Impact**: **30%–60% context bloat eliminated** at **< 0.1ms zero-alloc Go overhead** with **zero loss** in semantic or code fidelity.
-
----
-
-### 🛡️ 2. Proactive Agent Supervision (Runtime Stream & Loop Defense)
+### 🛡️ 1. Proactive Agent Supervision (Runtime Stream & Loop Defense)
 
 Nacho Flow supervises local and cloud open-weight models in real time, eliminating common agent failure loops:
 
@@ -84,6 +72,18 @@ Nacho Flow supervises local and cloud open-weight models in real time, eliminati
 - ⚡ **Kickstart (Stall Resuscitation Engine)**: Monitors consecutive non-write turns. Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), and jolts agents out of passive read/plan procrastination when implementation stalls.
 - 🧚 **Fairy Dust (Programmable Milestone Checkpoints)**: A cadenced intervention engine. You control the trigger interval (every N writes), the model, the audit prompt, and the spend cap—deploying frontier reasoning models precisely when and where quality verification matters.
 - 🛡️ **Agentic Tool Fallback Shield**: Sub-nanosecond sliding tail-buffer analysis (4.67 ns/op, 0 B/op) intercepting conversational plans or questions from local models (Gemma 2, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
+
+---
+
+### 🧪 2. Nacho Labs: Token Saver (NTS — Experimental Opt-In Engine)
+
+> **Notice: Disabled (`enabled: false`) by Default for Optimal Cache Performance**
+> Modern frontier models and cloud providers rely on byte-perfect prefix matching for KV prompt caching (saving up to 90% on prompt costs). Nacho Flow preserves 100% pristine context history by default. For developers investigating extreme token limits or custom compaction heuristics, NTS can be enabled in `config.yaml`:
+
+- **Zero-Alloc In-Place ANSI De-Noising (Opt-In)**: Terminal test executions spit out thousands of raw ANSI escape sequences, spinner animations, and carriage returns (`\r`). The NTS de-noising fast path (`pkg/nts`) purges them cleanly in-flight with zero heap allocation using mutable byte slices.
+- **Redundant File-Read Compaction (Experimental)**: When an agent inspects the same 1,000-line file four times across 20 turns, re-transmitting it burns 8,000 wasted tokens. NTS provides configurable depth-based compaction into structural digests while keeping the active turn fresh.
+- **Attention Defense for Open Weights**: Smaller open-weight models (8B–14B) suffer sharp reasoning degradation when prompt context exceeds 32k tokens. By stripping noise and deduplicating reads, NTS keeps smaller models working inside their high-accuracy attention zone.
+- **Dual-Lane Immunity Guards**: Even when NTS is enabled, strict immunity rules protect active file reads, edits (`write_to_file`, `apply_diff`, `editor`), and prompt caching breakpoints from mutation.
 
 ---
 

@@ -277,8 +277,138 @@ func BenchmarkStripSubslicesInPlace_ZeroAlloc(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(scratch, sample)
 		_ = StripSubslicesInPlace(scratch, targets)
+	}
+}
+
+func TestReplaceSubslicesInPlace(t *testing.T) {
+	targets := [][]byte{
+		[]byte("\"insert_line\": \"None\""),
+		[]byte("\"insert_line\":\"None\""),
+		[]byte("\"insert_line\": \"null\""),
+		[]byte("\"insert_line\":\"null\""),
+		[]byte("\"old_text\": \"None\""),
+	}
+	replacements := [][]byte{
+		[]byte("\"insert_line\": null"),
+		[]byte("\"insert_line\":null"),
+		[]byte("\"insert_line\": null"),
+		[]byte("\"insert_line\":null"),
+		[]byte("\"old_text\": \"\""),
+	}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "empty input",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "no triggers present",
+			input:    `{"path": "main.go", "content": "hello"}`,
+			expected: `{"path": "main.go", "content": "hello"}`,
+		},
+		{
+			name:     "trigger byte present but no match",
+			input:    `{"path": "insert_line_test.go"}`,
+			expected: `{"path": "insert_line_test.go"}`,
+		},
+		{
+			name:     "single spaced match",
+			input:    `{"insert_line": "None", "new_text": "package main"}`,
+			expected: `{"insert_line": null, "new_text": "package main"}`,
+		},
+		{
+			name:     "single compact match",
+			input:    `{"insert_line":"None","new_text":"package main"}`,
+			expected: `{"insert_line":null,"new_text":"package main"}`,
+		},
+		{
+			name:     "string null replacement",
+			input:    `{"insert_line": "null", "new_text": "test"}`,
+			expected: `{"insert_line": null, "new_text": "test"}`,
+		},
+		{
+			name:     "multiple matches in same payload",
+			input:    `{"insert_line": "None", "old_text": "None"}`,
+			expected: `{"insert_line": null, "old_text": ""}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := []byte(tt.input)
+			res := ReplaceSubslicesInPlace(buf, targets, replacements)
+			if string(res) != tt.expected {
+				t.Fatalf("expected %q, got %q", tt.expected, string(res))
+			}
+		})
+	}
+
+	// Nil / length mismatch safety checks
+	if len(ReplaceSubslicesInPlace(nil, targets, replacements)) != 0 {
+		t.Errorf("expected empty for nil buffer")
+	}
+	if string(ReplaceSubslicesInPlace([]byte("test"), nil, nil)) != "test" {
+		t.Errorf("expected unchanged for nil targets")
+	}
+	if string(ReplaceSubslicesInPlace([]byte("test"), targets, replacements[:1])) != "test" {
+		t.Errorf("expected unchanged for mismatched targets/replacements")
+	}
+
+	// Mixed trigger bytes (singleTrigger == false)
+	mixedTargets := [][]byte{
+		[]byte("alpha"),
+		[]byte("beta"),
+	}
+	mixedReplacements := [][]byte{
+		[]byte("a"),
+		[]byte("b"),
+	}
+	mixedBuf := []byte("first alpha then beta and end")
+	mixedRes := ReplaceSubslicesInPlace(mixedBuf, mixedTargets, mixedReplacements)
+	if string(mixedRes) != "first a then b and end" {
+		t.Errorf("expected 'first a then b and end', got %q", string(mixedRes))
+	}
+
+	// Safety guard check: repLen > targetLen must not corrupt buffer
+	invalidTargets := [][]byte{[]byte("short")}
+	invalidReplacements := [][]byte{[]byte("much_longer_replacement")}
+	safeBuf := []byte("prefix short suffix")
+	res := ReplaceSubslicesInPlace(safeBuf, invalidTargets, invalidReplacements)
+	// Guard skips replacing since it would violate w <= r
+	if string(res) != "prefix short suffix" {
+		t.Errorf("expected uncorrupted buffer when rep > target, got %q", string(res))
+	}
+}
+
+func BenchmarkReplaceSubslicesInPlace_ZeroAlloc(b *testing.B) {
+	targets := [][]byte{
+		[]byte("\"insert_line\": \"None\""),
+		[]byte("\"insert_line\":\"None\""),
+		[]byte("\"insert_line\": \"null\""),
+		[]byte("\"insert_line\":\"null\""),
+	}
+	replacements := [][]byte{
+		[]byte("\"insert_line\": null"),
+		[]byte("\"insert_line\":null"),
+		[]byte("\"insert_line\": null"),
+		[]byte("\"insert_line\":null"),
+	}
+
+	sample := []byte(`data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"editor","arguments":"{\"insert_line\": \"None\", \"new_text\": \"package main\\n\\nfunc main() {}\"}"}}]}}]}`)
+	scratch := make([]byte, len(sample))
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		copy(scratch, sample)
+		_ = ReplaceSubslicesInPlace(scratch, targets, replacements)
 	}
 }

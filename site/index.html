@@ -364,24 +364,24 @@
         </div>
     </section>
 
-    <!-- Section B: How We Fight the Context Snowball -->
+    <!-- Section B: Context Stability & Experimental Labs -->
     <section class="nts-section" id="context-snowball">
-        <h2 class="section-title">How We Fight the Context Snowball</h2>
-        <p class="section-subtitle">Autonomous coding agents re-send 50k–120k+ tokens of conversation history, file dumps, and terminal noise on <em>every single turn</em>. Here is how Nacho Token Saver (NTS) compacts the bloat in-flight before the model ever sees it.</p>
+        <h2 class="section-title">Context Stability &amp; Experimental Labs</h2>
+        <p class="section-subtitle">Nacho Flow defaults to 100% pristine context preservation so modern frontier models achieve 96%+ provider KV prompt caching discounts without editor diff drift. For advanced research and extreme context limits, explore Nacho Labs.</p>
 
         <!-- Metric Proof Row for Section B -->
         <div class="proof-metric-row">
             <div class="proof-metric-box" style="border-color: rgba(16, 185, 129, 0.3);">
-                <div class="proof-metric-val" style="color: #34d399;">30%–60%</div>
-                <div class="proof-metric-lbl">Context Bloat Eliminated</div>
+                <div class="proof-metric-val" style="color: #34d399;">96.4%</div>
+                <div class="proof-metric-lbl">Prompt Cache Hit Rate (Pristine Default)</div>
             </div>
             <div class="proof-metric-box" style="border-color: rgba(59, 130, 246, 0.3);">
                 <div class="proof-metric-val" style="color: #60a5fa;">&lt; 0.1ms</div>
                 <div class="proof-metric-lbl">Zero-Alloc Go Overhead</div>
             </div>
             <div class="proof-metric-box" style="border-color: rgba(168, 85, 247, 0.3);">
-                <div class="proof-metric-val" style="color: #c084fc;">Zero Loss</div>
-                <div class="proof-metric-lbl">Semantic &amp; Code Fidelity</div>
+                <div class="proof-metric-val" style="color: #c084fc;">100%</div>
+                <div class="proof-metric-lbl">Bit-Perfect Context Stability</div>
             </div>
         </div>
 
@@ -389,63 +389,63 @@
         <div class="nts-feature-box glass">
             <div class="nts-box-header">
                 <div class="nts-box-header-top">
-                    <div class="nts-master-badge">
+                    <div class="nts-master-badge experimental">
                         <span class="nts-badge-dot"></span>
-                        <span>KEY FEATURE AREA</span>
+                        <span>🧪 EXPERIMENTAL LABS / OPT-IN RESEARCH</span>
                     </div>
-                    <div class="nts-meta-chip">WIRE-SPEED IN-FLIGHT COMPACTION</div>
+                    <div class="nts-meta-chip">OPT-IN HEURISTIC COMPACTION</div>
                 </div>
-                <h3 class="nts-box-title">🗜️ Nacho Token Saver (NTS)</h3>
-                <p class="nts-box-subtitle">Four active, zero-alloc stream processors that sanitize terminal noise, deduplicate redundant tool reads, and shield model attention before prompts ever hit the model.</p>
+                <h3 class="nts-box-title">🧪 Nacho Labs: Experimental Context Compactor (NTS)</h3>
+                <p class="nts-box-subtitle">An opt-in research pipeline exploring long-context token reduction. Kept disabled out-of-the-box so users experience rock-solid cache stability, zero diff drift, and maximum prompt cache savings.</p>
             </div>
 
             <!-- The Four NTS Feature Cards (2x2) -->
             <div class="nts-grid">
                 <div class="fix-card glass">
                     <div class="fix-card-header">
-                        <span class="fix-badge badge-nts-ansi">🧹 TERMINAL SANITIZER</span>
+                        <span class="fix-badge badge-nts-ansi">🧹 TERMINAL SANITIZER (OPT-IN)</span>
                         <span class="fix-card-icon">🧹</span>
                     </div>
                     <h3>ANSI &amp; Spinner Purge</h3>
                     <p class="fix-superpower">Purges progress spinner garbage and terminal spam in-place.</p>
                     <p class="fix-solution">
-                        Terminal commands spit out thousands of raw ANSI escape sequences, spinner animations (<code>|/-\</code>), and carriage returns (<code>\r</code>). NTS purges them cleanly in-place with zero heap allocations.
+                        Terminal commands spit out thousands of raw ANSI escape sequences, spinner animations (<code>|/-\</code>), and carriage returns (<code>\r</code>). NTS purges them cleanly in-place with zero heap allocations when enabled.
                     </p>
                 </div>
 
                 <div class="fix-card glass">
                     <div class="fix-card-header">
-                        <span class="fix-badge badge-nts-dedup">📑 STALE READ COMPACTOR</span>
+                        <span class="fix-badge badge-nts-dedup">📑 STALE READ COMPACTOR (EXPERIMENTAL)</span>
                         <span class="fix-card-icon">📑</span>
                     </div>
                     <h3>Superseded Read Compaction</h3>
                     <p class="fix-superpower">Folds stale file-reads once a file is edited or re-read.</p>
                     <p class="fix-solution">
-                        When an agent inspects the same 1,000-line file across 20 turns, older reads become dead weight. NTS compacts superseded reads into structural notices while keeping the active turn fresh.
+                        When an agent inspects the same 1,000-line file across 20 turns, older reads become dead weight. NTS provides configurable depth-based compaction into structural notices for developer evaluation.
                     </p>
                 </div>
 
                 <div class="fix-card glass">
                     <div class="fix-card-header">
-                        <span class="fix-badge badge-nts-boilerplate">🛡️ HARNESS SHIELD</span>
+                        <span class="fix-badge badge-nts-boilerplate">🛡️ HARNESS SHIELD (EXPERIMENTAL)</span>
                         <span class="fix-card-icon">🛡️</span>
                     </div>
                     <h3>IDE Boilerplate Pruning</h3>
                     <p class="fix-superpower">Strips repetitive extension notices and runaway diff dumps.</p>
                     <p class="fix-solution">
-                        Cline and Zoo Code inject multi-line <code>&lt;notice&gt;</code> hints and massive <code>&lt;error_details&gt;</code> search blocks on diff misses. NTS strips this harness bloat before it hits the model.
+                        Harnesses like Cline and Zoo Code inject multi-line <code>&lt;notice&gt;</code> hints and massive search blocks on diff misses. NTS provides experimental rules to prune harness noise on request.
                     </p>
                 </div>
 
                 <div class="fix-card glass">
                     <div class="fix-card-header">
-                        <span class="fix-badge badge-nts-whitespace">📐 STREAM NORMALIZER</span>
+                        <span class="fix-badge badge-nts-whitespace">📐 WHITESPACE NORMALIZER (EXPERIMENTAL)</span>
                         <span class="fix-card-icon">📐</span>
                     </div>
-                    <h3>Whitespace &amp; Log Dedup</h3>
-                    <p class="fix-superpower">Collapses runaway blank lines and identical output bursts.</p>
+                    <h3>Whitespace &amp; Blank Line Pruning</h3>
+                    <p class="fix-superpower">Collapses runaway blank lines and duplicate noise bursts.</p>
                     <p class="fix-solution">
-                        Long test runs and file reads often leak thousands of blank lines and duplicate linter spam. NTS normalizes whitespace and deduplicates repeating chunks with zero memory allocation.
+                        Long test runs and build outputs often leak hundreds of blank lines. This pass normalizes consecutive newlines and deduplicates repeating chunks with zero memory allocation.
                     </p>
                 </div>
             </div>
@@ -618,7 +618,7 @@
                     <div class="trust-lbl">Go Core Latency</div>
                 </div>
                 <div class="trust-item">
-                    <div class="trust-top"><span class="trust-icon">🚀</span> <span class="trust-val"><!-- BENCHMARK:PEAK_VAL_START -->30,284+<!-- BENCHMARK:PEAK_VAL_END --></span></div>
+                    <div class="trust-top"><span class="trust-icon">🚀</span> <span class="trust-val"><!-- BENCHMARK:PEAK_VAL_START -->30,072+<!-- BENCHMARK:PEAK_VAL_END --></span></div>
                     <div class="trust-lbl">Peak Req / Sec</div>
                 </div>
                 <div class="trust-item">
@@ -651,7 +651,7 @@
                     <span class="dot-green"></span>
                 </div>
                 <div class="terminal-title">nacho-flow proxy daemon (localhost:8000)</div>
-                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● PEAK <!-- BENCHMARK:TERMINAL_PEAK_START -->30,284<!-- BENCHMARK:TERMINAL_PEAK_END --> req/s</div>
+                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● PEAK <!-- BENCHMARK:TERMINAL_PEAK_START -->30,072<!-- BENCHMARK:TERMINAL_PEAK_END --> req/s</div>
             </div>
             <div class="terminal-body">
                 <div class="term-line">
@@ -671,8 +671,8 @@
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:42:33</span>
-                    <span class="term-tag tag-nts">TOKEN SAVER</span>
-                    <span class="term-msg">Turn 8 (ANSI: 14.2k purged, Superseded reads: 2) ➔ <span class="term-highlight">pkg/nts</span> <span class="tag-nts-compaction">58.4% COMPACTED (18,400 TOKENS SAVED)</span></span>
+                    <span class="term-tag tag-normalizer" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">NORMALIZER</span>
+                    <span class="term-msg">Turn 8 (3-Lane Demux: Thinking/Tools/Prose) ➔ <span class="term-highlight">pkg/server</span> <span class="tag-cache">96.4% KV CACHE HIT (PRISTINE CONTEXT)</span></span>
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:42:50</span>

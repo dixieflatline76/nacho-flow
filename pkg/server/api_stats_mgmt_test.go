@@ -214,6 +214,38 @@ tiers:
 		t.Errorf("unexpected reloaded config tiers: %v", cfg.Tiers)
 	}
 
+	// 1. Verify NTS starts enabled
+	yamlNtsEnabled := yamlContent + `
+nts:
+  enabled: true
+  strip_ansi: true
+`
+	_ = os.WriteFile(configPath, []byte(yamlNtsEnabled), 0600)
+	srv.SetConfigPath(configPath)
+	if err := srv.ReloadConfigFromDisk(); err != nil {
+		t.Fatalf("ReloadConfigFromDisk with NTS enabled failed: %v", err)
+	}
+	tr := srv.GetNTSTransformer()
+	if tr == nil {
+		t.Fatal("expected NTS transformer to be non-nil after enabling via disk reload")
+	}
+	if !tr.Pipeline().Config().Enabled || !tr.Pipeline().Config().StripANSI {
+		t.Errorf("expected NTS enabled and StripANSI true, got enabled=%v, strip_ansi=%v", tr.Pipeline().Config().Enabled, tr.Pipeline().Config().StripANSI)
+	}
+
+	// 2. Overwrite config on disk with NTS disabled
+	yamlNtsDisabled := yamlContent + `
+nts:
+  enabled: false
+`
+	_ = os.WriteFile(configPath, []byte(yamlNtsDisabled), 0600)
+	if err := srv.ReloadConfigFromDisk(); err != nil {
+		t.Fatalf("ReloadConfigFromDisk with NTS disabled failed: %v", err)
+	}
+	if srv.GetNTSTransformer() != nil {
+		t.Fatal("expected NTS transformer to be nil after disabling via disk reload")
+	}
+
 	// Test with non-existent config path
 	srv.SetConfigPath(filepath.Join(tmpDir, "non_existent.yaml"))
 	if err := srv.ReloadConfigFromDisk(); err == nil {

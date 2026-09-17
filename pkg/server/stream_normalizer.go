@@ -257,6 +257,9 @@ type StreamNormalizer struct {
 	hasActiveToolCall      bool
 	inWriteTool            bool
 	pendingWriteTagBuf     string
+	hasEmittedContent      bool
+	hasEmittedToolCalls    bool
+	hasEmittedReasoning    bool
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -321,13 +324,32 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 		if readErr != nil {
 			if readErr == io.EOF {
 				s.eofReached = true
+				wasInThinking := s.inThinking
 				s.inThinking = false
 				s.inStructuredReasoning = false
 				if s.pendingDelimiterBuf != "" {
-					if !agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(s.pendingDelimiterBuf)) {
-						s.outBuf.WriteString(s.pendingDelimiterBuf)
-					}
+					buf := s.pendingDelimiterBuf
 					s.pendingDelimiterBuf = ""
+					suppress := len(buf) >= 2 && agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(buf))
+					if !suppress {
+						delta := fastDelta{}
+						if wasInThinking {
+							s.recordReasoning(buf)
+							delta.ReasoningContent = buf
+						} else {
+							s.recordProse(buf)
+							delta.Content = buf
+						}
+						chunk := fastStreamChunk{
+							Choices: []fastStreamChoice{
+								{
+									Index: 0,
+									Delta: delta,
+								},
+							},
+						}
+						s.emitChunk(chunk)
+					}
 				}
 			} else {
 				return 0, readErr
@@ -404,6 +426,16 @@ func (s *StreamNormalizer) fastPassProse(line, payload []byte) {
 		return
 	}
 	if contentStr := payloadContent(payload); contentStr != "" {
+		tailLen := len(contentStr)
+		if tailLen > 24 {
+			tailLen = 24
+		}
+		if strings.IndexByte(contentStr[len(contentStr)-tailLen:], '<') != -1 {
+			if idx := agentregistry.DefaultRegistry().FindTrailingDelimiterPrefix([]byte(contentStr), 24); idx != -1 {
+				s.processChunkLine(line, payload)
+				return
+			}
+		}
 		if partial := findPartialOpenTagSuffix(contentStr); partial != "" {
 			s.routeContentDelta(contentStr)
 			s.outBuf.Write(line)
@@ -433,6 +465,30 @@ func (s *StreamNormalizer) fastPassWrite(line, payload []byte) {
 
 // processChunkLine parses a JSON streaming chunk and canonicalizes reasoning vs content deltas.
 func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
+	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
+		reg := agentregistry.DefaultRegistry()
+		if reg != nil {
+			modified := false
+			if reg.HasParameterSanitizerMarker(payload) {
+				line = reg.SanitizeParametersInPlace(line)
+				modified = true
+			}
+			if reg.HasControlTokenMarker(payload) {
+				line = reg.StripControlTokensInPlace(line)
+				modified = true
+			}
+			if modified {
+				trimmed := bytes.TrimRight(line, "\r\n")
+				switch {
+				case bytes.HasPrefix(trimmed, []byte("data: ")):
+					payload = trimmed[6:]
+				case bytes.HasPrefix(trimmed, []byte("data:")):
+					payload = trimmed[5:]
+				}
+			}
+		}
+	}
+
 	var chunk fastStreamChunk
 	if err := json.Unmarshal(payload, &chunk); err != nil || len(chunk.Choices) == 0 {
 		s.outBuf.Write(line)
@@ -450,6 +506,7 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 	}
 	if len(choice.Delta.ToolCalls) > 0 {
 		s.extractAndRecordToolCalls(choice.Delta.ToolCalls)
+		s.pendingDelimiterBuf = ""
 	}
 
 	reasoningText := s.resolveReasoningField(&choice.Delta)
@@ -553,6 +610,9 @@ func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
 	} else if strings.Contains(content, "<think>") {
 		parts := strings.SplitN(content, "<think>", 2)
 		prefix := parts[0]
+		if strings.Contains(prefix, "</think>") {
+			prefix = strings.ReplaceAll(prefix, "</think>", "")
+		}
 		after := parts[1]
 		if strings.Contains(after, "</think>") {
 			subParts := strings.SplitN(after, "</think>", 2)
@@ -564,6 +624,14 @@ func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
 			proseDelta = prefix
 			s.inThinking = true
 		}
+	} else if content == "</think>" {
+		proseDelta = ""
+	} else if strings.HasPrefix(content, "</think>") {
+		proseDelta = content[len("</think>"):]
+	} else if strings.HasSuffix(content, "</think>") {
+		proseDelta = content[:len(content)-len("</think>")]
+	} else if strings.Contains(content, "</think>") {
+		proseDelta = strings.ReplaceAll(content, "</think>", "")
 	} else {
 		proseDelta = content
 	}
@@ -691,30 +759,35 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 	s.inStructuredReasoning = false
 	s.hasActiveToolCall = false
 	if s.pendingDelimiterBuf != "" {
-		if !agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(s.pendingDelimiterBuf)) {
-			if wasInThinking {
-				s.recordReasoning(s.pendingDelimiterBuf)
-			} else {
-				s.recordProse(s.pendingDelimiterBuf)
-			}
-			chunk := fastStreamChunk{
-				Choices: []fastStreamChoice{
-					{
-						Index: 0,
-						Delta: fastDelta{
-							Content: s.pendingDelimiterBuf,
+		buf := s.pendingDelimiterBuf
+		s.pendingDelimiterBuf = ""
+		if !s.hasEmittedToolCalls {
+			suppress := len(buf) >= 2 && agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(buf))
+			if !suppress {
+				delta := fastDelta{}
+				if wasInThinking {
+					s.recordReasoning(buf)
+					delta.ReasoningContent = buf
+				} else {
+					s.recordProse(buf)
+					delta.Content = buf
+				}
+				chunk := fastStreamChunk{
+					Choices: []fastStreamChoice{
+						{
+							Index: 0,
+							Delta: delta,
 						},
 					},
-				},
+				}
+				s.emitChunk(chunk)
 			}
-			s.emitChunk(chunk)
 		}
-		s.pendingDelimiterBuf = ""
 	}
 	if s.pendingWriteTagBuf != "" {
 		if s.inWriteTool {
 			s.recordToolDelta(s.pendingWriteTagBuf)
-		} else {
+		} else if !s.hasEmittedToolCalls {
 			s.recordProse(s.pendingWriteTagBuf)
 		}
 		s.pendingWriteTagBuf = ""
@@ -726,7 +799,17 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 		if matched, _ := s.shieldMgr.RuleEngine().Evaluate(s.tailBuffer.Bytes()); matched {
 			if synthCall, ok := s.shieldMgr.EvaluateAndSynthesize(s.proseAccumulator.String(), s.interactiveTool); ok && synthCall != nil {
 				s.emitSyntheticToolCall(synthCall)
+				s.hasEmittedToolCalls = true
 			}
+		}
+	}
+
+	// Silent turn resuscitation: if model emitted reasoning but 0 content and 0 tool calls,
+	// synthesize keepalive status chunk to prevent autonomous agent freeze.
+	if !s.hasEmittedContent && !s.hasEmittedToolCalls && s.hasEmittedReasoning {
+		if resuscitationChunk := agentregistry.DefaultRegistry().SilentTurnResuscitationChunk(); len(resuscitationChunk) > 0 {
+			s.outBuf.Write(resuscitationChunk)
+			s.hasEmittedContent = true
 		}
 	}
 
@@ -790,6 +873,7 @@ func (s *StreamNormalizer) recordReasoning(text string) {
 	if text == "" {
 		return
 	}
+	s.hasEmittedReasoning = true
 	s.emittedCompletionChars += len(text)
 	if s.cycleBreaker != nil && !s.cycleViolated {
 		if triggered, reason := s.cycleBreaker.ProcessDelta(text, true); triggered {
@@ -804,6 +888,7 @@ func (s *StreamNormalizer) recordProse(text string) {
 	if text == "" {
 		return
 	}
+	s.hasEmittedContent = true
 	s.emittedCompletionChars += len(text)
 	if s.tailBuffer != nil {
 		s.tailBuffer.Append([]byte(text))
@@ -822,6 +907,7 @@ func (s *StreamNormalizer) recordToolDelta(argText string) {
 	if argText == "" {
 		return
 	}
+	s.hasEmittedToolCalls = true
 	s.emittedCompletionChars += len(argText)
 	if s.cycleBreaker != nil && !s.cycleViolated {
 		if triggered, reason := s.cycleBreaker.ProcessToolDelta(argText, s.currentToolCategory); triggered {
@@ -835,6 +921,7 @@ func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
 	if len(raw) == 0 {
 		return
 	}
+	s.hasEmittedToolCalls = true
 	s.toolChunksScratch = s.toolChunksScratch[:0]
 	if err := json.Unmarshal(raw, &s.toolChunksScratch); err == nil {
 		for i := range s.toolChunksScratch {
@@ -927,7 +1014,7 @@ func (s *StreamNormalizer) GetUsage() (StreamUsage, bool) {
 		}
 		return StreamUsage{
 			CompletionTokens: estTokens,
-			TotalTokens:      estTokens,
+			TotalTokens:      0,
 		}, false
 	}
 	return StreamUsage{}, false
