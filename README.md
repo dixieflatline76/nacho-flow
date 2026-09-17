@@ -51,7 +51,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 
 > [!NOTE]
 > **Live Empirical Telemetry (Autonomous Coding Benchmarks)**:
-> In benchmarked tasks pairing Cline and Zoo Code with local models (Qwen2.5-Coder / Gemma), Nacho Flow's supervisor intercepted **22 runaway loops** with a **100% Stage 1 local heal rate** ($0.00 compute waste), rescuing **83.6 minutes** of GPU lockup. In-flight **Nacho Token Saver (NTS)** compaction pruned **1,426,821 tokens (5.4 MB payload)** across 852 turns with zero loss in code accuracy.
+> In benchmarked tasks pairing Cline and Zoo Code with local models (Qwen2.5-Coder / Gemma), Nacho Flow's supervisor intercepted **22 runaway loops** with a **100% Stage 1 local heal rate** ($0.00 compute waste), rescuing **83.6 minutes** of GPU lockup. Nacho Flow defaults to 100% pristine context preservation so frontier models hit **96%+ prompt cache rates**, while preserving the zero-alloc **Nacho Token Saver (NTS)** engine in `pkg/nts` as an opt-in research pipeline.
 
 ---
 
@@ -65,7 +65,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 | **Routing Logic** | Black-box trailing 7-day community spend. | **Deterministic AST Bytecode Rules** (`Tokens`, `Retries`, `Keywords`). |
 | **Target Providers** | Single cloud aggregator lock-in. | **Any Provider**: [Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Langdock](https://www.langdock.com), [Azure](https://azure.microsoft.com), [DeepSeek](https://www.deepseek.com), [OpenRouter](https://openrouter.ai). |
 | **Open-Source Tool Fixing** | None for local models. | **Normalizes 8 tool-calling format families & thinking tags on the fly**. |
-| **In-Flight Context Compaction**| None (forwards context uncompressed). | **Nacho Token Saver (NTS)**: Zero-alloc in-place ANSI de-noising & stale read deduplication. |
+| **In-Flight Context Compaction**| None (forwards context uncompressed). | **Pristine by default** (96%+ KV prompt cache hits) + **NTS Labs** (experimental opt-in compaction engine). |
 | **Local Self-Healing** | None. | **Circuit Breakers & Delayed Header streaming failovers**. |
 
 > [!TIP]
@@ -82,12 +82,15 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **Smarter Test-Loop Breaker**: Detects when an agent is repeatedly running failing tests without editing code, requiring concrete file write modifications to break idle accumulation.
 * **Fairy Dust (Programmable Milestone Checkpoints)**: A cadenced intervention engine. Deploy frontier reasoning models (e.g. Claude Opus) precisely every $N$ writes for quality verification without continuous frontier spend.
 
-### 🗜️ 2. Nacho Token Saver (NTS — In-Flight Context Compaction)
-* **Zero-Alloc In-Place ANSI De-Noising**: Terminal test executions spit out thousands of raw ANSI escape sequences, spinner animations, and carriage returns (`\r`). The NTS de-noising fast path (`pkg/nts`) purges them cleanly in-flight with zero heap allocation using mutable byte slices.
-* **Redundant File-Read Compaction**: When an agent inspects the same 1,000-line file four times across 20 turns, re-transmitting it burns 8,000 wasted tokens. NTS compacts stale read outputs into structural digests while keeping the active turn fresh.
-* **Attention Defense for Open Weights**: Smaller open-weight models (8B–14B) suffer sharp reasoning degradation when prompt context exceeds 32k tokens. By stripping noise and deduplicating reads, NTS keeps smaller models working inside their high-accuracy attention zone.
-* **Direct Cloud Invoice Protection**: When turns escalate to frontier models like Claude or DeepSeek-R1, you aren't paying $3.00/M tokens for repetitive linter logs already sent five turns ago. NTS stops the context bill from snowballing.
-* **Empirical Impact**: **30%–60% context bloat eliminated** at **< 0.1ms zero-alloc Go overhead** with **zero loss** in semantic or code fidelity.
+### 🧪 2. Nacho Labs: Token Saver (NTS — Experimental Opt-In Engine)
+> [!NOTE]
+> **Production Default: Disabled (`enabled: false`) for Pristine Context Stability**
+> Modern frontier models (Claude 3.5/3.7 Sonnet, Qwen 2.5 Coder, Gemini 2.0) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context breaks KV caches and induces diff matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted). Nacho Flow defaults to **100% pristine context preservation** for optimal speed, cache hits, and accuracy. NTS is maintained as an experimental opt-in research pipeline (`pkg/nts`) for developers investigating extreme context limits.
+
+* **Zero-Alloc In-Place ANSI De-Noising (Opt-In)**: Terminal test executions spit out thousands of raw ANSI escape sequences, spinner animations, and carriage returns (`\r`). The NTS de-noising fast path (`pkg/nts`) purges them cleanly in-flight with zero heap allocation using mutable byte slices.
+* **Redundant File-Read Compaction (Experimental)**: When an agent inspects the same 1,000-line file four times across 20 turns, re-transmitting it burns 8,000 wasted tokens. NTS provides configurable depth-based compaction into structural digests while keeping the active turn fresh.
+* **Attention Defense for Open Weights**: Smaller open-weight models (8B–14B) suffer sharp reasoning degradation when prompt context exceeds 32k tokens. For constrained hardware, NTS can be selectively enabled in `config.yaml` to trade prompt cache hits for lower raw context memory footprint.
+* **Dual-Lane Immunity Guards**: Even when NTS is enabled, strict immunity rules protect active file reads, edits (`write_to_file`, `apply_diff`, `editor`), and prompt caching breakpoints from mutation.
 
 ### ⚡ 3. High-Throughput Wire-Speed Core & Systems Architecture
 * **Zero-Allocation Fast Path**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU (Read-Copy-Update) state, stack-allocated streaming buffers (`sync.Pool`), and pooled HTTP transports with zero heap churn during proxying.

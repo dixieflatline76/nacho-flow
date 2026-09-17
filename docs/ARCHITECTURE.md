@@ -119,15 +119,21 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - This prevents `400 Bad Request` crashes on cheaper cloud models or local models that lack vision encoders.
 - The top-level `"model"` field in the JSON payload is rewritten to the target tier's upstream model ID.
 
-### Stage 3.5: Nacho Token Saver (NTS) In-Flight Compaction (`pkg/nts`, `pkg/zeroalloc`)
+### Stage 3.5: [Experimental / Opt-In] Nacho Token Saver (NTS) In-Flight Compaction (`pkg/nts`, `pkg/zeroalloc`)
+> [!NOTE]
+> **Production Default: Disabled (`enabled: false`) for Pristine Context Stability**
+> Nacho Flow defaults to 100% pristine context preservation. Empirical bake-offs demonstrated that modern frontier models and provider prompt caches (OpenRouter, Anthropic) achieve maximum cost and speed benefits (96%+ prompt cache hit rates) when the prompt prefix remains bit-for-bit unchanged. Mutating historical tool outputs in-flight causes prompt cache invalidation and can induce subtle diff-matching drifts in agent harnesses (Cline/Zoo Code taking 100–148 turns vs. 64–69 turns uncompacted).
+> 
+> NTS is maintained as an experimental, opt-in research pipeline (`pkg/nts`) for developers investigating extreme token limits or custom compaction heuristics. When enabled via `nts.enabled: true`:
+
 - **Multi-Pass Request Compaction**: Before transmitting payloads upstream, `ntsTransformer.TransformOpenAI` or `TransformAnthropic` evaluates historical tool outputs and command execution logs in-place.
 - **Pass 1 (ANSI / OSC Escapes)**: Strips terminal color codes and window title sequences.
 - **Pass 2 (Carriage Returns)**: Overwrites `\r` progress spinners from build tools (`npm`, `pip`, `docker`) in-place, keeping only final progress lines.
-- **Pass 3 (Duplicate Deduplication)**: Collapses consecutive identical log lines exceeding `dedup_threshold` (default: 3).
-- **Pass 4 (IDE Boilerplate)**: Strips repetitive parameter notices and agent tool wrapper banners.
-- **Pass 5 (Whitespace)**: Normalizes excessive empty lines.
-- **Dual-Lane Immunity**: Strictly preserves code modification tools (`write_to_file`, `replace_in_file`, `apply_diff`), active file reads, and upstream prompt caching breakpoints (`cache_control: {"type": "ephemeral"}`).
-- **Stale Read Eviction (`stale_read_depth: 3`)**: Automatically prunes older historical versions of superseded file reads, reclaiming **25%–41%+ of context tokens** per session while preventing model amnesia.
+- **Pass 3 (Duplicate Deduplication - Experimental)**: Collapses consecutive identical log lines exceeding `dedup_threshold` (default: 3).
+- **Pass 4 (IDE Boilerplate - Experimental)**: Strips repetitive parameter notices and agent tool wrapper banners.
+- **Pass 5 (Whitespace - Experimental)**: Normalizes excessive empty lines.
+- **Dual-Lane Immunity**: Strictly preserves code modification tools (`write_to_file`, `replace_in_file`, `apply_diff`, `editor`), active file reads, and upstream prompt caching breakpoints (`cache_control: {"type": "ephemeral"}`).
+- **Stale Read Eviction (`stale_read_depth: 3` - Experimental)**: Provides configurable depth-based compaction of older historical file reads into structural notices.
 - **Zero-Allocation Byte Pipeline (`pkg/zeroalloc`)**: Operates strictly in-place with single-pass read/write cursors ($w \le r$), delivering wire-speed performance with zero heap churn.
 
 ### Stage 4: Circuit-Breaker-Aware Dispatch & Strict Fallback Bypass (`pkg/server/proxy.go`, `pkg/provider/circuit_breaker.go`)

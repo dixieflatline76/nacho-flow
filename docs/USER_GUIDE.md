@@ -341,21 +341,26 @@ fairy_dust:
         if necessary, or confirm trajectory and continue.
 
 # =============================================================================
-# 🗜️ NACHO TOKEN SAVER (NTS)
-# Wire-speed, zero-allocation in-place tool output compaction engine
+# 🧪 NACHO TOKEN SAVER (NTS) [EXPERIMENTAL / OPT-IN ONLY]
+# Wire-speed, zero-allocation in-place tool output compaction engine.
+#
+# ⚠️ NOTICE: DISABLED BY DEFAULT.
+# Empirical bake-offs proved that mutating conversation history breaks provider
+# KV prompt caching (causing cache misses) and can degrade agent diff matching.
+# Keep disabled for optimal coding agent performance unless actively experimenting.
 # =============================================================================
 nts:
-  enabled: true                     # Master switch for tool output compaction
+  enabled: false                    # Master switch (default: false / pristine context)
   strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
   resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
-  deduplicate_lines: true           # Pass 3: Collapse repeated consecutive lines (>3 times)
+  deduplicate_lines: false          # Pass 3: Collapse repeated consecutive lines (disabled by default)
   dedup_threshold: 3                # Consecutive duplicate threshold before collapse
-  strip_boilerplate: true           # Pass 4: Strip IDE tool boilerplate notices
-  normalize_whitespace: true        # Pass 5: Collapse multiple empty lines
+  strip_boilerplate: false          # Pass 4: Strip IDE tool boilerplate notices (disabled by default)
+  normalize_whitespace: false       # Pass 5: Collapse multiple empty lines (disabled by default)
   preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
   preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
-  compact_stale_file_reads: true    # 📦 Evict superseded historical file reads
+  compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
   stale_read_depth: 3               # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 ```
 
@@ -500,11 +505,17 @@ To protect your wallet from runaway loops while preserving on-demand access to f
 
 ---
 
-### 2.7 🗜️ Nacho Token Saver (NTS): Wire-Speed Tool Output Compaction
+### 2.7 🧪 Nacho Labs: Token Saver (NTS — Experimental Opt-In Engine)
+
+> [!IMPORTANT]
+> **Production Default: Disabled (`enabled: false`) for Pristine Context Stability**
+> Modern frontier models (Claude 3.5/3.7 Sonnet, Qwen 2.5 Coder, Gemini 2.0) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context in-flight invalidates prompt cache keys and induces diff-matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted).
+> Nacho Flow defaults to **100% pristine context preservation** for optimal speed, cache hits, and accuracy.
+> NTS is maintained as an experimental opt-in research pipeline (`pkg/nts`) for developers investigating extreme context limits or custom compaction heuristics.
 
 Autonomous coding agents accumulate historical conversation baggage rapidly. Every shell command output, build progress spinner, `git diff`, and repeated file read stays in the conversation context forever. By Turn 20, an agent may be resending 40,000–80,000+ tokens with every single user prompt.
 
-**Nacho Token Saver (NTS)** is an in-flight, zero-allocation token reduction engine that executes directly on incoming request payloads before they are forwarded to upstream models.
+When explicitly enabled via `nts.enabled: true`, **Nacho Token Saver (NTS)** provides an in-flight, zero-allocation token reduction pipeline that executes directly on incoming request payloads before they are forwarded to upstream models.
 
 ```mermaid
 flowchart LR
@@ -537,17 +548,17 @@ When an agent inspects a file multiple times across a long session (e.g., readin
 #### Configuration Options:
 | Setting | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `enabled` | `bool` | `true` | Master switch for tool output compaction. |
+| `enabled` | `bool` | `false` | Master switch (default: false for 100% pristine context stability). |
 | `strip_ansi` | `bool` | `true` | Strips ANSI escape codes from shell and command execution logs. |
 | `resolve_cr` | `bool` | `true` | Resolves terminal `\r` progress spinners to their final line state. |
-| `deduplicate_lines` | `bool` | `true` | Collapses consecutive identical lines exceeding the threshold. |
+| `deduplicate_lines` | `bool` | `false` | Collapses consecutive identical lines exceeding the threshold (experimental). |
 | `dedup_threshold` | `int` | `3` | Number of consecutive identical lines permitted before collapsing. |
-| `strip_boilerplate` | `bool` | `true` | Strips repetitive IDE agent tool wrappers and status boilerplate. |
-| `normalize_whitespace` | `bool` | `true` | Trims trailing spaces and collapses consecutive empty lines. |
-| `preserve_file_writes` | `bool` | `true` | Full immunity for code writing tools (`write_to_file`, `apply_diff`). |
+| `strip_boilerplate` | `bool` | `false` | Strips repetitive IDE agent tool wrappers and status boilerplate (experimental). |
+| `normalize_whitespace` | `bool` | `false` | Trims trailing spaces and collapses consecutive empty lines (experimental). |
+| `preserve_file_writes` | `bool` | `true` | Full immunity for code writing tools (`write_to_file`, `apply_diff`, `editor`). |
 | `preserve_file_reads` | `bool` | `true` | Protects active file inspection turns from corruption. |
 | `preserve_cache_control`| `bool` | `true` | Preserves Anthropic/OpenRouter prompt cache annotations. |
-| `compact_stale_file_reads`| `bool` | `true` | Reclaims tokens by pruning superseded historical reads of the same file. |
+| `compact_stale_file_reads`| `bool` | `false` | Reclaims tokens by pruning superseded historical reads of the same file (experimental). |
 | `stale_read_depth` | `int` | `3` | Number of recent reads to keep per file before historical eviction. |
 
 ---
