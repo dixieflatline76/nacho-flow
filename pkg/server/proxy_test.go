@@ -2824,4 +2824,3 @@ func TestProxy_CloudProvider_HistoryPreserved(t *testing.T) {
 		t.Fatalf("expected user prompt to be preserved for cloud provider, got:\n%s", body)
 	}
 }
-

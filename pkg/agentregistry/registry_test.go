@@ -913,4 +913,3 @@ func TestRegistry_StripControlTokensInPlace_DeepEscaped(t *testing.T) {
 		})
 	}
 }
-
