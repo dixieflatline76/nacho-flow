@@ -4,6 +4,8 @@
 # Pipeline: Local GPU ($0) -> Fast Cloud ($0.65/M) -> Reasoning ($0.75/M) -> Frontier ($2/M)
 # =============================================================================
 
+version: "1.1.0" # Schema version (Major: breaking change, Minor: new features, Patch: doc tweaks)
+
 port: 8000
 host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
 
@@ -38,35 +40,12 @@ deals:
 agent_shield:
   enabled: true
   tail_buffer_bytes: 256
-  question_heuristics:
-    - "are you satisfied"
-    - "would you like"
-    - "should i"
-    - "do you approve"
-    - "please confirm"
-    - "let me know if"
-    - "how would you like to proceed"
-  mode_switch_heuristics:
-    - "switch to code mode"
-    - "switch to architect mode"
-    - "ready to implement"
-  error_signatures:
-    - "[ERROR] You did not use a tool"
-    - "Missing value for required parameter"
-    - "The tool execution failed"
-    - "<error_details>"
-    - "No sufficiently similar match found"
-    - "Command failed with exit code"
-    - "Please retry with complete response"
-    - "Editor operation failed"
-    - "Parameter 'old_text' is required"
-    - "Parameter `old_text` is required"
-    - "Parameter old_text is required"
-    - "Command not executed:"
-    - "expected string, received undefined"
-    - "✖ Invalid input"
-    - "Invalid input:"
-    - "tool execution error"
+  # Canonical question heuristics, mode switch heuristics, and error signatures
+  # are automatically loaded from data/agents/*.json via agentregistry.
+  # Use these lists only to define custom user overrides/extensions.
+  # question_heuristics: []
+  # mode_switch_heuristics: []
+  # error_signatures: []
 
 # =============================================================================
 # 🎸 CYCLE KILLER (Qu'est-ce que c'est?)
@@ -92,80 +71,32 @@ cycle_killer:
     max_tokens: 8192                # Max streaming tool call arguments before repetition enforcement
     max_write_tokens: 32768         # Max size for Category A file writes (zero-alloc fast path)
     phrase_length: 4                # Tighter n-gram window to catch repeating 4-word shell commands
-    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
-  kickstart_threshold: 5            # ⚡ Kickstart: jolt after N idle turns without tool progress (0 = off)
-  kickstart_max_count: 10           # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
-  kickstart_max_failures: 3         # 🔌 Circuit Breaker: suppress [SYSTEM OVERRIDE] after N consecutive model failures to produce tool calls
-  kickstart_write_only: true        # Only count file writes / commands as progress (ignores read-only tools)
-  # 🛡️ File Write & Progress Tools: Category A immunity & Kickstart progress
-  write_tools:
-    - editor
-    - str_replace_editor
-    - text_editor
-    - write_to_file
-    - replace_in_file
-    - replace_file_content
-    - multi_replace_file_content
-    - execute_command
-    - apply_diff
-    - insert_code_block
-    - create_file
-    - create_or_update_file
-    - write_file
-    - edit_file
-    - delete_file
-    - patch_file
-    - run_command
-    - run_terminal_command
-    - run_commands
-    - terminal
-    - bash
-    - exec
-  kickstart_write_tools:            # Preserved for backward compatibility
-    - editor
-    - str_replace_editor
-    - text_editor
-    - write_to_file
-    - replace_in_file
-    - replace_file_content
-    - multi_replace_file_content
-    - execute_command
-    - apply_diff
-    - insert_code_block
-    - create_file
-    - create_or_update_file
-    - write_file
-    - edit_file
-    - delete_file
-    - patch_file
-    - run_command
-    - run_terminal_command
-    - run_commands
-    - terminal
-    - bash
-    - exec
+    max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
+
+kickstart:
+  enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
+  threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
+  max_count: 10                     # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
+  max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+  write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
+  # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
 
 # =============================================================================
-# 🧪 NACHO TOKEN SAVER (NTS) [EXPERIMENTAL / OPT-IN ONLY]
-# Wire-speed, zero-allocation in-place tool output compaction engine.
-#
-# ⚠️ NOTICE: DISABLED BY DEFAULT.
-# Empirical bake-offs proved that mutating conversation history breaks provider
-# KV prompt caching (causing cache misses) and can degrade agent diff matching.
-# Keep disabled for optimal coding agent performance unless actively experimenting.
+# 🗜️ NACHO TOKEN SAVER (NTS)
+# Wire-speed, zero-allocation in-place tool output compaction engine
 # =============================================================================
 nts:
-  enabled: false                    # Master switch (default: false / pristine context)
+  enabled: false                     # Master switch for tool output compaction
   strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
   resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
-  deduplicate_lines: false          # Pass 3: Collapse repeated consecutive lines (disabled by default)
+  deduplicate_lines: false           # Pass 3: Collapse repeated consecutive lines (>3 times)
   dedup_threshold: 3                # Consecutive duplicate threshold before collapse
-  strip_boilerplate: false          # Pass 4: Strip IDE tool boilerplate notices (disabled by default)
-  normalize_whitespace: false       # Pass 5: Collapse multiple empty lines (disabled by default)
+  strip_boilerplate: false           # Pass 4: Strip IDE tool boilerplate notices
+  normalize_whitespace: true        # Pass 5: Collapse multiple empty lines
   preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
   preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
-  compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
+  compact_stale_file_reads: false    # 📦 Evict superseded historical file reads
   stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 
 # =============================================================================
@@ -264,11 +195,15 @@ fairy_dust:
       max_per_session: 5
       priority: 10
       prompt: >
-        [QUALITY CHECKPOINT - Tactical Review] You are a senior code reviewer
-        consulted mid-flight. Analyze the current codebase for: (1) logic bugs
-        and incorrect calculations, (2) compilation and type errors, (3) test failures
-        or broken assertions. Fix any issues immediately with tool calls. If
-        everything looks correct, confirm and continue the current task.
+        [QUALITY CHECKPOINT - ACTION REQUIRED]
+        You are an elite code reviewer consulted mid-flight. Your value is DIRECT CODE ACTIONS, NOT ESSAYS.
+        Do NOT write lengthy prose analysis, conversational reviews, or summaries.
+        MANDATORY: You must always emit an active tool call (such as executing `go test ./...` or file edits) or an explicit status message. You must NEVER finish your turn with an empty response or reasoning only.
+        Execute the following checks directly:
+        (1) STUBS & DUMMY IMPLEMENTATIONS: Find any functions that discard parameters, return hardcoded dummy values, or are left unfinished. Implement them now.
+        (2) LOOP & TERMINATION GUARDS: Inspect while/for loops and recursion for missing updates or infinite loops. Fix them immediately.
+        (3) COMPILATION & TESTS: Fix compilation errors, type mismatches, and broken assertions directly with tool calls (write_to_file, replace_file_content, execute_command).
+        If issues exist, emit tool calls immediately to fix them. If everything is verified and correct, output at most 1 sentence confirming status and continue the next task step with tools.
 
     # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
@@ -279,11 +214,12 @@ fairy_dust:
       max_per_session: 1
       priority: 100
       prompt: >
-        [QUALITY CHECKPOINT - Architecture Review] You are the lead architect
-        consulted for a strategic review. Evaluate: (1) Is the agent solving the
-        RIGHT problem? Compare current work against the original requirements.
-        (2) Is the overall architecture sound, or has it drifted into unnecessary
-        complexity? (3) Are there systemic issues (wrong patterns, missing
-        abstractions, repeated mistakes) that tactical fixes won't solve? If you
-        identify strategic drift, restructure the approach. If the trajectory is
-        correct, confirm the direction and continue.
+        [SPEC TRACEABILITY & DIRECTION AUDIT - ACTION REQUIRED]
+        You are the lead architect performing a requirements and trajectory audit.
+        Do NOT write lengthy analysis essays or commentary. Your value is ALIGNMENT AND EXECUTION.
+        MANDATORY: You must always emit an active tool call (such as executing tests or file edits) or an explicit status message. You must NEVER finish your turn with an empty response or reasoning only.
+        Execute the following checks immediately:
+        (1) SPEC AUDIT: Compare the active todo checklist against the user's original requirements. If any requirement is missing or untested, add it to the checklist. If a checklist does not exist, create one now.
+        (2) DIRECTION DOC: If the plan has drifted or lacks clear execution steps, write or update a concise direction plan.
+        (3) MISSING CODE & TESTS: Directly emit tool calls (write_to_file, replace_file_content, execute_command) to implement missing requirements.
+        If the trajectory is fully on track, output at most 1 sentence confirming direction and proceed with the next task step.

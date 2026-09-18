@@ -103,6 +103,14 @@
       {
         "command": "nacho-flow.openSupport",
         "title": "Nacho Flow: Open Support & Community"
+      },
+      {
+        "command": "nacho-flow.compareProfileWithTemplate",
+        "title": "Nacho Flow: Compare Active Profile with Factory Template"
+      },
+      {
+        "command": "nacho-flow.resetProfileToDefault",
+        "title": "Nacho Flow: Reset Active Profile to Factory Default Template"
       }
     ],
     "viewsContainers": {

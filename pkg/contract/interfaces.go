@@ -506,6 +506,7 @@ type NTSConfig struct {
 
 // Config defines the top-level configuration loaded from config.yaml.
 type Config struct {
+	Version      string                    `yaml:"version,omitempty" json:"version,omitempty"`
 	Port         int                       `yaml:"port" json:"port"`
 	Host         string                    `yaml:"host,omitempty" json:"host,omitempty"`
 	AuthToken    string                    `yaml:"auth_token,omitempty" json:"auth_token,omitempty"`

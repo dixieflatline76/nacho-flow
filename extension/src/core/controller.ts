@@ -12,6 +12,7 @@ import { SidebarViewProvider } from '../ui/sidebar/sidebar-view-provider';
 import { ProcessManager, ParsedStartupError } from './process-manager';
 import { TelemetryPoller, RefreshIntervalSeconds } from './telemetry-poller';
 import { DashboardSnapshot, DashboardEngineState } from './types/nacho-types';
+import { parseConfigVersion, compareConfigVersions } from './config/config-version';
 
 export class ExtensionController {
 	private context: vscode.ExtensionContext;
@@ -243,6 +244,14 @@ export class ExtensionController {
 
 			vscode.commands.registerCommand('nacho-flow.openSupport', () => {
 				vscode.env.openExternal(vscode.Uri.parse('https://spicebox.dev/nacho-flow/support.html'));
+			}),
+
+			vscode.commands.registerCommand('nacho-flow.compareProfileWithTemplate', async () => {
+				await this.compareProfileWithTemplate(this.activeProfile);
+			}),
+
+			vscode.commands.registerCommand('nacho-flow.resetProfileToDefault', async () => {
+				await this.resetProfile(this.activeProfile);
 			})
 		);
 	}
@@ -425,6 +434,20 @@ export class ExtensionController {
 						const profileId = message.profileId as 'profile1' | 'profile2' | 'profile3';
 						if (profileId) {
 							await this.switchProfile(profileId);
+						}
+						break;
+					}
+					case 'resetProfile': {
+						const profileId = (message.profileId || this.activeProfile) as 'profile1' | 'profile2' | 'profile3';
+						if (profileId) {
+							await this.resetProfile(profileId);
+						}
+						break;
+					}
+					case 'compareProfile': {
+						const profileId = (message.profileId || this.activeProfile) as 'profile1' | 'profile2' | 'profile3';
+						if (profileId) {
+							await this.compareProfileWithTemplate(profileId);
 						}
 						break;
 					}
@@ -1287,6 +1310,75 @@ export class ExtensionController {
 		return await this.resolveProfileUri(presetId);
 	}
 
+	public async compareProfileWithTemplate(profileId: 'profile1' | 'profile2' | 'profile3'): Promise<void> {
+		const profileLabel = this.getProfileLabel(profileId);
+		const { uri: profileUri } = await this.resolveProfileUri(profileId);
+		const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+
+		let templateVersion = '1.1.0';
+		try {
+			const templateBytes = await vscode.workspace.fs.readFile(templateUri);
+			templateVersion = parseConfigVersion(Buffer.from(templateBytes).toString('utf-8'));
+		} catch (_) {}
+
+		const title = `${profileLabel} (Active) ↔ Factory Template (v${templateVersion})`;
+		await vscode.commands.executeCommand('vscode.diff', profileUri, templateUri, title);
+	}
+
+	public async resetProfile(profileId: 'profile1' | 'profile2' | 'profile3', askConfirmation = true): Promise<boolean> {
+		if (this.isRemoteHost()) {
+			vscode.window.showInformationMessage('Nacho Flow: Profile reset is disabled in remote server mode.');
+			return false;
+		}
+
+		const profileLabel = this.getProfileLabel(profileId);
+		const { uri: profileUri } = await this.resolveProfileUri(profileId);
+		const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+
+		let templateVersion = '1.1.0';
+		try {
+			const templateBytes = await vscode.workspace.fs.readFile(templateUri);
+			templateVersion = parseConfigVersion(Buffer.from(templateBytes).toString('utf-8'));
+		} catch (_) {}
+
+		if (askConfirmation) {
+			const choice = await vscode.window.showWarningMessage(
+				`Reset ${profileLabel} to the factory default template (v${templateVersion})? Your current configuration will be backed up as .bak.`,
+				{ modal: true },
+				'Reset Profile',
+				'Cancel'
+			);
+			if (choice !== 'Reset Profile') {
+				return false;
+			}
+		}
+
+		try {
+			const templateBytes = await vscode.workspace.fs.readFile(templateUri);
+
+			// Backup current file to .bak before overwriting
+			try {
+				const currentBytes = await vscode.workspace.fs.readFile(profileUri);
+				const backupUri = vscode.Uri.file(`${profileUri.fsPath}.bak`);
+				await vscode.workspace.fs.writeFile(backupUri, currentBytes);
+			} catch (_) {}
+
+			await vscode.workspace.fs.writeFile(profileUri, templateBytes);
+			vscode.window.showInformationMessage(`🌮 ${profileLabel} reset to factory default template (v${templateVersion})!`);
+
+			// If local engine is running and this is the active profile, restart cleanly
+			if (this.processManager && this.processManager.isRunning() && this.activeProfile === profileId) {
+				const daemonUrl = await this.authManager.getBaseUrl();
+				await this.processManager.restart(daemonUrl, profileUri.fsPath);
+			}
+			await this.syncSidebarState();
+			return true;
+		} catch (err: any) {
+			vscode.window.showErrorMessage(`Nacho Flow: Could not reset profile: ${err.message || err}`);
+			return false;
+		}
+	}
+
 	private async switchProfile(profileId: 'profile1' | 'profile2' | 'profile3'): Promise<void> {
 		if (this.isRemoteHost()) {
 			vscode.window.showInformationMessage('Nacho Flow: Profile switching is disabled in remote server mode.');
@@ -1295,14 +1387,62 @@ export class ExtensionController {
 
 		await this.ensureGlobalProfiles();
 		const { uri: profileUri, isWorkspace } = await this.resolveProfileUri(profileId);
+		const profileLabel = this.getProfileLabel(profileId);
+
+		// Schema version check against bundled template
+		const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+		let userVersion = '1.0.0';
+		let templateVersion = '1.1.0';
+		try {
+			const userBytes = await vscode.workspace.fs.readFile(profileUri);
+			userVersion = parseConfigVersion(Buffer.from(userBytes).toString('utf-8'));
+		} catch (_) {}
+
+		try {
+			const templateBytes = await vscode.workspace.fs.readFile(templateUri);
+			templateVersion = parseConfigVersion(Buffer.from(templateBytes).toString('utf-8'));
+		} catch (_) {}
+
+		const delta = compareConfigVersions(userVersion, templateVersion);
+
+		if (delta === 'major') {
+			const choice = await vscode.window.showErrorMessage(
+				`⚠️ Incompatible Configuration: ${profileLabel} is on schema v${userVersion}, but Nacho Flow requires v${templateVersion}. Reset to factory default template to proceed? (Current file will be backed up as .bak)`,
+				{ modal: true },
+				'Reset to Factory Default',
+				'Cancel'
+			);
+			if (choice !== 'Reset to Factory Default') {
+				return;
+			}
+			const resetSuccess = await this.resetProfile(profileId, false);
+			if (!resetSuccess) {
+				return;
+			}
+		} else if (delta === 'minor') {
+			const choice = await vscode.window.showInformationMessage(
+				`🌮 ${profileLabel} is on config schema v${userVersion} (v${templateVersion} available with new features). Would you like to review changes or reset to the new template?`,
+				'Compare Diff',
+				'Reset to Factory Default',
+				'Use As Is'
+			);
+			if (choice === 'Compare Diff') {
+				await this.compareProfileWithTemplate(profileId);
+				return;
+			} else if (choice === 'Reset to Factory Default') {
+				const resetSuccess = await this.resetProfile(profileId, false);
+				if (!resetSuccess) {
+					return;
+				}
+			}
+		}
+
 		const configPath = profileUri.fsPath;
 
 		// Persist active profile and update state
 		this.activeProfile = profileId;
 		await this.context.globalState?.update('nachoFlow_activeProfile', profileId);
 		this.statusBar.setActiveProfile(this.activeProfile);
-
-		const profileLabel = this.getProfileLabel(profileId);
 		const locationHint = isWorkspace ? ' (Workspace Override)' : '';
 
 		// If local engine is running, restart cleanly with --config <configPath>
