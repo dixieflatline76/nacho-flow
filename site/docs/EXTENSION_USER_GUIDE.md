@@ -12,9 +12,10 @@ The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-
 2. [Installation & Quick Start](#2-installation--quick-start)
 3. [Sidebar Control Hub (Activity Bar)](#3-sidebar-control-hub-activity-bar)
    - [3.1 Model Dispatcher Lifecycle (Local vs. Remote Server)](#31-model-dispatcher-lifecycle-local-vs-remote-server)
-   - [3.2 Routing Presets & 1-Click Hot-Swap (Standard, Zoo Code, Cline)](#32-routing-presets--1-click-hot-swap-standard-zoo-code-cline)
-   - [3.3 Coding Agent Pairing (Zoo Code, Cline, Cursor, Aider)](#33-coding-agent-pairing-zoo-code-cline-cursor-aider)
-   - [3.4 Maintenance & System Operations](#34-maintenance--system-operations)
+   - [3.2 User-Configurable Profiles & 1-Click Switching (Profile 1, Profile 2, Profile 3)](#32-user-configurable-profiles--1-click-switching-profile-1-profile-2-profile-3)
+   - [3.3 🏆 Recommended Local Model for 16GB Cards: Gemma 4 12B IT QAT & Perfected Ollama Tuning](#33--recommended-local-model-for-16gb-cards-gemma-4-12b-it-qat--perfected-ollama-tuning)
+   - [3.4 Coding Agent Pairing (Zoo Code, Cline, Cursor, Aider)](#34-coding-agent-pairing-zoo-code-cline-cursor-aider)
+   - [3.5 Maintenance & System Operations](#35-maintenance--system-operations)
 4. [Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Show Dashboard`)](#4-real-time-analytics-dashboard)
    - [4.1 Flight Instruments & Time-Window Telemetry](#41-flight-instruments--time-window-telemetry)
    - [4.2 Cycle Killer Defense & Local Self-Healing](#42-cycle-killer-defense--local-self-healing)
@@ -147,7 +148,116 @@ Click **`📝 Edit YAML`** next to the section header (or the dynamic **`[📝 P
 
 ---
 
-### 3.3 Coding Agent Pairing (Zoo Code, Cline, Cursor, Aider)
+### 3.3 🏆 Recommended Local Model for 16GB Cards: Gemma 4 12B IT QAT & Perfected Ollama Tuning
+
+All three factory profiles shipped with the extension are pre-tuned for **Google Gemma 4 12B Instruction-Tuned QAT** (`gemma4:12b-it-qat`), the gold-standard local workhorse for developers with **16 GB VRAM GPUs** (RTX 4080, RX 6900/9070 XT, Apple Silicon M-series 16GB/24GB).
+
+#### Why `gemma4:12b-it-qat` is the Extension's Recommended Tier 1 Model:
+- **100% VRAM GPU Offload (Zero Latency Penalty)**: Consumes only ~7.5 GB to 8.5 GB VRAM in 4-bit QAT mode. Leaves ~7 GB of headroom for OS graphics, editor buffers, and browser windows, completely eliminating CUDA/ROCm out-of-memory crashes.
+- **Quantization-Aware Training (QAT)**: Trained specifically with 4-bit Quantization-Aware Training, preventing the syntax and AST degradation common in post-quantized 7B/14B models.
+- **Near-Instant Response**: Emits 60–90 tokens/sec on local GPUs, making code inspections, test runs, and single-file modifications completely free ($0.00) and instant.
+
+---
+
+#### ⚠️ Critical Pitfall: The "Runaway Monologue" Bug (DO NOT Hardcode `num_ctx` or `num_predict`)
+
+When testing with agentic harnesses like Cline or Zoo Code:
+> [!CAUTION]
+> **NEVER hardcode `PARAMETER num_predict 8192` or `PARAMETER num_ctx 32768` inside your Ollama Modelfile!**
+> - **Why `num_predict` fails**: If baked into the model, Gemma 4 enters runaway reasoning loops inside `<think>...</think>`, rambling for 45–60+ seconds without emitting active tool calls.
+> - **Why hardcoded `num_ctx` fails**: Static 32k context allocation locks up VRAM buffers prematurely and interferes with dynamic windowing.
+> - **The Extension's Integrated Fix**: Let Nacho Flow dynamically manage context per request turn via `max_context: 32000` in your profile YAML, while the extension's **Cycle Killer** actively monitors streaming tokens and kills runaway monologues in <3 seconds.
+
+---
+
+#### 🚀 Crucial Workstation Setup: Configure `OLLAMA_CONTEXT_LENGTH=32768` (Prevents Silent Context Truncation)
+
+By default on Windows and certain headless installations, Ollama runs with a restricted context ceiling (`OLLAMA_CONTEXT_LENGTH: 16384` or `4096`).
+When an autonomous agent (like Cline or Zoo) reaches long conversation turns (e.g. 18k tokens):
+1. Nacho Flow correctly routes the request to Tier 1 (`Tokens < 20000`).
+2. If Ollama's server context ceiling is only 16,384, **Ollama silently truncates the top of the prompt**.
+3. In Cline and Zoo, the prompt prefix contains the **system prompt, tool schemas, and XML formatting instructions**.
+4. When truncated, the model loses its tool definitions, enters a prolonged thinking loop inside `<think>...</think>` (burning 2,000+ reasoning tokens), and terminates with **0 content and 0 tool calls**, causing the agent to stall.
+
+> [!IMPORTANT]
+> **Do NOT hardcode `num_ctx` in the Modelfile.** Instead, set `OLLAMA_CONTEXT_LENGTH=32768` at the **Ollama server environment level**. This allows Ollama to allocate a full 32k context buffer dynamically without bloating the model weights or locking VRAM buffers prematurely.
+
+##### 🪟 Windows Setup (PowerShell):
+Set permanently for your user account:
+```powershell
+[System.Environment]::SetEnvironmentVariable('OLLAMA_CONTEXT_LENGTH', '32768', 'User')
+```
+*(Or in Command Prompt: `setx OLLAMA_CONTEXT_LENGTH 32768`)*
+
+Then restart the Ollama tray application (Right-click tray icon → Quit, and relaunch), or run:
+```powershell
+Stop-Process -Name "ollama*", "ollama app" -Force -ErrorAction SilentlyContinue
+Start-Process "C:\Users\<username>\AppData\Local\Programs\Ollama\ollama app.exe"
+```
+
+##### 🐧 Linux Setup (Ubuntu / systemd):
+Configure the systemd service override:
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+echo -e '[Service]\nEnvironment="OLLAMA_CONTEXT_LENGTH=32768"' | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+```
+
+##### 🍎 macOS Setup:
+```bash
+launchctl setenv OLLAMA_CONTEXT_LENGTH 32768
+```
+*(Or add `export OLLAMA_CONTEXT_LENGTH=32768` to your shell profile if launching via terminal)*.
+
+##### 🔍 How to Verify:
+Inspect Ollama's startup log (on Windows: `%LOCALAPPDATA%\Ollama\server.log`, on Linux: `journalctl -u ollama`):
+You should see:
+```text
+level=INFO source=routes.go:1940 msg="server config" env="... OLLAMA_CONTEXT_LENGTH:32768 ..."
+```
+
+---
+
+#### 🛠️ Perfected Ollama Setup
+
+1. **Pull the official QAT model**:
+   ```bash
+   ollama pull gemma4:12b-it-qat
+   ```
+
+2. **(Optional) Apply our perfected sampling Modelfile**:
+   ```dockerfile
+   # Save as: Modelfile
+   FROM gemma4:12b-it-qat
+
+   # 🌮 Perfected Nacho Flow Sampling Parameters for Gemma 4
+   PARAMETER temperature 0.6
+   PARAMETER top_k 64
+   PARAMETER top_p 0.9
+   PARAMETER min_p 0.05
+   PARAMETER repeat_last_n 64
+   PARAMETER repeat_penalty 1.15
+   ```
+   Build it in Ollama:
+   ```bash
+   ollama create gemma4:12b-it-qat -f Modelfile
+   ```
+
+3. **Active Profile Configuration**:
+   All extension profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) already include the matching tier rule:
+   ```yaml
+   - name: "Tier 1: Local GPU Workhorse"
+     provider: "ollama"
+     model: "gemma4:12b-it-qat"
+     when: "Tokens < 20000 && Retries < 2"
+     strip_images: false
+     max_context: 32000
+   ```
+
+---
+
+### 3.4 Coding Agent Pairing (Zoo Code, Cline, Cursor, Aider)
 
 Under **3. Coding Agents**, the sidebar displays copy-ready configuration cards:
 
@@ -171,7 +281,7 @@ Under **3. Coding Agents**, the sidebar displays copy-ready configuration cards:
 
 ---
 
-### 3.4 Maintenance & System Operations
+### 3.5 Maintenance & System Operations
 
 The **4. Maintenance & Operations** card provides immediate recovery tools:
 

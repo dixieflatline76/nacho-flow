@@ -7,10 +7,12 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 ## Table of Contents
 1. [Installation & Setup](#1-installation--setup)
 2. [Configuration Reference (`config.yaml`)](#2-configuration-reference-configyaml)
-   - [2.4 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints](#24--fairy-dusting-periodic-proactive-frontier-quality-checkpoints)
-   - [2.5 ⚡ Kickstart Resuscitation & Write-Only Filtering](#25--kickstart-resuscitation--write-only-filtering)
-   - [2.6 🛡️ Cost-Safe Default Tier & 🌶️ Spicy-Only Tiers](#26-️-cost-safe-default-tier--️-spicy-only-tiers-when-false)
-   - [2.7 🗜️ Nacho Token Saver (NTS): Wire-Speed Tool Output Compaction](#27-️-nacho-token-saver-nts-wire-speed-tool-output-compaction)
+   - [2.3 🏆 Recommended Local Model for 16GB Cards: Gemma 4 12B IT QAT & Perfected Ollama Tuning](#23--recommended-local-model-for-16gb-cards-gemma-4-12b-it-qat--perfected-ollama-tuning)
+   - [2.4 Tier Feature Flags & Transformation Policies: Granular Proxy Control](#24-tier-feature-flags--transformation-policies-granular-proxy-control)
+   - [2.5 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints](#25--fairy-dusting-periodic-proactive-frontier-quality-checkpoints)
+   - [2.6 ⚡ Kickstart Resuscitation & Write-Only Filtering](#26--kickstart-resuscitation--write-only-filtering)
+   - [2.7 🛡️ Cost-Safe Default Tier & 🌶️ Spicy-Only Tiers](#27-️-cost-safe-default-tier--️-spicy-only-tiers-when-false)
+   - [2.8 🗜️ Nacho Token Saver (NTS): Wire-Speed Tool Output Compaction](#28-️-nacho-token-saver-nts-wire-speed-tool-output-compaction)
 3. [Writing Custom Routing Tiers (`expr` Rules)](#3-writing-custom-routing-tiers-expr-rules)
 4. [Running Modes & OS Background Service Installation](#4-running-modes--os-background-service-installation)
 5. [IDE & Agent Integrations (Local & Multi-Device LAN)](#5-ide--agent-integrations-local--multi-device-lan)
@@ -28,7 +30,7 @@ If you just want to stop wasting cloud money and start saving in under 2 minutes
 
 ```mermaid
 flowchart LR
-    Step1["<b>1. Start Ollama Locally</b><br/><code>ollama run qwen2.5-coder</code>"]
+    Step1["<b>1. Start Ollama Locally</b><br/><code>ollama run gemma4:12b-it-qat</code>"]
     Step2["<b>2. Run Nacho Flow Gateway</b><br/><code>nacho-flow</code>"]
     Step3["<b>3. Point Zoo / Cline / Aider</b><br/><code>http://127.0.0.1:8000/v1</code>"]
 
@@ -40,7 +42,11 @@ flowchart LR
 
 1. **Pull a local coding model** (if you haven't already):
    ```bash
-   ollama pull qwen2.5-coder:14b   # or qwen2.5-coder:7b for 8GB VRAM
+   # 🏆 Recommended champion for 16GB VRAM GPUs (RTX 4080, RX 6900/9070 XT, Apple Silicon):
+   ollama pull gemma4:12b-it-qat
+
+   # Or for 8GB VRAM workstations:
+   ollama pull qwen2.5-coder:7b
    ```
 2. **Install Nacho Flow & Create `config.yaml`**:
    ```bash
@@ -149,12 +155,12 @@ providers:
     api_key: "ENV_OPENROUTER_API_KEY"
 
 tiers:
-  # Routine turns < 16k context stay on your GPU for $0.00
-  - name: "Local GPU"
-    model: "qwen2.5-coder:14b"
+  # Routine turns < 20k context stay on your GPU for $0.00 (100% VRAM offload on 16GB cards)
+  - name: "Local GPU Workhorse"
+    model: "gemma4:12b-it-qat"
     provider: "ollama"
-    max_context: 16384
-    when: "Tokens < 16000 && !HasImages && Retries < 2"
+    max_context: 32000
+    when: "Tokens < 20000 && Retries < 2"
 
 # Flagship cloud model for deep reasoning or heavy context
 default_tier:
@@ -369,7 +375,126 @@ nts:
 
 ---
 
-### 2.3 Tier Feature Flags & Transformation Policies: Granular Proxy Control
+### 2.3 🏆 Recommended Local Model for 16GB Cards: Gemma 4 12B IT QAT & Perfected Ollama Tuning
+
+For workstations equipped with **16 GB VRAM GPUs** (e.g. NVIDIA RTX 4080 / RTX 3080 16GB / RTX 4070 Ti Super, AMD Radeon RX 6900 XT / 7800 XT / 7900 GRE / 9070 XT, or Apple Silicon 16GB/24GB Unified Memory), the undisputed champion for Tier 1 local execution is **Google Gemma 4 12B Instruction-Tuned QAT** (`gemma4:12b-it-qat`).
+
+#### Why `gemma4:12b-it-qat` is the Workhorse of Choice:
+- **100% VRAM GPU Offload (Zero CPU Spillover)**: At ~7.5 GB to 8.5 GB base memory footprint (Q4_0 Quantization-Aware Training), the model plus dynamic KV cache fits entirely within 16GB with ~7GB of safety headroom for your operating system, IDE, and browser.
+- **Quantization-Aware Training (QAT)**: Unlike standard post-training quantization (PTQ) which often degrades AST syntax precision and tool syntax adherence, official QAT models are trained specifically for 4-bit weights, preserving exceptional instruction-following and code quality.
+- **Blazing Generation Speed**: Emits 60–90+ tokens/sec on 16GB consumer desktop GPUs for instant, zero-cost iterative coding turns.
+
+---
+
+#### ⚠️ Critical Trap: The "Runaway Monologue" Bug (DO NOT Hardcode `num_ctx` or `num_predict`)
+
+During real-world agentic stress testing with Cline and Zoo Code, we identified a critical failure pattern with local models:
+
+> [!CAUTION]
+> **NEVER hardcode `PARAMETER num_predict 8192` or `PARAMETER num_ctx 32768` inside your Ollama Modelfile!**
+> - **Why `num_predict` fails**: If baked into the model, Gemma 4 enters runaway reasoning loops inside `<think>...</think>` monologue traps, generating reasoning text for 45–60+ seconds without emitting active tool calls.
+> - **Why hardcoded `num_ctx` fails**: Static 32k context allocation locks up VRAM buffers prematurely and interferes with dynamic windowing.
+> - **The Nacho Flow Architecture**: Leave `num_predict` and `num_ctx` **OUT** of the Modelfile. Nacho Flow dynamically provisions context per request turn via `max_context: 32000` in `config.yaml`, while **Cycle Killer** enforces strict stream termination if repetition exceeds limits.
+
+---
+
+#### 🚀 Crucial Workstation Setup: Configure `OLLAMA_CONTEXT_LENGTH=32768` (Prevents Silent Context Truncation)
+
+By default on Windows and certain headless installations, Ollama runs with a restricted context ceiling (`OLLAMA_CONTEXT_LENGTH: 16384` or `4096`).
+When an autonomous agent (like Cline or Zoo) reaches long conversation turns (e.g. 18k tokens):
+1. Nacho Flow correctly routes the request to Tier 1 (`Tokens < 20000`).
+2. If Ollama's server context ceiling is only 16,384, **Ollama silently truncates the top of the prompt**.
+3. In Cline and Zoo, the prompt prefix contains the **system prompt, tool schemas, and XML formatting instructions**.
+4. When truncated, the model loses its tool definitions, enters a prolonged thinking loop inside `<think>...</think>` (burning 2,000+ reasoning tokens), and terminates with **0 content and 0 tool calls**, causing the agent to stall.
+
+> [!IMPORTANT]
+> **Do NOT hardcode `num_ctx` in the Modelfile.** Instead, set `OLLAMA_CONTEXT_LENGTH=32768` at the **Ollama server environment level**. This allows Ollama to allocate a full 32k context buffer dynamically without bloating the model weights or locking VRAM buffers prematurely.
+
+##### 🪟 Windows Setup (PowerShell):
+Set permanently for your user account:
+```powershell
+[System.Environment]::SetEnvironmentVariable('OLLAMA_CONTEXT_LENGTH', '32768', 'User')
+```
+*(Or in Command Prompt: `setx OLLAMA_CONTEXT_LENGTH 32768`)*
+
+Then restart the Ollama tray application (Right-click tray icon → Quit, and relaunch), or run:
+```powershell
+Stop-Process -Name "ollama*", "ollama app" -Force -ErrorAction SilentlyContinue
+Start-Process "C:\Users\<username>\AppData\Local\Programs\Ollama\ollama app.exe"
+```
+
+##### 🐧 Linux Setup (Ubuntu / systemd):
+Configure the systemd service override:
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+echo -e '[Service]\nEnvironment="OLLAMA_CONTEXT_LENGTH=32768"' | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+```
+
+##### 🍎 macOS Setup:
+```bash
+launchctl setenv OLLAMA_CONTEXT_LENGTH 32768
+```
+*(Or add `export OLLAMA_CONTEXT_LENGTH=32768` to your shell profile if launching via terminal)*.
+
+##### 🔍 How to Verify:
+Inspect Ollama's startup log (on Windows: `%LOCALAPPDATA%\Ollama\server.log`, on Linux: `journalctl -u ollama`):
+You should see:
+```text
+level=INFO source=routes.go:1940 msg="server config" env="... OLLAMA_CONTEXT_LENGTH:32768 ..."
+```
+
+---
+
+#### 🛠️ Perfected Ollama Modelfile & Sampling Parameters
+
+To get flawless tool adherence, zero monologue traps, and clean diff output, create a custom Modelfile with our perfected sampling parameters:
+
+```dockerfile
+# Save as: Modelfile
+FROM gemma4:12b-it-qat
+
+# 🌮 Perfected Nacho Flow Sampling Parameters for Gemma 4
+PARAMETER temperature 0.6
+PARAMETER top_k 64
+PARAMETER top_p 0.9
+PARAMETER min_p 0.05
+PARAMETER repeat_last_n 64
+PARAMETER repeat_penalty 1.15
+```
+
+Build or update it in Ollama with one command:
+```bash
+ollama create gemma4:12b-it-qat -f Modelfile
+```
+*(Or simply pull the vanilla model via `ollama pull gemma4:12b-it-qat` — just ensure no previous custom Modelfile baked in `num_predict 8192` or static `num_ctx`)*.
+
+---
+
+#### 🌮 Gateway Routing Configuration (`config.yaml` / Extension Profiles)
+
+In your Nacho Flow configuration (pre-configured in factory **Profile 1**, **Profile 2**, and **Profile 3**):
+
+```yaml
+tiers:
+  # TIER 1: Local GPU Workhorse (Gemma 4 12B QAT) - 100% VRAM Offload
+  - name: "Tier 1: Local GPU Workhorse"
+    provider: "ollama"
+    model: "gemma4:12b-it-qat"
+    when: "Tokens < 20000 && Retries < 2"
+    strip_images: false
+    max_context: 32000
+
+cycle_killer:
+  enabled: true
+  tool_lane:
+    max_repeats: 6      # Fast-kill repetition loop threshold
+```
+
+---
+
+### 2.4 Tier Feature Flags & Transformation Policies: Granular Proxy Control
 
 By default, Nacho Flow acts as an intelligent proxy that actively optimizes and sanitizes LLM streams:
 1. **Universal Tool Normalizer**: Converts 8 raw tool formats (Hermes XML, Mistral arrays, bare JSON, Markdown fences) into OpenAI-standard `tool_calls`.

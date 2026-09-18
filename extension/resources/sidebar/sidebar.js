@@ -421,6 +421,18 @@
 		vscode.postMessage({ command: 'switchProfile', profileId });
 	};
 
+	window.resetProfile = function() {
+		const selector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
+		const profileId = (selector && selector.value) || state.activeProfile || 'profile1';
+		vscode.postMessage({ command: 'resetProfile', profileId });
+	};
+
+	window.compareActiveProfile = function() {
+		const selector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
+		const profileId = (selector && selector.value) || state.activeProfile || 'profile1';
+		vscode.postMessage({ command: 'compareProfile', profileId });
+	};
+
 	window.editActiveProfile = function() {
 		vscode.postMessage({ command: 'editActiveProfile' });
 	};

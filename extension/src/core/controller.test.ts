@@ -1570,6 +1570,18 @@ default_tier:
       expect(setTimeWindowSpy).toHaveBeenCalledWith('this_month');
       setAllTimeCall[1]();
       expect(setTimeWindowSpy).toHaveBeenCalledWith('all_time');
+
+      const compareCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.compareProfileWithTemplate');
+      expect(compareCall).toBeDefined();
+      const compareSpy = jest.spyOn(extensionController, 'compareProfileWithTemplate').mockResolvedValue(undefined);
+      await compareCall[1]();
+      expect(compareSpy).toHaveBeenCalled();
+
+      const resetCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.resetProfileToDefault');
+      expect(resetCall).toBeDefined();
+      const resetSpy = jest.spyOn(extensionController, 'resetProfile').mockResolvedValue(true);
+      await resetCall[1]();
+      expect(resetSpy).toHaveBeenCalled();
     });
 
     it('should test setTimeWindow with globalState and dashboard panel', async () => {
@@ -1944,6 +1956,172 @@ default_tier:
       expect(showConfigSpy).toHaveBeenCalled();
     });
 
+    it('should compare active profile with factory template via vscode.diff', async () => {
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValue(Buffer.from('version: "1.1.0"\n'));
+
+      await extensionController.compareProfileWithTemplate('profile1');
+
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+        'vscode.diff',
+        expect.anything(),
+        expect.anything(),
+        expect.stringContaining('Profile 1 (Active) ↔ Factory Template (v1.1.0)')
+      );
+    });
+
+    it('should suppress resetProfile when in remote server mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+
+      const result = await extensionController.resetProfile('profile1');
+
+      expect(result).toBe(false);
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Profile reset is disabled in remote server mode')
+      );
+    });
+
+    it('should cancel resetProfile when user dismisses or rejects confirmation modal', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValue(Buffer.from('version: "1.1.0"\n'));
+      (vscode.window.showWarningMessage as jest.Mock).mockResolvedValueOnce('Cancel');
+
+      const result = await extensionController.resetProfile('profile1', true);
+
+      expect(result).toBe(false);
+      expect(vscode.workspace.fs.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('should execute resetProfile when confirmed, archiving to .bak and restarting engine if running', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock)
+        .mockResolvedValueOnce(Buffer.from('version: "1.1.0"\n')) // template version read
+        .mockResolvedValueOnce(Buffer.from('version: "1.1.0"\ntemplate data')) // template read for write
+        .mockResolvedValueOnce(Buffer.from('old profile content')); // currentBytes for .bak
+      (vscode.window.showWarningMessage as jest.Mock).mockResolvedValueOnce('Reset Profile');
+
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        restart: restartSpy
+      };
+      (extensionController as any).authManager = {
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000')
+      };
+      (extensionController as any).activeProfile = 'profile1';
+
+      const result = await extensionController.resetProfile('profile1', true);
+
+      expect(result).toBe(true);
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ path: expect.stringContaining('profile1.yaml.bak') }),
+        expect.anything()
+      );
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Profile 1 reset to factory default template (v1.1.0)!')
+      );
+      expect(restartSpy).toHaveBeenCalled();
+    });
+
+    it('should handle error in resetProfile gracefully', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock).mockRejectedValue(new Error('Disk read error'));
+
+      const result = await extensionController.resetProfile('profile1', false);
+
+      expect(result).toBe(false);
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Could not reset profile: Disk read error')
+      );
+    });
+
+    it('should handle major version mismatch in switchProfile and cancel if user declines reset', async () => {
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local')
+      };
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock)
+        .mockResolvedValueOnce(Buffer.from('version: "1.0.0"\n')) // user version
+        .mockResolvedValueOnce(Buffer.from('version: "2.0.0"\n')); // template version (major bump)
+
+      (vscode.window.showErrorMessage as jest.Mock).mockResolvedValueOnce('Cancel');
+      const resetSpy = jest.spyOn(extensionController, 'resetProfile');
+
+      await (extensionController as any).switchProfile('profile1');
+
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Incompatible Configuration'),
+        expect.anything(),
+        'Reset to Factory Default',
+        'Cancel'
+      );
+      expect(resetSpy).not.toHaveBeenCalled();
+    });
+
+    it('should handle major version mismatch in switchProfile and reset when confirmed', async () => {
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000')
+      };
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false)
+      };
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock)
+        .mockResolvedValueOnce(Buffer.from('version: "1.0.0"\n')) // user version
+        .mockResolvedValueOnce(Buffer.from('version: "2.0.0"\n')); // template version
+
+      (vscode.window.showErrorMessage as jest.Mock).mockResolvedValueOnce('Reset to Factory Default');
+      const resetSpy = jest.spyOn(extensionController, 'resetProfile').mockResolvedValue(true);
+
+      await (extensionController as any).switchProfile('profile1');
+
+      expect(resetSpy).toHaveBeenCalledWith('profile1', false);
+      expect((extensionController as any).activeProfile).toBe('profile1');
+    });
+
+    it('should handle minor version mismatch in switchProfile with Compare Diff choice', async () => {
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local')
+      };
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock)
+        .mockResolvedValueOnce(Buffer.from('version: "1.0.0"\n')) // user version
+        .mockResolvedValueOnce(Buffer.from('version: "1.1.0"\n')); // template version (minor bump)
+
+      (vscode.window.showInformationMessage as jest.Mock).mockResolvedValueOnce('Compare Diff');
+      const compareSpy = jest.spyOn(extensionController, 'compareProfileWithTemplate').mockResolvedValue(undefined);
+
+      await (extensionController as any).switchProfile('profile1');
+
+      expect(compareSpy).toHaveBeenCalledWith('profile1');
+    });
+
+    it('should handle minor version mismatch in switchProfile with Reset to Factory Default choice', async () => {
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000')
+      };
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false)
+      };
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock)
+        .mockResolvedValueOnce(Buffer.from('version: "1.0.0"\n'))
+        .mockResolvedValueOnce(Buffer.from('version: "1.1.0"\n'));
+
+      (vscode.window.showInformationMessage as jest.Mock).mockResolvedValueOnce('Reset to Factory Default');
+      const resetSpy = jest.spyOn(extensionController, 'resetProfile').mockResolvedValue(true);
+
+      await (extensionController as any).switchProfile('profile1');
+
+      expect(resetSpy).toHaveBeenCalledWith('profile1', false);
+      expect((extensionController as any).activeProfile).toBe('profile1');
+    });
+
     it('should handle error when editing active profile file', async () => {
       (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
       (vscode.workspace.openTextDocument as jest.Mock).mockRejectedValueOnce(new Error('Cannot open file'));
@@ -2071,8 +2249,17 @@ default_tier:
       const hotSwapSpy = jest.spyOn(extensionController as any, 'hotSwapPreset').mockResolvedValue(undefined);
       const editPresetSpy = jest.spyOn(extensionController as any, 'editActivePresetFile').mockResolvedValue(undefined);
 
+      const resetProfileSpy = jest.spyOn(extensionController, 'resetProfile').mockResolvedValue(true);
+      const compareProfileSpy = jest.spyOn(extensionController, 'compareProfileWithTemplate').mockResolvedValue(undefined);
+
       await onMessage({ command: 'switchProfile', profileId: 'profile3' });
       expect(switchProfileSpy).toHaveBeenCalledWith('profile3');
+
+      await onMessage({ command: 'resetProfile', profileId: 'profile2' });
+      expect(resetProfileSpy).toHaveBeenCalledWith('profile2');
+
+      await onMessage({ command: 'compareProfile', profileId: 'profile1' });
+      expect(compareProfileSpy).toHaveBeenCalledWith('profile1');
 
       await onMessage({ command: 'editActiveProfile' });
       expect(editProfileSpy).toHaveBeenCalled();
