@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.2] - 2026-09-19
 
+### Added
+- **Config Schema Versioning & SemVer Check**: Proactively validates user configuration profiles against extension factory templates to detect outdated schemas.
+- **Factory Template Comparison & Reset**: New commands `nacho-flow.compareProfileWithTemplate` and `nacho-flow.resetProfileToDefault` allow users to inspect diffs and safely restore factory defaults.
+- **Outdated Profile Sidebar Notification**: Visual alert banner and action button in the VS Code sidebar when an active profile schema version is older than the current extension version.
+
+
 ## [1.2.1] - 2026-09-18
 
 ### Added
