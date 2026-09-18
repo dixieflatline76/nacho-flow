@@ -27,18 +27,6 @@ Nacho Flow is an open-source, high-performance agent supervisor and model dispat
 
 ---
 
-#### 🔬 3. Live Agent Benchmark Validation: Zoo Code & Cline
-* **Zoo Code Benchmark (`zoo test 1`):**
-  * **92 Turns** completed end-to-end.
-  * **$0.89 Total Spent** ($8.48 saved, **90.53% cost reduction**).
-  * Built an interactive N-Queens simulator with 95%+ test coverage across all packages and a validated 2.35s $N=1000$ Min-Conflicts heuristic solver.
-* **Cline Benchmark (`cline test 1`):**
-  * **94 Turns** completed end-to-end.
-  * **$1.37 Total Spent** ($6.53 saved, **82.6% cost reduction**).
-  * Built a Bubble Tea TUI N-Queens simulator with an $N=1000$ Min-Conflicts solver executing in 1.88s.
-
----
-
 ### 🧪 Verification Matrix
 
 | Check / Metric | Scope | Result | Status |
@@ -49,7 +37,7 @@ Nacho Flow is an open-source, high-performance agent supervisor and model dispat
 | **VS Code Extension Suite** | Extension core, webviews, versioning | **15 / 15 suites, 299 / 299 tests passed (100%)** | ✅ Passed |
 | **Extension TypeScript Compilation** | Extension codebase | 0 errors (`tsc -p ./`) | ✅ Passed |
 | **GitHub Actions CI Matrix** | Windows, Ubuntu, macOS runners | All 3 platforms green on PR #59 | ✅ Passed |
-| **Real-World Agent Benchmarks** | ZooCode (92 turns) & Cline (94 turns) | **186 turns, 0 silent stalls, 90.5% max cost savings** | ✅ Passed |
+| **Real-World Agent Validation** | Multi-turn coding sessions (Cline & Zoo) | **180+ turns, 0 silent stalls, 90.5% max cost savings** | ✅ Passed |
 
 ---
 
