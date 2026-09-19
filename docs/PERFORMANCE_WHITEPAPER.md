@@ -23,16 +23,12 @@ Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 - **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,072\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
 - **Idle Memory Footprint**: **$< 25\text{ MB}$** (peaking under $111\text{ MB}$ at $500$ simultaneous client streams).
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                PROXY OVERHEAD LATENCY COMPARISON                       │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ LiteLLM (Python/FastAPI)      │ ████████████████████████████████████████ 8.0 - 25.0 ms  │
-│ AnyLLM-Proxy (Rust)           │ ███████ 3.0 - 15.0 ms                                  │
-│ Nacho Flow (Deep Inspection)  │ ▏ 0.205 ms (205 µs)  [40x - 100x Faster]               │
-│ Bifrost (Go - Raw Forward)    │ ▏ 0.011 - 0.050 ms (11 - 50 µs)                        │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+| Gateway / Architecture | Runtime Engine | Inspection Depth | Added Latency (Overhead) | Relative Speed vs. Python |
+| :--- | :--- | :--- | :--- | :--- |
+| **LiteLLM** | Python / FastAPI | Full Inspection | **8.0 – 25.0 ms** | Baseline ($1\times$) |
+| **AnyLLM-Proxy** | Rust | Token Parsing | **3.0 – 15.0 ms** | $\sim 2\times$ Faster |
+| **Nacho Flow** | **Pure Go Core** | **Deep Inspection + Normalization** | **0.205 ms** ($205.9\,\mu\text{s}$) | **$40\times\text{--}100\times$ Faster** ⚡ |
+| **Bifrost** | Go | Blind Raw Forward (No Inspection) | **0.011 – 0.050 ms** ($11\text{--}50\,\mu\text{s}$) | Shallow TCP Pipe |
 
 This whitepaper resolves this "paradox" by dissecting the low-level systems engineering decisions behind Nacho Flow: **why traditional gateways are slow**, **the trade-offs of blind forward proxies**, and **how zero-allocation streaming fast paths, pre-compiled bytecode VMs, lock-free RCU pointers, and ring-buffered streaming surgery allow Nacho Flow to execute deep agent supervision at wire speed.**
 
@@ -42,27 +38,24 @@ This whitepaper resolves this "paradox" by dissecting the low-level systems engi
 
 To understand why Nacho Flow is $40\times\text{--}100\times$ faster than Python-based gateways like LiteLLM, one must trace what happens inside a Python runtime when an agent client sends a $100\text{ KB}$ multi-turn JSON request:
 
-```
-[Inbound HTTP Client]
-        │
-        ▼ (100 KB JSON payload)
-1. Python Socket & asyncio Event Loop
-        │
-        ▼ (Single OS thread scheduling overhead)
-2. Pydantic Model Deserialization
-        │  • Allocates tens of thousands of Python heap objects (dicts, lists, strings)
-        │  • Reflects over schema annotations to validate field types
-        │  • Cost: 5.0 - 12.0 ms of pure CPU time
-        ▼
-3. Python GIL & Middleware Layer
-        │  • Custom hooks, spend logging, database connection pooling
-        │  • Python Global Interpreter Lock (GIL) serializes CPU execution across threads
-        ▼
-4. JSON Re-Serialization (`json.dumps` / `orjson`)
-        │  • Walks the Python heap object tree and encodes back to ASCII byte string
-        │  • Cost: 3.0 - 6.0 ms
-        ▼
-[Outbound Socket to Upstream LLM]
+```mermaid
+flowchart TD
+    classDef client fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff;
+    classDef tax fill:#450a0a,stroke:#f87171,stroke-width:2px,color:#fff;
+    classDef out fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff;
+
+    Client["<b>Inbound HTTP Client</b>"]:::client
+    S1["<b>1. Python Socket & asyncio Event Loop</b><br/>Single OS thread scheduling overhead"]:::tax
+    S2["<b>2. Pydantic Model Deserialization</b><br/>• Tens of thousands of heap allocations (dicts, lists, strings)<br/>• Schema reflection & field validation<br/>• <b>Cost: 5.0 – 12.0 ms CPU</b>"]:::tax
+    S3["<b>3. Python GIL & Middleware Layer</b><br/>• Custom hooks, spend logging, DB connection pooling<br/>• Global Interpreter Lock (GIL) serializes thread execution"]:::tax
+    S4["<b>4. JSON Re-Serialization</b> (<code>json.dumps</code> / <code>orjson</code>)<br/>• Walks Python heap object tree to re-encode ASCII byte string<br/>• <b>Cost: 3.0 – 6.0 ms</b>"]:::tax
+    Outbound["<b>Outbound Socket to Upstream LLM</b>"]:::outbound
+
+    Client -->|"100 KB JSON payload"| S1
+    S1 --> S2
+    S2 --> S3
+    S3 --> S4
+    S4 --> Outbound
 ```
 
 ### The Inherent Bottlenecks:
@@ -88,7 +81,7 @@ Coding agents (Cline, Zoo Code, OpenCode, Aider) do not fail because of a $150\,
 
 | Failure Mode in Agent Workflows | Blind Forwarder (Bifrost / Envoy) | Nacho Flow (Agent Supervisor) |
 | :--- | :--- | :--- |
-| **Model returns raw ` ```json ` fences instead of tool calls** | Forwarded to agent $\rightarrow$ Tool call fails $\rightarrow$ 3-strike crash | **Universal Tool Normalizer** repairs AST to OpenAI schema in $2.6\,\mu\text{s}$ |
+| **Model returns raw ` ```json ` fences instead of tool calls** | Forwarded to agent → Tool call fails → 3-strike crash | **Universal Tool Normalizer** repairs AST to OpenAI schema in $2.6\,\mu\text{s}$ |
 | **Model enters runaway prose or N-gram loop** | Agent runs until credit limit or context crash ($>\$15\text{ TCO}$) | **Cycle Killer** halts stream in $<3\text{s}$ at **$\$0.00$** via local override |
 | **Model hallucinates `:168:` line-number prefixes in diffs** | Search/replace diff fails in IDE | **Diff Sanitizer** regex-cleans headers in $<2.2\,\mu\text{s}$ |
 | **Model procrastinates in read-only planning loop** | Runs out turns reading files without writing code | **Kickstart State Machine** detects exploration stall and escalates |
