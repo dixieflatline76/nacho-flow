@@ -2729,7 +2729,7 @@ footer {
 }
 
 .quickstart-hero-container {
-    padding: 2.2rem 2rem;
+    padding: 2.2rem 1.75rem;
     border-radius: 24px;
     border: 1px solid rgba(245, 158, 11, 0.25);
     background: radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.08) 0%, rgba(15, 17, 24, 0.85) 70%);
@@ -2763,20 +2763,24 @@ footer {
 
 .quickstart-steps-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1.5rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.25rem;
     margin-bottom: 2rem;
+    min-width: 0;
+    width: 100%;
 }
 
 .quickstart-step-card {
     background: rgba(255, 255, 255, 0.025);
     border: 1px solid var(--border-color);
     border-radius: 18px;
-    padding: 1.6rem;
+    padding: 1.4rem 1.2rem;
     display: flex;
     flex-direction: column;
     position: relative;
     transition: all 0.3s ease;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .quickstart-step-card:hover {
@@ -2851,19 +2855,31 @@ footer {
     background: #06070b;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
-    padding: 0.75rem 0.9rem;
+    padding: 0.65rem 0.75rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
     margin-bottom: 0.75rem;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .step-code-box code {
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     color: #e2e8f0;
     overflow-x: auto;
     white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.step-code-box code::-webkit-scrollbar {
+    display: none;
 }
 
 .step-copy-btn {
@@ -2891,6 +2907,7 @@ footer {
     line-height: 1.4;
     padding-top: 0.5rem;
     border-top: 1px dashed rgba(255, 255, 255, 0.08);
+    margin-top: auto;
 }
 
 .step-protip a {
@@ -3103,20 +3120,24 @@ footer {
 }
 
 /* Responsive adjustments */
-@media (max-width: 960px) {
+@media (max-width: 1080px) {
     .quickstart-steps-grid {
         grid-template-columns: 1fr;
+        gap: 1.25rem;
     }
     .openrouter-showcase {
         grid-template-columns: 1fr;
         text-align: center;
     }
+    .or-logo-box {
+        margin: 0 auto;
+    }
+}
+
+@media (max-width: 768px) {
     .or-benefits-grid {
         grid-template-columns: 1fr;
         text-align: left;
-    }
-    .or-logo-box {
-        margin: 0 auto;
     }
 }
 
