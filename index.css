@@ -1651,8 +1651,8 @@ footer {
 
 /* Mermaid SVG Diagrams */
 .mermaid-diagram {
-    padding: 2.5rem 1.5rem;
-    margin: 2.5rem 0;
+    padding: 2rem 1.5rem;
+    margin: 2.2rem 0;
     border-radius: 18px;
     background: #06080d;
     border: 1px solid rgba(245, 158, 11, 0.3);
@@ -1667,11 +1667,11 @@ footer {
 }
 
 .mermaid-diagram svg {
-    min-width: 750px;
-    width: 100% !important;
-    max-width: 950px !important;
-    height: auto !important;
+    max-width: 100%;
+    max-height: 520px;
+    height: auto;
     margin: 0 auto;
+    display: inline-block;
 }
 
 .mermaid-diagram pre.mermaid {

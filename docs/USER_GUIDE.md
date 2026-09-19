@@ -579,13 +579,13 @@ Autonomous agents writing code with low-cost or local models (e.g. Gemini 3.7 Fl
 **Fairy Dusting** solves this by periodically and transparently hijacking prompt turns and routing them to frontier models (e.g., Claude Sonnet 5 or Claude Opus 5) with an injected quality review prompt.
 
 ```mermaid
-flowchart TD
-    Turn["Agent Prompt Turn"] --> CheckWrite{"Is Write Progress?<br/>(write_to_file, apply_diff, etc.)"}
+flowchart LR
+    Turn["Agent Prompt Turn"] --> CheckWrite{"Write<br/>Progress?"}
     CheckWrite -- No --> NormalRoute["Normal Tier Evaluation"]
-    CheckWrite -- Yes --> IncCount["Increment WriteProgressCount"]
-    IncCount --> CheckCadence{"Matches Entry Cadence?<br/>(WriteCount % frequency == 0)"}
+    CheckWrite -- Yes --> IncCount["Increment Write Count"]
+    IncCount --> CheckCadence{"Cadence<br/>Match?"}
     CheckCadence -- No --> NormalRoute
-    CheckCadence -- Yes --> FairyHijack["🧚 Fairy Dust Triggered!<br/>1. Select Highest-Priority Entry<br/>2. Route to Frontier Model<br/>3. Inject Review Prompt"]
+    CheckCadence -- Yes --> FairyHijack["🧚 Fairy Dust Checkpoint<br/>• Select Highest Priority<br/>• Route to Frontier Model<br/>• Inject Review Directive"]
 ```
 
 #### How It Works:
