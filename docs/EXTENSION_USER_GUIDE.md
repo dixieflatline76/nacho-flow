@@ -105,12 +105,12 @@ For developers hosting Nacho Flow on a dedicated GPU server, home lab workstatio
 
 ### 3.2 User-Configurable Profiles & 1-Click Switching (Profile 1, Profile 2, Profile 3)
 
-Nacho Flow features three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) that can be switched on the fly with **native process isolation and zero configuration drift**:
+Nacho Flow features three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) that can be switched on the fly with **native process isolation, zero configuration drift, and factory template synchronization**:
 
 ```text
-[⚡ 2. Routing Configuration]                     [📝 Edit YAML]
-  Active Routing Profile:
-  [ 📋 Profile 1                   ▼ ] [⚡ Switch]
+[⚡ 2. Routing Configuration]          [🔍 Diff] [📝 Edit YAML]
+  ACTIVE PROFILE
+  [ Profile 1           ▼ ]  [⚡ Switch]  [🔄 Reset]
 ```
 
 #### Available Profiles:
@@ -127,24 +127,57 @@ Nacho Flow features three independent, fully customizable configuration profiles
 > [!NOTE]
 > **Loopback Security Isolation**: All bundled extension profile templates strictly enforce `host: "127.0.0.1"` to provide local machine isolation and prevent Windows Defender Firewall network permission prompts. If you require LAN access for remote machines, set `host: "0.0.0.0"` in your workspace config.
 
-#### 1-Click Profile Switching:
-1. Select your target profile from the dropdown (`Profile 1`, `Profile 2`, or `Profile 3`).
-2. Click **`⚡ Switch`** (or select from the dropdown).
-3. **If the Local Engine is running**: The extension cleanly restarts the native Go daemon, passing the resolved absolute configuration path directly via the native `--config <path>` flag. In-flight processes terminate gracefully, and the engine boots immediately with the selected profile.
-4. **If the Local Engine is offline**: The extension updates your active profile selection so that the next time you click **`▶ Start`**, the engine automatically initializes with the chosen profile.
-5. **In Remote Server Mode**: Local profile switching is disabled to prevent accidental reconfiguration of remote or shared servers; the UI clearly displays `🌐 Remote Server`.
-6. Environment variable placeholders (`ENV_<KEY>`) in the profile are automatically expanded from the host process environment, keeping API authentication seamless.
-7. A transient confirmation toast appears: `🌮 Switched to Profile 1!`.
+#### 1-Click Profile Switching & Lifecycle Controls:
+1. **Dropdown Selection**: Select your target profile (`Profile 1`, `Profile 2`, or `Profile 3`) from the dropdown.
+2. **`⚡ Switch`**:
+   - **If the Local Engine is running**: The extension cleanly restarts the native Go daemon, passing the resolved absolute configuration path directly via the native `--config <path>` flag. In-flight processes terminate gracefully, and the engine boots immediately with the selected profile.
+   - **If the Local Engine is offline**: The extension updates your active profile selection so that the next time you click **`▶ Start`**, the engine automatically initializes with the chosen profile.
+3. **`🔍 Diff` (Side-by-Side Template Comparison)**:
+   - Click **`🔍 Diff`** (command `nacho-flow.compareProfileWithTemplate`) in the section header to open VS Code's native side-by-side diff editor (`vscode.diff`).
+   - Compares your active customized profile against the clean, bundled factory template in real time, letting you easily spot new guardrail keys, schema additions, or upstream default updates without modifying your file.
+4. **`🔄 Reset` (Safe Factory Reset)**:
+   - Click **`Reset`** (command `nacho-flow.resetProfileToDefault`) to restore the selected profile back to its pristine factory preset.
+   - **Safety First**: Automatically creates a timestamped backup copy (`profile<N>.yaml.bak`) of your existing customized file before replacing it, confirms via an explicit dialog, and automatically reloads the running gateway daemon with zero downtime.
+5. **`📝 Edit YAML` (Live Editing & Dynamic Sync)**:
+   - Click **`📝 Edit YAML`** next to the section header (or the dynamic **`[📝 Profile X (YAML)]`** button in the dashboard) to open the active profile file directly in VS Code with full YAML syntax highlighting and schema validation. Saving changes automatically hot-reloads the daemon in real time.
+6. **In Remote Server Mode**: Local profile switching, diffing, and resets are disabled to prevent accidental reconfiguration of remote or shared servers; the UI clearly displays `🌐 Remote Server`.
+7. Environment variable placeholders (`ENV_<KEY>`) in the profile are automatically expanded from the host process environment, keeping API authentication seamless.
+8. A transient confirmation toast appears: `🌮 Switched to Profile 1!`.
+
+---
+
+#### 🏷️ Config Schema Versioning & SemVer Drift Detection (`version: "1.2.2"`)
+
+Nacho Flow profiles feature top-level schema versioning (`version: "1.2.2"`). Whenever you switch profiles or boot the engine, the extension's SemVer validation engine compares your active profile against the latest extension factory templates:
+
+```mermaid
+flowchart LR
+    LoadProfile["Load Profile YAML"] --> ParseVer["Parse schema version"]
+    ParseVer --> Compare{"SemVer Delta<br/>vs Template"}
+    Compare -- "Equal / Patch" --> CleanBoot["🟢 Clean Boot<br/>(Seamless Execution)"]
+    Compare -- "Minor Delta<br/>(v1.1.0 vs v1.2.2)" --> MinorAlert["🟡 Informational Notice<br/>• Compare Diff<br/>• Reset to Template<br/>• Use As Is"]
+    Compare -- "Major Delta<br/>(v1.x vs v2.0)" --> MajorAlert["🔴 Blocking Modal<br/>• Incompatible Schema<br/>• Safe Factory Reset (with .bak)"]
+```
+
+* **Major Version Delta (Breaking Change)**:
+  * Triggers a blocking modal dialog: `⚠️ Incompatible Configuration: Profile X is on schema v1.0.0, but Nacho Flow requires v2.0.0.`
+  * Requires a 1-click **Reset to Factory Default** (which automatically backs up your old file as `.bak`) before proceeding, preventing runtime crashes.
+* **Minor Version Delta (New Additive Features)**:
+  * Displays an actionable notification: `🌮 Profile X is on config schema v1.1.0 (v1.2.2 available with new features). Would you like to review changes or reset to the new template?`
+  * Offers three instant actions:
+    1. **`Compare Diff`**: Opens side-by-side diff editor.
+    2. **`Reset to Factory Default`**: Restores pristine preset with `.bak` safety backup.
+    3. **`Use As Is`**: Continues running your customized configuration without interruption.
+* **Patch / Equal (Up-to-Date)**:
+  * Profile is fully up-to-date; boots instantly with zero prompts.
+
+---
 
 #### Profile Resolution Hierarchy:
 When resolving profile files, the extension checks:
 1. **Explicit Project Override** (`.nacho/` or workspace root): Checks `./.nacho/profile<N>.yaml` (or `./profile<N>.yaml` / `./config.yaml` if previously present). Storing project overrides in the hidden `.nacho/` directory prevents workspace clutter, ensures Git cleanliness, and avoids accidental credential commits.
 2. **Global Storage Profiles (Default)**: `<globalStorage>/profiles/` (e.g. `<globalStorage>/profiles/profile1.yaml`, `profile2.yaml`, `profile3.yaml`). Stores your active personalized configuration centrally so all your workspace projects share your tuned models, API keys, and routing rules without repo pollution.
 3. **Bundled Factory Templates**: Built-in, factory-calibrated templates packaged directly with the extension resources.
-
-#### Dynamic Sync & Live Editing (`📝 Edit YAML`):
-Click **`📝 Edit YAML`** next to the section header (or the dynamic **`[📝 Profile X (YAML)]`** button in the dashboard) to open the active profile file directly in VS Code with full YAML syntax highlighting and schema validation.
-- Saving changes automatically hot-reloads the daemon in real time.
 
 ---
 

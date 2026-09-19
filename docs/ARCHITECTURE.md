@@ -428,6 +428,7 @@ flowchart TD
    - *Global user storage*: Checks `<globalStorage>/profiles/profile*.yaml`.
    - *Bundled factory defaults*: Falls back to the extension's built-in factory templates.
 4. **Clean Hot-Restart Semantics**: Switching profiles while the local engine is active triggers an immediate, seamless restart with the new `--config` target. When offline, switching profiles updates the active profile intent so that the next `▶ Start` invocation boots with the selected configuration.
+5. **Config Schema Versioning & Factory Template Diffs (`version: "1.2.2"`, `compareProfileWithTemplate`, `resetProfileToDefault`)**: Profiles declare a top-level `version:` field validated against bundled extension templates via a SemVer delta engine (`compareConfigVersions`). The extension provides live side-by-side diffing (`vscode.diff`) to inspect template divergence and safe factory reset with automatic `.bak` backups.
 
 ### 9.4 Remote Daemon Mode & Host Process Auto-Resume
 1. **Strict Local vs. Remote Separation**: The extension detects whether the configured gateway endpoint is local (`127.0.0.1`, `localhost`) or remote (LAN, VPN, Tailscale IP, or domain).
