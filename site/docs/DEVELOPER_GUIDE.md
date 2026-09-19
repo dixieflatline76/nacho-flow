@@ -243,7 +243,7 @@ Nacho Flow uses an open, decoupled factory registry for dynamic model pricing lo
 3. **Zero Core Modifications**:
    Because `cmd/nacho-flow/main.go` and `pkg/server/api.go` iterate over `telemetry.GetRegisteredPricingFactories()`, adding your new pricing provider file automatically enables:
    - Live startup pricing catalog synchronization.
-   - On-demand refresh via `POST /v1/pricing/refresh`.
+   - Dynamic real-time inspection via `GET /api/v1/pricing` and deals ranking via `GET /api/v1/deals`.
    - Transparent integration with the lock-free atomic pricing map (`atomic.Pointer[map[string]ModelMetadata]`).
 
 ---
@@ -379,10 +379,10 @@ node esbuild.config.js
 npm test
 
 # 4. Package VSIX bundle
-npx vsce package --no-dependencies --out "../dist/nacho-flow-0.6.0.vsix"
+npx vsce package --no-dependencies --out "../dist/nacho-flow.vsix"
 
 # 5. Local Install into VS Code
-code --install-extension "../dist/nacho-flow-0.6.0.vsix" --force
+code --install-extension "../dist/nacho-flow.vsix" --force
 ```
 
 ### 11.3 Debugging in VS Code

@@ -18,11 +18,11 @@ flowchart TD
 
     subgraph NachoGateway ["🌮 Nacho Flow Edge Gateway (Pure Go Core)"]
         direction TB
-        Auth["1. Inbound Auth & Session Tracker (5m Sliding TTL)"]:::core
-        Classifier["2. Scoped Classifier & Adaptive Token EMA Estimator"]:::core
-        Evaluator["3. AST Bytecode Rule Engine & Context Window Guards"]:::core
-        NTSCompactor["4. Nacho Token Saver (NTS Zero-Alloc Compaction)"]:::tool
-        CircuitBreaker["5. Local Circuit Breaker & Sub-Millisecond Failover Dispatcher"]:::core
+        Auth["Stage 0 & 1: Inbound Auth & Session Tracker (5m Sliding TTL)"]:::core
+        Classifier["Stage 1: Scoped Classifier & Adaptive Token EMA Estimator"]:::core
+        Evaluator["Stage 2: AST Bytecode Rule Engine & Context Window Guards"]:::core
+        NTSCompactor["Stage 3 & 3.5: Payload Sanitization & NTS Token Compactor"]:::tool
+        CircuitBreaker["Stage 4: Circuit Breaker & Sub-Millisecond Failover Dispatcher"]:::core
         
         Auth --> Classifier --> Evaluator --> NTSCompactor --> CircuitBreaker
     end
@@ -35,12 +35,13 @@ flowchart TD
 
     subgraph ProcessingStack ["Response Validation & Stream Normalization"]
         direction TB
-        DelayedHeader["5. Delayed SSE Header & Quality Validator (Empty Chunk Peeker)"]:::tool
-        ToolNormalizer["6. Universal Tool Calling & &lt;think&gt; Stream Normalizer"]:::tool
-        Shield["7. Agentic Tool Fallback Shield (Sliding Tail-Buffer)"]:::tool
-        Telemetry["8. Lock-Free Persistence & Cost-Reduction Tracker"]:::core
+        DelayedHeader["Stage 5: Delayed SSE Header & Quality Validator (Empty Chunk Peeker)"]:::tool
+        ToolNormalizer["Stage 5b/c: Universal Tool Calling & &lt;think&gt; Stream Normalizer"]:::tool
+        Shield["Stage 5d: Agentic Tool Fallback Shield (Sliding Tail-Buffer)"]:::tool
+        CycleKiller["Stage 5e: Cycle Killer In-Flight Stream Defense & Loop Severing"]:::tool
+        Telemetry["Stage 6 & 7: Lock-Free Telemetry Persistence & Pricing Oracle"]:::core
 
-        DelayedHeader --> ToolNormalizer --> Shield --> Telemetry
+        DelayedHeader --> ToolNormalizer --> Shield --> CycleKiller --> Telemetry
     end
 
     Client -->|POST /v1/chat/completions| Auth
@@ -51,6 +52,7 @@ flowchart TD
     CloudAPI -->|Raw Stream / Buffer| DelayedHeader
 
     DelayedHeader -.->|Empty / Hanging Local Payload| CloudAPI
+    CycleKiller -.->|Repeated Breaches / Pre-Header Abort| CloudAPI
     Telemetry -->|Normalized OpenAI Wire Format| Client
 ```
 
@@ -194,7 +196,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
      - **Category A (File Writes - `ToolCategoryFileWrite`)**: For structured write tools (`write_to_file`, `replace_file_content`, `create_file`, etc.) and shell redirections (`> file`), sliding N-gram loop detection is bypassed entirely. This grants complete immunity to table-driven unit tests, repetitive struct fixtures, and large code diffs, bounded by a spacious `max_write_tokens` ceiling (default 32,768) with zero-alloc fast exit.
      - **Category B (Commands & Invocations - `ToolCategoryCommand`)**: For shell commands and general tool invocations, sliding N-gram repetition checks and `max_tool_tokens` (default 4,096) apply to intercept runaway command pipelines (e.g. infinite `sed -i` loops).
   5. **Dynamic XML Write Tag Demuxer (`xml_demuxer.go`)**: For autonomous coding agents that draft tool invocations using XML tags within the prose stream (such as Cline or community forks writing `<write_to_file path="...">` or `<replace_in_file>`), the demuxer inspects in-flight text deltas. Upon encountering an open write tag, it dynamically shifts the lane classification to `ToolCategoryFileWrite`, granting write immunity to large multi-hundred-line source code diffs embedded in prose without tripping loop detection.
-  6. **Frontier Model Cycle Immunity (`frontier_immunity`)**: Frontier reasoning models (`claude-3-7-sonnet`, `claude-3-5-sonnet`, `o1`, `gpt-4o`, `deepseek-r1`) are granted cycle immunity by default or via configuration. This ensures that deep, complex reasoning and architectural synthesis are never prematurely killed by aggressive repetition thresholds designed for small open-weight 7B-14B models.
+  6. **Frontier Model Cycle Immunity (`frontier_immunity`)**: Frontier reasoning models (`claude-3-7-sonnet`, `claude-sonnet-5`, `gemini-3.8-flash`, `o1`, `gpt-4o`, `deepseek-r1`) are granted cycle immunity by default or via configuration. This ensures that deep, complex reasoning and architectural synthesis are never prematurely killed by aggressive repetition thresholds designed for small open-weight 7B-14B models.
   7. **Modular Agent Catalog (`pkg/agentregistry`)**: Built-in and dynamically loaded agent profiles (`data/agents/manifest.json`, `data/agents/*.json`) define tool signatures, write tags, and shell write patterns dynamically, eliminating hardcoded agent checks across the codebase.
 - **Two-Phase Stream Defense Architecture**:
   - **Phase 1: Pre-Header Adaptive Defense (2KB Peek Buffer)**: If a loop or monologue budget breach occurs before HTTP headers are committed, Nacho Flow cleanly aborts the stream, appends an authoritative `[SYSTEM OVERRIDE]` prompt (*"You produced excessive reasoning without calling any tools. Stop planning. Execute immediately. Call the appropriate tool NOW with the correct arguments. Do not explain your reasoning."*), and re-dispatches synchronously. Incurred cost remains **$0.00** on local models. On repeated breach, it transparently fails over to the cloud default tier.
@@ -266,10 +268,7 @@ type HealthCheckProvider interface {
 }
 
 type CircuitBreakerProvider interface {
-    AllowRequest() bool
-    RecordSuccess()
-    RecordFailure()
-    State() string
+    CircuitBreaker() *CircuitBreaker
 }
 
 type PricingProvider interface {
@@ -277,6 +276,9 @@ type PricingProvider interface {
     FetchPricing(ctx context.Context) (map[string]ModelPricing, error)
 }
 ```
+
+> [!NOTE]
+> The concrete `*CircuitBreaker` (`pkg/provider/circuit_breaker.go`) manages thread-safe health transitions via atomic state machines, providing `AllowRequest() bool`, `RecordSuccess()`, `RecordFailure()`, and `State() CircuitState`.
 
 ---
 
@@ -389,23 +391,23 @@ flowchart TD
 
     subgraph GoDaemon ["🌮 Nacho Flow Go Daemon Core"]
         direction TB
-        MgmtAPI["Control Plane IPC (/v1/mgmt/*)"]:::daemon
-        EventBroker["SSE Real-Time Pub/Sub Event Broker (/v1/events)"]:::daemon
+        MgmtAPI["Control Plane REST API (/api/v1/*)"]:::daemon
+        EventBroker["SSE Real-Time Pub/Sub Event Broker (/api/v1/events)"]:::daemon
         RingBuffer["In-Memory Ring Buffer Sink (Last 500 Turns, Zero Disk I/O In-Memory Ring Buffer)"]:::daemon
         ProxyEngine["Proxy Director & 8-Format Tool Normalizer"]:::daemon
     end
 
     Sidebar -->|Start / Stop / Restart & Stream Logs| GoDaemon
     AuthMgr -->|Bearer Token & Endpoint Config| MgmtAPI
-    MgmtAPI -->|POST /v1/mgmt/stats/reset<br/>POST /v1/mgmt/circuits/reset| GoDaemon
+    MgmtAPI -->|POST /api/v1/stats/reset<br/>POST /api/v1/circuits/reset| GoDaemon
     EventBroker -->|SSE Event Stream: stats_update, route_record| WebviewDashboard
     EventBroker -->|SSE Event Stream: stats_update| StatusBar
-    RingBuffer -->|GET /v1/stats, Live Route Stream| WebviewDashboard
+    RingBuffer -->|GET /api/v1/routes, Live Route Stream| WebviewDashboard
 ```
 
 ### 9.1 Thin-Client Separation of Concerns
 1. **Zero Domain Logic in TypeScript**: All token calculation, `expr` AST rule evaluation, circuit trips, pricing oracle lookups, and stream transformations execute exclusively in the compiled Go daemon. The extension never duplicates routing or token math.
-2. **Real-Time Push Updates via SSE**: Rather than polling, the extension subscribes to the daemon's Server-Sent Events broker (`GET /v1/events`). Metrics update in real-time across the Status Bar and Analytics Webview with zero CPU spin.
+2. **Real-Time Push Updates via SSE**: Rather than polling, the extension subscribes to the daemon's Server-Sent Events broker (`GET /api/v1/events`). Metrics update in real-time across the Status Bar and Analytics Webview with zero CPU spin.
 3. **Isolated Credential State**: `AuthManager` isolates Local mode (`127.0.0.1:8000`) and Remote mode (`http://<ip>:8000`), storing tokens securely in `vscode.SecretStorage` and guaranteeing that toggling modes never overwrites remote server credentials.
 4. **Single Source of Truth (`config.yaml`)**: To prevent configuration drift, the extension provides no parallel sidebar toggle switches. All operational rules and normalizer flags are edited in `config.yaml` with instant hot-reload via atomic RCU.
 

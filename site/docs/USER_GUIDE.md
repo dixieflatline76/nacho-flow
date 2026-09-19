@@ -634,7 +634,7 @@ To protect your wallet from runaway loops while preserving on-demand access to f
 
 > [!IMPORTANT]
 > **Production Default: Disabled (`enabled: false`) for Pristine Context Stability**
-> Modern frontier models (Claude 3.5/3.7 Sonnet, Qwen 2.5 Coder, Gemini 2.0) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context in-flight invalidates prompt cache keys and induces diff-matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted).
+> Modern frontier models (Claude 3.7 / Sonnet 5, Qwen 3 Coder Plus, Gemini 3.8 Flash) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context in-flight invalidates prompt cache keys and induces diff-matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted).
 > Nacho Flow defaults to **100% pristine context preservation** for optimal speed, cache hits, and accuracy.
 > NTS is maintained as an experimental opt-in research pipeline (`pkg/nts`) for developers investigating extreme context limits or custom compaction heuristics.
 
@@ -1179,7 +1179,7 @@ nacho-flow deals -host 127.0.0.1 -port 8000 -auth my-secret-token
 **Example Output**:
 ```text
 🔥  HEAT SEEKER
-Benchmark: anthropic/claude-3.5-sonnet ($3.00/1M tokens)
+Benchmark: anthropic/claude-sonnet-5 ($2.00/1M tokens)
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 MODEL                            ROLE             CONTEXT    PROMPT/1M    COMP/1M      CODING   DISCOUNT  
 google/gemini-2.5-flash-lite     vision_workhorse 1.0M       $0.10        $0.40        68.1     96.7% 🔥  
@@ -1212,8 +1212,8 @@ curl -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8000/api/v1/dea
 
 ```json
 {
-  "benchmark_model": "anthropic/claude-3.5-sonnet",
-  "benchmark_cost_per_m": 3.00,
+  "benchmark_model": "anthropic/claude-sonnet-5",
+  "benchmark_cost_per_m": 2.00,
   "deals_count": 2,
   "deals": [
     {

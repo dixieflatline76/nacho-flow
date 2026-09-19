@@ -751,8 +751,8 @@ default_tier:
     });
 
     it('should preserve comments when replacing model in default_tier', () => {
-      const updated = extensionController.replaceTierModelInYaml(sampleYaml, 'Fallback', true, 'anthropic/claude-3.5-sonnet');
-      expect(updated).toContain('model: anthropic/claude-3.5-sonnet # Fallback model');
+      const updated = extensionController.replaceTierModelInYaml(sampleYaml, 'Fallback', true, 'anthropic/claude-sonnet-5');
+      expect(updated).toContain('model: anthropic/claude-sonnet-5 # Fallback model');
       expect(updated).toContain('model: qwen2.5-coder:7b # Current fast model');
       expect(updated).toContain('# Rescue tier');
     });

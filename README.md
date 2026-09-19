@@ -26,6 +26,47 @@ Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@d
 
 ---
 
+## ⚡ 60-Second Quickstart (Get Started in 3 Steps)
+
+Nacho Flow runs the simple stuff on your local workstation for **$0.00**, and escalates to frontier models only when deep reasoning is needed:
+
+```mermaid
+flowchart LR
+    Step1["<b>Step 1: Local GPU ($0.00)</b><br/><code>ollama run gemma4:12b-it-qat</code>"]
+    Step2["<b>Step 2: Cloud Gateway</b><br/>OpenRouter Key (1 Unified Key)"]
+    Step3["<b>Step 3: Point Your Agent</b><br/><code>http://127.0.0.1:8000/v1</code>"]
+
+    Step1 --> Step2 --> Step3
+```
+
+1. **Step 1: Local Workstation GPU ($0.00)**  
+   Install [Ollama](https://ollama.com/download) and pull the recommended 16GB VRAM coding champion:
+   ```bash
+   ollama run gemma4:12b-it-qat
+   ```
+   > 💡 **Workstation Pro-Tip**: To prevent Ollama from silently truncating long agent prompts, set `OLLAMA_CONTEXT_LENGTH=32768` in your environment (`setx OLLAMA_CONTEXT_LENGTH 32768` on Windows, or `launchctl setenv OLLAMA_CONTEXT_LENGTH 32768` on macOS). See [User Guide](docs/USER_GUIDE.md#crucial-workstation-setup-configure-ollama_context_length32768).
+
+2. **Step 2: Cloud Gateway via OpenRouter (1 Key for All Frontier Models)**  
+   Grab a single API key from [OpenRouter](https://openrouter.ai/keys) to power all cloud tiers (Qwen 3 Coder Plus, Gemini 3.8 Flash, Claude Sonnet 5).
+   ```bash
+   export OPENROUTER_API_KEY="sk-or-v1-..."
+   ```
+
+3. **Step 3: Start Nacho Flow & Connect Your Agent**  
+   - **VS Code Extension (Bundled Runtime)**: Install [Nacho Flow from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow), click `▶ Start` in the sidebar.
+   - **Standalone CLI**: Run `nacho-flow` in your terminal.
+   - **In your coding agent (Cline, Zoo Code, Cursor, Aider, OpenCode)**:
+     - **Base URL**: `http://127.0.0.1:8000/v1`
+     - **Model ID**: `nacho-hybrid`
+     - **API Key**: `sk-nacho-secret-key` *(or leave blank if auth disabled)*
+
+### ⚡ Why OpenRouter is the Perfect Cloud Partner for Nacho Flow
+* **One Unified Key**: A single API key and billing balance routes across **Qwen 3 Coder Plus**, **Gemini 3.8 Flash**, **Claude Sonnet 5**, and **Claude Opus 5** without managing separate vendor accounts or credit cards.
+* **The 90% Prompt Cache Multiplier**: OpenRouter passes through up to **90% caching discounts** on prompt tokens. Because Nacho Flow operates in **100% pristine context preservation mode**, historical prompt prefixes hit the cache byte-for-byte on every turn.
+* **Zero-Config Factory Profiles**: Nacho Flow's pre-configured factory profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) work out of the box with OpenRouter.
+
+---
+
 ## 🌟 The Problem: The Token Snowball Trap
 
 ### 💡 The Origin Story
@@ -85,7 +126,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 ### 🧪 2. Nacho Labs: Token Saver (NTS — Experimental Opt-In Engine)
 > [!NOTE]
 > **Production Default: Disabled (`enabled: false`) for Pristine Context Stability**
-> Modern frontier models (Claude 3.5/3.7 Sonnet, Qwen 2.5 Coder, Gemini 2.0) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context breaks KV caches and induces diff matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted). Nacho Flow defaults to **100% pristine context preservation** for optimal speed, cache hits, and accuracy. NTS is maintained as an experimental opt-in research pipeline (`pkg/nts`) for developers investigating extreme context limits.
+> Modern frontier models (Claude 3.7 / Sonnet 5, Qwen 3 Coder Plus, Gemini 3.8 Flash) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context breaks KV caches and induces diff matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted). Nacho Flow defaults to **100% pristine context preservation** for optimal speed, cache hits, and accuracy. NTS is maintained as an experimental opt-in research pipeline (`pkg/nts`) for developers investigating extreme context limits.
 
 * **Zero-Alloc In-Place ANSI De-Noising (Opt-In)**: Terminal test executions spit out thousands of raw ANSI escape sequences, spinner animations, and carriage returns (`\r`). The NTS de-noising fast path (`pkg/nts`) purges them cleanly in-flight with zero heap allocation using mutable byte slices.
 * **Redundant File-Read Compaction (Experimental)**: When an agent inspects the same 1,000-line file four times across 20 turns, re-transmitting it burns 8,000 wasted tokens. NTS provides configurable depth-based compaction into structural digests while keeping the active turn fresh.

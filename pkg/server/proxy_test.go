@@ -448,7 +448,7 @@ func TestProxy_DynamicPricingSavings_CalculatedFromOracle(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
 			"data": [
-				{"id": "anthropic/claude-3.5-sonnet", "pricing": {"prompt": "0.000003", "completion": "0.000015"}},
+				{"id": "anthropic/claude-sonnet-5", "pricing": {"prompt": "0.000002", "completion": "0.000010"}},
 				{"id": "deepseek/deepseek-r1", "pricing": {"prompt": "0.00000055", "completion": "0.00000219"}}
 			]
 		}`))
@@ -741,7 +741,7 @@ func TestProxy_CloudPricingDifferential(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
 			"data": [
-				{"id": "anthropic/claude-3.5-sonnet", "pricing": {"prompt": "0.000003", "completion": "0.000015"}},
+				{"id": "anthropic/claude-sonnet-5", "pricing": {"prompt": "0.000002", "completion": "0.000010"}},
 				{"id": "cheap-cloud", "pricing": {"prompt": "0.000001", "completion": "0.000002"}}
 			]
 		}`))

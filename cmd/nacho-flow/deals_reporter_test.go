@@ -13,8 +13,8 @@ import (
 
 func TestTableReporter_Render(t *testing.T) {
 	resp := server.DealsResponse{
-		BenchmarkModel:    "anthropic/claude-3.5-sonnet",
-		BenchmarkCostPerM: 3.00,
+		BenchmarkModel:    "anthropic/claude-sonnet-5",
+		BenchmarkCostPerM: 2.00,
 		DealsCount:        2,
 		Deals: []contract.DealInfo{
 			{
@@ -69,8 +69,8 @@ func TestTableReporter_Render(t *testing.T) {
 
 func TestJSONReporter_Render(t *testing.T) {
 	resp := server.DealsResponse{
-		BenchmarkModel:    "anthropic/claude-3.5-sonnet",
-		BenchmarkCostPerM: 3.00,
+		BenchmarkModel:    "anthropic/claude-sonnet-5",
+		BenchmarkCostPerM: 2.00,
 		DealsCount:        1,
 		Deals: []contract.DealInfo{
 			{
@@ -90,7 +90,7 @@ func TestJSONReporter_Render(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
 		t.Fatalf("failed to unmarshal json reporter output: %v", err)
 	}
-	if decoded.DealsCount != 1 || decoded.BenchmarkModel != "anthropic/claude-3.5-sonnet" {
+	if decoded.DealsCount != 1 || decoded.BenchmarkModel != "anthropic/claude-sonnet-5" {
 		t.Errorf("unexpected decoded payload: %+v", decoded)
 	}
 }

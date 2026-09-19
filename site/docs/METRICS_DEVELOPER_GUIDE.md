@@ -29,7 +29,7 @@ flowchart TD
     Worker -->|Lock RWMutex| Stats[StatsSnapshot Aggregator]
     Worker -->|Fan-out Async| Sinks[Observation Sinks]
     Sinks --> TrafficLog[logs/traffic.jsonl]
-    Sinks --> RingBuf[Recent Routes Ring Buffer 50]
+    Sinks --> RingBuf[Recent Routes Ring Buffer 500]
     Stats --> Disk[~/.config/nacho-flow/stats.json]
     Client[GET /v1/stats or UI] -->|RLock RWMutex O 1| Read[GetStats Snapshot]
 ```
@@ -203,7 +203,7 @@ if isLegacySnapshot {
 > [!CAUTION]
 > **The Dual Data-Path Trap**: Nacho Flow uses two related but distinct data representations:
 > 1. `Observation` (`pkg/telemetry/metrics.go`): The ephemeral in-memory DTO passed via `obsChan` on the hot path.
-> 2. `TurnRecord` (`pkg/telemetry/sink.go`): The serializable audit DTO emitted to `traffic.jsonl`, the 50-entry ring buffer, and SSE clients.
+> 2. `TurnRecord` (`pkg/telemetry/sink.go`): The serializable audit DTO emitted to `traffic.jsonl`, the 500-entry circular ring buffer, and SSE clients.
 >
 > When `worker()` processes an `Observation`:
 > - It updates in-memory counters (`s.stats...`, `addToWindow()`).

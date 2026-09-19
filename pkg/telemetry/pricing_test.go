@@ -195,7 +195,7 @@ func TestPricingOracle_GetDeals_QualityFilteringAndRanking(t *testing.T) {
 
 	// Setup 5 diverse models:
 	// 1. Gemini 2.5 Flash Lite: 96.7% discount, 68.1 coding index, tools
-	// 2. Claude 3.5 Sonnet: 0% discount (baseline benchmark $3.00), 92.4 coding index
+	// 2. Claude Sonnet 5: 0% discount (baseline benchmark $2.00), 97.4 coding index
 	// 3. Cheap non-tool model: 98% discount, 0 coding index, no tools
 	// 4. Free coding model: 100% discount, 75.0 coding index, tools
 	// 5. Cheap sub-threshold translation model: 90% discount, 20.0 coding index
@@ -208,13 +208,13 @@ func TestPricingOracle_GetDeals_QualityFilteringAndRanking(t *testing.T) {
 			SupportsTools: true,
 			CodingIndex:   68.1,
 		},
-		"anthropic/claude-3.5-sonnet": {
-			ModelPricing:  ModelPricing{PromptCostPerMillion: 3.00, CompletionCostPerMillion: 15.00},
-			ModelID:       "anthropic/claude-3.5-sonnet",
-			Name:          "Anthropic: Claude 3.5 Sonnet",
+		"anthropic/claude-sonnet-5": {
+			ModelPricing:  ModelPricing{PromptCostPerMillion: 2.00, CompletionCostPerMillion: 10.00},
+			ModelID:       "anthropic/claude-sonnet-5",
+			Name:          "Anthropic: Claude Sonnet 5",
 			ContextLength: 200000,
 			SupportsTools: true,
-			CodingIndex:   92.4,
+			CodingIndex:   97.4,
 		},
 		"small-org/no-tools-cheap": {
 			ModelPricing:  ModelPricing{PromptCostPerMillion: 0.05, CompletionCostPerMillion: 0.05},
@@ -253,7 +253,7 @@ func TestPricingOracle_GetDeals_QualityFilteringAndRanking(t *testing.T) {
 		RequireTools:      true,
 	}
 
-	deals := oracle.GetDeals(dealsCfg, 3.00, 10)
+	deals := oracle.GetDeals(dealsCfg, 2.00, 10)
 	if len(deals) != 2 {
 		t.Fatalf("expected exactly 2 qualifying deals (free model and gemini-flash-lite), got %d", len(deals))
 	}
@@ -263,8 +263,8 @@ func TestPricingOracle_GetDeals_QualityFilteringAndRanking(t *testing.T) {
 		t.Errorf("expected free model at rank 1, got %+v", deals[0])
 	}
 
-	// 2nd place should be Gemini 2.5 Flash Lite (~96.67% discount)
-	if deals[1].ModelID != "google/gemini-2.5-flash-lite" || deals[1].DiscountPct < 96.0 {
+	// 2nd place should be Gemini 2.5 Flash Lite (~95.0% discount against $2.00 benchmark)
+	if deals[1].ModelID != "google/gemini-2.5-flash-lite" || deals[1].DiscountPct < 94.0 {
 		t.Errorf("expected flash lite at rank 2, got %+v", deals[1])
 	}
 }

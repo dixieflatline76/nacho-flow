@@ -13,12 +13,12 @@ func TestOpenRouterPricingProvider_FetchPricing_Success(t *testing.T) {
 	mockResponse := `{
 		"data": [
 			{
-				"id": "anthropic/claude-3.5-sonnet",
-				"name": "Anthropic: Claude 3.5 Sonnet",
+				"id": "anthropic/claude-sonnet-5",
+				"name": "Anthropic: Claude Sonnet 5",
 				"context_length": 200000,
 				"pricing": {
-					"prompt": "0.000003",
-					"completion": "0.000015"
+					"prompt": "0.000002",
+					"completion": "0.000010"
 				},
 				"architecture": {
 					"input_modalities": ["text", "image"]
@@ -72,15 +72,15 @@ func TestOpenRouterPricingProvider_FetchPricing_Success(t *testing.T) {
 	}
 
 	// 1. Check Claude Sonnet
-	claude, ok := metaMap["anthropic/claude-3.5-sonnet"]
+	claude, ok := metaMap["anthropic/claude-sonnet-5"]
 	if !ok {
-		t.Fatalf("expected anthropic/claude-3.5-sonnet in map")
+		t.Fatalf("expected anthropic/claude-sonnet-5 in map")
 	}
-	if claude.PromptCostPerMillion != 3.0 {
-		t.Errorf("expected prompt cost 3.0, got %f", claude.PromptCostPerMillion)
+	if claude.PromptCostPerMillion != 2.0 {
+		t.Errorf("expected prompt cost 2.0, got %f", claude.PromptCostPerMillion)
 	}
-	if claude.CompletionCostPerMillion != 15.0 {
-		t.Errorf("expected completion cost 15.0, got %f", claude.CompletionCostPerMillion)
+	if claude.CompletionCostPerMillion != 10.0 {
+		t.Errorf("expected completion cost 10.0, got %f", claude.CompletionCostPerMillion)
 	}
 	if !claude.SupportsTools {
 		t.Errorf("expected claude to support tools")

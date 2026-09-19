@@ -150,7 +150,7 @@ func TestEvaluator_RetryAutoEscalation(t *testing.T) {
 	}
 	defaultTier := contract.Tier{
 		Name:     "Cloud Fallback",
-		Model:    "anthropic/claude-3.5-sonnet",
+		Model:    "anthropic/claude-sonnet-5",
 		Provider: "openrouter",
 	}
 
@@ -190,7 +190,7 @@ func TestEvaluator_MaxContext_SkipsTier(t *testing.T) {
 	}
 	defaultTier := contract.Tier{
 		Name:     "Cloud 128k Fallback",
-		Model:    "anthropic/claude-3.5-sonnet",
+		Model:    "anthropic/claude-sonnet-5",
 		Provider: "openrouter",
 	}
 
@@ -223,7 +223,7 @@ func TestExprEvaluator_ForcedDirectives(t *testing.T) {
 		"openrouter": {Type: contract.ProviderTypeCloud, BaseURL: "https://openrouter.ai/api/v1"},
 	}
 
-	defaultTier := contract.Tier{Name: "Default Cloud", Model: "claude-3.5", Provider: "openrouter"}
+	defaultTier := contract.Tier{Name: "Default Cloud", Model: "claude-sonnet-5", Provider: "openrouter"}
 
 	eval, err := NewExprEvaluator(tiers, defaultTier, providers)
 	if err != nil {

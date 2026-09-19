@@ -16,7 +16,7 @@ This whitepaper presents an empirical, head-to-head A/B case study evaluating **
 1. **Run A (Cost-Optimized Hybrid)**: Local GPU offload (`gemma4:12b-it-qat` on AMD ROCm) + Cloud Fast Coder (`qwen/qwen3-coder`).
 2. **Run B (Reasoning-Optimized Hybrid)**: Local GPU offload (`gemma4:12b-it-qat` on AMD ROCm) + Cloud Frontier Reasoning (`google/gemini-3.7-flash` with Extended Thinking).
 
-Both runs were benchmarked against a **Direct Frontier Cloud Baseline** (`anthropic/claude-3.5-sonnet` at standard API pricing).
+Both runs were benchmarked against a **Direct Frontier Cloud Baseline** (`anthropic/claude-sonnet-5` at standard API pricing).
 
 ### Key Empirical Findings:
 * **The Hybrid Architecture Slashes Cloud Spend by 65.5% to 92.7%**: Across **2,068 production API requests** and **78,241,623 tokens**, total gateway spend was **$86.28** compared to an unrouted **$250.37** baseline on Claude Sonnet 5 at live September 2026 rates—delivering **$164.10 net savings (65.5% overall fleet reduction)**. On individual complex tasks, savings reached up to **92.7%** ($0.28 vs. $3.81 baseline in Run 5).
@@ -85,7 +85,7 @@ We selected a real-world, complex full-stack feature within the **Nacho Flow VS 
 | **Local Quantized Model** | `gemma4:12b-it-qat` ($0.00 marginal cost) |
 | **Cloud Proxy Gateway** | Nacho Flow v0.6.0 (`http://127.0.0.1:8000/v1`) |
 | **Agent Harness** | Zoo Code (VS Code Extension) |
-| **Baseline Reference Pricing** | Anthropic Claude 3.5 Sonnet ($3.00 / 1M Input Tokens) |
+| **Baseline Reference Pricing** | Anthropic Claude Sonnet 5 ($2.00 / 1M Input Tokens) |
 
 ### 2.3 Empirical Legitimacy: Real Work vs. Synthetic Puzzles
 Unlike conventional AI coding benchmarks (such as HumanEval or synthetic single-turn puzzles), this case study evaluates real autonomous engineering:
@@ -113,7 +113,7 @@ Unlike conventional AI coding benchmarks (such as HumanEval or synthetic single-
 | **Total Tokens Processed** | 1,008,039 tokens | 1,939,474 tokens |
 | **Tokens Offloaded to GPU ($0)** | **216,874 tokens (21.5%)** | 90,036 tokens (4.6%) |
 | **Total Billed Cloud Spend** | **$0.2473** (~24.7¢) | **$0.7604** (~76.0¢) |
-| **Claude 3.5 Sonnet Baseline** | $3.0242 | $5.8185 |
+| **Claude Sonnet Baseline** | $3.0242 | $5.8185 |
 | **Total Financial Savings (USD)** | **+$2.7769 Saved** | **+$5.0581 Saved** |
 | **Effective Cost Reduction (%)** | **91.82% SAVINGS** | **86.93% SAVINGS** |
 | **YAML Parser Implementation** | ❌ **FAILED** (Naive prefix match) | 🏆 **PERFECT** (Regex State Machine) |
@@ -364,7 +364,7 @@ In **Nacho Flow `v0.8.2`**, three core control plane systems solve this failure 
 
 ### 9.2 Cache-Aware 3-Tier Pricing Oracle Re-calibration
 
-The `v0.6.0` study calculated cloud savings against an unrouted Claude 3.5 Sonnet baseline at flat prompt rates ($3.00 / 1M input tokens).
+The `v0.6.0` study calculated cloud savings against an unrouted Claude Sonnet baseline at flat prompt rates.
 
 In modern multi-turn agentic workflows (Zoo Code, Cline, Cursor), prompt cache hits comprise **80% to 95% of total turn tokens**, receiving an ~80% discount from upstream cloud providers. To prevent financial distortion, Nacho Flow `v0.8.2` implements a **3-Tier Priority Pricing Oracle** ([`pkg/telemetry/pricing.go`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/telemetry/pricing.go)):
 
@@ -372,7 +372,7 @@ In modern multi-turn agentic workflows (Zoo Code, Cline, Cursor), prompt cache h
 2. **Priority 2 (Live / Fallback Rate Card with Cache Discount)**:
    $$\text{PromptCost} = (\text{PromptTokens} - \text{CachedTokens}) \times P_{\text{prompt}} + \text{CachedTokens} \times (P_{\text{prompt}} \times 0.20)$$
    $$\text{CompletionCost} = \text{OutputTokens} \times P_{\text{completion}}$$
-3. **Priority 3 (Claude 3.5 Sonnet Benchmark Fallback with Cache Discount)**: Applies Claude 3.5 Sonnet benchmark rates with the 80% prompt cache discount.
+3. **Priority 3 (Claude Sonnet 5 Benchmark Fallback with Cache Discount)**: Applies Claude Sonnet 5 benchmark rates with the 80% prompt cache discount.
 
 #### Financial Re-evaluation Summary:
 * When accounting for prompt caching on multi-turn sessions, the theoretical Direct Sonnet baseline cost drops by ~40%–60%.
