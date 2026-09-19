@@ -60,7 +60,7 @@ flowchart LR
      - **Model ID**: `nacho-hybrid`
      - **API Key**: `sk-nacho-secret-key` *(or leave blank if auth disabled)*
 
-### ⚡ Why OpenRouter is the Perfect Cloud Partner for Nacho Flow
+### ⚡ Why OpenRouter is the Default Cloud Gateway for Nacho Flow
 * **One Unified Key**: A single API key and billing balance routes across **Qwen 3 Coder Plus**, **Gemini 3.8 Flash**, **Claude Sonnet 5**, and **Claude Opus 5** without managing separate vendor accounts or credit cards.
 * **The 90% Prompt Cache Multiplier**: OpenRouter passes through up to **90% caching discounts** on prompt tokens. Because Nacho Flow operates in **100% pristine context preservation mode**, historical prompt prefixes hit the cache byte-for-byte on every turn.
 * **Zero-Config Factory Profiles**: Nacho Flow's pre-configured factory profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) work out of the box with OpenRouter.
