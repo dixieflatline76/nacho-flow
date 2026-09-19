@@ -303,9 +303,9 @@ Under **3. Coding Agents**, the sidebar displays copy-ready configuration cards:
 
 #### Step-by-Step Agent Setup:
 1. Open your agent's API settings in VS Code:
-   - **Zoo Code**: Click the Zoo robot icon in the sidebar $\rightarrow$ Settings gear.
-   - **Cline**: Click the Cline icon $\rightarrow$ Settings gear.
-   - **Cursor**: `Cursor Settings` $\rightarrow$ `Models` $\rightarrow$ `OpenAI Compatible`.
+   - **Zoo Code**: Click the Zoo robot icon in the sidebar → Settings gear.
+   - **Cline**: Click the Cline icon → Settings gear.
+   - **Cursor**: `Cursor Settings` → `Models` → `OpenAI Compatible`.
 2. Select **Provider**: `OpenAI Compatible`.
 3. Click **`📋 Copy`** next to **Base URL** and paste: `http://127.0.0.1:8000/v1`.
 4. Click **`📋 Copy`** next to **API Key** and paste: `sk-nacho-secret-key` *(or any dummy string if auth is not configured)*.
@@ -459,7 +459,7 @@ Click **`📋 Copy`** on any deal card to copy the exact model ID (e.g. `google/
 
 Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns from `traffic.jsonl`:
 - Uses statistical odds-ratio analysis to find the optimal token boundary where local model failure odds increase.
-- Recommends new context bounds (e.g. shifting `Tokens < 12000` $\rightarrow$ `Tokens < 14500`).
+- Recommends new context bounds (e.g. shifting `Tokens < 12000` → `Tokens < 14500`).
 - Identifies friction keywords (e.g. `concurrency`, `deadlock`) that frequently trigger local retries.
 - Displays a visual diff banner in the dashboard. Click **`Apply Recommendation`** to atomically update `config.yaml` with an automatic backup.
 
@@ -511,7 +511,7 @@ Timeframe: [1h] | **✓ [Today]** | [This Week] | [This Month] | [All Time]
 
 ### Interactive QuickPick Menu:
 Clicking the status bar item opens a quick-action menu:
-- **Open Dashboard**: Opens the full telemetry webview (`Ctrl+Shift+P` $\rightarrow$ `Nacho Flow: Open Dashboard`).
+- **Open Dashboard**: Opens the full telemetry webview (`Ctrl+Shift+P` → `Nacho Flow: Open Dashboard`).
 - **Switch Routing Preset**: Quick-switch between Standard (`config.yaml`), Zoo Code (`config.yaml`), and Cline (`config.cline.yaml`).
 - **Start / Stop / Restart Engine**: Instant lifecycle controls.
 - **Open config.yaml**: Opens the active configuration document in your editor.
@@ -580,7 +580,7 @@ All extension features can be accessed via `Ctrl+Shift+P` / `Cmd+Shift+P`:
 
 ## 8. Configuration Settings (`settings.json`)
 
-Configure extension behaviors in VS Code Settings (`Ctrl+,` $\rightarrow$ search `Nacho Flow`):
+Configure extension behaviors in VS Code Settings (`Ctrl+,` → search `Nacho Flow`):
 
 ```json
 {
