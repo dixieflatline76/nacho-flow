@@ -204,7 +204,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
     - *Prose Violations*: Emits a helpful Markdown notice followed by `finish_reason: "stop"` and `data: [DONE]`.
     - *Tool Call Violations*: When severing mid-argument during active tool calls, emitting `finish_reason: "stop"` causes client V8 runtimes (e.g. Zoo Code) to attempt `JSON.parse()` on truncated arguments, resulting in syntax error crashes (e.g. `Expected ':' after property name at position 515`). To prevent client crashes, Nacho Flow emits standard OpenAI error framing: `data: {"error": {"message": "...", "type": "cycle_killer_error", "code": "tool_cycle_detected"}}` followed by `data: [DONE]`, **strictly omitting `finish_reason: "stop"`**. Client extensions cleanly catch the API error without throwing JSON parsing exceptions.
 - **Auto-Escalation & Model Cooldown Integration**:
-  - **MinRetriesFloor (Retry Floor Preservation)**: When Cycle Killer severs a stream, `RecordCycleKill` sets `MinRetriesFloor = 3`. Even if the client resets/prunes context tokens (e.g. 120k $\rightarrow$ 15k tokens) and submits a new prompt hash, the floor prevents retries from resetting to 0, ensuring the immediate next turn auto-escalates to Tier 3 / Tier 4. The floor safely decays turn by turn.
+  - **MinRetriesFloor (Retry Floor Preservation)**: When Cycle Killer severs a stream, `RecordCycleKill` sets `MinRetriesFloor = 3`. Even if the client resets/prunes context tokens (e.g. 120k → 15k tokens) and submits a new prompt hash, the floor prevents retries from resetting to 0, ensuring the immediate next turn auto-escalates to Tier 3 / Tier 4. The floor safely decays turn by turn.
   - **Per-Session Model Cooldown**: Severed models are placed on a 2-minute session-scoped cooldown (`CoolingDownModels map[string]time.Time`). `strategy.ExprEvaluator.SelectTier` programmatically skips cooling-down models to avoid repeating deterministic reasoning loops on the same session.
 - **Lock-Free Object Pooling (`sync.Pool`)**: `CycleBreaker` decouples static immutable configuration (`CycleBreakerConfig`) from runtime counters (`streamLane`). Instances are acquired via `GetCycleBreaker(cfg)` and recycled via `PutCycleBreaker(cb)`. Slices and maps are reset in-place using Go 1.21 `clear(m)` without re-allocation (51.8 ns/op, 0 B/op), eliminating 12 mutex wrappers across hot-path getters.
 
@@ -212,15 +212,15 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **The Problem**: Coding agents can get trapped in multi-turn read/plan loops (e.g. alternating `read_file` and `update_todo` across 60+ turns) or failing test loops followed by bare read commands (`cat main.go`, `ls`) without making code changes.
 - **Stateful Turn Tracker**: Tracks `KickstartCount` within `SessionState` across consecutive request turns.
 - **Tool Progress Evaluation**: Reset to 0 whenever the agent executes productive state changes (`HasToolProgress`). When `kickstart_write_only: true` is configured, only genuine write-class operations count as progress:
-  - Structured file tools (`write_to_file`, `replace_in_file`, custom tools from `kickstart_write_tools`) $\rightarrow$ `HasWriteProgress`
-  - Shell command file writes (`sed -i`, `>`, `>>`, `| tee`, `patch`, `git restore`) detected via zero-alloc SIMD string scanning $\rightarrow$ `HasShellWrite`
-  - Clean passing test suites $\rightarrow$ `HasTestProgress`
+  - Structured file tools (`write_to_file`, `replace_in_file`, custom tools from `kickstart_write_tools`) → `HasWriteProgress`
+  - Shell command file writes (`sed -i`, `>`, `>>`, `| tee`, `patch`, `git restore`) detected via zero-alloc SIMD string scanning → `HasShellWrite`
+  - Clean passing test suites → `HasTestProgress`
   Read-only / metadata operations (`cat`, `ls`, `grep`, `read_file`, `update_todo`) do NOT reset retries while tests fail, breaking infinite retry loops.
 - **Plan Mode Guard**: When an agent operates in pure plan mode (`HasTools && !HasWriteCapability`), tool progress is preserved without false kickstart accumulation.
 - **Resuscitation Injection**: When `KickstartCount >= kickstart_threshold` (default 5, `0` disables), Nacho Flow injects `[SYSTEM OVERRIDE]` to force the agent to transition from planning to execution.
 
 ### Stage 5g: 🔑 Clean Session Key & Ephemeral Port Normalization (`pkg/server/proxy.go`)
-- **The Problem**: Standard HTTP clients (Zoo Code, Cline, Python SDK) create fresh TCP connections per request/retry, resulting in changing ephemeral client ports (e.g., `:65143` $\rightarrow$ `:55732`). If `r.RemoteAddr` is used directly as `sessionKey`, every retry resets session state to Turn 0.
+- **The Problem**: Standard HTTP clients (Zoo Code, Cline, Python SDK) create fresh TCP connections per request/retry, resulting in changing ephemeral client ports (e.g., `:65143` → `:55732`). If `r.RemoteAddr` is used directly as `sessionKey`, every retry resets session state to Turn 0.
 - **Port-Stripped Session Normalization (`extractSessionKey`)**: Resolves session keys via `x-session-id`, `session-id`, `X-Forwarded-For`, `X-Real-IP`, or pure host IP extracted via `net.SplitHostPort(r.RemoteAddr)`, guaranteeing persistent retry tracking across multi-turn agent sessions.
 
 ### Stage 5h: 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints (`pkg/router/session.go`, `pkg/server/proxy.go`)
@@ -316,26 +316,20 @@ The auto-tuning engine uses an **Advisory-First**, pure Go empirical cost-penalt
 
 Nacho Flow v0.8.0 introduces the **3-Tier Capability & Intelligence Pipeline** to accurately classify models for routing and live model deal recommendations:
 
-```
-┌────────────────────────────────────────────────────────┐
-│  Tier 1: Curated Model Gallery (Highest Fidelity)      │
-│  • Embedded in binary via //go:embed (instant offline) │
-│  • Over-The-Air (OTA) synced from GitHub raw content   │
-│  • Semver comparison (newest wins, cache fallback)     │
-│  • Verified SWE-bench, Tool Reliability, Tier Roles    │
-└───────────────────────────┬────────────────────────────┘
-                            │ (fallback if uncatalogued model)
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│  Tier 2: Live API Benchmark Metadata (Dynamic)         │
-│  • Real-time Artificial Analysis scores from API       │
-└───────────────────────────┬────────────────────────────┘
-                            │ (fallback if benchmark is null/missing)
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│  Tier 3: Heuristic Keyword & Parameter Classifier      │
-│  • Name tokens (coder, flash, r1), context, modalities │
-└───────────────────────────┘
+```mermaid
+flowchart TD
+    classDef tier1 fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff;
+    classDef tier2 fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff;
+    classDef tier3 fill:#2e1065,stroke:#a855f7,stroke-width:2px,color:#fff;
+
+    Tier1["<b>Tier 1: Curated Model Gallery (Highest Fidelity)</b><br/>• Embedded in binary via //go:embed (instant offline)<br/>• Over-The-Air (OTA) synced from GitHub raw content<br/>• Semver comparison (newest wins, cache fallback)<br/>• Verified SWE-bench, Tool Reliability, Tier Roles"]:::tier1
+
+    Tier2["<b>Tier 2: Live API Benchmark Metadata (Dynamic)</b><br/>• Real-time Artificial Analysis scores from API"]:::tier2
+
+    Tier3["<b>Tier 3: Heuristic Keyword & Parameter Classifier</b><br/>• Name tokens (coder, flash, r1), context, modalities"]:::tier3
+
+    Tier1 -->|"Fallback (uncatalogued model)"| Tier2
+    Tier2 -->|"Fallback (benchmark null or missing)"| Tier3
 ```
 
 1. **Embedded Baseline (`pkg/telemetry/curation/embed.go`)**: Pre-packages canonical model benchmarks and capability profiles directly inside the binary via `//go:embed models.json`, providing zero-network startup capability.
