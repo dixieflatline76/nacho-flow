@@ -33,7 +33,12 @@ Both runs used the **identical prompt**, the **identical IDE agent harness** ([Z
 
 ```mermaid
 flowchart LR
-    subgraph RawControl["Raw Frontier Control: Sonnet 5 Direct"]
+    classDef raw fill:#2a1115,stroke:#ef4444,stroke-width:2px,color:#fff;
+    classDef nacho fill:#0d261b,stroke:#10b981,stroke-width:2px,color:#fff;
+    classDef sup fill:#261d0d,stroke:#f59e0b,stroke-width:2px,color:#fff;
+    classDef tier fill:#0e2233,stroke:#38bdf8,stroke-width:1.5px,color:#fff;
+
+    subgraph RawControl["🔴 Raw Frontier Control: Sonnet 5 Direct"]
         Z1["Zoo Code Agent"] -->|100% Direct| S5["Claude Sonnet 5<br/>$2.00 / $10.00 per 1M"]
         S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Prompt Cache Hit| Bill1["$4.87 USD<br/>31.5 min clock time<br/>9 max-token stalls"]
     end
@@ -47,6 +52,11 @@ flowchart LR
         Qwen --> Bill2
         Gemini --> Bill2
     end
+
+    class S5,Bill1 raw;
+    class NF sup;
+    class Local,Qwen,Gemini tier;
+    class Bill2 nacho;
 ```
 
 ### 🎯 The Scorecard at a Glance
