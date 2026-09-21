@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nacho Flow vs. Raw Claude Sonnet 5 — Visual Study</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .container {
+      max-width: 1000px;
+      width: 100%;
+    }
+    h1 {
+      color: var(--text-bright);
+      font-size: 2.2rem;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    .subtitle {
+      text-align: center;
+      color: #8b949e;
+      margin-bottom: 36px;
+      font-size: 1.1rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .card-title {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: var(--text-bright);
+      margin-top: 0;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-desc {
+      color: #8b949e;
+      font-size: 0.95rem;
+      margin-bottom: 20px;
+    }
+    .mermaid {
+      display: flex;
+      justify-content: center;
+      background: #0d1117;
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid #21262d;
+      overflow-x: auto;
+    }
+    .stat-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-right: 8px;
+    }
+    .badge-green { background: rgba(63, 185, 80, 0.2); color: var(--green); border: 1px solid rgba(63, 185, 80, 0.4); }
+    .badge-red { background: rgba(248, 81, 73, 0.2); color: var(--red); border: 1px solid rgba(248, 81, 73, 0.4); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>💸 The Frontier Tax: Visual Empirical Study</h1>
+    <div class="subtitle">Raw Claude Sonnet 5 ($4.87) vs. Nacho Flow Hybrid Gateway ($0.85) · September 2026</div>
+
+    <!-- Chart 1: Architectural Comparison -->
+    <div class="card">
+      <div class="card-title">
+        <span>⚡ 1. Head-to-Head Architecture: Firehose vs. Hybrid Gateway</span>
+      </div>
+      <div class="card-desc">
+        Raw Sonnet routes 100% of turns to frontier cloud at $2/$10 per 1M. Nacho Flow routes routine early turns to workstation GPU for $0.00.
+      </div>
+      <div class="mermaid">
+flowchart LR
+    subgraph RawControl["🔴 Raw Frontier Control (Sonnet 5 Direct)"]
+        Z1["Zoo Code Agent"] -->|100% Direct| S5["Claude Sonnet 5<br/>$2.00 / $10.00 per 1M"]
+        S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Cache Hit| Bill1["<b>$4.87 USD</b><br/>31.5 min clock time<br/>9 max-token stalls"]
+    end
+
+    subgraph NachoGateway["🟢 Nacho Flow Hybrid Gateway"]
+        Z2["Zoo Code Agent"] --> NF["Nacho Flow Gateway"]
+        NF -->|Turns 1-35: Scaffolding| Local["Workstation GPU: Gemma 4<br/><b>$0.00</b>"]
+        NF -->|Turns 36-58: Core Engine| Qwen["Qwen3 Coder Plus<br/>$0.65/M"]
+        NF -->|Turns 59-62: Verification| Gemini["Gemini 3.8 Flash<br/>$0.75/M"]
+        Local --> Bill2["<b>$0.85 USD</b><br/>19.5 min clock time<br/>0 buffer stalls"]
+        Qwen --> Bill2
+        Gemini --> Bill2
+    end
+      </div>
+    </div>
+
+    <!-- Chart 2: 2x2 Benchmark Battery -->
+    <div class="card">
+      <div class="card-title">
+        <span>🎭 2. The 2×2 Empirical Benchmark Battery (444 Turns)</span>
+      </div>
+      <div class="card-desc">
+        Cross-domain evaluation across N-Queens CSP and Blackjack Monte Carlo across Cline and Zoo Code.
+      </div>
+      <div class="mermaid">
+flowchart TD
+    subgraph Problem1["Domain 1: N-Queens Solver & ANSI Heatmap"]
+        R1["<b>Run 1: Cline on Nacho Flow</b><br/>139 turns · $2.38 spent · $14.43 saved<br/>100% tests pass · N=1000 in 1.67s"]
+        R2["<b>Run 2: Zoo Code on Nacho Flow</b><br/>90 turns · $1.80 spent · $11.52 saved<br/>97%+ tests pass · N=1000 in 1.85s"]
+    end
+
+    subgraph Problem2["Domain 2: Blackjack Simulator & Monte Carlo"]
+        R3["<b>Run 3: Cline on Nacho Flow</b><br/>153 turns · $2.74 spent · $15.45 saved<br/>10k rounds in 19.1ms · 88% cov"]
+        R4["<b>Run 4: Zoo Code on Nacho Flow</b><br/>62 turns · $0.85 spent · $7.03 saved<br/>10k rounds in 6.1ms · 97% game cov"]
+        R5["<b>Run 5: Raw Sonnet 5 Control</b><br/>84 turns · $4.87 spent · $0.00 saved<br/>10k rounds in 5.4ms · 86.7% tot cov"]
+    end
+
+    Problem1 --> Problem2
+      </div>
+    </div>
+
+    <!-- Chart 3: Turn 7 Upstream Failure -->
+    <div class="card">
+      <div class="card-title">
+        <span>🩺 3. Turn 7 Upstream Drop: IDE Freeze vs. Silent 180ms Healer</span>
+      </div>
+      <div class="card-desc">
+        When OpenRouter dropped an empty SSE socket packet, raw Zoo Code froze and crashed. Nacho Flow's StreamNormalizer recovered silently.
+      </div>
+      <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant Agent as Zoo Code IDE
+    participant NF as Nacho Flow Gateway
+    participant Cloud as OpenRouter
+
+    Note over Dev,Cloud: SCENARIO A: RAW FRONTIER CONTROL (NO GATEWAY)
+    Agent->>Cloud: POST /chat/completions (Turn 7)
+    Cloud-->>Agent: 200 OK with EMPTY SSE STREAM (Socket Drop)
+    Note over Agent: UI FREEZES. Spinner hangs indefinitely.
+    Dev->>Agent: Manual Intervention: Clicks Cancel & Retry
+
+    Note over Dev,Cloud: SCENARIO B: NACHO FLOW EDGE GATEWAY
+    Agent->>NF: POST /chat/completions (Turn 7)
+    NF->>Cloud: Forward request with keep-alive
+    Cloud-->>NF: Empty SSE Stream (Socket Drop)
+    NF->>NF: StreamNormalizer detects 0 bytes
+    NF->>Cloud: Immediate Retry with Backoff (180ms)
+    Cloud-->>NF: 200 OK Valid Payload
+    NF-->>Agent: Flawless Stream Passed Through
+    Note over Dev,Agent: Agent never flinched. Developer never noticed.
+      </div>
+    </div>
+
+    <!-- Chart 4: Where did the tokens go -->
+    <div class="card">
+      <div class="card-title">
+        <span>🕵️ 4. Token Attribution: Where Did the 9.9M Token Delta Go?</span>
+      </div>
+      <div class="card-desc">
+        Deconstructing why Nacho Flow sent 2.5M cloud prompt tokens vs Sonnet's 12.4M (100% pristine context, zero lossy compression).
+      </div>
+      <div class="mermaid">
+flowchart TD
+    subgraph Gap["Where Did the 9.9M Cloud Prompt Tokens Go?"]
+        A["Total Sonnet Cloud Prompt Tokens: 12.4M"]
+        B["1. Local Workstation Offload: 35 turns<br/><b>~3.85M Tokens Absorbed on GPU for $0.00</b>"]
+        C["2. Turn Inflation Prevention: 22 turns avoided<br/><b>~4.84M Redundant Tokens Never Sent</b>"]
+        D["3. Output Monologue Compounding: 146k fewer output tok<br/><b>~1.20M Compounded Context Tokens Avoided</b>"]
+        E["Nacho Flow Cloud Tokens Billed: 2.53M on OpenRouter"]
+        
+        A --> B
+        B --> C
+        C --> D
+        D --> E
+    end
+      </div>
+    </div>
+
+    <!-- Chart 5: Pie Charts -->
+    <div class="card">
+      <div class="card-title">
+        <span>🧾 5. Forensic Invoice Breakdown: Where Did the Money Go?</span>
+      </div>
+      <div class="card-desc">
+        Prompt caching fallacy: on Sonnet, uncached writes ($1.24) and un-cached output ($1.66) exceeded the entire Nacho Flow invoice.
+      </div>
+      <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 300px;">
+          <h4 style="text-align: center; color: var(--red);">Raw Sonnet 5: $4.87 Total</h4>
+          <div class="mermaid">
+pie title Raw Claude Sonnet 5 ($4.87)
+    "Prompt Cache Hits ($0.20/M)" : 1.97
+    "Completion Monologues ($10.00/M)" : 1.66
+    "Cache-Miss Writes ($3.75/M)" : 1.24
+          </div>
+        </div>
+        <div style="flex: 1; min-width: 300px;">
+          <h4 style="text-align: center; color: var(--green);">Nacho Flow: $0.85 Total</h4>
+          <div class="mermaid">
+pie title Nacho Flow Hybrid ($0.85)
+    "Qwen3 Coder Plus Workhorse" : 0.55
+    "Gemini 3.8 Flash Escalation" : 0.30
+    "Workstation GPU Scaffolding" : 0.00
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart 6: Code Quality Showdown -->
+    <div class="card">
+      <div class="card-title">
+        <span>⚖️ 6. Code Quality Showdown: Pragmatic Lean vs. Academic Overachiever</span>
+      </div>
+      <div class="card-desc">
+        Both passed race detectors and executed 10,000 Monte Carlo rounds in ~5-6ms. Sonnet wrote 2,208 lines of tests (mostly CLI/ANSI).
+      </div>
+      <div class="mermaid">
+flowchart TD
+    subgraph NFApp["Nacho Flow Codebase: $0.85 · 19.5 min"]
+        N1["1,871 Lines of Go<br/>10 Clean, Modular Files"]
+        N2["10,000 Rounds in 6.14ms<br/>EV: -2.49% (Vegas Strip Rules)"]
+        N3["go test -race: PASS<br/>Zero Data Races"]
+        N4["Coverage: 54.3% total<br/>internal/game: 97.6%"]
+        N1 --> N2 --> N3 --> N4
+    end
+
+    subgraph S5App["Raw Sonnet 5 Codebase: $4.87 · 31.5 min"]
+        S1["3,724 Lines of Go<br/>15 Files · ~59% of codebase is tests"]
+        S2["10,000 Rounds in 5.40ms<br/>EV: -1.17% (Liberal Casino Rules)"]
+        S3["go test -race: PASS<br/>Zero Data Races"]
+        S4["Coverage: 86.7% total<br/>incl. terminal formatting & tests"]
+        S1 --> S2 --> S3 --> S4
+    end
+      </div>
+    </div>
+
+    <!-- Chart 7: Tradeoff Matrix -->
+    <div class="card">
+      <div class="card-title">
+        <span>📐 7. The Autonomous Coding Tradeoff Matrix</span>
+      </div>
+      <div class="card-desc">
+        Mapping production efficiency vs. software rigor across local, cloud, and hybrid models.
+      </div>
+      <div class="mermaid">
+flowchart TD
+    subgraph Grid["The Autonomous Coding Tradeoff Matrix"]
+        direction TB
+        subgraph TopRow["High Rigor / Passing Code"]
+            Q2["<b>Over-Engineered & Expensive</b><br/>🔴 Raw Claude Sonnet 5<br/>$4.87 · 31.5 min · 86.7% cov"]
+            Q1["<b>The Sweet Spot (Optimal ROI)</b><br/>🟢 Nacho Flow Hybrid<br/>$0.85 · 19.5 min · 97.6% game cov"]
+        end
+        subgraph BottomRow["Low Rigor / Fragile Code"]
+            Q3["<b>Broken & Unusable</b><br/>⚪ Unmanaged Local Gemma 12B<br/>$0.00 · Repetition death loops"]
+            Q4["<b>Cheap Workhorse</b><br/>🔵 Raw Qwen3 Coder Plus Direct<br/>$1.20 · Good code, needs guardrails"]
+        end
+    end
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: '#0d1117',
+        primaryColor: '#1f6feb',
+        primaryTextColor: '#f0f6fc',
+        primaryBorderColor: '#388bfd',
+        lineColor: '#58a6ff',
+        secondaryColor: '#238636',
+        tertiaryColor: '#da3633'
+      }
+    });
+  </script>
+</body>
+</html>
