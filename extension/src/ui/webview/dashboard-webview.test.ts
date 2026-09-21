@@ -685,6 +685,102 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
     // Must remain Profile 3
     expect(document.getElementById('active-preset-badge')?.textContent).toBe('📋 Profile 3');
   });
+
+  describe('updateOptimization (Auto-Tuner v2 Inspector)', () => {
+    it('renders Auto-Tuner v2 Inline Inspector with session dynamics, recovery meters, and diff', () => {
+      postMessage('updateOptimization', {
+        target_tier_name: 'Tier 1: Local GPU',
+        original_rule: 'Tokens < 16000 && Retries < 2',
+        synthesized_rule: 'Tokens < 4000 && Retries < 1',
+        total_sessions: 23,
+        avg_turns_per_session: 36.8,
+        escalation_rate: 0.783,
+        total_sample_turns: 847,
+        retries_eliminated: 119,
+        projected_savings_usd: 8.20,
+        optimal_threshold: 4000,
+        optimal_retries: 1,
+        restrict_images: false,
+        restrict_tools: false,
+        friction_keywords: ['sql'],
+        recovery_stats: {
+          'qwen3-coder-plus': {
+            model: 'qwen3-coder-plus',
+            self_recovery_rate: 0.671,
+            avg_turns_to_recover: 1.2,
+            self_recoveries: 47,
+            total_failures: 70
+          },
+          'gemma-4-26b': {
+            model: 'gemma-4-26b',
+            self_recovery_rate: 0.032,
+            avg_turns_to_recover: 0,
+            self_recoveries: 1,
+            total_failures: 31
+          }
+        }
+      });
+
+      const banner = document.getElementById('tuner-banner');
+      expect(banner).not.toBeNull();
+      expect(banner?.style.display).toBe('block');
+
+      const content = banner?.textContent || '';
+      expect(content).toContain('Auto-Tuner v2: Session Replay Optimizer');
+      expect(content).toContain('~119 Retries Avoided');
+      expect(content).toContain('$8.20/mo Saved');
+
+      // Session Dynamics
+      expect(content).toContain('23 sessions');
+      expect(content).toContain('36.8 turns');
+      expect(content).toContain('78.3%');
+      expect(content).toContain('847 real turns');
+
+      // Model Recovery Meters
+      expect(content).toContain('qwen3-coder-plus');
+      expect(content).toContain('67% self-recovery');
+      expect(content).toContain('gemma-4-26b');
+      expect(content).toContain('3% self-recovery');
+
+      // Signals
+      expect(content).toMatch(/Context Cliff:\s*4[.,]000 tokens/);
+      expect(content).toContain('Retry Bound: 1 max retries');
+      expect(content).toContain('Vision: Clean');
+      expect(content).toContain('Tools: Clean');
+      expect(content).toContain('Friction Keywords: sql');
+
+      // Diff Viewer
+      expect(content).toContain('- when: "Tokens < 16000 && Retries < 2"');
+      expect(content).toContain('+ when: "Tokens < 4000 && Retries < 1"');
+
+      // Actions
+      expect(content).toContain('Apply Optimized Policy to config.yaml');
+      expect(content).toContain('Dismiss');
+    });
+
+    it('hides banner when optimization data is null', () => {
+      postMessage('updateOptimization', null);
+      const banner = document.getElementById('tuner-banner');
+      expect(banner?.style.display).toBe('none');
+      expect(banner?.innerHTML).toBe('');
+    });
+
+    it('renders single-turn baseline fallback when session data is absent', () => {
+      postMessage('updateOptimization', {
+        target_tier_name: 'Local ROCm',
+        synthesized_rule: 'Tokens < 12000',
+        total_sample_turns: 500,
+        optimal_threshold: 12000
+      });
+
+      const banner = document.getElementById('tuner-banner');
+      expect(banner?.style.display).toBe('block');
+      const content = banner?.textContent || '';
+      expect(content).toContain('Single-turn mode');
+      expect(content).toContain('No repeated model failures detected in sample history');
+      expect(content).toContain('+ when: "Tokens < 12000"');
+    });
+  });
 });
 
 

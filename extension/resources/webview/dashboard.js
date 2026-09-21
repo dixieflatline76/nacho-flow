@@ -747,46 +747,167 @@
 		}
 	}
 
+	function escapeHtml(str) {
+		if (str === null || str === undefined) return '';
+		return String(str)
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;');
+	}
+
 	function updateOptimization(optData) {
 		currentState.optimization = optData;
 		vscode.setState(currentState);
 
 		const banner = document.getElementById('tuner-banner');
+		if (!banner) return;
+
 		if (!optData) {
 			banner.style.display = 'none';
+			banner.innerHTML = '';
 			return;
 		}
 
 		const savingsVal = optData.projected_savings_usd !== undefined ? optData.projected_savings_usd : (optData.projected_savings || 0);
 		const savingsFormatted = typeof savingsVal === 'number' ? `$${savingsVal.toFixed(2)}` : savingsVal;
-		const rule = optData.synthesized_rule || optData.rule || 'Tokens < 64000 && Retries == 0';
+		const rule = optData.synthesized_rule || optData.rule || 'Tokens < 16000 && Retries < 1';
 		const tierName = optData.target_tier_name || 'Tier 1 (Local GPU)';
 		const sampleSize = optData.total_sample_turns || optData.sample_size || 0;
+		const retriesAvoided = optData.retries_eliminated !== undefined ? optData.retries_eliminated : (optData.retries_avoided || 0);
+
+		// Resolve original rule for diff view
+		let oldRule = optData.original_rule;
+		if (!oldRule && currentState.config && Array.isArray(currentState.config.tiers)) {
+			const matchingTier = currentState.config.tiers.find(t => t.name === tierName);
+			if (matchingTier && matchingTier.when) {
+				oldRule = matchingTier.when;
+			}
+		}
+		if (!oldRule) {
+			oldRule = 'Tokens < 16000 && !HasImages && !HasTools';
+		}
+
+		// Session Dynamics (v2) or Single-Turn Baseline (v1 fallback)
+		const hasSessions = typeof optData.total_sessions === 'number' && optData.total_sessions > 0;
+		const sessionsCount = hasSessions ? optData.total_sessions : 0;
+		const avgTurnsVal = typeof optData.avg_turns_per_session === 'number' ? optData.avg_turns_per_session.toFixed(1) : (optData.avg_turns_per_session || '--');
+		const escalationRatePct = typeof optData.escalation_rate === 'number' ? `${(optData.escalation_rate * 100).toFixed(1)}%` : '--';
+
+		// Model Self-Recovery Meters
+		let recoveryRows = '';
+		if (optData.recovery_stats && Object.keys(optData.recovery_stats).length > 0) {
+			const models = Object.keys(optData.recovery_stats).sort();
+			recoveryRows = models.map(m => {
+				const stat = optData.recovery_stats[m];
+				const rawPct = stat.self_recovery_rate || 0;
+				const pct = Math.min(100, Math.max(0, Math.round(rawPct * 100)));
+				let barColor = '#ef4444'; // Red for < 20%
+				if (pct >= 50) barColor = '#10b981'; // Green for >= 50%
+				else if (pct >= 20) barColor = '#f59e0b'; // Amber for 20-49%
+
+				const turnsText = (stat.avg_turns_to_recover && stat.avg_turns_to_recover > 0)
+					? `recovers in ~${stat.avg_turns_to_recover.toFixed(1)} turns`
+					: (pct === 0 ? 'loops on failure — cloud handoff required' : 'swift self-healing');
+
+				return `
+					<div class="recovery-item">
+						<div class="recovery-header">
+							<span class="recovery-model-name">${escapeHtml(stat.model || m)}</span>
+							<span class="recovery-pct" style="color: ${barColor}">${pct}% self-recovery</span>
+						</div>
+						<div class="recovery-bar-track">
+							<div class="recovery-bar-fill" style="width: ${pct}%; background-color: ${barColor}"></div>
+						</div>
+						<div class="recovery-subtext">${escapeHtml(turnsText)} (${stat.self_recoveries || 0}/${stat.total_failures || 0} healed)</div>
+					</div>
+				`;
+			}).join('');
+		} else {
+			recoveryRows = `<div class="recovery-empty">No repeated model failures detected in sample history. Clean turn progression across local models.</div>`;
+		}
+
+		// Friction & Bottleneck signals pills
+		const optimalThreshold = optData.optimal_threshold || 16000;
+		const optimalRetries = optData.optimal_retries;
+		const restrictImages = !!optData.restrict_images;
+		const restrictTools = !!optData.restrict_tools;
+		const frictionKeywords = Array.isArray(optData.friction_keywords) ? optData.friction_keywords : [];
 
 		banner.style.display = 'block';
 		banner.innerHTML = `
 			<div class="tuner-result">
 				<div class="tuner-header">
 					<div class="tuner-title-group">
-						<h3>⚡ Auto-Tuner Policy Recommendation</h3>
+						<h3>🌮 Auto-Tuner v2: Session Replay Optimizer</h3>
 						<span class="badge badge-deal">Optimal Policy Ready</span>
 					</div>
-					${savingsVal > 0 ? `<div class="tuner-savings-badge">Projected Savings: <strong>${savingsFormatted}</strong></div>` : ''}
-				</div>
-				<div class="tuner-details-grid">
-					<div class="tuner-detail-item">
-						<span class="tuner-detail-label">🎯 Target Tier:</span>
-						<strong class="tuner-detail-val">${tierName}</strong>
-					</div>
-					<div class="tuner-detail-item">
-						<span class="tuner-detail-label">📊 Sample Size:</span>
-						<span class="tuner-detail-val">${sampleSize} real turns analyzed</span>
-					</div>
-					<div class="tuner-detail-item full-width">
-						<span class="tuner-detail-label">✨ Synthesized AST Rule:</span>
-						<code class="tuner-rule-code">${rule}</code>
+					<div class="tuner-hero-badges">
+						${retriesAvoided > 0 ? `<div class="tuner-badge tuner-retries-badge">⚡ ~${retriesAvoided} Retries Avoided</div>` : ''}
+						${savingsVal > 0 ? `<div class="tuner-badge tuner-savings-badge">💰 ${savingsFormatted}/mo Saved</div>` : ''}
 					</div>
 				</div>
+
+				<div class="tuner-dynamics-grid">
+					<div class="tuner-card-col">
+						<div class="tuner-card-title">
+							<span>🔄</span> Session Dynamics
+						</div>
+						<div class="tuner-metrics-list">
+							<div class="tuner-metric-row">
+								<span class="tuner-metric-label">Sessions Evaluated:</span>
+								<strong class="tuner-metric-val">${hasSessions ? `${sessionsCount} sessions` : 'Single-turn mode'}</strong>
+							</div>
+							<div class="tuner-metric-row">
+								<span class="tuner-metric-label">Avg Turns / Session:</span>
+								<strong class="tuner-metric-val">${hasSessions ? `${avgTurnsVal} turns` : '--'}</strong>
+							</div>
+							<div class="tuner-metric-row">
+								<span class="tuner-metric-label">Cloud Escalation Rate:</span>
+								<strong class="tuner-metric-val">${hasSessions ? escalationRatePct : '--'}</strong>
+							</div>
+							<div class="tuner-metric-row">
+								<span class="tuner-metric-label">Sample Size:</span>
+								<strong class="tuner-metric-val">${sampleSize} real turns analyzed</strong>
+							</div>
+						</div>
+					</div>
+
+					<div class="tuner-card-col">
+						<div class="tuner-card-title">
+							<span>🩺</span> Model Self-Healing Analysis
+						</div>
+						<div class="recovery-list">
+							${recoveryRows}
+						</div>
+					</div>
+				</div>
+
+				<div class="tuner-signals-container">
+					<div class="tuner-signals-pills">
+						<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${optimalThreshold.toLocaleString()} tokens</span>
+						${optimalRetries ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${optimalRetries} max retries</span>` : ''}
+						<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
+							👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
+						</span>
+						<span class="signal-pill ${restrictTools ? 'signal-pill-warning' : 'signal-pill-clean'}">
+							🔧 Tools: ${restrictTools ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
+						</span>
+						${frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
+					</div>
+				</div>
+
+				<div class="tuner-diff-wrapper">
+					<div class="tuner-diff-header">
+						<span class="diff-tier-label">Target Tier: <strong>${escapeHtml(tierName)}</strong></span>
+						<span class="diff-badge">config.yaml diff preview</span>
+					</div>
+					<div class="tuner-diff-code">
+						<div class="diff-line diff-del"><span class="diff-sign">-</span> when: "${escapeHtml(oldRule)}"</div>
+						<div class="diff-line diff-add"><span class="diff-sign">+</span> when: "${escapeHtml(rule)}"</div>
+					</div>
+				</div>
+
 				<div class="tuner-actions">
 					<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Policy to config.yaml</button>
 					<button class="btn btn-secondary" onclick="dismissTuner()">Dismiss</button>

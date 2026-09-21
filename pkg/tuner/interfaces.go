@@ -40,6 +40,7 @@ type TuningResult struct {
 	RestrictTools       bool                     `json:"restrict_tools"`
 	PreservedClauses    []string                 `json:"preserved_clauses"`
 	TargetTierName      string                   `json:"target_tier_name"`
+	OriginalRule        string                   `json:"original_rule,omitempty"`
 	SynthesizedRule     string                   `json:"synthesized_rule"`
 	CurrentCostUSD      float64                  `json:"current_cost_usd"`
 	ProjectedCostUSD    float64                  `json:"projected_cost_usd"`

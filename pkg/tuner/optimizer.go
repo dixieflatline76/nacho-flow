@@ -62,6 +62,7 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 			OptimalThreshold: defaultThreshold,
 			SynthesizedRule:  rule,
 			TargetTierName:   targetTierName,
+			OriginalRule:     existingWhen,
 		}, nil
 	}
 
@@ -119,6 +120,7 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 			RestrictImages:      restrictImages,
 			RestrictTools:       restrictTools,
 			TargetTierName:      targetTierName,
+			OriginalRule:        existingWhen,
 			SynthesizedRule:     rule,
 			CurrentCostUSD:      currentCost,
 			ProjectedCostUSD:    gridRes.ProjectedCost,
@@ -172,6 +174,7 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 		RestrictImages:      restrictImages,
 		RestrictTools:       restrictTools,
 		TargetTierName:      targetTierName,
+		OriginalRule:        existingWhen,
 		SynthesizedRule:     rule,
 		CurrentCostUSD:      currentCost,
 		ProjectedCostUSD:    bestProjectedCost,
