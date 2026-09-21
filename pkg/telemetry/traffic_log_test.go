@@ -342,3 +342,100 @@ func BenchmarkTrafficLogger_Emit(b *testing.B) {
 		}
 	})
 }
+
+// TestTrafficLogger_SessionFields verifies that session-level and retry/progress fields
+// pass faithfully from Observation through StatsTracker into TurnRecord and disk JSONL.
+func TestTrafficLogger_SessionFields(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "session_fields_traffic.jsonl")
+
+	trafficLog, err := NewTrafficLogger(logPath, 100)
+	if err != nil {
+		t.Fatalf("Failed to create TrafficLogger: %v", err)
+	}
+
+	tracker := NewStatsTracker(100)
+	tracker.AddSink(trafficLog)
+
+	// Emit observation with complete v2 session metadata
+	tracker.Record(Observation{
+		Tier:               1,
+		TierName:           "Local ROCm Tier",
+		Model:              "qwen2.5-coder:14b",
+		Provider:           "ollama",
+		Tokens:             4500,
+		CostSaved:          0.02025,
+		IsLocal:            true,
+		StatusCode:         200,
+		SessionKey:         "sess-phase1-test-999",
+		RootPromptHash:     0xCAFEBABE12345678,
+		Retries:            2,
+		HasWriteCapability: true,
+		HasWriteProgress:   true,
+		HasTestPass:        true,
+		HasTestFail:        false,
+	})
+
+	tracker.Flush()
+	_ = trafficLog.Close()
+	tracker.Close()
+
+	records, err := ReadRecords(logPath, 0)
+	if err != nil {
+		t.Fatalf("Failed to read sink records: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 record, got %d", len(records))
+	}
+
+	rec := records[0]
+	if rec.SessionID != "sess-phase1-test-999" {
+		t.Errorf("Expected SessionID 'sess-phase1-test-999', got '%s'", rec.SessionID)
+	}
+	if rec.RootPromptHash != 0xCAFEBABE12345678 {
+		t.Errorf("Expected RootPromptHash 0xCAFEBABE12345678, got 0x%X", rec.RootPromptHash)
+	}
+	if rec.Retries != 2 {
+		t.Errorf("Expected Retries 2, got %d", rec.Retries)
+	}
+	if !rec.HasWriteCapability {
+		t.Errorf("Expected HasWriteCapability true, got false")
+	}
+	if !rec.HasWriteProgress {
+		t.Errorf("Expected HasWriteProgress true, got false")
+	}
+	if !rec.HasTestPass {
+		t.Errorf("Expected HasTestPass true, got false")
+	}
+	if rec.HasTestFail {
+		t.Errorf("Expected HasTestFail false, got true")
+	}
+}
+
+func BenchmarkStatsTracker_Record_ZeroAlloc(b *testing.B) {
+	tracker := NewStatsTracker(50000)
+	defer tracker.Close()
+
+	obs := Observation{
+		Tier:               1,
+		TierName:           "Local ROCm Tier",
+		Model:              "qwen2.5-coder:14b",
+		Provider:           "ollama",
+		Tokens:             4500,
+		CostSaved:          0.02,
+		IsLocal:            true,
+		StatusCode:         200,
+		SessionKey:         "bench-session",
+		RootPromptHash:     0x12345678,
+		Retries:            1,
+		HasWriteCapability: true,
+		HasWriteProgress:   true,
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		tracker.Record(obs)
+	}
+}
+

@@ -40,6 +40,14 @@ type TurnRecord struct {
 	FairyDustEntry            string    `json:"fairy_dust_entry,omitempty"`
 	NTSTokensSaved            int       `json:"nts_tokens_saved,omitempty"`
 	NTSBytesSaved             int       `json:"nts_bytes_saved,omitempty"`
+
+	// Session-aware fields for Auto-Tuner v2 session replay optimization
+	RootPromptHash     uint64 `json:"root_prompt_hash,omitempty"`     // Identity of the root task
+	Retries            int    `json:"retries,omitempty"`              // Session retry count at this turn
+	HasWriteCapability bool   `json:"has_write_capability,omitempty"` // Plan Mode detection: tools present but no write tools
+	HasWriteProgress   bool   `json:"has_write_progress,omitempty"`   // Did this turn produce file writes
+	HasTestPass        bool   `json:"has_test_pass,omitempty"`        // Did tests pass this turn
+	HasTestFail        bool   `json:"has_test_fail,omitempty"`        // Did tests fail this turn
 }
 
 // ObservationSink defines a decoupled consumer of observation events.
