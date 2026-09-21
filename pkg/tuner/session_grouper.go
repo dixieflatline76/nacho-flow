@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -18,6 +19,8 @@ type SessionTrajectory struct {
 
 // GroupBySession takes flat TurnRecord slices and returns ordered session trajectories.
 // Records with empty SessionID are dropped from v2 tuning.
+// When RootPromptHash is present, distinct root tasks within the same SessionID
+// are partitioned into independent trajectories.
 func GroupBySession(records []telemetry.TurnRecord) []SessionTrajectory {
 	if len(records) == 0 {
 		return []SessionTrajectory{}
@@ -28,7 +31,11 @@ func GroupBySession(records []telemetry.TurnRecord) []SessionTrajectory {
 		if r.SessionID == "" {
 			continue
 		}
-		grouped[r.SessionID] = append(grouped[r.SessionID], r)
+		key := r.SessionID
+		if r.RootPromptHash != 0 {
+			key = fmt.Sprintf("%s:%d", r.SessionID, r.RootPromptHash)
+		}
+		grouped[key] = append(grouped[key], r)
 	}
 
 	if len(grouped) == 0 {

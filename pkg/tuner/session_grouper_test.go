@@ -131,3 +131,49 @@ func TestSessionGrouper_EmptyInput(t *testing.T) {
 		t.Errorf("Expected 0 trajectories for empty input, got %d", len(traj))
 	}
 }
+
+func TestSessionGrouper_SplitsByRootPromptHash(t *testing.T) {
+	now := time.Now().UTC()
+
+	// Same client SessionID ("100.98.231.104"), but two distinct root tasks
+	records := []telemetry.TurnRecord{
+		// Task 1: Cline
+		{
+			SessionID:      "100.98.231.104",
+			RootPromptHash: 10090918085157982045,
+			Timestamp:      now.Add(1 * time.Second),
+			Tokens:         4000,
+			IsRetry:        false,
+		},
+		{
+			SessionID:      "100.98.231.104",
+			RootPromptHash: 10090918085157982045,
+			Timestamp:      now.Add(2 * time.Second),
+			Tokens:         6000,
+			IsRetry:        true,
+		},
+		// Task 2: Zoo Code
+		{
+			SessionID:      "100.98.231.104",
+			RootPromptHash: 3129044452092009081,
+			Timestamp:      now.Add(3 * time.Second),
+			Tokens:         3500,
+			IsRetry:        false,
+		},
+		{
+			SessionID:      "100.98.231.104",
+			RootPromptHash: 3129044452092009081,
+			Timestamp:      now.Add(4 * time.Second),
+			Tokens:         5000,
+			IsRetry:        false,
+		},
+	}
+
+	trajectories := GroupBySession(records)
+	if len(trajectories) != 2 {
+		t.Fatalf("Expected 2 distinct session trajectories split by RootPromptHash, got %d", len(trajectories))
+	}
+	if trajectories[0].TotalTurns != 2 || trajectories[1].TotalTurns != 2 {
+		t.Errorf("Expected 2 turns per trajectory, got %d and %d", trajectories[0].TotalTurns, trajectories[1].TotalTurns)
+	}
+}
