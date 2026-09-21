@@ -1062,3 +1062,142 @@ func TestServer_ServeHTTP_AllAPIRoutesDispatch(t *testing.T) {
 
 	_ = broker
 }
+
+func TestServer_AgentUserCorrection_EscalatesToFrontier(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"cmpl-test","choices":[{"index":0,"message":{"role":"assistant","content":"mock response"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	cfg := &contract.Config{
+		Port:      8000,
+		AuthToken: "test-secret-token",
+		Providers: map[string]contract.ProviderConfig{
+			"mock_prov": {BaseURL: mockUpstream.URL},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Local Free",
+				Provider: "mock_prov",
+				Model:    "qwen-local",
+				When:     "Tokens < 8000 && !HasTools",
+			},
+			{
+				Name:     "Tier 2: Qwen Coder",
+				Provider: "mock_prov",
+				Model:    "qwen-coder",
+				When:     "Retries < 2",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Tier 3: Claude Sonnet Fallback",
+			Provider: "mock_prov",
+			Model:    "claude-sonnet",
+		},
+		Kickstart: contract.KickstartConfig{
+			WriteOnly: true,
+		},
+	}
+
+	reg := provider.NewRegistry()
+	reg.Register(provider.NewGenericLLMProvider("mock_prov", cfg.Providers["mock_prov"]))
+	srv := NewServerWithTelemetryAndRegistry(cfg, nil, nil, nil, nil, nil, reg, nil)
+
+	sessionID := "agent-root-hash-session"
+	toolsJSON := `,"tools":[{"type":"function","function":{"name":"write_to_file"}},{"type":"function","function":{"name":"execute_command"}}]`
+
+	// Turn 1: Agent starts root task. Retries=0 -> selects Tier 2 (Qwen Coder)
+	body1 := `{"messages":[` +
+		`{"role":"system","content":"You are Cline"},` +
+		`{"role":"user","content":"Implement MinConflicts solver"}` +
+		`]` + toolsJSON + `}`
+
+	req1 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(body1))
+	req1.Header.Set("Authorization", "Bearer test-secret-token")
+	req1.Header.Set("x-session-id", sessionID)
+	w1 := httptest.NewRecorder()
+	srv.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("Turn 1 expected 200, got %d", w1.Code)
+	}
+	if tier := w1.Header().Get("x-nacho-router-tier"); tier != "Tier 2: Qwen Coder" {
+		t.Errorf("Turn 1 expected 'Tier 2: Qwen Coder', got %q", tier)
+	}
+	if model := w1.Header().Get("x-nacho-target-model"); model != "qwen-coder" {
+		t.Errorf("Turn 1 expected 'qwen-coder', got %q", model)
+	}
+
+	// Turn 2: Test fails. Read command executed, no write progress. Retries=1 -> still Tier 2
+	body2 := `{"messages":[` +
+		`{"role":"system","content":"You are Cline"},` +
+		`{"role":"user","content":"Implement MinConflicts solver"},` +
+		`{"role":"assistant","content":"Running test","tool_calls":[{"id":"tc1","type":"function","function":{"name":"execute_command","arguments":"{\"command\":\"go test\"}"}}]},` +
+		`{"role":"tool","tool_call_id":"tc1","content":"exit status 1: FAIL"}` +
+		`]` + toolsJSON + `}`
+
+	req2 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(body2))
+	req2.Header.Set("Authorization", "Bearer test-secret-token")
+	req2.Header.Set("x-session-id", sessionID)
+	w2 := httptest.NewRecorder()
+	srv.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("Turn 2 expected 200, got %d", w2.Code)
+	}
+	if tier := w2.Header().Get("x-nacho-router-tier"); tier != "Tier 2: Qwen Coder" {
+		t.Errorf("Turn 2 expected 'Tier 2: Qwen Coder', got %q", tier)
+	}
+
+	// Turn 3: User intervenes with corrective instruction!
+	// Root prompt is STILL "Implement MinConflicts solver".
+	// Retries must increment to 2, causing Retries < 2 to fail and ESCALATING to Tier 3 (Claude Sonnet)!
+	body3 := `{"messages":[` +
+		`{"role":"system","content":"You are Cline"},` +
+		`{"role":"user","content":"Implement MinConflicts solver"},` +
+		`{"role":"assistant","content":"Running test","tool_calls":[{"id":"tc1","type":"function","function":{"name":"execute_command","arguments":"{\"command\":\"go test\"}"}}]},` +
+		`{"role":"tool","tool_call_id":"tc1","content":"exit status 1: FAIL"},` +
+		`{"role":"user","content":"Fix the deadlock on line 64!"}` +
+		`]` + toolsJSON + `}`
+
+	req3 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(body3))
+	req3.Header.Set("Authorization", "Bearer test-secret-token")
+	req3.Header.Set("x-session-id", sessionID)
+	w3 := httptest.NewRecorder()
+	srv.ServeHTTP(w3, req3)
+
+	if w3.Code != http.StatusOK {
+		t.Fatalf("Turn 3 expected 200, got %d", w3.Code)
+	}
+	if tier := w3.Header().Get("x-nacho-router-tier"); tier != "Tier 3: Claude Sonnet Fallback" {
+		t.Errorf("Turn 3 expected escalation to 'Tier 3: Claude Sonnet Fallback', got %q", tier)
+	}
+	if model := w3.Header().Get("x-nacho-target-model"); model != "claude-sonnet" {
+		t.Errorf("Turn 3 expected escalation to 'claude-sonnet', got %q", model)
+	}
+
+	// Turn 4: User clicks "+" in Cline -> brand new task!
+	// RootPromptHash changes -> retries cleanly reset to 0 -> routes back to Tier 2 (Qwen Coder)!
+	body4 := `{"messages":[` +
+		`{"role":"system","content":"You are Cline"},` +
+		`{"role":"user","content":"Build a new frontend in React"}` +
+		`]` + toolsJSON + `}`
+
+	req4 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(body4))
+	req4.Header.Set("Authorization", "Bearer test-secret-token")
+	req4.Header.Set("x-session-id", sessionID)
+	w4 := httptest.NewRecorder()
+	srv.ServeHTTP(w4, req4)
+
+	if w4.Code != http.StatusOK {
+		t.Fatalf("Turn 4 expected 200, got %d", w4.Code)
+	}
+	if tier := w4.Header().Get("x-nacho-router-tier"); tier != "Tier 2: Qwen Coder" {
+		t.Errorf("Turn 4 (New Task) expected reset to 'Tier 2: Qwen Coder', got %q", tier)
+	}
+	if model := w4.Header().Get("x-nacho-target-model"); model != "qwen-coder" {
+		t.Errorf("Turn 4 (New Task) expected reset to 'qwen-coder', got %q", model)
+	}
+}

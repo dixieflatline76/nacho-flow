@@ -20,6 +20,7 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 7. [Autonomous Rule Auto-Tuning (`nacho-flow tune`)](#7-autonomous-rule-auto-tuning-nacho-flow-tune)
 8. [🔥 Heat Seeker: Live Model Deals & Discount Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-live-model-deals--discount-scout-nacho-flow-deals--nacho-flow-heat-seek)
 9. [🌶️ HotSauce Directives (In-Prompt Routing & Meta Commands)](#9-hotsauce-directives-in-prompt-routing--meta-commands)
+   - [🧑‍💻 A Day in the Life: Practical Developer Walkthrough](DAY_IN_THE_LIFE.md)
 10. [🧩 VS Code Companion Extension & Real-Time Control Plane](#10-vs-code-companion-extension--real-time-control-plane)
 
 ---
@@ -1253,6 +1254,10 @@ Two complementary ways to optimize your agent routing costs:
 ---
 
 **HotSauce Directives** allow developers and autonomous coding agents (Zoo Code, Cline, OpenCode, Cursor, Aider) to spice up prompt turns with instant routing overrides, session guardrail toggles, or daemon metadata inspection using zero-cost `@nacho:` tags.
+
+> [!TIP]
+> **See It in Action: A Day in the Life of a Developer**:
+> Want to see how automatic routing, auto-escalation, and HotSauce directives work together during a real workday? Check out our complete scenario walkthrough: **[🧑‍💻 A Day in the Life of a Developer: Mastering Nacho Flow & HotSauce Directives](DAY_IN_THE_LIFE.md)**.
 
 ### 🎮 In-Chat Directive Controls
 

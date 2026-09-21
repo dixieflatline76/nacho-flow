@@ -14,6 +14,9 @@ type RequestContext struct {
 	Keywords                  []string `json:"keywords"`
 	Prompt                    string   `json:"prompt"`
 	CleanPrompt               string   `json:"clean_prompt,omitempty"`
+	RootPromptHash            uint64   `json:"root_prompt_hash,omitempty"`
+	PromptHash                uint64   `json:"prompt_hash,omitempty"`
+	MessageCount              int      `json:"message_count,omitempty"`
 	Retries                   int      `json:"retries,omitempty"`
 	IsRetry                   bool     `json:"is_retry,omitempty"`
 	HasToolProgress           bool     `json:"has_tool_progress,omitempty"`

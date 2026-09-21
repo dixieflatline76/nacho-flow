@@ -1,6 +1,7 @@
 package router
 
 import (
+	"hash/fnv"
 	"sync"
 	"testing"
 	"time"
@@ -744,6 +745,7 @@ func TestSessionTracker_GuardrailsAndReset(t *testing.T) {
 	tracker.RecordKickstartState(key, false, 5, 0)
 	tracker.RecordCycleKill(key, "test-model", 2*time.Minute)
 	tracker.RecordWriteProgress(key, true)
+	tracker.RecordTurnTask(key, 0x1234, 0x5678, false, true, 10)
 
 	tracker.ResetSession(key)
 
@@ -760,6 +762,13 @@ func TestSessionTracker_GuardrailsAndReset(t *testing.T) {
 	if wp := tracker.RecordWriteProgress(key, false); wp != 0 {
 		t.Errorf("expected write progress 0 after reset, got %d", wp)
 	}
+	tracker.mu.RLock()
+	stReset := tracker.sessions[key]
+	if stReset.RootPromptHash != 0 || stReset.PromptHash != 0 || stReset.LastMessageCount != 0 || stReset.RetriesCount != 0 {
+		t.Errorf("expected zeroed session task vars after ResetSession, got root=%x prompt=%x count=%d retries=%d",
+			stReset.RootPromptHash, stReset.PromptHash, stReset.LastMessageCount, stReset.RetriesCount)
+	}
+	tracker.mu.RUnlock()
 
 	// 7. ResetSession and Set* methods on empty or non-existent does not panic
 	tracker.ResetSession("")
@@ -774,4 +783,181 @@ func TestSessionTracker_GuardrailsAndReset(t *testing.T) {
 	tracker.SetRawModeEnabled("non-existent", true)
 	tracker.SetFairyDustDisabled("", true)
 	tracker.SetFairyDustDisabled("non-existent", true)
+}
+
+func TestHashPrompt_BitwiseParityWithStdlib(t *testing.T) {
+	testInputs := []string{
+		"",
+		"a",
+		"hello world",
+		"Fix compilation error in main.go:42: undefined variable 'err'",
+		"Implement high-performance MinConflicts solver with O(1) conflict updates in Go",
+		"Line 1\nLine 2\r\nLine 3\tTabbed\x00Binary-like",
+		"Unicode text: 日本語, Español, 🚀 emoji test",
+	}
+
+	for _, input := range testInputs {
+		hStd := fnv.New64a()
+		_, _ = hStd.Write([]byte(input))
+		expected := hStd.Sum64()
+		if input == "" {
+			expected = 0
+		}
+
+		gotStr := HashPrompt(input)
+		if gotStr != expected {
+			t.Errorf("HashPrompt(%q) = %d; want %d", input, gotStr, expected)
+		}
+
+		gotBytes := HashPromptBytes([]byte(input))
+		if gotBytes != expected {
+			t.Errorf("HashPromptBytes(%q) = %d; want %d", input, gotBytes, expected)
+		}
+	}
+}
+
+func BenchmarkHashPrompt_ZeroAlloc(b *testing.B) {
+	prompt := "Implement high-performance MinConflicts solver with O(1) conflict updates in Go"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = HashPrompt(prompt)
+	}
+}
+
+func TestSessionTracker_RecordTurnTask_AgentInterventionEscalates(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionID := "cline-session-1"
+
+	rootPrompt := "Implement MinConflicts solver with O(1) conflict updates"
+	rootHash := HashPrompt(rootPrompt)
+
+	// Turn 1: Model starts task. Tool progress made (wrote scaffolding).
+	turn1Prompt := rootPrompt
+	turn1Hash := HashPrompt(turn1Prompt)
+	retries, isRetry := tracker.RecordTurnTask(sessionID, rootHash, turn1Hash, true, true, 2)
+	if retries != 0 || isRetry {
+		t.Fatalf("Turn 1 expected retries=0, isRetry=false; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 2: Tests fail. Model makes read-only call. No tool progress.
+	turn2Hash := turn1Hash
+	retries, isRetry = tracker.RecordTurnTask(sessionID, rootHash, turn2Hash, false, true, 6)
+	if retries != 1 || !isRetry {
+		t.Fatalf("Turn 2 expected retries=1, isRetry=true; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 3: User intervenes with corrective instruction!
+	// In the old implementation, this changed promptHash and wiped RetriesCount=0!
+	// In the new implementation, rootPromptHash is preserved, so retries MUST escalate!
+	userCorrection := "You are in an infinite loop on line 64: conflicts became negative, fix the math!"
+	userCorrectionHash := HashPrompt(userCorrection)
+	retries, isRetry = tracker.RecordTurnTask(sessionID, rootHash, userCorrectionHash, false, true, 8)
+	if retries != 2 || !isRetry {
+		t.Fatalf("Turn 3 (User Correction) expected retries=2, isRetry=true; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 4: User intervenes again because model still didn't fix it
+	userCorrection2 := "Still failing: test timed out on N=1000"
+	userCorrection2Hash := HashPrompt(userCorrection2)
+	retries, isRetry = tracker.RecordTurnTask(sessionID, rootHash, userCorrection2Hash, false, true, 10)
+	if retries != 3 || !isRetry {
+		t.Fatalf("Turn 4 expected retries=3, isRetry=true; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 5: Frontier model takes over, writes correct fix, tests pass -> tool progress true!
+	turn5Hash := userCorrection2Hash
+	retries, isRetry = tracker.RecordTurnTask(sessionID, rootHash, turn5Hash, true, true, 12)
+	if retries != 0 || isRetry {
+		t.Fatalf("Turn 5 expected retries=0 after forward progress; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+}
+
+func TestSessionTracker_RecordTurnTask_NewTaskResets(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionID := "cline-session-2"
+
+	root1 := "Task 1: Build compiler"
+	h1 := HashPrompt(root1)
+
+	// Accumulate retries on Task 1 (Turn 0: fresh=0, Turn 1: retry=1, Turn 2: retry=2)
+	tracker.RecordTurnTask(sessionID, h1, h1, false, true, 2)
+	tracker.RecordTurnTask(sessionID, h1, h1, false, true, 4)
+	tracker.RecordTurnTask(sessionID, h1, h1, false, true, 6)
+	if r := tracker.GetRetries(sessionID); r != 2 {
+		t.Fatalf("Expected retries=2 on Task 1, got %d", r)
+	}
+
+	// User clicks "+" in Cline -> starts brand new task!
+	root2 := "Task 2: Build frontend UI in React"
+	h2 := HashPrompt(root2)
+
+	retries, isRetry := tracker.RecordTurnTask(sessionID, h2, h2, false, true, 2)
+	if retries != 0 || isRetry {
+		t.Fatalf("New task expected retries=0, isRetry=false; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+	if r := tracker.GetRetries(sessionID); r != 0 {
+		t.Fatalf("Expected GetRetries=0 after new task, got %d", r)
+	}
+}
+
+func TestSessionTracker_RecordTurnTask_HistoryTruncationResets(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionID := "cline-session-3"
+
+	root := "Task: Solve N-Queens"
+	h := HashPrompt(root)
+
+	tracker.RecordTurnTask(sessionID, h, h, false, true, 2)
+	tracker.RecordTurnTask(sessionID, h, h, false, true, 10)
+	tracker.RecordTurnTask(sessionID, h, h, false, true, 20)
+	if r := tracker.GetRetries(sessionID); r != 2 {
+		t.Fatalf("Expected retries=2, got %d", r)
+	}
+
+	// User restarted conversation in client with same initial prompt (messages shrunk from 20 to 2)
+	retries, isRetry := tracker.RecordTurnTask(sessionID, h, h, false, true, 2)
+	if retries != 0 || isRetry {
+		t.Fatalf("History truncation expected retries=0, isRetry=false; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+}
+
+func TestSessionTracker_RecordTurnTask_ConversationalChat(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionID := "chat-session-1"
+
+	// Conversational chat: hasTools = false
+	q1 := "What is the speed of light?"
+	hq1 := HashPrompt(q1)
+	retries, isRetry := tracker.RecordTurnTask(sessionID, hq1, hq1, false, false, 2)
+	if retries != 0 || isRetry {
+		t.Fatalf("Chat turn 1 expected retries=0; got %d", retries)
+	}
+
+	// Follow-up question (different prompt) should NOT escalate!
+	q2 := "What is the mass of the sun?"
+	hq2 := HashPrompt(q2)
+	retries, isRetry = tracker.RecordTurnTask(sessionID, hq1, hq2, false, false, 4)
+	if retries != 0 || isRetry {
+		t.Fatalf("Chat turn 2 (different question) expected retries=0; got %d", retries)
+	}
+
+	// User clicks "Regenerate" on question 2 (same prompt) -> genuine retry!
+	retries, isRetry = tracker.RecordTurnTask(sessionID, hq1, hq2, false, false, 4)
+	if retries != 1 || !isRetry {
+		t.Fatalf("Chat turn 3 (regenerate same question) expected retries=1; got %d", retries)
+	}
+}
+
+func BenchmarkSessionTracker_RecordTurnTask_ZeroAlloc(b *testing.B) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionID := "bench-session"
+	rootHash := HashPrompt("Root task")
+	promptHash := HashPrompt("Current turn prompt")
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _ = tracker.RecordTurnTask(sessionID, rootHash, promptHash, true, true, 4)
+	}
 }

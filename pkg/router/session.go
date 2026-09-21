@@ -1,7 +1,6 @@
 package router
 
 import (
-	"hash/fnv"
 	"sync"
 	"time"
 )
@@ -29,7 +28,9 @@ type SessionState struct {
 	KickstartFailures  int // consecutive kickstart attempts that failed to produce tool calls
 	MinRetriesFloor    int // floor to maintain retry escalation across context resets
 	LastTurnTime       time.Time
-	PromptHash         uint64
+	RootPromptHash     uint64 // invariant fingerprint of root task user prompt
+	PromptHash         uint64 // fingerprint of latest turn prompt
+	LastMessageCount   int    // message count of last turn (detects conversation reset)
 	LastMetaDirective  string
 	LastMetaTime       time.Time
 	CoolingDownModels  map[string]time.Time // model -> cooldown expiration
@@ -58,21 +59,46 @@ func NewSessionTracker(ttl time.Duration) *SessionTracker {
 	}
 }
 
-// HashPrompt computes an FNV-1a 64-bit hash of the prompt for fast retry comparison.
+const (
+	fnvOffset64 = 14695981039346656037
+	fnvPrime64  = 1099511628211
+)
+
+// HashPrompt computes an FNV-1a 64-bit hash of the prompt with 0 allocations.
 func HashPrompt(prompt string) uint64 {
 	if prompt == "" {
 		return 0
 	}
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(prompt))
-	return h.Sum64()
+	var h uint64 = fnvOffset64
+	for i := 0; i < len(prompt); i++ {
+		h ^= uint64(prompt[i])
+		h *= fnvPrime64
+	}
+	return h
+}
+
+// HashPromptBytes computes an FNV-1a 64-bit hash of a byte slice with 0 allocations.
+func HashPromptBytes(b []byte) uint64 {
+	if len(b) == 0 {
+		return 0
+	}
+	var h uint64 = fnvOffset64
+	for _, c := range b {
+		h ^= uint64(c)
+		h *= fnvPrime64
+	}
+	return h
 }
 
 // RecordTurn records a turn for sessionKey and promptHash.
-// If hasToolProgress is true (e.g. intermediate tool calls succeeded in an agent loop),
-// the turn is treated as forward progress and Retries is reset to 0 even if promptHash is identical.
-// Returns (retries, isRetry).
+// Preserves backward compatibility by delegating to RecordTurnTask with rootPromptHash=0 and hasTools=false.
 func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64, hasToolProgress bool) (retries int, isRetry bool) {
+	return st.RecordTurnTask(sessionKey, 0, promptHash, hasToolProgress, false, 0)
+}
+
+// RecordTurnTask records a turn for sessionKey with distinct rootPromptHash (task identity)
+// and promptHash (turn prompt), tracking retries across autonomous agent loops and user interventions.
+func (st *SessionTracker) RecordTurnTask(sessionKey string, rootPromptHash, promptHash uint64, hasToolProgress bool, hasTools bool, messageCount int) (retries int, isRetry bool) {
 	if sessionKey == "" {
 		return 0, false
 	}
@@ -93,43 +119,107 @@ func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64, hasTo
 			}
 		}
 
-		// Check lazy expiration
+		// Check lazy TTL expiration
 		if now.Sub(state.LastTurnTime) > st.ttl {
 			state.RetriesCount = 0
 			state.EscalationCount = 0
+			state.KickstartCount = 0
+			state.KickstartFailures = 0
 			state.MinRetriesFloor = 0
 			state.WriteProgressCount = 0
 			state.FairyDustCounts = nil
+			state.RootPromptHash = rootPromptHash
 			state.PromptHash = promptHash
+			state.LastMessageCount = messageCount
 			state.LastTurnTime = now
 			return 0, false
 		}
 
-		// Check if it's the exact same prompt
-		if state.PromptHash == promptHash && promptHash != 0 {
-			if hasToolProgress {
-				// Agent is making forward progress (successful tool calls in history).
-				// This is a normal multi-step autonomous loop, NOT a retry.
-				state.RetriesCount = 0
-				state.EscalationCount = 0
-				state.LastTurnTime = now
-				retries = 0
-				isRetry = false
-			} else {
-				// No tool progress + same prompt = genuine retry
-				state.RetriesCount++
-				state.LastTurnTime = now
-				retries = state.RetriesCount
-				isRetry = true
-			}
-		} else {
-			// Distinct turn within same session
+		// Check for conversation reset via history truncation (e.g. user clicked New Task in agent)
+		isTruncated := messageCount > 0 && state.LastMessageCount > 0 && messageCount < state.LastMessageCount
+
+		// Check for distinct root task
+		isNewTask := (rootPromptHash != 0 && state.RootPromptHash != 0 && state.RootPromptHash != rootPromptHash) || isTruncated
+
+		if isNewTask {
+			// Distinct task detected via root prompt change or history truncation.
+			// Reset retry counters cleanly for the new task.
 			state.RetriesCount = 0
 			state.EscalationCount = 0
+			state.RootPromptHash = rootPromptHash
 			state.PromptHash = promptHash
+			state.LastMessageCount = messageCount
 			state.LastTurnTime = now
 			retries = 0
 			isRetry = false
+		} else {
+			state.LastMessageCount = messageCount
+			if rootPromptHash != 0 {
+				if state.RootPromptHash == 0 {
+					state.RootPromptHash = rootPromptHash
+				}
+				if hasTools {
+					// Autonomous agent loop: forward progress is determined by workspace tool actions (writes, passing tests).
+					if hasToolProgress {
+						// Forward progress achieved in the workspace.
+						// Reset retry count to 0.
+						state.RetriesCount = 0
+						state.EscalationCount = 0
+						state.PromptHash = promptHash
+						state.LastTurnTime = now
+						retries = 0
+						isRetry = false
+					} else {
+						// No forward progress (test failure, tool stall, read-only loop, or user corrective intervention).
+						// Increment retries within this task to trigger tier escalation.
+						state.RetriesCount++
+						state.PromptHash = promptHash
+						state.LastTurnTime = now
+						retries = state.RetriesCount
+						isRetry = true
+					}
+				} else {
+					// Conversational chat / completion (no tools).
+					if state.PromptHash == promptHash && promptHash != 0 {
+						// Exact same prompt re-sent (regeneration / retry button)
+						state.RetriesCount++
+						state.LastTurnTime = now
+						retries = state.RetriesCount
+						isRetry = true
+					} else {
+						// New conversational turn with a different question
+						state.RetriesCount = 0
+						state.EscalationCount = 0
+						state.PromptHash = promptHash
+						state.LastTurnTime = now
+						retries = 0
+						isRetry = false
+					}
+				}
+			} else {
+				// Legacy RecordTurn behavior (rootPromptHash == 0)
+				if state.PromptHash == promptHash && promptHash != 0 {
+					if hasToolProgress {
+						state.RetriesCount = 0
+						state.EscalationCount = 0
+						state.LastTurnTime = now
+						retries = 0
+						isRetry = false
+					} else {
+						state.RetriesCount++
+						state.LastTurnTime = now
+						retries = state.RetriesCount
+						isRetry = true
+					}
+				} else {
+					state.RetriesCount = 0
+					state.EscalationCount = 0
+					state.PromptHash = promptHash
+					state.LastTurnTime = now
+					retries = 0
+					isRetry = false
+				}
+			}
 		}
 
 		// Apply MinRetriesFloor if set (e.g. from a recent cycle kill), and safely decay
@@ -148,9 +238,11 @@ func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64, hasTo
 	st.evictExpiredOrOldest(now)
 
 	st.sessions[sessionKey] = &SessionState{
-		RetriesCount: 0,
-		LastTurnTime: now,
-		PromptHash:   promptHash,
+		RetriesCount:     0,
+		LastTurnTime:     now,
+		RootPromptHash:   rootPromptHash,
+		PromptHash:       promptHash,
+		LastMessageCount: messageCount,
 	}
 	return 0, false
 }
@@ -572,4 +664,7 @@ func (st *SessionTracker) ResetSession(sessionKey string) {
 	state.WriteProgressCount = 0
 	state.FairyDustCounts = nil
 	state.Guardrails = SessionGuardrails{}
+	state.RootPromptHash = 0
+	state.PromptHash = 0
+	state.LastMessageCount = 0
 }

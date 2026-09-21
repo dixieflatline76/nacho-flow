@@ -312,6 +312,8 @@ Control routing rules, guardrails, and daemon telemetry directly from your edito
 
 > [!TIP]
 > **Plan Mode Auto-Detection**: When your agent switches into Plan Mode (declaring zero write tools), Nacho Flow automatically detects `HasWriteCapability == false` and **suspends Kickstart idle escalation**—no manual toggles required!
+>
+> 🧑‍💻 **Mastering Directives**: See how these directives and automatic tier escalations work in a real workday with Cline and Zoo Code in our **[Day in the Life Developer Walkthrough](docs/DAY_IN_THE_LIFE.md)**.
 
 ---
 
