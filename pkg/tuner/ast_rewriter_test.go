@@ -10,7 +10,7 @@ import (
 
 func TestRewriteRuleAST_PreservesCustomGuardrails(t *testing.T) {
 	existing := "Tokens < 10000 && !HasImages && Retries < 2"
-	rule, err := RewriteRuleAST(existing, 24000, nil, false, false)
+	rule, err := RewriteRuleAST(existing, 24000, 0, nil, false, false)
 	if err != nil {
 		t.Fatalf("RewriteRuleAST failed: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestRewriteRuleAST_PreservesCustomGuardrails(t *testing.T) {
 // Test Fix 2: Preserves user variables and literals that contain tokens or keywords as substrings
 func TestRewriteRuleAST_PreservesCustomTokensAndKeywordsVariables(t *testing.T) {
 	existing := `Tokens < 10000 && Retries < 2 && (ForcedModel == "tokens_v2" || ForcedTier == "keywords_fast")`
-	rule, err := RewriteRuleAST(existing, 20000, nil, false, false)
+	rule, err := RewriteRuleAST(existing, 20000, 0, nil, false, false)
 	if err != nil {
 		t.Fatalf("RewriteRuleAST failed: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestRewriteRuleAST_PreservesCustomTokensAndKeywordsVariables(t *testing.T) 
 // Test Fix 3: Escaped backslash before quote (e.g. "C:\\")
 func TestRewriteRuleAST_EscapedBackslashBeforeQuote(t *testing.T) {
 	existing := `Tokens < 10000 && (ForcedModel == "C:\\" || ForcedModel == "test\"tag") && Retries < 2`
-	rule, err := RewriteRuleAST(existing, 18000, nil, false, false)
+	rule, err := RewriteRuleAST(existing, 18000, 0, nil, false, false)
 	if err != nil {
 		t.Fatalf("RewriteRuleAST failed on escaped backslash: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestRewriteRuleAST_EscapedBackslashBeforeQuote(t *testing.T) {
 
 func TestRewriteRuleAST_InjectsKeywordExclusion(t *testing.T) {
 	existing := "Tokens < 10000 && Retries < 2"
-	rule, err := RewriteRuleAST(existing, 16000, []string{"mutex", "deadlock"}, false, false)
+	rule, err := RewriteRuleAST(existing, 16000, 0, []string{"mutex", "deadlock"}, false, false)
 	if err != nil {
 		t.Fatalf("RewriteRuleAST failed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestRewriteRuleAST_InjectsKeywordExclusion(t *testing.T) {
 
 func TestRewriteRuleAST_AddsRestrictImagesAndTools(t *testing.T) {
 	existing := "Tokens < 8000 && Retries < 2 && HasImages && HasTools && !HasTools"
-	rule, err := RewriteRuleAST(existing, 12000, nil, true, true)
+	rule, err := RewriteRuleAST(existing, 12000, 0, nil, true, true)
 	if err != nil {
 		t.Fatalf("RewriteRuleAST failed: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestRewriteRuleAST_AddsRestrictImagesAndTools(t *testing.T) {
 
 func TestRewriteRuleAST_ComplexNestingAndEscapedQuotes(t *testing.T) {
 	existing := "Tokens < 10000 && (ForcedModel == \"test\\\"model\" || ForcedModel == 'hybrid\\'tag') && any([1, 2], { # > 0 })"
-	rule, err := RewriteRuleAST(existing, 20000, nil, false, false)
+	rule, err := RewriteRuleAST(existing, 20000, 0, nil, false, false)
 	if err != nil {
 		t.Fatalf("RewriteRuleAST failed on complex nesting: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestRewriteRuleAST_ComplexNestingAndEscapedQuotes(t *testing.T) {
 }
 
 func TestRewriteRuleAST_BlankInitialRule(t *testing.T) {
-	rule, err := RewriteRuleAST("", 16000, nil, false, false)
+	rule, err := RewriteRuleAST("", 16000, 0, nil, false, false)
 	if err != nil {
 		t.Fatalf("RewriteRuleAST failed: %v", err)
 	}
@@ -188,18 +188,18 @@ func TestDistillRuleWithContext(t *testing.T) {
 }
 
 func TestRewriteRuleAST_InvalidThreshold(t *testing.T) {
-	_, err := RewriteRuleAST("Tokens < 10000", 0, nil, false, false)
+	_, err := RewriteRuleAST("Tokens < 10000", 0, 0, nil, false, false)
 	if err == nil {
 		t.Fatalf("Expected error for threshold 0, got nil")
 	}
-	_, err = RewriteRuleAST("Tokens < 10000", -500, nil, false, false)
+	_, err = RewriteRuleAST("Tokens < 10000", -500, 0, nil, false, false)
 	if err == nil {
 		t.Fatalf("Expected error for negative threshold, got nil")
 	}
 }
 
 func TestRewriteRuleAST_MalformedExistingRule(t *testing.T) {
-	_, err := RewriteRuleAST("Tokens < && invalid", 16000, nil, false, false)
+	_, err := RewriteRuleAST("Tokens < && invalid", 16000, 0, nil, false, false)
 	if err == nil {
 		t.Fatalf("Expected error for malformed existing rule, got nil")
 	}
@@ -207,8 +207,35 @@ func TestRewriteRuleAST_MalformedExistingRule(t *testing.T) {
 
 func TestRewriteRuleAST_InvalidKeywordQuotes(t *testing.T) {
 	// Keyword with unescaped single quote
-	_, err := RewriteRuleAST("Tokens < 10000", 16000, []string{"invalid'kw"}, false, false)
+	_, err := RewriteRuleAST("Tokens < 10000", 16000, 0, []string{"invalid'kw"}, false, false)
 	if err == nil {
 		t.Fatalf("Expected error for keyword containing unescaped quote, got nil")
 	}
 }
+
+func TestRewriteRuleAST_WithRetries(t *testing.T) {
+	// Replacing existing Retries < 2 with tuned Retries < 1
+	existing := "Tokens < 16000 && Retries < 2 && !HasImages"
+	rule, err := RewriteRuleAST(existing, 4000, 1, nil, true, false)
+	if err != nil {
+		t.Fatalf("RewriteRuleAST failed: %v", err)
+	}
+
+	if !strings.Contains(rule, "Tokens < 4000") {
+		t.Errorf("Expected 'Tokens < 4000', got: %s", rule)
+	}
+	if !strings.Contains(rule, "Retries < 1") {
+		t.Errorf("Expected tuned 'Retries < 1', got: %s", rule)
+	}
+	if strings.Contains(rule, "Retries < 2") {
+		t.Errorf("Expected old 'Retries < 2' to be replaced, got: %s", rule)
+	}
+	if !strings.Contains(rule, "!HasImages") {
+		t.Errorf("Expected '!HasImages', got: %s", rule)
+	}
+
+	if _, err := expr.Compile(rule, expr.Env(contract.RequestContext{})); err != nil {
+		t.Fatalf("Synthesized rule failed expr compilation: %v", err)
+	}
+}
+

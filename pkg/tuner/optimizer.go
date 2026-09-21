@@ -54,7 +54,7 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 			defaultThreshold = targetTier.MaxContext
 		}
 
-		rule, err := RewriteRuleAST(existingWhen, defaultThreshold, nil, false, false)
+		rule, err := RewriteRuleAST(existingWhen, defaultThreshold, 0, nil, false, false)
 		if err != nil {
 			return nil, err
 		}
@@ -78,7 +78,7 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 	bestT, bestProjectedCost, bestProjectedRetries := contextAnalyzer.Sweep(records, targetTier, restrictImages, restrictTools, highFrictionKws)
 
 	// 4. AST Rule Synthesis (Preserving custom user guardrails)
-	rule, err := RewriteRuleAST(existingWhen, bestT, highFrictionKws, restrictImages, restrictTools)
+	rule, err := RewriteRuleAST(existingWhen, bestT, 0, highFrictionKws, restrictImages, restrictTools)
 	if err != nil {
 		return nil, err
 	}

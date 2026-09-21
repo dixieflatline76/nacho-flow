@@ -33,18 +33,23 @@ func DefaultTuningPolicy() TuningPolicy {
 
 // TuningResult captures the mathematical and empirical output of a tuning strategy run.
 type TuningResult struct {
-	OptimalThreshold    int      `json:"optimal_threshold"`
-	FrictionKeywords    []string `json:"friction_keywords"`
-	RestrictImages      bool     `json:"restrict_images"`
-	RestrictTools       bool     `json:"restrict_tools"`
-	PreservedClauses    []string `json:"preserved_clauses"`
-	TargetTierName      string   `json:"target_tier_name"`
-	SynthesizedRule     string   `json:"synthesized_rule"`
-	CurrentCostUSD      float64  `json:"current_cost_usd"`
-	ProjectedCostUSD    float64  `json:"projected_cost_usd"`
-	ProjectedSavingsUSD float64  `json:"projected_savings_usd"`
-	RetriesEliminated   int      `json:"retries_eliminated"`
-	TotalSampleTurns    int      `json:"total_sample_turns"`
+	OptimalThreshold    int                      `json:"optimal_threshold"`
+	OptimalRetries      int                      `json:"optimal_retries"` // NEW: tuned retry bound
+	FrictionKeywords    []string                 `json:"friction_keywords"`
+	RestrictImages      bool                     `json:"restrict_images"`
+	RestrictTools       bool                     `json:"restrict_tools"`
+	PreservedClauses    []string                 `json:"preserved_clauses"`
+	TargetTierName      string                   `json:"target_tier_name"`
+	SynthesizedRule     string                   `json:"synthesized_rule"`
+	CurrentCostUSD      float64                  `json:"current_cost_usd"`
+	ProjectedCostUSD    float64                  `json:"projected_cost_usd"`
+	ProjectedSavingsUSD float64                  `json:"projected_savings_usd"`
+	RetriesEliminated   int                      `json:"retries_eliminated"`
+	TotalSampleTurns    int                      `json:"total_sample_turns"`
+	TotalSessions       int                      `json:"total_sessions"`        // NEW: total sessions evaluated
+	AvgTurnsPerSession  float64                  `json:"avg_turns_per_session"` // NEW: average turns to resolve
+	EscalationRate      float64                  `json:"escalation_rate"`       // NEW: percentage of sessions needing cloud
+	RecoveryStats       map[string]RecoveryStats `json:"recovery_stats,omitempty"` // NEW: per-model recovery dynamics
 }
 
 // OptimizationStrategy defines the contract for autonomous route tuning algorithms.
