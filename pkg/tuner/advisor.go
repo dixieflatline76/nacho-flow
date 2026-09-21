@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -12,13 +13,43 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 	var b strings.Builder
 
 	b.WriteString("========================================================================================\n")
-	b.WriteString("🌮 NACHO FLOW ADVISORY TUNING REPORT\n")
+	if res.TotalSessions > 0 {
+		b.WriteString("🌮 NACHO FLOW ADVISORY TUNING REPORT (v2 — Session Replay)\n")
+	} else {
+		b.WriteString("🌮 NACHO FLOW ADVISORY TUNING REPORT\n")
+	}
 	b.WriteString("========================================================================================\n\n")
 
-	b.WriteString(fmt.Sprintf("📊 Sample Size: %d historical prompt turns evaluated\n\n", res.TotalSampleTurns))
+	b.WriteString(fmt.Sprintf("📊 Sample Size: %d historical prompt turns evaluated\n", res.TotalSampleTurns))
 
-	b.WriteString("🔍 FRICTION & BOTTLENECK SIGNALS DETECTED:\n")
+	if res.TotalSessions > 0 {
+		b.WriteString("\n🔄 SESSION DYNAMICS:\n")
+		b.WriteString(fmt.Sprintf("  • Total Sessions Evaluated:       %d\n", res.TotalSessions))
+		b.WriteString(fmt.Sprintf("  • Average Turns per Session:      %.1f\n", res.AvgTurnsPerSession))
+		b.WriteString(fmt.Sprintf("  • Cloud Escalation Rate:          %.1f%%\n", res.EscalationRate*100))
+	} else {
+		b.WriteString("\n")
+	}
+
+	if len(res.RecoveryStats) > 0 {
+		b.WriteString("\n🩺 MODEL SELF-RECOVERY ANALYSIS:\n")
+		var models []string
+		for m := range res.RecoveryStats {
+			models = append(models, m)
+		}
+		sort.Strings(models)
+		for _, m := range models {
+			stat := res.RecoveryStats[m]
+			b.WriteString(fmt.Sprintf("  • %-24s Self-Recovery: %.1f%% (avg %.1f turns to recover)\n",
+				stat.Model+":", stat.SelfRecoveryRate*100, stat.AvgTurnsToRecover))
+		}
+	}
+
+	b.WriteString("\n🔍 FRICTION & BOTTLENECK SIGNALS DETECTED:\n")
 	b.WriteString(fmt.Sprintf("  • Optimal Local Context Threshold: %d tokens\n", res.OptimalThreshold))
+	if res.OptimalRetries > 0 {
+		b.WriteString(fmt.Sprintf("  • Retry Bound:                    %d max retries before cloud escalation\n", res.OptimalRetries))
+	}
 
 	if res.RestrictImages {
 		b.WriteString("  • Multimodal Vision:              High Friction (Spikes local retries — restricted)\n")

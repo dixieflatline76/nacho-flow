@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -494,6 +495,92 @@ func TestOptimizer_CustomPolicy(t *testing.T) {
 	}
 }
 
+func TestOptimizer_SessionReplayPipeline_v2(t *testing.T) {
+	optimizer := NewCostPenaltyOptimizer()
+	now := time.Now().UTC()
+
+	// 5 realistic sessions
+	var records []telemetry.TurnRecord
+	for s := 0; s < 5; s++ {
+		sessID := "sess-" + string(rune('A'+s))
+		// Turn 1: 2000 tokens on local, succeeds
+		records = append(records, telemetry.TurnRecord{
+			SessionID:        sessID,
+			Timestamp:        now.Add(time.Duration(s*100) * time.Second),
+			Tokens:           2000,
+			TargetModel:      "qwen2.5-coder",
+			IsLocal:          true,
+			IsRetry:          false,
+			HasWriteProgress: true,
+			CostSavedUSD:     0.01,
+		})
+		// Turn 2: 12000 tokens on local, fails 2 times
+		records = append(records, telemetry.TurnRecord{
+			SessionID:        sessID,
+			Timestamp:        now.Add(time.Duration(s*100+1) * time.Second),
+			Tokens:           12000,
+			TargetModel:      "qwen2.5-coder",
+			IsLocal:          true,
+			IsRetry:          true,
+			HasWriteProgress: false,
+		})
+		records = append(records, telemetry.TurnRecord{
+			SessionID:        sessID,
+			Timestamp:        now.Add(time.Duration(s*100+2) * time.Second),
+			Tokens:           12000,
+			TargetModel:      "qwen2.5-coder",
+			IsLocal:          true,
+			IsRetry:          true,
+			HasWriteProgress: false,
+		})
+		// Turn 3: 12000 tokens on cloud, succeeds
+		records = append(records, telemetry.TurnRecord{
+			SessionID:        sessID,
+			Timestamp:        now.Add(time.Duration(s*100+3) * time.Second),
+			Tokens:           12000,
+			TargetModel:      "claude-3-5",
+			IsLocal:          false,
+			IsRetry:          false,
+			HasWriteProgress: true,
+			CostSpentUSD:     0.05,
+		})
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{Name: "Tier 1: Local GPU", When: "Tokens < 16000 && Retries < 3", Provider: "ollama", Model: "qwen2.5-coder"},
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {Type: "local"},
+		},
+	}
+
+	res, err := optimizer.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimizer failed: %v", err)
+	}
+
+	if res.TotalSessions != 5 {
+		t.Errorf("Expected 5 total sessions, got %d", res.TotalSessions)
+	}
+	if res.OptimalThreshold > 12000 {
+		t.Errorf("Expected threshold <= 12000, got %d", res.OptimalThreshold)
+	}
+	if res.OptimalRetries < 1 || res.OptimalRetries > 2 {
+		t.Errorf("Expected OptimalRetries 1 or 2, got %d", res.OptimalRetries)
+	}
+	if !strings.Contains(res.SynthesizedRule, "Retries <") {
+		t.Errorf("Expected synthesized rule to contain 'Retries <', got %s", res.SynthesizedRule)
+	}
+	if res.AvgTurnsPerSession <= 0 {
+		t.Errorf("Expected AvgTurnsPerSession > 0, got %f", res.AvgTurnsPerSession)
+	}
+	if len(res.RecoveryStats) == 0 {
+		t.Errorf("Expected RecoveryStats to be populated")
+	}
+}
+
 func NewOptimizerForTest() *CostPenaltyOptimizer {
 	return NewCostPenaltyOptimizer()
 }
+

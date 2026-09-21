@@ -246,3 +246,56 @@ func TestApplier_DestinationDirectoryCollision(t *testing.T) {
 		t.Errorf("Expected error applying tuning to a directory")
 	}
 }
+
+func TestAdvisor_GeneratesReport_v2(t *testing.T) {
+	result := &TuningResult{
+		TotalSampleTurns:   847,
+		TotalSessions:      23,
+		AvgTurnsPerSession: 36.8,
+		EscalationRate:     0.783,
+		OptimalThreshold:   4000,
+		OptimalRetries:     1,
+		SynthesizedRule:    "Tokens < 4000 && Retries < 1",
+		CurrentCostUSD:     12.40,
+		ProjectedCostUSD:   8.20,
+		RetriesEliminated:  119,
+		RecoveryStats: map[string]RecoveryStats{
+			"gemma-4-26b": {
+				Model:            "gemma-4-26b",
+				SelfRecoveryRate: 0.032,
+			},
+			"qwen3-coder-plus": {
+				Model:            "qwen3-coder-plus",
+				SelfRecoveryRate: 0.671,
+			},
+		},
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{Name: "Tier 1: Local GPU", When: "Tokens < 16000 && Retries < 2", Provider: "ollama"},
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {Type: "local"},
+		},
+	}
+
+	report := GenerateAdvisoryReport(result, cfg)
+
+	if !strings.Contains(report, "v2 — Session Replay") {
+		t.Errorf("Expected v2 header, got: %s", report)
+	}
+	if !strings.Contains(report, "SESSION DYNAMICS:") {
+		t.Errorf("Expected SESSION DYNAMICS section, got: %s", report)
+	}
+	if !strings.Contains(report, "Average Turns per Session:") {
+		t.Errorf("Expected Average Turns per Session, got: %s", report)
+	}
+	if !strings.Contains(report, "MODEL SELF-RECOVERY ANALYSIS:") {
+		t.Errorf("Expected MODEL SELF-RECOVERY ANALYSIS section, got: %s", report)
+	}
+	if !strings.Contains(report, "Retry Bound:") {
+		t.Errorf("Expected Retry Bound metric, got: %s", report)
+	}
+}
+

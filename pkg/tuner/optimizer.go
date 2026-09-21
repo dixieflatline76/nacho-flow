@@ -65,6 +65,74 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 		}, nil
 	}
 
+	trajectories := GroupBySession(records)
+	if len(trajectories) > 0 {
+		// 1. Modality Risk Analysis (Images & Tools)
+		modalityAnalyzer := NewModalityRiskAnalyzer(opt.Policy)
+		restrictImages, restrictTools := modalityAnalyzer.Analyze(records, targetTier)
+
+		// 2. Keyword Friction Risk Analysis
+		keywordAnalyzer := NewKeywordRiskAnalyzer(opt.Policy)
+		highFrictionKws := keywordAnalyzer.Analyze(records)
+
+		// 3. 2D Grid Sweep Optimizer across session trajectories
+		gridRes := GridSweep(trajectories, targetTier, restrictImages, restrictTools, highFrictionKws, opt.Policy)
+
+		// 4. Model Self-Recovery Dynamics Analysis
+		recoveryStats := AnalyzeRecovery(trajectories)
+
+		// 5. AST Rule Synthesis
+		rule, err := RewriteRuleAST(existingWhen, gridRes.OptimalTokens, gridRes.OptimalRetries, highFrictionKws, restrictImages, restrictTools)
+		if err != nil {
+			return nil, err
+		}
+
+		// 6. Aggregate Baseline Metrics
+		var currentCost float64
+		var currentLocalRetries int
+		for _, traj := range trajectories {
+			currentCost += traj.TotalCost
+			for _, turn := range traj.Turns {
+				if turn.IsLocal && turn.IsRetry {
+					currentLocalRetries++
+				}
+			}
+		}
+
+		totalProjectedRetries := int(gridRes.ProjectedRetries * float64(len(trajectories)))
+		retriesAvoided := currentLocalRetries - totalProjectedRetries
+		if retriesAvoided < 0 {
+			retriesAvoided = 0
+		}
+
+		projectedSavings := currentCost - gridRes.ProjectedCost
+		if projectedSavings < 0 {
+			projectedSavings = 0
+		}
+
+		avgTurns := float64(len(records)) / float64(len(trajectories))
+
+		return &TuningResult{
+			OptimalThreshold:    gridRes.OptimalTokens,
+			OptimalRetries:      gridRes.OptimalRetries,
+			FrictionKeywords:    highFrictionKws,
+			RestrictImages:      restrictImages,
+			RestrictTools:       restrictTools,
+			TargetTierName:      targetTierName,
+			SynthesizedRule:     rule,
+			CurrentCostUSD:      currentCost,
+			ProjectedCostUSD:    gridRes.ProjectedCost,
+			ProjectedSavingsUSD: projectedSavings,
+			RetriesEliminated:   retriesAvoided,
+			TotalSampleTurns:    len(records),
+			TotalSessions:       len(trajectories),
+			AvgTurnsPerSession:  avgTurns,
+			EscalationRate:      gridRes.EscalationRate,
+			RecoveryStats:       recoveryStats,
+		}, nil
+	}
+
+	// Legacy single-turn fallback pipeline (when SessionIDs are absent)
 	// 1. Modality Risk Analysis (Images & Tools)
 	modalityAnalyzer := NewModalityRiskAnalyzer(opt.Policy)
 	restrictImages, restrictTools := modalityAnalyzer.Analyze(records, targetTier)
