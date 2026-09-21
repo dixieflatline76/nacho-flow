@@ -33,17 +33,19 @@ Both runs used the **identical prompt**, the **identical IDE agent harness** ([Z
 
 ```mermaid
 flowchart LR
-    subgraph RawControl["🔴 The Raw Frontier Control (Sonnet 5 Direct)"]
+    subgraph RawControl["Raw Frontier Control: Sonnet 5 Direct"]
         Z1["Zoo Code Agent"] -->|100% Direct| S5["Claude Sonnet 5<br/>$2.00 / $10.00 per 1M"]
-        S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Prompt Cache Hit| Bill1["<b>$4.87 USD</b><br/><i>31.5 minutes clock time</i><br/>9 max-token stalls (8k)"]
+        S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Prompt Cache Hit| Bill1["$4.87 USD<br/>31.5 min clock time<br/>9 max-token stalls"]
     end
 
-    subgraph NachoGateway["🟢 The Nacho Flow Hybrid Gateway"]
+    subgraph NachoGateway["Nacho Flow Hybrid Gateway"]
         Z2["Zoo Code Agent"] --> NF["Nacho Flow Gateway"]
-        NF -->|Turns 1-35: Scaffolding & Local| Local["Workstation GPU: Gemma 4<br/><b>$0.00</b>"]
-        NF -->|Turns 36-58: Core Engine| Qwen["Qwen3 Coder Plus<br/><b>$0.65/M</b>"]
-        NF -->|Turns 59-62: Verification| Gemini["Gemini 3.8 Flash<br/><b>$0.75/M</b>"]
-        Local & Qwen & Gemini --> Bill2["<b>$0.85 USD</b><br/><i>19.5 minutes clock time</i><br/>0 max-token stalls · 0 network drops"]
+        NF -->|Turns 1-35: Scaffolding| Local["Workstation GPU: Gemma 4<br/>$0.00"]
+        NF -->|Turns 36-58: Core Engine| Qwen["Qwen3 Coder Plus<br/>$0.65/M"]
+        NF -->|Turns 59-62: Verification| Gemini["Gemini 3.8 Flash<br/>$0.75/M"]
+        Local --> Bill2["$0.85 USD<br/>19.5 min clock time<br/>0 buffer stalls"]
+        Qwen --> Bill2
+        Gemini --> Bill2
     end
 ```
 
@@ -90,20 +92,16 @@ Scientific honesty requires explicitly listing experimental controls *and* their
 The head-to-head above is the capstone of a **balanced 2×2 empirical benchmark battery** (444 historical prompt turns) across two problem domains and two autonomous agent harnesses — plus the frontier control:
 
 ```mermaid
-graph TD
-    classDef cline fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
-    classDef zoo fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
-    classDef control fill:#450a0a,stroke:#f87171,stroke-width:3px,color:#fef2f2;
-
-    subgraph Problem1["Domain 1: N-Queens Solver & ANSI Heatmap Visualizer"]
-        R1["<b>Run 1: Cline on Nacho Flow</b><br/>139 turns · $2.38 spent · $14.43 saved<br/>100% tests pass · N=1000 in 1.67s"]:::cline
-        R2["<b>Run 2: Zoo Code on Nacho Flow</b><br/>90 turns · $1.80 spent · $11.52 saved<br/>97%+ tests pass · N=1000 in 1.85s"]:::zoo
+flowchart TD
+    subgraph Problem1["Domain 1: N-Queens Solver and ANSI Heatmap"]
+        R1["Run 1: Cline on Nacho Flow<br/>139 turns · $2.38 spent · $14.43 saved<br/>100% tests pass · N=1000 in 1.67s"]
+        R2["Run 2: Zoo Code on Nacho Flow<br/>90 turns · $1.80 spent · $11.52 saved<br/>97%+ tests pass · N=1000 in 1.85s"]
     end
 
-    subgraph Problem2["Domain 2: Blackjack Simulator & Monte Carlo Engine"]
-        R3["<b>Run 3: Cline on Nacho Flow</b><br/>153 turns · $2.74 spent · $15.45 saved<br/>10k rounds in 19.1ms · 88% deck cov"]:::cline
-        R4["<b>Run 4: Zoo Code on Nacho Flow</b><br/>62 turns · $0.85 spent · $7.03 saved<br/>10k rounds in 6.1ms · 97% game cov"]:::zoo
-        R5["<b>Run 5: Raw Sonnet 5 Control</b><br/>84 turns · $4.87 spent · $0.00 saved<br/>10k rounds in 5.4ms · 86.7% tot cov"]:::control
+    subgraph Problem2["Domain 2: Blackjack Simulator and Monte Carlo Engine"]
+        R3["Run 3: Cline on Nacho Flow<br/>153 turns · $2.74 spent · $15.45 saved<br/>10k rounds in 19.1ms · 88% deck cov"]
+        R4["Run 4: Zoo Code on Nacho Flow<br/>62 turns · $0.85 spent · $7.03 saved<br/>10k rounds in 6.1ms · 97% game cov"]
+        R5["Run 5: Raw Sonnet 5 Control<br/>84 turns · $4.87 spent · $0.00 saved<br/>10k rounds in 5.4ms · 86.7% tot cov"]
     end
 
     Problem1 --> Problem2
@@ -145,12 +143,15 @@ So where did the ~10 million prompt tokens vanish? Through three distinct mathem
 flowchart TD
     subgraph Gap["Where Did the 9.9M Cloud Prompt Tokens Go?"]
         A["Total Sonnet Cloud Prompt Tokens: 12.4M"]
-        B["1. Local Workstation Offloading (35 turns x ~110k avg context)<br/><b>~3.85 Million Tokens Absorbed on Local GPU for $0.00</b>"]
-        C["2. Turn Inflation Prevention (22 extra turns avoided on deep context)<br/><b>~4.84 Million Redundant Tokens Never Transmitted</b>"]
-        D["3. Output Monologue Compounding (146k fewer completion tokens)<br/><b>~1.20 Million Compounded History Tokens Avoided</b>"]
-        E["Nacho Flow Cloud Tokens Billed: 2.53M ($0.55 on OpenRouter)"]
+        B["1. Local Workstation Offloading: 35 turns<br/>~3.85M Tokens Absorbed on GPU for $0.00"]
+        C["2. Turn Inflation Prevention: 22 turns avoided<br/>~4.84M Redundant Tokens Never Sent"]
+        D["3. Output Monologue Compounding: 146k fewer output tok<br/>~1.20M Compounded Context Tokens Avoided"]
+        E["Nacho Flow Cloud Tokens Billed: 2.53M on OpenRouter"]
         
-        A --> B --> C --> D --> E
+        A --> B
+        B --> C
+        C --> D
+        D --> E
     end
 ```
 
@@ -183,23 +184,24 @@ To answer the critical buyer question—*how much of the $4.02 savings came from
 To understand how a routine coding task racked up a $5 invoice, you have to watch the tape.
 
 ```mermaid
-timeline
-    title The Raw Sonnet 5 vs. Nacho Flow Chronology
-    section Act I: Scaffolding
-        Turn 1 to 10 (Raw Sonnet) : Runs go version, go mod init : Burns $0.60
-        Turn 1 to 10 (Nacho Flow) : Workstation GPU (Gemma 4) : Costs $0.00
-    section Act II: The Outage
-        Turn 7 (Raw Sonnet) : Upstream SSE drops empty payload : IDE locks up, human must click retry
-        Turn 7 (Nacho Flow) : StreamNormalizer absorbs drops : Retries in 180ms silently
-    section Act III: The Monologue
-        Turn 12 to 30 (Raw Sonnet) : Model writes philosophical essays : 9 turns hit 8,192 max tokens (12 min stalls)
-        Turn 12 to 30 (Nacho Flow) : Cycle Killer keeps output tight : Sub-10s turn execution on Qwen3
-    section Act IV: Deep Context
-        Turn 60+ (Raw Sonnet) : Context crosses 200k tokens : Each turn bills $0.75 - $0.89
-        Turn 50+ (Nacho Flow) : Escalates selectively to Gemini Flash : Turns cost $0.015 - $0.017
-    section Act V: Verification
-        Completion (Raw Sonnet) : 3,724 lines written, 86.7% coverage : $4.87 total bill in 31.5 min
-        Completion (Nacho Flow) : 1,871 lines written, 97.6% game cov : $0.85 total bill in 19.5 min
+flowchart TD
+    subgraph SonnetRun["Raw Sonnet 5 Timeline: 31.5 min · $4.87"]
+        S_T1["Turns 1-10: Scaffolding ($0.60 billed for go version)"]
+        S_T2["Turn 7: Upstream SSE Drop (Empty socket, IDE freeze)"]
+        S_T3["Turns 12-30: Monologue Drift (9 turns hit 8k max-tokens, 12 min stalls)"]
+        S_T4["Turns 60+: Deep Context ($0.85-$0.89 per turn at 200k+ tokens)"]
+        S_T5["Completion: 3,724 lines (86.7% coverage, $4.87 total)"]
+        S_T1 --> S_T2 --> S_T3 --> S_T4 --> S_T5
+    end
+
+    subgraph NachoRun["Nacho Flow Hybrid Timeline: 19.5 min · $0.85"]
+        N_T1["Turns 1-35: Scaffolding on Local GPU ($0.00)"]
+        N_T2["Turn 7: StreamNormalizer intercepts drops (silent 180ms retry)"]
+        N_T3["Turns 36-58: Core Engine on Qwen3 Coder Plus (sub-10s turns)"]
+        N_T4["Turns 59-62: Verification on Gemini 3.8 Flash ($0.015/turn)"]
+        N_T5["Completion: 1,871 lines (97.6% game cov, $0.85 total)"]
+        N_T1 --> N_T2 --> N_T3 --> N_T4 --> N_T5
+    end
 ```
 
 ### Act I: The $0.60 Hello World (Turns 1–10)
@@ -238,22 +240,21 @@ sequenceDiagram
     actor Dev as Developer
     participant Agent as Zoo Code IDE
     participant NF as Nacho Flow Gateway
-    participant Cloud as OpenRouter (Upstream)
+    participant Cloud as OpenRouter
 
     Note over Dev,Cloud: SCENARIO A: RAW FRONTIER CONTROL (NO GATEWAY)
     Agent->>Cloud: POST /chat/completions (Turn 7)
     Cloud-->>Agent: 200 OK with EMPTY SSE STREAM (Socket Drop)
-    Agent--xAgent: Uncaught JSON Parse Exception
     Note over Agent: UI FREEZES. Spinner hangs indefinitely.
-    Dev->>Agent: Manual Intervention: Clicks "Cancel & Retry"
+    Dev->>Agent: Manual Intervention: Clicks Cancel & Retry
 
     Note over Dev,Cloud: SCENARIO B: NACHO FLOW EDGE GATEWAY
     Agent->>NF: POST /chat/completions (Turn 7)
     NF->>Cloud: Forward request with keep-alive
     Cloud-->>NF: Empty SSE Stream (Socket Drop)
-    NF->>NF: StreamNormalizer & Circuit Breaker detect 0 bytes
-    NF->>Cloud: Immediate Retry with Exponential Backoff (180ms)
-    Cloud-->>NF: 200 OK Valid JSON Payload
+    NF->>NF: StreamNormalizer detects 0 bytes
+    NF->>Cloud: Immediate Retry with Backoff (180ms)
+    Cloud-->>NF: 200 OK Valid Payload
     NF-->>Agent: Flawless Stream Passed Through
     Note over Dev,Agent: Agent never flinched. Developer never noticed.
 ```
@@ -281,7 +282,7 @@ Then the buffer ceiling struck. Anthropic enforces an **8,192-token maximum outp
 ```mermaid
 pie title Raw Claude Sonnet 5 Turn Completion Types (84 Turns)
     "Clean Tool Calls" : 74
-    "Max Token (8k) Chokes (Truncated Mid-Flight)" : 9
+    "Max Token 8k Chokes" : 9
     "SSE Socket Failures" : 1
 ```
 
@@ -294,12 +295,19 @@ Why didn't this happen on Nacho Flow? The **🎸 Cycle Killer** monitors n-gram 
 
 As an agent edits files, runs tests, and inspects compiler errors, the prompt history accumulates. By Turn 70, the raw control's context window packed **over 275,000 tokens**. At this depth, per-turn costs diverge violently:
 
-```mermaid
-xychart-beta
-    title "Cost Per Single Request at Deep Context (USD $)"
-    x-axis ["Turn 10", "Turn 25", "Turn 45", "Turn 60", "Turn 70", "Turn 75", "Turn 80", "Turn 84"]
-    y-axis "Cost per Turn ($)" 0.0 --> 1.0
-    bar [0.03, 0.08, 0.22, 0.45, 0.75, 0.82, 0.86, 0.89]
+```text
+========================================================================================
+COST PER SINGLE TURN AT DEEP CONTEXT (RAW CLAUDE SONNET 5 vs. NACHO FLOW)
+========================================================================================
+Turn 10  ($0.03)  █
+Turn 25  ($0.08)  ███
+Turn 45  ($0.22)  ████████
+Turn 60  ($0.45)  ████████████████
+Turn 70  ($0.75)  ███████████████████████████
+Turn 75  ($0.82)  ██████████████████████████████
+Turn 80  ($0.86)  ███████████████████████████████
+Turn 84  ($0.89)  ████████████████████████████████
+========================================================================================
 ```
 
 ### The Live Per-Turn Price Ledger at 100k+ Context
@@ -312,13 +320,19 @@ xychart-beta
 | **15:37:44** | 106,192 tokens | Qwen3 Coder Plus | **$0.0148** | **$0.8500** | **57× cheaper** |
 | **15:38:20** | 107,971 tokens | Qwen3 Coder Plus | **$0.0175** | **$0.8900** | **51× cheaper** |
 
-```mermaid
-xychart-beta
-    title "Cumulative Billed Spend: Raw Sonnet 5 vs Nacho Flow ($ USD)"
-    x-axis ["Turn 10", "Turn 20", "Turn 30", "Turn 40", "Turn 50", "Turn 60", "Turn 70", "Turn 84"]
-    y-axis "Cumulative Spend ($)" 0.0 --> 5.0
-    line [0.00, 0.15, 0.35, 0.52, 0.68, 0.85, 0.85, 0.85]
-    line [0.65, 1.25, 1.95, 2.70, 3.45, 4.10, 4.65, 4.87]
+```text
+========================================================================================
+CUMULATIVE BILLED SPEND ACROSS TURNS
+========================================================================================
+Turn 10:  Nacho Flow: $0.00  |  Raw Sonnet 5: $0.65
+Turn 20:  Nacho Flow: $0.15  |  Raw Sonnet 5: $1.25
+Turn 30:  Nacho Flow: $0.35  |  Raw Sonnet 5: $1.95
+Turn 40:  Nacho Flow: $0.52  |  Raw Sonnet 5: $2.70
+Turn 50:  Nacho Flow: $0.68  |  Raw Sonnet 5: $3.45
+Turn 60:  Nacho Flow: $0.85  |  Raw Sonnet 5: $4.10
+Turn 70:  Nacho Flow: $0.85  |  Raw Sonnet 5: $4.65  (Nacho Flow finished at Turn 62!)
+Turn 84:  Nacho Flow: $0.85  |  Raw Sonnet 5: $4.87  (Sonnet completed)
+========================================================================================
 ```
 
 At deep context, asking Raw Sonnet 5 to fix a one-character syntax error or re-run `go test` costs **85 to 89 cents per turn**. The same turn through Nacho Flow costs **1.5 cents**. Five quick turns of test iteration on raw frontier pricing burns more than the entire Nacho Flow build from scratch.
@@ -331,16 +345,16 @@ Many engineers assume prompt caching protects them. Let's dissect the OpenRouter
 
 ```mermaid
 pie title Where Did the $4.87 Go on Raw Sonnet 5?
-    "Prompt Cache Hits ($0.20/M on 12.1M tok)" : 1.97
-    "Completion Monologues ($10.00/M on 166k tok)" : 1.66
-    "Cache-Miss Writes ($3.75/M on 327k tok)" : 1.24
+    "Prompt Cache Hits ($0.20/M)" : 1.97
+    "Completion Monologues ($10.00/M)" : 1.66
+    "Cache-Miss Writes ($3.75/M)" : 1.24
 ```
 
 ```mermaid
 pie title Where Did the $0.85 Go on Nacho Flow?
-    "Qwen3 Coder Plus Workhorse ($0.65/M)" : 0.55
-    "Gemini 3.8 Flash Escalation ($0.75/M)" : 0.30
-    "Workstation GPU Scaffolding ($0.00)" : 0.00
+    "Qwen3 Coder Plus Workhorse" : 0.55
+    "Gemini 3.8 Flash Escalation" : 0.30
+    "Workstation GPU Scaffolding" : 0.00
 ```
 
 ### The Three Structural Leaks in Frontier Prompt Caching
@@ -358,22 +372,22 @@ These three mechanisms are **structural properties of frontier API pricing**, no
 A 5.7× cost reduction only matters if the software works. Both codebases passed `go test -race` with zero data races and delivered operational Monte Carlo engines within 0.74ms of each other. The differences are in philosophy, not correctness:
 
 ```mermaid
-classDef nacho fill:#064e3b,stroke:#059669,stroke-width:2px,color:#d1fae5;
-classDef sonnet fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#e0e7ff;
+flowchart TD
+    subgraph NFApp["Nacho Flow Codebase: $0.85 · 19.5 min"]
+        N1["1,871 Lines of Go<br/>10 Clean, Modular Files"]
+        N2["10,000 Rounds in 6.14ms<br/>EV: -2.49% (Vegas Strip Rules)"]
+        N3["go test -race: PASS<br/>Zero Data Races"]
+        N4["Coverage: 54.3% total<br/>internal/game: 97.6%"]
+        N1 --> N2 --> N3 --> N4
+    end
 
-subgraph NFApp["Nacho Flow Codebase ($0.85 · 19.5 min)"]
-    N1["<b>1,871 Lines of Go</b><br/>10 Clean, Modular Files"]:::nacho
-    N2["<b>10,000 Rounds in 6.14ms</b><br/>EV: -2.49% (Vegas Strip Rules)"]:::nacho
-    N3["<b>go test -race: PASS</b><br/>Zero Data Races"]:::nacho
-    N4["<b>Coverage: 54.3% total<br/>internal/game: 97.6%</b>"]:::nacho
-end
-
-subgraph S5App["Raw Sonnet 5 Codebase ($4.87 · 31.5 min)"]
-    S1["<b>3,724 Lines of Go</b><br/>15 Files · ~59% of codebase is tests"]:::sonnet
-    S2["<b>10,000 Rounds in 5.40ms</b><br/>EV: -1.17% (Liberal Casino Rules)"]:::sonnet
-    S3["<b>go test -race: PASS</b><br/>Zero Data Races"]:::sonnet
-    S4["<b>Coverage: 86.7% total</b><br/>incl. terminal formatting &amp; input-validation tests"]:::sonnet
-end
+    subgraph S5App["Raw Sonnet 5 Codebase: $4.87 · 31.5 min"]
+        S1["3,724 Lines of Go<br/>15 Files · ~59% of codebase is tests"]
+        S2["10,000 Rounds in 5.40ms<br/>EV: -1.17% (Liberal Casino Rules)"]
+        S3["go test -race: PASS<br/>Zero Data Races"]
+        S4["Coverage: 86.7% total<br/>incl. terminal formatting & tests"]
+        S1 --> S2 --> S3 --> S4
+    end
 ```
 
 ### 1. Where Raw Sonnet 5 Excelled: The Academic Overachiever
@@ -405,22 +419,19 @@ Neither simulation is mathematically broken; both match published casino house-e
 
 ## 📐 The Cost/Capability Landscape
 
-*(Coordinates in this chart represent an empirical tradeoff index: X-axis represents cost efficiency derived from total spend; Y-axis represents software rigor as a composite of test statement coverage, `-race` pass rate, and Monte Carlo throughput.)*
-
 ```mermaid
-quadrantChart
-    title The Autonomous Coding Cost/Capability Landscape
-    x-axis Low Cost / Efficiency --> High Cost / Waste
-    y-axis Low Quality / Failure --> High Quality / Reliability
-    quadrant-1 Over-Engineered & Expensive
-    quadrant-2 The Sweet Spot (High ROI)
-    quadrant-3 Broken & Unusable
-    quadrant-4 Cheap Workhorse (Fragile)
-    "Raw Claude Sonnet 5": [0.85, 0.92]
-    "Nacho Flow Hybrid": [0.20, 0.88]
-    "Unmanaged Local Gemma 12B": [0.05, 0.25]
-    "Raw Qwen3 Coder Plus Direct": [0.35, 0.65]
-    "OpenRouter Auto / LiteLLM": [0.70, 0.60]
+flowchart TD
+    subgraph Grid["The Autonomous Coding Tradeoff Matrix"]
+        direction TB
+        subgraph TopRow["High Rigor / Passing Code"]
+            Q2["<b>Over-Engineered & Expensive</b><br/>🔴 Raw Claude Sonnet 5<br/>$4.87 · 31.5 min · 86.7% cov"]
+            Q1["<b>The Sweet Spot (Optimal ROI)</b><br/>🟢 Nacho Flow Hybrid<br/>$0.85 · 19.5 min · 97.6% game cov"]
+        end
+        subgraph BottomRow["Low Rigor / Fragile Code"]
+            Q3["<b>Broken & Unusable</b><br/>⚪ Unmanaged Local Gemma 12B<br/>$0.00 · Repetition death loops"]
+            Q4["<b>Cheap Workhorse</b><br/>🔵 Raw Qwen3 Coder Plus Direct<br/>$1.20 · Good code, needs guardrails"]
+        end
+    end
 ```
 
 * **Unmanaged local (Ollama solo)**: $0.00, but repetition loops on complex turns yield broken software — the 29.4% self-recovery rate means most failures stay failed.
