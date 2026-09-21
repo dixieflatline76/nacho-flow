@@ -17,6 +17,7 @@ This document details the performance characteristics, load-testing methodology,
 
 > [!TIP]
 > **Deep-Dive Technical Whitepapers**:
+> - 💸 **[The Frontier Tax: 1:1 Control Study on Raw Claude Sonnet 5](FRONTIER_CONTROL_STUDY_2026.md)**: Empirical 1:1 control test proving Nacho Flow delivered an 82.5% cash discount ($0.85 vs $4.87) and ran 12 minutes faster than raw Claude Sonnet 5 despite 97.4% prompt cache hit rates.
 > - 📄 **[Near-Zero Allocation Hot Paths & Wire-Speed Systems Whitepaper](PERFORMANCE_WHITEPAPER.md)**: Explains the low-level systems engineering (SIMD byte filters, AOT bytecode VM, lock-free RCU, and ring-buffer streaming surgery) that enables deep inspection in $<0.2\text{ms}$ compared to LiteLLM and Bifrost.
 > - 🔬 **[A/B Benchmark Case Study Whitepaper](BENCHMARKS_AB_CASE_STUDY.md)**: Full empirical 4-run developer case study documenting $94.7\%$ spend reduction and local hardware ROI.
 

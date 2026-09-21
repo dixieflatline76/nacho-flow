@@ -22,6 +22,7 @@
 **Nacho Flow** is an active execution runtime and model dispatcher built in pure Go. It sits between autonomous coding agents ([Cline](https://github.com/cline/cline), [Zoo Code](https://www.zoocode.dev), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **frontier endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)). Includes an integrated **VS Code Companion Extension** with real-time cost telemetry, visual route inspector, and one-click agent setup.
 
 🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)  
+💸 **Latest Research**: [The Frontier Tax: Empirical 1:1 Control Study on Raw Claude Sonnet 5 vs. Nacho Flow](docs/FRONTIER_CONTROL_STUDY_2026.md) *(5.7× cheaper, 12 minutes faster)*  
 Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
 
 ---
@@ -93,6 +94,8 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 > [!NOTE]
 > **Live Empirical Telemetry (Autonomous Coding Benchmarks)**:
 > In benchmarked tasks pairing Cline and Zoo Code with local models (Qwen2.5-Coder / Gemma), Nacho Flow's supervisor intercepted **22 runaway loops** with a **100% Stage 1 local heal rate** ($0.00 compute waste), rescuing **83.6 minutes** of GPU lockup. Nacho Flow defaults to 100% pristine context preservation so frontier models hit **96%+ prompt cache rates**, while preserving the zero-alloc **Nacho Token Saver (NTS)** engine in `pkg/nts` as an opt-in research pipeline.
+> 
+> 💸 **1:1 Empirical Control Test (September 2026)**: In a head-to-head control trial building an educational Go Blackjack engine and Monte Carlo simulator with Zoo Code, **Raw Claude Sonnet 5 cost $4.87 and took 31.5 minutes** (despite 97.4% prompt cache hit rate), while **Nacho Flow cost $0.85 and finished in 19.5 minutes** (5.7× cheaper, 12 minutes faster). See the full [Frontier Control Study Whitepaper](docs/FRONTIER_CONTROL_STUDY_2026.md).
 
 ---
 
