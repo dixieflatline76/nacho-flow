@@ -10,8 +10,11 @@ type TuningPolicy struct {
 	Name                string  `json:"name"`
 	CostPerMillionCloud float64 `json:"cost_per_million_cloud"`
 	RetryPenaltyUSD     float64 `json:"retry_penalty_usd"`
+	CostWeight          float64 `json:"cost_weight,omitempty"` // Weight for cloud cost (defaults to 1.0)
+	TurnsWeight         float64 `json:"turns_weight"`          // Penalty per average session turn
 	MinOccurrences      int     `json:"min_occurrences"`
 	OddsRatioThreshold  float64 `json:"odds_ratio_threshold"`
+	MinSessions         int     `json:"min_sessions"` // Minimum sessions for statistical significance
 }
 
 // DefaultTuningPolicy returns the recommended balanced flow-state protection policy.
@@ -20,8 +23,11 @@ func DefaultTuningPolicy() TuningPolicy {
 		Name:                "balanced_flow_state",
 		CostPerMillionCloud: 2.50,
 		RetryPenaltyUSD:     2.00,
+		CostWeight:          1.0,
+		TurnsWeight:         0.10,
 		MinOccurrences:      10,
 		OddsRatioThreshold:  1.5,
+		MinSessions:         5,
 	}
 }
 
