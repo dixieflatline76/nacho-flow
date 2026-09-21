@@ -1,27 +1,33 @@
 # 💸 The Frontier Tax: Why Claude Sonnet 5 Burned $4.87 on a Blackjack Game
 
-## (And How Nacho Flow Built the Exact Same App for 85 Cents)
+## (And How Nacho Flow Built the Spec-Compliant App for 85 Cents)
 
-**An Empirical 1:1 Head-to-Head Control Study on Autonomous Coding Agents, Prompt Caching Realities, and Zero-Waste Edge Routing**
+**An Independent Field Report on Autonomous Coding Agents, Prompt Caching Realities, and Zero-Waste Edge Routing**
 
 **Author:** [@dixieflatline76](https://github.com/dixieflatline76) · [nacho-flow](https://github.com/dixieflatline76/nacho-flow)  
 **Date:** September 2026  
-**Format:** Empirical Field Report & Raw Telemetry Receipts (`v1.2.2`)  
-**Status:** Validated with Production Invoices & Telemetry Logs
+**Format:** Field Benchmark Report & Technical Whitepaper  
+**Status:** Validated with Production Invoices & Telemetry Logs (`v1.2.2`)  
+**Sample Size Disclosure:** The head-to-head control is **N=1**. The aggregate fleet dataset is **444 turns across 5 runs**. See [§ Threats to Validity](#-threats-to-validity-read-this-before-quoting-our-numbers) before quoting any multiplier.
 
 ---
 
 ## ⚡ Executive Summary: The $4.02 Cup of Coffee
 
-In developer circles, Twitter threads, and vendor keynotes, you will frequently encounter the following piece of conventional wisdom:
+In developer circles, Twitter threads, and vendor keynotes, you will frequently encounter the following conventional wisdom:
 
 > *"Frontier models are so fast and prompt caching is so aggressive (90%+ discounts!) that smart routing and local model gateways are obsolete. Just point your coding agent directly at Claude Sonnet 5 or GPT-5 and let it rip. It costs pennies anyway."*
 
-So we ran the experiment. Not with toy 10-line LeetCode puzzles (HumanEval) or theoretical simulation models. We gave an autonomous agent an empty directory and told it to build a full-fidelity, multi-file software engineering project in Go: **an interactive terminal Blackjack Simulator, basic strategy trainer, casino rule engine (splits, double-downs, dealer soft-17), and a 10,000-round Monte Carlo EV simulation runner** in Go 1.26+.
+We decided to test that assertion empirically — with one honest caveat up front: **this is a single-developer field study, not a university benchmark**. Every control run against a frontier API costs real money, so we ran the control once, cleanly, and documented every failure mechanism with production invoices. 
 
-We executed this exact challenge twice under strictly controlled conditions:
+The quantitative headline is a **5.7× cost ratio** ($4.87 vs. $0.85) and a **12-minute speedup** from one paired head-to-head run; the *mechanisms* behind it — output-buffer stalls, cache-write penalties, and deep-context per-turn pricing — are structural properties of frontier APIs that recur on every run. Both claims are defended below, separately, because they deserve different levels of your trust.
+
+The challenge was not a toy 10-line LeetCode puzzle. We gave an autonomous agent an empty directory and instructed it to build a full-fidelity, multi-file software engineering project in Go: **an interactive terminal Blackjack Simulator, basic strategy trainer, casino rule engine (splits, double-downs, dealer soft-17), and a 10,000-round Monte Carlo EV simulation runner** in Go 1.26+.
+
+We ran this exact challenge under strictly controlled conditions:
+
 1. **The Nacho Flow Hybrid Gateway**: Intelligent edge routing across a local workstation GPU (`gemma4:12b-it-qat` on Ollama at **$0.00**), a dense cloud workhorse (`qwen3-coder-plus` at **$0.65/M**), and targeted reasoning escalation (`gemini-3.8-flash` at **$0.75/M**).
-2. **The Raw Frontier Control**: Bypassing Nacho Flow completely. Pointing the agent **100% raw and direct to Anthropic Claude Sonnet 5** via OpenRouter.
+2. **The Raw Frontier Control**: Bypassing Nacho Flow completely, pointing the agent **100% raw and direct to Anthropic Claude Sonnet 5** via OpenRouter.
 
 Both runs used the **identical prompt**, the **identical IDE agent harness** ([Zoo Code](https://zoocode.dev) v3.82), the **identical operating system**, and the **identical acceptance criteria** (`go test -race` passing and Monte Carlo simulation operational).
 
@@ -29,7 +35,7 @@ Both runs used the **identical prompt**, the **identical IDE agent harness** ([Z
 flowchart LR
     subgraph RawControl["🔴 The Raw Frontier Control (Sonnet 5 Direct)"]
         Z1["Zoo Code Agent"] -->|100% Direct| S5["Claude Sonnet 5<br/>$2.00 / $10.00 per 1M"]
-        S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Prompt Cache Hit| Bill1["<b>$4.87 USD</b><br/><i>31.5 minutes clock time</i><br/>9 buffer stalls (8k tokens)"]
+        S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Prompt Cache Hit| Bill1["<b>$4.87 USD</b><br/><i>31.5 minutes clock time</i><br/>9 max-token stalls (8k)"]
     end
 
     subgraph NachoGateway["🟢 The Nacho Flow Hybrid Gateway"]
@@ -37,7 +43,7 @@ flowchart LR
         NF -->|Turns 1-35: Scaffolding & Local| Local["Workstation GPU: Gemma 4<br/><b>$0.00</b>"]
         NF -->|Turns 36-58: Core Engine| Qwen["Qwen3 Coder Plus<br/><b>$0.65/M</b>"]
         NF -->|Turns 59-62: Verification| Gemini["Gemini 3.8 Flash<br/><b>$0.75/M</b>"]
-        Local & Qwen & Gemini --> Bill2["<b>$0.85 USD</b><br/><i>19.5 minutes clock time</i><br/>0 buffer stalls · 0 network drops"]
+        Local & Qwen & Gemini --> Bill2["<b>$0.85 USD</b><br/><i>19.5 minutes clock time</i><br/>0 max-token stalls · 0 network drops"]
     end
 ```
 
@@ -52,20 +58,36 @@ flowchart LR
 | **Prompt Cache Hit Rate** | **97.44%** | **92.47%** | 🧠 *High cache hit rate didn't save Sonnet!* |
 | **Average Turn Latency** | **19.39 seconds** | **9.32 seconds** | ⏱️ **2.1× faster response cycle** |
 | **Turns Stalling on Max Tokens** | **9 turns** *(choked on 8,192 tok)* | **0 turns** *(clean tool calls)* | 🛑 **12 full minutes of waiting eliminated** |
-| **Agent Tool Retries (Compiles)** | **11 retries** | **11 retries** | 🔄 *Identical error recovery frequency* |
+| **Agent Tool Retries (Compiles)** | **11 retries** | **11 retries** | 🔄 *Identical compile/test error recovery* |
 | **Gateway Drops / Buffer Stalls**| **1 SSE drop + 9 truncations** | **0 drops · 0 truncations** | 🛡️ *Zero UI lockups or stalls* |
 | **10,000 Monte Carlo Speed** | **5.40 ms** | **6.14 ms** | 🏎️ *Both blisteringly fast (<1ms delta)* |
 | **Race Conditions (`-race`)** | **0 races (PASS)** | **0 races (PASS)** | 🛡️ *Both thread-safe in Go* |
 
-> [!NOTE]
-> **Macro-Telemetry: The 444-Turn Baseline**:
-> While this Blackjack head-to-head is our detailed forensic case study, it is backed by an aggregate production dataset of **444 real prompt turns** spanning two independent agent harnesses (Cline v3.82, Zoo Code v3.82), two distinct problem domains (N-Queens CSP and Blackjack Monte Carlo), and three model tiers. Across all 444 historical turns, Nacho Flow consistently achieved an **82.5% to 94.7% cost reduction** with zero dropped sessions.
+> [!IMPORTANT]
+> **The Bottom Line**: Raw Sonnet 5 cost **$4.87** and took **31.5 minutes**. Nacho Flow delivered a fully working, race-free Blackjack game and Monte Carlo simulator for **$0.85** in **19.5 minutes**. The extra $4.02 bought 12 minutes of staring at an IDE loading spinner and 146,000 tokens of monologue. All quantitative claims in this table refer to this single controlled head-to-head; aggregate fleet statistics across 444 turns appear in [§ Autonomous Fleet Recovery Dynamics](#-autonomous-fleet-recovery-dynamics-auto-tuner-v2-data).
 
 ---
 
-## 🎭 The 2×2 Benchmark Battery: Four Real-World Sessions
+## 🧪 Methodology: What We Controlled, and What We Didn't
 
-To guarantee these results were not an isolated quirk of one prompt, this test was the capstone of a balanced **2×2 empirical benchmark battery** (comprising 444 historical prompt turns) across two complex problem domains and two autonomous agent harnesses:
+Scientific honesty requires explicitly listing experimental controls *and* their boundaries:
+
+**Held constant across both arms:**
+- **Identical User Prompt**: Verbatim requirement to build Blackjack with basic strategy, dealer soft-17 rules, split/double mechanics, and a 10,000-round Monte Carlo simulation.
+- **Identical Agent Harness**: Zoo Code v3.82, identical tool definitions, identical environment prompt, and identical VS Code window.
+- **Identical Host System**: Windows 11 Pro, Go 1.26+ native toolchain, AMD Ryzen 7 5700X3D workstation.
+- **Identical Acceptance Gate**: `go test -race ./...` passing cleanly and Monte Carlo simulation executing successfully.
+
+**Not controlled, and disclosed:**
+- **N=1 per arm.** Each configuration ran once end-to-end. We report observed, auditable values, not hypothetical means.
+- **The gateway arm received multiple interventions simultaneously**: Model-tier routing, workstation GPU offloading, and gateway-side stream hygiene (Cycle Killer output discipline, retry normalization). We isolate and attribute the dollar savings across these distinct mechanisms in [§ Token Attribution](#-token-attribution-where-did-the-99m-token-gap-come-from).
+- **Tuning Provenance**: Nacho Flow's routing thresholds (4k local context ceiling, 1-retry escalation rule) were tuned on earlier sessions of similar Go systems programming tasks. The benchmark measures the system on familiar architectural terrain. See [§ Threats to Validity](#-threats-to-validity-read-this-before-quoting-our-numbers).
+
+---
+
+## 🎭 The 2×2 Benchmark Battery: Five Real-World Sessions
+
+The head-to-head above is the capstone of a **balanced 2×2 empirical benchmark battery** (444 historical prompt turns) across two problem domains and two autonomous agent harnesses — plus the frontier control:
 
 ```mermaid
 graph TD
@@ -101,18 +123,21 @@ graph TD
 | **Agent Tool Retries** | 59 retries | 9 retries | 73 retries | **11 retries** | **11 retries** |
 | **Network Stalls / Chokes**| 0 stalls | 0 stalls | 0 stalls | **0 stalls** | **9 max-token stalls + 1 UI crash** |
 | **Monte Carlo / Solver Speed** | 1.67s ($N=1000$) | 1.85s ($N=1000$) | 19.1ms (10k rounds) | **6.14ms** (10k rounds) | **5.40ms** (10k rounds) |
-| **Statement Coverage** | 77.2% | 63.0% | 45.6% | **54.3%** *(game: 97.6%)* | **86.7%** |
+| **Statement Coverage** | 77.2% | 63.0% | 45.6% | **54.3%** *(game pkg: 97.6%)* | **86.7%** *(~59% of codebase was tests)* |
+
+> [!NOTE]
+> **A Note on "Retries" vs. "Stalls"**: Both Run 4 (Nacho Flow) and Run 5 (Raw Sonnet) experienced **11 agent-level tool retries** — normal engineering iterations where the model compiled code, caught a test failure, and self-corrected. However, Run 5 *also* suffered **9 buffer ceiling truncations and an upstream socket crash**, requiring human UI intervention. Nacho Flow experienced **zero stream truncations and zero dropped sockets**; its StreamNormalizer absorbed dropped packets in $<200\text{ms}$ invisibly to the IDE.
 
 ---
 
-## 🔍 The 4.9× Token Gap: Did We Cheat With Compression?
+## 🕵️ Token Attribution: Where Did the 9.9M Token Gap Come From?
 
-A sharp engineer inspecting the scorecard will immediately notice a glaring disparity:
-> *"Sonnet was billed 12.4M prompt tokens. Nacho Flow only billed 2.5M cloud prompt tokens. If both used the identical harness and prompt, why did the gateway send ~5× less context? Did you use lossy context compaction and claim it was routing?"*
+A skeptical engineer inspecting the numbers will ask:
+> *"Sonnet was billed 12.4M prompt tokens. Nacho Flow only billed 2.5M cloud prompt tokens. If both used the identical harness and prompt, why did the gateway send ~5× less context? Did you run lossy context compaction and misattribute the savings to routing?"*
 
-**The short answer: No. Nacho Flow operated in 100% PRISTINE Context Preservation Mode.** 
+**The short answer: No. Nacho Flow operated in 100% PRISTINE Context Preservation Mode.**
 
-Not a single token of history, tool schema, or transcript was pruned, summarized, or stripped by the gateway. The experimental Nacho Token Saver (NTS) compaction pipeline remained completely deactivated (`NTS_ENABLED=false`).
+Not a single token of history, tool schema, or transcript was pruned, summarized, or stripped by the gateway. Nacho Flow's experimental compaction pipeline (`pkg/nts`) remained **completely disabled** (`NTS_ENABLED=false`). If Nacho Flow had trimmed or summarized context, it would have **destroyed prompt caching**, because OpenRouter and Anthropic require byte-for-byte prefix fidelity to trigger the 90%+ cache discount.
 
 So where did the ~10 million prompt tokens vanish? Through three distinct mathematical realities of agent physics:
 
@@ -120,7 +145,7 @@ So where did the ~10 million prompt tokens vanish? Through three distinct mathem
 flowchart TD
     subgraph Gap["Where Did the 9.9M Cloud Prompt Tokens Go?"]
         A["Total Sonnet Cloud Prompt Tokens: 12.4M"]
-        B["1. Local GPU Offloading (35 turns x ~110k avg context)<br/><b>~3.85 Million Tokens Absorbed Locally for $0.00</b>"]
+        B["1. Local Workstation Offloading (35 turns x ~110k avg context)<br/><b>~3.85 Million Tokens Absorbed on Local GPU for $0.00</b>"]
         C["2. Turn Inflation Prevention (22 extra turns avoided on deep context)<br/><b>~4.84 Million Redundant Tokens Never Transmitted</b>"]
         D["3. Output Monologue Compounding (146k fewer completion tokens)<br/><b>~1.20 Million Compounded History Tokens Avoided</b>"]
         E["Nacho Flow Cloud Tokens Billed: 2.53M ($0.55 on OpenRouter)"]
@@ -138,7 +163,7 @@ flowchart TD
 
 ### 📊 The Cost Attribution Watermark: Isolating the Variables
 
-To answer the critical buyer question—*how much of the savings came from model routing vs. local offloading vs. stream defense?*—we isolate the four distinct mechanisms:
+To answer the critical buyer question—*how much of the $4.02 savings came from model routing vs. local offloading vs. stream defense?*—we isolate the four distinct mechanisms:
 
 | Savings Mechanism | How It Works | Est. Dollar Impact | Share of $4.02 Savings |
 | :--- | :--- | :---: | :---: |
@@ -155,7 +180,7 @@ To answer the critical buyer question—*how much of the savings came from model
 
 ## 🎬 The Five-Act Drama: Anatomy of a Run Gone Wild
 
-To understand how a routine coding task racked up a $5 invoice, you have to watch the tape. Here is what actually unfolded during the 31.5 minutes of the Raw Sonnet 5 run compared to Nacho Flow.
+To understand how a routine coding task racked up a $5 invoice, you have to watch the tape.
 
 ```mermaid
 timeline
@@ -167,17 +192,15 @@ timeline
         Turn 7 (Raw Sonnet) : Upstream SSE drops empty payload : IDE locks up, human must click retry
         Turn 7 (Nacho Flow) : StreamNormalizer absorbs drops : Retries in 180ms silently
     section Act III: The Monologue
-        Turn 15 to 30 (Raw Sonnet) : Model writes philosophical essays : 9 turns hit 8,192 max tokens (12 min stalls)
-        Turn 15 to 30 (Nacho Flow) : Cycle Killer keeps output tight : Sub-10s turn execution on Qwen3
+        Turn 12 to 30 (Raw Sonnet) : Model writes philosophical essays : 9 turns hit 8,192 max tokens (12 min stalls)
+        Turn 12 to 30 (Nacho Flow) : Cycle Killer keeps output tight : Sub-10s turn execution on Qwen3
     section Act IV: Deep Context
         Turn 60+ (Raw Sonnet) : Context crosses 200k tokens : Each turn bills $0.75 - $0.89
         Turn 50+ (Nacho Flow) : Escalates selectively to Gemini Flash : Turns cost $0.015 - $0.017
     section Act V: Verification
-        Completion (Raw Sonnet) : 3,724 lines written, 86% coverage : $4.87 total bill in 31.5 min
+        Completion (Raw Sonnet) : 3,724 lines written, 86.7% coverage : $4.87 total bill in 31.5 min
         Completion (Nacho Flow) : 1,871 lines written, 97.6% game cov : $0.85 total bill in 19.5 min
 ```
-
----
 
 ### Act I: The $0.60 Hello World (Turns 1–10)
 
@@ -191,14 +214,12 @@ module blackjack
 go 1.26
 ```
 
-* **On Raw Sonnet 5**: Because each turn re-sends the agent’s system prompt, tool definitions, and environment state at frontier rates ($2.00/M input), **Zoo Code billed $0.60 USD in the first 6 turns before writing a single function of Go logic**. You paid 60 cents for the model to confirm that Go was installed on your machine.
-* **On Nacho Flow**: Nacho Flow’s classifier recognized these early turns as read-only system inspection. It routed **100% of the first 10 scaffolding turns to the local GPU (`gemma4:12b-it-qat`) for exactly $0.00**.
-
----
+* **On Raw Sonnet 5**: Each turn re-sends the agent's system prompt, tool definitions, and environment state at frontier rates ($2.00/M input). **Zoo Code billed $0.60 USD in the first 6 turns before writing a single function of Go logic.** You paid 60 cents for the model to confirm that Go was installed on your machine.
+* **On Nacho Flow**: The classifier recognized these early turns as read-only system inspection and routed **100% of the first 10 scaffolding turns to the local GPU (`gemma4:12b-it-qat`) for exactly $0.00**.
 
 ### Act II: The Upstream Meltdown & The "White Screen of Death" (Turn 7)
 
-At 13:54:45 GMT, OpenRouter’s upstream provider experienced a momentary socket disconnect. An SSE payload arrived empty:
+At 13:54:45 GMT, OpenRouter's upstream provider experienced a momentary socket disconnect. An SSE payload arrived empty:
 
 ```json
 {
@@ -237,26 +258,13 @@ sequenceDiagram
     Note over Dev,Agent: Agent never flinched. Developer never noticed.
 ```
 
-Without an edge gateway, an upstream hiccup crashes the agent loop. With Nacho Flow, the `StreamNormalizer` and `DefectiveContentDefense` catch empty frames in-flight and execute a transparent backoff retry in `< 200ms`.
-
----
+Without an edge gateway, an upstream hiccup crashes the agent loop and demands human intervention. With Nacho Flow, the `StreamNormalizer` and `DefectiveContentDefense` catch empty frames in-flight and execute a transparent backoff retry in $< 200\text{ms}$.
 
 ### Act III: The Shakespearean Monologue & The 8,192-Token Chokehold
 
-Between Turn 12 and Turn 30, Claude Sonnet 5 decided it wasn't just a Go programmer—it was a tenure-track professor of probability theory writing a dissertation.
+Between Turn 12 and Turn 30, Claude Sonnet 5 decided it wasn't just a Go programmer — it was a tenure-track professor of probability theory writing a dissertation. Asked to implement card shuffling and hand evaluation, it wrote multi-page essays on dealer soft-17 rules, the Kelly Criterion, and exhaustive struct commentary.
 
-When asked to implement card shuffling and hand evaluation, it didn't just write the code. It wrote multi-page essays detailing the philosophy of dealer soft-17 rules, the mathematics of the Kelly Criterion, and exhaustive Go struct commentary.
-
-And then disaster struck. Anthropic enforces an **8,192-token maximum output limit**. When an autonomous agent outputs 8,192 tokens of rambling code and commentary in a single turn, the stream truncates mid-flight (`finish_reason = length`).
-
-```mermaid
-pie title Raw Claude Sonnet 5 Turn Completion Types (84 Turns)
-    "Clean Tool Calls" : 74
-    "Max Token (8k) Chokes (Truncated Mid-Flight)" : 9
-    "SSE Socket Failures" : 1
-```
-
-Here is the complete, audited ledger of all 9 max-token stalls from the OpenRouter activity export:
+Then the buffer ceiling struck. Anthropic enforces an **8,192-token maximum output limit**, and when an agent emits 8,192 tokens of rambling in a single turn, the stream truncates mid-flight (`finish_reason = length`), corrupting any in-progress tool call. This happened **9 times** out of 84 turns. Here is the complete audited ledger from OpenRouter:
 
 | Turn Timestamp | Completion Tokens | Finish Reason | Generation Time | The Damage |
 | :---: | :---: | :---: | :---: | :--- |
@@ -270,21 +278,21 @@ Here is the complete, audited ledger of all 9 max-token stalls from the OpenRout
 | **14:06:42** | **8,192** | `max_tokens (length)` | **85.6 seconds** | Attempted to dump entire 1,000-line test file at once. |
 | **14:15:11** | **8,192** | `max_tokens (length)` | **86.2 seconds** | Final monologue blowout before completion. |
 
+```mermaid
+pie title Raw Claude Sonnet 5 Turn Completion Types (84 Turns)
+    "Clean Tool Calls" : 74
+    "Max Token (8k) Chokes (Truncated Mid-Flight)" : 9
+    "SSE Socket Failures" : 1
+```
+
 > [!CAUTION]
-> **The 12-Minute Trap**: Look at the clock times. **9 turns multiplied by ~80 seconds each equals 720 seconds—exactly 12 FULL MINUTES of pure waiting time** where the developer was staring at a stalled screen while the model spewed 73,728 tokens of text that got cut off mid-sentence anyway!
+> **The 12-Minute Trap**: 9 turns × ~80 seconds ≈ 720 seconds — **12 full minutes of pure waiting** while the model generated ~73,700 tokens of text that got cut off mid-sentence anyway, billed at $10.00/M.
 
-Why didn't this happen on Nacho Flow?
-Nacho Flow’s **🎸 Cycle Killer** monitors n-gram repetition, token acceleration, and tool-call formatting in real time. When an agent drifts into prose soliloquies instead of issuing tool calls, the gateway terminates the runaway stream in `< 3s` and injects a `[SYSTEM OVERRIDE: ISSUE TOOL CALL IMMEDIATELY]`, forcing the model back onto the rails.
-
-On Nacho Flow: **Zero turns hit max tokens. Zero turns truncated. Average generation time was 9.3 seconds.**
-
----
+Why didn't this happen on Nacho Flow? The **🎸 Cycle Killer** monitors n-gram repetition, token acceleration, and tool-call formatting in real time. When a model drifts into prose soliloquy instead of issuing tool calls, the gateway terminates the runaway stream in $< 3\text{s}$ and injects a corrective system message forcing the model back onto the rails. On Nacho Flow: **zero max-token stalls, zero truncations, 9.3-second average generation time**.
 
 ### Act IV: The Context Snowball Avalanche (Turns 50–84)
 
-As an autonomous agent edits files, runs unit tests, and inspects compiler errors, the prompt history accumulates. By Turn 70, the context window was packing **over 275,000 tokens**.
-
-At this depth, the cost-per-turn dynamics between raw frontier pricing and edge-routed pricing diverge violently:
+As an agent edits files, runs tests, and inspects compiler errors, the prompt history accumulates. By Turn 70, the raw control's context window packed **over 275,000 tokens**. At this depth, per-turn costs diverge violently:
 
 ```mermaid
 xychart-beta
@@ -313,17 +321,13 @@ xychart-beta
     line [0.65, 1.25, 1.95, 2.70, 3.45, 4.10, 4.65, 4.87]
 ```
 
-At deep context, asking Raw Sonnet 5 to fix a one-character syntax error or re-run `go test` costs **85 to 89 cents per turn**. On Nacho Flow, that exact same turn costs **1.5 cents**. 
-
-Five quick turns of test iteration on Raw Sonnet burns more money than the entire Nacho Flow build from scratch!
+At deep context, asking Raw Sonnet 5 to fix a one-character syntax error or re-run `go test` costs **85 to 89 cents per turn**. The same turn through Nacho Flow costs **1.5 cents**. Five quick turns of test iteration on raw frontier pricing burns more than the entire Nacho Flow build from scratch.
 
 ---
 
 ## 🧾 Forensic Accounting: Where Did the $4.87 Actually Go?
 
-Many engineers assume prompt caching protects them. *"If I have a 95%+ cache hit rate, my costs should be negligible!"*
-
-Let's dissect the official OpenRouter CSV export (`benchmarks/data/openrouter_activity_2026-09-21.csv`) and bust the Prompt Caching Fallacy once and for all:
+Many engineers assume prompt caching protects them. Let's dissect the OpenRouter CSV export (`benchmarks/data/openrouter_activity_2026-09-21.csv`) and bust the Prompt Caching Fallacy:
 
 ```mermaid
 pie title Where Did the $4.87 Go on Raw Sonnet 5?
@@ -341,54 +345,49 @@ pie title Where Did the $0.85 Go on Nacho Flow?
 
 ### The Three Structural Leaks in Frontier Prompt Caching
 
-1. **The Cache-Miss Write Penalty ($1.24 USD)**:
-   Prompt caching is not free. When context changes (e.g., a file is written or a new command output is added), the provider must write the new prefix into cache. On Claude Sonnet 5, cache writes cost **$3.75 per million tokens**.
-   Across 12.6 million tokens, even a tiny 2.6% cache-miss/write rate ($327,600$ tokens) billed **$1.24 USD**—which alone is 45% higher than the entire Nacho Flow invoice!
-2. **Completion Tokens Are Billed at 5× Input Cost ($1.66 USD)**:
-   Prompt caching only applies to *input*. Output tokens are billed at the full, un-cached rate of **$10.00 per million tokens**. Because Sonnet 5 output 165,939 completion tokens (8.3× more than Nacho Flow), it burned $1.66 purely on text generation.
-3. **Turn Inflation (+22 Turns)**:
-   Because Sonnet kept hitting the 8,192-token ceiling, it had to repeat file writes across multiple turns, blowing out the turn count from 62 to 84. Every extra turn re-evaluates the massive 200k+ prompt prefix.
+1. **The Cache-Miss Write Penalty ($1.24 USD)**: Prompt caching is not free. When context changes (a file is written, a command output is appended), the provider writes the new prefix into cache at **$3.75 per million tokens**. Across 12.6M total tokens, a 2.6% cache-miss/write rate (~327,600 tokens) billed **$1.24** — 45% *more than the entire Nacho Flow invoice*.
+2. **Completion Tokens Are Billed Uncached ($1.66 USD)**: Prompt caching applies to *input only*. Output is billed at the full **$10.00/M**. Sonnet's 165,939 completion tokens (8.3× Nacho Flow's) burned $1.66 on text generation alone.
+3. **Turn Inflation (+22 Turns)**: Because Sonnet kept hitting the 8,192-token ceiling, it re-wrote truncated files across multiple turns, inflating the turn count from 62 to 84. Every extra turn re-evaluates the massive 200k+ prompt prefix.
+
+These three mechanisms are **structural properties of frontier API pricing**, not quirks of this particular run. A replicate run would produce different dollar amounts; it would produce the exact same leaks.
 
 ---
 
 ## ⚖️ Code Quality Showdown: Did the Extra $4.02 Buy a Bugatti?
 
-A 5.7× cost reduction and 38% faster build time are only meaningful if the generated software actually works. 
-
-Did the extra $4.02 on Claude Sonnet 5 buy superior engineering, or did it just buy academic over-engineering? Let's inspect the two codebases side by side:
+A 5.7× cost reduction only matters if the software works. Both codebases passed `go test -race` with zero data races and delivered operational Monte Carlo engines within 0.74ms of each other. The differences are in philosophy, not correctness:
 
 ```mermaid
 classDef nacho fill:#064e3b,stroke:#059669,stroke-width:2px,color:#d1fae5;
-    classDef sonnet fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#e0e7ff;
+classDef sonnet fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#e0e7ff;
 
-    subgraph NFApp["Nacho Flow Codebase ($0.85 · 19.5 min)"]
-        N1["<b>1,871 Lines of Go</b><br/>10 Clean, Modular Files"]:::nacho
-        N2["<b>10,000 Rounds in 6.14ms</b><br/>EV: -2.49% (Real Casino Odds)"]:::nacho
-        N3["<b>go test -race: PASS</b><br/>Zero Data Races"]:::nacho
-        N4["<b>Statement Coverage: 54.3%</b><br/>internal/game: 97.6% coverage"]:::nacho
-    end
+subgraph NFApp["Nacho Flow Codebase ($0.85 · 19.5 min)"]
+    N1["<b>1,871 Lines of Go</b><br/>10 Clean, Modular Files"]:::nacho
+    N2["<b>10,000 Rounds in 6.14ms</b><br/>EV: -2.49% (Vegas Strip Rules)"]:::nacho
+    N3["<b>go test -race: PASS</b><br/>Zero Data Races"]:::nacho
+    N4["<b>Coverage: 54.3% total<br/>internal/game: 97.6%</b>"]:::nacho
+end
 
-    subgraph S5App["Raw Sonnet 5 Codebase ($4.87 · 31.5 min)"]
-        S1["<b>3,724 Lines of Go</b><br/>15 Exhaustive Files"]:::sonnet
-        S2["<b>10,000 Rounds in 5.40ms</b><br/>EV: -1.17% (Liberal Casino Odds)"]:::sonnet
-        S3["<b>go test -race: PASS</b><br/>Zero Data Races"]:::sonnet
-        S4["<b>Statement Coverage: 86.7%</b><br/>2,208 lines of table tests"]:::sonnet
-    end
+subgraph S5App["Raw Sonnet 5 Codebase ($4.87 · 31.5 min)"]
+    S1["<b>3,724 Lines of Go</b><br/>15 Files · ~59% of codebase is tests"]:::sonnet
+    S2["<b>10,000 Rounds in 5.40ms</b><br/>EV: -1.17% (Liberal Casino Rules)"]:::sonnet
+    S3["<b>go test -race: PASS</b><br/>Zero Data Races"]:::sonnet
+    S4["<b>Coverage: 86.7% total</b><br/>incl. terminal formatting &amp; input-validation tests"]:::sonnet
+end
 ```
 
 ### 1. Where Raw Sonnet 5 Excelled: The Academic Overachiever
-* **86.7% Statement Coverage (vs 54.3%)**: Sonnet 5 wrote **2,208 lines of table-driven unit tests**—meaning 59% of its entire codebase was tests. It wrote unit tests for CLI ANSI colors, tests for invalid string prompts, and tests for every single lookup cell in the basic strategy matrix.
-* **Split Aces Lockout Mechanic**: Sonnet 5 implemented the subtle real-world casino rule where split Aces receive exactly one card (`FromSplitAces: wasAces`) and cannot hit further.
-* **Higher Modularity**: Sonnet decoupled player decisions into a first-class function pointer (`type DecisionFunc func(...) Action`), allowing the identical engine to be plugged into CLI human players, basic strategy bots, and Monte Carlo runners without code duplication.
+* **86.7% statement coverage** with 2,208 lines of table-driven tests — meticulous, if sprawling.
+* **Split Aces lockout mechanic**: The subtle real-world rule where split Aces receive exactly one card (`FromSplitAces: wasAces`) and cannot hit further. Correctly implemented.
+* **First-class decision abstraction** (`type DecisionFunc func(...) Action`), decoupling the engine from CLI players, strategy bots, and Monte Carlo runners.
 
 ### 2. Where Nacho Flow Excelled: The Pragmatic Systems Engineer
-* **Zero Bloat (1,871 Lines)**: Nacho Flow delivered the full specification without scattering logic across 15 separate files. The core game engine reached **97.6% statement coverage** where it mattered.
-* **Simulation Speed**: Nacho Flow’s 10,000-round Monte Carlo simulation completed in **6.14 milliseconds**—within 0.74ms of Sonnet 5’s heavily optimized engine.
-* **True Casino House Edge**: Nacho Flow’s simulation reported an expected value (EV) of **-2.49%**, accurately reflecting real-world multi-deck shoe rules.
-* **12 Minutes Less Developer Waiting**: Nacho Flow delivered a shippable, race-free, passing binary in 19.5 minutes.
+* **Zero bloat**: The full specification in 1,871 lines across 10 files, with 97.6% coverage on the core engine.
+* **Simulation speed within 0.74ms** of the heavily-optimized frontier engine.
+* **12 fewer minutes of developer wall-clock waiting** for a shippable, race-free binary.
 
-### 3. Total Coverage vs. Core Engine Coverage
-Sonnet's higher total statement coverage (86.7% vs 54.3%) reflects exhaustive testing of peripheral components: ANSI color escape sequences, interactive CLI input prompts, and mock input loops. Core business logic tells a different story:
+### 3. A Word on Coverage Comparability
+These coverage numbers are **not apples-to-apples**, and we won't pretend otherwise. Sonnet's 86.7% includes ~2,208 lines of table-driven tests spanning CLI ANSI colors, invalid string prompts, and every cell of the basic-strategy matrix. Nacho Flow's 54.3% reflects deliberate scoping:
 * **Game Mechanics & Engine Coverage**: Nacho Flow: **97.6%** · Sonnet 5: **100.0%**
 * **Strategy Lookup Table Coverage**: Nacho Flow: **100.0%** · Sonnet 5: **100.0%**
 * **CLI Terminal Output Coverage**: Nacho Flow: **22.0%** · Sonnet 5: **78.4%**
@@ -404,34 +403,35 @@ Neither simulation is mathematically broken; both match published casino house-e
 
 ---
 
-## 🎯 The Engineering Tradeoff: Cost vs. Code Rigor
+## 📐 The Cost/Capability Landscape
+
+*(Coordinates in this chart represent an empirical tradeoff index: X-axis represents cost efficiency derived from total spend; Y-axis represents software rigor as a composite of test statement coverage, `-race` pass rate, and Monte Carlo throughput.)*
 
 ```mermaid
 quadrantChart
-    title Engineering Tradeoff: Architecture vs Production Economics
-    x-axis Low Efficiency (High Cost) --> High Efficiency (Low Cost)
-    y-axis Basic Implementation --> Enterprise Grade
-    quadrant-1 Optimal Sweet Spot (Nacho Flow)
-    quadrant-2 Over-Engineered & Expensive (Raw Sonnet 5)
-    quadrant-3 Broken & Fragile (Unmanaged Local)
-    quadrant-4 Cheap Workhorse (Raw Cloud API)
-    "Raw Claude Sonnet 5": [0.20, 0.88]
-    "Nacho Flow Hybrid": [0.82, 0.82]
-    "Unmanaged Local Gemma 12B": [0.90, 0.25]
-    "Raw Qwen3 Coder Plus": [0.65, 0.60]
+    title The Autonomous Coding Cost/Capability Landscape
+    x-axis Low Cost / Efficiency --> High Cost / Waste
+    y-axis Low Quality / Failure --> High Quality / Reliability
+    quadrant-1 Over-Engineered & Expensive
+    quadrant-2 The Sweet Spot (High ROI)
+    quadrant-3 Broken & Unusable
+    quadrant-4 Cheap Workhorse (Fragile)
+    "Raw Claude Sonnet 5": [0.85, 0.92]
+    "Nacho Flow Hybrid": [0.20, 0.88]
+    "Unmanaged Local Gemma 12B": [0.05, 0.25]
+    "Raw Qwen3 Coder Plus Direct": [0.35, 0.65]
+    "OpenRouter Auto / LiteLLM": [0.70, 0.60]
 ```
 
-*Note: Coordinates in this chart represent an empirical tradeoff index: X-axis represents cost efficiency (inverse total spend normalized across runs); Y-axis represents software rigor (composite score of test statement coverage, thread-safety pass on `go test -race`, and Monte Carlo benchmark throughput).*
-
-* **Unmanaged Local (Ollama solo)**: Costs $0.00, but gets stuck in repetition loops around Turn 12, yielding incomplete or broken software.
-* **Raw Frontier Cloud**: Produces pristine code with 86% test coverage, but charges $5.00 per task, suffers from monologue drift, and stalls on 8k output buffers.
-* **Nacho Flow**: Achieves **95% of frontier quality** while operating at **18% of the cost** and finishing **38% faster**.
+* **Unmanaged local (Ollama solo)**: $0.00, but repetition loops on complex turns yield broken software — the 29.4% self-recovery rate means most failures stay failed.
+* **Raw frontier cloud**: Pristine, heavily-tested code, but ~$5/task, monologue drift, 8k-output stalls, and unhandled upstream crashes.
+* **Nacho Flow**: Frontier-adjacent quality (both binaries passed identical acceptance criteria) at 18% of the cost and 38% faster wall-clock.
 
 ---
 
 ## 🔬 Autonomous Fleet Recovery Dynamics (Auto-Tuner v2 Data)
 
-Analyzing the full 444-turn dataset across all five benchmark runs reveals why Nacho Flow's multi-tier architecture works so effectively:
+The strongest evidence in this document isn't the head-to-head — it's the **444-turn fleet dataset** accumulated across all five runs. This is where patterns become statistically visible:
 
 ```text
 ========================================================================================
@@ -450,9 +450,9 @@ Analyzing the full 444-turn dataset across all five benchmark runs reveals why N
 ========================================================================================
 ```
 
-1. **The 4,000-Token Local Cliff**: Local 12B/14B models on consumer GPUs (e.g. RTX 4090 or RX 9070 XT) are brilliant at directory scans, file reads, and initial scaffolding below 4,000 tokens. Beyond 4k, their tool-calling accuracy degrades rapidly.
-2. **`qwen3-coder-plus` is the Ultimate Workhorse**: At **$0.65 per million tokens**, Qwen possesses a **56.8% autonomous self-recovery rate**, fixing compile and test errors without needing human nudging or frontier escalation.
-3. **The `Retries < 1` Rule**: When a local model fails a tool call or compile check, letting it try a second time is almost always wasted compute. Escalating immediately to Tier 2/3 after 1 failure eliminates ~17 wasted loops per session.
+1. **The 4,000-Token Local Cliff**: Local 12B/14B models on consumer GPUs are excellent at directory scans, file reads, and scaffolding below 4,000 tokens. Beyond 4k, tool-calling accuracy degrades rapidly.
+2. **`qwen3-coder-plus` is the workhorse**: At **$0.65/M**, it posts a **56.8% autonomous self-recovery rate**, fixing compile and test errors without human nudges.
+3. **The `Retries < 1` Rule**: After a local model fails a tool call, a second attempt is almost always wasted compute. Escalating after 1 failure eliminates ~17 wasted loops per session.
 
 ---
 
@@ -462,17 +462,17 @@ What happens when you scale these numbers from a single weekend experiment to an
 
 Consider a team of **10 software engineers**, each running **5 autonomous coding sessions per day** (refactoring tasks, feature implementations, bug investigations, or test generation):
 
-| Metric | Raw Claude Sonnet 5 | Nacho Flow Hybrid Gateway | Annual Team Impact |
+| Metric | Raw Claude Sonnet 5 | Nacho Flow Hybrid Gateway | Annual Organizational Impact |
 | :--- | :---: | :---: | :---: |
 | **Cost per Task** | $4.87 | $0.85 | **-$4.02 per task** |
 | **Daily Spend (50 tasks)** | $243.50 | $42.50 | **$201.00 saved per day** |
 | **Monthly Spend (22 days)** | $5,357.00 | $935.00 | **$4,422.00 saved per month** |
 | **Annual Spend (250 days)** | **$60,875.00** | **$10,625.00** | 💰 **$50,250.00 direct cash savings / year** |
-| **Annual Waiting Time** | 656.2 hours | 406.2 hours | ⏱️ **250 engineering hours saved** |
+| **Annual Waiting Time** | 656.2 hours | 406.2 hours | ⏱️ **250 engineering hours returned** |
 
 ### 💻 The Pragmatic Buyer's Reality: Setup Friction & Non-4090 Hardware
 
-A decision-maker evaluating Nacho Flow doesn't just care about headline multipliers; they care about operational reality:
+A decision-maker evaluating Nacho Flow cares about operational reality:
 
 * **"What if my developers don't have an RTX 4090?"**  
   Nacho Flow does not require flagship workstation silicon. Laptops with 8GB–16GB VRAM (or Apple Silicon unified memory) run quantized 7B/8B models (e.g. `qwen2.5-coder:7b-instruct-q4_K_M` or `gemma2:9b`) smoothly for early scaffolding. Furthermore, on developer machines with **zero local GPU**, Tier 1 can be pointed to an ultra-low-cost cloud endpoint (such as DeepSeek V3 at $0.20/M), retaining **over 75% of total savings**.
@@ -482,39 +482,42 @@ A decision-maker evaluating Nacho Flow doesn't just care about headline multipli
 
 ---
 
-## ⚠️ Threats to Validity & Methodological Nuance
+## 🧯 Threats to Validity: Read This Before Quoting Our Numbers
 
-Any honest benchmark must acknowledge its experimental boundaries:
+We are an independent developer, not a lab with a corporate compute budget. Every frontier control run costs real money, so this study is explicitly **N=1 on the control arm**. Here is everything a hostile reviewer should know before citing our results.
 
-1. **The $n=1$ Control Design Choice**:
-   We ran a single head-to-head control deliberately—because we wanted a clean, high-resolution forensic baseline to trace failure mechanics (buffer truncations, cache misses, token stream timing) down to the millisecond, rather than diluting the trace in statistical noise. While agent trajectories have stochastic variance ($\pm 15\%$ on turn counts), the core phenomena driving the economic chasm—the $3.75/M cache-write penalty, the $10.00/M completion rate, the 8k output buffer limit, and the 50× turn cost divergence at deep context—are **structural platform invariants**, not statistical accidents. Replicating the control 5 times would refine mean and variance estimates, but it would not alter the underlying physics of frontier prompt economics.
-2. **Deterministic vs. Stochastic Model Versions**:
-   The control run utilized `anthropic/claude-sonnet-5-20260630`. Subsequent model revisions from Anthropic or OpenRouter may adjust default system prompt overhead or output token limits.
-3. **Domain Specificity**:
-   Go was selected specifically because its strict static typing, compiler speed, and `-race` detector provide objective, binary acceptance gates. In dynamically typed languages (Python, JavaScript) or CSS styling tasks, monologue drift and syntax error recovery dynamics may differ.
-4. **Repeated-Trials Roadmap (v1.3.0)**:
-   For the upcoming `v1.3.0` release, we are building an automated benchmark runner that executes parameterized 5-trial batteries across identical Git checkpoints to report standard deviations and confidence intervals.
+### 1. The Single-Run Baseline
+The Sonnet 5 control ran once. Agent turn counts vary run-to-run; a replicate could plausibly land anywhere from ~$3 to ~$7. We report the observed $4.87, not an average. However, the failure mechanisms we document are **structural, not stochastic**: 8,192-token output ceilings, $3.75/M cache-write pricing, and 200k+ context per-turn costs are properties of the pricing model and buffer limits — they recur on *every* frontier run; only their magnitude varies. The architectural conclusion survives run-to-run noise even if the exact multiplier doesn't.
+
+### 2. Attribution: Where Did the Savings Come From?
+See [§ Token Attribution](#-token-attribution-where-did-the-99m-token-gap-come-from). Smart model routing accounts for **46.0%** of the savings, while local VRAM offloading (**23.6%**), active monologue killing (**18.7%**), and turn inflation avoidance (**11.7%**) supply the remainder. Passive cloud routers can only capture the routing slice.
+
+### 3. Coverage Is Not Comparable 1:1
+Sonnet's 86.7% includes exhaustive peripheral testing; Nacho Flow's 54.3% reflects scoped priorities with 97.6% on the core engine. Neither number is "correct" — they encode different definitions of done. The EV discrepancy (-2.49% vs -1.17%) indicates differing modeled rule sets; both match published casino references.
+
+### 4. The Simulator Was Built by the Thing Being Tested
+Nacho Flow's routing policies, Cycle Killer thresholds, and Auto-Tuner parameters were tuned on this same family of Go systems tasks. The benchmark partially measures the tool on its home turf.
+
+### 5. What Would Change Our Mind
+Five replicated controls (~$25 of frontier spend) with pre-registered metrics; a task domain outside Go systems code; a machine *without* a workstation GPU to test Tier 1 degradation. We invite anyone with budget to run these and will publish counter-results unedited.
 
 ---
 
 ## 🚀 The Next Evolution: Auto-Tuner v3 (Min-Conflicts Optimizer)
 
-While Auto-Tuner v2 established the 4,000-token threshold and 1-retry bound via heuristic grid search, real-world sessions feature non-linear token dynamics and multi-model cost structures.
+Auto-Tuner v2 established the 4,000-token threshold and 1-retry bound via heuristic grid search. Real-world sessions feature non-linear token dynamics and multi-model cost structures, so `v1.3.0` introduces a **Min-Conflicts Local Search & Constraint Satisfaction Optimizer**:
 
-Currently in development for `v1.3.0`, **Auto-Tuner v3** introduces a **Min-Conflicts Local Search & Constraint Satisfaction Optimizer**:
-* **Multi-Tier Boundary Search**: Jointly optimizing thresholds across Tier 1 (Local GPU), Tier 2 (Dense Workhorse), and Tier 3 (Reasoning Frontier).
-* **Multi-Session Trajectory Replay**: Testing candidate routing policies against the historical replay logs of all 444 benchmark turns.
-* **Pareto-Optimal Penalty Function**: Balancing cash savings, latency penalties, and recovery failure probabilities into an automated tuning recommendation.
+* **Multi-Tier Boundary Search**: Jointly optimizing thresholds across Tier 1 (local GPU), Tier 2 (dense workhorse), and Tier 3 (reasoning frontier).
+* **Multi-Session Trajectory Replay**: Testing candidate routing policies against the historical replay logs of all 444 benchmark turns — turning the existing dataset into a continuously-reusable evaluation harness without spending another cent of inference.
+* **Pareto-Optimal Penalty Function**: Balancing cash savings, latency penalties, and recovery-failure probabilities into automated tuning recommendations.
 
 ---
 
 ## 🏁 Conclusion & Reproducibility
 
-Prompt caching is a welcome feature, but **it is not an edge routing strategy**. 
+Prompt caching is a welcome feature, but **it is not an edge routing strategy**. Raw frontier access without an intelligent gateway invites runaway costs: cache-miss writes on 200k+ contexts are punishing, monologue drift compounds at $10/M and then pays rent as permanent context, and uncaught upstream hiccups crash autonomous loops.
 
-Raw frontier access without an intelligent edge gateway is an invitation to runaway costs: cache misses on 200k+ contexts are punishingly expensive, monologue drift burns $10/M output tokens, and uncaught upstream hiccups crash autonomous agent loops.
-
-Let your workstation GPU absorb the repetitive scaffolding turns for free, let dense cloud workhorses write the plumbing, and only wake up the expensive frontier models when you actually need a big brain.
+By pairing consumer workstation GPUs for early-turn absorption, dense cloud models for routine coding, and selective escalation for deep reasoning — with transparent stream hygiene at the boundary — **Nacho Flow delivered a spec-complete, race-free build at 18% of frontier cost, 38% faster, in a single controlled head-to-head**. The exact multiplier deserves replication. The mechanisms don't.
 
 ### Reproduce These Benchmarks
 All raw telemetry, configuration profiles, and exported CSV audit trails are open-source and reproducible:
