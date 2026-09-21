@@ -89,12 +89,12 @@
 <body>
   <div class="container">
     <h1>💸 The Frontier Tax: Visual Empirical Study</h1>
-    <div class="subtitle">Raw Claude Sonnet 5 ($4.87) vs. Nacho Flow Hybrid Gateway ($0.85) · September 2026</div>
+    <div class="subtitle">Raw Claude Sonnet 5 ($4.87) vs. Nacho Flow Supervised Runtime ($0.85) · September 2026</div>
 
     <!-- Chart 1: Architectural Comparison -->
     <div class="card">
       <div class="card-title">
-        <span>⚡ 1. Head-to-Head Architecture: Firehose vs. Hybrid Gateway</span>
+        <span>⚡ 1. Head-to-Head Architecture: Raw Firehose vs. Supervised Dispatcher</span>
       </div>
       <div class="card-desc">
         Raw Sonnet routes 100% of turns to frontier cloud at $2/$10 per 1M. Nacho Flow routes routine early turns to workstation GPU for $0.00.
@@ -106,8 +106,8 @@ flowchart LR
         S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Cache Hit| Bill1["<b>$4.87 USD</b><br/>31.5 min clock time<br/>9 max-token stalls"]
     end
 
-    subgraph NachoGateway["🟢 Nacho Flow Hybrid Gateway"]
-        Z2["Zoo Code Agent"] --> NF["Nacho Flow Gateway"]
+    subgraph NachoSupervisor["🟢 Nacho Flow (Supervisor & Dispatcher)"]
+        Z2["Zoo Code Agent"] --> NF["Nacho Flow Supervisor"]
         NF -->|Turns 1-35: Scaffolding| Local["Workstation GPU: Gemma 4<br/><b>$0.00</b>"]
         NF -->|Turns 36-58: Core Engine| Qwen["Qwen3 Coder Plus<br/>$0.65/M"]
         NF -->|Turns 59-62: Verification| Gemini["Gemini 3.8 Flash<br/>$0.75/M"]
@@ -156,16 +156,16 @@ sequenceDiagram
     autonumber
     actor Dev as Developer
     participant Agent as Zoo Code IDE
-    participant NF as Nacho Flow Gateway
+    participant NF as Nacho Flow Supervisor
     participant Cloud as OpenRouter
 
-    Note over Dev,Cloud: SCENARIO A: RAW FRONTIER CONTROL (NO GATEWAY)
+    Note over Dev,Cloud: SCENARIO A: RAW FRONTIER CONTROL (UNSUPERVISED)
     Agent->>Cloud: POST /chat/completions (Turn 7)
     Cloud-->>Agent: 200 OK with EMPTY SSE STREAM (Socket Drop)
     Note over Agent: UI FREEZES. Spinner hangs indefinitely.
     Dev->>Agent: Manual Intervention: Clicks Cancel & Retry
 
-    Note over Dev,Cloud: SCENARIO B: NACHO FLOW EDGE GATEWAY
+    Note over Dev,Cloud: SCENARIO B: NACHO FLOW SUPERVISED RUNTIME
     Agent->>NF: POST /chat/completions (Turn 7)
     NF->>Cloud: Forward request with keep-alive
     Cloud-->>NF: Empty SSE Stream (Socket Drop)

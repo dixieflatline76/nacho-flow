@@ -26,7 +26,7 @@ The challenge was not a toy 10-line LeetCode puzzle. We gave an autonomous agent
 
 We ran this exact challenge under strictly controlled conditions:
 
-1. **The Nacho Flow Hybrid Gateway**: Intelligent edge routing across a local workstation GPU (`gemma4:12b-it-qat` on Ollama at **$0.00**), a dense cloud workhorse (`qwen3-coder-plus` at **$0.65/M**), and targeted reasoning escalation (`gemini-3.8-flash` at **$0.75/M**).
+1. **Nacho Flow (Agent Supervisor & Model Dispatcher)**: Intelligent edge routing across a local workstation GPU (`gemma4:12b-it-qat` on Ollama at **$0.00**), a dense cloud workhorse (`qwen3-coder-plus` at **$0.65/M**), and targeted reasoning escalation (`gemini-3.8-flash` at **$0.75/M**).
 2. **The Raw Frontier Control**: Bypassing Nacho Flow completely, pointing the agent **100% raw and direct to Anthropic Claude Sonnet 5** via OpenRouter.
 
 Both runs used the **identical prompt**, the **identical IDE agent harness** ([Zoo Code](https://zoocode.dev) v3.82), the **identical operating system**, and the **identical acceptance criteria** (`go test -race` passing and Monte Carlo simulation operational).
@@ -38,8 +38,8 @@ flowchart LR
         S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Prompt Cache Hit| Bill1["$4.87 USD<br/>31.5 min clock time<br/>9 max-token stalls"]
     end
 
-    subgraph NachoGateway["Nacho Flow Hybrid Gateway"]
-        Z2["Zoo Code Agent"] --> NF["Nacho Flow Gateway"]
+    subgraph NachoSupervisor["🟢 Nacho Flow (Supervisor & Dispatcher)"]
+        Z2["Zoo Code Agent"] --> NF["Nacho Flow Supervisor"]
         NF -->|Turns 1-35: Scaffolding| Local["Workstation GPU: Gemma 4<br/>$0.00"]
         NF -->|Turns 36-58: Core Engine| Qwen["Qwen3 Coder Plus<br/>$0.65/M"]
         NF -->|Turns 59-62: Verification| Gemini["Gemini 3.8 Flash<br/>$0.75/M"]
@@ -51,7 +51,7 @@ flowchart LR
 
 ### 🎯 The Scorecard at a Glance
 
-| Metric | Raw Claude Sonnet 5 Control | Nacho Flow Hybrid Gateway | The Delta (Impact) |
+| Metric | Raw Claude Sonnet 5 Control | Nacho Flow Supervised Runtime | The Delta (Impact) |
 | :--- | :---: | :---: | :---: |
 | **Total Billed Spend** | **$4.8738 USD** | **$0.8500 USD** | 💰 **5.7× cheaper (82.5% cash savings)** |
 | **Clock Time to Complete** | **31.5 minutes** | **19.5 minutes** | ⚡ **12 minutes faster (38% speedup)** |
@@ -61,7 +61,7 @@ flowchart LR
 | **Average Turn Latency** | **19.39 seconds** | **9.32 seconds** | ⏱️ **2.1× faster response cycle** |
 | **Turns Stalling on Max Tokens** | **9 turns** *(choked on 8,192 tok)* | **0 turns** *(clean tool calls)* | 🛑 **12 full minutes of waiting eliminated** |
 | **Agent Tool Retries (Compiles)** | **11 retries** | **11 retries** | 🔄 *Identical compile/test error recovery* |
-| **Gateway Drops / Buffer Stalls**| **1 SSE drop + 9 truncations** | **0 drops · 0 truncations** | 🛡️ *Zero UI lockups or stalls* |
+| **Stream Drops / Buffer Stalls**| **1 SSE drop + 9 truncations** | **0 drops · 0 truncations** | 🛡️ *Zero UI lockups or stalls* |
 | **10,000 Monte Carlo Speed** | **5.40 ms** | **6.14 ms** | 🏎️ *Both blisteringly fast (<1ms delta)* |
 | **Race Conditions (`-race`)** | **0 races (PASS)** | **0 races (PASS)** | 🛡️ *Both thread-safe in Go* |
 
@@ -82,7 +82,7 @@ Scientific honesty requires explicitly listing experimental controls *and* their
 
 **Not controlled, and disclosed:**
 - **N=1 per arm.** Each configuration ran once end-to-end. We report observed, auditable values, not hypothetical means.
-- **The gateway arm received multiple interventions simultaneously**: Model-tier routing, workstation GPU offloading, and gateway-side stream hygiene (Cycle Killer output discipline, retry normalization). We isolate and attribute the dollar savings across these distinct mechanisms in [§ Token Attribution](#-token-attribution-where-did-the-99m-token-gap-come-from).
+- **The Nacho Flow arm received multiple supervisory interventions simultaneously**: Model-tier routing, workstation GPU offloading, and supervisor-level stream hygiene (Cycle Killer output discipline, retry normalization). We isolate and attribute the dollar savings across these distinct mechanisms in [§ Token Attribution](#-token-attribution-where-did-the-99m-token-gap-come-from).
 - **Tuning Provenance**: Nacho Flow's routing thresholds (4k local context ceiling, 1-retry escalation rule) were tuned on earlier sessions of similar Go systems programming tasks. The benchmark measures the system on familiar architectural terrain. See [§ Threats to Validity](#-threats-to-validity-read-this-before-quoting-our-numbers).
 
 ---
@@ -131,11 +131,11 @@ flowchart TD
 ## 🕵️ Token Attribution: Where Did the 9.9M Token Gap Come From?
 
 A skeptical engineer inspecting the numbers will ask:
-> *"Sonnet was billed 12.4M prompt tokens. Nacho Flow only billed 2.5M cloud prompt tokens. If both used the identical harness and prompt, why did the gateway send ~5× less context? Did you run lossy context compaction and misattribute the savings to routing?"*
+> *"Sonnet was billed 12.4M prompt tokens. Nacho Flow only billed 2.5M cloud prompt tokens. If both used the identical harness and prompt, why did Nacho Flow send ~5× less context? Did you run lossy context compaction and misattribute the savings to routing?"*
 
 **The short answer: No. Nacho Flow operated in 100% PRISTINE Context Preservation Mode.**
 
-Not a single token of history, tool schema, or transcript was pruned, summarized, or stripped by the gateway. Nacho Flow's experimental compaction pipeline (`pkg/nts`) remained **completely disabled** (`NTS_ENABLED=false`). If Nacho Flow had trimmed or summarized context, it would have **destroyed prompt caching**, because OpenRouter and Anthropic require byte-for-byte prefix fidelity to trigger the 90%+ cache discount.
+Not a single token of history, tool schema, or transcript was pruned, summarized, or stripped by the runtime supervisor. Nacho Flow's experimental compaction pipeline (`pkg/nts`) remained **completely disabled** (`NTS_ENABLED=false`). If Nacho Flow had trimmed or summarized context, it would have **destroyed prompt caching**, because OpenRouter and Anthropic require byte-for-byte prefix fidelity to trigger the 90%+ cache discount.
 
 So where did the ~10 million prompt tokens vanish? Through three distinct mathematical realities of agent physics:
 
@@ -239,16 +239,16 @@ sequenceDiagram
     autonumber
     actor Dev as Developer
     participant Agent as Zoo Code IDE
-    participant NF as Nacho Flow Gateway
+    participant NF as Nacho Flow Supervisor
     participant Cloud as OpenRouter
 
-    Note over Dev,Cloud: SCENARIO A: RAW FRONTIER CONTROL (NO GATEWAY)
+    Note over Dev,Cloud: SCENARIO A: RAW FRONTIER CONTROL (UNSUPERVISED)
     Agent->>Cloud: POST /chat/completions (Turn 7)
     Cloud-->>Agent: 200 OK with EMPTY SSE STREAM (Socket Drop)
     Note over Agent: UI FREEZES. Spinner hangs indefinitely.
     Dev->>Agent: Manual Intervention: Clicks Cancel & Retry
 
-    Note over Dev,Cloud: SCENARIO B: NACHO FLOW EDGE GATEWAY
+    Note over Dev,Cloud: SCENARIO B: NACHO FLOW SUPERVISED RUNTIME
     Agent->>NF: POST /chat/completions (Turn 7)
     NF->>Cloud: Forward request with keep-alive
     Cloud-->>NF: Empty SSE Stream (Socket Drop)
@@ -259,7 +259,7 @@ sequenceDiagram
     Note over Dev,Agent: Agent never flinched. Developer never noticed.
 ```
 
-Without an edge gateway, an upstream hiccup crashes the agent loop and demands human intervention. With Nacho Flow, the `StreamNormalizer` and `DefectiveContentDefense` catch empty frames in-flight and execute a transparent backoff retry in $< 200\text{ms}$.
+Without an active runtime supervisor, an upstream hiccup crashes the agent loop and demands human intervention. With Nacho Flow, the `StreamNormalizer` and `DefectiveContentDefense` catch empty frames in-flight and execute a transparent backoff retry in $< 200\text{ms}$.
 
 ### Act III: The Shakespearean Monologue & The 8,192-Token Chokehold
 
@@ -289,7 +289,7 @@ pie title Raw Claude Sonnet 5 Turn Completion Types (84 Turns)
 > [!CAUTION]
 > **The 12-Minute Trap**: 9 turns × ~80 seconds ≈ 720 seconds — **12 full minutes of pure waiting** while the model generated ~73,700 tokens of text that got cut off mid-sentence anyway, billed at $10.00/M.
 
-Why didn't this happen on Nacho Flow? The **🎸 Cycle Killer** monitors n-gram repetition, token acceleration, and tool-call formatting in real time. When a model drifts into prose soliloquy instead of issuing tool calls, the gateway terminates the runaway stream in $< 3\text{s}$ and injects a corrective system message forcing the model back onto the rails. On Nacho Flow: **zero max-token stalls, zero truncations, 9.3-second average generation time**.
+Why didn't this happen on Nacho Flow? The **🎸 Cycle Killer** monitors n-gram repetition, token acceleration, and tool-call formatting in real time. When a model drifts into prose soliloquy instead of issuing tool calls, the supervisor terminates the runaway stream in $< 3\text{s}$ and injects a corrective system message forcing the model back onto the rails. On Nacho Flow: **zero max-token stalls, zero truncations, 9.3-second average generation time**.
 
 ### Act IV: The Context Snowball Avalanche (Turns 50–84)
 
@@ -473,7 +473,7 @@ What happens when you scale these numbers from a single weekend experiment to an
 
 Consider a team of **10 software engineers**, each running **5 autonomous coding sessions per day** (refactoring tasks, feature implementations, bug investigations, or test generation):
 
-| Metric | Raw Claude Sonnet 5 | Nacho Flow Hybrid Gateway | Annual Organizational Impact |
+| Metric | Raw Claude Sonnet 5 | Nacho Flow Supervised Runtime | Annual Organizational Impact |
 | :--- | :---: | :---: | :---: |
 | **Cost per Task** | $4.87 | $0.85 | **-$4.02 per task** |
 | **Daily Spend (50 tasks)** | $243.50 | $42.50 | **$201.00 saved per day** |
@@ -488,7 +488,7 @@ A decision-maker evaluating Nacho Flow cares about operational reality:
 * **"What if my developers don't have an RTX 4090?"**  
   Nacho Flow does not require flagship workstation silicon. Laptops with 8GB–16GB VRAM (or Apple Silicon unified memory) run quantized 7B/8B models (e.g. `qwen2.5-coder:7b-instruct-q4_K_M` or `gemma2:9b`) smoothly for early scaffolding. Furthermore, on developer machines with **zero local GPU**, Tier 1 can be pointed to an ultra-low-cost cloud endpoint (such as DeepSeek V3 at $0.20/M), retaining **over 75% of total savings**.
 * **"What if run-to-run variance means the real multiplier is 'only' 3× instead of 5.7×?"**  
-  Even under conservative assumptions where Sonnet has an unusually clean run, saving 65% of agent spend pays for the gateway integration within **10 to 12 sessions**.
+  Even under conservative assumptions where Sonnet has an unusually clean run, saving 65% of agent spend pays for adopting Nacho Flow within **10 to 12 sessions**.
 * **Zero Integration Friction**: Zero agent code changes. Point Zoo Code, Cline, Aider, or Cursor to `http://127.0.0.1:8000/v1` with a single unified OpenRouter API key.
 
 ---
@@ -526,7 +526,7 @@ Auto-Tuner v2 established the 4,000-token threshold and 1-retry bound via heuris
 
 ## 🏁 Conclusion & Reproducibility
 
-Prompt caching is a welcome feature, but **it is not an edge routing strategy**. Raw frontier access without an intelligent gateway invites runaway costs: cache-miss writes on 200k+ contexts are punishing, monologue drift compounds at $10/M and then pays rent as permanent context, and uncaught upstream hiccups crash autonomous loops.
+Prompt caching is a welcome feature, but **it is not an edge routing strategy**. Raw frontier access without an active agent supervisor invites runaway costs: cache-miss writes on 200k+ contexts are punishing, monologue drift compounds at $10/M and then pays rent as permanent context, and uncaught upstream hiccups crash autonomous loops.
 
 By pairing consumer workstation GPUs for early-turn absorption, dense cloud models for routine coding, and selective escalation for deep reasoning — with transparent stream hygiene at the boundary — **Nacho Flow delivered a spec-complete, race-free build at 18% of frontier cost, 38% faster, in a single controlled head-to-head**. The exact multiplier deserves replication. The mechanisms don't.
 
