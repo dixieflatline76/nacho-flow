@@ -2,7 +2,7 @@
   "name": "nacho-flow",
   "displayName": "Nacho Flow",
   "description": "Active execution runtime for autonomous coding agents (Cline, Zoo Code, Cursor). In-flight loop defense, context compaction, and intelligent local/cloud model dispatch.",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "publisher": "dixieflatline76",
   "license": "MIT",
   "repository": {
