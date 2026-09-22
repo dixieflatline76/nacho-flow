@@ -51,17 +51,17 @@ func TestOptimizer_GroundTruth_Scenario1_8kCliff(t *testing.T) {
 		t.Fatalf("Optimizer failed: %v", err)
 	}
 
-	if result.OptimalThreshold != 8000 {
-		t.Errorf("Expected optimal threshold 8000, got %d", result.OptimalThreshold)
+	if result.Tiers[0].OptimalThreshold != 8000 {
+		t.Errorf("Expected optimal threshold 8000, got %d", result.Tiers[0].OptimalThreshold)
 	}
 
 	expectedKws := []string{"deadlock", "mutex"}
-	if strings.Join(result.FrictionKeywords, ",") != strings.Join(expectedKws, ",") {
-		t.Errorf("Expected friction keywords %v, got %v", expectedKws, result.FrictionKeywords)
+	if strings.Join(result.Tiers[0].FrictionKeywords, ",") != strings.Join(expectedKws, ",") {
+		t.Errorf("Expected friction keywords %v, got %v", expectedKws, result.Tiers[0].FrictionKeywords)
 	}
 
-	if !strings.Contains(result.SynthesizedRule, "Tokens < 8000") || !strings.Contains(result.SynthesizedRule, "deadlock") {
-		t.Errorf("Unexpected synthesized rule: %s", result.SynthesizedRule)
+	if !strings.Contains(result.Tiers[0].SynthesizedRule, "Tokens < 8000") || !strings.Contains(result.Tiers[0].SynthesizedRule, "deadlock") {
+		t.Errorf("Unexpected synthesized rule: %s", result.Tiers[0].SynthesizedRule)
 	}
 }
 
@@ -96,14 +96,14 @@ func TestOptimizer_GroundTruth_Scenario2_14kClean(t *testing.T) {
 		t.Fatalf("Optimizer failed: %v", err)
 	}
 
-	if result.OptimalThreshold != 14000 {
-		t.Errorf("Expected optimal threshold 14000, got %d", result.OptimalThreshold)
+	if result.Tiers[0].OptimalThreshold != 14000 {
+		t.Errorf("Expected optimal threshold 14000, got %d", result.Tiers[0].OptimalThreshold)
 	}
-	if len(result.FrictionKeywords) != 0 {
-		t.Errorf("Expected 0 friction keywords, got %v", result.FrictionKeywords)
+	if len(result.Tiers[0].FrictionKeywords) != 0 {
+		t.Errorf("Expected 0 friction keywords, got %v", result.Tiers[0].FrictionKeywords)
 	}
-	if result.SynthesizedRule != "Tokens < 14000" {
-		t.Errorf("Unexpected synthesized rule: %s", result.SynthesizedRule)
+	if result.Tiers[0].SynthesizedRule != "Tokens < 14000" {
+		t.Errorf("Unexpected synthesized rule: %s", result.Tiers[0].SynthesizedRule)
 	}
 }
 
@@ -147,13 +147,13 @@ func TestOptimizer_GroundTruth_Scenario3_10kSQL(t *testing.T) {
 		t.Fatalf("Optimizer failed: %v", err)
 	}
 
-	if result.OptimalThreshold != 10000 {
-		t.Errorf("Expected optimal threshold 10000, got %d", result.OptimalThreshold)
+	if result.Tiers[0].OptimalThreshold != 10000 {
+		t.Errorf("Expected optimal threshold 10000, got %d", result.Tiers[0].OptimalThreshold)
 	}
 
 	expectedKws := []string{"migration", "postgres", "sql"}
-	if strings.Join(result.FrictionKeywords, ",") != strings.Join(expectedKws, ",") {
-		t.Errorf("Expected friction keywords %v, got %v", expectedKws, result.FrictionKeywords)
+	if strings.Join(result.Tiers[0].FrictionKeywords, ",") != strings.Join(expectedKws, ",") {
+		t.Errorf("Expected friction keywords %v, got %v", expectedKws, result.Tiers[0].FrictionKeywords)
 	}
 }
 
@@ -176,11 +176,11 @@ func TestOptimizer_Multimodal_LocalVisionSuccess(t *testing.T) {
 		t.Fatalf("Optimizer failed: %v", err)
 	}
 
-	if result.RestrictImages {
+	if result.Tiers[0].RestrictImages {
 		t.Errorf("Expected RestrictImages=false for clean vision turns")
 	}
-	if strings.Contains(result.SynthesizedRule, "!HasImages") {
-		t.Errorf("Rule should NOT restrict images: %s", result.SynthesizedRule)
+	if strings.Contains(result.Tiers[0].SynthesizedRule, "!HasImages") {
+		t.Errorf("Rule should NOT restrict images: %s", result.Tiers[0].SynthesizedRule)
 	}
 }
 
@@ -213,11 +213,11 @@ func TestOptimizer_Multimodal_LocalVisionFriction(t *testing.T) {
 		t.Fatalf("Optimizer failed: %v", err)
 	}
 
-	if !result.RestrictImages {
+	if !result.Tiers[0].RestrictImages {
 		t.Errorf("Expected RestrictImages=true for failing vision turns")
 	}
-	if !strings.Contains(result.SynthesizedRule, "!HasImages") {
-		t.Errorf("Rule should restrict images: %s", result.SynthesizedRule)
+	if !strings.Contains(result.Tiers[0].SynthesizedRule, "!HasImages") {
+		t.Errorf("Rule should restrict images: %s", result.Tiers[0].SynthesizedRule)
 	}
 }
 
@@ -252,8 +252,8 @@ func TestOptimizer_PreservesGuardrails(t *testing.T) {
 		t.Fatalf("Optimizer failed: %v", err)
 	}
 
-	if !strings.Contains(result.SynthesizedRule, "Retries < 2") {
-		t.Errorf("Expected preserved Retries < 2 guardrail, got: %s", result.SynthesizedRule)
+	if !strings.Contains(result.Tiers[0].SynthesizedRule, "Retries < 2") {
+		t.Errorf("Expected preserved Retries < 2 guardrail, got: %s", result.Tiers[0].SynthesizedRule)
 	}
 }
 
@@ -289,8 +289,8 @@ func TestOptimizer_RespectsMaxContext(t *testing.T) {
 		t.Fatalf("Optimizer failed: %v", err)
 	}
 
-	if result.OptimalThreshold > 20000 {
-		t.Errorf("Expected threshold <= 20000, got: %d", result.OptimalThreshold)
+	if result.Tiers[0].OptimalThreshold > 20000 {
+		t.Errorf("Expected threshold <= 20000, got: %d", result.Tiers[0].OptimalThreshold)
 	}
 }
 
@@ -398,8 +398,8 @@ func TestOptimizer_ZeroRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Optimize failed on nil records: %v", err)
 	}
-	if result.OptimalThreshold != 16000 {
-		t.Errorf("Expected default 16000 threshold, got %d", result.OptimalThreshold)
+	if result.Tiers[0].OptimalThreshold != 16000 {
+		t.Errorf("Expected default 16000 threshold, got %d", result.Tiers[0].OptimalThreshold)
 	}
 
 	// Zero records with existing tier
@@ -415,8 +415,8 @@ func TestOptimizer_ZeroRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Optimize failed on zero records with existing config: %v", err)
 	}
-	if !strings.Contains(res2.SynthesizedRule, "Retries < 2") {
-		t.Errorf("Expected preserved Retries < 2 on zero records, got: %s", res2.SynthesizedRule)
+	if !strings.Contains(res2.Tiers[0].SynthesizedRule, "Retries < 2") {
+		t.Errorf("Expected preserved Retries < 2 on zero records, got: %s", res2.Tiers[0].SynthesizedRule)
 	}
 
 	// Zero records with malformed existing when
@@ -563,14 +563,14 @@ func TestOptimizer_SessionReplayPipeline_v2(t *testing.T) {
 	if res.TotalSessions != 5 {
 		t.Errorf("Expected 5 total sessions, got %d", res.TotalSessions)
 	}
-	if res.OptimalThreshold > 12000 {
-		t.Errorf("Expected threshold <= 12000, got %d", res.OptimalThreshold)
+	if res.Tiers[0].OptimalThreshold > 12000 {
+		t.Errorf("Expected threshold <= 12000, got %d", res.Tiers[0].OptimalThreshold)
 	}
-	if res.OptimalRetries < 1 || res.OptimalRetries > 2 {
-		t.Errorf("Expected OptimalRetries 1 or 2, got %d", res.OptimalRetries)
+	if res.Tiers[0].OptimalRetries < 1 || res.Tiers[0].OptimalRetries > 2 {
+		t.Errorf("Expected OptimalRetries 1 or 2, got %d", res.Tiers[0].OptimalRetries)
 	}
-	if !strings.Contains(res.SynthesizedRule, "Retries <") {
-		t.Errorf("Expected synthesized rule to contain 'Retries <', got %s", res.SynthesizedRule)
+	if !strings.Contains(res.Tiers[0].SynthesizedRule, "Retries <") {
+		t.Errorf("Expected synthesized rule to contain 'Retries <', got %s", res.Tiers[0].SynthesizedRule)
 	}
 	if res.AvgTurnsPerSession <= 0 {
 		t.Errorf("Expected AvgTurnsPerSession > 0, got %f", res.AvgTurnsPerSession)

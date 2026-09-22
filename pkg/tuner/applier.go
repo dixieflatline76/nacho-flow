@@ -36,18 +36,23 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 		return "", fmt.Errorf("failed to create backup file at %s: %w", backupPath, err)
 	}
 
-	// 2. Mutate Local Tier rule
+	// 2. Mutate Tier rules matching result.Tiers
 	updated := false
-	for i, tier := range cfg.Tiers {
-		if IsLocalTier(tier, cfg.Providers) {
-			cfg.Tiers[i].When = result.SynthesizedRule
-			updated = true
-			break
+	for _, tunedTier := range result.Tiers {
+		if tunedTier.SynthesizedRule == "" {
+			continue
+		}
+		for i := range cfg.Tiers {
+			if cfg.Tiers[i].Name == tunedTier.TierName || (len(result.Tiers) == 1 && IsLocalTier(cfg.Tiers[i], cfg.Providers)) {
+				cfg.Tiers[i].When = tunedTier.SynthesizedRule
+				updated = true
+				break
+			}
 		}
 	}
 
 	if !updated {
-		return backupPath, fmt.Errorf("no tunable local tier found in config (tiers must specify a local provider like 'ollama'/'vllm'/'lmstudio' or include 'local'/'gpu' in name)")
+		return backupPath, fmt.Errorf("no matching tiers found in config to apply tuned rules")
 	}
 
 	// 3. Serialize updated config

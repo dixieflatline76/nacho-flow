@@ -19,6 +19,7 @@ type TrafficLogger struct {
 	writer   *bufio.Writer
 	queue    chan TurnRecord
 	closeReq chan struct{}
+	flushReq chan chan struct{}
 	done     chan struct{}
 	closed   atomic.Bool
 }
@@ -50,6 +51,7 @@ func NewTrafficLogger(filePath string, bufferSize int) (*TrafficLogger, error) {
 		writer:   bufio.NewWriterSize(file, 64*1024), // 64KB write buffer
 		queue:    make(chan TurnRecord, bufferSize),
 		closeReq: make(chan struct{}),
+		flushReq: make(chan chan struct{}),
 		done:     make(chan struct{}),
 	}
 
@@ -74,6 +76,18 @@ func (tl *TrafficLogger) worker() {
 			tl.writeRecord(record)
 		case <-flushTicker.C:
 			tl.flush()
+		case done := <-tl.flushReq:
+			for {
+				select {
+				case record := <-tl.queue:
+					tl.writeRecord(record)
+				default:
+					goto flushed
+				}
+			}
+		flushed:
+			tl.flush()
+			close(done)
 		case <-tl.closeReq:
 			// Drain remaining records in queue before terminating
 			for {
@@ -103,6 +117,19 @@ func (tl *TrafficLogger) flush() {
 	}
 	if tl.file != nil {
 		_ = tl.file.Sync()
+	}
+}
+
+// Flush synchronizes all currently queued TurnRecord entries to disk.
+func (tl *TrafficLogger) Flush() {
+	if tl.closed.Load() {
+		return
+	}
+	done := make(chan struct{})
+	select {
+	case tl.flushReq <- done:
+		<-done
+	case <-time.After(2 * time.Second):
 	}
 }
 
@@ -170,3 +197,80 @@ func ReadRecords(filePath string, limit int) ([]TurnRecord, error) {
 
 	return records, scanner.Err()
 }
+
+// ReadCompleteSessions reads historical TurnRecord entries preserving full session trajectories.
+// If maxSessions > 0, it returns all turns belonging to the most recent maxSessions complete sessions.
+// If maxSessions <= 0, it returns all turns across all recorded sessions without arbitrary truncation.
+// Lines that are corrupt or partially written (e.g. from concurrent writes at EOF) are safely skipped.
+func ReadCompleteSessions(filePath string, maxSessions int) ([]TurnRecord, error) {
+	filePath = filepath.Clean(filePath)
+	file, err := os.Open(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []TurnRecord{}, nil
+		}
+		return nil, fmt.Errorf("failed to open traffic log for reading: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	sessions := make(map[string][]TurnRecord)
+	sessionOrder := make([]string, 0)
+	sessionIndex := make(map[string]int)
+
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // up to 10MB lines
+
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var r TurnRecord
+		if err := json.Unmarshal(line, &r); err != nil {
+			// Skip corrupted or incomplete trailing lines from concurrent appends
+			continue
+		}
+
+		key := r.SessionID
+		if r.RootPromptHash != 0 {
+			key = fmt.Sprintf("%s:%d", r.SessionID, r.RootPromptHash)
+		}
+		if key == "" {
+			key = fmt.Sprintf("anon_%d_%s", lineNum, r.RequestID)
+		}
+
+		if _, exists := sessionIndex[key]; !exists {
+			sessionIndex[key] = len(sessionOrder)
+			sessionOrder = append(sessionOrder, key)
+
+			// If maxSessions is set and exceeded, evict the oldest session
+			if maxSessions > 0 && len(sessionOrder) > maxSessions {
+				oldest := sessionOrder[0]
+				sessionOrder = sessionOrder[1:]
+				delete(sessions, oldest)
+				delete(sessionIndex, oldest)
+				for i, k := range sessionOrder {
+					sessionIndex[k] = i
+				}
+			}
+		}
+
+		sessions[key] = append(sessions[key], r)
+	}
+
+	totalRecords := 0
+	for _, k := range sessionOrder {
+		totalRecords += len(sessions[k])
+	}
+
+	records := make([]TurnRecord, 0, totalRecords)
+	for _, k := range sessionOrder {
+		records = append(records, sessions[k]...)
+	}
+
+	return records, scanner.Err()
+}
+

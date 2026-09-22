@@ -686,23 +686,37 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
     expect(document.getElementById('active-preset-badge')?.textContent).toBe('📋 Profile 3');
   });
 
-  describe('updateOptimization (Auto-Tuner v2 Inspector)', () => {
-    it('renders Auto-Tuner v2 Inline Inspector with session dynamics, recovery meters, and diff', () => {
+  describe('updateOptimization (Auto-Tuner v3 Inspector)', () => {
+    it('renders Auto-Tuner v3 Inline Inspector with session dynamics, recovery meters, and multi-tier diffs', () => {
       postMessage('updateOptimization', {
-        target_tier_name: 'Tier 1: Local GPU',
-        original_rule: 'Tokens < 16000 && Retries < 2',
-        synthesized_rule: 'Tokens < 4000 && Retries < 1',
+        tiers: [
+          {
+            tier_name: 'Tier 1: Local GPU',
+            original_rule: 'Tokens < 16000 && Retries < 2',
+            synthesized_rule: 'Tokens < 4000 && Retries < 1',
+            optimal_threshold: 4000,
+            optimal_retries: 1,
+            restrict_images: false,
+            restrict_tools: false,
+            friction_keywords: ['sql']
+          },
+          {
+            tier_name: 'Tier 2: Cloud Coder',
+            original_rule: 'Retries < 2',
+            synthesized_rule: 'Tokens < 32000 && Retries < 2',
+            optimal_threshold: 32000,
+            optimal_retries: 2,
+            restrict_images: false,
+            restrict_tools: false,
+            friction_keywords: []
+          }
+        ],
         total_sessions: 23,
         avg_turns_per_session: 36.8,
         escalation_rate: 0.783,
         total_sample_turns: 847,
         retries_eliminated: 119,
         projected_savings_usd: 8.20,
-        optimal_threshold: 4000,
-        optimal_retries: 1,
-        restrict_images: false,
-        restrict_tools: false,
-        friction_keywords: ['sql'],
         recovery_stats: {
           'qwen3-coder-plus': {
             model: 'qwen3-coder-plus',
@@ -726,7 +740,7 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       expect(banner?.style.display).toBe('block');
 
       const content = banner?.textContent || '';
-      expect(content).toContain('Auto-Tuner v2: Session Replay Optimizer');
+      expect(content).toContain('Auto-Tuner v3: Multi-Tier Min-Conflicts Optimizer');
       expect(content).toContain('~119 Retries Avoided');
       expect(content).toContain('$8.20/mo Saved');
 
@@ -742,19 +756,24 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       expect(content).toContain('gemma-4-26b');
       expect(content).toContain('3% self-recovery');
 
-      // Signals
+      // Multi-Tier Signals & Diffs
+      expect(content).toContain('Tier 1: Local GPU');
       expect(content).toMatch(/Context Cliff:\s*4[.,]000 tokens/);
       expect(content).toContain('Retry Bound: 1 max retries');
       expect(content).toContain('Vision: Clean');
       expect(content).toContain('Tools: Clean');
       expect(content).toContain('Friction Keywords: sql');
-
-      // Diff Viewer
       expect(content).toContain('- when: "Tokens < 16000 && Retries < 2"');
       expect(content).toContain('+ when: "Tokens < 4000 && Retries < 1"');
 
+      expect(content).toContain('Tier 2: Cloud Coder');
+      expect(content).toMatch(/Context Cliff:\s*32[.,]000 tokens/);
+      expect(content).toContain('Retry Bound: 2 max retries');
+      expect(content).toContain('- when: "Retries < 2"');
+      expect(content).toContain('+ when: "Tokens < 32000 && Retries < 2"');
+
       // Actions
-      expect(content).toContain('Apply Optimized Policy to config.yaml');
+      expect(content).toContain('Apply Optimized Multi-Tier Policy to config.yaml');
       expect(content).toContain('Dismiss');
     });
 
@@ -765,12 +784,16 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       expect(banner?.innerHTML).toBe('');
     });
 
-    it('renders single-turn baseline fallback when session data is absent', () => {
+    it('renders single-turn baseline mode when session data is absent', () => {
       postMessage('updateOptimization', {
-        target_tier_name: 'Local ROCm',
-        synthesized_rule: 'Tokens < 12000',
-        total_sample_turns: 500,
-        optimal_threshold: 12000
+        tiers: [
+          {
+            tier_name: 'Local ROCm',
+            synthesized_rule: 'Tokens < 12000',
+            optimal_threshold: 12000
+          }
+        ],
+        total_sample_turns: 500
       });
 
       const banner = document.getElementById('tuner-banner');

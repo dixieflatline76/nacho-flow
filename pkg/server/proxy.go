@@ -43,7 +43,9 @@ type Server struct {
 	transport                *http.Transport
 	ringBuffer               *telemetry.RingBufferSink
 	eventBroker              *telemetry.EventBroker
-	tuner                    *tuner.CostPenaltyOptimizer
+	tuner                    tuner.OptimizationStrategy
+	tuningRunner             TuningRunner
+	trafficLogger            *telemetry.TrafficLogger
 	diskStore                *store.DiskStore
 	ntsTransformer           *nts.Transformer
 	trafficLogPath           string
@@ -106,8 +108,16 @@ func (s *Server) GetLastDiskWriteUnixNano() int64 {
 	return s.lastDiskWriteUnixNano.Load()
 }
 
-func (s *Server) SetTuner(t *tuner.CostPenaltyOptimizer) {
+func (s *Server) SetTuner(t tuner.OptimizationStrategy) {
 	s.tuner = t
+}
+
+func (s *Server) SetTuningRunner(runner TuningRunner) {
+	s.tuningRunner = runner
+}
+
+func (s *Server) SetTrafficLogger(tl *telemetry.TrafficLogger) {
+	s.trafficLogger = tl
 }
 
 func (s *Server) SetDiskStore(ds *store.DiskStore) {
@@ -250,10 +260,11 @@ func NewServerWithTelemetryAndRegistry(
 		shieldMgr:      shieldMgr,
 		logger:         logger,
 		transport:      transport,
-		tuner:          tuner.NewCostPenaltyOptimizer(),
+		tuner:          tuner.NewMinConflictsOptimizer(tuner.DefaultTuningPolicy()),
 		ntsTransformer: ntsTr,
 		startTime:      time.Now(),
 	}
+	srv.tuningRunner = NewInProcessTuningRunner(srv)
 
 	srv.state.Store(&runtimeState{
 		config:         cfg,

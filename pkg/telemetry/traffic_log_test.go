@@ -439,3 +439,178 @@ func BenchmarkStatsTracker_Record_ZeroAlloc(b *testing.B) {
 	}
 }
 
+// Test: ReadCompleteSessions preserves whole sessions without truncating mid-session
+func TestReadCompleteSessions_PreservesFullTrajectories(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "sessions_test.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 100)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	baseTime := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
+
+	// Emit Session A: 3 turns
+	for i := 1; i <= 3; i++ {
+		logger.Emit(TurnRecord{
+			Timestamp:      baseTime.Add(time.Duration(i) * time.Minute),
+			RequestID:      "req-A-" + string(rune('0'+i)),
+			SessionID:      "sess-A",
+			RootPromptHash: 100,
+			Tokens:         1000 * i,
+			SelectedTier:   "Tier1",
+		})
+	}
+
+	// Emit Session B: 4 turns
+	for i := 1; i <= 4; i++ {
+		logger.Emit(TurnRecord{
+			Timestamp:      baseTime.Add(time.Duration(10+i) * time.Minute),
+			RequestID:      "req-B-" + string(rune('0'+i)),
+			SessionID:      "sess-B",
+			RootPromptHash: 200,
+			Tokens:         2000 * i,
+			SelectedTier:   "Tier1",
+		})
+	}
+
+	// Emit Session C: 2 turns
+	for i := 1; i <= 2; i++ {
+		logger.Emit(TurnRecord{
+			Timestamp:      baseTime.Add(time.Duration(20+i) * time.Minute),
+			RequestID:      "req-C-" + string(rune('0'+i)),
+			SessionID:      "sess-C",
+			RootPromptHash: 300,
+			Tokens:         3000 * i,
+			SelectedTier:   "Tier2",
+		})
+	}
+
+	if err := logger.Close(); err != nil {
+		t.Fatalf("Failed to close logger: %v", err)
+	}
+
+	// Read last 2 sessions (should be Session B and Session C, exactly 4 + 2 = 6 records)
+	records, err := ReadCompleteSessions(logPath, 2)
+	if err != nil {
+		t.Fatalf("ReadCompleteSessions failed: %v", err)
+	}
+
+	if len(records) != 6 {
+		t.Fatalf("Expected 6 records for 2 complete sessions, got %d", len(records))
+	}
+
+	// Verify Session B has all 4 turns preserved (not truncated!)
+	sessionBTurns := 0
+	sessionCTurns := 0
+	for _, r := range records {
+		if r.SessionID == "sess-B" {
+			sessionBTurns++
+		} else if r.SessionID == "sess-C" {
+			sessionCTurns++
+		}
+	}
+	if sessionBTurns != 4 {
+		t.Errorf("Expected 4 turns for Session B, got %d", sessionBTurns)
+	}
+	if sessionCTurns != 2 {
+		t.Errorf("Expected 2 turns for Session C, got %d", sessionCTurns)
+	}
+}
+
+// Test: ReadCompleteSessions with maxSessions=0 returns all complete sessions
+func TestReadCompleteSessions_Uncapped(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "uncapped_test.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 100)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	baseTime := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
+	for i := 1; i <= 5; i++ {
+		logger.Emit(TurnRecord{
+			Timestamp:      baseTime.Add(time.Duration(i) * time.Minute),
+			RequestID:      "req-" + string(rune('0'+i)),
+			SessionID:      "sess-" + string(rune('0'+i)),
+			RootPromptHash: uint64(i * 100),
+			Tokens:         500,
+		})
+	}
+	if err := logger.Close(); err != nil {
+		t.Fatalf("Failed to close logger: %v", err)
+	}
+
+	records, err := ReadCompleteSessions(logPath, 0)
+	if err != nil {
+		t.Fatalf("ReadCompleteSessions failed: %v", err)
+	}
+
+	if len(records) != 5 {
+		t.Fatalf("Expected all 5 records, got %d", len(records))
+	}
+}
+
+// Test: ReadCompleteSessions tolerates a trailing corrupted line (simulating concurrent proxy append)
+func TestReadCompleteSessions_TrailingPartialLine(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "partial_test.jsonl")
+
+	// Write 1 valid record and 1 partial line
+	validJSON := `{"timestamp":"2026-09-21T10:00:00Z","request_id":"req-1","session_id":"sess-1","root_prompt_hash":123,"tokens":100,"selected_tier":"T1"}` + "\n"
+	partialJSON := `{"timestamp":"2026-09-21T10:01:00Z","request_id":"req-2","session_id":"se`
+
+	if err := os.WriteFile(logPath, []byte(validJSON+partialJSON), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	records, err := ReadCompleteSessions(logPath, 0)
+	if err != nil {
+		t.Fatalf("ReadCompleteSessions failed: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 valid record, got %d", len(records))
+	}
+	if records[0].RequestID != "req-1" {
+		t.Errorf("Expected req-1, got %s", records[0].RequestID)
+	}
+}
+
+// Test: TrafficLogger.Flush synchronizes queue to disk without closing
+func TestTrafficLogger_Flush(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "flush_test.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 500)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+	defer func() { _ = logger.Close() }()
+
+	logger.Emit(TurnRecord{
+		Timestamp:    time.Now().UTC(),
+		RequestID:    "flush-req-1",
+		SessionID:    "flush-sess",
+		SelectedTier: "T1",
+	})
+
+	// Before closing, flush to disk
+	logger.Flush()
+
+	// Verify file is readable immediately
+	records, err := ReadRecords(logPath, 0)
+	if err != nil {
+		t.Fatalf("Failed to read flushed records: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 flushed record on disk, got %d", len(records))
+	}
+	if records[0].RequestID != "flush-req-1" {
+		t.Errorf("Expected flush-req-1, got %s", records[0].RequestID)
+	}
+}
+
+

@@ -688,13 +688,22 @@ tiers:
       (extensionController as any).dashboardPanel = mockDashboardPanel;
 
       await extensionController.applyOptimization({
-        target_tier_name: 'Tier 1: Local GPU Free',
-        synthesized_rule: 'Tokens < 64000 && Retries == 0'
+        tiers: [
+          {
+            tier_name: 'Tier 1: Local GPU Free',
+            synthesized_rule: 'Tokens < 64000 && Retries == 0'
+          },
+          {
+            tier_name: 'Tier 2: Cloud Workhorse',
+            synthesized_rule: 'Tokens < 128000 && Retries < 2'
+          }
+        ]
       });
       expect(mockRestClient.updateConfigYaml).toHaveBeenCalledWith(expect.stringContaining('Tokens < 64000 && Retries == 0'));
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledWith(expect.stringContaining('Tokens < 128000 && Retries < 2'));
       expect(mockDashboardPanel.updateOptimization).toHaveBeenCalledWith(null);
       expect(vscode.window.withProgress).toHaveBeenCalledWith(
-        expect.objectContaining({ title: '🎉 Applied Auto-Tuner policy to Tier 1: Local GPU Free!' }),
+        expect.objectContaining({ title: '🎉 Applied Auto-Tuner v3 policy across 2 tier(s)!' }),
         expect.any(Function)
       );
     });
@@ -710,8 +719,12 @@ tiers:
       };
       (extensionController as any).restClient = mockRestClient;
       await extensionController.applyOptimization({
-        target_tier_name: 'Tier 1: Local GPU Free',
-        synthesized_rule: 'Tokens < 64000'
+        tiers: [
+          {
+            tier_name: 'Tier 1: Local GPU Free',
+            synthesized_rule: 'Tokens < 64000'
+          }
+        ]
       });
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Nacho Flow: Failed to apply optimization: Update failed');
     });
@@ -2343,20 +2356,20 @@ other_key:
       const modified = extensionController.replaceTierRuleInYaml(sampleYaml, "Tier 1", "Tokens < 500");
       expect(modified).toContain('"Tokens < 500"');
 
-      // 5. applyOptimization without target_tier_name or synthesized_rule
+      // 5. applyOptimization without tiers
       const warnSpy = jest.spyOn(vscode.window, 'showWarningMessage');
-      await extensionController.applyOptimization({ target_tier_name: '' });
+      await extensionController.applyOptimization({ tiers: [] });
       expect(warnSpy).toHaveBeenCalledWith('Nacho Flow: No optimization policy available to apply');
 
       // 6. applyOptimization when rule cannot be located
       (extensionController as any).restClient.getConfigYaml = jest.fn().mockResolvedValue(`tiers:\n  - name: "Different"\n    when: "true"\n`);
-      await extensionController.applyOptimization({ target_tier_name: 'Target', synthesized_rule: 'rule' });
-      expect(warnSpy).toHaveBeenCalledWith('Nacho Flow: Could not locate rule for tier "Target" in config YAML');
+      await extensionController.applyOptimization({ tiers: [{ tier_name: 'Target', synthesized_rule: 'rule' }] });
+      expect(warnSpy).toHaveBeenCalledWith('Nacho Flow: Could not locate matching tiers in config YAML');
 
       // 7. applyOptimization when getConfigYaml returns null
       const errSpy = jest.spyOn(vscode.window, 'showErrorMessage');
       (extensionController as any).restClient.getConfigYaml = jest.fn().mockResolvedValue(null);
-      await extensionController.applyOptimization({ target_tier_name: 'Target', synthesized_rule: 'rule' });
+      await extensionController.applyOptimization({ tiers: [{ tier_name: 'Target', synthesized_rule: 'rule' }] });
       expect(errSpy).toHaveBeenCalledWith('Nacho Flow: Unable to fetch configuration from daemon');
     });
   });

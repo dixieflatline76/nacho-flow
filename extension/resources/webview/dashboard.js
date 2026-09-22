@@ -771,24 +771,10 @@
 
 		const savingsVal = optData.projected_savings_usd !== undefined ? optData.projected_savings_usd : (optData.projected_savings || 0);
 		const savingsFormatted = typeof savingsVal === 'number' ? `$${savingsVal.toFixed(2)}` : savingsVal;
-		const rule = optData.synthesized_rule || optData.rule || 'Tokens < 16000 && Retries < 1';
-		const tierName = optData.target_tier_name || 'Tier 1 (Local GPU)';
 		const sampleSize = optData.total_sample_turns || optData.sample_size || 0;
 		const retriesAvoided = optData.retries_eliminated !== undefined ? optData.retries_eliminated : (optData.retries_avoided || 0);
 
-		// Resolve original rule for diff view
-		let oldRule = optData.original_rule;
-		if (!oldRule && currentState.config && Array.isArray(currentState.config.tiers)) {
-			const matchingTier = currentState.config.tiers.find(t => t.name === tierName);
-			if (matchingTier && matchingTier.when) {
-				oldRule = matchingTier.when;
-			}
-		}
-		if (!oldRule) {
-			oldRule = 'Tokens < 16000 && !HasImages && !HasTools';
-		}
-
-		// Session Dynamics (v2) or Single-Turn Baseline (v1 fallback)
+		// Session Dynamics
 		const hasSessions = typeof optData.total_sessions === 'number' && optData.total_sessions > 0;
 		const sessionsCount = hasSessions ? optData.total_sessions : 0;
 		const avgTurnsVal = typeof optData.avg_turns_per_session === 'number' ? optData.avg_turns_per_session.toFixed(1) : (optData.avg_turns_per_session || '--');
@@ -827,20 +813,62 @@
 			recoveryRows = `<div class="recovery-empty">No repeated model failures detected in sample history. Clean turn progression across local models.</div>`;
 		}
 
-		// Friction & Bottleneck signals pills
-		const optimalThreshold = optData.optimal_threshold || 16000;
-		const optimalRetries = optData.optimal_retries;
-		const restrictImages = !!optData.restrict_images;
-		const restrictTools = !!optData.restrict_tools;
-		const frictionKeywords = Array.isArray(optData.friction_keywords) ? optData.friction_keywords : [];
+		// Pure Multi-Tier Diffs Rendering
+		const tiers = Array.isArray(optData.tiers) ? optData.tiers : [];
+		let tierDiffsHtml = '';
+		if (tiers.length > 0) {
+			tierDiffsHtml = tiers.map((tier, idx) => {
+				const tierName = tier.tier_name || `Tier ${idx + 1}`;
+				let oldRule = tier.original_rule;
+				if (!oldRule && currentState.config && Array.isArray(currentState.config.tiers)) {
+					const matchingTier = currentState.config.tiers.find(t => t.name === tierName);
+					if (matchingTier && matchingTier.when) {
+						oldRule = matchingTier.when;
+					}
+				}
+				if (!oldRule) {
+					oldRule = '(Default Pass / No Constraint)';
+				}
+				const threshold = tier.optimal_threshold;
+				const retries = tier.optimal_retries;
+				const restrictImages = !!tier.restrict_images;
+				const restrictTools = !!tier.restrict_tools;
+				const frictionKeywords = Array.isArray(tier.friction_keywords) ? tier.friction_keywords : [];
+
+				return `
+					<div class="tuner-diff-wrapper">
+						<div class="tuner-diff-header">
+							<span class="diff-tier-label">Target Tier: <strong>${escapeHtml(tierName)}</strong></span>
+							<div class="tier-pills-row">
+								${threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
+								${retries !== undefined && retries !== null ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
+								<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
+									👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
+								</span>
+								<span class="signal-pill ${restrictTools ? 'signal-pill-warning' : 'signal-pill-clean'}">
+									🔧 Tools: ${restrictTools ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
+								</span>
+								${frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
+							</div>
+						</div>
+						<div class="tuner-diff-code">
+							<div class="diff-line diff-del"><span class="diff-sign">-</span> when: "${escapeHtml(oldRule)}"</div>
+							<div class="diff-line diff-add"><span class="diff-sign">+</span> when: "${escapeHtml(tier.synthesized_rule)}"</div>
+						</div>
+					</div>
+				`;
+			}).join('');
+		} else {
+			tierDiffsHtml = `<div class="recovery-empty">No tunable tier policies generated for current configuration.</div>`;
+		}
 
 		banner.style.display = 'block';
 		banner.innerHTML = `
 			<div class="tuner-result">
 				<div class="tuner-header">
 					<div class="tuner-title-group">
-						<h3>🌮 Auto-Tuner v2: Session Replay Optimizer</h3>
-						<span class="badge badge-deal">Optimal Policy Ready</span>
+						<h3>🌮 Auto-Tuner v3: Multi-Tier Min-Conflicts Optimizer</h3>
+						<span class="badge badge-deal">Pareto-Optimal Policy Ready</span>
 					</div>
 					<div class="tuner-hero-badges">
 						${retriesAvoided > 0 ? `<div class="tuner-badge tuner-retries-badge">⚡ ~${retriesAvoided} Retries Avoided</div>` : ''}
@@ -883,33 +911,12 @@
 					</div>
 				</div>
 
-				<div class="tuner-signals-container">
-					<div class="tuner-signals-pills">
-						<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${optimalThreshold.toLocaleString()} tokens</span>
-						${optimalRetries ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${optimalRetries} max retries</span>` : ''}
-						<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
-							👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
-						</span>
-						<span class="signal-pill ${restrictTools ? 'signal-pill-warning' : 'signal-pill-clean'}">
-							🔧 Tools: ${restrictTools ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
-						</span>
-						${frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
-					</div>
-				</div>
-
-				<div class="tuner-diff-wrapper">
-					<div class="tuner-diff-header">
-						<span class="diff-tier-label">Target Tier: <strong>${escapeHtml(tierName)}</strong></span>
-						<span class="diff-badge">config.yaml diff preview</span>
-					</div>
-					<div class="tuner-diff-code">
-						<div class="diff-line diff-del"><span class="diff-sign">-</span> when: "${escapeHtml(oldRule)}"</div>
-						<div class="diff-line diff-add"><span class="diff-sign">+</span> when: "${escapeHtml(rule)}"</div>
-					</div>
+				<div class="tuner-diffs-container">
+					${tierDiffsHtml}
 				</div>
 
 				<div class="tuner-actions">
-					<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Policy to config.yaml</button>
+					<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Multi-Tier Policy to config.yaml</button>
 					<button class="btn btn-secondary" onclick="dismissTuner()">Dismiss</button>
 				</div>
 			</div>

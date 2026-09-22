@@ -500,8 +500,8 @@ func TestAPI_Tune_Endpoint(t *testing.T) {
 		t.Fatalf("failed to decode tuning result JSON: %v", err)
 	}
 
-	if result.SynthesizedRule == "" {
-		t.Errorf("expected non-empty synthesized rule")
+	if len(result.Tiers) == 0 || result.Tiers[0].SynthesizedRule == "" {
+		t.Errorf("expected non-empty synthesized rule in result.Tiers")
 	}
 }
 

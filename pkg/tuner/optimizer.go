@@ -59,10 +59,14 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 			return nil, err
 		}
 		return &TuningResult{
-			OptimalThreshold: defaultThreshold,
-			SynthesizedRule:  rule,
-			TargetTierName:   targetTierName,
-			OriginalRule:     existingWhen,
+			Tiers: []TierTuningResult{
+				{
+					TierName:         targetTierName,
+					OptimalThreshold: defaultThreshold,
+					SynthesizedRule:  rule,
+					OriginalRule:     existingWhen,
+				},
+			},
 		}, nil
 	}
 
@@ -114,14 +118,18 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 		avgTurns := float64(len(records)) / float64(len(trajectories))
 
 		return &TuningResult{
-			OptimalThreshold:    gridRes.OptimalTokens,
-			OptimalRetries:      gridRes.OptimalRetries,
-			FrictionKeywords:    highFrictionKws,
-			RestrictImages:      restrictImages,
-			RestrictTools:       restrictTools,
-			TargetTierName:      targetTierName,
-			OriginalRule:        existingWhen,
-			SynthesizedRule:     rule,
+			Tiers: []TierTuningResult{
+				{
+					TierName:         targetTierName,
+					OptimalThreshold: gridRes.OptimalTokens,
+					OptimalRetries:   gridRes.OptimalRetries,
+					FrictionKeywords: highFrictionKws,
+					RestrictImages:   restrictImages,
+					RestrictTools:    restrictTools,
+					OriginalRule:     existingWhen,
+					SynthesizedRule:  rule,
+				},
+			},
 			CurrentCostUSD:      currentCost,
 			ProjectedCostUSD:    gridRes.ProjectedCost,
 			ProjectedSavingsUSD: projectedSavings,
@@ -169,13 +177,17 @@ func (opt *CostPenaltyOptimizer) Optimize(records []telemetry.TurnRecord, curren
 	}
 
 	return &TuningResult{
-		OptimalThreshold:    bestT,
-		FrictionKeywords:    highFrictionKws,
-		RestrictImages:      restrictImages,
-		RestrictTools:       restrictTools,
-		TargetTierName:      targetTierName,
-		OriginalRule:        existingWhen,
-		SynthesizedRule:     rule,
+		Tiers: []TierTuningResult{
+			{
+				TierName:         targetTierName,
+				OptimalThreshold: bestT,
+				FrictionKeywords: highFrictionKws,
+				RestrictImages:   restrictImages,
+				RestrictTools:    restrictTools,
+				OriginalRule:     existingWhen,
+				SynthesizedRule:  rule,
+			},
+		},
 		CurrentCostUSD:      currentCost,
 		ProjectedCostUSD:    bestProjectedCost,
 		ProjectedSavingsUSD: currentCost - bestProjectedCost,

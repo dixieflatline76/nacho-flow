@@ -45,63 +45,44 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 		}
 	}
 
-	b.WriteString("\n🔍 FRICTION & BOTTLENECK SIGNALS DETECTED:\n")
-	b.WriteString(fmt.Sprintf("  • Optimal Local Context Threshold: %d tokens\n", res.OptimalThreshold))
-	if res.OptimalRetries > 0 {
-		b.WriteString(fmt.Sprintf("  • Retry Bound:                    %d max retries before cloud escalation\n", res.OptimalRetries))
+	b.WriteString("\n🔍 MULTI-TIER ROUTING POLICIES:\n")
+	for i, tier := range res.Tiers {
+		b.WriteString(fmt.Sprintf("\n  [Tier %d: %s]\n", i+1, tier.TierName))
+		b.WriteString(fmt.Sprintf("  • Context Threshold:   %d tokens\n", tier.OptimalThreshold))
+		if tier.OptimalRetries > 0 {
+			b.WriteString(fmt.Sprintf("  • Retry Bound:         %d max retries before escalation\n", tier.OptimalRetries))
+		}
+		if tier.RestrictImages {
+			b.WriteString("  • Multimodal Vision:   Restricted\n")
+		} else {
+			b.WriteString("  • Multimodal Vision:   Allowed\n")
+		}
+		if tier.RestrictTools {
+			b.WriteString("  • Agentic Tool Calls:  Restricted\n")
+		} else {
+			b.WriteString("  • Agentic Tool Calls:  Allowed\n")
+		}
+		if len(tier.FrictionKeywords) > 0 {
+			b.WriteString(fmt.Sprintf("  • Excluded Keywords:   %v\n", tier.FrictionKeywords))
+		}
 	}
 
-	if res.RestrictImages {
-		b.WriteString("  • Multimodal Vision:              High Friction (Spikes local retries — restricted)\n")
-	} else {
-		b.WriteString("  • Multimodal Vision:              Clean (0% retry rate — enabled locally)\n")
-	}
-
-	if res.RestrictTools {
-		b.WriteString("  • Agentic Tool Calls:             High Friction (Spikes local retries — restricted)\n")
-	} else {
-		b.WriteString("  • Agentic Tool Calls:             Clean (0% retry rate — enabled locally)\n")
-	}
-
-	if len(res.FrictionKeywords) > 0 {
-		b.WriteString(fmt.Sprintf("  • High-Friction Domain Keywords:  %v (Spikes local retry probability)\n", res.FrictionKeywords))
-	} else {
-		b.WriteString("  • High-Friction Domain Keywords:  None (Clean token progression across all domains)\n")
-	}
-
-	b.WriteString("\n📈 PROJECTED MONTHLY IMPACT:\n")
+	b.WriteString("\n📈 PROJECTED FLEET IMPACT:\n")
 	b.WriteString(fmt.Sprintf("  • Developer Retries Avoided: ~%d retries eliminated\n", res.RetriesEliminated))
 	if res.ProjectedSavingsUSD > 0 {
 		b.WriteString(fmt.Sprintf("  • Net Monthly Cost Optimization: $%.2f USD saved\n", res.ProjectedSavingsUSD))
 	}
 
-	// Find the local tier in current config to show diff
-	var oldRule string
-	localTierName := res.TargetTierName
-	if localTierName == "" {
-		localTierName = "Local ROCm GPU"
-	}
-
-	if cfg != nil {
-		for _, tier := range cfg.Tiers {
-			if IsLocalTier(tier, cfg.Providers) {
-				oldRule = tier.When
-				if tier.Name != "" {
-					localTierName = tier.Name
-				}
-				break
-			}
-		}
-	}
-	if oldRule == "" {
-		oldRule = "Tokens < 16000 && !HasImages && !HasTools"
-	}
-
 	b.WriteString("\n🛠️ RECOMMENDED CONFIGURATION DIFF:\n")
 	b.WriteString("----------------------------------------------------------------------------------------\n")
-	b.WriteString(fmt.Sprintf("  Tier: %q\n", localTierName))
-	b.WriteString(fmt.Sprintf("  - when: %q\n", oldRule))
-	b.WriteString(fmt.Sprintf("  + when: %q\n", res.SynthesizedRule))
+	for _, tier := range res.Tiers {
+		b.WriteString(fmt.Sprintf("  Tier: %q\n", tier.TierName))
+		if tier.OriginalRule != "" {
+			b.WriteString(fmt.Sprintf("  - when: %q\n", tier.OriginalRule))
+		}
+		b.WriteString(fmt.Sprintf("  + when: %q\n", tier.SynthesizedRule))
+		b.WriteString("\n")
+	}
 	b.WriteString("----------------------------------------------------------------------------------------\n\n")
 
 	b.WriteString("To apply this recommendation with automatic backup:\n")

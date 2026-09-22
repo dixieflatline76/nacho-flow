@@ -458,6 +458,19 @@ body {
 	border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
+.tuner-diffs-container {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.tier-pills-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+}
+
 /* Git Diff Viewer Box */
 .tuner-diff-wrapper {
 	background: #090d16;
@@ -474,6 +487,8 @@ body {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
 	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
