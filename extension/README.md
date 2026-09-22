@@ -130,12 +130,14 @@ Heat Seeker continuously scans 300+ cloud models on OpenRouter, discovering flas
 
 ---
 
-### 🎛️ 6. 1-Click Auto-Tuning Optimizer
+### 🎛️ 6. 1-Click Multi-Tier Auto-Tuning Optimizer
 
 Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns from `traffic.jsonl`:
-- Statistical odds-ratio analysis calculates the optimal context boundary where local model error rates rise.
-- Recommends calibrated token thresholds and keyword exclusion rules.
-- Review the visual diff banner in the dashboard and click **`Apply Recommendation`** to atomically update `config.yaml` with an automatic backup.
+- **v3 Min-Conflicts CSP Local Search**: Evaluates multi-tier cascade routing across millions of simulated turns in milliseconds with zero heap allocations.
+- **6D Variable Repair**: Calibrates per-tier token thresholds, retry bounds, tool/vision modalities, high-friction keyword exclusions, and VRAM-bounded model substitutions.
+- **Vetted Model Catalog Metrics**: Pulls SWE-bench coding capability index scores and tool reliability ratings directly from the embedded catalog cache.
+- **Pareto Fleet Dominance**: Enforces multi-objective optimality across cost, latency, and retry rate.
+- **Instant 1-Click Adoption**: Review the visual rule diff banner in the dashboard and click **`Apply Recommendation`** to atomically update `config.yaml` with an automatic backup (`config.yaml.bak_<timestamp>`).
 
 ---
 

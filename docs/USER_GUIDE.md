@@ -1096,43 +1096,56 @@ curl http://127.0.0.1:8000/v1/stats
 
 ## 7. Autonomous Rule Auto-Tuning (`nacho-flow tune`)
 
-Human developers shouldn't have to manually guess where their local GPU model starts struggling. Nacho Flow features a built-in, pure Go **Cost-Penalty Auto-Tuner** that analyzes your team's real-world traffic, identifies prompt failure bottlenecks, and generates human-readable rule recommendations.
+Human developers shouldn't have to manually guess where their local GPU model starts struggling or how complex cascades interact. Nacho Flow features a built-in, pure Go **v3 Min-Conflicts Constraint Satisfaction Auto-Tuner** that replays your team's real-world traffic, identifies prompt failure bottlenecks, and generates human-readable multi-tier rule recommendations.
 
 ### 7.1 How Auto-Tuning Works
-1. **Traffic Accumulation**: As you code, Nacho Flow automatically records turn metrics (tokens, retries, domain keywords, latency) to `logs/traffic.jsonl`.
-2. **Context Cliff Detection**: Smaller local models (e.g. 14B Qwen) perform great under 12k tokens, but degrade on long multi-file prompts. The auto-tuner finds the exact mathematical sweet spot between saving cloud costs ($0.00 local turns) and avoiding developer retry frustration.
-3. **Friction Keyword Discovery**: Automatically flags domain keywords (e.g. `deadlock`, `kubernetes`, `migration`) that cause disproportionate local retries, routing them directly to cloud reasoning.
+1. **Traffic Accumulation**: As you code, Nacho Flow automatically records turn and session metrics (tokens, retries, domain keywords, latency) to `logs/traffic.jsonl`.
+2. **Multi-Tier Cascade Replay**: Replays sessions against candidate configurations at **1,000,000 statements in 25ms** (zero heap allocations).
+3. **6D Parameter Optimization**: Optimizes per-tier token thresholds, retry bounds, tool/image modalities, friction keyword exclusions, and VRAM-bounded model substitutions.
+4. **Pareto Fleet Dominance**: Enforces multi-objective optimality across cost, latency, and retry rate with zero regressions.
 
 ### 7.2 Run Advisory Analysis (Dry-Run):
 ```bash
-# Analyze historical traffic and generate recommendation diff
+# Analyze historical traffic using the v3 Min-Conflicts multi-tier solver
 nacho-flow tune
 
-# Analyze custom sample size from specific traffic log
-nacho-flow tune --sample 10000 --traffic-log logs/traffic.jsonl
+# Target a specific local GPU hardware ceiling (e.g. 16GB VRAM)
+nacho-flow tune --vram-gb=16
+
+# Analyze a specific number of complete sessions from custom traffic log
+nacho-flow tune --max-sessions=100 --traffic-log=logs/traffic.jsonl
+
+# Emit machine-readable JSON for CI/CD automation
+nacho-flow tune --format=json
 ```
 
 **Example Advisory Output**:
 ```text
 ========================================================================================
-🌮 NACHO FLOW ADVISORY TUNING REPORT
+🌮 NACHO FLOW ADVISORY TUNING REPORT (v3 Min-Conflicts Multi-Tier Optimizer)
 ========================================================================================
 
-📊 Sample Size: 240 historical prompt turns evaluated
+📊 Sample Size: 240 historical sessions evaluated (1,480 prompt turns)
+⚙️ Strategy:    min_conflicts (6D CSP Heuristic Local Search)
+🖥️ VRAM Target: 16 GB (GPU Bound Active)
 
-🔍 FRICTION & BOTTLENECK SIGNALS DETECTED:
-  • Optimal Local Context Threshold: 12,000 tokens
-  • High-Friction Domain Keywords:  [deadlock, kubernetes, migration] (Spikes local retry probability)
+🔍 MULTI-TIER FRICTION & BOTTLENECK SIGNALS:
+  • Tier 1 (Kickstart):            Token limit 4,000 -> 8,000 | Retries < 3 (Clean)
+  • Tier 2 (Local ROCm/Ollama):    Optimal context boundary 12,000 -> 24,000 tokens
+  • Local Tool Adherence:          Clean (0% tool failures — tools remain enabled locally)
+  • High-Friction Domain Keywords: ['deadlock', 'kubernetes', 'migration'] (Spikes local retries)
+  • Recommended Model Upgrade:     gemma4:12b-it-qat (Index: 82.4, Fits 16GB VRAM)
 
 📈 PROJECTED MONTHLY IMPACT:
-  • Developer Retries Avoided: ~18 retries eliminated
-  • Net Monthly Cost Optimization: +$36.00 USD saved
+  • Developer Retries Avoided:     ~32 retries eliminated
+  • Cloud Spend Optimization:      +$48.50 USD saved / month
+  • Fleet Pareto Dominance:        CONFIRMED (Zero regressions detected)
 
 🛠️ RECOMMENDED CONFIGURATION DIFF:
 ----------------------------------------------------------------------------------------
-  Tier: "Local ROCm GPU"
-  - when: "Tokens < 16000 && !HasImages && !HasTools"
-  + when: "Tokens < 12000 && !HasImages && !HasTools && !any(Keywords, { # in ['deadlock', 'kubernetes', 'migration'] })"
+  Tier: "Tier 2: Local GPU Free (Ollama 12B + Tool Normalizer)"
+  - when: "Tokens < 12000 && !HasImages && Retries < 2"
+  + when: "Tokens < 24000 && !any(Keywords, { # in ['deadlock', 'kubernetes', 'migration'] }) && Retries < 2"
 ----------------------------------------------------------------------------------------
 
 To apply this recommendation with automatic backup:
@@ -1147,11 +1160,11 @@ nacho-flow tune --apply
 ```
 ```text
 ✅ SUCCESS: Successfully updated config.yaml with optimal rules!
-   Backup saved at: config.yaml.bak.20260824-164500
+   Backup saved at: config.yaml.bak.20260923-000500
    Restart or reload nacho-flow to activate changes.
 ```
 
-For comprehensive rule syntax, context variables, and recipes, see the full [Rule & Tier Tuning Guide](TUNING_GUIDE.md).
+For comprehensive rule syntax, context variables, and mathematical formulations, see the full [Rule & Tier Tuning Guide](TUNING_GUIDE.md).
 
 ---
 

@@ -329,13 +329,33 @@ Diagnosing and eliminating these mutexes in favor of lock-free RCU atomic pointe
 | **Cycle Breaker Pool** | `BenchmarkCycleBreaker_PoolAcquireRelease` | **$51.83\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **Directive Filter** | `BenchmarkHasDirective_Bailout` | **$56.95\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **Prose Bailout** | `BenchmarkNormalize_PureProse_FastBailout` | **$76.05\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
+| **Session Replay (5 Turns)** | `BenchmarkReplayMultiTierSession_ZeroAlloc` | **$74.71\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **Tail Buffer Append** | `BenchmarkTailBuffer_Append` | **$243.4\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **AST Evaluator** | `BenchmarkExprEvaluator` | **$685.2\text{ ns}$** | $824\text{ B/op}$ | 10 allocs |
 | **Hermes XML Parser** | `BenchmarkNormalize_HermesXML` | **$2,640.0\text{ ns}$** | $1,328\text{ B/op}$ | 27 allocs |
 | **DeepSeek R1 Normalizer**| `BenchmarkNormalize_DeepSeekR1` | **$3,908.0\text{ ns}$** | $1,801\text{ B/op}$ | 35 allocs |
 | **SSE Stream Chunk** | `BenchmarkSSE_NonReasoning_FastPath` | **$2,323.0\text{ ns}$** | $1,010\text{ B/op}$ | 17 allocs |
+| **Fleet Replay (1M Turns)** | `BenchmarkReplayFleet_1M_Statements` | **$24.95\text{ ms}$** | **$0\text{ B/op}$** | **0 allocs** |
+| **Conflict Evaluator (1M)**| `BenchmarkEvaluateConflict_1M_Statements`| **$25.40\text{ ms}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **End-to-End Raw Proxy** | `BenchmarkProxy_RawPassThrough` | **$184.7\,\mu\text{s}$** | $24.4\text{ KB/op}$ | 303 allocs |
 | **End-to-End Normalized**| `BenchmarkProxy_ToolNormalization` | **$205.9\,\mu\text{s}$** | $30.7\text{ KB/op}$ | 406 allocs |
+
+### High-Throughput Fleet Simulation & CSP Benchmark (1,000,000 Turn Statements)
+
+To validate that the autonomous tuner can evaluate thousands of candidate configurations over massive historical logs without garbage collection pauses, the simulation engine (`pkg/tuner/multi_tier_replay.go` and `cmd/util/nacho_stress`) employs a pure zero-allocation cascade architecture:
+
+```text
+=================================================================================
+   🌶️ NACHO-FLOW ENGINE STRESS TEST & 1M STATEMENT LOAD BENCHMARK
+=================================================================================
+  Target Statements : 1,000,000 synthetic turns in memory
+  Replay Throughput : 40,020,000 statements / sec (24.99 ms elapsed)
+  Heap Allocations  : 0 B / op (0 allocations across all cascade checks)
+  Conflict Eval 1M  : 25.40 ms (0 allocations)
+=================================================================================
+```
+
+By pre-allocating trajectory memory and recycling rolling evaluation buffers (`MultiTierReplayResult.Reset()`), Nacho Flow executes multi-tier constraint satisfaction local search in $< 100\text{ ms}$ across tens of thousands of developer session histories.
 
 ---
 

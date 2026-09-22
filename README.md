@@ -320,7 +320,28 @@ Control routing rules, guardrails, and daemon telemetry directly from your edito
 
 ---
 
-### 4. Running as a Background Daemon
+### 4. Autonomous Multi-Tier Auto-Tuning (`nacho-flow tune`)
+
+Never guess where your local GPU model starts struggling. Nacho Flow includes an autonomous **v3 Min-Conflicts Constraint Satisfaction Optimizer** that analyzes your real-world traffic telemetry (`logs/traffic.jsonl`), identifies prompt failure bottlenecks, and synthesizes optimal multi-tier routing rules:
+
+```bash
+# Advisory dry-run with multi-tier CSP heuristic local search
+nacho-flow tune
+
+# Target specific local GPU hardware ceiling (e.g. 16GB VRAM)
+nacho-flow tune --vram-gb=16
+
+# Atomically apply recommended rules with automatic timestamped backup (.bak)
+nacho-flow tune --apply
+```
+
+* **Wire-Speed In-Memory Simulation**: Simulates **1,000,000 turn statements in 25ms** (~40M turns/sec) with zero heap allocations.
+* **6D Variable Repair**: Automatically optimizes per-tier token thresholds, retry bounds, tool/image modalities, keyword friction exclusions, and hardware-bounded model substitutions.
+* **Pareto Fleet Dominance**: Enforces multi-objective optimality across cost, latency, and retry rate.
+
+---
+
+### 5. Running as a Background Daemon
 
 To make Nacho Flow run continuously in the background (starts automatically on OS boot):
 
@@ -334,7 +355,7 @@ nacho-flow service start
 
 ---
 
-### 5. Connect Your IDE & Coding Agents
+### 6. Connect Your IDE & Coding Agents
 
 Nacho Flow exposes a standard OpenAI-compatible proxy endpoint on `http://localhost:8000/v1`. Since Nacho Flow dynamically routes and rewrites model IDs turn-by-turn based on your `config.yaml` tier rules, you can use `nacho-hybrid` (or any string) as your Model ID.
 

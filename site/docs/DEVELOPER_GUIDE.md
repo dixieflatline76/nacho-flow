@@ -102,11 +102,12 @@ make build
 
 Nacho Flow follows strict **Test-Driven Development (TDD)** and quality standards:
 - **TDD Workflow**: Write failing tests first (`Red`), implement minimal clean code (`Green`), and refactor.
-- **Coverage Gate**: Every individual package must maintain $\ge 95\%$ statement coverage (repository target $\ge 96\%$).
+- **Coverage Gate**: Every individual package must maintain $\ge 95.0\%$ statement coverage (repository global coverage $\ge 96.2\%$).
+- **Benchmark Modernization**: All benchmarks should utilize Go 1.24+ `for b.Loop()` iteration to automatically eliminate setup timer bias.
 - **Zero Anti-Patterns**: Lock-free atomic synchronization on hot paths (`sync/atomic.Pointer`), zero detached background goroutine leaks (lazy TTL eviction), and zero external runtime dependencies.
 
 ```bash
-# Run all-in-one quality gate (fmt, vet, gosec, race tests)
+# Run all-in-one quality gate (fmt, vet, gosec, race tests, Jest suite)
 make check
 
 # Run AST security vulnerability analysis (matching Spice standards)
@@ -133,7 +134,7 @@ make tune
 
 ## 6. Benchmarking & Load Testing
 
-Nacho Flow includes both standard Go micro-benchmarks (`testing.B`) and a dedicated high-throughput A/B load test CLI:
+Nacho Flow includes both standard Go micro-benchmarks (`testing.B`) and dedicated high-throughput load test utilities:
 
 ### 6.1 End-to-End Proxy Pipeline Benchmark
 ```bash
@@ -149,9 +150,19 @@ go test -bench=BenchmarkNormalize -benchmem -run=^$ ./pkg/router/...
 
 ### 6.3 High-Concurrency A/B Stress Benchmark
 ```bash
-# Run calibrated 250,000-request A/B stress test comparing raw pass-through vs full auth & normalization:
+# Run calibrated 350,000-request A/B stress test comparing raw pass-through vs full auth & normalization:
 make bench
-# or: go run ./cmd/util/nacho_bench
+# or synchronize metrics to docs:
+make bench-sync
+```
+
+### 6.4 High-Throughput 1M-Statement Replay Benchmark (`nacho_stress`)
+```bash
+# Replay 1,000,000 turn statements in memory (25ms execution, 0 B/op):
+go run ./cmd/util/nacho_stress -turns 1000000 -runs 3
+
+# Or execute tuner benchmark suite using Go 1.24+ b.Loop():
+go test -bench=BenchmarkReplayFleet -benchmem -run=^$ ./pkg/tuner/...
 ```
 
 ---
