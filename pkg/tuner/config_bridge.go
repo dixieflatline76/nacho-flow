@@ -83,18 +83,25 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 		codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
 		isDisabled := strings.TrimSpace(tier.When) == "false"
 
-		threshold := 8000
+		threshold := 0
 		if m := extractTokenRegex.FindStringSubmatch(tier.When); len(m) > 1 {
 			if v, err := strconv.Atoi(m[1]); err == nil && v > 0 {
 				threshold = v
 			}
+		} else if isLocal {
+			threshold = 16000
+			if tier.MaxContext > 0 && tier.MaxContext < threshold {
+				threshold = tier.MaxContext
+			}
 		}
 
-		retryBound := 2
+		retryBound := 0
 		if m := extractRetriesRegex.FindStringSubmatch(tier.When); len(m) > 1 {
 			if v, err := strconv.Atoi(m[1]); err == nil && v > 0 {
 				retryBound = v
 			}
+		} else if isLocal {
+			retryBound = 2
 		}
 
 		restrictImages := strings.Contains(strings.ToLower(tier.When), "!hasimages")

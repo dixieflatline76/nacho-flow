@@ -339,3 +339,95 @@ func TestModelBenchmarkIntegration_AndDualPricing(t *testing.T) {
 	}
 }
 
+// TDD Test: When current routing is already optimal (0 savings, 0 retries eliminated),
+// the optimizer MUST NOT recommend any changes or inject fake token bounds into escalation tiers.
+func TestOptimalRouting_NoChangeRecommendedWhenAlreadyOptimal(t *testing.T) {
+	now := time.Now().UTC()
+	records := []telemetry.TurnRecord{
+		{
+			Timestamp:          now,
+			SessionID:          "sess-1",
+			RootPromptHash:     101,
+			Tokens:             1500,
+			CycleContentTokens: 200,
+			SelectedTier:       "Kickstart Escalation (Gemini 3.8 Flash)",
+			IsLocal:            false,
+			StatusCode:         200,
+			Keywords:           []string{"init"},
+		},
+		{
+			Timestamp:          now.Add(time.Second),
+			SessionID:          "sess-1",
+			RootPromptHash:     101,
+			Tokens:             5000,
+			CycleContentTokens: 300,
+			SelectedTier:       "Tier 1: Local GPU Workhorse",
+			IsLocal:            true,
+			StatusCode:         200,
+		},
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:     "Kickstart Escalation (Gemini 3.8 Flash)",
+				Provider: "openrouter",
+				Model:    "google/gemini-2.5-flash",
+				When:     "SessionKickstarted && Retries < 3",
+			},
+			{
+				Name:     "Tier: Multimodal Vision (Gemini 3.8 Flash)",
+				Provider: "openrouter",
+				Model:    "google/gemini-2.5-flash",
+				When:     "HasImages && Retries < 2",
+			},
+			{
+				Name:       "Tier 1: Local GPU Workhorse",
+				Provider:   "ollama",
+				Model:      "qwen2.5-coder:14b",
+				When:       "Tokens < 20000 && Retries < 2",
+				MaxContext: 32000,
+			},
+			{
+				Name:       "Tier 2: Flagship Agent Coder (Qwen3 Coder Plus)",
+				Provider:   "openrouter",
+				Model:      "qwen/qwen-2.5-coder-32b-instruct",
+				When:       "Tokens < 160000 && Retries < 2",
+				MaxContext: 160000,
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Tier 3: Fallback",
+			Provider: "openrouter",
+			Model:    "anthropic/claude-sonnet-5",
+			When:     "true",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama":     {Type: contract.ProviderTypeLocal},
+			"openrouter": {Type: contract.ProviderTypeCloud},
+		},
+	}
+
+	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	// Kickstart Escalation MUST NOT be modified with "Tokens < 8000"
+	kickstart := res.Tiers[0]
+	if kickstart.SynthesizedRule != "SessionKickstarted && Retries < 3" {
+		t.Errorf("CRITICAL BUG: Optimal tier rule was mutated! Expected %q, got %q",
+			"SessionKickstarted && Retries < 3", kickstart.SynthesizedRule)
+	}
+
+	// All tiers must remain strictly identical to their original rule
+	for i, tier := range res.Tiers {
+		if tier.SynthesizedRule != tier.OriginalRule {
+			t.Errorf("Tier %d (%s) expected SynthesizedRule == OriginalRule (%q), got %q",
+				i, tier.TierName, tier.OriginalRule, tier.SynthesizedRule)
+		}
+	}
+}
+
+

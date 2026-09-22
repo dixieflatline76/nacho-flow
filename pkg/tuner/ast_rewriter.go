@@ -21,8 +21,11 @@ var (
 // RewriteRuleAST synthesizes an optimal expr expression while preserving existing custom guardrails
 // from the existing tier expression.
 func RewriteRuleAST(existingWhen string, newThreshold int, optimalRetries int, frictionKws []string, restrictImages, restrictTools bool) (string, error) {
-	if newThreshold <= 0 {
-		return "", fmt.Errorf("optimal threshold must be positive, got %d", newThreshold)
+	if newThreshold < 0 {
+		return "", fmt.Errorf("optimal threshold cannot be negative, got %d", newThreshold)
+	}
+	if newThreshold == 0 && tokenClauseRegex.MatchString(existingWhen) {
+		return "", fmt.Errorf("optimal threshold must be positive for token-constrained tier, got %d", newThreshold)
 	}
 
 	// 1. Extract preserved clauses from existing expression
@@ -52,8 +55,10 @@ func RewriteRuleAST(existingWhen string, newThreshold int, optimalRetries int, f
 	// 2. Build updated clauses
 	var clauses []string
 
-	// Primary token bound
-	clauses = append(clauses, fmt.Sprintf("Tokens < %d", newThreshold))
+	// Primary token bound (only if positive)
+	if newThreshold > 0 {
+		clauses = append(clauses, fmt.Sprintf("Tokens < %d", newThreshold))
+	}
 
 	// Tuned retry bound
 	if optimalRetries > 0 {
@@ -83,6 +88,13 @@ func RewriteRuleAST(existingWhen string, newThreshold int, optimalRetries int, f
 
 	// Append preserved custom guardrails
 	clauses = append(clauses, preserved...)
+
+	if len(clauses) == 0 {
+		if cleanExisting != "" {
+			return cleanExisting, nil
+		}
+		return "true", nil
+	}
 
 	// Join into unified expression
 	result := strings.Join(clauses, " && ")

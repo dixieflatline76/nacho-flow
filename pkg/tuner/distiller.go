@@ -1,8 +1,13 @@
 package tuner
 
+import "fmt"
+
 // DistillRule synthesizes a clean expr rule from optimal threshold and friction keywords,
 // and validates that it compiles cleanly with expr.Compile.
 func DistillRule(optimalThreshold int, highFrictionKws []string) (string, error) {
+	if optimalThreshold <= 0 {
+		return "", fmt.Errorf("optimal threshold must be positive, got %d", optimalThreshold)
+	}
 	return RewriteRuleAST("", optimalThreshold, 0, highFrictionKws, false, false)
 }
 

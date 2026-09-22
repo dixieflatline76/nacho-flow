@@ -359,6 +359,19 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	}
 
 	savingsUSD := baselineBuf.TotalCostUSD - finalBuf.TotalCostUSD
+	if savingsUSD < 0 {
+		savingsUSD = 0
+	}
+
+	// Invariant: If optimization achieves zero savings and zero retries avoided,
+	// the active configuration is already optimal. Preserve original rules for all tiers!
+	if retriesAvoided <= 0 && savingsUSD <= 0.001 {
+		for i := range tierResults {
+			if !tierResults[i].IsDisabled {
+				tierResults[i].SynthesizedRule = tierResults[i].OriginalRule
+			}
+		}
+	}
 
 	escalationRate := 0.0
 	if len(trajectories) > 0 {

@@ -816,6 +816,7 @@
 		// Pure Multi-Tier Diffs Rendering
 		const tiers = Array.isArray(optData.tiers) ? optData.tiers : [];
 		let tierDiffsHtml = '';
+		let hasAnyChanges = false;
 		if (tiers.length > 0) {
 			tierDiffsHtml = tiers.map((tier, idx) => {
 				const tierName = tier.tier_name || `Tier ${idx + 1}`;
@@ -836,6 +837,10 @@
 				const frictionKeywords = Array.isArray(tier.friction_keywords) ? tier.friction_keywords : [];
 				const isDisabled = !!tier.is_disabled || tier.synthesized_rule === 'false' || oldRule.trim() === 'false';
 				const isUnchanged = !isDisabled && (oldRule.trim() === (tier.synthesized_rule || '').trim());
+
+				if (!isDisabled && !isUnchanged) {
+					hasAnyChanges = true;
+				}
 
 				// Benchmark and pricing pills
 				let benchmarkPill = '';
@@ -906,7 +911,7 @@
 				<div class="tuner-header">
 					<div class="tuner-title-group">
 						<h3>🌮 Auto-Tuner: Route Optimization</h3>
-						<span class="badge badge-deal">${savingsVal > 0 || retriesAvoided > 0 ? 'Routing Improvements Suggested' : 'Routing Currently Optimal'}</span>
+						<span class="badge badge-deal">${hasAnyChanges ? 'Routing Improvements Suggested' : 'Routing Currently Optimal'}</span>
 					</div>
 					<div class="tuner-hero-badges">
 						${retriesAvoided > 0 ? `<div class="tuner-badge tuner-retries-badge">⚡ ~${retriesAvoided} Retries Avoided</div>` : ''}
@@ -954,7 +959,10 @@
 				</div>
 
 				<div class="tuner-actions">
-					<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Multi-Tier Policy to config.yaml</button>
+					${hasAnyChanges 
+						? `<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Multi-Tier Policy to config.yaml</button>`
+						: `<button class="btn btn-secondary" disabled style="opacity: 0.65; cursor: default;">✅ Current Policy is Optimal</button>`
+					}
 					<button class="btn btn-secondary" onclick="dismissTuner()">Dismiss</button>
 				</div>
 			</div>
