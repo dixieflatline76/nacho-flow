@@ -834,26 +834,64 @@
 				const restrictImages = !!tier.restrict_images;
 				const restrictTools = !!tier.restrict_tools;
 				const frictionKeywords = Array.isArray(tier.friction_keywords) ? tier.friction_keywords : [];
+				const isDisabled = !!tier.is_disabled || tier.synthesized_rule === 'false' || oldRule.trim() === 'false';
+				const isUnchanged = !isDisabled && (oldRule.trim() === (tier.synthesized_rule || '').trim());
+
+				// Benchmark and pricing pills
+				let benchmarkPill = '';
+				if (tier.coding_index && tier.coding_index > 0) {
+					benchmarkPill = `<span class="signal-pill signal-pill-benchmark">⭐ Coding Score: ${tier.coding_index}/100</span>`;
+				}
+				let ratePill = '';
+				if (tier.is_local) {
+					ratePill = `<span class="signal-pill signal-pill-rate">💵 Local ($0.00 / Free)</span>`;
+				} else if (tier.comprehensive_rate && tier.comprehensive_rate > 0) {
+					ratePill = `<span class="signal-pill signal-pill-rate">💵 Rate: $${Number(tier.comprehensive_rate).toFixed(2)}/1M</span>`;
+				}
+
+				let diffContent = '';
+				if (isDisabled) {
+					diffContent = `
+						<div class="diff-line diff-neutral">
+							<span class="diff-sign">🔒</span> Tier Disabled / Manual Only (when: "false") — No active traffic routed
+						</div>
+					`;
+				} else if (isUnchanged) {
+					diffContent = `
+						<div class="diff-line diff-neutral">
+							<span class="diff-sign">✅</span> Current Rule Optimal (when: "${escapeHtml(oldRule)}") — No changes needed
+						</div>
+					`;
+				} else {
+					diffContent = `
+						<div class="diff-line diff-del"><span class="diff-sign">-</span> when: "${escapeHtml(oldRule)}"</div>
+						<div class="diff-line diff-add"><span class="diff-sign">+</span> when: "${escapeHtml(tier.synthesized_rule)}"</div>
+					`;
+				}
 
 				return `
 					<div class="tuner-diff-wrapper">
 						<div class="tuner-diff-header">
 							<span class="diff-tier-label">Target Tier: <strong>${escapeHtml(tierName)}</strong></span>
 							<div class="tier-pills-row">
-								${threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
-								${retries !== undefined && retries !== null ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
-								<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
-									👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
-								</span>
-								<span class="signal-pill ${restrictTools ? 'signal-pill-warning' : 'signal-pill-clean'}">
-									🔧 Tools: ${restrictTools ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
-								</span>
-								${frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
+								${benchmarkPill}
+								${ratePill}
+								${isDisabled ? '<span class="signal-pill signal-pill-neutral">🔒 Disabled</span>' : ''}
+								${!isDisabled && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
+								${!isDisabled && retries !== undefined && retries !== null ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
+								${!isDisabled ? `
+									<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
+										👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
+									</span>
+									<span class="signal-pill ${restrictTools ? 'signal-pill-warning' : 'signal-pill-clean'}">
+										🔧 Tools: ${restrictTools ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
+									</span>
+								` : ''}
+								${!isDisabled && frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
 							</div>
 						</div>
 						<div class="tuner-diff-code">
-							<div class="diff-line diff-del"><span class="diff-sign">-</span> when: "${escapeHtml(oldRule)}"</div>
-							<div class="diff-line diff-add"><span class="diff-sign">+</span> when: "${escapeHtml(tier.synthesized_rule)}"</div>
+							${diffContent}
 						</div>
 					</div>
 				`;
@@ -867,8 +905,8 @@
 			<div class="tuner-result">
 				<div class="tuner-header">
 					<div class="tuner-title-group">
-						<h3>🌮 Auto-Tuner v3: Multi-Tier Min-Conflicts Optimizer</h3>
-						<span class="badge badge-deal">Pareto-Optimal Policy Ready</span>
+						<h3>🌮 Auto-Tuner: Route Optimization</h3>
+						<span class="badge badge-deal">${savingsVal > 0 || retriesAvoided > 0 ? 'Routing Improvements Suggested' : 'Routing Currently Optimal'}</span>
 					</div>
 					<div class="tuner-hero-badges">
 						${retriesAvoided > 0 ? `<div class="tuner-badge tuner-retries-badge">⚡ ~${retriesAvoided} Retries Avoided</div>` : ''}
@@ -879,7 +917,7 @@
 				<div class="tuner-dynamics-grid">
 					<div class="tuner-card-col">
 						<div class="tuner-card-title">
-							<span>🔄</span> Session Dynamics
+							<span>🔄</span> Traffic Summary
 						</div>
 						<div class="tuner-metrics-list">
 							<div class="tuner-metric-row">
@@ -903,7 +941,7 @@
 
 					<div class="tuner-card-col">
 						<div class="tuner-card-title">
-							<span>🩺</span> Model Self-Healing Analysis
+							<span>🩺</span> Model Failure & Recovery Analysis
 						</div>
 						<div class="recovery-list">
 							${recoveryRows}

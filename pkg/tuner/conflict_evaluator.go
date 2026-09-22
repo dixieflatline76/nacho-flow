@@ -145,6 +145,9 @@ func EvaluateFleetWithAttribution(
 
 			for tIdx := 0; tIdx < len(cfg.Tiers) && tIdx < MaxSupportedTiers-1; tIdx++ {
 				candidate := &cfg.Tiers[tIdx]
+				if candidate.IsDisabled {
+					continue
+				}
 				if candidate.MaxContext > 0 && turn.Tokens > candidate.MaxContext {
 					continue
 				}
@@ -199,16 +202,25 @@ func EvaluateFleetWithAttribution(
 			} else {
 				// Cloud tier
 				turnCost = turn.CostSpentUSD
-				if turnCost == 0 || (turn.IsLocal && targetTier.CostPerMillion > 0) {
-					rate := targetTier.CostPerMillion
-					if rate == 0 && policy != nil {
-						rate = policy.CostPerMillionCloud
+				if turnCost == 0 || turn.IsLocal || targetTier.CostPerMillion > 0 {
+					outputTokens := turn.CycleContentTokens + turn.CycleThinkingTokens + turn.CycleToolTokens
+					if outputTokens > 0 && targetTier.CompletionCostPerMillion > 0 {
+						turnCost = (float64(turn.Tokens)/1_000_000.0)*targetTier.PromptCostPerMillion +
+							(float64(outputTokens)/1_000_000.0)*targetTier.CompletionCostPerMillion
+					} else {
+						rate := targetTier.ComprehensiveRate
+						if rate <= 0 {
+							rate = targetTier.CostPerMillion
+						}
+						if rate <= 0 && policy != nil {
+							rate = policy.CostPerMillionCloud
+						}
+						turnCost = (float64(turn.Tokens) / 1_000_000.0) * rate
 					}
-					turnCost = (float64(turn.Tokens) / 1_000_000.0) * rate
 				}
 				totalCostUSD += turnCost
 
-				if !turn.IsRetry || turn.IsLocal {
+				if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 90.0 {
 					currentRetries = 0
 				} else {
 					currentRetries++
@@ -222,8 +234,8 @@ func EvaluateFleetWithAttribution(
 				turnFailed = true
 			}
 
-			// Fractional Attribution on Failure (only for non-default tiers)
-			if turnFailed && selectedTierIdx < len(cfg.Tiers) {
+			// Fractional Attribution on Failure (only for non-default tiers and non-disabled tiers)
+			if turnFailed && selectedTierIdx < len(cfg.Tiers) && !cfg.Tiers[selectedTierIdx].IsDisabled {
 				repairVarsBuf = repairVarsBuf[:0]
 
 				// Candidate 1: Tightening Token Cliff

@@ -153,3 +153,189 @@ func TestMinConflicts_RealLifeTraffic(t *testing.T) {
 			i+1, tierRes.TierName, tierRes.OptimalThreshold, tierRes.OptimalRetries, tierRes.SynthesizedRule)
 	}
 }
+
+// TDD Test: Disabled tier immunity (e.g. when: "false" like Opus On-Demand)
+func TestDisabledTierImmunity_PreservesFalse(t *testing.T) {
+	records := []telemetry.TurnRecord{
+		{
+			Timestamp:      time.Now().UTC(),
+			SessionID:      "sess-1",
+			RootPromptHash: 123,
+			Tokens:         2000,
+			SelectedTier:   "Tier 1: Local",
+			IsLocal:        true,
+			StatusCode:     200,
+		},
+		{
+			Timestamp:      time.Now().UTC().Add(1 * time.Minute),
+			SessionID:      "sess-1",
+			RootPromptHash: 123,
+			Tokens:         3000,
+			SelectedTier:   "Tier 1: Local",
+			IsLocal:        true,
+			StatusCode:     200,
+		},
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Local",
+				Provider: "ollama",
+				Model:    "qwen2.5-coder:14b",
+				When:     "Tokens < 16000 && Retries < 2",
+			},
+			{
+				Name:     "Tier 5: Opus On-Demand (Spicy Only)",
+				Provider: "openrouter",
+				Model:    "anthropic/claude-opus-3",
+				When:     "false", // Explicitly disabled
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Tier 6: Frontier Fallback",
+			Provider: "openrouter",
+			Model:    "anthropic/claude-sonnet-5",
+			When:     "true",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama":     {Type: contract.ProviderTypeLocal},
+			"openrouter": {Type: contract.ProviderTypeCloud},
+		},
+	}
+
+	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	if len(res.Tiers) != 2 {
+		t.Fatalf("Expected 2 tiers in result, got %d", len(res.Tiers))
+	}
+
+	opusTier := res.Tiers[1]
+	if opusTier.TierName != "Tier 5: Opus On-Demand (Spicy Only)" {
+		t.Errorf("Expected tier name 'Tier 5: Opus On-Demand (Spicy Only)', got %s", opusTier.TierName)
+	}
+
+	// Must strictly be "false", never "Tokens < 8000 && Retries < 2 && false"!
+	if opusTier.SynthesizedRule != "false" {
+		t.Errorf("CRITICAL BUG: Expected disabled tier to remain 'false', got: %s", opusTier.SynthesizedRule)
+	}
+	if !opusTier.IsDisabled {
+		t.Errorf("Expected IsDisabled to be true for when: 'false', got false")
+	}
+	if opusTier.OptimalThreshold != 0 {
+		t.Errorf("Expected OptimalThreshold to be 0 for disabled tier, got %d", opusTier.OptimalThreshold)
+	}
+	if opusTier.OptimalRetries != 0 {
+		t.Errorf("Expected OptimalRetries to be 0 for disabled tier, got %d", opusTier.OptimalRetries)
+	}
+}
+
+// TDD Test: Zero-traffic active tier preserves original rule without dummy threshold additions
+func TestZeroTrafficTier_PreservesOriginalRule(t *testing.T) {
+	records := []telemetry.TurnRecord{
+		{
+			Timestamp:      time.Now().UTC(),
+			SessionID:      "sess-1",
+			RootPromptHash: 123,
+			Tokens:         1500,
+			SelectedTier:   "Tier 1: Local",
+			IsLocal:        true,
+			StatusCode:     200,
+		},
+	}
+
+	originalRule := "Tokens > 50000 && HasImages"
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Local",
+				Provider: "ollama",
+				Model:    "qwen2.5-coder:14b",
+				When:     "Tokens < 16000",
+			},
+			{
+				Name:     "Tier 2: High Context Vision",
+				Provider: "openrouter",
+				Model:    "google/gemini-2.5-flash",
+				When:     originalRule, // Never matched by the 1500-token text-only record
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Tier 3: Fallback",
+			Provider: "openrouter",
+			Model:    "anthropic/claude-sonnet-5",
+			When:     "true",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama":     {Type: contract.ProviderTypeLocal},
+			"openrouter": {Type: contract.ProviderTypeCloud},
+		},
+	}
+
+	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	t2 := res.Tiers[1]
+	if t2.SynthesizedRule != originalRule {
+		t.Errorf("Expected zero-traffic tier to preserve original rule %q, got %q", originalRule, t2.SynthesizedRule)
+	}
+}
+
+// TDD Test: Model benchmarks and comprehensive dual pricing are populated from models.json catalog
+func TestModelBenchmarkIntegration_AndDualPricing(t *testing.T) {
+	records := []telemetry.TurnRecord{
+		{
+			Timestamp:          time.Now().UTC(),
+			SessionID:          "sess-1",
+			RootPromptHash:     123,
+			Tokens:             2000,
+			CycleContentTokens: 500, // 500 output tokens
+			SelectedTier:       "Tier 1: Claude Sonnet",
+			IsLocal:            false,
+			StatusCode:         200,
+		},
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Claude Sonnet",
+				Provider: "openrouter",
+				Model:    "anthropic/claude-sonnet-5",
+				When:     "Tokens < 16000",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Tier 2: Fallback",
+			Provider: "openrouter",
+			Model:    "anthropic/claude-sonnet-5",
+			When:     "true",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {Type: contract.ProviderTypeCloud},
+		},
+	}
+
+	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	sonnetTier := res.Tiers[0]
+	// Claude Sonnet 5 in data/models.json has coding_index=97.4
+	if sonnetTier.CodingIndex < 90.0 {
+		t.Errorf("Expected CodingIndex >= 90 for Claude Sonnet 5, got %f", sonnetTier.CodingIndex)
+	}
+	if sonnetTier.ComprehensiveRate <= 0.0 {
+		t.Errorf("Expected positive ComprehensiveRate, got %f", sonnetTier.ComprehensiveRate)
+	}
+}
+

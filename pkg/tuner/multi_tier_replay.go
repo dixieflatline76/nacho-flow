@@ -3,16 +3,23 @@ package tuner
 
 // TierReplayConfig defines the routing guardrails and economic properties for an individual tier.
 type TierReplayConfig struct {
-	TierName         string   `json:"tier_name"`
-	Provider         string   `json:"provider"`
-	IsLocal          bool     `json:"is_local"`
-	CostPerMillion   float64  `json:"cost_per_million"`
-	TokenThreshold   int      `json:"token_threshold"` // Tokens < TokenThreshold (0 = unlimited)
-	MaxContext       int      `json:"max_context"`     // Hardware context ceiling (0 = unlimited)
-	RetryBound       int      `json:"retry_bound"`     // Retries < RetryBound (0 = unlimited)
-	RestrictImages   bool     `json:"restrict_images"` // If true, prompts with images are blocked
-	RestrictTools    bool     `json:"restrict_tools"`  // If true, prompts with tools are blocked
-	ExcludedKeywords []string `json:"excluded_keywords"`
+	TierName                 string   `json:"tier_name"`
+	Provider                 string   `json:"provider"`
+	Model                    string   `json:"model"`
+	IsLocal                  bool     `json:"is_local"`
+	IsDisabled               bool     `json:"is_disabled"` // e.g. when: "false"
+	CodingIndex              float64  `json:"coding_index"`
+	ToolReliability          float64  `json:"tool_reliability"`
+	PromptCostPerMillion     float64  `json:"prompt_cost_per_million"`
+	CompletionCostPerMillion float64  `json:"completion_cost_per_million"`
+	ComprehensiveRate        float64  `json:"comprehensive_rate"`
+	CostPerMillion           float64  `json:"cost_per_million"`
+	TokenThreshold           int      `json:"token_threshold"` // Tokens < TokenThreshold (0 = unlimited)
+	MaxContext               int      `json:"max_context"`     // Hardware context ceiling (0 = unlimited)
+	RetryBound               int      `json:"retry_bound"`     // Retries < RetryBound (0 = unlimited)
+	RestrictImages           bool     `json:"restrict_images"` // If true, prompts with images are blocked
+	RestrictTools            bool     `json:"restrict_tools"`  // If true, prompts with tools are blocked
+	ExcludedKeywords         []string `json:"excluded_keywords"`
 }
 
 // MaxSupportedTiers is the maximum number of cascade tiers handled in fixed-size buffers.
@@ -157,6 +164,11 @@ func replayMultiTierSessionInternal(
 		for tIdx := 0; tIdx < len(cfg.Tiers) && tIdx < MaxSupportedTiers-1; tIdx++ {
 			candidate := &cfg.Tiers[tIdx]
 
+			// Disabled tier guard (e.g. when: "false")
+			if candidate.IsDisabled {
+				continue
+			}
+
 			// Context ceiling guard
 			if candidate.MaxContext > 0 && turn.Tokens > candidate.MaxContext {
 				continue
@@ -228,18 +240,28 @@ func replayMultiTierSessionInternal(
 		} else {
 			// Cloud Tier (Workhorse or Frontier Fallback)
 			cost := turn.CostSpentUSD
-			if cost == 0 || (turn.IsLocal && targetTier.CostPerMillion > 0) {
-				rate := targetTier.CostPerMillion
-				if rate == 0 && policy != nil {
-					rate = policy.CostPerMillionCloud
+			if cost == 0 || turn.IsLocal || targetTier.CostPerMillion > 0 {
+				outputTokens := turn.CycleContentTokens + turn.CycleThinkingTokens + turn.CycleToolTokens
+				if outputTokens > 0 && targetTier.CompletionCostPerMillion > 0 {
+					cost = (float64(turn.Tokens)/1_000_000.0)*targetTier.PromptCostPerMillion +
+						(float64(outputTokens)/1_000_000.0)*targetTier.CompletionCostPerMillion
+				} else {
+					rate := targetTier.ComprehensiveRate
+					if rate <= 0 {
+						rate = targetTier.CostPerMillion
+					}
+					if rate <= 0 && policy != nil {
+						rate = policy.CostPerMillionCloud
+					}
+					cost = (float64(turn.Tokens) / 1_000_000.0) * rate
 				}
-				cost = (float64(turn.Tokens) / 1_000_000.0) * rate
 			}
 			result.TotalCostUSD += cost
 			result.TierStats[selectedTierIdx].CostUSD += cost
 
-			// Cloud resolution behavior
-			if !turn.IsRetry || turn.IsLocal {
+			// Cloud resolution behavior with benchmark intelligence:
+			// High coding index (>= 90.0) models reliably resolve retries on escalation.
+			if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 90.0 {
 				currentRetries = 0
 			} else {
 				currentRetries++

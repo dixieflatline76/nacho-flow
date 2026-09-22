@@ -47,6 +47,27 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	if len(records) == 0 {
 		var tierResults []TierTuningResult
 		for _, tier := range currentConfig.Tiers {
+			isLocal := IsLocalTier(tier, currentConfig.Providers)
+			promptCost, compCost, compRate := ResolveModelRates(tier.Model, isLocal)
+			codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
+			isDisabled := strings.TrimSpace(tier.When) == "false"
+			if isDisabled {
+				tierResults = append(tierResults, TierTuningResult{
+					TierName:                 tier.Name,
+					Model:                    tier.Model,
+					CodingIndex:              codingIndex,
+					ToolReliability:          toolReliability,
+					PromptCostPerMillion:     promptCost,
+					CompletionCostPerMillion: compCost,
+					ComprehensiveRate:        compRate,
+					IsDisabled:               true,
+					OptimalThreshold:         0,
+					OptimalRetries:           0,
+					OriginalRule:             tier.When,
+					SynthesizedRule:          "false",
+				})
+				continue
+			}
 			defaultThreshold := 16000
 			if tier.MaxContext > 0 && tier.MaxContext < defaultThreshold {
 				defaultThreshold = tier.MaxContext
@@ -56,11 +77,17 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 				rule = tier.When
 			}
 			tierResults = append(tierResults, TierTuningResult{
-				TierName:         tier.Name,
-				OptimalThreshold: defaultThreshold,
-				OptimalRetries:   0,
-				OriginalRule:     tier.When,
-				SynthesizedRule:  rule,
+				TierName:                 tier.Name,
+				Model:                    tier.Model,
+				CodingIndex:              codingIndex,
+				ToolReliability:          toolReliability,
+				PromptCostPerMillion:     promptCost,
+				CompletionCostPerMillion: compCost,
+				ComprehensiveRate:        compRate,
+				OptimalThreshold:         defaultThreshold,
+				OptimalRetries:           0,
+				OriginalRule:             tier.When,
+				SynthesizedRule:          rule,
 			})
 		}
 		return &TuningResult{
@@ -171,7 +198,7 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 				tierIdxStr := strings.TrimPrefix(parts[0], "tier_")
 				attr := parts[1]
 				tierIdx, err := strconv.Atoi(tierIdxStr)
-				if err == nil && tierIdx >= 0 && tierIdx < len(currentCfg.Tiers) {
+				if err == nil && tierIdx >= 0 && tierIdx < len(currentCfg.Tiers) && !currentCfg.Tiers[tierIdx].IsDisabled {
 					switch attr {
 					case "tokens":
 						for _, candT := range TokenCandidateValues {
@@ -282,27 +309,47 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 			origWhen = currentConfig.Tiers[i].When
 		}
 
-		synthRule, err := RewriteRuleAST(
-			origWhen,
-			tier.TokenThreshold,
-			tier.RetryBound,
-			tier.ExcludedKeywords,
-			tier.RestrictImages,
-			tier.RestrictTools,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to rewrite AST for tier %q: %w", tier.TierName, err)
+		isDisabled := tier.IsDisabled || strings.TrimSpace(origWhen) == "false"
+
+		var synthRule string
+		if isDisabled {
+			synthRule = "false"
+			tier.TokenThreshold = 0
+			tier.RetryBound = 0
+		} else if i < len(finalBuf.TierStats) && finalBuf.TierStats[i].TurnsRouted == 0 {
+			// Zero traffic reached this tier during replay -> preserve original rule strictly without dummy threshold additions!
+			synthRule = origWhen
+		} else {
+			var err error
+			synthRule, err = RewriteRuleAST(
+				origWhen,
+				tier.TokenThreshold,
+				tier.RetryBound,
+				tier.ExcludedKeywords,
+				tier.RestrictImages,
+				tier.RestrictTools,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to rewrite AST for tier %q: %w", tier.TierName, err)
+			}
 		}
 
 		tierResults = append(tierResults, TierTuningResult{
-			TierName:         tier.TierName,
-			OptimalThreshold: tier.TokenThreshold,
-			OptimalRetries:   tier.RetryBound,
-			FrictionKeywords: tier.ExcludedKeywords,
-			RestrictImages:   tier.RestrictImages,
-			RestrictTools:    tier.RestrictTools,
-			OriginalRule:     origWhen,
-			SynthesizedRule:  synthRule,
+			TierName:                 tier.TierName,
+			Model:                    tier.Model,
+			CodingIndex:              tier.CodingIndex,
+			ToolReliability:          tier.ToolReliability,
+			PromptCostPerMillion:     tier.PromptCostPerMillion,
+			CompletionCostPerMillion: tier.CompletionCostPerMillion,
+			ComprehensiveRate:        tier.ComprehensiveRate,
+			IsDisabled:               isDisabled,
+			OptimalThreshold:         tier.TokenThreshold,
+			OptimalRetries:           tier.RetryBound,
+			FrictionKeywords:         tier.ExcludedKeywords,
+			RestrictImages:           tier.RestrictImages,
+			RestrictTools:            tier.RestrictTools,
+			OriginalRule:             origWhen,
+			SynthesizedRule:          synthRule,
 		})
 	}
 

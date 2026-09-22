@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/dixieflatline76/nacho-flow/pkg/tuner"
@@ -74,20 +75,41 @@ func (p *ProcessTuningRunner) RunTuning(ctx context.Context, configPath string, 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start tuner worker process: %w", err)
+	}
+
+	pid := 0
+	if cmd.Process != nil {
+		pid = cmd.Process.Pid
+	}
+
 	if p.logger != nil {
-		p.logger.Info("Spawning isolated tuner worker process",
+		p.logger.Info("Spawned isolated tuner worker process",
+			slog.Int("pid", pid),
 			slog.String("executable", exe),
 			slog.String("strategy", strategy),
 			slog.String("traffic_log", trafficLogPath),
 		)
 	}
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Wait()
+	duration := time.Since(start)
+
+	if err != nil {
 		stderrStr := strings.TrimSpace(stderr.String())
 		if stderrStr != "" {
-			return nil, fmt.Errorf("tuner worker process failed: %s", stderrStr)
+			return nil, fmt.Errorf("tuner worker process (pid %d) failed after %s: %s", pid, duration, stderrStr)
 		}
-		return nil, fmt.Errorf("tuner worker process failed: %w", err)
+		return nil, fmt.Errorf("tuner worker process (pid %d) failed after %s: %w", pid, duration, err)
+	}
+
+	if p.logger != nil {
+		p.logger.Info("Tuner worker process completed successfully",
+			slog.Int("pid", pid),
+			slog.Duration("duration", duration),
+		)
 	}
 
 	var result tuner.TuningResult

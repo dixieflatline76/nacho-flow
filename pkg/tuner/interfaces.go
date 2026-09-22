@@ -35,15 +35,22 @@ func DefaultTuningPolicy() TuningPolicy {
 
 // TierTuningResult captures the tuned routing policy for an individual tier.
 type TierTuningResult struct {
-	TierName         string   `json:"tier_name"`
-	OptimalThreshold int      `json:"optimal_threshold"`
-	OptimalRetries   int      `json:"optimal_retries"`
-	FrictionKeywords []string `json:"friction_keywords"`
-	RestrictImages   bool     `json:"restrict_images"`
-	RestrictTools    bool     `json:"restrict_tools"`
-	PreservedClauses []string `json:"preserved_clauses"`
-	OriginalRule     string   `json:"original_rule,omitempty"`
-	SynthesizedRule  string   `json:"synthesized_rule"`
+	TierName                 string   `json:"tier_name"`
+	Model                    string   `json:"model,omitempty"`
+	CodingIndex              float64  `json:"coding_index,omitempty"`
+	ToolReliability          float64  `json:"tool_reliability,omitempty"`
+	PromptCostPerMillion     float64  `json:"prompt_cost_per_million,omitempty"`
+	CompletionCostPerMillion float64  `json:"completion_cost_per_million,omitempty"`
+	ComprehensiveRate        float64  `json:"comprehensive_rate,omitempty"`
+	IsDisabled               bool     `json:"is_disabled,omitempty"`
+	OptimalThreshold         int      `json:"optimal_threshold"`
+	OptimalRetries           int      `json:"optimal_retries"`
+	FrictionKeywords         []string `json:"friction_keywords"`
+	RestrictImages           bool     `json:"restrict_images"`
+	RestrictTools            bool     `json:"restrict_tools"`
+	PreservedClauses         []string `json:"preserved_clauses"`
+	OriginalRule             string   `json:"original_rule,omitempty"`
+	SynthesizedRule          string   `json:"synthesized_rule"`
 }
 
 // TuningResult captures the holistic fleet impact and per-tier policies.

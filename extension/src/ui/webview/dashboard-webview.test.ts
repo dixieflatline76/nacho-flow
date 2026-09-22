@@ -740,17 +740,20 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       expect(banner?.style.display).toBe('block');
 
       const content = banner?.textContent || '';
-      expect(content).toContain('Auto-Tuner v3: Multi-Tier Min-Conflicts Optimizer');
+      expect(content).toContain('Auto-Tuner: Route Optimization');
+      expect(content).toContain('Routing Improvements Suggested');
       expect(content).toContain('~119 Retries Avoided');
       expect(content).toContain('$8.20/mo Saved');
 
-      // Session Dynamics
+      // Traffic Summary
+      expect(content).toContain('Traffic Summary');
       expect(content).toContain('23 sessions');
       expect(content).toContain('36.8 turns');
       expect(content).toContain('78.3%');
       expect(content).toContain('847 real turns');
 
       // Model Recovery Meters
+      expect(content).toContain('Model Failure & Recovery Analysis');
       expect(content).toContain('qwen3-coder-plus');
       expect(content).toContain('67% self-recovery');
       expect(content).toContain('gemma-4-26b');
@@ -775,6 +778,48 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       // Actions
       expect(content).toContain('Apply Optimized Multi-Tier Policy to config.yaml');
       expect(content).toContain('Dismiss');
+    });
+
+    it('suppresses diffs for disabled tiers and unchanged tiers', () => {
+      postMessage('updateOptimization', {
+        tiers: [
+          {
+            tier_name: 'Tier 5: Opus On-Demand',
+            original_rule: 'false',
+            synthesized_rule: 'false',
+            is_disabled: true,
+            coding_index: 97.4,
+            comprehensive_rate: 33.75
+          },
+          {
+            tier_name: 'Tier 1: Local Qwen',
+            original_rule: 'Tokens < 16000',
+            synthesized_rule: 'Tokens < 16000',
+            is_local: true,
+            coding_index: 78.4
+          }
+        ],
+        total_sample_turns: 200,
+        projected_savings_usd: 0,
+        retries_eliminated: 0
+      });
+
+      const banner = document.getElementById('tuner-banner');
+      expect(banner?.style.display).toBe('block');
+      const content = banner?.textContent || '';
+
+      expect(content).toContain('Routing Currently Optimal');
+      expect(content).toContain('Tier Disabled / Manual Only');
+      expect(content).toContain('Current Rule Optimal');
+      expect(content).toContain('⭐ Coding Score: 97.4/100');
+      expect(content).toContain('💵 Rate: $33.75/1M');
+      expect(content).toContain('💵 Local ($0.00 / Free)');
+
+      // Neither tier should have red/green diff markers
+      expect(content).not.toContain('- when: "false"');
+      expect(content).not.toContain('+ when: "false"');
+      expect(content).not.toContain('- when: "Tokens < 16000"');
+      expect(content).not.toContain('+ when: "Tokens < 16000"');
     });
 
     it('hides banner when optimization data is null', () => {
