@@ -399,6 +399,8 @@ type Tier struct {
 	StripImages       bool                `yaml:"strip_images" json:"strip_images"`
 	HasVision         *bool               `yaml:"has_vision,omitempty" json:"has_vision,omitempty"`
 	ResolvedHasVision bool                `yaml:"-" json:"resolved_has_vision"`
+	StripTools        bool                `yaml:"strip_tools,omitempty" json:"strip_tools,omitempty"`
+	HasTools          *bool               `yaml:"has_tools,omitempty" json:"has_tools,omitempty"`
 	ReasoningEffort   string              `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
 	MaxContext        int                 `yaml:"max_context,omitempty" json:"max_context,omitempty"`
 	Raw               *bool               `yaml:"raw,omitempty" json:"raw,omitempty"`

@@ -479,6 +479,9 @@ body {
 .diff-neutral {
 	background: rgba(148, 163, 184, 0.08);
 	color: #94a3b8;
+}
+
+.diff-neutral .diff-desc {
 	font-style: italic;
 }
 
@@ -544,9 +547,9 @@ body {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	padding: 2px 6px;
-	border-radius: 3px;
-	white-space: pre-wrap;
+	padding: 4px 8px;
+	border-radius: 4px;
+	line-height: 1.5;
 	word-break: break-all;
 }
 
@@ -561,8 +564,23 @@ body {
 }
 
 .diff-sign {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-style: normal;
 	font-weight: bold;
 	user-select: none;
+	flex-shrink: 0;
+	width: 18px;
+	height: 18px;
+	line-height: 1;
+	text-align: center;
+}
+
+.diff-desc {
+	display: inline-flex;
+	align-items: center;
+	line-height: 1.5;
 }
 
 .diff-del .diff-sign {

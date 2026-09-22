@@ -814,21 +814,29 @@
 		}
 
 		// Pure Multi-Tier Diffs Rendering
-		const tiers = Array.isArray(optData.tiers) ? optData.tiers : [];
+		const tiers = Array.isArray(optData.tiers) ? [...optData.tiers] : [];
+		if (optData.default_tier) {
+			tiers.push({ ...optData.default_tier, is_default: true });
+		}
 		let tierDiffsHtml = '';
 		let hasAnyChanges = false;
 		if (tiers.length > 0) {
 			tierDiffsHtml = tiers.map((tier, idx) => {
-				const tierName = tier.tier_name || `Tier ${idx + 1}`;
+				const isDefault = !!tier.is_default;
+				const tierName = tier.tier_name || (isDefault ? 'Fallback Tier' : `Tier ${idx + 1}`);
 				let oldRule = tier.original_rule;
-				if (!oldRule && currentState.config && Array.isArray(currentState.config.tiers)) {
-					const matchingTier = currentState.config.tiers.find(t => t.name === tierName);
-					if (matchingTier && matchingTier.when) {
-						oldRule = matchingTier.when;
+				if (!oldRule && currentState.config) {
+					if (isDefault && currentState.config.default_tier) {
+						oldRule = currentState.config.default_tier.when || 'true';
+					} else if (Array.isArray(currentState.config.tiers)) {
+						const matchingTier = currentState.config.tiers.find(t => t.name === tierName);
+						if (matchingTier && matchingTier.when) {
+							oldRule = matchingTier.when;
+						}
 					}
 				}
 				if (!oldRule) {
-					oldRule = '(Default Pass / No Constraint)';
+					oldRule = isDefault ? 'true' : '(Default Pass / No Constraint)';
 				}
 				const threshold = tier.optimal_threshold;
 				const retries = tier.optimal_retries;
@@ -836,7 +844,10 @@
 				const restrictTools = !!tier.restrict_tools;
 				const frictionKeywords = Array.isArray(tier.friction_keywords) ? tier.friction_keywords : [];
 				const isDisabled = !!tier.is_disabled || tier.synthesized_rule === 'false' || oldRule.trim() === 'false';
-				const isUnchanged = !isDisabled && (oldRule.trim() === (tier.synthesized_rule || '').trim());
+				
+				const hasRuleChange = !isDisabled && tier.synthesized_rule && (oldRule.trim() !== tier.synthesized_rule.trim());
+				const hasModelChange = !!(tier.recommended_model && tier.original_model && tier.recommended_model !== tier.original_model);
+				const isUnchanged = !isDisabled && !hasRuleChange && !hasModelChange;
 
 				if (!isDisabled && !isUnchanged) {
 					hasAnyChanges = true;
@@ -856,34 +867,36 @@
 
 				let diffContent = '';
 				if (isDisabled) {
-					diffContent = `
-						<div class="diff-line diff-neutral">
-							<span class="diff-sign">🔒</span> Tier Disabled / Manual Only (when: "false") — No active traffic routed
-						</div>
-					`;
+					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">🔒</span> <span class="diff-desc">Tier Disabled / Manual Only (when: "false") — No active traffic routed</span></div>`;
 				} else if (isUnchanged) {
-					diffContent = `
-						<div class="diff-line diff-neutral">
-							<span class="diff-sign">✅</span> Current Rule Optimal (when: "${escapeHtml(oldRule)}") — No changes needed
-						</div>
-					`;
+					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">✅</span> <span class="diff-desc">Current Rule Optimal (when: "${escapeHtml(oldRule)}") — No changes needed</span></div>`;
 				} else {
-					diffContent = `
-						<div class="diff-line diff-del"><span class="diff-sign">-</span> when: "${escapeHtml(oldRule)}"</div>
-						<div class="diff-line diff-add"><span class="diff-sign">+</span> when: "${escapeHtml(tier.synthesized_rule)}"</div>
-					`;
+					if (hasModelChange) {
+						diffContent += `
+							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">model: "${escapeHtml(tier.original_model)}"</span></div>
+							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">model: "${escapeHtml(tier.recommended_model)}"</span></div>
+							${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #6ee7b7; font-size: 0.85em;"><span class="diff-sign">✨</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+						`;
+					}
+					if (hasRuleChange) {
+						diffContent += `
+							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
+							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "${escapeHtml(tier.synthesized_rule)}"</span></div>
+						`;
+					}
 				}
 
+				const tierPrefix = isDefault ? 'Fallback Tier:' : 'Target Tier:';
 				return `
 					<div class="tuner-diff-wrapper">
 						<div class="tuner-diff-header">
-							<span class="diff-tier-label">Target Tier: <strong>${escapeHtml(tierName)}</strong></span>
+							<span class="diff-tier-label">${tierPrefix} <strong>${escapeHtml(tierName)}</strong></span>
 							<div class="tier-pills-row">
 								${benchmarkPill}
 								${ratePill}
 								${isDisabled ? '<span class="signal-pill signal-pill-neutral">🔒 Disabled</span>' : ''}
-								${!isDisabled && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
-								${!isDisabled && retries !== undefined && retries !== null ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
+								${!isDisabled && !isDefault && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
+								${!isDisabled && !isDefault && retries ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
 								${!isDisabled ? `
 									<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
 										👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}

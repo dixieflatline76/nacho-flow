@@ -10,61 +10,53 @@ import (
 )
 
 var (
-	extractTokenRegex   = regexp.MustCompile(`(?i)tokens\s*<\s*(\d+)`)
-	extractRetriesRegex = regexp.MustCompile(`(?i)retries\s*<\s*(\d+)`)
-	extractKwRegex      = regexp.MustCompile(`'([^']+)'|"([^"]+)"`)
+	extractTokenRegex        = regexp.MustCompile(`(?i)tokens\s*<\s*(\d+)`)
+	extractRetriesRegex      = regexp.MustCompile(`(?i)retries\s*<\s*(\d+)`)
+	extractRetryFloorRegex   = regexp.MustCompile(`(?i)retries\s*>=\s*(\d+)`)
+	extractRetryFloorGtRegex = regexp.MustCompile(`(?i)retries\s*>\s*(\d+)`)
+	extractKwRegex           = regexp.MustCompile(`'([^']+)'|"([^"]+)"`)
+
+	kickstartClauseRegex = regexp.MustCompile(`(?i)\bSessionKickstarted\b(?:\s*==\s*true)?`)
+	restrictImagesRegex  = regexp.MustCompile(`(?i)(?:!\s*HasImages|\bHasImages\s*==\s*false\b)`)
+	requireImagesRegex   = regexp.MustCompile(`(?i)(?:^|[^!])\bHasImages\b(?:\s*==\s*true)?`)
+	restrictToolsRegex   = regexp.MustCompile(`(?i)(?:!\s*HasTools|\bHasTools\s*==\s*false\b)`)
+	extractKeywordsRegex = regexp.MustCompile(`(?i)\bkeywords\b`)
 )
 
 // ResolveModelRates resolves realistic prompt and completion rates per million tokens.
+// It queries the canonical curated catalog dynamically without hardcoded switches.
 // The comprehensive rate represents a blended rate: prompt + 0.25 * completion.
 func ResolveModelRates(model string, isLocal bool) (promptCost, compCost, compRate float64) {
 	if isLocal {
 		return 0, 0, 0
 	}
-	m := strings.ToLower(model)
-	switch {
-	case strings.Contains(m, "opus"):
-		return 15.00, 75.00, 33.75
-	case strings.Contains(m, "sonnet"):
-		return 3.00, 15.00, 6.75
-	case strings.Contains(m, "haiku"):
-		return 0.80, 4.00, 1.80
-	case strings.Contains(m, "deepseek"):
-		return 0.27, 1.10, 0.545
-	case strings.Contains(m, "gemini") && strings.Contains(m, "flash"):
-		return 0.15, 0.60, 0.30
-	case strings.Contains(m, "gemini") && strings.Contains(m, "pro"):
-		return 1.25, 5.00, 2.50
-	case strings.Contains(m, "qwen"):
-		return 0.20, 0.60, 0.35
-	default:
-		return 2.50, 10.00, 5.00
+	if p, ok := curation.DefaultManager().Lookup(model); ok && p.PromptCostPerMillion > 0 {
+		promptCost = p.PromptCostPerMillion
+		compCost = p.CompletionCostPerMillion
+		compRate = promptCost + 0.25*compCost
+		return promptCost, compCost, compRate
 	}
+	// Fallback to standard cloud baseline rate from DefaultTuningPolicy for uncatalogued models
+	defRate := DefaultTuningPolicy().CostPerMillionCloud
+	return defRate, defRate * 4.0, defRate * 2.0
 }
 
 // ResolveModelBenchmark resolves verified coding index and tool reliability from the curated catalog.
 func ResolveModelBenchmark(model string) (codingIndex float64, toolReliability float64) {
-	cat := curation.NewManager("", "")
-	if p, ok := cat.Lookup(model); ok {
+	if p, ok := curation.DefaultManager().Lookup(model); ok && p.CodingIndex > 0 {
 		return p.CodingIndex, p.ToolReliability
 	}
-	m := strings.ToLower(model)
-	switch {
-	case strings.Contains(m, "sonnet-5") || strings.Contains(m, "opus"):
-		return 97.4, 99.0
-	case strings.Contains(m, "sonnet-3.7") || strings.Contains(m, "3.7-sonnet"):
-		return 95.8, 99.0
-	case strings.Contains(m, "sonnet"):
-		return 92.0, 99.0
-	case strings.Contains(m, "deepseek") || strings.Contains(m, "r1"):
-		return 82.5, 90.0
-	case strings.Contains(m, "qwen"):
-		return 78.4, 88.0
-	case strings.Contains(m, "flash"):
-		return 74.0, 85.0
-	default:
-		return 70.0, 80.0
+	// Default neutral baseline benchmarks for uncatalogued models
+	return 70.0, 80.0
+}
+
+// ResolveModelCapabilities resolves verified vision and tool calling support from the curated catalog.
+func ResolveModelCapabilities(model string) (supportsVision bool, supportsTools bool) {
+	if p, ok := curation.DefaultManager().Lookup(model); ok {
+		return p.SupportsVision, p.SupportsTools
 	}
+	// Default to no-vision, tool-capable for uncatalogued models
+	return false, true
 }
 
 // ExtractRoutingState converts a contract.Config into an editable MultiTierConfig
@@ -81,6 +73,33 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 		isLocal := IsLocalTier(tier, cfg.Providers)
 		promptCost, compCost, compRate := ResolveModelRates(tier.Model, isLocal)
 		codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
+
+		requiresKickstart := kickstartClauseRegex.MatchString(tier.When)
+		restrictImages := restrictImagesRegex.MatchString(tier.When)
+		requiresImages := requireImagesRegex.MatchString(tier.When) && !restrictImages
+		restrictTools := restrictToolsRegex.MatchString(tier.When)
+
+		supportsVision, supportsTools := ResolveModelCapabilities(tier.Model)
+		if tier.HasVision != nil {
+			supportsVision = *tier.HasVision
+		} else if tier.ResolvedHasVision || requiresImages {
+			supportsVision = true
+		}
+		if tier.StripImages {
+			supportsVision = false
+		}
+		if tier.HasTools != nil {
+			supportsTools = *tier.HasTools
+		}
+		if tier.StripTools {
+			supportsTools = false
+		}
+
+		isFrontier := false
+		if p, ok := curation.DefaultManager().Lookup(tier.Model); ok {
+			isFrontier = p.IsFrontier()
+		}
+
 		isDisabled := strings.TrimSpace(tier.When) == "false"
 
 		threshold := 0
@@ -104,11 +123,19 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 			retryBound = 2
 		}
 
-		restrictImages := strings.Contains(strings.ToLower(tier.When), "!hasimages")
-		restrictTools := strings.Contains(strings.ToLower(tier.When), "!hastools")
+		retryFloor := 0
+		if m := extractRetryFloorRegex.FindStringSubmatch(tier.When); len(m) > 1 {
+			if v, err := strconv.Atoi(m[1]); err == nil && v > 0 {
+				retryFloor = v
+			}
+		} else if m := extractRetryFloorGtRegex.FindStringSubmatch(tier.When); len(m) > 1 {
+			if v, err := strconv.Atoi(m[1]); err == nil && v >= 0 {
+				retryFloor = v + 1
+			}
+		}
 
 		var excludedKws []string
-		if strings.Contains(strings.ToLower(tier.When), "keywords") {
+		if extractKeywordsRegex.MatchString(tier.When) {
 			matches := extractKwRegex.FindAllStringSubmatch(tier.When, -1)
 			for _, m := range matches {
 				if len(m) > 1 && m[1] != "" {
@@ -125,12 +152,18 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 			Model:                    tier.Model,
 			IsLocal:                  isLocal,
 			IsDisabled:               isDisabled,
+			IsFrontier:               isFrontier,
 			CodingIndex:              codingIndex,
 			ToolReliability:          toolReliability,
 			PromptCostPerMillion:     promptCost,
 			CompletionCostPerMillion: compCost,
 			ComprehensiveRate:        compRate,
 			CostPerMillion:           compRate,
+			SupportsVision:           supportsVision,
+			SupportsTools:            supportsTools,
+			RequiresKickstart:        requiresKickstart,
+			RequiresImages:           requiresImages,
+			RetryFloor:               retryFloor,
 			TokenThreshold:           threshold,
 			MaxContext:               tier.MaxContext,
 			RetryBound:               retryBound,
@@ -144,18 +177,40 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 	defLocal := IsLocalTier(cfg.DefaultTier, cfg.Providers)
 	defPrompt, defComp, defRate := ResolveModelRates(cfg.DefaultTier.Model, defLocal)
 	defCoding, defTool := ResolveModelBenchmark(cfg.DefaultTier.Model)
+	defVision, defTools := ResolveModelCapabilities(cfg.DefaultTier.Model)
+	if cfg.DefaultTier.HasVision != nil {
+		defVision = *cfg.DefaultTier.HasVision
+	} else if cfg.DefaultTier.ResolvedHasVision {
+		defVision = true
+	}
+	if cfg.DefaultTier.StripImages {
+		defVision = false
+	}
+	if cfg.DefaultTier.HasTools != nil {
+		defTools = *cfg.DefaultTier.HasTools
+	}
+	if cfg.DefaultTier.StripTools {
+		defTools = false
+	}
+	defIsFrontier := false
+	if p, ok := curation.DefaultManager().Lookup(cfg.DefaultTier.Model); ok {
+		defIsFrontier = p.IsFrontier()
+	}
 
 	result.DefaultTier = TierReplayConfig{
 		TierName:                 cfg.DefaultTier.Name,
 		Provider:                 cfg.DefaultTier.Provider,
 		Model:                    cfg.DefaultTier.Model,
 		IsLocal:                  defLocal,
+		IsFrontier:               defIsFrontier,
 		CodingIndex:              defCoding,
 		ToolReliability:          defTool,
 		PromptCostPerMillion:     defPrompt,
 		CompletionCostPerMillion: defComp,
 		ComprehensiveRate:        defRate,
 		CostPerMillion:           defRate,
+		SupportsVision:           defVision,
+		SupportsTools:            defTools,
 	}
 
 	return result

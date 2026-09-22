@@ -1,6 +1,5 @@
 package tuner
 
-
 // TierReplayConfig defines the routing guardrails and economic properties for an individual tier.
 type TierReplayConfig struct {
 	TierName                 string   `json:"tier_name"`
@@ -8,6 +7,7 @@ type TierReplayConfig struct {
 	Model                    string   `json:"model"`
 	IsLocal                  bool     `json:"is_local"`
 	IsDisabled               bool     `json:"is_disabled"` // e.g. when: "false"
+	IsFrontier               bool     `json:"is_frontier"` // True if model satisfies frontier capability class
 	CodingIndex              float64  `json:"coding_index"`
 	ToolReliability          float64  `json:"tool_reliability"`
 	PromptCostPerMillion     float64  `json:"prompt_cost_per_million"`
@@ -19,6 +19,11 @@ type TierReplayConfig struct {
 	RetryBound               int      `json:"retry_bound"`     // Retries < RetryBound (0 = unlimited)
 	RestrictImages           bool     `json:"restrict_images"` // If true, prompts with images are blocked
 	RestrictTools            bool     `json:"restrict_tools"`  // If true, prompts with tools are blocked
+	SupportsVision           bool     `json:"supports_vision"`
+	SupportsTools            bool     `json:"supports_tools"`
+	RequiresKickstart        bool     `json:"requires_kickstart"`
+	RequiresImages           bool     `json:"requires_images"`
+	RetryFloor               int      `json:"retry_floor"`
 	ExcludedKeywords         []string `json:"excluded_keywords"`
 }
 
@@ -42,14 +47,14 @@ type TierReplayStats struct {
 
 // MultiTierReplayResult captures the simulated fleet/session replay outcome.
 type MultiTierReplayResult struct {
-	TotalTurns         int                             `json:"total_turns"`
-	TotalCostUSD       float64                         `json:"total_cost_usd"`
-	TotalWastedRetries int                             `json:"total_wasted_retries"`
-	TotalCycleTrips    int                             `json:"total_cycle_trips"`
-	EscalatedSessions  int                             `json:"escalated_sessions"`
-	ResolvedSessions   int                             `json:"resolved_sessions"`
+	TotalTurns         int                                `json:"total_turns"`
+	TotalCostUSD       float64                            `json:"total_cost_usd"`
+	TotalWastedRetries int                                `json:"total_wasted_retries"`
+	TotalCycleTrips    int                                `json:"total_cycle_trips"`
+	EscalatedSessions  int                                `json:"escalated_sessions"`
+	ResolvedSessions   int                                `json:"resolved_sessions"`
 	TierStats          [MaxSupportedTiers]TierReplayStats `json:"tier_stats"`
-	NumTiers           int                             `json:"num_tiers"` // Count of active tiers (Tiers + DefaultTier)
+	NumTiers           int                                `json:"num_tiers"` // Count of active tiers (Tiers + DefaultTier)
 }
 
 // Reset clears the result accumulators for reuse without re-allocating.
@@ -169,6 +174,17 @@ func replayMultiTierSessionInternal(
 				continue
 			}
 
+			// Positive prerequisite guards
+			if candidate.RequiresKickstart && !turn.SessionKickstarted {
+				continue
+			}
+			if candidate.RequiresImages && !turn.HasImages {
+				continue
+			}
+			if candidate.RetryFloor > 0 && currentRetries < candidate.RetryFloor {
+				continue
+			}
+
 			// Context ceiling guard
 			if candidate.MaxContext > 0 && turn.Tokens > candidate.MaxContext {
 				continue
@@ -182,11 +198,11 @@ func replayMultiTierSessionInternal(
 				continue
 			}
 			// Vision gate
-			if candidate.RestrictImages && turn.HasImages {
+			if (candidate.RestrictImages || (candidate.Model != "" && !candidate.SupportsVision)) && turn.HasImages {
 				continue
 			}
 			// Tool gate
-			if candidate.RestrictTools && turn.HasTools {
+			if (candidate.RestrictTools || (candidate.Model != "" && !candidate.SupportsTools)) && turn.HasTools {
 				continue
 			}
 			// Domain keyword gate
@@ -222,6 +238,10 @@ func replayMultiTierSessionInternal(
 				currentRetries++
 				result.TotalWastedRetries++
 				result.TierStats[selectedTierIdx].WastedRetries++
+			} else if turn.IsRetry {
+				currentRetries++
+				result.TotalWastedRetries++
+				result.TierStats[selectedTierIdx].WastedRetries++
 			} else {
 				hasProgress := turn.HasWriteProgress || turn.HasTestPass
 				if turn.HasTools && !turn.HasWriteCapability {
@@ -231,10 +251,6 @@ func replayMultiTierSessionInternal(
 
 				if hasProgress {
 					currentRetries = 0
-				} else if turn.IsRetry {
-					currentRetries++
-					result.TotalWastedRetries++
-					result.TierStats[selectedTierIdx].WastedRetries++
 				}
 			}
 		} else {
@@ -260,14 +276,21 @@ func replayMultiTierSessionInternal(
 			result.TierStats[selectedTierIdx].CostUSD += cost
 
 			// Cloud resolution behavior with benchmark intelligence:
-			// High coding index (>= 90.0) models reliably resolve retries on escalation.
-			if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 90.0 {
+			// High coding index (>= 70.0) models reliably resolve retries on escalation.
+			if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
 				currentRetries = 0
 			} else {
 				currentRetries++
 				result.TotalWastedRetries++
 				result.TierStats[selectedTierIdx].WastedRetries++
 			}
+		}
+
+		// Modality capability penalty: if the selected tier cannot execute the turn's modalities
+		if targetTier.Model != "" && ((turn.HasImages && !targetTier.SupportsVision) || (turn.HasTools && !targetTier.SupportsTools)) {
+			currentRetries++
+			result.TotalWastedRetries++
+			result.TierStats[selectedTierIdx].WastedRetries++
 		}
 
 		// Cycle breaker tracking

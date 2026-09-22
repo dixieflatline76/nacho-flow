@@ -435,6 +435,7 @@ func runTune(args []string) error {
 	formatFlag := tuneFlags.String("format", "text", "Output format: 'text' (human-readable report) or 'json' (machine-readable JSON)")
 	apply := tuneFlags.Bool("apply", false, "Apply recommended rule optimizations to config.yaml")
 	strategyFlag := tuneFlags.String("strategy", "min_conflicts", "Optimization strategy: 'min_conflicts' (v3 multi-tier) or 'grid_sweep' (v2 single-tier)")
+	vramGB := tuneFlags.Int("vram-gb", 0, "Target local GPU VRAM ceiling in GB for local model substitution recommendations (e.g. 8, 16, 24; 0 = infer from current model)")
 
 	if err := tuneFlags.Parse(args); err != nil {
 		return err
@@ -458,7 +459,11 @@ func runTune(args []string) error {
 	if *strategyFlag == "grid_sweep" || *strategyFlag == "cost_penalty" {
 		optimizer = tuner.NewCostPenaltyOptimizer()
 	} else {
-		optimizer = tuner.NewMinConflictsOptimizer(tuner.DefaultTuningPolicy())
+		policy := tuner.DefaultTuningPolicy()
+		if *vramGB > 0 {
+			policy.LocalVRAMGB = *vramGB
+		}
+		optimizer = tuner.NewMinConflictsOptimizer(policy)
 	}
 	result, err := optimizer.Optimize(records, cfg)
 	if err != nil {

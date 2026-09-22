@@ -143,3 +143,46 @@ func TestReplaySession_FrictionKeywordRouting(t *testing.T) {
 		t.Errorf("Expected 0 LocalTurns, got %d", res.LocalTurns)
 	}
 }
+
+func TestReplaySession_PlanModeAndModalityRestrictions(t *testing.T) {
+	// 1. Empty trajectory
+	emptyRes := ReplaySession(SessionTrajectory{}, ReplayConfig{}, DefaultTuningPolicy())
+	if emptyRes.LocalTurns != 0 || emptyRes.CloudTurns != 0 {
+		t.Errorf("expected 0 turns for empty trajectory")
+	}
+
+	// 2. Modality restrictions: RestrictImages and RestrictTools
+	now := time.Now().UTC()
+	traj := SessionTrajectory{
+		SessionID: "sess-modal",
+		Turns: []telemetry.TurnRecord{
+			// Turn 1: has images -> restricted
+			{Timestamp: now, Tokens: 500, HasImages: true, IsLocal: true},
+			// Turn 2: has tools -> restricted
+			{Timestamp: now.Add(time.Second), Tokens: 500, HasTools: true, IsLocal: true},
+			// Turn 3: plan mode turn (has tools, no write capability) -> passes progress
+			{Timestamp: now.Add(2 * time.Second), Tokens: 500, HasTools: true, HasWriteCapability: false, IsLocal: true},
+		},
+	}
+	cfg := ReplayConfig{
+		TokenThreshold: 4000,
+		RestrictImages: true,
+		RestrictTools:  true,
+	}
+	res := ReplaySession(traj, cfg, DefaultTuningPolicy())
+	if res.CloudTurns != 3 {
+		t.Errorf("expected 3 cloud turns due to modality restrictions, got %d", res.CloudTurns)
+	}
+
+	// 3. Plan mode progress on local
+	trajPlan := SessionTrajectory{
+		SessionID: "sess-plan",
+		Turns: []telemetry.TurnRecord{
+			{Timestamp: now, Tokens: 500, HasTools: true, HasWriteCapability: false, IsLocal: true},
+		},
+	}
+	resPlan := ReplaySession(trajPlan, ReplayConfig{TokenThreshold: 4000}, DefaultTuningPolicy())
+	if resPlan.LocalTurns != 1 || resPlan.SimulatedRetries != 0 {
+		t.Errorf("expected plan mode turn to succeed on local without retry")
+	}
+}

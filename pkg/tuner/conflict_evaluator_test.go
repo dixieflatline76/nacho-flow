@@ -105,7 +105,7 @@ func TestEvaluateConflicts_FractionalAttribution(t *testing.T) {
 	}
 
 	// Penalty is 3.0. With 3 repair variables, each must receive exactly 3.0 / 3 = 1.0
-	expectedPenaltyPerVar := 3.0 / 3.0
+	expectedPenaltyPerVar := 1.0
 
 	tokenVar := "tier_0:tokens"
 	toolVar := "tier_0:tools"
@@ -219,12 +219,44 @@ func BenchmarkEvaluateFleetConflict_ZeroAlloc(b *testing.B) {
 	var buf MultiTierReplayResult
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		c := EvaluateFleetConflict(trajectories, &cfg, &policy, &buf)
 		if c <= 0 {
 			b.Fatalf("expected conflict > 0, got %f", c)
 		}
+	}
+}
+
+func TestEvaluateFleetConflict_NilBufAndPolicy(t *testing.T) {
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{TierName: "Tier 1", TokenThreshold: 4000},
+		},
+		DefaultTier: TierReplayConfig{TierName: "Tier 2"},
+	}
+	trajectories := []SessionTrajectory{
+		{
+			SessionID: "sess-1",
+			Turns: []telemetry.TurnRecord{
+				{Tokens: 1000, Timestamp: time.Now().UTC()},
+			},
+		},
+	}
+	// 1. nil buf and nil policy
+	c := EvaluateFleetConflict(trajectories, &cfg, nil, nil)
+	if c <= 0 {
+		t.Errorf("expected positive conflict with nil buf and nil policy, got %f", c)
+	}
+	// 2. hard constraints failure
+	badCfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{TierName: "Tier 1", TokenThreshold: 16000},
+			{TierName: "Tier 2", TokenThreshold: 8000},
+		},
+		DefaultTier: TierReplayConfig{TierName: "Tier 3"},
+	}
+	if !math.IsInf(EvaluateFleetConflict(trajectories, &badCfg, nil, nil), 1) {
+		t.Errorf("expected +Inf conflict for bad config")
 	}
 }

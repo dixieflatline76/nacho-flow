@@ -16,13 +16,49 @@ func TestAdvisor_GeneratesReport(t *testing.T) {
 			{
 				TierName:         "Local ROCm GPU",
 				OptimalThreshold: 12500,
+				OptimalRetries:   2,
 				FrictionKeywords: []string{"sql", "migration"},
 				RestrictImages:   false,
 				RestrictTools:    false,
+				OriginalModel:    "qwen2.5-coder:14b",
+				RecommendedModel: "qwen3-coder-plus",
+				ModelBenefit:     "SWE-bench +15%",
 				OriginalRule:     "Tokens < 16000 && !HasImages && !HasTools",
 				SynthesizedRule:  "Tokens < 12500 && !any(Keywords, { # in ['migration', 'sql'] })",
 			},
+			{
+				TierName:         "Unlimited Tier",
+				OptimalThreshold: 0,
+				OptimalRetries:   0,
+				RestrictImages:   true,
+				RestrictTools:    true,
+				OriginalRule:     "true",
+				SynthesizedRule:  "true",
+			},
 		},
+		DefaultTier: &TierTuningResult{
+			TierName:         "Fallback Catch-All",
+			OriginalModel:    "z-ai/glm-5.3-flash",
+			RecommendedModel: "google/gemini-3.8-flash",
+			ModelBenefit:     "Capability parity",
+		},
+		StaticDominanceConflicts: []StaticDominanceConflict{
+			{
+				TierIndex: 1,
+				TierName:  "Local ROCm GPU",
+				Reason:    "Escalation tier is strictly inferior to predecessor tier",
+			},
+		},
+		RecoveryStats: map[string]RecoveryStats{
+			"qwen2.5-coder:14b": {
+				Model:             "qwen2.5-coder:14b",
+				SelfRecoveryRate:  0.75,
+				AvgTurnsToRecover: 1.8,
+			},
+		},
+		TotalSessions:       10,
+		AvgTurnsPerSession:  500.0,
+		EscalationRate:      0.25,
 		CurrentCostUSD:      45.00,
 		ProjectedCostUSD:    48.20,
 		ProjectedSavingsUSD: 14.50,
@@ -56,6 +92,10 @@ func TestAdvisor_GeneratesReport(t *testing.T) {
 		"~340 retries eliminated",
 		"$14.50 USD saved",
 		"Tokens < 12500 && !any(Keywords, { # in ['migration', 'sql'] })",
+		"STATIC ROUTING DOMINANCE DEFECTS DETECTED",
+		"MODEL SELF-RECOVERY ANALYSIS",
+		"Fallback Catch-All",
+		"Context Threshold:   Unlimited",
 	}
 
 	for _, snippet := range expectedSnippets {

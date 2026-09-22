@@ -583,4 +583,3 @@ func TestOptimizer_SessionReplayPipeline_v2(t *testing.T) {
 func NewOptimizerForTest() *CostPenaltyOptimizer {
 	return NewCostPenaltyOptimizer()
 }
-

@@ -31,6 +31,7 @@ type ProcessTuningRunner struct {
 	ExecutablePath string
 	MaxSessions    int
 	Strategy       string
+	LocalVRAMGB    int
 	logger         *slog.Logger
 }
 
@@ -41,6 +42,7 @@ func NewProcessTuningRunner(executablePath string, logger *slog.Logger) *Process
 		ExecutablePath: executablePath,
 		MaxSessions:    0, // Uncapped: evaluate all complete sessions
 		Strategy:       "min_conflicts",
+		LocalVRAMGB:    0,
 		logger:         logger,
 	}
 }
@@ -69,7 +71,11 @@ func (p *ProcessTuningRunner) RunTuning(ctx context.Context, configPath string, 
 		fmt.Sprintf("--strategy=%s", strategy),
 		fmt.Sprintf("--max-sessions=%d", p.MaxSessions),
 	}
+	if p.LocalVRAMGB > 0 {
+		args = append(args, fmt.Sprintf("--vram-gb=%d", p.LocalVRAMGB))
+	}
 
+	// #nosec G204 - self-invoked executable for worker sub-process execution
 	cmd := exec.CommandContext(ctx, exe, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -123,12 +129,13 @@ func (p *ProcessTuningRunner) RunTuning(ctx context.Context, configPath string, 
 // InProcessTuningRunner runs the tuning optimization directly in-process.
 // It is primarily intended for fast, zero-dependency unit tests and fallback scenarios.
 type InProcessTuningRunner struct {
-	server *Server
+	server      *Server
+	LocalVRAMGB int
 }
 
 // NewInProcessTuningRunner creates an InProcessTuningRunner bound to the given Server.
 func NewInProcessTuningRunner(server *Server) *InProcessTuningRunner {
-	return &InProcessTuningRunner{server: server}
+	return &InProcessTuningRunner{server: server, LocalVRAMGB: 0}
 }
 
 // RunTuning loads complete sessions and runs s.tuner.OptimizeWithContext in-process.
@@ -145,5 +152,12 @@ func (r *InProcessTuningRunner) RunTuning(ctx context.Context, configPath string
 		}
 	}
 
-	return r.server.tuner.OptimizeWithContext(ctx, records, r.server.GetConfig())
+	optimizer := r.server.tuner
+	if r.LocalVRAMGB > 0 {
+		policy := tuner.DefaultTuningPolicy()
+		policy.LocalVRAMGB = r.LocalVRAMGB
+		optimizer = tuner.NewMinConflictsOptimizer(policy)
+	}
+
+	return optimizer.OptimizeWithContext(ctx, records, r.server.GetConfig())
 }

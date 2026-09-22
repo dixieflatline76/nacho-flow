@@ -1119,11 +1119,36 @@ export class ExtensionController {
 			for (const tier of tiers) {
 				const tierName = tier.tier_name || tier.tierName;
 				const synthesizedRule = tier.synthesized_rule || tier.synthesizedRule;
-				if (!tierName || !synthesizedRule) continue;
-				const updatedYaml = this.replaceTierRuleInYaml(yamlContent, tierName, synthesizedRule);
-				if (updatedYaml !== yamlContent) {
-					yamlContent = updatedYaml;
-					appliedCount++;
+				const recommendedModel = tier.recommended_model || tier.recommendedModel;
+				const originalModel = tier.original_model || tier.originalModel;
+
+				if (tierName && synthesizedRule) {
+					const updatedYaml = this.replaceTierRuleInYaml(yamlContent, tierName, synthesizedRule);
+					if (updatedYaml !== yamlContent) {
+						yamlContent = updatedYaml;
+						appliedCount++;
+					}
+				}
+				if (tierName && recommendedModel && originalModel && recommendedModel !== originalModel) {
+					const updatedYaml = this.replaceTierModelInYaml(yamlContent, tierName, false, recommendedModel);
+					if (updatedYaml !== yamlContent) {
+						yamlContent = updatedYaml;
+						appliedCount++;
+					}
+				}
+			}
+
+			if (data?.default_tier) {
+				const defTier = data.default_tier;
+				const defTierName = defTier.tier_name || defTier.tierName || 'Fallback';
+				const recModel = defTier.recommended_model || defTier.recommendedModel;
+				const origModel = defTier.original_model || defTier.originalModel;
+				if (recModel && origModel && recModel !== origModel) {
+					const updatedYaml = this.replaceTierModelInYaml(yamlContent, defTierName, true, recModel);
+					if (updatedYaml !== yamlContent) {
+						yamlContent = updatedYaml;
+						appliedCount++;
+					}
 				}
 			}
 

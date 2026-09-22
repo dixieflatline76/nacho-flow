@@ -579,10 +579,39 @@ func (s *Server) handleAPITune(w http.ResponseWriter, r *http.Request) {
 		s.trafficLogger.Flush()
 	}
 
+	vramGB := 0
+	if vStr := r.URL.Query().Get("vram_gb"); vStr != "" {
+		if v, err := strconv.Atoi(vStr); err == nil && v > 0 {
+			vramGB = v
+		}
+	}
+	if vramGB == 0 && r.Body != nil {
+		var payload struct {
+			LocalVRAMGB int `json:"local_vram_gb"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		if payload.LocalVRAMGB > 0 {
+			vramGB = payload.LocalVRAMGB
+		}
+	}
+
+	activeRunner := runner
+	if vramGB > 0 {
+		if procRunner, ok := runner.(*ProcessTuningRunner); ok {
+			cp := *procRunner
+			cp.LocalVRAMGB = vramGB
+			activeRunner = &cp
+		} else if inProc, ok := runner.(*InProcessTuningRunner); ok {
+			cp := *inProc
+			cp.LocalVRAMGB = vramGB
+			activeRunner = &cp
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	result, err := runner.RunTuning(ctx, s.configPath, s.trafficLogPath)
+	result, err := activeRunner.RunTuning(ctx, s.configPath, s.trafficLogPath)
 	if err != nil {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusInternalServerError)

@@ -77,6 +77,11 @@ func EvaluateFleetConflict(
 		(turnsWeight * float64(buf.TotalTurns)) +
 		(cycleWeight * float64(buf.TotalCycleTrips))
 
+	dominanceConflicts := CountFleetDominanceConflicts(cfg)
+	if dominanceConflicts > 0 {
+		totalConflict += float64(dominanceConflicts) * 10.0 * retryWeight
+	}
+
 	return totalConflict
 }
 
@@ -148,6 +153,15 @@ func EvaluateFleetWithAttribution(
 				if candidate.IsDisabled {
 					continue
 				}
+				if candidate.RequiresKickstart && !turn.SessionKickstarted {
+					continue
+				}
+				if candidate.RequiresImages && !turn.HasImages {
+					continue
+				}
+				if candidate.RetryFloor > 0 && currentRetries < candidate.RetryFloor {
+					continue
+				}
 				if candidate.MaxContext > 0 && turn.Tokens > candidate.MaxContext {
 					continue
 				}
@@ -157,10 +171,10 @@ func EvaluateFleetWithAttribution(
 				if candidate.RetryBound > 0 && currentRetries >= candidate.RetryBound {
 					continue
 				}
-				if candidate.RestrictImages && turn.HasImages {
+				if (candidate.RestrictImages || (candidate.Model != "" && !candidate.SupportsVision)) && turn.HasImages {
 					continue
 				}
-				if candidate.RestrictTools && turn.HasTools {
+				if (candidate.RestrictTools || (candidate.Model != "" && !candidate.SupportsTools)) && turn.HasTools {
 					continue
 				}
 				if len(candidate.ExcludedKeywords) > 0 && hasKeyword(turn.Keywords, candidate.ExcludedKeywords) {
@@ -186,6 +200,10 @@ func EvaluateFleetWithAttribution(
 					currentRetries++
 					totalWastedRetries++
 					turnFailed = true
+				} else if turn.IsRetry {
+					currentRetries++
+					totalWastedRetries++
+					turnFailed = true
 				} else {
 					hasProgress := turn.HasWriteProgress || turn.HasTestPass
 					if turn.HasTools && !turn.HasWriteCapability {
@@ -193,10 +211,6 @@ func EvaluateFleetWithAttribution(
 					}
 					if hasProgress {
 						currentRetries = 0
-					} else if turn.IsRetry {
-						currentRetries++
-						totalWastedRetries++
-						turnFailed = true
 					}
 				}
 			} else {
@@ -220,7 +234,7 @@ func EvaluateFleetWithAttribution(
 				}
 				totalCostUSD += turnCost
 
-				if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 90.0 {
+				if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
 					currentRetries = 0
 				} else {
 					currentRetries++
@@ -229,55 +243,96 @@ func EvaluateFleetWithAttribution(
 				}
 			}
 
+			if targetTier.Model != "" && ((turn.HasImages && !targetTier.SupportsVision) || (turn.HasTools && !targetTier.SupportsTools)) {
+				currentRetries++
+				totalWastedRetries++
+				turnFailed = true
+			}
+
 			if turn.CycleBreakerTriggered {
 				totalCycleTrips++
 				turnFailed = true
 			}
 
-			// Fractional Attribution on Failure (only for non-default tiers and non-disabled tiers)
-			if turnFailed && selectedTierIdx < len(cfg.Tiers) && !cfg.Tiers[selectedTierIdx].IsDisabled {
-				repairVarsBuf = repairVarsBuf[:0]
+			// Fractional Attribution on Failure
+			if turnFailed {
+				if selectedTierIdx < len(cfg.Tiers) && !cfg.Tiers[selectedTierIdx].IsDisabled {
+					repairVarsBuf = repairVarsBuf[:0]
 
-				// Candidate 1: Tightening Token Cliff
-				if turn.Tokens > 0 {
-					repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:tokens", selectedTierIdx))
-				}
-
-				// Candidate 2: Tightening Retry Bound (only if retriesBeforeTurn >= 1)
-				if retriesBeforeTurn >= 1 {
-					repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:retries", selectedTierIdx))
-				}
-
-				// Candidate 3: Tool Gate
-				if turn.HasTools && !targetTier.RestrictTools {
-					repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:tools", selectedTierIdx))
-				}
-
-				// Candidate 4: Vision Gate
-				if turn.HasImages && !targetTier.RestrictImages {
-					repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:images", selectedTierIdx))
-				}
-
-				// Candidate 5: Monitored Keyword Exclusions
-				for _, kw := range monitoredKeywords {
-					if !hasKeyword([]string{kw}, targetTier.ExcludedKeywords) && hasKeyword(turn.Keywords, []string{kw}) {
-						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("keyword:%s", kw))
+					// Candidate 1: Tightening Token Cliff (only if tier is token-constrained or is local tier, and not kickstart)
+					if turn.Tokens >= 1000 && (targetTier.TokenThreshold > 0 || targetTier.IsLocal) && !targetTier.RequiresKickstart {
+						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:tokens", selectedTierIdx))
 					}
-				}
 
-				// Divide turn penalty equally among all repairable variables
-				k := len(repairVarsBuf)
-				if k > 0 {
+					// Candidate 2: Tightening Retry Bound (only if retriesBeforeTurn >= 1)
+					if retriesBeforeTurn >= 1 {
+						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:retries", selectedTierIdx))
+					}
+
+					// Candidate 3: Tool Gate (only if tier model does not support tools)
+					if turn.HasTools && !targetTier.RestrictTools && !targetTier.SupportsTools {
+						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:tools", selectedTierIdx))
+					}
+
+					// Candidate 4: Vision Gate (only if tier model does not support vision)
+					if turn.HasImages && !targetTier.RestrictImages && !targetTier.SupportsVision {
+						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:images", selectedTierIdx))
+					}
+
+					// Candidate 5: Model Substitution (underperforming benchmark or missing modality)
+					canSubstituteModel := true
+					if targetTier.IsLocal && (policy == nil || policy.LocalVRAMGB == 0) {
+						canSubstituteModel = false
+					}
+					if canSubstituteModel && targetTier.Model != "" && (targetTier.CodingIndex < 70.0 || (turn.HasImages && !targetTier.SupportsVision) || (turn.HasTools && !targetTier.SupportsTools)) {
+						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:model", selectedTierIdx))
+					}
+
+					// Candidate 6: Monitored Keyword Exclusions
+					for _, kw := range monitoredKeywords {
+						if !hasKeyword([]string{kw}, targetTier.ExcludedKeywords) && hasKeyword(turn.Keywords, []string{kw}) {
+							repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("keyword:%s", kw))
+						}
+					}
+
+					// Divide turn penalty equally among all repairable variables
+					k := len(repairVarsBuf)
+					if k > 0 {
+						penalty := retryWeight
+						if turn.CycleBreakerTriggered {
+							penalty += cycleWeight
+						}
+						penalty += costWeight * turnCost
+
+						fractionalPenalty := penalty / float64(k)
+						for _, v := range repairVarsBuf {
+							variableLedger[v] += fractionalPenalty
+						}
+					}
+				} else if selectedTierIdx == defaultTierIdx {
+					// Fallback sink failed: attribute to default_tier:model
 					penalty := retryWeight
 					if turn.CycleBreakerTriggered {
 						penalty += cycleWeight
 					}
 					penalty += costWeight * turnCost
-
-					fractionalPenalty := penalty / float64(k)
-					for _, v := range repairVarsBuf {
-						variableLedger[v] += fractionalPenalty
+					variableLedger["default_tier:model"] += penalty
+				}
+			} else if turnCost > 0 && targetTier.Model != "" {
+				costCeiling := 3.0
+				if policy != nil && policy.CostPerMillionCloud > 0 {
+					costCeiling = policy.CostPerMillionCloud
+				}
+				tierCeiling := costCeiling
+				if selectedTierIdx == defaultTierIdx {
+					tierCeiling = 15.0
+				}
+				if targetTier.ComprehensiveRate > tierCeiling {
+					varVar := fmt.Sprintf("tier_%d:model", selectedTierIdx)
+					if selectedTierIdx == defaultTierIdx {
+						varVar = "default_tier:model"
 					}
+					variableLedger[varVar] += costWeight * turnCost
 				}
 			}
 		}
@@ -288,11 +343,22 @@ func EvaluateFleetWithAttribution(
 		(turnsWeight * float64(totalTurns)) +
 		(cycleWeight * float64(totalCycleTrips))
 
-	// Find the variable contributing highest conflict penalty
+	dominanceConflicts := AnalyzeFleetDominance(cfg)
+	for _, dc := range dominanceConflicts {
+		penalty := 10.0 * retryWeight
+		if dc.TierIndex < len(cfg.Tiers) {
+			variableLedger[fmt.Sprintf("tier_%d:model", dc.TierIndex)] += penalty
+		} else {
+			variableLedger["default_tier:model"] += penalty
+		}
+		totalConflict += penalty
+	}
+
+	// Find the variable contributing highest conflict penalty (deterministic tie-breaking)
 	var maxVar string
 	var maxVal float64
 	for v, val := range variableLedger {
-		if val > maxVal {
+		if val > maxVal || (val == maxVal && (maxVar == "" || v < maxVar)) {
 			maxVal = val
 			maxVar = v
 		}

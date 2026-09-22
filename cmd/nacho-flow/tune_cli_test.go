@@ -200,3 +200,67 @@ tiers:
 		t.Errorf("Expected 0 sessions for empty log, got %d", res.TotalSessions)
 	}
 }
+
+func TestRunTune_StrategiesAndVRAM(t *testing.T) {
+	tempDir := t.TempDir()
+	cfgPath := filepath.Join(tempDir, "config.yaml")
+	logPath := filepath.Join(tempDir, "traffic.jsonl")
+
+	sampleCfg := `providers:
+  local:
+    base_url: "http://localhost:11434"
+    type: "local"
+tiers:
+  - name: "Local GPU"
+    provider: "local"
+    model: "qwen2.5-coder:14b"
+    when: "Tokens < 4000"
+`
+	_ = os.WriteFile(cfgPath, []byte(sampleCfg), 0644)
+
+	tl, _ := telemetry.NewTrafficLogger(logPath, 100)
+	tl.Emit(telemetry.TurnRecord{
+		Timestamp: time.Now().UTC(),
+		SessionID: "s-1",
+		Tokens:    1000,
+		IsLocal:   true,
+	})
+	_ = tl.Close()
+
+	// 1. Test with --strategy=grid_sweep
+	_ = captureStdout(func() {
+		err := runTune([]string{
+			"--config=" + cfgPath,
+			"--traffic-log=" + logPath,
+			"--strategy=grid_sweep",
+			"--sample=10",
+		})
+		if err != nil {
+			t.Fatalf("grid_sweep failed: %v", err)
+		}
+	})
+
+	// 2. Test with --strategy=cost_penalty
+	_ = captureStdout(func() {
+		err := runTune([]string{
+			"--config=" + cfgPath,
+			"--traffic-log=" + logPath,
+			"--strategy=cost_penalty",
+		})
+		if err != nil {
+			t.Fatalf("cost_penalty failed: %v", err)
+		}
+	})
+
+	// 3. Test with --vram-gb=16
+	_ = captureStdout(func() {
+		err := runTune([]string{
+			"--config=" + cfgPath,
+			"--traffic-log=" + logPath,
+			"--vram-gb=16",
+		})
+		if err != nil {
+			t.Fatalf("vram-gb failed: %v", err)
+		}
+	})
+}

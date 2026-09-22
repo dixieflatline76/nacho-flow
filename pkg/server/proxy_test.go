@@ -50,6 +50,26 @@ func TestGetModelsEndpoint(t *testing.T) {
 	}
 }
 
+func TestServer_SettersAndNTSTransformer(t *testing.T) {
+	cfg := &contract.Config{Port: 8000}
+	evaluator, _ := strategy.NewExprEvaluator(nil, contract.Tier{Model: "default"})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	srv.SetTuningRunner(nil)
+	srv.SetTrafficLogger(nil)
+	srv.SetDiskStore(nil)
+	srv.SetTrafficLogPath("traffic.jsonl")
+
+	_ = srv.GetNTSTransformer()
+
+	var emptySrv Server
+	if emptySrv.GetNTSTransformer() != nil {
+		t.Errorf("expected nil for empty server without state")
+	}
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	cfg := &contract.Config{Port: 8000}
 	evaluator, _ := strategy.NewExprEvaluator(nil, contract.Tier{Model: "default"})

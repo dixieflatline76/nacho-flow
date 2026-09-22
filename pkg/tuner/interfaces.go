@@ -16,7 +16,8 @@ type TuningPolicy struct {
 	TurnsWeight         float64 `json:"turns_weight"`          // Penalty per average session turn
 	MinOccurrences      int     `json:"min_occurrences"`
 	OddsRatioThreshold  float64 `json:"odds_ratio_threshold"`
-	MinSessions         int     `json:"min_sessions"` // Minimum sessions for statistical significance
+	MinSessions         int     `json:"min_sessions"`                                           // Minimum sessions for statistical significance
+	LocalVRAMGB         int     `json:"local_vram_gb,omitempty" yaml:"local_vram_gb,omitempty"` // Target local GPU VRAM ceiling in GB (0 = infer)
 }
 
 // DefaultTuningPolicy returns the recommended balanced flow-state protection policy.
@@ -30,6 +31,7 @@ func DefaultTuningPolicy() TuningPolicy {
 		MinOccurrences:      10,
 		OddsRatioThreshold:  1.5,
 		MinSessions:         5,
+		LocalVRAMGB:         0,
 	}
 }
 
@@ -37,6 +39,9 @@ func DefaultTuningPolicy() TuningPolicy {
 type TierTuningResult struct {
 	TierName                 string   `json:"tier_name"`
 	Model                    string   `json:"model,omitempty"`
+	OriginalModel            string   `json:"original_model,omitempty"`
+	RecommendedModel         string   `json:"recommended_model,omitempty"`
+	ModelBenefit             string   `json:"model_benefit,omitempty"`
 	CodingIndex              float64  `json:"coding_index,omitempty"`
 	ToolReliability          float64  `json:"tool_reliability,omitempty"`
 	PromptCostPerMillion     float64  `json:"prompt_cost_per_million,omitempty"`
@@ -55,16 +60,18 @@ type TierTuningResult struct {
 
 // TuningResult captures the holistic fleet impact and per-tier policies.
 type TuningResult struct {
-	Tiers               []TierTuningResult       `json:"tiers"`
-	CurrentCostUSD      float64                  `json:"current_cost_usd"`
-	ProjectedCostUSD    float64                  `json:"projected_cost_usd"`
-	ProjectedSavingsUSD float64                  `json:"projected_savings_usd"`
-	RetriesEliminated   int                      `json:"retries_eliminated"`
-	TotalSampleTurns    int                      `json:"total_sample_turns"`
-	TotalSessions       int                      `json:"total_sessions"`
-	AvgTurnsPerSession  float64                  `json:"avg_turns_per_session"`
-	EscalationRate      float64                  `json:"escalation_rate"`
-	RecoveryStats       map[string]RecoveryStats `json:"recovery_stats,omitempty"`
+	Tiers                    []TierTuningResult        `json:"tiers"`
+	DefaultTier              *TierTuningResult         `json:"default_tier,omitempty"`
+	CurrentCostUSD           float64                   `json:"current_cost_usd"`
+	ProjectedCostUSD         float64                   `json:"projected_cost_usd"`
+	ProjectedSavingsUSD      float64                   `json:"projected_savings_usd"`
+	RetriesEliminated        int                       `json:"retries_eliminated"`
+	TotalSampleTurns         int                       `json:"total_sample_turns"`
+	TotalSessions            int                       `json:"total_sessions"`
+	AvgTurnsPerSession       float64                   `json:"avg_turns_per_session"`
+	EscalationRate           float64                   `json:"escalation_rate"`
+	RecoveryStats            map[string]RecoveryStats  `json:"recovery_stats,omitempty"`
+	StaticDominanceConflicts []StaticDominanceConflict `json:"static_dominance_conflicts,omitempty"`
 }
 
 // OptimizationStrategy defines the contract for autonomous route tuning algorithms.

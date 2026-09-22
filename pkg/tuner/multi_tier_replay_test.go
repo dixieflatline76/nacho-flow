@@ -463,9 +463,8 @@ func BenchmarkReplayMultiTierSession_ZeroAlloc(b *testing.B) {
 	var res MultiTierReplayResult
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res.Reset()
 		ReplayMultiTierSession(&traj, &cfg, &policy, &res)
 	}
@@ -521,9 +520,8 @@ func BenchmarkReplayMultiTierFleet_RealLifeData(b *testing.B) {
 	var res MultiTierReplayResult
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res.Reset()
 		ReplayMultiTierFleet(trajectories, &cfg, &policy, &res)
 	}
@@ -533,3 +531,91 @@ func BenchmarkReplayMultiTierFleet_RealLifeData(b *testing.B) {
 	}
 }
 
+func TestMultiTierReplay_PositivePrerequisites(t *testing.T) {
+	now := time.Now().UTC()
+	policy := DefaultTuningPolicy()
+
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:          "Tier 0: Kickstart",
+				Provider:          "openrouter",
+				IsLocal:           false,
+				RequiresKickstart: true,
+				RetryBound:        3,
+				SupportsVision:    true,
+				SupportsTools:     true,
+			},
+			{
+				TierName:       "Tier 1: Vision",
+				Provider:       "openrouter",
+				IsLocal:        false,
+				RequiresImages: true,
+				RetryBound:     2,
+				SupportsVision: true,
+				SupportsTools:  true,
+			},
+			{
+				TierName:       "Tier 2: Local GPU",
+				Provider:       "ollama",
+				IsLocal:        true,
+				TokenThreshold: 20000,
+				RetryBound:     2,
+				SupportsVision: false,
+				SupportsTools:  true,
+			},
+			{
+				TierName:       "Tier 3: Escalation",
+				Provider:       "openrouter",
+				IsLocal:        false,
+				RetryFloor:     5,
+				RetryBound:     8,
+				SupportsVision: true,
+				SupportsTools:  true,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:       "Default Tier",
+			Provider:       "openrouter",
+			IsLocal:        false,
+			CostPerMillion: 2.0,
+			SupportsVision: true,
+			SupportsTools:  true,
+		},
+	}
+
+	traj := SessionTrajectory{
+		SessionID: "sess-prereq",
+		Turns: []telemetry.TurnRecord{
+			// Turn 0: Regular coding turn -> must bypass Tier 0 & 1 -> land on Tier 2 (Local GPU)
+			{Timestamp: now.Add(1 * time.Second), Tokens: 2500, IsLocal: true, SessionKickstarted: false, HasImages: false, RootPromptHash: 0x1},
+			// Turn 1: Kickstarted turn -> lands on Tier 0 (Kickstart)
+			{Timestamp: now.Add(2 * time.Second), Tokens: 1500, IsLocal: false, SessionKickstarted: true, HasImages: false, RootPromptHash: 0x2},
+			// Turn 2: Image turn -> lands on Tier 1 (Vision)
+			{Timestamp: now.Add(3 * time.Second), Tokens: 3000, IsLocal: false, SessionKickstarted: false, HasImages: true, RootPromptHash: 0x3},
+			// Turn 3: 5 retries turn -> lands on Tier 3 (Escalation with RetryFloor=5)
+			{Timestamp: now.Add(4 * time.Second), Tokens: 1000, IsLocal: false, IsRetry: true, RootPromptHash: 0x4},
+			{Timestamp: now.Add(5 * time.Second), Tokens: 1000, IsLocal: false, IsRetry: true, RootPromptHash: 0x4},
+			{Timestamp: now.Add(6 * time.Second), Tokens: 1000, IsLocal: false, IsRetry: true, RootPromptHash: 0x4},
+			{Timestamp: now.Add(7 * time.Second), Tokens: 1000, IsLocal: false, IsRetry: true, RootPromptHash: 0x4},
+			{Timestamp: now.Add(8 * time.Second), Tokens: 1000, IsLocal: false, IsRetry: true, RootPromptHash: 0x4},
+			{Timestamp: now.Add(9 * time.Second), Tokens: 1000, IsLocal: false, IsRetry: false, RootPromptHash: 0x4}, // 5th failure escalates to RetryFloor=5
+		},
+	}
+
+	var res MultiTierReplayResult
+	ReplayMultiTierSession(&traj, &cfg, &policy, &res)
+
+	// Turn 0: Tier 2 (Local GPU)
+	if res.TierStats[2].TurnsRouted == 0 {
+		t.Fatalf("Expected Tier 2 (Local GPU) to receive regular turns, got 0!")
+	}
+	// Turn 1: Tier 0 (Kickstart)
+	if res.TierStats[0].TurnsRouted == 0 {
+		t.Fatalf("Expected Tier 0 (Kickstart) to receive kickstarted turn, got 0!")
+	}
+	// Turn 2: Tier 1 (Vision)
+	if res.TierStats[1].TurnsRouted == 0 {
+		t.Fatalf("Expected Tier 1 (Vision) to receive image turn, got 0!")
+	}
+}

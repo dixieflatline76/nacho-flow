@@ -273,4 +273,3 @@ func ReadCompleteSessions(filePath string, maxSessions int) ([]TurnRecord, error
 
 	return records, scanner.Err()
 }
-

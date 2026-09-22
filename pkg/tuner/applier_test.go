@@ -265,3 +265,125 @@ func TestApplyTuning_EmptyConfigPath(t *testing.T) {
 		t.Fatalf("Expected error for non-existent explicit path")
 	}
 }
+
+func TestApplyTuning_ModelSubstitutionAndFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	initialYAML := `
+port: 8000
+tiers:
+  - name: "Tier 1: Fast"
+    model: "qwen2.5-coder:7b"
+    when: "Tokens < 8000"
+default_tier:
+  name: "Fallback"
+  model: "anthropic/claude-sonnet-5"
+`
+	if err := os.WriteFile(cfgPath, []byte(initialYAML), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	result := &TuningResult{
+		Tiers: []TierTuningResult{
+			{
+				TierName:         "Tier 1: Fast",
+				OriginalModel:    "qwen2.5-coder:7b",
+				RecommendedModel: "qwen2.5-coder:14b",
+				SynthesizedRule:  "Tokens < 12000",
+			},
+		},
+		DefaultTier: &TierTuningResult{
+			TierName:         "Fallback",
+			OriginalModel:    "anthropic/claude-sonnet-5",
+			RecommendedModel: "z-ai/glm-5.3-flash",
+		},
+	}
+
+	_, err := ApplyTuning(cfgPath, result)
+	if err != nil {
+		t.Fatalf("ApplyTuning failed: %v", err)
+	}
+
+	updated, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	s := string(updated)
+	if !strings.Contains(s, "model: qwen2.5-coder:14b") {
+		t.Errorf("expected Tier 1 model substitution to qwen2.5-coder:14b, got: %s", s)
+	}
+	if !strings.Contains(s, "Tokens < 12000") {
+		t.Errorf("expected synthesized rule Tokens < 12000, got: %s", s)
+	}
+	if !strings.Contains(s, "model: z-ai/glm-5.3-flash") {
+		t.Errorf("expected fallback tier model substitution to z-ai/glm-5.3-flash, got: %s", s)
+	}
+}
+
+func TestApplyTuning_ErrorBranches(t *testing.T) {
+	// 1. Nonexistent file
+	_, err := ApplyTuning("nonexistent-config-file-12345.yaml", &TuningResult{})
+	if err == nil {
+		t.Errorf("expected error for nonexistent file")
+	}
+
+	// 2. Invalid YAML
+	tmpDir := t.TempDir()
+	badYAML := filepath.Join(tmpDir, "invalid.yaml")
+	if err := os.WriteFile(badYAML, []byte(":::invalid yaml:::"), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	_, err = ApplyTuning(badYAML, &TuningResult{})
+	if err == nil {
+		t.Errorf("expected error for invalid YAML")
+	}
+
+	// 3. Result with empty rules/models
+	validYAML := filepath.Join(tmpDir, "valid.yaml")
+	if err := os.WriteFile(validYAML, []byte("port: 8000\n"), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	emptyResult := &TuningResult{
+		Tiers: []TierTuningResult{
+			{TierName: "Empty Tier"},
+		},
+	}
+	_, err = ApplyTuning(validYAML, emptyResult)
+	if err == nil {
+		t.Errorf("expected error when no tiers matched")
+	}
+}
+
+func TestApplyTuning_SingleLocalTierFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	initialYAML := `port: 8000
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
+tiers:
+  - name: "Existing Local Tier"
+    provider: "ollama"
+    model: "qwen2.5-coder:7b"
+    when: "Tokens < 4000"
+`
+	if err := os.WriteFile(cfgPath, []byte(initialYAML), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	result := &TuningResult{
+		Tiers: []TierTuningResult{
+			{
+				TierName:         "Generic Local",
+				RecommendedModel: "qwen2.5-coder:14b",
+				OriginalModel:    "qwen2.5-coder:7b",
+				SynthesizedRule:  "Tokens < 8000",
+			},
+		},
+	}
+	_, err := ApplyTuning(cfgPath, result)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

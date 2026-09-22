@@ -15,8 +15,8 @@ func TestRecoveryAnalyzer_PerModelRates(t *testing.T) {
 		SessionID: "sess-gemma",
 		Turns: []telemetry.TurnRecord{
 			{Timestamp: now.Add(1 * time.Second), TargetModel: "gemma-4-26b", IsRetry: false, HasWriteProgress: true},
-			{Timestamp: now.Add(2 * time.Second), TargetModel: "gemma-4-26b", IsRetry: true, HasWriteProgress: false},  // failure 1
-			{Timestamp: now.Add(3 * time.Second), TargetModel: "gemma-4-26b", IsRetry: true, HasWriteProgress: false},  // didn't recover on turn 3
+			{Timestamp: now.Add(2 * time.Second), TargetModel: "gemma-4-26b", IsRetry: true, HasWriteProgress: false}, // failure 1
+			{Timestamp: now.Add(3 * time.Second), TargetModel: "gemma-4-26b", IsRetry: true, HasWriteProgress: false}, // didn't recover on turn 3
 			{Timestamp: now.Add(4 * time.Second), TargetModel: "claude-3-5", IsRetry: false, HasWriteProgress: true},
 		},
 	}

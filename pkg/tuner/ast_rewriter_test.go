@@ -239,3 +239,31 @@ func TestRewriteRuleAST_WithRetries(t *testing.T) {
 	}
 }
 
+func TestRewriteRuleAST_EmptyClausesAndDefault(t *testing.T) {
+	// 1. Both empty -> returns "true"
+	r1, err1 := RewriteRuleAST("", 0, 0, nil, false, false)
+	if err1 != nil || r1 != "true" {
+		t.Errorf("expected 'true' for all empty, got %q, err=%v", r1, err1)
+	}
+
+	// 2. Existing was autotunable but removed, no new clauses -> returns cleanExisting
+	r2, err2 := RewriteRuleAST("!HasImages", 0, 0, nil, false, false)
+	if err2 != nil || r2 != "!HasImages" {
+		t.Errorf("expected cleanExisting preserved, got %q, err=%v", r2, err2)
+	}
+}
+
+func TestIsAutoTunableClause_Keywords(t *testing.T) {
+	if !isAutoTunableClause("!any(Keywords, { # in ['k8s'] })", false) {
+		t.Errorf("expected !any keyword clause to be autotunable")
+	}
+	if !isAutoTunableClause("Retries < 2", true) {
+		t.Errorf("expected Retries < 2 to be autotunable when tuningRetries is true")
+	}
+	if isAutoTunableClause("Retries < 2", false) {
+		t.Errorf("expected Retries < 2 NOT to be autotunable when tuningRetries is false")
+	}
+	if isAutoTunableClause("CustomVar == 42", true) {
+		t.Errorf("expected CustomVar not to be autotunable")
+	}
+}

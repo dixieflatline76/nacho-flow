@@ -612,5 +612,3 @@ func TestTrafficLogger_Flush(t *testing.T) {
 		t.Errorf("Expected flush-req-1, got %s", records[0].RequestID)
 	}
 }
-
-

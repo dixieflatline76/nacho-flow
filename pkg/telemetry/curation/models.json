@@ -1,58 +1,372 @@
 {
   "version": "v1.0.0",
-  "updated_at": "2026-08-24T08:33:04.5012563Z",
+  "updated_at": "2026-09-22T10:05:49.1473989Z",
   "description": "Canonical benchmark and capability intelligence catalog for Nacho Flow",
   "models": {
     "amazon/nova-2-lite-v1": {
       "name": "Amazon: Nova 2 Lite",
       "tier_role": "vision_workhorse",
-      "coding_index": 0,
+      "coding_index": 23,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 2.5,
       "recommended_tiers": [
         "tier_1_vision"
-      ]
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "amazon/nova-lite-v1": {
       "name": "Amazon: Nova Lite 1.0",
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.06,
+      "completion_cost_per_million": 0.24,
       "recommended_tiers": [
         "tier_1_vision"
       ]
     },
+    "anthropic/claude-fable-5": {
+      "name": "Anthropic: Claude Fable 5",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.5,
+      "tool_reliability": 50.7,
+      "prompt_cost_per_million": 10,
+      "completion_cost_per_million": 50,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-fable-5.1": {
+      "name": "Anthropic: Claude Fable 5.1",
+      "tier_role": "coding_workhorse",
+      "coding_index": 81.6,
+      "tool_reliability": 57.9,
+      "prompt_cost_per_million": 10,
+      "completion_cost_per_million": 50,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-fable-5.1:batch": {
+      "name": "Anthropic: Claude Fable 5.1 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 81.6,
+      "tool_reliability": 57.9,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-fable-5:batch": {
+      "name": "Anthropic: Claude Fable 5 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.5,
+      "tool_reliability": 50.7,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-haiku-4.5": {
+      "name": "Anthropic: Claude Haiku 4.5",
+      "tier_role": "general",
+      "coding_index": 43.9,
+      "tool_reliability": 8,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-haiku-4.5:batch": {
+      "name": "Anthropic: Claude Haiku 4.5 (batch)",
+      "tier_role": "general",
+      "coding_index": 43.9,
+      "tool_reliability": 8,
+      "prompt_cost_per_million": 0.5,
+      "completion_cost_per_million": 2.5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-opus-4.1": {
+      "name": "Anthropic: Claude Opus 4.1",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 15,
+      "completion_cost_per_million": 75,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "anthropic/claude-opus-4.1:batch": {
+      "name": "Anthropic: Claude Opus 4.1 (batch)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 7.5,
+      "completion_cost_per_million": 37.5,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "anthropic/claude-opus-4.5": {
+      "name": "Anthropic: Claude Opus 4.5",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "anthropic/claude-opus-4.5:batch": {
+      "name": "Anthropic: Claude Opus 4.5 (batch)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 2.5,
+      "completion_cost_per_million": 12.5,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "anthropic/claude-opus-4.6": {
+      "name": "Anthropic: Claude Opus 4.6",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "anthropic/claude-opus-4.6:batch": {
+      "name": "Anthropic: Claude Opus 4.6 (batch)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 2.5,
+      "completion_cost_per_million": 12.5,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "anthropic/claude-opus-4.7": {
+      "name": "Anthropic: Claude Opus 4.7",
+      "tier_role": "deep_reasoner",
+      "coding_index": 73.6,
+      "tool_reliability": 38.6,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-opus-4.7:batch": {
+      "name": "Anthropic: Claude Opus 4.7 (batch)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 73.6,
+      "tool_reliability": 38.6,
+      "prompt_cost_per_million": 2.5,
+      "completion_cost_per_million": 12.5,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-opus-4.8": {
+      "name": "Anthropic: Claude Opus 4.8",
+      "tier_role": "deep_reasoner",
+      "coding_index": 74.3,
+      "tool_reliability": 41.9,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-opus-4.8:batch": {
+      "name": "Anthropic: Claude Opus 4.8 (batch)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 74.3,
+      "tool_reliability": 41.9,
+      "prompt_cost_per_million": 2.5,
+      "completion_cost_per_million": 12.5,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-opus-5": {
+      "name": "Anthropic: Claude Opus 5",
+      "tier_role": "deep_reasoner",
+      "coding_index": 78,
+      "tool_reliability": 56.5,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-opus-5:batch": {
+      "name": "Anthropic: Claude Opus 5 (batch)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 78,
+      "tool_reliability": 56.5,
+      "prompt_cost_per_million": 2.5,
+      "completion_cost_per_million": 12.5,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-sonnet-4": {
+      "name": "Anthropic: Claude Sonnet 4",
+      "tier_role": "coding_workhorse",
+      "coding_index": 37.6,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 3,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-sonnet-4.5": {
+      "name": "Anthropic: Claude Sonnet 4.5",
+      "tier_role": "coding_workhorse",
+      "coding_index": 52.1,
+      "tool_reliability": 15.8,
+      "prompt_cost_per_million": 3,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-sonnet-4.5:batch": {
+      "name": "Anthropic: Claude Sonnet 4.5 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 52.1,
+      "tool_reliability": 15.8,
+      "prompt_cost_per_million": 1.5,
+      "completion_cost_per_million": 7.5,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-sonnet-4.6": {
+      "name": "Anthropic: Claude Sonnet 4.6",
+      "tier_role": "coding_workhorse",
+      "coding_index": 63,
+      "tool_reliability": 31.8,
+      "prompt_cost_per_million": 3,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-sonnet-4.6:batch": {
+      "name": "Anthropic: Claude Sonnet 4.6 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 63,
+      "tool_reliability": 31.8,
+      "prompt_cost_per_million": 1.5,
+      "completion_cost_per_million": 7.5,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
     "anthropic/claude-sonnet-5": {
       "name": "Anthropic: Claude Sonnet 5",
       "tier_role": "coding_workhorse",
-      "coding_index": 97.4,
-      "tool_reliability": 99,
+      "coding_index": 71.5,
+      "tool_reliability": 43.6,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 10,
       "recommended_tiers": [
-        "tier_4_frontier"
-      ]
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
-    "anthropic/claude-3.7-sonnet": {
-      "name": "Anthropic: Claude 3.7 Sonnet",
+    "anthropic/claude-sonnet-5:batch": {
+      "name": "Anthropic: Claude Sonnet 5 (batch)",
       "tier_role": "coding_workhorse",
-      "coding_index": 95.8,
-      "tool_reliability": 99,
+      "coding_index": 71.5,
+      "tool_reliability": 43.6,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 5,
       "recommended_tiers": [
-        "tier_4_frontier"
-      ]
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
-    "anthropic/claude-3.5-sonnet": {
-      "name": "Anthropic: Claude 3.5 Sonnet",
-      "tier_role": "coding_workhorse",
-      "coding_index": 92,
-      "tool_reliability": 99,
+    "arcee-ai/trinity-large-thinking": {
+      "name": "Arcee AI: Trinity Large Thinking",
+      "tier_role": "deep_reasoner",
+      "coding_index": 25.8,
+      "tool_reliability": 1,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 0.7999999999999999,
       "recommended_tiers": [
         "tier_4_frontier"
-      ]
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "bytedance-seed/seed-1.6-flash": {
       "name": "ByteDance Seed: Seed 1.6 Flash",
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.075,
+      "completion_cost_per_million": 0.3,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -62,54 +376,231 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 2,
       "recommended_tiers": [
         "tier_1_vision"
       ]
     },
+    "cohere/command-a": {
+      "name": "Cohere: Command A",
+      "tier_role": "general",
+      "coding_index": 27.8,
+      "tool_reliability": 1,
+      "prompt_cost_per_million": 2.5,
+      "completion_cost_per_million": 10,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "cohere/north-mini-code:free": {
+      "name": "Cohere: North Mini Code (free)",
+      "tier_role": "general",
+      "coding_index": 36.5,
+      "tool_reliability": 1.1,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "deepseek/deepseek-chat-v3-0324": {
+      "name": "DeepSeek: DeepSeek V3 0324",
+      "tier_role": "general",
+      "coding_index": 21.2,
+      "tool_reliability": 0.8,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 1,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
     "deepseek/deepseek-r1": {
-      "name": "DeepSeek: R1 (Reasoning)",
+      "name": "DeepSeek: R1",
       "tier_role": "deep_reasoner",
-      "coding_index": 75,
-      "tool_reliability": 88,
+      "coding_index": 24.6,
+      "tool_reliability": 1.1,
+      "prompt_cost_per_million": 0.7,
+      "completion_cost_per_million": 2.5,
       "recommended_tiers": [
         "tier_4_frontier"
-      ]
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "deepseek/deepseek-r1-0528": {
       "name": "DeepSeek: R1 0528",
       "tier_role": "deep_reasoner",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.5,
+      "completion_cost_per_million": 2.1500000000000004,
       "recommended_tiers": [
         "tier_4_frontier"
-      ]
+      ],
+      "is_open_weights": true
     },
     "deepseek/deepseek-r1-distill-llama-70b": {
       "name": "DeepSeek: R1 Distill Llama 70B",
       "tier_role": "deep_reasoner",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.7999999999999999,
+      "completion_cost_per_million": 0.7999999999999999,
       "recommended_tiers": [
         "tier_4_frontier"
-      ]
+      ],
+      "is_open_weights": true
+    },
+    "deepseek/deepseek-v3.1-terminus": {
+      "name": "DeepSeek: DeepSeek V3.1 Terminus",
+      "tier_role": "general",
+      "coding_index": 43.5,
+      "tool_reliability": 6.8,
+      "prompt_cost_per_million": 0.27,
+      "completion_cost_per_million": 1,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "deepseek/deepseek-v3.2": {
+      "name": "DeepSeek: DeepSeek V3.2",
+      "tier_role": "general",
+      "coding_index": 44.2,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.26899999999999996,
+      "completion_cost_per_million": 0.39999999999999997,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "deepseek/deepseek-v4-flash": {
+      "name": "DeepSeek: DeepSeek V4 Flash 0423",
+      "tier_role": "general",
+      "coding_index": 56.2,
+      "tool_reliability": 22.2,
+      "prompt_cost_per_million": 0.088606,
+      "completion_cost_per_million": 0.177212,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "deepseek/deepseek-v4-flash-0731": {
+      "name": "DeepSeek: DeepSeek V4 Flash 0731",
+      "tier_role": "coding_workhorse",
+      "coding_index": 69.1,
+      "tool_reliability": 41,
+      "prompt_cost_per_million": 0.04,
+      "completion_cost_per_million": 0.64,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "deepseek/deepseek-v4-flash-0731:batch": {
+      "name": "DeepSeek: DeepSeek V4 Flash 0731 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 69.1,
+      "tool_reliability": 41,
+      "prompt_cost_per_million": 0.11,
+      "completion_cost_per_million": 0.33,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "deepseek/deepseek-v4-flash-vision-exp": {
       "name": "DeepSeek: DeepSeek V4 Flash Vision Exp",
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.22,
+      "completion_cost_per_million": 0.66,
       "recommended_tiers": [
         "tier_1_vision"
-      ]
+      ],
+      "is_open_weights": true
+    },
+    "deepseek/deepseek-v4-flash-vision-exp:batch": {
+      "name": "DeepSeek: DeepSeek V4 Flash Vision Exp (batch)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.11,
+      "completion_cost_per_million": 0.33,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "is_open_weights": true
+    },
+    "deepseek/deepseek-v4-pro": {
+      "name": "DeepSeek: DeepSeek V4 Pro 0423",
+      "tier_role": "general",
+      "coding_index": 59.4,
+      "tool_reliability": 26.3,
+      "prompt_cost_per_million": 0.9552599999999999,
+      "completion_cost_per_million": 1.9105199999999998,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "deepseek/deepseek-v4-pro-0813": {
+      "name": "DeepSeek: DeepSeek V4 Pro 0813",
+      "tier_role": "coding_workhorse",
+      "coding_index": 68.8,
+      "tool_reliability": 41.3,
+      "prompt_cost_per_million": 0.59862,
+      "completion_cost_per_million": 1.79586,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "deepseek/deepseek-v4-pro-0813:batch": {
+      "name": "DeepSeek: DeepSeek V4 Pro 0813 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 68.8,
+      "tool_reliability": 41.3,
+      "prompt_cost_per_million": 0.66,
+      "completion_cost_per_million": 1.9800000000000002,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "deepseek/deepseek-v4.1-flash": {
+      "name": "DeepSeek: DeepSeek V4.1 Flash",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 0.6,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "is_open_weights": true
     },
     "google/gemini-2.5-flash": {
       "name": "Google: Gemini 2.5 Flash",
-      "tier_role": "coding_workhorse",
-      "coding_index": 78.4,
-      "tool_reliability": 95,
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 2.5,
       "recommended_tiers": [
-        "tier_1_vision",
-        "tier_3_workhorse"
+        "tier_1_vision"
       ]
     },
     "google/gemini-2.5-flash-image": {
@@ -117,6 +608,8 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 2.5,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -124,8 +617,10 @@
     "google/gemini-2.5-flash-lite": {
       "name": "Google: Gemini 2.5 Flash Lite",
       "tier_role": "vision_workhorse",
-      "coding_index": 68.1,
-      "tool_reliability": 90,
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.09999999999999999,
+      "completion_cost_per_million": 0.39999999999999997,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -135,6 +630,8 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.049999999999999996,
+      "completion_cost_per_million": 0.19999999999999998,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -144,15 +641,41 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 1.25,
       "recommended_tiers": [
         "tier_1_vision"
       ]
+    },
+    "google/gemini-2.5-pro": {
+      "name": "Google: Gemini 2.5 Pro",
+      "tier_role": "general",
+      "coding_index": 33.3,
+      "tool_reliability": 1.6,
+      "prompt_cost_per_million": 1.25,
+      "completion_cost_per_million": 10,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "google/gemini-2.5-pro:batch": {
+      "name": "Google: Gemini 2.5 Pro (batch)",
+      "tier_role": "general",
+      "coding_index": 33.3,
+      "tool_reliability": 1.6,
+      "prompt_cost_per_million": 0.625,
+      "completion_cost_per_million": 5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3-flash-preview": {
       "name": "Google: Gemini 3 Flash Preview",
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.5,
+      "completion_cost_per_million": 3,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -162,6 +685,8 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 1.5,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -171,6 +696,8 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.5,
+      "completion_cost_per_million": 3,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -180,6 +707,8 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.5,
+      "completion_cost_per_million": 3,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -189,6 +718,8 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 1.5,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -198,6 +729,8 @@
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 1.5,
       "recommended_tiers": [
         "tier_1_vision"
       ]
@@ -205,143 +738,1276 @@
     "google/gemini-3.1-flash-lite-preview": {
       "name": "Google: Gemini 3.1 Flash Lite Preview",
       "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "coding_index": 34.7,
+      "tool_reliability": 1.6,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 1.5,
       "recommended_tiers": [
         "tier_1_vision"
-      ]
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.1-flash-lite:batch": {
       "name": "Google: Gemini 3.1 Flash Lite (batch)",
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.125,
+      "completion_cost_per_million": 0.75,
       "recommended_tiers": [
         "tier_1_vision"
       ]
     },
+    "google/gemini-3.1-pro-preview": {
+      "name": "Google: Gemini 3.1 Pro Preview",
+      "tier_role": "coding_workhorse",
+      "coding_index": 68.8,
+      "tool_reliability": 8.2,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 12,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "google/gemini-3.1-pro-preview:batch": {
+      "name": "Google: Gemini 3.1 Pro Preview (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 68.8,
+      "tool_reliability": 8.2,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 6,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
     "google/gemini-3.5-flash": {
       "name": "Google: Gemini 3.5 Flash",
-      "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "tier_role": "coding_workhorse",
+      "coding_index": 70.1,
+      "tool_reliability": 26,
+      "prompt_cost_per_million": 1.5,
+      "completion_cost_per_million": 9,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.5-flash-lite": {
       "name": "Google: Gemini 3.5 Flash Lite",
       "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "coding_index": 49.3,
+      "tool_reliability": 14.3,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 2.5,
       "recommended_tiers": [
         "tier_1_vision"
-      ]
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.5-flash-lite:batch": {
       "name": "Google: Gemini 3.5 Flash Lite (batch)",
       "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "coding_index": 49.3,
+      "tool_reliability": 14.3,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 1.25,
       "recommended_tiers": [
         "tier_1_vision"
-      ]
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.5-flash:batch": {
       "name": "Google: Gemini 3.5 Flash (batch)",
-      "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "tier_role": "coding_workhorse",
+      "coding_index": 70.1,
+      "tool_reliability": 26,
+      "prompt_cost_per_million": 0.75,
+      "completion_cost_per_million": 4.5,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.6-flash": {
       "name": "Google: Gemini 3.6 Flash",
-      "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "tier_role": "coding_workhorse",
+      "coding_index": 69.2,
+      "tool_reliability": 29,
+      "prompt_cost_per_million": 0.75,
+      "completion_cost_per_million": 3.75,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.6-flash:batch": {
       "name": "Google: Gemini 3.6 Flash (batch)",
-      "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "tier_role": "coding_workhorse",
+      "coding_index": 69.2,
+      "tool_reliability": 29,
+      "prompt_cost_per_million": 0.375,
+      "completion_cost_per_million": 1.875,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.7-flash": {
       "name": "Google: Gemini 3.7 Flash",
-      "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.1,
+      "tool_reliability": 35.2,
+      "prompt_cost_per_million": 0.75,
+      "completion_cost_per_million": 3.75,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.7-flash:batch": {
       "name": "Google: Gemini 3.7 Flash (batch)",
-      "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.1,
+      "tool_reliability": 35.2,
+      "prompt_cost_per_million": 0.375,
+      "completion_cost_per_million": 1.875,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.8-flash": {
       "name": "Google: Gemini 3.8 Flash",
-      "tier_role": "vision_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.3,
+      "tool_reliability": 40.2,
+      "prompt_cost_per_million": 0.75,
+      "completion_cost_per_million": 3.75,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "google/gemini-3.8-flash:batch": {
       "name": "Google: Gemini 3.8 Flash (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.3,
+      "tool_reliability": 40.2,
+      "prompt_cost_per_million": 0.375,
+      "completion_cost_per_million": 1.875,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "google/gemma-3-12b-it": {
+      "name": "Google: Gemma 3 12B",
       "tier_role": "vision_workhorse",
-      "coding_index": 0,
+      "coding_index": 5.8,
+      "tool_reliability": 0.1,
+      "prompt_cost_per_million": 0.049999999999999996,
+      "completion_cost_per_million": 0.15,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "google/gemma-3-27b-it": {
+      "name": "Google: Gemma 3 27B",
+      "tier_role": "vision_workhorse",
+      "coding_index": 10.1,
+      "tool_reliability": 0.1,
+      "prompt_cost_per_million": 0.08,
+      "completion_cost_per_million": 0.44999999999999996,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "google/gemma-3-4b-it": {
+      "name": "Google: Gemma 3 4B",
+      "tier_role": "vision_workhorse",
+      "coding_index": 2.7,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.049999999999999996,
+      "completion_cost_per_million": 0.09999999999999999,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "google/gemma-4-26b-a4b-it": {
+      "name": "Google: Gemma 4 26B A4B ",
+      "tier_role": "vision_workhorse",
+      "coding_index": 39.3,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.09,
+      "completion_cost_per_million": 0.3,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "google/gemma-4-26b-a4b-it:free": {
+      "name": "Google: Gemma 4 26B A4B  (free)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 39.3,
       "tool_reliability": 85,
       "recommended_tiers": [
         "tier_1_vision"
-      ]
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
-    "kwaipilot/kat-coder-air-v2.5": {
-      "name": "Kwaipilot: KAT-Coder-Air V2.5",
-      "tier_role": "coding_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+    "google/gemma-4-31b-it": {
+      "name": "Google: Gemma 4 31B",
+      "tier_role": "vision_workhorse",
+      "coding_index": 43.4,
+      "tool_reliability": 4.2,
+      "prompt_cost_per_million": 0.09,
+      "completion_cost_per_million": 0.33999999999999997,
       "recommended_tiers": [
-        "tier_3_workhorse"
-      ]
+        "tier_1_vision"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
-    "kwaipilot/kat-coder-pro-v2": {
-      "name": "Kwaipilot: KAT-Coder-Pro V2",
-      "tier_role": "coding_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+    "google/gemma-4-31b-it:free": {
+      "name": "Google: Gemma 4 31B (free)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 43.4,
+      "tool_reliability": 4.2,
       "recommended_tiers": [
-        "tier_3_workhorse"
-      ]
+        "tier_1_vision"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "ibm-granite/granite-4.2-8b": {
+      "name": "IBM: Granite 4.2 8B",
+      "tier_role": "general",
+      "coding_index": 22.4,
+      "tool_reliability": 1.3,
+      "prompt_cost_per_million": 0.06,
+      "completion_cost_per_million": 0.25,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "inception/mercury-2": {
+      "name": "Inception: Mercury 2",
+      "tier_role": "general",
+      "coding_index": 31.1,
+      "tool_reliability": 1.6,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 0.75,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "inclusionai/ling-3.0-flash": {
+      "name": "inclusionAI: Ling 3.0 Flash",
+      "tier_role": "general",
+      "coding_index": 50.6,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.020999999999999998,
+      "completion_cost_per_million": 0.063,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "inclusionai/ling-3.0-flash-fin": {
+      "name": "inclusionAI: Ling 3.0 Flash Fin",
+      "tier_role": "general",
+      "coding_index": 55.6,
+      "tool_reliability": 27.9,
+      "prompt_cost_per_million": 0.06,
+      "completion_cost_per_million": 0.18,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "inclusionai/ling-3.0-flash-fin:free": {
+      "name": "inclusionAI: Ling 3.0 Flash Fin (free)",
+      "tier_role": "general",
+      "coding_index": 55.6,
+      "tool_reliability": 27.9,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "inclusionai/ling-3.0-flash-vl": {
+      "name": "inclusionAI: Ling 3.0 Flash VL",
+      "tier_role": "vision_workhorse",
+      "coding_index": 57,
+      "tool_reliability": 28.7,
+      "prompt_cost_per_million": 0.06,
+      "completion_cost_per_million": 0.18,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "inclusionai/ling-3.0-flash-vl:free": {
+      "name": "inclusionAI: Ling 3.0 Flash VL (free)",
+      "tier_role": "vision_workhorse",
+      "coding_index": 57,
+      "tool_reliability": 28.7,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "kwaipilot/kat-coder-pro-v2.5": {
       "name": "Kwaipilot: KAT-Coder-Pro V2.5",
       "tier_role": "coding_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.74,
+      "completion_cost_per_million": 2.96,
       "recommended_tiers": [
         "tier_3_workhorse"
       ]
     },
+    "meituan/longcat-2.0": {
+      "name": "Meituan: LongCat 2.0",
+      "tier_role": "general",
+      "coding_index": 45.3,
+      "tool_reliability": 14,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 1.2,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "meta-llama/llama-3.1-8b-instruct": {
+      "name": "Meta: Llama 3.1 8B Instruct",
+      "tier_role": "general",
+      "coding_index": 5.4,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.049999999999999996,
+      "completion_cost_per_million": 0.08,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "meta-llama/llama-3.3-70b-instruct": {
+      "name": "Meta: Llama 3.3 70B Instruct",
+      "tier_role": "general",
+      "coding_index": 11.9,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.09999999999999999,
+      "completion_cost_per_million": 0.32,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "meta-llama/llama-4-maverick": {
+      "name": "Meta: Llama 4 Maverick",
+      "tier_role": "general",
+      "coding_index": 16.3,
+      "tool_reliability": 0.6,
+      "prompt_cost_per_million": 0.1875,
+      "completion_cost_per_million": 0.6525,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "meta-llama/llama-4-scout": {
+      "name": "Meta: Llama 4 Scout",
+      "tier_role": "general",
+      "coding_index": 8.2,
+      "tool_reliability": 0.5,
+      "prompt_cost_per_million": 0.09999999999999999,
+      "completion_cost_per_million": 0.3,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "meta/muse-spark-1.1": {
+      "name": "Meta: Muse Spark 1.1",
+      "tier_role": "coding_workhorse",
+      "coding_index": 71.3,
+      "tool_reliability": 25.8,
+      "prompt_cost_per_million": 1.25,
+      "completion_cost_per_million": 4.25,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "meta/muse-spark-1.2": {
+      "name": "Meta: Muse Spark 1.2",
+      "tier_role": "coding_workhorse",
+      "coding_index": 72.2,
+      "tool_reliability": 43.2,
+      "prompt_cost_per_million": 1.25,
+      "completion_cost_per_million": 4.25,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "minimax/minimax-m2.7": {
+      "name": "MiniMax: MiniMax M2.7",
+      "tier_role": "general",
+      "coding_index": 52.6,
+      "tool_reliability": 15.3,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 1.2,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "minimax/minimax-m3": {
+      "name": "MiniMax: MiniMax M3",
+      "tier_role": "general",
+      "coding_index": 58.6,
+      "tool_reliability": 29.5,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 1.2,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/devstral-2512": {
+      "name": "Mistral: Devstral 2 2512",
+      "tier_role": "general",
+      "coding_index": 31.3,
+      "tool_reliability": 2.3,
+      "prompt_cost_per_million": 0.39999999999999997,
+      "completion_cost_per_million": 2,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/ministral-14b-2512": {
+      "name": "Mistral: Ministral 3 14B 2512",
+      "tier_role": "general",
+      "coding_index": 14.4,
+      "tool_reliability": 1.1,
+      "prompt_cost_per_million": 0.19999999999999998,
+      "completion_cost_per_million": 0.19999999999999998,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/ministral-3b-2512": {
+      "name": "Mistral: Ministral 3 3B 2512",
+      "tier_role": "general",
+      "coding_index": 4.8,
+      "tool_reliability": 0.8,
+      "prompt_cost_per_million": 0.09999999999999999,
+      "completion_cost_per_million": 0.09999999999999999,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/ministral-8b-2512": {
+      "name": "Mistral: Ministral 3 8B 2512",
+      "tier_role": "general",
+      "coding_index": 9.7,
+      "tool_reliability": 0.6,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 0.15,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/ministral-8b-2512:batch": {
+      "name": "Mistral: Ministral 3 8B 2512 (batch)",
+      "tier_role": "general",
+      "coding_index": 9.7,
+      "tool_reliability": 0.6,
+      "prompt_cost_per_million": 0.075,
+      "completion_cost_per_million": 0.075,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/mistral-large-2512:batch": {
+      "name": "Mistral: Mistral Large 3 2512 (batch)",
+      "tier_role": "general",
+      "coding_index": 20.1,
+      "tool_reliability": 1,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 0.75,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/mistral-medium-3-5": {
+      "name": "Mistral: Mistral Medium 3.5",
+      "tier_role": "general",
+      "coding_index": 46.9,
+      "tool_reliability": 7,
+      "prompt_cost_per_million": 1.5,
+      "completion_cost_per_million": 7.5,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/mistral-medium-3-5:batch": {
+      "name": "Mistral: Mistral Medium 3.5 (batch)",
+      "tier_role": "general",
+      "coding_index": 46.9,
+      "tool_reliability": 7,
+      "prompt_cost_per_million": 0.75,
+      "completion_cost_per_million": 3.75,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/mistral-medium-3.1": {
+      "name": "Mistral: Mistral Medium 3.1",
+      "tier_role": "general",
+      "coding_index": 20.5,
+      "tool_reliability": 1.9,
+      "prompt_cost_per_million": 0.39999999999999997,
+      "completion_cost_per_million": 2,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/mistral-medium-3.1:batch": {
+      "name": "Mistral: Mistral Medium 3.1 (batch)",
+      "tier_role": "general",
+      "coding_index": 20.5,
+      "tool_reliability": 1.9,
+      "prompt_cost_per_million": 0.19999999999999998,
+      "completion_cost_per_million": 1,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/mistral-small-2603": {
+      "name": "Mistral: Mistral Small 4",
+      "tier_role": "general",
+      "coding_index": 26.6,
+      "tool_reliability": 0.8,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 0.6,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "mistralai/mistral-small-2603:batch": {
+      "name": "Mistral: Mistral Small 4 (batch)",
+      "tier_role": "general",
+      "coding_index": 26.6,
+      "tool_reliability": 0.8,
+      "prompt_cost_per_million": 0.075,
+      "completion_cost_per_million": 0.3,
+      "recommended_tiers": null,
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "moonshotai/kimi-k2-thinking": {
+      "name": "MoonshotAI: Kimi K2 Thinking",
+      "tier_role": "deep_reasoner",
+      "coding_index": 21,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.6,
+      "completion_cost_per_million": 2.5,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "moonshotai/kimi-k2.5": {
+      "name": "MoonshotAI: Kimi K2.5",
+      "tier_role": "general",
+      "coding_index": 46.8,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.44999999999999996,
+      "completion_cost_per_million": 2.25,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "moonshotai/kimi-k2.6": {
+      "name": "MoonshotAI: Kimi K2.6",
+      "tier_role": "general",
+      "coding_index": 61.8,
+      "tool_reliability": 20.5,
+      "prompt_cost_per_million": 0.95,
+      "completion_cost_per_million": 4,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "moonshotai/kimi-k2.7-code": {
+      "name": "MoonshotAI: Kimi K2.7 Code",
+      "tier_role": "general",
+      "coding_index": 60.8,
+      "tool_reliability": 21,
+      "prompt_cost_per_million": 0.7062,
+      "completion_cost_per_million": 3.21,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "moonshotai/kimi-k3": {
+      "name": "MoonshotAI: Kimi K3",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.2,
+      "tool_reliability": 50,
+      "prompt_cost_per_million": 3,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "nvidia/nemotron-3-nano-30b-a3b": {
+      "name": "NVIDIA: Nemotron 3 Nano 30B A3B",
+      "tier_role": "general",
+      "coding_index": 14.4,
+      "tool_reliability": 1,
+      "prompt_cost_per_million": 0.049999999999999996,
+      "completion_cost_per_million": 0.19999999999999998,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
       "name": "NVIDIA: Nemotron 3 Nano Omni (free)",
       "tier_role": "deep_reasoner",
+      "coding_index": 13.8,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "nvidia/nemotron-3-super-120b-a12b": {
+      "name": "NVIDIA: Nemotron 3 Super",
+      "tier_role": "general",
+      "coding_index": 37.7,
+      "tool_reliability": 1.7,
+      "prompt_cost_per_million": 0.08,
+      "completion_cost_per_million": 0.44999999999999996,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "nvidia/nemotron-3-super-120b-a12b:free": {
+      "name": "NVIDIA: Nemotron 3 Super (free)",
+      "tier_role": "general",
+      "coding_index": 37.7,
+      "tool_reliability": 1.7,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b": {
+      "name": "NVIDIA: Nemotron 3 Ultra",
+      "tier_role": "general",
+      "coding_index": 49.3,
+      "tool_reliability": 20.1,
+      "prompt_cost_per_million": 0.6,
+      "completion_cost_per_million": 2.4,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b:free": {
+      "name": "NVIDIA: Nemotron 3 Ultra (free)",
+      "tier_role": "general",
+      "coding_index": 49.3,
+      "tool_reliability": 20.1,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "nvidia/nemotron-3.5-lightning": {
+      "name": "NVIDIA: Nemotron 3.5 Lightning",
+      "tier_role": "general",
+      "coding_index": 26.8,
+      "tool_reliability": 3.5,
+      "prompt_cost_per_million": 0.07,
+      "completion_cost_per_million": 0.19999999999999998,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "nvidia/nemotron-3.5-lightning:free": {
+      "name": "NVIDIA: Nemotron 3.5 Lightning (free)",
+      "tier_role": "general",
+      "coding_index": 26.8,
+      "tool_reliability": 3.5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-3.5-turbo": {
+      "name": "OpenAI: GPT-3.5 Turbo",
+      "tier_role": "general",
+      "coding_index": 10.7,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.5,
+      "completion_cost_per_million": 1.5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-3.5-turbo:batch": {
+      "name": "OpenAI: GPT-3.5 Turbo (batch)",
+      "tier_role": "general",
+      "coding_index": 10.7,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 0.75,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4": {
+      "name": "OpenAI: GPT-4",
+      "tier_role": "general",
+      "coding_index": 13.1,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 30,
+      "completion_cost_per_million": 60,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4-turbo": {
+      "name": "OpenAI: GPT-4 Turbo",
+      "tier_role": "general",
+      "coding_index": 21.5,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 10,
+      "completion_cost_per_million": 30,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4-turbo:batch": {
+      "name": "OpenAI: GPT-4 Turbo (batch)",
+      "tier_role": "general",
+      "coding_index": 21.5,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4.1-mini": {
+      "name": "OpenAI: GPT-4.1 Mini",
+      "tier_role": "general",
+      "coding_index": 20.2,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.39999999999999997,
+      "completion_cost_per_million": 1.5999999999999999,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4.1-mini:batch": {
+      "name": "OpenAI: GPT-4.1 Mini (batch)",
+      "tier_role": "general",
+      "coding_index": 20.2,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.19999999999999998,
+      "completion_cost_per_million": 0.7999999999999999,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4.1-nano": {
+      "name": "OpenAI: GPT-4.1 Nano",
+      "tier_role": "general",
+      "coding_index": 11.1,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.09999999999999999,
+      "completion_cost_per_million": 0.39999999999999997,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4.1-nano:batch": {
+      "name": "OpenAI: GPT-4.1 Nano (batch)",
+      "tier_role": "general",
+      "coding_index": 11.1,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.049999999999999996,
+      "completion_cost_per_million": 0.19999999999999998,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4o-2024-05-13": {
+      "name": "OpenAI: GPT-4o (2024-05-13)",
+      "tier_role": "general",
+      "coding_index": 24.2,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4o-mini": {
+      "name": "OpenAI: GPT-4o-mini",
+      "tier_role": "general",
+      "coding_index": 11.4,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 0.6,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-4o-mini:batch": {
+      "name": "OpenAI: GPT-4o-mini (batch)",
+      "tier_role": "general",
+      "coding_index": 11.4,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.075,
+      "completion_cost_per_million": 0.3,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5": {
+      "name": "OpenAI: GPT-5",
+      "tier_role": "general",
+      "coding_index": 37.8,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 1.25,
+      "completion_cost_per_million": 10,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5-mini": {
+      "name": "OpenAI: GPT-5 Mini",
+      "tier_role": "general",
+      "coding_index": 15.6,
+      "tool_reliability": 6.8,
+      "prompt_cost_per_million": 0.25,
+      "completion_cost_per_million": 2,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5-mini:batch": {
+      "name": "OpenAI: GPT-5 Mini (batch)",
+      "tier_role": "general",
+      "coding_index": 15.6,
+      "tool_reliability": 6.8,
+      "prompt_cost_per_million": 0.125,
+      "completion_cost_per_million": 1,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.1": {
+      "name": "OpenAI: GPT-5.1",
+      "tier_role": "general",
+      "coding_index": 49.4,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 1.25,
+      "completion_cost_per_million": 10,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.1:batch": {
+      "name": "OpenAI: GPT-5.1 (batch)",
+      "tier_role": "general",
+      "coding_index": 49.4,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.625,
+      "completion_cost_per_million": 5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.4": {
+      "name": "OpenAI: GPT-5.4",
+      "tier_role": "coding_workhorse",
+      "coding_index": 71.1,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 2.5,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.4-mini": {
+      "name": "OpenAI: GPT-5.4 Mini",
+      "tier_role": "general",
+      "coding_index": 56.1,
+      "tool_reliability": 17.9,
+      "prompt_cost_per_million": 0.75,
+      "completion_cost_per_million": 4.5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.4-mini:batch": {
+      "name": "OpenAI: GPT-5.4 Mini (batch)",
+      "tier_role": "general",
+      "coding_index": 56.1,
+      "tool_reliability": 17.9,
+      "prompt_cost_per_million": 0.375,
+      "completion_cost_per_million": 2.25,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.4-nano": {
+      "name": "OpenAI: GPT-5.4 Nano",
+      "tier_role": "general",
+      "coding_index": 56.1,
+      "tool_reliability": 16,
+      "prompt_cost_per_million": 0.19999999999999998,
+      "completion_cost_per_million": 1.25,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.4-nano:batch": {
+      "name": "OpenAI: GPT-5.4 Nano (batch)",
+      "tier_role": "general",
+      "coding_index": 56.1,
+      "tool_reliability": 16,
+      "prompt_cost_per_million": 0.09999999999999999,
+      "completion_cost_per_million": 0.625,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.4:batch": {
+      "name": "OpenAI: GPT-5.4 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 71.1,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 1.25,
+      "completion_cost_per_million": 7.5,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.5": {
+      "name": "OpenAI: GPT-5.5",
+      "tier_role": "coding_workhorse",
+      "coding_index": 74.9,
+      "tool_reliability": 36.4,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 30,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.5:batch": {
+      "name": "OpenAI: GPT-5.5 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 74.9,
+      "tool_reliability": 36.4,
+      "prompt_cost_per_million": 2.5,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.6-luna": {
+      "name": "OpenAI: GPT-5.6 Luna",
+      "tier_role": "coding_workhorse",
+      "coding_index": 71.4,
+      "tool_reliability": 42.1,
+      "prompt_cost_per_million": 0.19999999999999998,
+      "completion_cost_per_million": 1.2,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.6-luna:batch": {
+      "name": "OpenAI: GPT-5.6 Luna (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 71.4,
+      "tool_reliability": 42.1,
+      "prompt_cost_per_million": 0.09999999999999999,
+      "completion_cost_per_million": 0.6,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.6-sol": {
+      "name": "OpenAI: GPT-5.6 Sol",
+      "tier_role": "coding_workhorse",
+      "coding_index": 77.4,
+      "tool_reliability": 50.2,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 10,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.6-sol:batch": {
+      "name": "OpenAI: GPT-5.6 Sol (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 77.4,
+      "tool_reliability": 50.2,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 5,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.6-terra": {
+      "name": "OpenAI: GPT-5.6 Terra",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.7,
+      "tool_reliability": 43.2,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 12,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5.6-terra:batch": {
+      "name": "OpenAI: GPT-5.6 Terra (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.7,
+      "tool_reliability": 43.2,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 6,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-5:batch": {
+      "name": "OpenAI: GPT-5 (batch)",
+      "tier_role": "general",
+      "coding_index": 37.8,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.625,
+      "completion_cost_per_million": 5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-6-astra": {
+      "name": "OpenAI: GPT-6 Astra",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.9,
+      "tool_reliability": 51,
+      "prompt_cost_per_million": 10,
+      "completion_cost_per_million": 50,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-6-astra:batch": {
+      "name": "OpenAI: GPT-6 Astra (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.9,
+      "tool_reliability": 51,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-oss-120b": {
+      "name": "OpenAI: gpt-oss-120b",
+      "tier_role": "general",
+      "coding_index": 30.4,
+      "tool_reliability": 3.7,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 0.6,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/gpt-oss-20b": {
+      "name": "OpenAI: gpt-oss-20b",
+      "tier_role": "general",
+      "coding_index": 20.7,
+      "tool_reliability": 1.2,
+      "prompt_cost_per_million": 0.03,
+      "completion_cost_per_million": 0.13,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/o1": {
+      "name": "OpenAI: o1",
+      "tier_role": "deep_reasoner",
+      "coding_index": 39.7,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 15,
+      "completion_cost_per_million": 60,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/o1-pro": {
+      "name": "OpenAI: o1-pro",
+      "tier_role": "deep_reasoner",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 150,
+      "completion_cost_per_million": 600,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "openai/o3": {
+      "name": "OpenAI: o3",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 8,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "openai/o3-mini": {
+      "name": "OpenAI: o3 Mini",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 1.1,
+      "completion_cost_per_million": 4.4,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "openai/o3-mini-high": {
+      "name": "OpenAI: o3 Mini High",
+      "tier_role": "deep_reasoner",
+      "coding_index": 16.3,
+      "tool_reliability": 0.9,
+      "prompt_cost_per_million": 1.1,
+      "completion_cost_per_million": 4.4,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "openai/o3-mini:batch": {
+      "name": "OpenAI: o3 Mini (batch)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.55,
+      "completion_cost_per_million": 2.2,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "openai/o3-pro": {
+      "name": "OpenAI: o3 Pro",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 20,
+      "completion_cost_per_million": 80,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "openai/o3:batch": {
+      "name": "OpenAI: o3 (batch)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 4,
       "recommended_tiers": [
         "tier_4_frontier"
       ]
@@ -351,105 +2017,1009 @@
       "tier_role": "deep_reasoner",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 8,
       "recommended_tiers": [
         "tier_4_frontier"
       ]
+    },
+    "qwen/qwen3-14b": {
+      "name": "Qwen: Qwen3 14B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 13.8,
+      "tool_reliability": 0.9,
+      "prompt_cost_per_million": 0.12,
+      "completion_cost_per_million": 0.24,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3-235b-a22b": {
+      "name": "Qwen: Qwen3 235B A22B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.45499999999999996,
+      "completion_cost_per_million": 1.8199999999999998,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-235b-a22b-2507": {
+      "name": "Qwen: Qwen3 235B A22B Instruct 2507",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.0875,
+      "completion_cost_per_million": 0.35,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-235b-a22b-thinking-2507": {
+      "name": "Qwen: Qwen3 235B A22B Thinking 2507",
+      "tier_role": "deep_reasoner",
+      "coding_index": 22.1,
+      "tool_reliability": 1.3,
+      "prompt_cost_per_million": 0.22999999999999998,
+      "completion_cost_per_million": 2.3,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3-30b-a3b": {
+      "name": "Qwen: Qwen3 30B A3B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.12,
+      "completion_cost_per_million": 0.5,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-30b-a3b-instruct-2507": {
+      "name": "Qwen: Qwen3 30B A3B Instruct 2507",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.04815,
+      "completion_cost_per_million": 0.19305,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-30b-a3b-thinking-2507": {
+      "name": "Qwen: Qwen3 30B A3B Thinking 2507",
+      "tier_role": "deep_reasoner",
+      "coding_index": 12.1,
+      "tool_reliability": 0.9,
+      "prompt_cost_per_million": 0.19999999999999998,
+      "completion_cost_per_million": 2.4,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3-32b": {
+      "name": "Qwen: Qwen3 32B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 15.3,
+      "tool_reliability": 0.9,
+      "prompt_cost_per_million": 0.08,
+      "completion_cost_per_million": 0.28,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3-8b": {
+      "name": "Qwen: Qwen3 8B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 9,
+      "tool_reliability": 0.8,
+      "prompt_cost_per_million": 0.117,
+      "completion_cost_per_million": 0.45499999999999996,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "qwen/qwen3-coder": {
       "name": "Qwen: Qwen3 Coder 480B A35B",
       "tier_role": "coding_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 1,
       "recommended_tiers": [
         "tier_3_workhorse"
-      ]
+      ],
+      "is_open_weights": true
     },
     "qwen/qwen3-coder-30b-a3b-instruct": {
       "name": "Qwen: Qwen3 Coder 30B A3B Instruct",
       "tier_role": "coding_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.07,
+      "completion_cost_per_million": 0.28,
       "recommended_tiers": [
         "tier_3_workhorse"
-      ]
-    },
-    "qwen/qwen3-coder-480b": {
-      "name": "Qwen: Qwen 3 Coder 480B",
-      "tier_role": "coding_workhorse",
-      "coding_index": 82,
-      "tool_reliability": 96,
-      "recommended_tiers": [
-        "tier_3_workhorse"
-      ]
+      ],
+      "is_open_weights": true
     },
     "qwen/qwen3-coder-flash": {
       "name": "Qwen: Qwen3 Coder Flash",
       "tier_role": "coding_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.195,
+      "completion_cost_per_million": 0.975,
       "recommended_tiers": [
         "tier_3_workhorse"
-      ]
+      ],
+      "is_open_weights": true
     },
     "qwen/qwen3-coder-next": {
       "name": "Qwen: Qwen3 Coder Next",
       "tier_role": "coding_workhorse",
-      "coding_index": 0,
-      "tool_reliability": 85,
+      "coding_index": 36.2,
+      "tool_reliability": 0.9,
+      "prompt_cost_per_million": 0.12,
+      "completion_cost_per_million": 0.7999999999999999,
       "recommended_tiers": [
         "tier_3_workhorse"
-      ]
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "qwen/qwen3-coder-plus": {
       "name": "Qwen: Qwen3 Coder Plus",
       "tier_role": "coding_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.65,
+      "completion_cost_per_million": 3.25,
       "recommended_tiers": [
         "tier_3_workhorse"
-      ]
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-max": {
+      "name": "Qwen: Qwen3 Max",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.78,
+      "completion_cost_per_million": 3.9,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-max-thinking": {
+      "name": "Qwen: Qwen3 Max Thinking",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.78,
+      "completion_cost_per_million": 3.9,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-next-80b-a3b-instruct": {
+      "name": "Qwen: Qwen3 Next 80B A3B Instruct",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.09,
+      "completion_cost_per_million": 1.1,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-next-80b-a3b-thinking": {
+      "name": "Qwen: Qwen3 Next 80B A3B Thinking",
+      "tier_role": "deep_reasoner",
+      "coding_index": 17.4,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 1.2,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3-vl-235b-a22b-instruct": {
+      "name": "Qwen: Qwen3 VL 235B A22B Instruct",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.21,
+      "completion_cost_per_million": 1.9,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-vl-235b-a22b-thinking": {
+      "name": "Qwen: Qwen3 VL 235B A22B Thinking",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.39999999999999997,
+      "completion_cost_per_million": 4,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-vl-30b-a3b-instruct": {
+      "name": "Qwen: Qwen3 VL 30B A3B Instruct",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.13,
+      "completion_cost_per_million": 0.52,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-vl-30b-a3b-thinking": {
+      "name": "Qwen: Qwen3 VL 30B A3B Thinking",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.19999999999999998,
+      "completion_cost_per_million": 2.4,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-vl-32b-instruct": {
+      "name": "Qwen: Qwen3 VL 32B Instruct",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.10400000000000001,
+      "completion_cost_per_million": 0.41600000000000004,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-vl-8b-instruct": {
+      "name": "Qwen: Qwen3 VL 8B Instruct",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.117,
+      "completion_cost_per_million": 0.45499999999999996,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3-vl-8b-thinking": {
+      "name": "Qwen: Qwen3 VL 8B Thinking",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.18,
+      "completion_cost_per_million": 2.0999999999999996,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.5-122b-a10b": {
+      "name": "Qwen: Qwen3.5-122B-A10B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 45.7,
+      "tool_reliability": 7.6,
+      "prompt_cost_per_million": 0.26,
+      "completion_cost_per_million": 2.08,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.5-27b": {
+      "name": "Qwen: Qwen3.5-27B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.195,
+      "completion_cost_per_million": 1.56,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.5-35b-a3b": {
+      "name": "Qwen: Qwen3.5-35B-A3B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 37,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.3125,
+      "completion_cost_per_million": 1.25,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.5-397b-a17b": {
+      "name": "Qwen: Qwen3.5 397B A17B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 48.2,
+      "tool_reliability": 8.3,
+      "prompt_cost_per_million": 0.55,
+      "completion_cost_per_million": 3.5,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.5-9b": {
+      "name": "Qwen: Qwen3.5-9B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 28.7,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.09999999999999999,
+      "completion_cost_per_million": 0.15,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "qwen/qwen3.5-flash-02-23": {
       "name": "Qwen: Qwen3.5-Flash",
-      "tier_role": "vision_workhorse",
+      "tier_role": "coding_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.065,
+      "completion_cost_per_million": 0.26,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.5-plus-02-15": {
+      "name": "Qwen: Qwen3.5 Plus 2026-02-15",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.26,
+      "completion_cost_per_million": 1.56,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.5-plus-20260420": {
+      "name": "Qwen: Qwen3.5 Plus 2026-04-20",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 1.7999999999999998,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.6-27b": {
+      "name": "Qwen: Qwen3.6 27B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 53.7,
+      "tool_reliability": 18.5,
+      "prompt_cost_per_million": 0.3,
+      "completion_cost_per_million": 2,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.6-35b-a3b": {
+      "name": "Qwen: Qwen3.6 35B A3B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 41.9,
+      "tool_reliability": 13.1,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 1,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "qwen/qwen3.6-flash": {
       "name": "Qwen: Qwen3.6 Flash",
-      "tier_role": "vision_workhorse",
+      "tier_role": "coding_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.1875,
+      "completion_cost_per_million": 1.125,
       "recommended_tiers": [
-        "tier_1_vision"
-      ]
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.6-max-preview": {
+      "name": "Qwen: Qwen3.6 Max Preview",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 1.0270000000000001,
+      "completion_cost_per_million": 6.162,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.6-plus": {
+      "name": "Qwen: Qwen3.6 Plus",
+      "tier_role": "coding_workhorse",
+      "coding_index": 54.5,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.325,
+      "completion_cost_per_million": 1.95,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
     },
     "qwen/qwen3.7-flash": {
       "name": "Qwen: Qwen3.7 Flash",
-      "tier_role": "vision_workhorse",
+      "tier_role": "coding_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.03,
+      "completion_cost_per_million": 0.13,
       "recommended_tiers": [
-        "tier_1_vision"
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.7-max": {
+      "name": "Qwen: Qwen3.7 Max",
+      "tier_role": "coding_workhorse",
+      "coding_index": 66,
+      "tool_reliability": 22.5,
+      "prompt_cost_per_million": 1.475,
+      "completion_cost_per_million": 4.425,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.7-plus": {
+      "name": "Qwen: Qwen3.7 Plus",
+      "tier_role": "coding_workhorse",
+      "coding_index": 55.9,
+      "tool_reliability": 17.5,
+      "prompt_cost_per_million": 0.32,
+      "completion_cost_per_million": 1.28,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.8-2.4t-a95b": {
+      "name": "Qwen: Qwen3.8 2.4T A95B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 71.9,
+      "tool_reliability": 50.1,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 6,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.8-27b": {
+      "name": "Qwen: Qwen3.8 27B",
+      "tier_role": "coding_workhorse",
+      "coding_index": 68.1,
+      "tool_reliability": 45.8,
+      "prompt_cost_per_million": 0.42,
+      "completion_cost_per_million": 3,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.8-27b:free": {
+      "name": "Qwen: Qwen3.8 27B (free)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 68.1,
+      "tool_reliability": 45.8,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "qwen/qwen3.8-flash": {
+      "name": "Qwen: Qwen3.8 Flash",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 0.47,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true
+    },
+    "qwen/qwen3.8-max-0902": {
+      "name": "Qwen: Qwen3.8 Max (0902)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.2,
+      "tool_reliability": 56,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 6,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "is_open_weights": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "sao10k/l3-lunaris-8b": {
+      "name": "Sao10K: Llama 3 8B Lunaris",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.04,
+      "completion_cost_per_million": 0.049999999999999996,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "sao10k/l3.1-euryale-70b": {
+      "name": "Sao10K: Llama 3.1 Euryale 70B v2.2",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.85,
+      "completion_cost_per_million": 0.85,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "sao10k/l3.3-euryale-70b": {
+      "name": "Sao10K: Llama 3.3 Euryale 70B",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.65,
+      "completion_cost_per_million": 0.75,
+      "recommended_tiers": [
+        "tier_4_frontier"
       ]
     },
     "stepfun/step-3.7-flash": {
       "name": "StepFun: Step 3.7 Flash",
       "tier_role": "vision_workhorse",
+      "coding_index": 39.6,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.19999999999999998,
+      "completion_cost_per_million": 1.15,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "tencent/hy3-preview": {
+      "name": "Tencent: Hy3 preview",
+      "tier_role": "general",
+      "coding_index": 58.8,
+      "tool_reliability": 24.1,
+      "prompt_cost_per_million": 0.18,
+      "completion_cost_per_million": 0.6,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "thinkingmachines/inkling": {
+      "name": "Thinking Machines: Inkling",
+      "tier_role": "deep_reasoner",
+      "coding_index": 52.1,
+      "tool_reliability": 22.5,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 4.05,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "thinkingmachines/inkling-small": {
+      "name": "Thinking Machines: Inkling Small",
+      "tier_role": "deep_reasoner",
+      "coding_index": 52.9,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.44999999999999996,
+      "completion_cost_per_million": 1.2,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "thinkingmachines/inkling-small:free": {
+      "name": "Thinking Machines: Inkling Small (free)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 52.9,
+      "tool_reliability": 85,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "thinkingmachines/inkling:free": {
+      "name": "Thinking Machines: Inkling (free)",
+      "tier_role": "deep_reasoner",
+      "coding_index": 52.1,
+      "tool_reliability": 22.5,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "upstage/solar-pro-3": {
+      "name": "Upstage: Solar Pro 3",
+      "tier_role": "general",
+      "coding_index": 16.2,
+      "tool_reliability": 1.4,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 0.6,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "upstage/solar-pro4": {
+      "name": "Upstage: Solar Pro 4",
+      "tier_role": "general",
+      "coding_index": 52.7,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.09,
+      "completion_cost_per_million": 0.36,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "x-ai/grok-4.3": {
+      "name": "SpaceXAI: Grok 4.3",
+      "tier_role": "general",
+      "coding_index": 42.2,
+      "tool_reliability": 15.5,
+      "prompt_cost_per_million": 1.25,
+      "completion_cost_per_million": 2.5,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "x-ai/grok-4.3:batch": {
+      "name": "SpaceXAI: Grok 4.3 (batch)",
+      "tier_role": "general",
+      "coding_index": 42.2,
+      "tool_reliability": 15.5,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 2,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "x-ai/grok-4.5": {
+      "name": "SpaceXAI: Grok 4.5",
+      "tier_role": "coding_workhorse",
+      "coding_index": 72.4,
+      "tool_reliability": 41.2,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 6,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "x-ai/grok-4.6": {
+      "name": "SpaceXAI: Grok 4.6",
+      "tier_role": "coding_workhorse",
+      "coding_index": 76.8,
+      "tool_reliability": 53,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 6,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "x-ai/grok-build-0.1": {
+      "name": "SpaceXAI: Grok Build 0.1",
+      "tier_role": "general",
+      "coding_index": 51.5,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 2,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "xiaomi/mimo-v2.5": {
+      "name": "Xiaomi: MiMo-V2.5",
+      "tier_role": "general",
+      "coding_index": 56.8,
+      "tool_reliability": 15.8,
+      "prompt_cost_per_million": 0.14,
+      "completion_cost_per_million": 0.28,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "xiaomi/mimo-v2.5-pro": {
+      "name": "Xiaomi: MiMo-V2.5-Pro",
+      "tier_role": "general",
+      "coding_index": 60.2,
+      "tool_reliability": 21.3,
+      "prompt_cost_per_million": 0.435,
+      "completion_cost_per_million": 0.87,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "xiaomi/mimo-v2.6-flash": {
+      "name": "Xiaomi: MiMo-V2.6-Flash",
+      "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.14,
+      "completion_cost_per_million": 0.28,
       "recommended_tiers": [
         "tier_1_vision"
       ]
     },
-    "~google/gemini-flash-latest": {
-      "name": "Google Gemini Flash Latest",
+    "z-ai/glm-4.6": {
+      "name": "Z.ai: GLM 4.6",
+      "tier_role": "general",
+      "coding_index": 45.8,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.43,
+      "completion_cost_per_million": 1.75,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-4.7": {
+      "name": "Z.ai: GLM 4.7",
+      "tier_role": "general",
+      "coding_index": 45.3,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.39999999999999997,
+      "completion_cost_per_million": 1.75,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-5.1": {
+      "name": "Z.ai: GLM 5.1",
+      "tier_role": "general",
+      "coding_index": 55.8,
+      "tool_reliability": 23.9,
+      "prompt_cost_per_million": 0.966,
+      "completion_cost_per_million": 3.036,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-5.2": {
+      "name": "Z.ai: GLM 5.2",
+      "tier_role": "coding_workhorse",
+      "coding_index": 68.8,
+      "tool_reliability": 38.4,
+      "prompt_cost_per_million": 0.6496,
+      "completion_cost_per_million": 2.0416,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-5.2:batch": {
+      "name": "Z.ai: GLM 5.2 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 68.8,
+      "tool_reliability": 38.4,
+      "prompt_cost_per_million": 0.7,
+      "completion_cost_per_million": 2.2,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-5.2:free": {
+      "name": "Z.ai: GLM 5.2 (free)",
+      "tier_role": "general",
+      "coding_index": 68.8,
+      "tool_reliability": 38.4,
+      "recommended_tiers": null,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-5.3": {
+      "name": "Z.ai: GLM 5.3",
+      "tier_role": "coding_workhorse",
+      "coding_index": 74.8,
+      "tool_reliability": 53.1,
+      "prompt_cost_per_million": 0.84,
+      "completion_cost_per_million": 2.64,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-5.3-flash": {
+      "name": "Z.ai: GLM 5.3 Flash",
+      "tier_role": "coding_workhorse",
+      "coding_index": 71.5,
+      "tool_reliability": 50.9,
+      "prompt_cost_per_million": 0.15,
+      "completion_cost_per_million": 0.5,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-5.3-flash:batch": {
+      "name": "Z.ai: GLM 5.3 Flash (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 71.5,
+      "tool_reliability": 50.9,
+      "prompt_cost_per_million": 0.075,
+      "completion_cost_per_million": 0.25,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "z-ai/glm-5.3-flashx": {
+      "name": "Z.ai: GLM 5.3 FlashX",
       "tier_role": "vision_workhorse",
       "coding_index": 0,
       "tool_reliability": 85,
+      "prompt_cost_per_million": 0.37,
+      "completion_cost_per_million": 1.25,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "z-ai/glm-5.3:batch": {
+      "name": "Z.ai: GLM 5.3 (batch)",
+      "tier_role": "coding_workhorse",
+      "coding_index": 74.8,
+      "tool_reliability": 53.1,
+      "prompt_cost_per_million": 0.7,
+      "completion_cost_per_million": 2.2,
+      "recommended_tiers": [
+        "tier_3_workhorse"
+      ],
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "~anthropic/claude-opus-latest": {
+      "name": "Anthropic: Claude Opus Latest",
+      "tier_role": "deep_reasoner",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ]
+    },
+    "~anthropic/claude-sonnet-latest": {
+      "name": "Anthropic: Claude Sonnet Latest",
+      "tier_role": "coding_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 2,
+      "completion_cost_per_million": 10,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ]
+    },
+    "~deepseek/deepseek-flash-latest": {
+      "name": "DeepSeek: DeepSeek Flash Latest",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.12,
+      "completion_cost_per_million": 0.48,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ],
+      "is_open_weights": true
+    },
+    "~google/gemini-flash-latest": {
+      "name": "Google: Gemini Flash Latest",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.75,
+      "completion_cost_per_million": 3.75,
+      "recommended_tiers": [
+        "tier_1_vision"
+      ]
+    },
+    "~z-ai/glm-flash-latest": {
+      "name": "Z.ai: GLM Flash Latest",
+      "tier_role": "vision_workhorse",
+      "coding_index": 0,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 0.075,
+      "completion_cost_per_million": 0.25,
       "recommended_tiers": [
         "tier_1_vision"
       ]

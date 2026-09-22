@@ -36,19 +36,29 @@ func ApplyTuning(configPath string, result *TuningResult) (string, error) {
 		return "", fmt.Errorf("failed to create backup file at %s: %w", backupPath, err)
 	}
 
-	// 2. Mutate Tier rules matching result.Tiers
+	// 2. Mutate Tier rules and models matching result.Tiers
 	updated := false
 	for _, tunedTier := range result.Tiers {
-		if tunedTier.SynthesizedRule == "" {
+		if tunedTier.SynthesizedRule == "" && tunedTier.RecommendedModel == "" {
 			continue
 		}
 		for i := range cfg.Tiers {
 			if cfg.Tiers[i].Name == tunedTier.TierName || (len(result.Tiers) == 1 && IsLocalTier(cfg.Tiers[i], cfg.Providers)) {
-				cfg.Tiers[i].When = tunedTier.SynthesizedRule
+				if tunedTier.SynthesizedRule != "" {
+					cfg.Tiers[i].When = tunedTier.SynthesizedRule
+				}
+				if tunedTier.RecommendedModel != "" && tunedTier.RecommendedModel != tunedTier.OriginalModel {
+					cfg.Tiers[i].Model = tunedTier.RecommendedModel
+				}
 				updated = true
 				break
 			}
 		}
+	}
+
+	if result.DefaultTier != nil && result.DefaultTier.RecommendedModel != "" && result.DefaultTier.RecommendedModel != result.DefaultTier.OriginalModel {
+		cfg.DefaultTier.Model = result.DefaultTier.RecommendedModel
+		updated = true
 	}
 
 	if !updated {

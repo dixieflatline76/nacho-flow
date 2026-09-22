@@ -45,12 +45,29 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 		}
 	}
 
+	if len(res.StaticDominanceConflicts) > 0 {
+		b.WriteString("\n⚠️ STATIC ROUTING DOMINANCE DEFECTS DETECTED:\n")
+		for _, c := range res.StaticDominanceConflicts {
+			b.WriteString(fmt.Sprintf("  • %s\n", c.Reason))
+		}
+	}
+
 	b.WriteString("\n🔍 MULTI-TIER ROUTING POLICIES:\n")
 	for i, tier := range res.Tiers {
 		b.WriteString(fmt.Sprintf("\n  [Tier %d: %s]\n", i+1, tier.TierName))
-		b.WriteString(fmt.Sprintf("  • Context Threshold:   %d tokens\n", tier.OptimalThreshold))
+		if tier.OptimalThreshold > 0 {
+			b.WriteString(fmt.Sprintf("  • Context Threshold:   %d tokens\n", tier.OptimalThreshold))
+		} else {
+			b.WriteString("  • Context Threshold:   Unlimited\n")
+		}
 		if tier.OptimalRetries > 0 {
 			b.WriteString(fmt.Sprintf("  • Retry Bound:         %d max retries before escalation\n", tier.OptimalRetries))
+		}
+		if tier.RecommendedModel != "" && tier.RecommendedModel != tier.OriginalModel {
+			b.WriteString(fmt.Sprintf("  • Model Substitution:  %s -> %s\n", tier.OriginalModel, tier.RecommendedModel))
+			if tier.ModelBenefit != "" {
+				b.WriteString(fmt.Sprintf("    Benefit:             %s\n", tier.ModelBenefit))
+			}
 		}
 		if tier.RestrictImages {
 			b.WriteString("  • Multimodal Vision:   Restricted\n")
@@ -67,6 +84,14 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 		}
 	}
 
+	if res.DefaultTier != nil && res.DefaultTier.RecommendedModel != "" && res.DefaultTier.RecommendedModel != res.DefaultTier.OriginalModel {
+		b.WriteString(fmt.Sprintf("\n  [Fallback Tier: %s]\n", res.DefaultTier.TierName))
+		b.WriteString(fmt.Sprintf("  • Model Substitution:  %s -> %s\n", res.DefaultTier.OriginalModel, res.DefaultTier.RecommendedModel))
+		if res.DefaultTier.ModelBenefit != "" {
+			b.WriteString(fmt.Sprintf("    Benefit:             %s\n", res.DefaultTier.ModelBenefit))
+		}
+	}
+
 	b.WriteString("\n📈 PROJECTED FLEET IMPACT:\n")
 	b.WriteString(fmt.Sprintf("  • Developer Retries Avoided: ~%d retries eliminated\n", res.RetriesEliminated))
 	if res.ProjectedSavingsUSD > 0 {
@@ -75,13 +100,36 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 
 	b.WriteString("\n🛠️ RECOMMENDED CONFIGURATION DIFF:\n")
 	b.WriteString("----------------------------------------------------------------------------------------\n")
+	var diffCount int
 	for _, tier := range res.Tiers {
-		b.WriteString(fmt.Sprintf("  Tier: %q\n", tier.TierName))
-		if tier.OriginalRule != "" {
-			b.WriteString(fmt.Sprintf("  - when: %q\n", tier.OriginalRule))
+		hasModelDiff := tier.RecommendedModel != "" && tier.RecommendedModel != tier.OriginalModel
+		hasRuleDiff := tier.SynthesizedRule != "" && tier.SynthesizedRule != tier.OriginalRule
+		if !hasModelDiff && !hasRuleDiff {
+			continue
 		}
-		b.WriteString(fmt.Sprintf("  + when: %q\n", tier.SynthesizedRule))
+		diffCount++
+		b.WriteString(fmt.Sprintf("  Tier: %q\n", tier.TierName))
+		if hasModelDiff {
+			b.WriteString(fmt.Sprintf("  - model: %q\n", tier.OriginalModel))
+			b.WriteString(fmt.Sprintf("  + model: %q\n", tier.RecommendedModel))
+		}
+		if hasRuleDiff {
+			if tier.OriginalRule != "" {
+				b.WriteString(fmt.Sprintf("  - when: %q\n", tier.OriginalRule))
+			}
+			b.WriteString(fmt.Sprintf("  + when: %q\n", tier.SynthesizedRule))
+		}
 		b.WriteString("\n")
+	}
+	if res.DefaultTier != nil && res.DefaultTier.RecommendedModel != "" && res.DefaultTier.RecommendedModel != res.DefaultTier.OriginalModel {
+		diffCount++
+		b.WriteString(fmt.Sprintf("  Fallback Tier: %q\n", res.DefaultTier.TierName))
+		b.WriteString(fmt.Sprintf("  - model: %q\n", res.DefaultTier.OriginalModel))
+		b.WriteString(fmt.Sprintf("  + model: %q\n", res.DefaultTier.RecommendedModel))
+		b.WriteString("\n")
+	}
+	if diffCount == 0 {
+		b.WriteString("  (No configuration changes recommended — active fleet policy is optimal)\n\n")
 	}
 	b.WriteString("----------------------------------------------------------------------------------------\n\n")
 

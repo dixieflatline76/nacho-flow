@@ -19,7 +19,8 @@
       "tool_reliability": 88,
       "recommended_tiers": [
         "tier_4_frontier"
-      ]
+      ],
+      "is_open_weights": true
     },
     "google/gemini-2.5-flash": {
       "name": "Google: Gemini 2.5 Flash",
@@ -47,7 +48,8 @@
       "tool_reliability": 96,
       "recommended_tiers": [
         "tier_3_workhorse"
-      ]
+      ],
+      "is_open_weights": true
     }
   }
 }

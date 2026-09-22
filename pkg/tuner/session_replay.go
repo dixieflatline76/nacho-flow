@@ -6,8 +6,8 @@ import (
 
 // ReplayConfig defines a candidate routing configuration to simulate.
 type ReplayConfig struct {
-	TokenThreshold   int      // Tokens < T
-	RetryBound       int      // Retries < R
+	TokenThreshold   int // Tokens < T
+	RetryBound       int // Retries < R
 	RestrictImages   bool
 	RestrictTools    bool
 	FrictionKeywords []string
@@ -86,8 +86,11 @@ func ReplaySession(trajectory SessionTrajectory, config ReplayConfig, policy Tun
 			if !turn.IsLocal {
 				currentRetries++
 				result.SimulatedRetries++
+			} else if turn.IsRetry {
+				currentRetries++
+				result.SimulatedRetries++
 			} else {
-				// Historical turn ran on Local: use historical outcome
+				// Historical turn ran on Local: check progress
 				hasProgress := turn.HasWriteProgress || turn.HasTestPass
 				if turn.HasTools && !turn.HasWriteCapability {
 					// Plan mode read-only turns are immune to retry penalties
@@ -96,9 +99,6 @@ func ReplaySession(trajectory SessionTrajectory, config ReplayConfig, policy Tun
 
 				if hasProgress {
 					currentRetries = 0
-				} else if turn.IsRetry {
-					currentRetries++
-					result.SimulatedRetries++
 				}
 			}
 

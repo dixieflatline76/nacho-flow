@@ -11,6 +11,8 @@ import (
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
+	"github.com/expr-lang/expr/parser"
 )
 
 // MinConflictsOptimizer implements the 6D Min-Conflicts CSP local search optimizer.
@@ -31,7 +33,7 @@ func (opt *MinConflictsOptimizer) Name() string {
 }
 
 // TokenCandidateValues defines the discrete context search domain.
-var TokenCandidateValues = []int{1000, 2000, 4000, 8000, 12000, 16000, 24000, 32000, 64000}
+var TokenCandidateValues = []int{1000, 2000, 4000, 8000, 12000, 16000, 20000, 24000, 32000, 64000}
 
 // RetryCandidateValues defines the discrete retry bound search domain.
 var RetryCandidateValues = []int{1, 2, 3, 4, 5, 6}
@@ -55,6 +57,8 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 				tierResults = append(tierResults, TierTuningResult{
 					TierName:                 tier.Name,
 					Model:                    tier.Model,
+					OriginalModel:            tier.Model,
+					RecommendedModel:         tier.Model,
 					CodingIndex:              codingIndex,
 					ToolReliability:          toolReliability,
 					PromptCostPerMillion:     promptCost,
@@ -79,6 +83,8 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 			tierResults = append(tierResults, TierTuningResult{
 				TierName:                 tier.Name,
 				Model:                    tier.Model,
+				OriginalModel:            tier.Model,
+				RecommendedModel:         tier.Model,
 				CodingIndex:              codingIndex,
 				ToolReliability:          toolReliability,
 				PromptCostPerMillion:     promptCost,
@@ -118,6 +124,8 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	if len(currentCfg.Tiers) == 0 {
 		return nil, fmt.Errorf("no tunable tiers found in active configuration")
 	}
+	initialCfg := copyMultiTierConfig(&currentCfg)
+	initialDominance := AnalyzeFleetDominance(&initialCfg)
 
 	// 3. Evaluate initial baseline
 	var baselineBuf MultiTierReplayResult
@@ -148,6 +156,7 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	var evalBuf MultiTierReplayResult
 	var consecutiveStagnations int
 	lastBest := bestConflict
+	// #nosec G404 - pseudo-random epsilon perturbation for heuristic search
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for iter := 0; iter < maxIterations; iter++ {
@@ -265,9 +274,119 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 								bestValCfg = candCfg
 							}
 						}
+
+					case "model":
+						// Preserve local model unless user explicitly requests local VRAM model substitution
+						if currentCfg.Tiers[tierIdx].IsLocal && opt.policy.LocalVRAMGB == 0 {
+							continue
+						}
+
+						// Identify immediate escalation predecessor in the retry hierarchy
+						var immediatePred *TierReplayConfig
+						for j := tierIdx - 1; j >= 0; j-- {
+							pred := &currentCfg.Tiers[j]
+							if pred.IsDisabled || pred.RequiresKickstart || pred.RequiresImages {
+								continue
+							}
+							isEscalation := false
+							if currentCfg.Tiers[tierIdx].RetryFloor > 0 && pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryFloor >= pred.RetryBound {
+								isEscalation = true
+							} else if pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryBound > pred.RetryBound {
+								isEscalation = true
+							} else if pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryBound == 0 {
+								isEscalation = true
+							}
+							if isEscalation {
+								immediatePred = pred
+								break
+							}
+						}
+
+						isFrontier := currentCfg.Tiers[tierIdx].IsFrontier || IsFrontierModel(currentCfg.Tiers[tierIdx].Model)
+						isEscalationTier := currentCfg.Tiers[tierIdx].RetryFloor > 0 || (immediatePred != nil && immediatePred.CodingIndex >= 70.0)
+
+						tierRole := curation.RoleCodingWorkhorse
+						if currentCfg.Tiers[tierIdx].RequiresImages || (currentCfg.Tiers[tierIdx].SupportsVision && !currentCfg.Tiers[tierIdx].SupportsTools) {
+							tierRole = curation.RoleVisionWorkhorse
+						} else if isFrontier || isEscalationTier {
+							tierRole = curation.RoleGeneral
+						}
+						candidates := curation.DefaultManager().ParetoCandidates(
+							tierRole,
+							currentCfg.Tiers[tierIdx].IsLocal,
+							currentCfg.Tiers[tierIdx].Model,
+							opt.policy.LocalVRAMGB,
+						)
+						for _, cand := range candidates {
+							if cand.ModelID == currentCfg.Tiers[tierIdx].Model {
+								continue
+							}
+							// Anti-Duplication: Never duplicate immediate escalation predecessor
+							if immediatePred != nil && cand.ModelID == immediatePred.Model {
+								continue
+							}
+							// Escalation Progression: Require strictly higher capability or verified frontier class
+							if isEscalationTier && immediatePred != nil {
+								if !cand.IsFrontier() && cand.CodingIndex <= immediatePred.CodingIndex {
+									continue
+								}
+							}
+							// Frontier tier protection: never downgrade a frontier tier to a non-frontier or lower-benchmark model
+							if isFrontier {
+								if !cand.IsFrontier() && cand.CodingIndex < 80.0 {
+									continue
+								}
+								if currentCfg.Tiers[tierIdx].CodingIndex > 0 && cand.CodingIndex < currentCfg.Tiers[tierIdx].CodingIndex {
+									continue
+								}
+								if currentCfg.Tiers[tierIdx].ToolReliability > 0 && cand.ToolReliability < currentCfg.Tiers[tierIdx].ToolReliability {
+									continue
+								}
+							}
+							candCfg := copyMultiTierConfig(&currentCfg)
+							candCfg.Tiers[tierIdx].Model = cand.ModelID
+							candCfg.Tiers[tierIdx].CodingIndex = cand.CodingIndex
+							candCfg.Tiers[tierIdx].ToolReliability = cand.ToolReliability
+							candCfg.Tiers[tierIdx].IsFrontier = cand.IsFrontier()
+							candVision, candTools := ResolveModelCapabilities(cand.ModelID)
+							if cand.SupportsVision {
+								candVision = true
+							}
+							if cand.SupportsTools {
+								candTools = true
+							}
+							candCfg.Tiers[tierIdx].SupportsVision = candVision
+							candCfg.Tiers[tierIdx].SupportsTools = candTools
+							if !candCfg.Tiers[tierIdx].IsLocal {
+								candCfg.Tiers[tierIdx].PromptCostPerMillion = cand.PromptCostPerMillion
+								candCfg.Tiers[tierIdx].CompletionCostPerMillion = cand.CompletionCostPerMillion
+								compRate := cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
+								candCfg.Tiers[tierIdx].ComprehensiveRate = compRate
+								candCfg.Tiers[tierIdx].CostPerMillion = compRate
+							} else {
+								candCfg.Tiers[tierIdx].PromptCostPerMillion = 0
+								candCfg.Tiers[tierIdx].CompletionCostPerMillion = 0
+								candCfg.Tiers[tierIdx].ComprehensiveRate = 0
+								candCfg.Tiers[tierIdx].CostPerMillion = 0
+							}
+
+							if !CheckHardConstraints(&candCfg) {
+								continue
+							}
+							h := hashState(&candCfg)
+							c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
+							if tabuSet[h] && c >= bestConflict {
+								continue
+							}
+							if c < minValConflict {
+								minValConflict = c
+								bestValCfg = candCfg
+							}
+						}
 					}
 				}
 			}
+
 		} else if strings.HasPrefix(targetVar, "keyword:") {
 			// Variable format: "keyword:<kw>"
 			kw := strings.TrimPrefix(targetVar, "keyword:")
@@ -276,6 +395,78 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 				candCfg := copyMultiTierConfig(&currentCfg)
 				if !hasKeyword([]string{kw}, candCfg.Tiers[tIdx].ExcludedKeywords) {
 					candCfg.Tiers[tIdx].ExcludedKeywords = append(candCfg.Tiers[tIdx].ExcludedKeywords, kw)
+				}
+				h := hashState(&candCfg)
+				c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
+				if tabuSet[h] && c >= bestConflict {
+					continue
+				}
+				if c < minValConflict {
+					minValConflict = c
+					bestValCfg = candCfg
+				}
+			}
+		} else if targetVar == "default_tier:model" {
+			isFrontierFallback := currentCfg.DefaultTier.IsFrontier || IsFrontierModel(currentConfig.DefaultTier.Model)
+
+			candidates := curation.DefaultManager().ParetoCandidates(
+				curation.RoleGeneral,
+				currentCfg.DefaultTier.IsLocal,
+				currentCfg.DefaultTier.Model,
+				opt.policy.LocalVRAMGB,
+			)
+			for _, cand := range candidates {
+				if cand.ModelID == currentCfg.DefaultTier.Model {
+					continue
+				}
+				// Frontier Safety Net Protection:
+				// Fallback catch-all tier must not be downgraded from Frontier to Budget Workhorse.
+				if isFrontierFallback {
+					if !cand.IsFrontier() && cand.CodingIndex < 80.0 {
+						continue
+					}
+					// Must not degrade coding capability or tool reliability on frontier fallback
+					if currentCfg.DefaultTier.CodingIndex > 0 && cand.CodingIndex < currentCfg.DefaultTier.CodingIndex {
+						continue
+					}
+					if currentCfg.DefaultTier.ToolReliability > 0 && cand.ToolReliability < currentCfg.DefaultTier.ToolReliability {
+						continue
+					}
+				} else {
+					// Workhorse fallback: enforce tool capability and baseline tool reliability
+					if !cand.SupportsTools || cand.ToolReliability < 30.0 {
+						continue
+					}
+				}
+				candCfg := copyMultiTierConfig(&currentCfg)
+				candCfg.DefaultTier.Model = cand.ModelID
+				candCfg.DefaultTier.CodingIndex = cand.CodingIndex
+				candCfg.DefaultTier.ToolReliability = cand.ToolReliability
+				candCfg.DefaultTier.IsFrontier = cand.IsFrontier()
+				candVision, candTools := ResolveModelCapabilities(cand.ModelID)
+				if cand.SupportsVision {
+					candVision = true
+				}
+				if cand.SupportsTools {
+					candTools = true
+				}
+				candCfg.DefaultTier.SupportsVision = candVision
+				candCfg.DefaultTier.SupportsTools = candTools
+				if !candCfg.DefaultTier.IsLocal {
+					candCfg.DefaultTier.PromptCostPerMillion = cand.PromptCostPerMillion
+					candCfg.DefaultTier.CompletionCostPerMillion = cand.CompletionCostPerMillion
+					compRate := cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
+					candCfg.DefaultTier.ComprehensiveRate = compRate
+					candCfg.DefaultTier.CostPerMillion = compRate
+				} else {
+					candCfg.DefaultTier.PromptCostPerMillion = 0
+					candCfg.DefaultTier.CompletionCostPerMillion = 0
+					candCfg.DefaultTier.ComprehensiveRate = 0
+					candCfg.DefaultTier.CostPerMillion = 0
+				}
+
+				if !CheckHardConstraints(&candCfg) {
+					continue
 				}
 				h := hashState(&candCfg)
 				c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
@@ -304,18 +495,36 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 
 	var tierResults []TierTuningResult
 	for i, tier := range bestCfg.Tiers {
-		var origWhen string
+		var origWhen, origModel string
 		if i < len(currentConfig.Tiers) {
 			origWhen = currentConfig.Tiers[i].When
+			origModel = currentConfig.Tiers[i].Model
 		}
 
 		isDisabled := tier.IsDisabled || strings.TrimSpace(origWhen) == "false"
+		if clean := strings.TrimSpace(origWhen); clean != "" && clean != "false" {
+			if _, err := parser.Parse(clean); err != nil {
+				return nil, fmt.Errorf("failed to rewrite AST for tier %q: %w", tier.TierName, err)
+			}
+		}
+
+		var routingUnchanged bool
+		if i < len(initialCfg.Tiers) {
+			origTier := initialCfg.Tiers[i]
+			routingUnchanged = (tier.TokenThreshold == origTier.TokenThreshold &&
+				tier.RetryBound == origTier.RetryBound &&
+				tier.RestrictImages == origTier.RestrictImages &&
+				tier.RestrictTools == origTier.RestrictTools &&
+				equalStringSlices(tier.ExcludedKeywords, origTier.ExcludedKeywords))
+		}
 
 		var synthRule string
 		if isDisabled {
 			synthRule = "false"
 			tier.TokenThreshold = 0
 			tier.RetryBound = 0
+		} else if routingUnchanged {
+			synthRule = origWhen
 		} else if i < len(finalBuf.TierStats) && finalBuf.TierStats[i].TurnsRouted == 0 {
 			// Zero traffic reached this tier during replay -> preserve original rule strictly without dummy threshold additions!
 			synthRule = origWhen
@@ -334,9 +543,26 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 			}
 		}
 
+		recModel := tier.Model
+		var modelBenefit string
+		if recModel != "" && recModel != origModel {
+			origCoding, _ := ResolveModelBenchmark(origModel)
+			origPrompt, origComp, _ := ResolveModelRates(origModel, tier.IsLocal)
+			if tier.CodingIndex > origCoding {
+				modelBenefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f", origCoding, tier.CodingIndex)
+			} else if !tier.IsLocal && (tier.PromptCostPerMillion < origPrompt || tier.CompletionCostPerMillion < origComp) {
+				modelBenefit = fmt.Sprintf("Reduces cloud token pricing ($%.2f/M prompt vs $%.2f/M)", tier.PromptCostPerMillion, origPrompt)
+			} else {
+				modelBenefit = "Optimizes fleet cost-to-performance frontier"
+			}
+		}
+
 		tierResults = append(tierResults, TierTuningResult{
 			TierName:                 tier.TierName,
-			Model:                    tier.Model,
+			Model:                    recModel,
+			OriginalModel:            origModel,
+			RecommendedModel:         recModel,
+			ModelBenefit:             modelBenefit,
 			CodingIndex:              tier.CodingIndex,
 			ToolReliability:          tier.ToolReliability,
 			PromptCostPerMillion:     tier.PromptCostPerMillion,
@@ -353,6 +579,31 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		})
 	}
 
+	var defaultTierResult *TierTuningResult
+	origDefModel := currentConfig.DefaultTier.Model
+	recDefModel := bestCfg.DefaultTier.Model
+	if recDefModel != "" && recDefModel != origDefModel {
+		origDefCoding, _ := ResolveModelBenchmark(origDefModel)
+		var defBenefit string
+		if bestCfg.DefaultTier.CodingIndex > origDefCoding {
+			defBenefit = fmt.Sprintf("Improves fallback benchmark from %.1f to %.1f", origDefCoding, bestCfg.DefaultTier.CodingIndex)
+		} else {
+			defBenefit = "Reduces fallback cloud cost while preserving reasoning capability"
+		}
+		defaultTierResult = &TierTuningResult{
+			TierName:                 bestCfg.DefaultTier.TierName,
+			Model:                    recDefModel,
+			OriginalModel:            origDefModel,
+			RecommendedModel:         recDefModel,
+			ModelBenefit:             defBenefit,
+			CodingIndex:              bestCfg.DefaultTier.CodingIndex,
+			ToolReliability:          bestCfg.DefaultTier.ToolReliability,
+			PromptCostPerMillion:     bestCfg.DefaultTier.PromptCostPerMillion,
+			CompletionCostPerMillion: bestCfg.DefaultTier.CompletionCostPerMillion,
+			ComprehensiveRate:        bestCfg.DefaultTier.ComprehensiveRate,
+		}
+	}
+
 	retriesAvoided := baselineBuf.TotalWastedRetries - finalBuf.TotalWastedRetries
 	if retriesAvoided < 0 {
 		retriesAvoided = 0
@@ -364,12 +615,17 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	}
 
 	// Invariant: If optimization achieves zero savings and zero retries avoided,
-	// the active configuration is already optimal. Preserve original rules for all tiers!
-	if retriesAvoided <= 0 && savingsUSD <= 0.001 {
+	// and no static fleet dominance conflicts were resolved,
+	// the active configuration is already optimal. Preserve original rules and models for all tiers!
+	hasDominanceResolution := len(AnalyzeFleetDominance(&initialCfg)) > len(AnalyzeFleetDominance(&bestCfg))
+	if retriesAvoided <= 0 && savingsUSD <= 0.001 && !hasDominanceResolution {
+		defaultTierResult = nil
 		for i := range tierResults {
 			if !tierResults[i].IsDisabled {
 				tierResults[i].SynthesizedRule = tierResults[i].OriginalRule
 			}
+			tierResults[i].RecommendedModel = tierResults[i].OriginalModel
+			tierResults[i].ModelBenefit = ""
 		}
 	}
 
@@ -384,15 +640,17 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	}
 
 	return &TuningResult{
-		Tiers:               tierResults,
-		CurrentCostUSD:      baselineBuf.TotalCostUSD,
-		ProjectedCostUSD:    finalBuf.TotalCostUSD,
-		ProjectedSavingsUSD: savingsUSD,
-		RetriesEliminated:   retriesAvoided,
-		TotalSampleTurns:    finalBuf.TotalTurns,
-		TotalSessions:       len(trajectories),
-		AvgTurnsPerSession:  avgTurns,
-		EscalationRate:      escalationRate,
+		Tiers:                    tierResults,
+		DefaultTier:              defaultTierResult,
+		CurrentCostUSD:           baselineBuf.TotalCostUSD,
+		ProjectedCostUSD:         finalBuf.TotalCostUSD,
+		ProjectedSavingsUSD:      savingsUSD,
+		RetriesEliminated:        retriesAvoided,
+		TotalSampleTurns:         finalBuf.TotalTurns,
+		TotalSessions:            len(trajectories),
+		AvgTurnsPerSession:       avgTurns,
+		EscalationRate:           escalationRate,
+		StaticDominanceConflicts: initialDominance,
 	}, nil
 }
 
@@ -442,7 +700,9 @@ func hashState(cfg *MultiTierConfig) uint64 {
 	const prime uint64 = 1099511628211
 
 	for _, t := range cfg.Tiers {
+		// #nosec G115 - TokenThreshold and RetryBound are positive configuration limits
 		h = (h ^ uint64(t.TokenThreshold)) * prime
+		// #nosec G115 - TokenThreshold and RetryBound are positive configuration limits
 		h = (h ^ uint64(t.RetryBound)) * prime
 		if t.RestrictImages {
 			h = (h ^ 0x01) * prime
@@ -450,11 +710,29 @@ func hashState(cfg *MultiTierConfig) uint64 {
 		if t.RestrictTools {
 			h = (h ^ 0x02) * prime
 		}
+		for i := 0; i < len(t.Model); i++ {
+			h = (h ^ uint64(t.Model[i])) * prime
+		}
 		for _, kw := range t.ExcludedKeywords {
 			for i := 0; i < len(kw); i++ {
 				h = (h ^ uint64(kw[i])) * prime
 			}
 		}
 	}
+	for i := 0; i < len(cfg.DefaultTier.Model); i++ {
+		h = (h ^ uint64(cfg.DefaultTier.Model[i])) * prime
+	}
 	return h
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
