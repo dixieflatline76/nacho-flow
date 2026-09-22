@@ -1102,28 +1102,63 @@ export class ExtensionController {
 
 		try {
 			const data = optData || await this.restClient.tune();
-			const targetTier = data?.target_tier_name;
-			const synthesizedRule = data?.synthesized_rule;
+			const tiers: any[] = Array.isArray(data?.tiers) ? data.tiers : [];
 
-			if (!targetTier || !synthesizedRule) {
+			if (tiers.length === 0) {
 				vscode.window.showWarningMessage('Nacho Flow: No optimization policy available to apply');
 				return;
 			}
 
-			const yamlContent = await this.restClient.getConfigYaml();
+			let yamlContent = await this.restClient.getConfigYaml();
 			if (!yamlContent) {
 				vscode.window.showErrorMessage('Nacho Flow: Unable to fetch configuration from daemon');
 				return;
 			}
 
-			const updatedYaml = this.replaceTierRuleInYaml(yamlContent, targetTier, synthesizedRule);
-			if (updatedYaml === yamlContent) {
-				vscode.window.showWarningMessage(`Nacho Flow: Could not locate rule for tier "${targetTier}" in config YAML`);
+			let appliedCount = 0;
+			for (const tier of tiers) {
+				const tierName = tier.tier_name || tier.tierName;
+				const synthesizedRule = tier.synthesized_rule || tier.synthesizedRule;
+				const recommendedModel = tier.recommended_model || tier.recommendedModel;
+				const originalModel = tier.original_model || tier.originalModel;
+
+				if (tierName && synthesizedRule) {
+					const updatedYaml = this.replaceTierRuleInYaml(yamlContent, tierName, synthesizedRule);
+					if (updatedYaml !== yamlContent) {
+						yamlContent = updatedYaml;
+						appliedCount++;
+					}
+				}
+				if (tierName && recommendedModel && originalModel && recommendedModel !== originalModel) {
+					const updatedYaml = this.replaceTierModelInYaml(yamlContent, tierName, false, recommendedModel);
+					if (updatedYaml !== yamlContent) {
+						yamlContent = updatedYaml;
+						appliedCount++;
+					}
+				}
+			}
+
+			if (data?.default_tier) {
+				const defTier = data.default_tier;
+				const defTierName = defTier.tier_name || defTier.tierName || 'Fallback';
+				const recModel = defTier.recommended_model || defTier.recommendedModel;
+				const origModel = defTier.original_model || defTier.originalModel;
+				if (recModel && origModel && recModel !== origModel) {
+					const updatedYaml = this.replaceTierModelInYaml(yamlContent, defTierName, true, recModel);
+					if (updatedYaml !== yamlContent) {
+						yamlContent = updatedYaml;
+						appliedCount++;
+					}
+				}
+			}
+
+			if (appliedCount === 0) {
+				vscode.window.showWarningMessage('Nacho Flow: Could not locate matching tiers in config YAML');
 				return;
 			}
 
-			await this.restClient.updateConfigYaml(updatedYaml);
-			this.showTransientToast(`🎉 Applied Auto-Tuner policy to ${targetTier}!`);
+			await this.restClient.updateConfigYaml(yamlContent);
+			this.showTransientToast(`🎉 Applied Auto-Tuner v3 policy across ${appliedCount} tier(s)!`);
 
 			if (this.dashboardPanel) {
 				this.dashboardPanel.updateOptimization(null);

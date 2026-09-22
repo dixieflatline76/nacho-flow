@@ -65,6 +65,13 @@
                                 <span class="dropdown-desc">Internal pipeline, DTOs & agentic shield</span>
                             </div>
                         </a>
+                        <a href="docs.html?doc=frontier_study" class="dropdown-item">
+                            <span class="dropdown-icon">💸</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">The Frontier Tax</span>
+                                <span class="dropdown-desc">1:1 Claude Sonnet 5 empirical control study</span>
+                            </div>
+                        </a>
                         <a href="docs.html?doc=benchmarks" class="dropdown-item">
                             <span class="dropdown-icon">📊</span>
                             <div class="dropdown-text">
@@ -117,6 +124,9 @@
                 </div>
                 <div class="doc-nav-item" id="nav-extension_guide" onclick="loadDoc('extension_guide', true)">
                     <span>🧩</span> VS Code Companion Extension
+                </div>
+                <div class="doc-nav-item" id="nav-frontier_study" onclick="loadDoc('frontier_study', true)">
+                    <span>💸</span> The Frontier Tax Whitepaper
                 </div>
                 <div class="doc-nav-item" id="nav-architecture" onclick="loadDoc('architecture', true)">
                     <span>🏛️</span> Architecture & Design
@@ -180,6 +190,7 @@
         const docsMap = {
             'user_guide': { path: 'docs/USER_GUIDE.md', fallback: '../docs/USER_GUIDE.md', title: 'User Guide - Nacho Flow' },
             'extension_guide': { path: 'docs/EXTENSION_USER_GUIDE.md', fallback: '../docs/EXTENSION_USER_GUIDE.md', title: 'VS Code Extension Guide - Nacho Flow' },
+            'frontier_study': { path: 'docs/FRONTIER_CONTROL_STUDY_2026.md', fallback: '../docs/FRONTIER_CONTROL_STUDY_2026.md', title: 'The Frontier Tax Study - Nacho Flow' },
             'architecture': { path: 'docs/ARCHITECTURE.md', fallback: '../docs/ARCHITECTURE.md', title: 'Architecture - Nacho Flow' },
             'benchmarks': { path: 'docs/BENCHMARKS.md', fallback: '../docs/BENCHMARKS.md', title: 'Benchmarks - Nacho Flow' },
             'case_study': { path: 'docs/BENCHMARKS_AB_CASE_STUDY.md', fallback: '../docs/BENCHMARKS_AB_CASE_STUDY.md', title: 'A/B Benchmark Whitepaper - Nacho Flow' },
@@ -196,6 +207,8 @@
             'EXTENSION_USER_GUIDE.MD': 'extension_guide',
             'EXTENSION_USER_GUIDE': 'extension_guide',
             'VSCODE_EXTENSION_SPEC.MD': 'extension_guide',
+            'FRONTIER_CONTROL_STUDY_2026.MD': 'frontier_study',
+            'FRONTIER_CONTROL_STUDY_2026': 'frontier_study',
             'ARCHITECTURE.MD': 'architecture',
             'ARCHITECTURE': 'architecture',
             'BENCHMARKS.MD': 'benchmarks',

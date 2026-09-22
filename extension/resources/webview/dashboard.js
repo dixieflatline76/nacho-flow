@@ -747,48 +747,235 @@
 		}
 	}
 
+	function escapeHtml(str) {
+		if (str === null || str === undefined) return '';
+		return String(str)
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;');
+	}
+
 	function updateOptimization(optData) {
 		currentState.optimization = optData;
 		vscode.setState(currentState);
 
 		const banner = document.getElementById('tuner-banner');
+		if (!banner) return;
+
 		if (!optData) {
 			banner.style.display = 'none';
+			banner.innerHTML = '';
 			return;
 		}
 
 		const savingsVal = optData.projected_savings_usd !== undefined ? optData.projected_savings_usd : (optData.projected_savings || 0);
 		const savingsFormatted = typeof savingsVal === 'number' ? `$${savingsVal.toFixed(2)}` : savingsVal;
-		const rule = optData.synthesized_rule || optData.rule || 'Tokens < 64000 && Retries == 0';
-		const tierName = optData.target_tier_name || 'Tier 1 (Local GPU)';
 		const sampleSize = optData.total_sample_turns || optData.sample_size || 0;
+		const retriesAvoided = optData.retries_eliminated !== undefined ? optData.retries_eliminated : (optData.retries_avoided || 0);
+
+		// Session Dynamics
+		const hasSessions = typeof optData.total_sessions === 'number' && optData.total_sessions > 0;
+		const sessionsCount = hasSessions ? optData.total_sessions : 0;
+		const avgTurnsVal = typeof optData.avg_turns_per_session === 'number' ? optData.avg_turns_per_session.toFixed(1) : (optData.avg_turns_per_session || '--');
+		const escalationRatePct = typeof optData.escalation_rate === 'number' ? `${(optData.escalation_rate * 100).toFixed(1)}%` : '--';
+
+		// Model Self-Recovery Meters
+		let recoveryRows = '';
+		if (optData.recovery_stats && Object.keys(optData.recovery_stats).length > 0) {
+			const models = Object.keys(optData.recovery_stats).sort();
+			recoveryRows = models.map(m => {
+				const stat = optData.recovery_stats[m];
+				const rawPct = stat.self_recovery_rate || 0;
+				const pct = Math.min(100, Math.max(0, Math.round(rawPct * 100)));
+				let barColor = '#ef4444'; // Red for < 20%
+				if (pct >= 50) barColor = '#10b981'; // Green for >= 50%
+				else if (pct >= 20) barColor = '#f59e0b'; // Amber for 20-49%
+
+				const turnsText = (stat.avg_turns_to_recover && stat.avg_turns_to_recover > 0)
+					? `recovers in ~${stat.avg_turns_to_recover.toFixed(1)} turns`
+					: (pct === 0 ? 'loops on failure — cloud handoff required' : 'swift self-healing');
+
+				return `
+					<div class="recovery-item">
+						<div class="recovery-header">
+							<span class="recovery-model-name">${escapeHtml(stat.model || m)}</span>
+							<span class="recovery-pct" style="color: ${barColor}">${pct}% self-recovery</span>
+						</div>
+						<div class="recovery-bar-track">
+							<div class="recovery-bar-fill" style="width: ${pct}%; background-color: ${barColor}"></div>
+						</div>
+						<div class="recovery-subtext">${escapeHtml(turnsText)} (${stat.self_recoveries || 0}/${stat.total_failures || 0} healed)</div>
+					</div>
+				`;
+			}).join('');
+		} else {
+			recoveryRows = `<div class="recovery-empty">No repeated model failures detected in sample history. Clean turn progression across local models.</div>`;
+		}
+
+		// Pure Multi-Tier Diffs Rendering
+		const tiers = Array.isArray(optData.tiers) ? [...optData.tiers] : [];
+		if (optData.default_tier) {
+			tiers.push({ ...optData.default_tier, is_default: true });
+		}
+		let tierDiffsHtml = '';
+		let hasAnyChanges = false;
+		if (tiers.length > 0) {
+			tierDiffsHtml = tiers.map((tier, idx) => {
+				const isDefault = !!tier.is_default;
+				const tierName = tier.tier_name || (isDefault ? 'Fallback Tier' : `Tier ${idx + 1}`);
+				let oldRule = tier.original_rule;
+				if (!oldRule && currentState.config) {
+					if (isDefault && currentState.config.default_tier) {
+						oldRule = currentState.config.default_tier.when || 'true';
+					} else if (Array.isArray(currentState.config.tiers)) {
+						const matchingTier = currentState.config.tiers.find(t => t.name === tierName);
+						if (matchingTier && matchingTier.when) {
+							oldRule = matchingTier.when;
+						}
+					}
+				}
+				if (!oldRule) {
+					oldRule = isDefault ? 'true' : '(Default Pass / No Constraint)';
+				}
+				const threshold = tier.optimal_threshold;
+				const retries = tier.optimal_retries;
+				const restrictImages = !!tier.restrict_images;
+				const restrictTools = !!tier.restrict_tools;
+				const frictionKeywords = Array.isArray(tier.friction_keywords) ? tier.friction_keywords : [];
+				const isDisabled = !!tier.is_disabled || tier.synthesized_rule === 'false' || oldRule.trim() === 'false';
+				
+				const hasRuleChange = !isDisabled && tier.synthesized_rule && (oldRule.trim() !== tier.synthesized_rule.trim());
+				const hasModelChange = !!(tier.recommended_model && tier.original_model && tier.recommended_model !== tier.original_model);
+				const isUnchanged = !isDisabled && !hasRuleChange && !hasModelChange;
+
+				if (!isDisabled && !isUnchanged) {
+					hasAnyChanges = true;
+				}
+
+				// Benchmark and pricing pills
+				let benchmarkPill = '';
+				if (tier.coding_index && tier.coding_index > 0) {
+					benchmarkPill = `<span class="signal-pill signal-pill-benchmark">⭐ Coding Score: ${tier.coding_index}/100</span>`;
+				}
+				let ratePill = '';
+				if (tier.is_local) {
+					ratePill = `<span class="signal-pill signal-pill-rate">💵 Local ($0.00 / Free)</span>`;
+				} else if (tier.comprehensive_rate && tier.comprehensive_rate > 0) {
+					ratePill = `<span class="signal-pill signal-pill-rate">💵 Rate: $${Number(tier.comprehensive_rate).toFixed(2)}/1M</span>`;
+				}
+
+				let diffContent = '';
+				if (isDisabled) {
+					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">🔒</span> <span class="diff-desc">Tier Disabled / Manual Only (when: "false") — No active traffic routed</span></div>`;
+				} else if (isUnchanged) {
+					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">✅</span> <span class="diff-desc">Current Rule Optimal (when: "${escapeHtml(oldRule)}") — No changes needed</span></div>`;
+				} else {
+					if (hasModelChange) {
+						diffContent += `
+							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">model: "${escapeHtml(tier.original_model)}"</span></div>
+							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">model: "${escapeHtml(tier.recommended_model)}"</span></div>
+							${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #6ee7b7; font-size: 0.85em;"><span class="diff-sign">✨</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+						`;
+					}
+					if (hasRuleChange) {
+						diffContent += `
+							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
+							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "${escapeHtml(tier.synthesized_rule)}"</span></div>
+						`;
+					}
+				}
+
+				const tierPrefix = isDefault ? 'Fallback Tier:' : 'Target Tier:';
+				return `
+					<div class="tuner-diff-wrapper">
+						<div class="tuner-diff-header">
+							<span class="diff-tier-label">${tierPrefix} <strong>${escapeHtml(tierName)}</strong></span>
+							<div class="tier-pills-row">
+								${benchmarkPill}
+								${ratePill}
+								${isDisabled ? '<span class="signal-pill signal-pill-neutral">🔒 Disabled</span>' : ''}
+								${!isDisabled && !isDefault && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
+								${!isDisabled && !isDefault && retries ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
+								${!isDisabled ? `
+									<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
+										👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
+									</span>
+									<span class="signal-pill ${restrictTools ? 'signal-pill-warning' : 'signal-pill-clean'}">
+										🔧 Tools: ${restrictTools ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
+									</span>
+								` : ''}
+								${!isDisabled && frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
+							</div>
+						</div>
+						<div class="tuner-diff-code">
+							${diffContent}
+						</div>
+					</div>
+				`;
+			}).join('');
+		} else {
+			tierDiffsHtml = `<div class="recovery-empty">No tunable tier policies generated for current configuration.</div>`;
+		}
 
 		banner.style.display = 'block';
 		banner.innerHTML = `
 			<div class="tuner-result">
 				<div class="tuner-header">
 					<div class="tuner-title-group">
-						<h3>⚡ Auto-Tuner Policy Recommendation</h3>
-						<span class="badge badge-deal">Optimal Policy Ready</span>
+						<h3>🌮 Auto-Tuner: Route Optimization</h3>
+						<span class="badge badge-deal">${hasAnyChanges ? 'Routing Improvements Suggested' : 'Routing Currently Optimal'}</span>
 					</div>
-					${savingsVal > 0 ? `<div class="tuner-savings-badge">Projected Savings: <strong>${savingsFormatted}</strong></div>` : ''}
-				</div>
-				<div class="tuner-details-grid">
-					<div class="tuner-detail-item">
-						<span class="tuner-detail-label">🎯 Target Tier:</span>
-						<strong class="tuner-detail-val">${tierName}</strong>
-					</div>
-					<div class="tuner-detail-item">
-						<span class="tuner-detail-label">📊 Sample Size:</span>
-						<span class="tuner-detail-val">${sampleSize} real turns analyzed</span>
-					</div>
-					<div class="tuner-detail-item full-width">
-						<span class="tuner-detail-label">✨ Synthesized AST Rule:</span>
-						<code class="tuner-rule-code">${rule}</code>
+					<div class="tuner-hero-badges">
+						${retriesAvoided > 0 ? `<div class="tuner-badge tuner-retries-badge">⚡ ~${retriesAvoided} Retries Avoided</div>` : ''}
+						${savingsVal > 0 ? `<div class="tuner-badge tuner-savings-badge">💰 ${savingsFormatted}/mo Saved</div>` : ''}
 					</div>
 				</div>
+
+				<div class="tuner-dynamics-grid">
+					<div class="tuner-card-col">
+						<div class="tuner-card-title">
+							<span>🔄</span> Traffic Summary
+						</div>
+						<div class="tuner-metrics-list">
+							<div class="tuner-metric-row">
+								<span class="tuner-metric-label">Sessions Evaluated:</span>
+								<strong class="tuner-metric-val">${hasSessions ? `${sessionsCount} sessions` : 'Single-turn mode'}</strong>
+							</div>
+							<div class="tuner-metric-row">
+								<span class="tuner-metric-label">Avg Turns / Session:</span>
+								<strong class="tuner-metric-val">${hasSessions ? `${avgTurnsVal} turns` : '--'}</strong>
+							</div>
+							<div class="tuner-metric-row">
+								<span class="tuner-metric-label">Cloud Escalation Rate:</span>
+								<strong class="tuner-metric-val">${hasSessions ? escalationRatePct : '--'}</strong>
+							</div>
+							<div class="tuner-metric-row">
+								<span class="tuner-metric-label">Sample Size:</span>
+								<strong class="tuner-metric-val">${sampleSize} real turns analyzed</strong>
+							</div>
+						</div>
+					</div>
+
+					<div class="tuner-card-col">
+						<div class="tuner-card-title">
+							<span>🩺</span> Model Failure & Recovery Analysis
+						</div>
+						<div class="recovery-list">
+							${recoveryRows}
+						</div>
+					</div>
+				</div>
+
+				<div class="tuner-diffs-container">
+					${tierDiffsHtml}
+				</div>
+
 				<div class="tuner-actions">
-					<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Policy to config.yaml</button>
+					${hasAnyChanges 
+						? `<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Multi-Tier Policy to config.yaml</button>`
+						: `<button class="btn btn-secondary" disabled style="opacity: 0.65; cursor: default;">✅ Current Policy is Optimal</button>`
+					}
 					<button class="btn btn-secondary" onclick="dismissTuner()">Dismiss</button>
 				</div>
 			</div>

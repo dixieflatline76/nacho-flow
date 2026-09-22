@@ -95,6 +95,13 @@ func (s *Server) recordTelemetry(
 		FairyDustEntry:            reqCtx.FairyDustEntry,
 		NTSTokensSaved:            ntsTokensSaved,
 		NTSBytesSaved:             ntsBytesSaved,
+		SessionKey:                reqCtx.SessionKey,
+		RootPromptHash:            reqCtx.RootPromptHash,
+		Retries:                   reqCtx.Retries,
+		HasWriteCapability:        reqCtx.HasWriteCapability,
+		HasWriteProgress:          reqCtx.HasWriteProgress,
+		HasTestPass:               reqCtx.HasTestPass,
+		HasTestFail:               reqCtx.HasTestFail,
 	})
 
 	reqLogger.Info("Completed proxy request",

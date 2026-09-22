@@ -18,15 +18,48 @@ func TestGenerateCatalog_MockAPI(t *testing.T) {
 				"id":             "google/gemini-2.5-flash",
 				"name":           "Gemini 2.5 Flash",
 				"context_length": 1048576,
+				"pricing": map[string]interface{}{
+					"prompt":     "0.00000015",
+					"completion": "0.00000060",
+				},
 				"architecture": map[string]interface{}{
 					"input_modalities": []string{"text", "image"},
 				},
 				"supported_parameters": []string{"tools", "temperature"},
+				"benchmarks": map[string]interface{}{
+					"artificial_analysis": map[string]interface{}{
+						"coding_index":  78.4,
+						"agentic_index": 95.0,
+					},
+				},
+			},
+			{
+				"id":             "anthropic/claude-sonnet-5",
+				"name":           "Claude Sonnet 5",
+				"context_length": 200000,
+				"pricing": map[string]interface{}{
+					"prompt":     "0.000002",
+					"completion": "0.000010",
+				},
+				"architecture": map[string]interface{}{
+					"input_modalities": []string{"text", "image"},
+				},
+				"supported_parameters": []string{"tools"},
+				"benchmarks": map[string]interface{}{
+					"artificial_analysis": map[string]interface{}{
+						"coding_index":  97.4,
+						"agentic_index": 99.0,
+					},
+				},
 			},
 			{
 				"id":             "qwen/qwen-coder-32b",
 				"name":           "Qwen Coder 32B",
 				"context_length": 131072,
+				"pricing": map[string]interface{}{
+					"prompt":     "0.00000030",
+					"completion": "0.00000090",
+				},
 				"architecture": map[string]interface{}{
 					"input_modalities": []string{"text"},
 				},
@@ -49,6 +82,19 @@ func TestGenerateCatalog_MockAPI(t *testing.T) {
 					"input_modalities": []string{"text"},
 				},
 				"supported_parameters": []string{"temperature"},
+			},
+			{
+				"id":             "meta/llama-4-general-high",
+				"name":           "Llama 4 General High",
+				"context_length": 128000,
+				"architecture": map[string]interface{}{
+					"input_modalities": []string{"text"},
+				},
+				"benchmarks": map[string]interface{}{
+					"artificial_analysis": map[string]interface{}{
+						"coding_index": 90.5,
+					},
+				},
 			},
 			{
 				"id":             "unknown/general-text-only",
@@ -77,13 +123,46 @@ func TestGenerateCatalog_MockAPI(t *testing.T) {
 		t.Errorf("expected default version v1.0.0, got %s", cat.Version)
 	}
 
-	// Verify Gemini override took precedence
+	// Verify Gemini parsed with benchmarks and provenance from Artificial Analysis
 	geminiProfile, exists := cat.Models["google/gemini-2.5-flash"]
 	if !exists {
 		t.Fatalf("expected gemini in catalog")
 	}
 	if geminiProfile.CodingIndex != 78.4 {
 		t.Errorf("expected 78.4 coding index, got %f", geminiProfile.CodingIndex)
+	}
+	if geminiProfile.ToolReliability != 95.0 {
+		t.Errorf("expected 95.0 tool reliability, got %f", geminiProfile.ToolReliability)
+	}
+	if geminiProfile.BenchmarkSource != "artificial_analysis" {
+		t.Errorf("expected artificial_analysis benchmark source, got %s", geminiProfile.BenchmarkSource)
+	}
+	if geminiProfile.ProvenanceURL != "https://artificialanalysis.ai" {
+		t.Errorf("expected artificialanalysis.ai provenance, got %s", geminiProfile.ProvenanceURL)
+	}
+	if !geminiProfile.SupportsVision {
+		t.Errorf("expected gemini to support vision")
+	}
+	if !geminiProfile.SupportsTools {
+		t.Errorf("expected gemini to support tools")
+	}
+	if geminiProfile.PromptCostPerMillion != 0.15 {
+		t.Errorf("expected 0.15 prompt cost, got %f", geminiProfile.PromptCostPerMillion)
+	}
+
+	// Verify Claude Sonnet 5 recognized as frontier coding workhorse
+	sonnetProfile, exists := cat.Models["anthropic/claude-sonnet-5"]
+	if !exists {
+		t.Fatalf("expected sonnet-5 in catalog")
+	}
+	if sonnetProfile.TierRole != curation.RoleCodingWorkhorse {
+		t.Errorf("expected RoleCodingWorkhorse for sonnet-5, got %s", sonnetProfile.TierRole)
+	}
+	if sonnetProfile.PromptCostPerMillion != 2.0 {
+		t.Errorf("expected 2.0 prompt cost, got %f", sonnetProfile.PromptCostPerMillion)
+	}
+	if len(sonnetProfile.RecommendedTiers) < 2 || sonnetProfile.RecommendedTiers[0] != "tier_4_frontier" {
+		t.Errorf("expected tier_4_frontier for sonnet-5, got %v", sonnetProfile.RecommendedTiers)
 	}
 
 	// Verify Qwen was categorized as RoleCodingWorkhorse
@@ -102,6 +181,19 @@ func TestGenerateCatalog_MockAPI(t *testing.T) {
 	r1Profile, exists := cat.Models["deepseek/deepseek-r1-custom"]
 	if !exists || r1Profile.TierRole != curation.RoleDeepReasoner {
 		t.Errorf("expected RoleDeepReasoner for r1-custom")
+	}
+
+	// Verify Llama 4 high benchmark included with frontier tier
+	llamaProfile, exists := cat.Models["meta/llama-4-general-high"]
+	if !exists {
+		t.Errorf("expected llama-4-general-high in catalog")
+	} else if len(llamaProfile.RecommendedTiers) == 0 || llamaProfile.RecommendedTiers[0] != "tier_4_frontier" {
+		t.Errorf("expected tier_4_frontier for llama-4-general-high, got %v", llamaProfile.RecommendedTiers)
+	}
+
+	// Verify uncatalogued general model with 0 coding index is excluded
+	if _, exists := cat.Models["unknown/general-text-only"]; exists {
+		t.Errorf("expected unknown/general-text-only to be filtered out of catalog")
 	}
 }
 

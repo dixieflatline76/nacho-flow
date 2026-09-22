@@ -7,7 +7,7 @@ This document details the performance characteristics, load-testing methodology,
 ## 1. Executive Summary
 
 <!-- BENCHMARK:EXECUTIVE_SUMMARY_START -->
-- **Peak Throughput**: **30,071 requests/second** under full production authentication and tool normalization load.
+- **Peak Throughput**: **30,058 requests/second** under full production authentication and tool normalization load.
 - **Pipeline Latency**: **~0.19 ms** raw pass-through overhead per request (**~0.22 ms** with full multi-model tool-call normalization).
 - **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
 - **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
@@ -17,6 +17,7 @@ This document details the performance characteristics, load-testing methodology,
 
 > [!TIP]
 > **Deep-Dive Technical Whitepapers**:
+> - 💸 **[The Frontier Tax: 1:1 Control Study on Raw Claude Sonnet 5](FRONTIER_CONTROL_STUDY_2026.md)**: Empirical 1:1 control test proving Nacho Flow delivered an 82.5% cash discount ($0.85 vs $4.87) and ran 12 minutes faster than raw Claude Sonnet 5 despite 97.4% prompt cache hit rates.
 > - 📄 **[Near-Zero Allocation Hot Paths & Wire-Speed Systems Whitepaper](PERFORMANCE_WHITEPAPER.md)**: Explains the low-level systems engineering (SIMD byte filters, AOT bytecode VM, lock-free RCU, and ring-buffer streaming surgery) that enables deep inspection in $<0.2\text{ms}$ compared to LiteLLM and Bifrost.
 > - 🔬 **[A/B Benchmark Case Study Whitepaper](BENCHMARKS_AB_CASE_STUDY.md)**: Full empirical 4-run developer case study documenting $94.7\%$ spend reduction and local hardware ROI.
 
@@ -69,11 +70,11 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 <!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **28219.8 req/s** | 1.32 ms | 7.60 ms | 117.2 MB |
-| **100 workers** | 50,000 | **100.0%** | **25058.1 req/s** | 3.00 ms | 16.47 ms | 150.6 MB |
-| **250 workers** | 75,000 | **100.0%** | **26434.2 req/s** | 7.01 ms | 50.63 ms | 111.3 MB |
-| **500 workers** | 100,000 | **100.0%** | **24078.1 req/s** | 16.93 ms | 73.45 ms | 181.4 MB |
-| **1000 workers** | 100,000 | **100.0%** | **25211.7 req/s** | 37.67 ms | 72.03 ms | 165.5 MB |
+| **50 workers** | 25,000 | **100.0%** | **26686.9 req/s** | 1.47 ms | 8.00 ms | 117.0 MB |
+| **100 workers** | 50,000 | **100.0%** | **25525.1 req/s** | 3.00 ms | 15.68 ms | 80.7 MB |
+| **250 workers** | 75,000 | **100.0%** | **24322.4 req/s** | 8.12 ms | 45.88 ms | 128.2 MB |
+| **500 workers** | 100,000 | **100.0%** | **26081.8 req/s** | 17.41 ms | 43.67 ms | 110.8 MB |
+| **1000 workers** | 100,000 | **100.0%** | **25855.6 req/s** | 32.68 ms | 91.18 ms | 215.8 MB |
 <!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
@@ -92,10 +93,10 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 <!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 27477.5 req/s | 26756.8 req/s | **-2.6%** | **+0.09 ms** (0.91ms vs 1.00ms) | +1.10 ms |
-| **50 workers** | 29360.8 req/s | 30071.9 req/s | **+2.4%** | **+0.04 ms** (1.28ms vs 1.32ms) | -0.17 ms |
-| **100 workers** | 29250.9 req/s | 26816.9 req/s | **-8.3%** | **+0.00 ms** (3.00ms vs 3.00ms) | +1.20 ms |
-| **200 workers** | 25564.4 req/s | 29665.9 req/s | **+16.0%** | **+0.36 ms** (5.63ms vs 6.00ms) | -13.62 ms |
+| **25 workers** | 27070.0 req/s | 26817.5 req/s | **-0.9%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.35 ms |
+| **50 workers** | 29155.9 req/s | 27376.5 req/s | **-6.1%** | **+0.12 ms** (1.01ms vs 1.13ms) | +1.79 ms |
+| **100 workers** | 29441.8 req/s | 26303.6 req/s | **-10.7%** | **+0.00 ms** (3.00ms vs 3.00ms) | +4.81 ms |
+| **200 workers** | 30058.4 req/s | 28664.4 req/s | **-4.6%** | **+0.49 ms** (5.52ms vs 6.00ms) | -0.99 ms |
 <!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 
@@ -217,17 +218,17 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **98.0%** |
 | `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **97.5%** |
 | `pkg/nts` | Nacho Token Saver Compactors, Stale Read Eliminators & CR Delimiting | **97.4%** |
-| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **97.1%** |
-| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **96.9%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
-| `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.7%** |
-| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.6%** |
+| `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **96.9%** |
+| `cmd/util/gen_catalog` | Catalog Cache Generator | **96.8%** |
+| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.2%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
-| `cmd/util/gen_catalog` | Catalog Cache Generator | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.9%** |
+| `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **95.7%** |
 | `pkg/agentregistry` | Modular Agent Catalog, Reasoning Parser & Tag Marker Compiler | **95.7%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.3%** |
+| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **95.3%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.2%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.2%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
@@ -235,7 +236,7 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 <!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **14 / 14 Suites** | **274 / 274 (100%)** | **96.71% / 97.43% / 95.18%** |
+| **Extension Core & Webview Suite** | **15 / 15 Suites** | **303 / 303 (100%)** | **96.12% / 96.78% / 95.32%** |
 <!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---

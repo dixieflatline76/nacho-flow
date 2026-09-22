@@ -184,7 +184,14 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 
 	// 3. Track session retries for auto-escalation
 	reqCtx.SessionKey = sessionKey
-	promptHash := router.HashPrompt(reqCtx.Prompt)
+	promptHash := reqCtx.PromptHash
+	if promptHash == 0 && reqCtx.Prompt != "" {
+		promptHash = router.HashPrompt(reqCtx.Prompt)
+	}
+	rootPromptHash := reqCtx.RootPromptHash
+	if rootPromptHash == 0 {
+		rootPromptHash = promptHash
+	}
 
 	cfg := s.GetConfig()
 
@@ -199,7 +206,14 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 			turnProgress = turnProgress || reqCtx.HasToolProgress
 		}
 	}
-	retries, isRetry := s.sessionTracker.RecordTurn(sessionKey, promptHash, turnProgress)
+	retries, isRetry := s.sessionTracker.RecordTurnTask(
+		sessionKey,
+		rootPromptHash,
+		promptHash,
+		turnProgress,
+		reqCtx.HasTools,
+		reqCtx.MessageCount,
+	)
 	reqCtx.CoolingDownModels = s.sessionTracker.GetCoolingDownModels(sessionKey)
 
 	// Kickstart: detect semantic stall/idle loop across consecutive turns

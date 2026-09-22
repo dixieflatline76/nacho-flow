@@ -548,7 +548,21 @@ func (s *Server) handleAPITune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.tuner == nil {
+	runner := s.tuningRunner
+	if runner == nil {
+		if s.tuner == nil {
+			w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]string{
+					"type":    "tuner_unavailable",
+					"message": "auto-tuning optimizer is not initialized on this server",
+				},
+			})
+			return
+		}
+		runner = NewInProcessTuningRunner(s)
+	} else if inProc, ok := runner.(*InProcessTuningRunner); ok && inProc.server != nil && inProc.server.tuner == nil {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -560,15 +574,44 @@ func (s *Server) handleAPITune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var records []telemetry.TurnRecord
-	if s.ringBuffer != nil {
-		records = s.ringBuffer.GetRecent(500)
+	// Flush pending in-flight telemetry queue to disk before running optimizer
+	if s.trafficLogger != nil {
+		s.trafficLogger.Flush()
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	vramGB := 0
+	if vStr := r.URL.Query().Get("vram_gb"); vStr != "" {
+		if v, err := strconv.Atoi(vStr); err == nil && v > 0 {
+			vramGB = v
+		}
+	}
+	if vramGB == 0 && r.Body != nil {
+		var payload struct {
+			LocalVRAMGB int `json:"local_vram_gb"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		if payload.LocalVRAMGB > 0 {
+			vramGB = payload.LocalVRAMGB
+		}
+	}
+
+	activeRunner := runner
+	if vramGB > 0 {
+		if procRunner, ok := runner.(*ProcessTuningRunner); ok {
+			cp := *procRunner
+			cp.LocalVRAMGB = vramGB
+			activeRunner = &cp
+		} else if inProc, ok := runner.(*InProcessTuningRunner); ok {
+			cp := *inProc
+			cp.LocalVRAMGB = vramGB
+			activeRunner = &cp
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	result, err := s.tuner.OptimizeWithContext(ctx, records, s.GetConfig())
+	result, err := activeRunner.RunTuning(ctx, s.configPath, s.trafficLogPath)
 	if err != nil {
 		w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 		w.WriteHeader(http.StatusInternalServerError)

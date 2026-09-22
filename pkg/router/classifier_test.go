@@ -1240,3 +1240,106 @@ func BenchmarkClassifier_GetEstimator(b *testing.B) {
 		}
 	})
 }
+
+func TestClassify_RootPromptHash_StandardAgent(t *testing.T) {
+	classifier := NewClassifier()
+	jsonBody := []byte(`{
+		"messages": [
+			{"role": "system", "content": "You are Cline, an autonomous AI engineer."},
+			{"role": "user", "content": "Implement MinConflicts solver in Go"}
+		]
+	}`)
+
+	reqCtx, err := classifier.Classify(jsonBody)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	expectedRootHash := HashPrompt("Implement MinConflicts solver in Go")
+	if reqCtx.RootPromptHash != expectedRootHash {
+		t.Errorf("RootPromptHash = %d; want %d", reqCtx.RootPromptHash, expectedRootHash)
+	}
+	if reqCtx.PromptHash != expectedRootHash {
+		t.Errorf("PromptHash = %d; want %d", reqCtx.PromptHash, expectedRootHash)
+	}
+	if reqCtx.Prompt != "Implement MinConflicts solver in Go" {
+		t.Errorf("Prompt = %q; want %q", reqCtx.Prompt, "Implement MinConflicts solver in Go")
+	}
+}
+
+func TestClassify_RootPromptHash_FollowUpCorrection(t *testing.T) {
+	classifier := NewClassifier()
+	jsonBody := []byte(`{
+		"messages": [
+			{"role": "system", "content": "You are Cline, an autonomous AI engineer."},
+			{"role": "user", "content": "Implement MinConflicts solver in Go"},
+			{"role": "assistant", "content": "I am working on it..."},
+			{"role": "user", "content": "Fix the infinite loop on line 64"}
+		]
+	}`)
+
+	reqCtx, err := classifier.Classify(jsonBody)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	expectedRootHash := HashPrompt("Implement MinConflicts solver in Go")
+	expectedLatestHash := HashPrompt("Fix the infinite loop on line 64")
+
+	if reqCtx.RootPromptHash != expectedRootHash {
+		t.Errorf("RootPromptHash = %d; want %d", reqCtx.RootPromptHash, expectedRootHash)
+	}
+	if reqCtx.PromptHash != expectedLatestHash {
+		t.Errorf("PromptHash = %d; want %d", reqCtx.PromptHash, expectedLatestHash)
+	}
+	if reqCtx.Prompt != "Fix the infinite loop on line 64" {
+		t.Errorf("Prompt = %q; want %q", reqCtx.Prompt, "Fix the infinite loop on line 64")
+	}
+}
+
+func TestClassify_RootPromptHash_NoSystemPrompt(t *testing.T) {
+	classifier := NewClassifier()
+	jsonBody := []byte(`{
+		"messages": [
+			{"role": "user", "content": "Single user turn without system prompt"}
+		]
+	}`)
+
+	reqCtx, err := classifier.Classify(jsonBody)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	expectedRootHash := HashPrompt("Single user turn without system prompt")
+	if reqCtx.RootPromptHash != expectedRootHash {
+		t.Errorf("RootPromptHash = %d; want %d", reqCtx.RootPromptHash, expectedRootHash)
+	}
+	if reqCtx.PromptHash != expectedRootHash {
+		t.Errorf("PromptHash = %d; want %d", reqCtx.PromptHash, expectedRootHash)
+	}
+}
+
+func TestClassify_RootPromptHash_MultiPartContent(t *testing.T) {
+	classifier := NewClassifier()
+	jsonBody := []byte(`{
+		"messages": [
+			{"role": "system", "content": "System prompt"},
+			{"role": "user", "content": [
+				{"type": "text", "text": "Part one of prompt"},
+				{"type": "text", "text": "Part two of prompt"}
+			]}
+		]
+	}`)
+
+	reqCtx, err := classifier.Classify(jsonBody)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if reqCtx.RootPromptHash == 0 {
+		t.Errorf("Expected non-zero RootPromptHash for multi-part content")
+	}
+	if reqCtx.PromptHash == 0 {
+		t.Errorf("Expected non-zero PromptHash for multi-part content")
+	}
+}

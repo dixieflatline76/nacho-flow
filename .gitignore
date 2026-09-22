@@ -20,6 +20,7 @@ checksums.txt
 logs/
 *.log
 *.jsonl
+!**/testdata/*.jsonl
 stats.json
 *.tmp.*
 config.tmp.*.yaml

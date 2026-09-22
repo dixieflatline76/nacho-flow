@@ -50,6 +50,26 @@ func TestGetModelsEndpoint(t *testing.T) {
 	}
 }
 
+func TestServer_SettersAndNTSTransformer(t *testing.T) {
+	cfg := &contract.Config{Port: 8000}
+	evaluator, _ := strategy.NewExprEvaluator(nil, contract.Tier{Model: "default"})
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	srv.SetTuningRunner(nil)
+	srv.SetTrafficLogger(nil)
+	srv.SetDiskStore(nil)
+	srv.SetTrafficLogPath("traffic.jsonl")
+
+	_ = srv.GetNTSTransformer()
+
+	var emptySrv Server
+	if emptySrv.GetNTSTransformer() != nil {
+		t.Errorf("expected nil for empty server without state")
+	}
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	cfg := &contract.Config{Port: 8000}
 	evaluator, _ := strategy.NewExprEvaluator(nil, contract.Tier{Model: "default"})
@@ -1520,6 +1540,84 @@ func TestProxy_RecordTelemetry_VisionTier4(t *testing.T) {
 	pLocal := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{Type: "local"})
 	tierLocal := contract.Tier{Name: "Local Default", Model: "qwen", Provider: "ollama"}
 	srv.recordTelemetry(tierLocal, pLocal, reqCtx, usage, 200, time.Now(), false, slog.Default(), 0, 0)
+}
+
+type mockSessionTurnSink struct {
+	records []telemetry.TurnRecord
+	mu      sync.Mutex
+}
+
+func (m *mockSessionTurnSink) Emit(rec telemetry.TurnRecord) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.records = append(m.records, rec)
+}
+
+func (m *mockSessionTurnSink) Close() error { return nil }
+
+func TestProxy_RecordTelemetry_SessionFields(t *testing.T) {
+	tracker := telemetry.NewStatsTracker(100)
+	defer tracker.Close()
+
+	sink := &mockSessionTurnSink{}
+	tracker.AddSink(sink)
+
+	srv := &Server{
+		tracker: tracker,
+		oracle:  telemetry.NewPricingOracle(),
+	}
+
+	tier := contract.Tier{
+		Name:     "Tier 1: Local GPU",
+		Model:    "qwen2.5-coder:14b",
+		Provider: "ollama",
+	}
+	p := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{Type: "local"})
+
+	reqCtx := contract.RequestContext{
+		Tokens:             1200,
+		SessionKey:         "sess-live-proxy-12345",
+		RootPromptHash:     0xABCD1234EF567890,
+		Retries:            3,
+		HasWriteCapability: true,
+		HasWriteProgress:   true,
+		HasTestPass:        true,
+		HasTestFail:        false,
+	}
+	usage := StreamUsage{PromptTokens: 1000, CompletionTokens: 200, TotalTokens: 1200}
+
+	srv.recordTelemetry(tier, p, reqCtx, usage, 200, time.Now(), false, slog.Default(), 0, 0)
+	tracker.Flush()
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+
+	if len(sink.records) != 1 {
+		t.Fatalf("Expected 1 sink record, got %d", len(sink.records))
+	}
+
+	rec := sink.records[0]
+	if rec.SessionID != "sess-live-proxy-12345" {
+		t.Errorf("Expected SessionID 'sess-live-proxy-12345', got '%s'", rec.SessionID)
+	}
+	if rec.RootPromptHash != 0xABCD1234EF567890 {
+		t.Errorf("Expected RootPromptHash 0xABCD1234EF567890, got 0x%X", rec.RootPromptHash)
+	}
+	if rec.Retries != 3 {
+		t.Errorf("Expected Retries 3, got %d", rec.Retries)
+	}
+	if !rec.HasWriteCapability {
+		t.Errorf("Expected HasWriteCapability true, got false")
+	}
+	if !rec.HasWriteProgress {
+		t.Errorf("Expected HasWriteProgress true, got false")
+	}
+	if !rec.HasTestPass {
+		t.Errorf("Expected HasTestPass true, got false")
+	}
+	if rec.HasTestFail {
+		t.Errorf("Expected HasTestFail false, got true")
+	}
 }
 
 func TestProxy_IsDefectiveEmptyContent_DeepBranches(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
-// GenerateCatalog pulls OpenRouter models, blends curated ratings, and generates catalog JSON.
+// GenerateCatalog pulls OpenRouter models, blends verified Artificial Analysis ratings, and generates catalog JSON.
 func GenerateCatalog(ctx context.Context, apiURL, version string) (*curation.CuratedCatalog, error) {
 	if apiURL == "" {
 		apiURL = fmt.Sprintf("%s%s", contract.OpenRouterProduction, contract.OpenRouterModelsPath)
@@ -45,10 +46,20 @@ func GenerateCatalog(ctx context.Context, apiURL, version string) (*curation.Cur
 			ID            string `json:"id"`
 			Name          string `json:"name"`
 			ContextLength int    `json:"context_length"`
-			Architecture  struct {
+			Pricing       struct {
+				Prompt     string `json:"prompt"`
+				Completion string `json:"completion"`
+			} `json:"pricing"`
+			Architecture struct {
 				InputModalities []string `json:"input_modalities"`
 			} `json:"architecture"`
 			SupportedParameters []string `json:"supported_parameters"`
+			Benchmarks          *struct {
+				ArtificialAnalysis *struct {
+					CodingIndex  float64 `json:"coding_index"`
+					AgenticIndex float64 `json:"agentic_index"`
+				} `json:"artificial_analysis"`
+			} `json:"benchmarks"`
 		} `json:"data"`
 	}
 
@@ -62,8 +73,6 @@ func GenerateCatalog(ctx context.Context, apiURL, version string) (*curation.Cur
 		Description: "Canonical benchmark and capability intelligence catalog for Nacho Flow",
 		Models:      make(map[string]curation.ModelCuratedProfile),
 	}
-
-	curatedOverrides := GetCuratedOverrides()
 
 	for _, m := range payload.Data {
 		hasVision := false
@@ -82,85 +91,79 @@ func GenerateCatalog(ctx context.Context, apiURL, version string) (*curation.Cur
 			}
 		}
 
+		var codingIdx, agenticIdx float64
+		var benchSource, provURL string
+		if m.Benchmarks != nil && m.Benchmarks.ArtificialAnalysis != nil {
+			codingIdx = m.Benchmarks.ArtificialAnalysis.CodingIndex
+			agenticIdx = m.Benchmarks.ArtificialAnalysis.AgenticIndex
+			if codingIdx > 0 {
+				benchSource = "artificial_analysis"
+				provURL = "https://artificialanalysis.ai"
+			}
+		}
+
+		toolReliability := 85.0
+		if agenticIdx > 0 {
+			toolReliability = agenticIdx
+		}
+
+		var promptCost, compCost float64
+		if pVal, parseErr := strconv.ParseFloat(m.Pricing.Prompt, 64); parseErr == nil && pVal > 0 {
+			promptCost = pVal * 1_000_000
+		}
+		if cVal, parseErr := strconv.ParseFloat(m.Pricing.Completion, 64); parseErr == nil && cVal > 0 {
+			compCost = cVal * 1_000_000
+		}
+
 		role := curation.RoleGeneral
 		var recTiers []string
 		name := strings.ToLower(m.ID)
-		if strings.Contains(name, "coder") && hasTools {
+		if strings.Contains(name, "r1") || strings.Contains(name, "reason") || strings.Contains(name, "o1") || strings.Contains(name, "o3") || strings.Contains(name, "thinking") || strings.Contains(name, "opus") {
+			role = curation.RoleDeepReasoner
+			recTiers = []string{contract.TierIDFrontier}
+		} else if hasTools && (codingIdx >= 65.0 || strings.Contains(name, "coder") || strings.Contains(name, "sonnet") || strings.Contains(name, "claude-3.5") || strings.Contains(name, "claude-3.7") || strings.Contains(name, "qwen3")) {
 			role = curation.RoleCodingWorkhorse
-			recTiers = []string{contract.TierIDWorkhorse}
-		} else if hasVision && (strings.Contains(name, "flash") || strings.Contains(name, "lite")) {
+			if promptCost >= 1.5 || codingIdx >= 80.0 || strings.Contains(name, "sonnet") {
+				recTiers = []string{contract.TierIDFrontier, contract.TierIDWorkhorse}
+			} else {
+				recTiers = []string{contract.TierIDWorkhorse}
+			}
+		} else if hasVision && (strings.Contains(name, "flash") || strings.Contains(name, "lite") || strings.Contains(name, "vision") || strings.Contains(name, "gemma")) {
 			role = curation.RoleVisionWorkhorse
 			recTiers = []string{contract.TierIDVision}
-		} else if strings.Contains(name, "r1") || strings.Contains(name, "reason") {
-			role = curation.RoleDeepReasoner
+		} else if codingIdx >= 80.0 {
 			recTiers = []string{contract.TierIDFrontier}
 		}
 
+		isOpenWeights := false
+		for _, fam := range []string{"qwen", "llama", "deepseek", "mistral", "phi", "gemma", "codellama", "starcoder", "command-r", "smollm", "granite", "falcon", "internlm"} {
+			if strings.Contains(name, fam) {
+				isOpenWeights = true
+				break
+			}
+		}
+
 		profile := curation.ModelCuratedProfile{
-			Name:             m.Name,
-			TierRole:         role,
-			ToolReliability:  85.0,
-			RecommendedTiers: recTiers,
+			Name:                     m.Name,
+			TierRole:                 role,
+			CodingIndex:              codingIdx,
+			ToolReliability:          toolReliability,
+			PromptCostPerMillion:     promptCost,
+			CompletionCostPerMillion: compCost,
+			RecommendedTiers:         recTiers,
+			SupportsVision:           hasVision,
+			SupportsTools:            hasTools,
+			IsOpenWeights:            isOpenWeights,
+			BenchmarkSource:          benchSource,
+			ProvenanceURL:            provURL,
 		}
 
-		if override, exists := curatedOverrides[m.ID]; exists {
-			profile = override
-		}
-
-		if profile.TierRole != curation.RoleGeneral || curatedOverrides[m.ID].Name != "" {
+		if profile.TierRole != curation.RoleGeneral || profile.CodingIndex > 0 {
 			catalog.Models[m.ID] = profile
 		}
 	}
 
-	// Ensure curated overrides are always present even if missing from API response
-	for id, override := range curatedOverrides {
-		if _, exists := catalog.Models[id]; !exists {
-			catalog.Models[id] = override
-		}
-	}
-
 	return catalog, nil
-}
-
-// GetCuratedOverrides returns the baseline high-precision benchmarks for top frontier & coding workhorses.
-func GetCuratedOverrides() map[string]curation.ModelCuratedProfile {
-	return map[string]curation.ModelCuratedProfile{
-		"google/gemini-2.5-flash": {
-			Name:             "Google: Gemini 2.5 Flash",
-			TierRole:         curation.RoleCodingWorkhorse,
-			CodingIndex:      78.4,
-			ToolReliability:  95.0,
-			RecommendedTiers: []string{contract.TierIDVision, contract.TierIDWorkhorse},
-		},
-		"google/gemini-2.5-flash-lite": {
-			Name:             "Google: Gemini 2.5 Flash Lite",
-			TierRole:         curation.RoleVisionWorkhorse,
-			CodingIndex:      68.1,
-			ToolReliability:  90.0,
-			RecommendedTiers: []string{contract.TierIDVision},
-		},
-		"qwen/qwen3-coder-480b": {
-			Name:             "Qwen: Qwen 3 Coder 480B",
-			TierRole:         curation.RoleCodingWorkhorse,
-			CodingIndex:      82.0,
-			ToolReliability:  96.0,
-			RecommendedTiers: []string{contract.TierIDWorkhorse},
-		},
-		"deepseek/deepseek-r1": {
-			Name:             "DeepSeek: R1 (Reasoning)",
-			TierRole:         curation.RoleDeepReasoner,
-			CodingIndex:      75.0,
-			ToolReliability:  88.0,
-			RecommendedTiers: []string{contract.TierIDFrontier},
-		},
-		"anthropic/claude-3.5-sonnet": {
-			Name:             "Anthropic: Claude 3.5 Sonnet",
-			TierRole:         curation.RoleCodingWorkhorse,
-			CodingIndex:      92.0,
-			ToolReliability:  99.0,
-			RecommendedTiers: []string{contract.TierIDFrontier},
-		},
-	}
 }
 
 func run(args []string, apiURL string) error {

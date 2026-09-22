@@ -312,18 +312,38 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	if len(payload.Messages) == 0 {
 		return reqCtx, nil
 	}
+	reqCtx.MessageCount = len(payload.Messages)
+
+	// 2.1 Identify root task prompt in O(1) bounded check (first role == "user", or fallback to messages[0])
+	var rootMsg *classifyMessage
+	if payload.Messages[0].Role == "user" {
+		rootMsg = &payload.Messages[0]
+	} else if len(payload.Messages) > 1 && payload.Messages[1].Role == "user" {
+		rootMsg = &payload.Messages[1]
+	} else {
+		for i := 0; i < len(payload.Messages) && i < 4; i++ {
+			if payload.Messages[i].Role == "user" {
+				rootMsg = &payload.Messages[i]
+				break
+			}
+		}
+		if rootMsg == nil {
+			rootMsg = &payload.Messages[0]
+		}
+	}
+	reqCtx.RootPromptHash = hashMessageContent(rootMsg)
 
 	var latestUserPrompt string
-	var fallbackText strings.Builder
+	var latestUserMsg *classifyMessage
 	hasNonEmptyContent := false
 
-	for _, msg := range payload.Messages {
+	for i := range payload.Messages {
+		msg := &payload.Messages[i]
 		if msg.Content.Text != "" {
 			hasNonEmptyContent = true
-			fallbackText.WriteString(msg.Content.Text)
-			fallbackText.WriteString(" ")
 			if msg.Role == "user" {
 				latestUserPrompt = msg.Content.Text
+				latestUserMsg = msg
 			}
 		}
 
@@ -335,10 +355,9 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 			case "text":
 				if part.Text != "" {
 					hasNonEmptyContent = true
-					fallbackText.WriteString(part.Text)
-					fallbackText.WriteString(" ")
 					if msg.Role == "user" {
 						latestUserPrompt = part.Text
+						latestUserMsg = msg
 					}
 				}
 			}
@@ -356,6 +375,14 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	}
 	reqCtx.Prompt = latestUserPrompt
 	reqCtx.CleanPrompt = latestUserPrompt
+	if latestUserPrompt != "" {
+		reqCtx.PromptHash = HashPrompt(latestUserPrompt)
+	} else if latestUserMsg != nil {
+		reqCtx.PromptHash = hashMessageContent(latestUserMsg)
+	}
+	if reqCtx.RootPromptHash == 0 {
+		reqCtx.RootPromptHash = reqCtx.PromptHash
+	}
 
 	// 4. Parse @nacho: in-prompt directives if present
 	if HasDirective(latestUserPrompt) {
@@ -373,14 +400,57 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 		reqCtx.Features = uint16(FeatureDefaultAll)
 	}
 
-	// 5. Extract clean lowercased keywords strictly from latest user prompt (fallback to fallbackText if no user prompt)
+	// 5. Extract clean lowercased keywords strictly from latest user prompt (lazy fallback only if prompt is empty)
 	keywordSource := reqCtx.CleanPrompt
 	if keywordSource == "" {
+		var fallbackText strings.Builder
+		for i := range payload.Messages {
+			if t := payload.Messages[i].Text(); t != "" {
+				if fallbackText.Len() > 0 {
+					fallbackText.WriteString(" ")
+				}
+				fallbackText.WriteString(t)
+			}
+		}
 		keywordSource = fallbackText.String()
 	}
 	reqCtx.Keywords = extractKeywords(keywordSource)
 
 	return reqCtx, nil
+}
+
+func hashMessageContent(msg *classifyMessage) uint64 {
+	if msg == nil {
+		return 0
+	}
+	if msg.Content.Text != "" {
+		return HashPrompt(msg.Content.Text)
+	}
+	if len(msg.Content.Parts) == 0 {
+		return 0
+	}
+	if len(msg.Content.Parts) == 1 {
+		return HashPrompt(msg.Content.Parts[0].Text)
+	}
+	var h uint64 = fnvOffset64
+	hasText := false
+	for _, p := range msg.Content.Parts {
+		if p.Text != "" {
+			if hasText {
+				h ^= uint64(' ')
+				h *= fnvPrime64
+			}
+			hasText = true
+			for i := 0; i < len(p.Text); i++ {
+				h ^= uint64(p.Text[i])
+				h *= fnvPrime64
+			}
+		}
+	}
+	if !hasText {
+		return 0
+	}
+	return h
 }
 
 func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasShellWrite bool, hasTestPass bool, hasTestFail bool) {

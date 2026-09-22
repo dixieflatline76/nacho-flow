@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🌮 The Frontier Tax: Visual Empirical Study · Nacho Flow</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
+  <!-- Mermaid -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  
+  <style>
+    :root {
+      --bg-color: #090a0f;
+      --bg-surface: #111218;
+      --card-bg: rgba(17, 18, 24, 0.75);
+      --card-hover: rgba(25, 27, 36, 0.85);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(245, 158, 11, 0.45);
+      --accent-color: #f59e0b;
+      --accent-hover: #fbbf24;
+      --accent-glow: rgba(245, 158, 11, 0.2);
+      --accent-dim: rgba(245, 158, 11, 0.1);
+      --text-primary: #ffffff;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --cyan: #38bdf8;
+      --green: #10b981;
+      --green-glow: rgba(16, 185, 129, 0.2);
+      --red: #ef4444;
+      --red-glow: rgba(239, 68, 68, 0.2);
+      --purple: #a855f7;
+      --glass-bg: rgba(15, 17, 24, 0.8);
+      --glass-blur: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      padding-top: 80px;
+      padding-bottom: 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    /* Sticky Glass Navigation */
+    nav.glass-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 70px;
+      z-index: 1000;
+      background: var(--glass-bg);
+      backdrop-filter: blur(var(--glass-blur));
+      -webkit-backdrop-filter: blur(var(--glass-blur));
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 20px;
+    }
+
+    .nav-inner {
+      max-width: 1100px;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #fff;
+      text-decoration: none;
+    }
+
+    .logo-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: var(--accent-dim);
+      color: var(--accent-color);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 0.15rem 0.5rem;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .nav-link {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-link:hover {
+      color: var(--accent-color);
+    }
+
+    .btn-site {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--accent-color);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .btn-site:hover {
+      background: var(--accent-color);
+      color: #000;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1060px;
+      width: 100%;
+      padding: 0 20px;
+    }
+
+    /* Hero Section */
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: var(--accent-hover);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+
+    .hero-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    h1 {
+      color: var(--text-primary);
+      font-size: 2.35rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 10px;
+      line-height: 1.25;
+    }
+
+    .subtitle {
+      color: var(--text-secondary);
+      font-size: 1.1rem;
+      max-width: 780px;
+      margin: 0 auto 24px;
+    }
+
+    /* KPI Highlight Bar */
+    .kpi-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+
+    .kpi-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(var(--glass-blur));
+      -webkit-backdrop-filter: blur(var(--glass-blur));
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 16px 20px;
+      text-align: center;
+      transition: all 0.25s ease;
+    }
+
+    .kpi-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0,0,0,0.5), 0 0 20px var(--accent-glow);
+    }
+
+    .kpi-val {
+      font-size: 1.55rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .val-green { color: var(--green); }
+    .val-amber { color: var(--accent-color); }
+    .val-cyan { color: var(--cyan); }
+
+    .kpi-label {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(var(--glass-blur));
+      -webkit-backdrop-filter: blur(var(--glass-blur));
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 28px;
+      margin-bottom: 36px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-hover);
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.8), 0 0 30px var(--accent-dim);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 10px;
+    }
+
+    .card-title span.badge-num {
+      background: var(--accent-dim);
+      color: var(--accent-color);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+
+    .card-desc {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      margin-bottom: 22px;
+      line-height: 1.6;
+    }
+
+    /* Mermaid Container */
+    .mermaid-box {
+      background: #06080d;
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: 14px;
+      padding: 24px;
+      overflow-x: auto;
+      box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 25px rgba(245, 158, 11, 0.05);
+      display: flex;
+      justify-content: center;
+      transition: border-color 0.25s ease;
+    }
+
+    .card:hover .mermaid-box {
+      border-color: rgba(245, 158, 11, 0.45);
+    }
+
+    .mermaid {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* Tag Pills */
+    .pill-green {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+
+    .pill-red {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--red);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.88em;
+      background: rgba(245, 158, 11, 0.1);
+      color: #fbbf24;
+      padding: 2px 6px;
+      border-radius: 5px;
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 40px;
+      padding: 20px 0;
+      border-top: 1px solid var(--border-color);
+      width: 100%;
+      max-width: 1060px;
+    }
+
+    footer a {
+      color: var(--accent-color);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      color: var(--accent-hover);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sticky Glass Navigation -->
+  <nav class="glass-nav">
+    <div class="nav-inner">
+      <a href="https://spicebox.dev/nacho-flow/" class="logo">
+        <span>🌮</span> Nacho Flow
+        <span class="logo-badge">v1.2.2</span>
+      </a>
+      <div class="nav-links">
+        <a href="https://spicebox.dev/nacho-flow/" class="nav-link">Home</a>
+        <a href="https://spicebox.dev/nacho-flow/docs.html" class="nav-link">Documentation</a>
+        <a href="https://github.com/dixieflatline76/nacho-flow" target="_blank" rel="noopener noreferrer" class="btn-site">★ Star on GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    
+    <!-- Hero Header -->
+    <div class="hero-header">
+      <div class="hero-badge">⚡ Empirical Research Whitepaper · September 2026</div>
+      <h1>💸 The Frontier Tax: Visual Empirical Study</h1>
+      <p class="subtitle">
+        Raw Anthropic Claude Sonnet 5 (<strong>$4.87</strong>) vs. Nacho Flow Supervised Runtime (<strong>$0.85</strong>) in an identical 1:1 Go engineering control challenge.
+      </p>
+    </div>
+
+    <!-- Quick KPI Bar -->
+    <div class="kpi-bar">
+      <div class="kpi-card">
+        <div class="kpi-val val-green">5.7× Cheaper</div>
+        <div class="kpi-label">$0.85 vs $4.87 USD (82.5% Cash Savings)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val val-amber">12 Min Faster</div>
+        <div class="kpi-label">19.5 min vs 31.5 min (38% Clock Speedup)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val val-cyan">4.9× Fewer Tokens</div>
+        <div class="kpi-label">2.5M vs 12.4M Cloud Tokens (Pristine Context)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val val-green">0 Stalls / Drops</div>
+        <div class="kpi-label">vs. 9 Truncations + 1 SSE Socket Crash</div>
+      </div>
+    </div>
+
+    <!-- Chart 1: Architectural Comparison -->
+    <div class="card">
+      <div class="card-title">
+        <span class="badge-num">1</span>
+        <span>⚡ Head-to-Head Architecture: Raw Firehose vs. Supervised Dispatcher</span>
+      </div>
+      <div class="card-desc">
+        Raw Sonnet routes 100% of turns to the frontier cloud at $2.00 / $10.00 per 1M. Nacho Flow routes routine early scaffolding turns to local workstation GPU VRAM for $0.00, only escalating when deep reasoning is required.
+      </div>
+      <div class="mermaid-box">
+        <div class="mermaid">
+flowchart LR
+    classDef raw fill:#2a1115,stroke:#ef4444,stroke-width:2px,color:#fff;
+    classDef nacho fill:#0d261b,stroke:#10b981,stroke-width:2px,color:#fff;
+    classDef sup fill:#261d0d,stroke:#f59e0b,stroke-width:2px,color:#fff;
+    classDef tier fill:#0e2233,stroke:#38bdf8,stroke-width:1.5px,color:#fff;
+
+    subgraph RawControl["🔴 Raw Frontier Control (Sonnet 5 Direct)"]
+        Z1["Zoo Code Agent"] -->|100% Direct| S5["Claude Sonnet 5<br/>$2.00 / $10.00 per 1M"]
+        S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Cache Hit| Bill1["<b>$4.87 USD</b><br/>31.5 min clock time<br/>9 max-token stalls"]
+    end
+
+    subgraph NachoSupervisor["🟢 Nacho Flow (Supervisor & Dispatcher)"]
+        Z2["Zoo Code Agent"] --> NF["Nacho Flow Supervisor"]
+        NF -->|Turns 1-35: Scaffolding| Local["Workstation GPU: Gemma 4<br/><b>$0.00</b>"]
+        NF -->|Turns 36-58: Core Engine| Qwen["Qwen3 Coder Plus<br/>$0.65/M"]
+        NF -->|Turns 59-62: Verification| Gemini["Gemini 3.8 Flash<br/>$0.75/M"]
+        Local --> Bill2["<b>$0.85 USD</b><br/>19.5 min clock time<br/>0 buffer stalls"]
+        Qwen --> Bill2
+        Gemini --> Bill2
+    end
+
+    class S5,Bill1 raw;
+    class NF sup;
+    class Local,Qwen,Gemini tier;
+    class Bill2 nacho;
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart 2: 2x2 Benchmark Battery -->
+    <div class="card">
+      <div class="card-title">
+        <span class="badge-num">2</span>
+        <span>🎭 The 2×2 Empirical Benchmark Battery (444 Prompt Turns)</span>
+      </div>
+      <div class="card-desc">
+        Cross-domain fleet evaluation across N-Queens CSP solver and Blackjack Monte Carlo engine across both Cline and Zoo Code agent harnesses.
+      </div>
+      <div class="mermaid-box">
+        <div class="mermaid">
+flowchart TD
+    subgraph Problem1["Domain 1: N-Queens Solver & ANSI Heatmap"]
+        R1["<b>Run 1: Cline on Nacho Flow</b><br/>139 turns · $2.38 spent · $14.43 saved<br/>100% tests pass · N=1000 in 1.67s"]
+        R2["<b>Run 2: Zoo Code on Nacho Flow</b><br/>90 turns · $1.80 spent · $11.52 saved<br/>97%+ tests pass · N=1000 in 1.85s"]
+    end
+
+    subgraph Problem2["Domain 2: Blackjack Simulator & Monte Carlo"]
+        R3["<b>Run 3: Cline on Nacho Flow</b><br/>153 turns · $2.74 spent · $15.45 saved<br/>10k rounds in 19.1ms · 88% cov"]
+        R4["<b>Run 4: Zoo Code on Nacho Flow</b><br/>62 turns · $0.85 spent · $7.03 saved<br/>10k rounds in 6.1ms · 97% game cov"]
+        R5["<b>Run 5: Raw Sonnet 5 Control</b><br/>84 turns · $4.87 spent · $0.00 saved<br/>10k rounds in 5.4ms · 86.7% tot cov"]
+    end
+
+    Problem1 --> Problem2
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart 3: Turn 7 Upstream Failure -->
+    <div class="card">
+      <div class="card-title">
+        <span class="badge-num">3</span>
+        <span>🩺 Turn 7 Upstream Drop: IDE Freeze vs. Silent 180ms Healer</span>
+      </div>
+      <div class="card-desc">
+        When OpenRouter dropped an empty SSE socket packet, raw Zoo Code froze and crashed with an unhandled exception. Nacho Flow's <code>StreamNormalizer</code> absorbed the dropped frame and executed an in-flight backoff retry invisibly to the IDE.
+      </div>
+      <div class="mermaid-box">
+        <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant Agent as Zoo Code IDE
+    participant NF as Nacho Flow Supervisor
+    participant Cloud as OpenRouter
+
+    Note over Dev,Cloud: SCENARIO A: RAW FRONTIER CONTROL (UNSUPERVISED)
+    Agent->>Cloud: POST /chat/completions (Turn 7)
+    Cloud-->>Agent: 200 OK with EMPTY SSE STREAM (Socket Drop)
+    Note over Agent: UI FREEZES. Spinner hangs indefinitely.
+    Dev->>Agent: Manual Intervention: Clicks Cancel & Retry
+
+    Note over Dev,Cloud: SCENARIO B: NACHO FLOW SUPERVISED RUNTIME
+    Agent->>NF: POST /chat/completions (Turn 7)
+    NF->>Cloud: Forward request with keep-alive
+    Cloud-->>NF: Empty SSE Stream (Socket Drop)
+    NF->>NF: StreamNormalizer detects 0 bytes
+    NF->>Cloud: Immediate Retry with Backoff (180ms)
+    Cloud-->>NF: 200 OK Valid Payload
+    NF-->>Agent: Flawless Stream Passed Through
+    Note over Dev,Agent: Agent never flinched. Developer never noticed.
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart 4: Where did the tokens go -->
+    <div class="card">
+      <div class="card-title">
+        <span class="badge-num">4</span>
+        <span>🕵️ Token Attribution: Where Did the 9.9M Token Delta Go?</span>
+      </div>
+      <div class="card-desc">
+        Deconstructing why Nacho Flow sent only 2.53M cloud prompt tokens vs Sonnet's 12.4M. Both ran in 100% PRISTINE Context Preservation Mode (zero lossy context summarization).
+      </div>
+      <div class="mermaid-box">
+        <div class="mermaid">
+flowchart TD
+    subgraph Gap["Where Did the 9.9M Cloud Prompt Tokens Go?"]
+        A["Total Sonnet Cloud Prompt Tokens: 12.4M"]
+        B["1. Local Workstation Offload: 35 turns<br/><b>~3.85M Tokens Absorbed on GPU for $0.00</b>"]
+        C["2. Turn Inflation Prevention: 22 turns avoided<br/><b>~4.84M Redundant Tokens Never Sent</b>"]
+        D["3. Output Monologue Compounding: 146k fewer output tok<br/><b>~1.20M Compounded Context Tokens Avoided</b>"]
+        E["Nacho Flow Cloud Tokens Billed: 2.53M on OpenRouter"]
+        
+        A --> B
+        B --> C
+        C --> D
+        D --> E
+    end
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart 5: Pie Charts -->
+    <div class="card">
+      <div class="card-title">
+        <span class="badge-num">5</span>
+        <span>🧾 Forensic Invoice Breakdown: Where Did the Money Go?</span>
+      </div>
+      <div class="card-desc">
+        The prompt caching fallacy: on Sonnet, uncached cache-miss writes ($1.24) and runaway monologue output ($1.66) exceeded the entire Nacho Flow invoice ($0.85).
+      </div>
+      <div style="display: flex; gap: 24px; flex-wrap: wrap; margin-top: 10px;">
+        <div style="flex: 1; min-width: 320px;" class="mermaid-box">
+          <div style="width: 100%;">
+            <div style="text-align: center; margin-bottom: 12px;"><span class="pill-red">Raw Claude Sonnet 5: $4.87 Total</span></div>
+            <div class="mermaid">
+pie title Raw Claude Sonnet 5 ($4.87)
+    "Prompt Cache Hits ($0.20/M)" : 1.97
+    "Completion Monologues ($10.00/M)" : 1.66
+    "Cache-Miss Writes ($3.75/M)" : 1.24
+            </div>
+          </div>
+        </div>
+        <div style="flex: 1; min-width: 320px;" class="mermaid-box">
+          <div style="width: 100%;">
+            <div style="text-align: center; margin-bottom: 12px;"><span class="pill-green">Nacho Flow Supervised: $0.85 Total</span></div>
+            <div class="mermaid">
+pie title Nacho Flow Supervised ($0.85)
+    "Qwen3 Coder Plus Workhorse" : 0.55
+    "Gemini 3.8 Flash Escalation" : 0.30
+    "Workstation GPU Scaffolding" : 0.00
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart 6: Code Quality Showdown -->
+    <div class="card">
+      <div class="card-title">
+        <span class="badge-num">6</span>
+        <span>⚖️ Code Quality Showdown: Pragmatic Lean vs. Academic Overachiever</span>
+      </div>
+      <div class="card-desc">
+        Both generated race-free (<code>go test -race PASS</code>) implementations running 10,000 Monte Carlo rounds in ~5–6ms. Sonnet wrote 2,208 extra lines of tests (primarily terminal ANSI formatting).
+      </div>
+      <div class="mermaid-box">
+        <div class="mermaid">
+flowchart TD
+    subgraph NFApp["Nacho Flow Codebase: $0.85 · 19.5 min"]
+        N1["1,871 Lines of Go<br/>10 Clean, Modular Files"]
+        N2["10,000 Rounds in 6.14ms<br/>EV: -2.49% (Vegas Strip Rules)"]
+        N3["go test -race: PASS<br/>Zero Data Races"]
+        N4["Coverage: 54.3% total<br/>internal/game: 97.6%"]
+        N1 --> N2 --> N3 --> N4
+    end
+
+    subgraph S5App["Raw Sonnet 5 Codebase: $4.87 · 31.5 min"]
+        S1["3,724 Lines of Go<br/>15 Files · ~59% of codebase is tests"]
+        S2["10,000 Rounds in 5.40ms<br/>EV: -1.17% (Liberal Casino Rules)"]
+        S3["go test -race: PASS<br/>Zero Data Races"]
+        S4["Coverage: 86.7% total<br/>incl. terminal formatting & tests"]
+        S1 --> S2 --> S3 --> S4
+    end
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart 7: Tradeoff Matrix -->
+    <div class="card">
+      <div class="card-title">
+        <span class="badge-num">7</span>
+        <span>📐 The Autonomous Coding Tradeoff Matrix</span>
+      </div>
+      <div class="card-desc">
+        Mapping real-world production efficiency vs. engineering rigor across unmanaged local models, direct cloud firehoses, and Nacho Flow supervised runtime.
+      </div>
+      <div class="mermaid-box">
+        <div class="mermaid">
+flowchart TD
+    subgraph Grid["The Autonomous Coding Tradeoff Matrix"]
+        direction TB
+        subgraph TopRow["High Rigor / Passing Code"]
+            Q2["<b>Over-Engineered & Expensive</b><br/>🔴 Raw Claude Sonnet 5<br/>$4.87 · 31.5 min · 86.7% cov"]
+            Q1["<b>The Sweet Spot (Optimal ROI)</b><br/>🟢 Nacho Flow Hybrid<br/>$0.85 · 19.5 min · 97.6% game cov"]
+        end
+        subgraph BottomRow["Low Rigor / Fragile Code"]
+            Q3["<b>Broken & Unusable</b><br/>⚪ Unmanaged Local Gemma 12B<br/>$0.00 · Repetition death loops"]
+            Q4["<b>Cheap Workhorse</b><br/>🔵 Raw Qwen3 Coder Plus Direct<br/>$1.20 · Good code, needs guardrails"]
+        end
+    end
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      🌮 Part of the <a href="https://spicebox.dev/nacho-flow/" target="_blank">Nacho Flow</a> developer tool suite by <a href="https://github.com/dixieflatline76" target="_blank">@dixieflatline76</a>.<br/>
+      Read the full markdown whitepaper: <a href="https://github.com/dixieflatline76/nacho-flow/blob/main/docs/FRONTIER_CONTROL_STUDY_2026.md" target="_blank">FRONTIER_CONTROL_STUDY_2026.md</a>
+    </footer>
+
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: 'transparent',
+        primaryColor: '#1a1d29',
+        primaryTextColor: '#ffffff',
+        primaryBorderColor: '#f59e0b',
+        lineColor: '#38bdf8',
+        secondaryColor: '#11141f',
+        tertiaryColor: '#1f2438',
+        fontFamily: 'Inter, sans-serif'
+      }
+    });
+  </script>
+</body>
+</html>

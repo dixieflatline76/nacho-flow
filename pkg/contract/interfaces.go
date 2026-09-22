@@ -14,6 +14,9 @@ type RequestContext struct {
 	Keywords                  []string `json:"keywords"`
 	Prompt                    string   `json:"prompt"`
 	CleanPrompt               string   `json:"clean_prompt,omitempty"`
+	RootPromptHash            uint64   `json:"root_prompt_hash,omitempty"`
+	PromptHash                uint64   `json:"prompt_hash,omitempty"`
+	MessageCount              int      `json:"message_count,omitempty"`
 	Retries                   int      `json:"retries,omitempty"`
 	IsRetry                   bool     `json:"is_retry,omitempty"`
 	HasToolProgress           bool     `json:"has_tool_progress,omitempty"`
@@ -396,6 +399,8 @@ type Tier struct {
 	StripImages       bool                `yaml:"strip_images" json:"strip_images"`
 	HasVision         *bool               `yaml:"has_vision,omitempty" json:"has_vision,omitempty"`
 	ResolvedHasVision bool                `yaml:"-" json:"resolved_has_vision"`
+	StripTools        bool                `yaml:"strip_tools,omitempty" json:"strip_tools,omitempty"`
+	HasTools          *bool               `yaml:"has_tools,omitempty" json:"has_tools,omitempty"`
 	ReasoningEffort   string              `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
 	MaxContext        int                 `yaml:"max_context,omitempty" json:"max_context,omitempty"`
 	Raw               *bool               `yaml:"raw,omitempty" json:"raw,omitempty"`

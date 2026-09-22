@@ -12,12 +12,53 @@ import (
 // Test 3.1: Advisory report generation contains key diff and projections
 func TestAdvisor_GeneratesReport(t *testing.T) {
 	result := &TuningResult{
-		OptimalThreshold:    12500,
-		FrictionKeywords:    []string{"sql", "migration"},
-		RestrictImages:      false,
-		RestrictTools:       false,
-		TargetTierName:      "Local ROCm GPU",
-		SynthesizedRule:     "Tokens < 12500 && !any(Keywords, { # in ['migration', 'sql'] })",
+		Tiers: []TierTuningResult{
+			{
+				TierName:         "Local ROCm GPU",
+				OptimalThreshold: 12500,
+				OptimalRetries:   2,
+				FrictionKeywords: []string{"sql", "migration"},
+				RestrictImages:   false,
+				RestrictTools:    false,
+				OriginalModel:    "qwen2.5-coder:14b",
+				RecommendedModel: "qwen3-coder-plus",
+				ModelBenefit:     "SWE-bench +15%",
+				OriginalRule:     "Tokens < 16000 && !HasImages && !HasTools",
+				SynthesizedRule:  "Tokens < 12500 && !any(Keywords, { # in ['migration', 'sql'] })",
+			},
+			{
+				TierName:         "Unlimited Tier",
+				OptimalThreshold: 0,
+				OptimalRetries:   0,
+				RestrictImages:   true,
+				RestrictTools:    true,
+				OriginalRule:     "true",
+				SynthesizedRule:  "true",
+			},
+		},
+		DefaultTier: &TierTuningResult{
+			TierName:         "Fallback Catch-All",
+			OriginalModel:    "z-ai/glm-5.3-flash",
+			RecommendedModel: "google/gemini-3.8-flash",
+			ModelBenefit:     "Capability parity",
+		},
+		StaticDominanceConflicts: []StaticDominanceConflict{
+			{
+				TierIndex: 1,
+				TierName:  "Local ROCm GPU",
+				Reason:    "Escalation tier is strictly inferior to predecessor tier",
+			},
+		},
+		RecoveryStats: map[string]RecoveryStats{
+			"qwen2.5-coder:14b": {
+				Model:             "qwen2.5-coder:14b",
+				SelfRecoveryRate:  0.75,
+				AvgTurnsToRecover: 1.8,
+			},
+		},
+		TotalSessions:       10,
+		AvgTurnsPerSession:  500.0,
+		EscalationRate:      0.25,
 		CurrentCostUSD:      45.00,
 		ProjectedCostUSD:    48.20,
 		ProjectedSavingsUSD: 14.50,
@@ -40,38 +81,47 @@ func TestAdvisor_GeneratesReport(t *testing.T) {
 	}
 
 	report := GenerateAdvisoryReport(result, cfg)
+	if report == "" {
+		t.Fatalf("Expected non-empty advisory report")
+	}
 
-	if !strings.Contains(report, "12500 tokens") {
-		t.Errorf("Expected report to mention 12500 tokens")
+	expectedSnippets := []string{
+		"NACHO FLOW ADVISORY TUNING REPORT",
+		"5000 historical prompt turns evaluated",
+		"12500 tokens",
+		"~340 retries eliminated",
+		"$14.50 USD saved",
+		"Tokens < 12500 && !any(Keywords, { # in ['migration', 'sql'] })",
+		"STATIC ROUTING DOMINANCE DEFECTS DETECTED",
+		"MODEL SELF-RECOVERY ANALYSIS",
+		"Fallback Catch-All",
+		"Context Threshold:   Unlimited",
 	}
-	if !strings.Contains(report, "340 retries eliminated") {
-		t.Errorf("Expected report to mention retries eliminated")
-	}
-	if !strings.Contains(report, "Clean (0% retry rate — enabled locally)") {
-		t.Errorf("Expected report to mention clean modalities")
-	}
-	if !strings.Contains(report, "- when: \"Tokens < 16000 && !HasImages && !HasTools\"") {
-		t.Errorf("Expected report to contain original when rule in diff")
-	}
-	if !strings.Contains(report, "+ when: \"Tokens < 12500") {
-		t.Errorf("Expected report to contain synthesized when rule in diff")
+
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(report, snippet) {
+			t.Errorf("Expected report to contain snippet %q, but it was missing", snippet)
+		}
 	}
 }
 
 // Test 3.2: Advisory report with friction modalities and non-local config
 func TestAdvisor_FrictionModalities(t *testing.T) {
 	result := &TuningResult{
-		OptimalThreshold:    8000,
-		RestrictImages:      true,
-		RestrictTools:       true,
-		TargetTierName:      "",
-		SynthesizedRule:     "Tokens < 8000 && !HasImages && !HasTools",
+		Tiers: []TierTuningResult{
+			{
+				TierName:         "Tier 1: Local GPU",
+				OptimalThreshold: 8000,
+				RestrictImages:   true,
+				RestrictTools:    true,
+				SynthesizedRule:  "Tokens < 8000 && !HasImages && !HasTools",
+			},
+		},
 		TotalSampleTurns:    200,
 		RetriesEliminated:   12,
 		ProjectedSavingsUSD: 5.0,
 	}
 
-	// Config with only cloud tiers (tests fallback oldRule branch)
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
 			"openrouter": {BaseURL: "https://openrouter.ai/api/v1", Type: contract.ProviderTypeCloud},
@@ -82,14 +132,11 @@ func TestAdvisor_FrictionModalities(t *testing.T) {
 	}
 
 	report := GenerateAdvisoryReport(result, cfg)
-	if !strings.Contains(report, "Multimodal Vision:              High Friction") {
-		t.Errorf("Expected report to mention high friction vision")
+	if !strings.Contains(report, "Multimodal Vision:   Restricted") {
+		t.Errorf("Expected report to mention restricted vision, got: %s", report)
 	}
-	if !strings.Contains(report, "Agentic Tool Calls:             High Friction") {
-		t.Errorf("Expected report to mention high friction tools")
-	}
-	if !strings.Contains(report, "Local ROCm GPU") {
-		t.Errorf("Expected fallback tier name")
+	if !strings.Contains(report, "Agentic Tool Calls:  Restricted") {
+		t.Errorf("Expected report to mention restricted tools, got: %s", report)
 	}
 }
 
@@ -115,7 +162,12 @@ tiers:
 	}
 
 	result := &TuningResult{
-		SynthesizedRule: "Tokens < 12000 && !HasTools",
+		Tiers: []TierTuningResult{
+			{
+				TierName:        "Local GPU",
+				SynthesizedRule: "Tokens < 12000 && !HasTools",
+			},
+		},
 	}
 
 	backupPath, err := ApplyTuning(configPath, result)
@@ -150,14 +202,18 @@ func TestOptimizer_ConstructorAndEmptyRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error on empty records: %v", err)
 	}
-	if res.OptimalThreshold != 16000 {
-		t.Errorf("Expected default 16000 threshold on empty records, got %d", res.OptimalThreshold)
+	if len(res.Tiers) == 0 || res.Tiers[0].OptimalThreshold != 16000 {
+		t.Errorf("Expected default 16000 threshold on empty records")
 	}
 }
 
 // Test 3.5: ApplyTuning error handling on missing file and malformed YAML
 func TestApplier_ErrorCases(t *testing.T) {
-	result := &TuningResult{SynthesizedRule: "Tokens < 10000"}
+	result := &TuningResult{
+		Tiers: []TierTuningResult{
+			{TierName: "Local GPU", SynthesizedRule: "Tokens < 10000"},
+		},
+	}
 
 	// Missing config file
 	_, err := ApplyTuning(filepath.Join(t.TempDir(), "missing.yaml"), result)
@@ -181,25 +237,26 @@ func TestApplier_ErrorCases(t *testing.T) {
 // Test 3.6: Advisory report with no friction keywords, zero projected savings, and nil config
 func TestAdvisor_NoFrictionKeywordsAndNilConfig(t *testing.T) {
 	result := &TuningResult{
-		OptimalThreshold:    16000,
-		FrictionKeywords:    nil,
-		TargetTierName:      "Local ROCm GPU",
-		SynthesizedRule:     "Tokens < 16000",
+		Tiers: []TierTuningResult{
+			{
+				TierName:         "Local ROCm GPU",
+				OptimalThreshold: 16000,
+				FrictionKeywords: nil,
+				SynthesizedRule:  "Tokens < 16000",
+			},
+		},
 		ProjectedSavingsUSD: 0.0,
 		TotalSampleTurns:    100,
 	}
 
 	report := GenerateAdvisoryReport(result, nil)
-	if !strings.Contains(report, "None (Clean token progression across all domains)") {
-		t.Errorf("Expected report to mention clean token progression")
-	}
 	if !strings.Contains(report, "Local ROCm GPU") {
-		t.Errorf("Expected fallback tier name 'Local ROCm GPU' when config is nil")
+		t.Errorf("Expected tier name 'Local ROCm GPU'")
 	}
 }
 
-// Test 3.7: ApplyTuning rejects config with only cloud tiers
-func TestApplier_RejectCloudOnly(t *testing.T) {
+// Test 3.7: ApplyTuning rejects config with no matching tiers
+func TestApplier_RejectNoMatchingTier(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "cloud_only_config.yaml")
 
@@ -219,10 +276,14 @@ tiers:
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 
-	result := &TuningResult{SynthesizedRule: "Tokens < 8000"}
+	result := &TuningResult{
+		Tiers: []TierTuningResult{
+			{TierName: "Nonexistent Tier", SynthesizedRule: "Tokens < 8000"},
+		},
+	}
 	_, err := ApplyTuning(configPath, result)
 	if err == nil {
-		t.Fatalf("Expected error when applying tuning to cloud-only config, got nil")
+		t.Fatalf("Expected error when applying tuning with no matching tier, got nil")
 	}
 }
 
@@ -240,9 +301,70 @@ func TestApplier_DestinationDirectoryCollision(t *testing.T) {
 	configDir := filepath.Join(tempDir, "config.yaml")
 	_ = os.MkdirAll(filepath.Join(configDir, "non_empty"), 0750)
 
-	result := &TuningResult{SynthesizedRule: "Tokens < 5000"}
+	result := &TuningResult{
+		Tiers: []TierTuningResult{
+			{TierName: "Local GPU", SynthesizedRule: "Tokens < 5000"},
+		},
+	}
 	_, err := ApplyTuning(configDir, result)
 	if err == nil {
 		t.Errorf("Expected error applying tuning to a directory")
+	}
+}
+
+func TestAdvisor_GeneratesReport_v2(t *testing.T) {
+	result := &TuningResult{
+		TotalSampleTurns:   847,
+		TotalSessions:      23,
+		AvgTurnsPerSession: 36.8,
+		EscalationRate:     0.783,
+		Tiers: []TierTuningResult{
+			{
+				TierName:         "Tier 1: Local GPU",
+				OptimalThreshold: 4000,
+				OptimalRetries:   1,
+				SynthesizedRule:  "Tokens < 4000 && Retries < 1",
+			},
+		},
+		CurrentCostUSD:    12.40,
+		ProjectedCostUSD:  8.20,
+		RetriesEliminated: 119,
+		RecoveryStats: map[string]RecoveryStats{
+			"gemma-4-26b": {
+				Model:            "gemma-4-26b",
+				SelfRecoveryRate: 0.032,
+			},
+			"qwen3-coder-plus": {
+				Model:            "qwen3-coder-plus",
+				SelfRecoveryRate: 0.671,
+			},
+		},
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{Name: "Tier 1: Local GPU", When: "Tokens < 16000 && Retries < 2", Provider: "ollama"},
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama": {Type: "local"},
+		},
+	}
+
+	report := GenerateAdvisoryReport(result, cfg)
+
+	if !strings.Contains(report, "v2 — Session Replay") {
+		t.Errorf("Expected v2 header, got: %s", report)
+	}
+	if !strings.Contains(report, "SESSION DYNAMICS:") {
+		t.Errorf("Expected SESSION DYNAMICS section, got: %s", report)
+	}
+	if !strings.Contains(report, "Average Turns per Session:") {
+		t.Errorf("Expected Average Turns per Session, got: %s", report)
+	}
+	if !strings.Contains(report, "MODEL SELF-RECOVERY ANALYSIS:") {
+		t.Errorf("Expected MODEL SELF-RECOVERY ANALYSIS section, got: %s", report)
+	}
+	if !strings.Contains(report, "Retry Bound:") {
+		t.Errorf("Expected Retry Bound metric, got: %s", report)
 	}
 }

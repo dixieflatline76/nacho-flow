@@ -500,8 +500,101 @@ func TestAPI_Tune_Endpoint(t *testing.T) {
 		t.Fatalf("failed to decode tuning result JSON: %v", err)
 	}
 
-	if result.SynthesizedRule == "" {
-		t.Errorf("expected non-empty synthesized rule")
+	if len(result.Tiers) == 0 || result.Tiers[0].SynthesizedRule == "" {
+		t.Errorf("expected non-empty synthesized rule in result.Tiers")
+	}
+}
+
+func TestAPI_Tune_WithVRAM(t *testing.T) {
+	srv, ringBuffer, _ := setupTestServer(t)
+
+	for i := 0; i < 10; i++ {
+		ringBuffer.Emit(telemetry.TurnRecord{
+			Tokens:   1500,
+			IsLocal:  true,
+			IsRetry:  i%2 == 0,
+			Keywords: []string{"vram-test"},
+		})
+	}
+
+	// 1. Query param: ?vram_gb=16
+	req := httptest.NewRequest(http.MethodPost, contract.PathAPITune+"?vram_gb=16", nil)
+	req.Header.Set("Authorization", "Bearer test-secret-token")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with ?vram_gb=16, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 2. JSON body: {"local_vram_gb": 24}
+	bodyJSON := bytes.NewBufferString(`{"local_vram_gb": 24}`)
+	reqBody := httptest.NewRequest(http.MethodPost, contract.PathAPITune, bodyJSON)
+	reqBody.Header.Set("Authorization", "Bearer test-secret-token")
+	reqBody.Header.Set("Content-Type", "application/json")
+	wBody := httptest.NewRecorder()
+	srv.ServeHTTP(wBody, reqBody)
+
+	if wBody.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with local_vram_gb JSON body, got %d: %s", wBody.Code, wBody.Body.String())
+	}
+}
+
+type mockFailingRunner struct{}
+
+func (m *mockFailingRunner) RunTuning(ctx context.Context, configPath string, trafficLogPath string) (*tuner.TuningResult, error) {
+	return nil, fmt.Errorf("simulated runner explosion")
+}
+
+func TestAPI_Tune_ErrorAndBranchCases(t *testing.T) {
+	srv, _, _ := setupTestServer(t)
+
+	// 1. Method Not Allowed
+	reqGet := httptest.NewRequest(http.MethodGet, contract.PathAPITune, nil)
+	reqGet.Header.Set("Authorization", "Bearer test-secret-token")
+	wGet := httptest.NewRecorder()
+	srv.ServeHTTP(wGet, reqGet)
+	if wGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 Method Not Allowed, got %d", wGet.Code)
+	}
+
+	// 2. Tuner unavailable (s.tuner == nil)
+	srvNoTuner, _, _ := setupTestServer(t)
+	srvNoTuner.tuner = nil
+	srvNoTuner.tuningRunner = nil
+	reqNoTuner := httptest.NewRequest(http.MethodPost, contract.PathAPITune, nil)
+	reqNoTuner.Header.Set("Authorization", "Bearer test-secret-token")
+	wNoTuner := httptest.NewRecorder()
+	srvNoTuner.ServeHTTP(wNoTuner, reqNoTuner)
+	if wNoTuner.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 Service Unavailable, got %d", wNoTuner.Code)
+	}
+
+	// 3. ProcessTuningRunner with VRAM query param
+	srvProc := &Server{
+		tuningRunner: NewProcessTuningRunner("nonexistent-bin", nil),
+		tuner:        tuner.NewMinConflictsOptimizer(tuner.DefaultTuningPolicy()),
+	}
+	cfg := &contract.Config{AuthToken: "test-secret-token"}
+	srvProc.state.Store(&runtimeState{config: cfg})
+	reqProc := httptest.NewRequest(http.MethodPost, contract.PathAPITune+"?vram_gb=16", nil)
+	reqProc.Header.Set("Authorization", "Bearer test-secret-token")
+	wProc := httptest.NewRecorder()
+	srvProc.ServeHTTP(wProc, reqProc)
+	// Process runner fails to execute nonexistent binary -> 500
+	if wProc.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 Internal Server Error, got %d", wProc.Code)
+	}
+
+	// 4. Failing runner returns 500
+	srvFail, _, _ := setupTestServer(t)
+	srvFail.SetTuningRunner(&mockFailingRunner{})
+	reqFail := httptest.NewRequest(http.MethodPost, contract.PathAPITune, nil)
+	reqFail.Header.Set("Authorization", "Bearer test-secret-token")
+	wFail := httptest.NewRecorder()
+	srvFail.ServeHTTP(wFail, reqFail)
+	if wFail.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 Internal Server Error, got %d", wFail.Code)
 	}
 }
 
@@ -995,5 +1088,14 @@ func TestServer_ApplyConfig_EdgeCases(t *testing.T) {
 	}
 	if backup == "" {
 		t.Errorf("expected backup file path")
+	}
+
+	// 3. Validation failure (unknown provider reference)
+	badProviderCfg := &contract.Config{
+		DefaultTier: contract.Tier{Name: "Def", Provider: "unknown-provider-xyz", When: "true"},
+	}
+	_, errVal := srv.ApplyConfig(badProviderCfg, false)
+	if errVal == nil {
+		t.Errorf("expected error for validation failure")
 	}
 }

@@ -10,7 +10,11 @@ This guide teaches you how to write, optimize, test, and tune dynamic routing ru
    - [3.2 🏆 The 16GB VRAM Champion: Gemma 4 12B IT QAT & Perfected Ollama Tuning](#-the-16gb-vram-champion-gemma-4-12b-it-qat--perfected-ollama-tuning)
 4. [Real-World Rule Recipes](#4-real-world-rule-recipes)
 5. [Testing & Validating Your Rules](#5-testing--validating-your-rules)
-6. [Autonomous Cost-Penalty Auto-Tuning (`nacho-flow tune`)](#6-autonomous-cost-penalty-auto-tuning-nacho-flow-tune)
+6. [Autonomous Multi-Tier Auto-Tuning (`nacho-flow tune`)](#6-autonomous-multi-tier-auto-tuning-nacho-flow-tune)
+   - [6.1 6D Constraint Satisfaction Formulation & Min-Conflicts Heuristic](#61-6d-constraint-satisfaction-formulation--min-conflicts-heuristic)
+   - [6.2 Fractional Conflict Attribution & Fleet Dominance](#62-fractional-conflict-attribution--fleet-dominance)
+   - [6.3 Step-by-Step Tuning Workflow & CLI Options](#63-step-by-step-tuning-workflow--cli-options)
+   - [6.4 High-Throughput 1M-Statement Stress Testing (`nacho_stress`)](#64-high-throughput-1m-statement-stress-testing-nacho_stress)
 7. [Manual Heuristic Tuning Tips](#7-manual-heuristic-tuning-tips-for-custom-power-rules)
 8. [Agent-Specific Harness Tuning: Zoo Code vs. Cline](#8-agent-specific-harness-tuning-zoo-code-vs-cline)
 9. [🧚 Fairy Dusting & Cost Shield Architecture](#9-fairy-dusting--cost-shield-architecture)
@@ -471,55 +475,129 @@ If you use the [VS Code Companion Extension](EXTENSION_USER_GUIDE.md), open the 
 
 ---
 
-## 6. Autonomous Cost-Penalty Auto-Tuning (`nacho-flow tune`)
+## 6. Autonomous Multi-Tier Auto-Tuning (`nacho-flow tune`)
 
-While manual rule crafting is powerful, human developers shouldn't have to guess where their local model begins to struggle. Nacho Flow features an autonomous **Cost-Penalty Auto-Tuner** that analyzes your real-world coding telemetry, detects model failure boundaries, and synthesizes optimal rules.
-
-### 6.1 The Mathematical Problem: The "Context Cliff"
-Local open-weight models (e.g. `qwen2.5-coder:14b`, `deepseek-coder:6.7b`) are remarkably capable on concise prompt turns ($< 8\text{k}\text{--}12\text{k}$ tokens). However, as conversation history snowballs, smaller models experience **attention dilution** and context degradation:
-1. **The Hidden Cost of Local Failures**: While a local GPU turn costs **$0.00** in direct API spend, a defective response that hallucinates an edit or breaks a file forces the human developer to manually intervene, rollback, or re-prompt. This costs minutes of developer flow state (quantified as a **~$2.00 penalty** per wasted retry).
-2. **The Cloud Alternative**: Escalating a 20k token turn to an economy cloud model (e.g. `qwen3-coder` or `deepseek-v3`) costs only **~$0.03**.
-3. **The Objective Function**: The auto-tuner runs a grid-search sweep across historical turns to find the threshold $T$ and friction keywords that maximize total utility:
-   $$\text{Utility} = - \text{CloudDirectSpend} - (\text{LocalRetries} \times \text{RetryPenaltyUSD})$$
+While manual rule crafting is powerful, human developers shouldn't have to guess where local open-weight models begin to struggle or how complex multi-tier cascades interact. Nacho Flow features an autonomous **v3 Min-Conflicts Constraint Satisfaction Auto-Tuner** that replays historical traffic logs, identifies bottleneck boundaries, and synthesizes optimal multi-tier routing rules.
 
 ---
 
-### 6.2 Step-by-Step Tuning Workflow
+### 6.1 6D Constraint Satisfaction Formulation & Min-Conflicts Heuristic
+
+Traditional grid search is limited to evaluating a single token boundary on a single local tier ($O(N)$). Modern agentic workflows, however, rely on **multi-tier cascades** (e.g. Kickstart Tier $\rightarrow$ Vision Tier $\rightarrow$ Local Workhorse $\rightarrow$ Cloud Escalation $\rightarrow$ Frontier Fallback).
+
+To optimize an entire fleet of tiers simultaneously, Nacho Flow formulates rule tuning as a **Constraint Satisfaction Problem (CSP)** solved via an adaptive **Min-Conflicts Local Search** heuristic:
+
+```mermaid
+flowchart TD
+    subgraph CSP["6D Constraint Satisfaction Formulation"]
+        T["Tiers Variables (Token Thresholds Tk)"]
+        R["Retry Ceilings (Rk)"]
+        Tools["Tool Adherence Flags (HasTools)"]
+        Vision["Vision Modality Flags (HasImages)"]
+        KW["Friction Keywords (any(Keywords, ...))"]
+        Model["Hardware Model Selection (VRAM & Benchmarks)"]
+    end
+
+    Logs["Historical Traffic Logs (traffic.jsonl)"] --> Replay["Zero-Alloc Fleet Replay Engine"]
+    CSP --> Replay
+    Replay --> Conflict["Fractional Conflict Evaluator"]
+    Conflict --> Solver{"Min-Conflicts Solver (Local Search)"}
+    Solver -->|Repair Variable| CSP
+    Solver -->|Convergence / Low Conflict| Pareto["Pareto Fleet Dominance Verification"]
+    Pareto --> Output["Advisory Tuning Report & AST Diff"]
+```
+
+#### The 6 Tunable Dimensions Per Tier:
+1. **Context Token Threshold ($T_k$)**: Discrete search across $\{1\text{k}, 2\text{k}, 4\text{k}, 8\text{k}, 12\text{k}, 16\text{k}, 20\text{k}, 24\text{k}, 32\text{k}, 64\text{k}\}$.
+2. **Retry Escalation Bound ($R_k$)**: Escalation ceiling $\{1, 2, 3, 4, 5, 6\}$ before kicking to cloud.
+3. **Tool Adherence Toggle (`HasTools`)**: Disables local routing when agent declares tools if local tool-calling reliability fails.
+4. **Vision Modality Toggle (`HasImages`)**: Prevents sending multi-modal image turns to text-only local models.
+5. **High-Friction Keyword Exclusions (`any(Keywords, ...)`)**: Isolates concepts with retry odds ratios $\ge 1.5\times$ baseline.
+6. **VRAM-Aware Model Substitution**: Inspects the vetted models catalog (`models.json`) to recommend drop-in model upgrades that fit within your target hardware ceiling (e.g. 16GB VRAM).
+
+#### Hard Constraints vs. Soft Penalties:
+* **Hard Monotonicity Constraint**: Token thresholds across tiers must monotonically increase or remain valid ($T_0 \le T_1 \le ... \le T_n$). Non-monotonic configurations receive a conflict penalty of $+\infty$.
+* **Unbounded Default Tier Protection**: The final fallback tier must have no token or modality restriction ($T_{\text{default}} = \infty$) to guarantee 100% request completion.
+* **Hardware VRAM Ceilings**: Local model substitutions cannot exceed `--vram-gb`.
+* **Soft Cost & Friction Penalties**:
+  $$\text{Objective Conflict} = \text{CloudDirectSpend} + (\text{LocalRetries} \times \text{RetryPenaltyUSD}) + (\text{SessionTurns} \times \text{TurnsWeight})$$
+
+#### Zero-Allocation Replay Performance:
+The inner evaluation loop (`pkg/tuner/conflict_evaluator.go`) operates with **zero heap allocations**:
+* Replays **1,000,000 turn statements in 25ms** (~40,000,000 statements/sec).
+* Pre-allocates trajectory memory and reuses rolling evaluation buffers (`MultiTierReplayResult.Reset()`), allowing thousands of candidate CSP assignments to be evaluated in fractions of a second.
+
+---
+
+### 6.2 Fractional Conflict Attribution & Fleet Dominance
+
+When a prompt turn fails (incurring developer retry frustration or runaway cloud spend), how does the engine know *which* tier or variable caused it?
+
+#### Fractional Attribution:
+If a multi-tier session incurs penalty $P$ across $M$ active variables contributing to the failure, the conflict evaluator divides the penalty proportionally:
+$$\text{Penalty}_{\text{var}} = \frac{P}{M}$$
+This prevents the optimizer from penalizing innocent tiers while pinpointing the exact threshold or keyword rule that permitted the failure.
+
+#### Pareto Fleet Dominance:
+Before recommending any rule mutation, the tuner evaluates the candidate configuration against your existing baseline across 3 objectives:
+1. **Direct Cloud Spend (USD)**
+2. **Average Session Turn Latency (ms)**
+3. **Fleet Retry Rate (%)**
+
+A candidate configuration is adopted only if it **Pareto-dominates** the baseline (improving at least one metric without degrading the others) and triggers no static rule dominance conflicts (such as shadowed tiers or unreachable rules).
+
+---
+
+### 6.3 Step-by-Step Tuning Workflow & CLI Options
 
 #### Step 1: Accumulate Natural Traffic
-Run Nacho Flow during your normal coding workflow for a few days (recommended: 50 to 500 prompt turns). Nacho Flow automatically appends structured turn telemetry to `logs/traffic.jsonl`:
+Run Nacho Flow during your normal coding workflow for a few days (recommended: 50 to 500 complete sessions). Telemetry is recorded asynchronously to `logs/traffic.jsonl`:
 ```json
-{"timestamp":"2026-08-24T14:32:00Z","tokens":9450,"has_images":false,"has_tools":false,"keywords":["docker","compose"],"retries":0,"is_retry":false,"is_local":true,"tier":"Local ROCm GPU","model":"qwen2.5-coder:14b","latency_ms":1250,"cost_saved_usd":0.0236}
+{"timestamp":"2026-08-24T14:32:00Z","session_id":"sess-8891","tokens":9450,"has_images":false,"has_tools":true,"keywords":["docker","compose"],"retries":0,"is_retry":false,"is_local":true,"tier":"Tier 2: Local GPU","model":"gemma4:12b-it-qat","latency_ms":1250,"cost_saved_usd":0.0236}
 ```
 
 #### Step 2: Run the Advisory Analysis (Dry-Run)
-Analyze your historical traffic without modifying any files:
+Run the auto-tuner in advisory mode:
 ```bash
+# Run default v3 Min-Conflicts multi-tier optimization
 nacho-flow tune
+
+# Target specific local GPU hardware ceiling (e.g. 16GB VRAM)
+nacho-flow tune --vram-gb=16
+
+# Analyze a specific number of complete sessions
+nacho-flow tune --max-sessions=100 --traffic-log=logs/traffic.jsonl
+
+# Output machine-readable JSON for CI/CD or automation
+nacho-flow tune --format=json
 ```
 
-**Example Advisory Output**:
+**Example Multi-Tier Advisory Output**:
 ```text
 ========================================================================================
-🌮 NACHO FLOW ADVISORY TUNING REPORT
+🌮 NACHO FLOW ADVISORY TUNING REPORT (v3 Min-Conflicts Multi-Tier Optimizer)
 ========================================================================================
 
-📊 Sample Size: 240 historical prompt turns evaluated
+📊 Sample Size: 240 historical sessions evaluated (1,480 prompt turns)
+⚙️ Strategy:    min_conflicts (6D CSP Heuristic Local Search)
+🖥️ VRAM Target: 16 GB (GPU Bound Active)
 
-🔍 FRICTION & BOTTLENECK SIGNALS DETECTED:
-  • Optimal Local Context Threshold: 24,000 tokens
-  • Multimodal Vision:              Clean (0% retry rate — enabled locally)
-  • Agentic Tool Calls:             Clean (0% retry rate — enabled locally)
-  • High-Friction Domain Keywords:  ['deadlock', 'kubernetes', 'migration'] (Spikes local retry probability)
+🔍 MULTI-TIER FRICTION & BOTTLENECK SIGNALS:
+  • Tier 1 (Kickstart):            Token limit 4,000 -> 8,000 | Retries < 3 (Clean)
+  • Tier 2 (Local ROCm/Ollama):    Optimal context boundary 16,000 -> 24,000 tokens
+  • Local Tool Adherence:          Clean (0% tool failures — tools remain enabled locally)
+  • High-Friction Domain Keywords: ['deadlock', 'kubernetes', 'migration'] (Spikes local retries)
+  • Recommended Model Upgrade:     gemma4:12b-it-qat (Index: 82.4, Fits 16GB VRAM)
 
 📈 PROJECTED MONTHLY IMPACT:
-  • Developer Retries Avoided: ~18 retries eliminated
-  • Net Monthly Cost Optimization: +$36.00 USD saved
+  • Developer Retries Avoided:     ~32 retries eliminated
+  • Cloud Spend Optimization:      +$48.50 USD saved / month
+  • Fleet Pareto Dominance:        CONFIRMED (Zero regressions detected)
 
 🛠️ RECOMMENDED CONFIGURATION DIFF:
 ----------------------------------------------------------------------------------------
-  Tier: "Tier 2: Local GPU Free (Ollama 14B + Tool Normalizer)"
-  - when: "Tokens < 10000 && !HasImages && Retries < 2"
+  Tier: "Tier 2: Local GPU Free (Ollama 12B + Tool Normalizer)"
+  - when: "Tokens < 12000 && !HasImages && Retries < 2"
   + when: "Tokens < 24000 && !any(Keywords, { # in ['deadlock', 'kubernetes', 'migration'] }) && Retries < 2"
 ----------------------------------------------------------------------------------------
 
@@ -528,22 +606,27 @@ To apply this recommendation with automatic backup:
 ========================================================================================
 ```
 
-#### Step 3: Understand the Signals in the Report
-* **Optimal Local Context Threshold (e.g. `24,000 tokens`)**: The exact token boundary where keeping requests on your local GPU begins costing more in developer retries than the modest API cost of escalating to cloud (bounded by the model's `max_context`).
-* **Multimodal Vision & Tool Call Status**: Reports whether local image or tool execution experiences failure spikes. If $\sim 0\%$ failures are recorded, modalities remain enabled for local processing without adding `!HasImages` or `!HasTools`.
-* **High-Friction Keywords (e.g. `['deadlock', 'kubernetes']`)**: Domains where the local model exhibited an odds ratio $\ge 1.5\times$ baseline retry rate. Nacho Flow synthesizes an exclusion rule to route these specific concepts directly to cloud reasoning.
-* **Preserved Guardrails (e.g. `Retries < 2`)**: Existing user conditions and escalation guards are automatically preserved via AST parsing.
-
-#### Step 4: Apply Recommendations Automatically
-To update your `config.yaml` with the synthesized rule:
+#### Step 3: Apply Recommendations Automatically
 ```bash
+# Applies the synthesized rule to config.yaml and creates an automatic timestamped backup
 nacho-flow tune --apply
 ```
 ```text
 ✅ SUCCESS: Successfully updated config.yaml with optimal rules!
-   Backup saved at: config.yaml.bak.20260824-164500
+   Backup saved at: config.yaml.bak.20260923-000500
    Restart or reload nacho-flow to activate changes.
 ```
+
+#### CLI Options Reference:
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `--strategy` | `min_conflicts` | Optimization engine: `min_conflicts` (v3 multi-tier CSP heuristic) or `grid_sweep` / `cost_penalty` (legacy v2 single-tier). |
+| `--vram-gb` | `0` | Target local GPU VRAM ceiling in GB (e.g. `8`, `16`, `24`; `0` = infer from current model). |
+| `--max-sessions` | `0` | Maximum complete multi-turn sessions to analyze (`0` = all). Replaces turn-level `--sample`. |
+| `--config` | `config.yaml` | Path to target configuration file to inspect and update. |
+| `--traffic-log` | `logs/traffic.jsonl` | Path to historical traffic JSONL log file. |
+| `--format` | `text` | Output format: `text` (human-readable terminal report) or `json` (machine-readable). |
+| `--apply` | `false` | Atomically writes synthesized rules to config file with `.bak.<timestamp>` backup. |
 
 > [!TIP]
 > **1-Click Auto-Tuning in VS Code**: You can also trigger the empirical optimizer, review recommended rule diffs, and hot-reload `config.yaml` with one click directly from the **Nacho Flow Analytics Dashboard** webview inside the [VS Code Companion Extension](EXTENSION_USER_GUIDE.md).
@@ -552,14 +635,35 @@ nacho-flow tune --apply
 
 ---
 
-### 6.3 Advanced Tuning CLI Options
+### 6.4 High-Throughput 1M-Statement Stress Testing (`nacho_stress`)
 
-| Flag | Default | Description |
-| :--- | :--- | :--- |
-| `--config <path>` | `config.yaml` | Path to the target configuration file to inspect and update. |
-| `--traffic-log <path>` | `logs/traffic.jsonl` | Path to the historical traffic JSONL log file. |
-| `--sample <N>` | `5000` | Maximum number of historical prompt records to analyze. |
-| `--apply` | `false` | Atomically writes the optimized rule to `config.yaml` with a timestamped `.bak` backup. |
+To verify the speed and zero-allocation characteristics of the multi-tier replay engine on your local hardware, Nacho Flow includes the standalone `nacho_stress` utility:
+
+```bash
+# Generate and replay 1,000,000 synthetic turn statements
+go run ./cmd/util/nacho_stress -turns 1000000 -runs 3
+```
+
+**Output**:
+```text
+=================================================================================
+   🌶️ NACHO-FLOW ENGINE STRESS TEST & 1M STATEMENT LOAD BENCHMARK
+=================================================================================
+  Target Statements : 1000000
+  PRNG Seed         : 42
+  OS / Architecture : windows / amd64 (GOMAXPROCS=16)
+---------------------------------------------------------------------------------
+[1/3] Synthesizing 1000000 realistic telemetry turns in memory...
+      Generated 166667 sessions in 3.65s (Dataset Heap: 147.2 MB)
+[2/3] Executing 3 multi-tier fleet cascade replay runs across 1,000,000 statements...
+      Run 1: 25.12 ms (39.81 M statements/sec) | Allocs: 0 B
+      Run 2: 24.89 ms (40.18 M statements/sec) | Allocs: 0 B
+      Run 3: 24.95 ms (40.08 M statements/sec) | Allocs: 0 B
+      AVERAGE REPLAY: 24.99 ms (40.02 M statements/sec)
+[3/3] Evaluating full fleet conflict attribution on 1,000,000 statements...
+      Conflict Score: 12450.00 in 25.40 ms (0 allocs)
+=================================================================================
+```
 
 ---
 

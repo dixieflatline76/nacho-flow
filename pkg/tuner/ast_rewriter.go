@@ -13,15 +13,19 @@ import (
 
 var (
 	tokenClauseRegex    = regexp.MustCompile(`(?i)^\s*tokens\s*[<>=]`)
+	retriesClauseRegex  = regexp.MustCompile(`(?i)^\s*(retries\s*[<>=!]+|!?isretry)`)
 	modalityClauseRegex = regexp.MustCompile(`(?i)^!?\s*has(images|tools)$`)
 	keywordClauseRegex  = regexp.MustCompile(`(?i)any\s*\(\s*keywords\s*,`)
 )
 
 // RewriteRuleAST synthesizes an optimal expr expression while preserving existing custom guardrails
-// (e.g. Retries < 2, !IsRetry, custom tags) from the existing tier expression.
-func RewriteRuleAST(existingWhen string, newThreshold int, frictionKws []string, restrictImages, restrictTools bool) (string, error) {
-	if newThreshold <= 0 {
-		return "", fmt.Errorf("optimal threshold must be positive, got %d", newThreshold)
+// from the existing tier expression.
+func RewriteRuleAST(existingWhen string, newThreshold int, optimalRetries int, frictionKws []string, restrictImages, restrictTools bool) (string, error) {
+	if newThreshold < 0 {
+		return "", fmt.Errorf("optimal threshold cannot be negative, got %d", newThreshold)
+	}
+	if newThreshold == 0 && tokenClauseRegex.MatchString(existingWhen) {
+		return "", fmt.Errorf("optimal threshold must be positive for token-constrained tier, got %d", newThreshold)
 	}
 
 	// 1. Extract preserved clauses from existing expression
@@ -39,7 +43,7 @@ func RewriteRuleAST(existingWhen string, newThreshold int, frictionKws []string,
 		clauses := splitConjuncts(cleanExisting)
 		for _, c := range clauses {
 			cTrimmed := strings.TrimSpace(c)
-			if isAutoTunableClause(cTrimmed) {
+			if isAutoTunableClause(cTrimmed, optimalRetries > 0) {
 				continue
 			}
 			if cTrimmed != "" {
@@ -51,8 +55,15 @@ func RewriteRuleAST(existingWhen string, newThreshold int, frictionKws []string,
 	// 2. Build updated clauses
 	var clauses []string
 
-	// Primary token bound
-	clauses = append(clauses, fmt.Sprintf("Tokens < %d", newThreshold))
+	// Primary token bound (only if positive)
+	if newThreshold > 0 {
+		clauses = append(clauses, fmt.Sprintf("Tokens < %d", newThreshold))
+	}
+
+	// Tuned retry bound
+	if optimalRetries > 0 {
+		clauses = append(clauses, fmt.Sprintf("Retries < %d", optimalRetries))
+	}
 
 	// Empirical Modalities
 	if restrictImages {
@@ -77,6 +88,13 @@ func RewriteRuleAST(existingWhen string, newThreshold int, frictionKws []string,
 
 	// Append preserved custom guardrails
 	clauses = append(clauses, preserved...)
+
+	if len(clauses) == 0 {
+		if cleanExisting != "" {
+			return cleanExisting, nil
+		}
+		return "true", nil
+	}
 
 	// Join into unified expression
 	result := strings.Join(clauses, " && ")
@@ -155,10 +173,13 @@ func splitConjuncts(exprStr string) []string {
 	return parts
 }
 
-// isAutoTunableClause returns true if a conjunct is managed directly by the optimizer (Tokens, Modalities, Keywords).
-func isAutoTunableClause(clause string) bool {
+// isAutoTunableClause returns true if a conjunct is managed directly by the optimizer (Tokens, Retries, Modalities, Keywords).
+func isAutoTunableClause(clause string, tuningRetries bool) bool {
 	c := strings.TrimSpace(clause)
 	if tokenClauseRegex.MatchString(c) {
+		return true
+	}
+	if tuningRetries && retriesClauseRegex.MatchString(c) {
 		return true
 	}
 	if modalityClauseRegex.MatchString(c) {

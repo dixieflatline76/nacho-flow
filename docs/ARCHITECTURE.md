@@ -293,20 +293,46 @@ type PricingProvider interface {
 
 ---
 
-## 5. Autonomous Rule Optimization Subsystem (`pkg/tuner`)
+## 5. Autonomous Multi-Tier Rule Optimization Subsystem (`pkg/tuner`)
 
-The auto-tuning engine uses an **Advisory-First**, pure Go empirical cost-penalty tuning architecture:
+The auto-tuning engine uses an **Advisory-First**, pure Go empirical Constraint Satisfaction (CSP) architecture:
+
+```mermaid
+flowchart TD
+    classDef comp fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff;
+    classDef opt fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff;
+    classDef ast fill:#2e1065,stroke:#a855f7,stroke-width:2px,color:#fff;
+
+    Log["<b>Passive Telemetry Logger</b><br/>logs/traffic.jsonl (Zero Code / PII)"]:::comp --> Grouper["<b>Session Grouper</b><br/>Reconstructs complete multi-turn sessions"]:::comp
+    Grouper --> Bridge["<b>Config Bridge & AST Extractor</b><br/>Extracts tier bounds, guards & keyword AST"]:::ast
+    Bridge --> Replay["<b>Zero-Alloc Fleet Replay Engine</b><br/>1M statements in 25ms (0 B/op)"]:::opt
+    Replay --> Conflict["<b>Fractional Conflict Evaluator</b><br/>Weights spend, retries & hard monotonicity (+Inf)"]:::opt
+    Conflict --> Solver["<b>Min-Conflicts CSP Solver</b><br/>6D local search repair heuristic"]:::opt
+    Solver --> Dominance["<b>Pareto Fleet Dominance Engine</b><br/>Verifies cost, latency & retry optimality"]:::opt
+    Dominance --> Distiller["<b>Symbolic Distiller & Rewriter</b><br/>AST-compiles mathematically optimal expr rules"]:::ast
+    Distiller --> Advisor["<b>Advisory Reporter & Atomic Applier</b><br/>Terminal diff report + .bak timestamped backup"]:::comp
+```
 
 1. **Passive Telemetry Collector (`pkg/telemetry/traffic_log.go`)**:  
-   An asynchronous `ObservationSink` capturing non-blocking metadata in `logs/traffic.jsonl` (zero code, zero prompt content).
-2. **Mathematical Optimizer (`pkg/tuner/optimizer.go`)**:  
-   - Computes keyword friction odds ratios to isolate high-risk domains for local models.
-   - Evaluates a weighted cost-penalty sweep across candidate thresholds to maximize local GPU utilization while penalizing prompt retries.
-3. **Symbolic Distiller (`pkg/tuner/distiller.go`)**:  
-   - Formulates and AST-compiles mathematically optimal `expr` expressions.
-4. **Advisory & Atomic Applier (`pkg/tuner/advisor.go`, `pkg/tuner/applier.go`)**:  
-   - Renders formatted terminal comparison reports (`nacho-flow tune`).
-   - Supports atomic config file replacement with automatic `.bak.<timestamp>` creation (`nacho-flow tune --apply`).
+   An asynchronous `ObservationSink` capturing non-blocking session metadata in `logs/traffic.jsonl` (zero code, zero prompt content, zero PII).
+2. **Session Grouper & Trajectory Model (`pkg/tuner/session_grouper.go`)**:  
+   Reconstructs fragmented prompt records into chronological session trajectories (`SessionTrajectory`), tracking multi-turn state snowballs and error recovery loops.
+3. **Config Bridge & AST Extractor (`pkg/tuner/config_bridge.go`)**:  
+   Bi-directional adapter that parses existing YAML routing tiers into discrete solver variables (`Tokens`, `Retries`, `HasTools`, `HasImages`, `Keywords`), preserving custom clauses and guardrails.
+4. **Zero-Allocation Multi-Tier Replay Engine (`pkg/tuner/multi_tier_replay.go`)**:  
+   Replays prompt trajectories against candidate multi-tier configurations at **~40,000,000 statements/sec** (evaluates 1,000,000 turns in 25ms with 0 heap allocations) using rolling evaluation buffers (`MultiTierReplayResult.Reset()`).
+5. **Fractional Conflict Evaluator (`pkg/tuner/conflict_evaluator.go`)**:  
+   Evaluates total fleet conflict across soft objectives (API spend, retry frustration penalties, average turn depth) and hard constraints (tier monotonicity $T_0 \le T_1 \le ... \le T_n$, unbounded default tier fallback, and VRAM ceilings). Distributes penalties proportionally across contributing variables.
+6. **Min-Conflicts CSP Optimizer (`pkg/tuner/min_conflicts.go`)**:  
+   Applies heuristic local search to iteratively select conflicting variables and flip them to the value minimizing overall fleet conflict until convergence.
+7. **Pareto Fleet Dominance Evaluator (`pkg/tuner/fleet_dominance.go`)**:  
+   Verifies that recommended configurations strictly Pareto-dominate the current baseline across cost, latency, and retry rate, while flagging static rule conflicts (e.g. shadowed or redundant tiers).
+8. **Symbolic Distiller & AST Rewriter (`pkg/tuner/distiller.go`, `pkg/tuner/ast_rewriter.go`)**:  
+   Re-synthesizes clean, idiomatic `expr-lang/expr` expressions via AST mutation, seamlessly replacing threshold constants and injecting keyword exclusions while preserving custom user clauses.
+9. **Advisory & Atomic Applier (`pkg/tuner/advisor.go`, `pkg/tuner/applier.go`)**:  
+   Renders formatted terminal comparison reports (`nacho-flow tune`) and performs atomic configuration replacements with automatic `.bak.<timestamp>` file backups (`nacho-flow tune --apply`).
+10. **Out-of-Process Tuning Runner (`pkg/server/tuning_runner.go`)**:  
+    Enables the VS Code Analytics Dashboard to trigger background optimizations in process isolation, streaming live JSON progress updates over server-sent events.
 
 ---
 

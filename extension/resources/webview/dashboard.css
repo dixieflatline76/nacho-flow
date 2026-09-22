@@ -233,29 +233,374 @@ body {
 	background-color: #d97706;
 }
 
+/* --- Auto-Tuner v2 Inline Inspector Card --- */
 .tuner-banner {
-	background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(147, 51, 234, 0.15));
-	border: 1px solid var(--vscode-focusBorder, #3b82f6);
-	border-radius: 6px;
-	padding: 16px;
-	margin-bottom: 20px;
+	background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(99, 102, 241, 0.08));
+	border: 1px solid rgba(56, 189, 248, 0.35);
+	border-radius: 8px;
+	padding: 20px;
+	margin-bottom: 24px;
+	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 0 15px rgba(56, 189, 248, 0.05);
+	backdrop-filter: blur(10px);
+	transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tuner-result {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
 }
 
 .tuner-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 12px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	padding-bottom: 14px;
 }
 
-.tuner-header h3 {
+.tuner-title-group {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.tuner-title-group h3 {
 	margin: 0;
 	font-size: 16px;
+	font-weight: 600;
+	color: #f1f5f9;
+	letter-spacing: -0.01em;
+}
+
+.tuner-hero-badges {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.tuner-badge {
+	font-size: 11px;
+	font-weight: 600;
+	padding: 3px 10px;
+	border-radius: 12px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+}
+
+.tuner-retries-badge {
+	background: rgba(16, 185, 129, 0.15);
+	color: #34d399;
+	border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.tuner-savings-badge {
+	background: rgba(245, 158, 11, 0.15);
+	color: #fbbf24;
+	border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+/* 2-Column Responsive Dynamics Grid */
+.tuner-dynamics-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 16px;
+}
+
+@media (max-width: 768px) {
+	.tuner-dynamics-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+.tuner-card-col {
+	background: rgba(15, 23, 42, 0.4);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 6px;
+	padding: 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.tuner-card-title {
+	font-size: 12px;
+	font-weight: 600;
+	color: #94a3b8;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 0 4px 0;
+}
+
+.tuner-metrics-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.tuner-metric-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 12px;
+}
+
+.tuner-metric-label {
+	color: #94a3b8;
+}
+
+.tuner-metric-val {
+	font-weight: 600;
+	color: #e2e8f0;
+}
+
+/* Model Recovery Meters */
+.recovery-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.recovery-item {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.recovery-header {
+	display: flex;
+	justify-content: space-between;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.recovery-model-name {
+	color: #cbd5e1;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.recovery-pct {
+	font-weight: 600;
+}
+
+.recovery-bar-track {
+	height: 6px;
+	background: rgba(255, 255, 255, 0.08);
+	border-radius: 3px;
+	overflow: hidden;
+}
+
+.recovery-bar-fill {
+	height: 100%;
+	border-radius: 3px;
+	transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.recovery-subtext {
+	font-size: 10px;
+	color: #64748b;
+}
+
+.recovery-empty {
+	font-size: 12px;
+	color: #94a3b8;
+	font-style: italic;
+	padding: 8px 0;
+}
+
+/* Friction & Signals Row */
+.tuner-signals-container {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.tuner-signals-pills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.signal-pill {
+	font-size: 11px;
+	padding: 4px 10px;
+	border-radius: 4px;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-weight: 500;
+}
+
+.signal-pill-accent {
+	background: rgba(56, 189, 248, 0.12);
+	color: #38bdf8;
+	border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.signal-pill-clean {
+	background: rgba(16, 185, 129, 0.12);
+	color: #34d399;
+	border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.signal-pill-warning {
+	background: rgba(239, 68, 68, 0.12);
+	color: #f87171;
+	border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.signal-pill-neutral {
+	background: rgba(148, 163, 184, 0.12);
+	color: #94a3b8;
+	border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.signal-pill-benchmark {
+	background: rgba(168, 85, 247, 0.12);
+	color: #c084fc;
+	border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.signal-pill-rate {
+	background: rgba(234, 179, 8, 0.12);
+	color: #facc15;
+	border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.diff-neutral {
+	background: rgba(148, 163, 184, 0.08);
+	color: #94a3b8;
+}
+
+.diff-neutral .diff-desc {
+	font-style: italic;
+}
+
+.tuner-diffs-container {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.tier-pills-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+}
+
+/* Git Diff Viewer Box */
+.tuner-diff-wrapper {
+	background: #090d16;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 6px;
+	overflow: hidden;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.tuner-diff-header {
+	background: rgba(255, 255, 255, 0.04);
+	padding: 6px 12px;
+	font-size: 11px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.diff-tier-label {
+	color: #94a3b8;
+}
+
+.diff-tier-label strong {
+	color: #f8fafc;
+}
+
+.diff-badge {
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: #64748b;
+}
+
+.tuner-diff-code {
+	padding: 10px 12px;
+	font-size: 12px;
+	line-height: 1.5;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.diff-line {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 8px;
+	border-radius: 4px;
+	line-height: 1.5;
+	word-break: break-all;
+}
+
+.diff-del {
+	background: rgba(239, 68, 68, 0.12);
+	color: #fca5a5;
+}
+
+.diff-add {
+	background: rgba(16, 185, 129, 0.15);
+	color: #86efac;
+}
+
+.diff-sign {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-style: normal;
+	font-weight: bold;
+	user-select: none;
+	flex-shrink: 0;
+	width: 18px;
+	height: 18px;
+	line-height: 1;
+	text-align: center;
+}
+
+.diff-desc {
+	display: inline-flex;
+	align-items: center;
+	line-height: 1.5;
+}
+
+.diff-del .diff-sign {
+	color: #ef4444;
+}
+
+.diff-add .diff-sign {
+	color: #10b981;
 }
 
 .tuner-actions {
-	margin-top: 12px;
+	margin-top: 4px;
 	display: flex;
-	gap: 10px;
+	align-items: center;
+	gap: 12px;
+}
+
+.btn-glow {
+	box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+	font-weight: 600;
 }
 
 .dashboard-grid {

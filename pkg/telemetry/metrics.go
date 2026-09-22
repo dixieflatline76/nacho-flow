@@ -127,6 +127,15 @@ type Observation struct {
 	NTSTokensSaved            int
 	NTSBytesSaved             int
 	ObservedAt                time.Time
+
+	// Session-aware fields for Auto-Tuner v2
+	SessionKey         string
+	RootPromptHash     uint64
+	Retries            int
+	HasWriteCapability bool
+	HasWriteProgress   bool
+	HasTestPass        bool
+	HasTestFail        bool
 }
 
 type minuteBucket struct {
@@ -609,6 +618,13 @@ func (s *StatsTracker) worker() {
 				FairyDustEntry:            obs.FairyDustEntry,
 				NTSTokensSaved:            obs.NTSTokensSaved,
 				NTSBytesSaved:             obs.NTSBytesSaved,
+				SessionID:                 obs.SessionKey,
+				RootPromptHash:            obs.RootPromptHash,
+				Retries:                   obs.Retries,
+				HasWriteCapability:        obs.HasWriteCapability,
+				HasWriteProgress:          obs.HasWriteProgress,
+				HasTestPass:               obs.HasTestPass,
+				HasTestFail:               obs.HasTestFail,
 			}
 			for _, sink := range *sinksPtr {
 				sink.Emit(record)

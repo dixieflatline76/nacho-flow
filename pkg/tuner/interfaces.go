@@ -1,6 +1,8 @@
 package tuner
 
 import (
+	"context"
+
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
@@ -10,8 +12,12 @@ type TuningPolicy struct {
 	Name                string  `json:"name"`
 	CostPerMillionCloud float64 `json:"cost_per_million_cloud"`
 	RetryPenaltyUSD     float64 `json:"retry_penalty_usd"`
+	CostWeight          float64 `json:"cost_weight,omitempty"` // Weight for cloud cost (defaults to 1.0)
+	TurnsWeight         float64 `json:"turns_weight"`          // Penalty per average session turn
 	MinOccurrences      int     `json:"min_occurrences"`
 	OddsRatioThreshold  float64 `json:"odds_ratio_threshold"`
+	MinSessions         int     `json:"min_sessions"`                                           // Minimum sessions for statistical significance
+	LocalVRAMGB         int     `json:"local_vram_gb,omitempty" yaml:"local_vram_gb,omitempty"` // Target local GPU VRAM ceiling in GB (0 = infer)
 }
 
 // DefaultTuningPolicy returns the recommended balanced flow-state protection policy.
@@ -20,31 +26,59 @@ func DefaultTuningPolicy() TuningPolicy {
 		Name:                "balanced_flow_state",
 		CostPerMillionCloud: 2.50,
 		RetryPenaltyUSD:     2.00,
+		CostWeight:          1.0,
+		TurnsWeight:         0.10,
 		MinOccurrences:      10,
 		OddsRatioThreshold:  1.5,
+		MinSessions:         5,
+		LocalVRAMGB:         0,
 	}
 }
 
-// TuningResult captures the mathematical and empirical output of a tuning strategy run.
+// TierTuningResult captures the tuned routing policy for an individual tier.
+type TierTuningResult struct {
+	TierName                 string   `json:"tier_name"`
+	Model                    string   `json:"model,omitempty"`
+	OriginalModel            string   `json:"original_model,omitempty"`
+	RecommendedModel         string   `json:"recommended_model,omitempty"`
+	ModelBenefit             string   `json:"model_benefit,omitempty"`
+	CodingIndex              float64  `json:"coding_index,omitempty"`
+	ToolReliability          float64  `json:"tool_reliability,omitempty"`
+	PromptCostPerMillion     float64  `json:"prompt_cost_per_million,omitempty"`
+	CompletionCostPerMillion float64  `json:"completion_cost_per_million,omitempty"`
+	ComprehensiveRate        float64  `json:"comprehensive_rate,omitempty"`
+	IsDisabled               bool     `json:"is_disabled,omitempty"`
+	OptimalThreshold         int      `json:"optimal_threshold"`
+	OptimalRetries           int      `json:"optimal_retries"`
+	FrictionKeywords         []string `json:"friction_keywords"`
+	RestrictImages           bool     `json:"restrict_images"`
+	RestrictTools            bool     `json:"restrict_tools"`
+	PreservedClauses         []string `json:"preserved_clauses"`
+	OriginalRule             string   `json:"original_rule,omitempty"`
+	SynthesizedRule          string   `json:"synthesized_rule"`
+}
+
+// TuningResult captures the holistic fleet impact and per-tier policies.
 type TuningResult struct {
-	OptimalThreshold    int      `json:"optimal_threshold"`
-	FrictionKeywords    []string `json:"friction_keywords"`
-	RestrictImages      bool     `json:"restrict_images"`
-	RestrictTools       bool     `json:"restrict_tools"`
-	PreservedClauses    []string `json:"preserved_clauses"`
-	TargetTierName      string   `json:"target_tier_name"`
-	SynthesizedRule     string   `json:"synthesized_rule"`
-	CurrentCostUSD      float64  `json:"current_cost_usd"`
-	ProjectedCostUSD    float64  `json:"projected_cost_usd"`
-	ProjectedSavingsUSD float64  `json:"projected_savings_usd"`
-	RetriesEliminated   int      `json:"retries_eliminated"`
-	TotalSampleTurns    int      `json:"total_sample_turns"`
+	Tiers                    []TierTuningResult        `json:"tiers"`
+	DefaultTier              *TierTuningResult         `json:"default_tier,omitempty"`
+	CurrentCostUSD           float64                   `json:"current_cost_usd"`
+	ProjectedCostUSD         float64                   `json:"projected_cost_usd"`
+	ProjectedSavingsUSD      float64                   `json:"projected_savings_usd"`
+	RetriesEliminated        int                       `json:"retries_eliminated"`
+	TotalSampleTurns         int                       `json:"total_sample_turns"`
+	TotalSessions            int                       `json:"total_sessions"`
+	AvgTurnsPerSession       float64                   `json:"avg_turns_per_session"`
+	EscalationRate           float64                   `json:"escalation_rate"`
+	RecoveryStats            map[string]RecoveryStats  `json:"recovery_stats,omitempty"`
+	StaticDominanceConflicts []StaticDominanceConflict `json:"static_dominance_conflicts,omitempty"`
 }
 
 // OptimizationStrategy defines the contract for autonomous route tuning algorithms.
 type OptimizationStrategy interface {
 	Name() string
 	Optimize(records []telemetry.TurnRecord, currentConfig *contract.Config) (*TuningResult, error)
+	OptimizeWithContext(ctx context.Context, records []telemetry.TurnRecord, currentConfig *contract.Config) (*TuningResult, error)
 }
 
 // IsLocalTier returns true if the tier represents a local or on-prem inference engine.

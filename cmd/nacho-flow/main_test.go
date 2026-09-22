@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -1256,5 +1257,41 @@ func TestExecuteStartupDirectives_MalformedJSON(t *testing.T) {
 	}
 	if _, err := os.Stat(directiveFile); !os.IsNotExist(err) {
 		t.Fatalf("expected malformed directive file to be wiped, but it still exists")
+	}
+}
+
+func TestProgram_Run_NonInteractive_ConfigLoadError(t *testing.T) {
+	origInteractive := serviceInteractiveFunc
+	serviceInteractiveFunc = func() bool { return false }
+	defer func() { serviceInteractiveFunc = origInteractive }()
+
+	*configPathFlag = filepath.Join(t.TempDir(), "nonexistent.yaml")
+	defer func() { *configPathFlag = "" }()
+
+	p := &program{}
+	mock := &mockService{}
+	err := p.run(mock)
+	if err == nil {
+		t.Fatalf("expected error for missing config in non-interactive mode")
+	}
+}
+
+func TestFetchDeals_NetworkAndBadStatus(t *testing.T) {
+	// 1. Network error
+	_, err := fetchDeals("http://127.0.0.1:59999", "")
+	if err == nil {
+		t.Fatalf("expected connection error, got nil")
+	}
+
+	// 2. HTTP 500 error
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("internal error"))
+	}))
+	defer ts.Close()
+
+	_, err = fetchDeals(ts.URL, "")
+	if err == nil || !strings.Contains(err.Error(), "HTTP 500") {
+		t.Fatalf("expected HTTP 500 error, got %v", err)
 	}
 }

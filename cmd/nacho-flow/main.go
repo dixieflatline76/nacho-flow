@@ -252,7 +252,7 @@ func (p *program) run(s service.Service) error {
 	trafficLogger, err = telemetry.NewTrafficLogger(trafficLogPath, 5000)
 	if err == nil {
 		tracker.AddSink(trafficLogger)
-		if histRecords, rErr := telemetry.ReadRecords(trafficLogger.FilePath(), 50); rErr == nil && len(histRecords) > 0 {
+		if histRecords, rErr := telemetry.ReadCompleteSessions(trafficLogger.FilePath(), 10); rErr == nil && len(histRecords) > 0 {
 			for _, rec := range histRecords {
 				ringBuffer.Emit(rec)
 			}
@@ -292,7 +292,9 @@ func (p *program) run(s service.Service) error {
 	}
 	if trafficLogger != nil {
 		srvHandler.SetTrafficLogPath(trafficLogger.FilePath())
+		srvHandler.SetTrafficLogger(trafficLogger)
 	}
+	srvHandler.SetTuningRunner(server.NewProcessTuningRunner("", appLogger))
 	activeConfigPath := contract.DefaultConfigFileName
 	if *configPathFlag != "" {
 		activeConfigPath = *configPathFlag
@@ -428,8 +430,12 @@ func runTune(args []string) error {
 	tuneFlags := flag.NewFlagSet("tune", flag.ContinueOnError)
 	configPath := tuneFlags.String("config", "config.yaml", "Path to config.yaml file")
 	trafficLogPath := tuneFlags.String("traffic-log", "logs/traffic.jsonl", "Path to traffic log JSONL")
-	sampleLimit := tuneFlags.Int("sample", 5000, "Maximum historical prompt turns to analyze")
+	sampleLimit := tuneFlags.Int("sample", 0, "Deprecated: use -max-sessions (0 = all)")
+	maxSessions := tuneFlags.Int("max-sessions", 0, "Maximum complete sessions to analyze (0 = all complete sessions)")
+	formatFlag := tuneFlags.String("format", "text", "Output format: 'text' (human-readable report) or 'json' (machine-readable JSON)")
 	apply := tuneFlags.Bool("apply", false, "Apply recommended rule optimizations to config.yaml")
+	strategyFlag := tuneFlags.String("strategy", "min_conflicts", "Optimization strategy: 'min_conflicts' (v3 multi-tier) or 'grid_sweep' (v2 single-tier)")
+	vramGB := tuneFlags.Int("vram-gb", 0, "Target local GPU VRAM ceiling in GB for local model substitution recommendations (e.g. 8, 16, 24; 0 = infer from current model)")
 
 	if err := tuneFlags.Parse(args); err != nil {
 		return err
@@ -440,21 +446,43 @@ func runTune(args []string) error {
 		return fmt.Errorf("failed to load config at %s: %w", *configPath, err)
 	}
 
-	records, err := telemetry.ReadRecords(*trafficLogPath, *sampleLimit)
+	limitSessions := *maxSessions
+	if limitSessions == 0 && *sampleLimit > 0 {
+		limitSessions = *sampleLimit
+	}
+	records, err := telemetry.ReadCompleteSessions(*trafficLogPath, limitSessions)
 	if err != nil {
 		return fmt.Errorf("failed to read traffic log at %s: %w", *trafficLogPath, err)
+	}
+
+	var optimizer tuner.OptimizationStrategy
+	if *strategyFlag == "grid_sweep" || *strategyFlag == "cost_penalty" {
+		optimizer = tuner.NewCostPenaltyOptimizer()
+	} else {
+		policy := tuner.DefaultTuningPolicy()
+		if *vramGB > 0 {
+			policy.LocalVRAMGB = *vramGB
+		}
+		optimizer = tuner.NewMinConflictsOptimizer(policy)
+	}
+	result, err := optimizer.Optimize(records, cfg)
+	if err != nil {
+		return fmt.Errorf("optimization analysis failed: %w", err)
+	}
+
+	if *formatFlag == "json" {
+		data, err := json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("failed to marshal tuning result to JSON: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
 	}
 
 	if len(records) == 0 {
 		fmt.Printf("ℹ️  No historical traffic records found in %s.\n", *trafficLogPath)
 		fmt.Printf("   Run Nacho Flow under normal traffic to accumulate telemetry before tuning.\n")
 		return nil
-	}
-
-	optimizer := tuner.NewCostPenaltyOptimizer()
-	result, err := optimizer.Optimize(records, cfg)
-	if err != nil {
-		return fmt.Errorf("optimization analysis failed: %w", err)
 	}
 
 	// Generate and print human-readable report

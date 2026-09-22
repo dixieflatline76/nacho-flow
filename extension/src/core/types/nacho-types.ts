@@ -87,16 +87,30 @@ export interface ModelPricing {
 	completion_cost_per_million: number;
 }
 
+// Tier Tuning Result
+export interface TierTuningResult {
+	tier_name: string;
+	optimal_threshold: number;
+	optimal_retries: number;
+	friction_keywords: string[];
+	restrict_images: boolean;
+	restrict_tools: boolean;
+	preserved_clauses?: string[];
+	original_rule?: string;
+	synthesized_rule: string;
+}
+
 // Tuning Result
 export interface TuningResult {
-	optimal_threshold: number;
-	friction_keywords: string[];
-	synthesized_rule: string;
+	tiers: TierTuningResult[];
 	current_cost_usd: number;
 	projected_cost_usd: number;
 	projected_savings_usd: number;
 	retries_eliminated: number;
 	total_sample_turns: number;
+	total_sessions?: number;
+	avg_turns_per_session?: number;
+	escalation_rate?: number;
 }
 
 // Dashboard SSOT Snapshot State

@@ -20,7 +20,7 @@ Indeed, popular enterprise gateways like **LiteLLM** add **$8.0\text{--}25.0\tex
 Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 - **Raw Pass-Through Proxy Latency**: **$0.184\text{ ms}$** ($184.7\,\mu\text{s}$)
 - **Full Deep-Inspection Latency** (Bearer Auth + AST Rules + Multi-Model Normalization): **$0.205\text{ ms}$** ($205.9\,\mu\text{s}$)
-- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,072\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
+- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,058\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
 - **Idle Memory Footprint**: **$< 25\text{ MB}$** (peaking under $111\text{ MB}$ at $500$ simultaneous client streams).
 
 | Gateway / Architecture | Runtime Engine | Inspection Depth | Added Latency (Overhead) | Relative Speed vs. Python |
@@ -300,11 +300,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$28219.8\text{ req/s}$** | $1.32\text{ ms}$ | $7.60\text{ ms}$ | $117.2\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$25058.1\text{ req/s}$** | $3.00\text{ ms}$ | $16.47\text{ ms}$ | $150.6\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$26434.2\text{ req/s}$** | $7.01\text{ ms}$ | $50.63\text{ ms}$ | $111.3\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$24078.1\text{ req/s}$** | $16.93\text{ ms}$ | $73.45\text{ ms}$ | $181.4\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$25211.7\text{ req/s}$** | $37.67\text{ ms}$ | $72.03\text{ ms}$ | $165.5\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$26686.9\text{ req/s}$** | $1.47\text{ ms}$ | $8.00\text{ ms}$ | $117.0\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$25525.1\text{ req/s}$** | $3.00\text{ ms}$ | $15.68\text{ ms}$ | $80.7\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$24322.4\text{ req/s}$** | $8.12\text{ ms}$ | $45.88\text{ ms}$ | $128.2\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$26081.8\text{ req/s}$** | $17.41\text{ ms}$ | $43.67\text{ ms}$ | $110.8\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$25855.6\text{ req/s}$** | $32.68\text{ ms}$ | $91.18\text{ ms}$ | $215.8\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 #### High-Concurrency Scaling Analysis:
@@ -329,13 +329,33 @@ Diagnosing and eliminating these mutexes in favor of lock-free RCU atomic pointe
 | **Cycle Breaker Pool** | `BenchmarkCycleBreaker_PoolAcquireRelease` | **$51.83\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **Directive Filter** | `BenchmarkHasDirective_Bailout` | **$56.95\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **Prose Bailout** | `BenchmarkNormalize_PureProse_FastBailout` | **$76.05\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
+| **Session Replay (5 Turns)** | `BenchmarkReplayMultiTierSession_ZeroAlloc` | **$74.71\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **Tail Buffer Append** | `BenchmarkTailBuffer_Append` | **$243.4\text{ ns}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **AST Evaluator** | `BenchmarkExprEvaluator` | **$685.2\text{ ns}$** | $824\text{ B/op}$ | 10 allocs |
 | **Hermes XML Parser** | `BenchmarkNormalize_HermesXML` | **$2,640.0\text{ ns}$** | $1,328\text{ B/op}$ | 27 allocs |
 | **DeepSeek R1 Normalizer**| `BenchmarkNormalize_DeepSeekR1` | **$3,908.0\text{ ns}$** | $1,801\text{ B/op}$ | 35 allocs |
 | **SSE Stream Chunk** | `BenchmarkSSE_NonReasoning_FastPath` | **$2,323.0\text{ ns}$** | $1,010\text{ B/op}$ | 17 allocs |
+| **Fleet Replay (1M Turns)** | `BenchmarkReplayFleet_1M_Statements` | **$24.95\text{ ms}$** | **$0\text{ B/op}$** | **0 allocs** |
+| **Conflict Evaluator (1M)**| `BenchmarkEvaluateConflict_1M_Statements`| **$25.40\text{ ms}$** | **$0\text{ B/op}$** | **0 allocs** |
 | **End-to-End Raw Proxy** | `BenchmarkProxy_RawPassThrough` | **$184.7\,\mu\text{s}$** | $24.4\text{ KB/op}$ | 303 allocs |
 | **End-to-End Normalized**| `BenchmarkProxy_ToolNormalization` | **$205.9\,\mu\text{s}$** | $30.7\text{ KB/op}$ | 406 allocs |
+
+### High-Throughput Fleet Simulation & CSP Benchmark (1,000,000 Turn Statements)
+
+To validate that the autonomous tuner can evaluate thousands of candidate configurations over massive historical logs without garbage collection pauses, the simulation engine (`pkg/tuner/multi_tier_replay.go` and `cmd/util/nacho_stress`) employs a pure zero-allocation cascade architecture:
+
+```text
+=================================================================================
+   🌶️ NACHO-FLOW ENGINE STRESS TEST & 1M STATEMENT LOAD BENCHMARK
+=================================================================================
+  Target Statements : 1,000,000 synthetic turns in memory
+  Replay Throughput : 40,020,000 statements / sec (24.99 ms elapsed)
+  Heap Allocations  : 0 B / op (0 allocations across all cascade checks)
+  Conflict Eval 1M  : 25.40 ms (0 allocations)
+=================================================================================
+```
+
+By pre-allocating trajectory memory and recycling rolling evaluation buffers (`MultiTierReplayResult.Reset()`), Nacho Flow executes multi-tier constraint satisfaction local search in $< 100\text{ ms}$ across tens of thousands of developer session histories.
 
 ---
 
