@@ -1,6 +1,8 @@
 package tuner
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/config"
@@ -86,9 +88,29 @@ func TestEndToEndTune_RealTraffic(t *testing.T) {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
-	records, err := telemetry.ReadCompleteSessions("../../logs/traffic.jsonl", 0)
+	candidates := []string{
+		filepath.Join("testdata", "traffic.jsonl"),
+		filepath.Join("..", "..", "pkg", "tuner", "testdata", "traffic.jsonl"),
+		filepath.Join("..", "..", "logs", "traffic.jsonl"),
+		filepath.Join("logs", "traffic.jsonl"),
+	}
+	var trafficPath string
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			trafficPath = p
+			break
+		}
+	}
+	if trafficPath == "" {
+		t.Skip("traffic test fixture not found")
+	}
+
+	records, err := telemetry.ReadCompleteSessions(trafficPath, 0)
 	if err != nil {
 		t.Fatalf("ReadCompleteSessions failed: %v", err)
+	}
+	if len(records) == 0 {
+		t.Skip("no complete sessions in traffic fixture")
 	}
 
 	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())

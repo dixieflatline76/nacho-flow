@@ -16,6 +16,8 @@ func loadRealTrafficData(tb testing.TB) []telemetry.TurnRecord {
 	tb.Helper()
 	// Try multiple relative locations for test execution flexibility
 	candidates := []string{
+		filepath.Join("testdata", "traffic.jsonl"),
+		filepath.Join("..", "..", "pkg", "tuner", "testdata", "traffic.jsonl"),
 		filepath.Join("..", "..", "logs", "traffic.jsonl"),
 		filepath.Join("logs", "traffic.jsonl"),
 		filepath.Join("..", "telemetry", "testdata", "historical_turns.json"),
