@@ -3,6 +3,8 @@ package tuner
 import (
 	"fmt"
 	"math"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
 // ConflictReport captures the holistic conflict score and per-variable attribution ledger.
@@ -281,8 +283,30 @@ func EvaluateFleetWithAttribution(
 
 					// Candidate 5: Model Substitution (underperforming benchmark or missing modality)
 					canSubstituteModel := true
-					if targetTier.IsLocal && (policy == nil || policy.LocalVRAMGB == 0) {
-						canSubstituteModel = false
+					if targetTier.IsLocal {
+						if policy == nil || policy.LocalVRAMGB == 0 {
+							canSubstituteModel = false
+						} else {
+							hasModalityMismatch := (turn.HasImages && !targetTier.SupportsVision) || (turn.HasTools && !targetTier.SupportsTools)
+							if !hasModalityMismatch {
+								betterExists := false
+								candidates := curation.DefaultManager().ParetoCandidates(
+									curation.RoleCodingWorkhorse,
+									true,
+									targetTier.Model,
+									policy.LocalVRAMGB,
+								)
+								for _, cand := range candidates {
+									if cand.CodingIndex > targetTier.CodingIndex {
+										betterExists = true
+										break
+									}
+								}
+								if !betterExists {
+									canSubstituteModel = false
+								}
+							}
+						}
 					}
 					if canSubstituteModel && targetTier.Model != "" && (targetTier.CodingIndex < 70.0 || (turn.HasImages && !targetTier.SupportsVision) || (turn.HasTools && !targetTier.SupportsTools)) {
 						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:model", selectedTierIdx))

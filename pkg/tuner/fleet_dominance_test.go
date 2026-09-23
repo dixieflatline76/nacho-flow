@@ -167,6 +167,58 @@ func TestEndToEndTune_RealTraffic(t *testing.T) {
 	}
 }
 
+func TestEndToEndTune_RealTraffic_WithVRAM16(t *testing.T) {
+	cfg, err := config.LoadConfig("../../config.yaml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	candidates := []string{
+		filepath.Join("testdata", "traffic.jsonl"),
+		filepath.Join("..", "..", "pkg", "tuner", "testdata", "traffic.jsonl"),
+		filepath.Join("..", "..", "logs", "traffic.jsonl"),
+		filepath.Join("logs", "traffic.jsonl"),
+	}
+	var trafficPath string
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			trafficPath = p
+			break
+		}
+	}
+	if trafficPath == "" {
+		t.Skip("traffic test fixture not found")
+	}
+
+	records, err := telemetry.ReadCompleteSessions(trafficPath, 0)
+	if err != nil {
+		t.Fatalf("ReadCompleteSessions failed: %v", err)
+	}
+	if len(records) == 0 {
+		t.Skip("no complete sessions in traffic fixture")
+	}
+
+	policy := DefaultTuningPolicy()
+	policy.LocalVRAMGB = 16
+	opt := NewMinConflictsOptimizer(policy)
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	// Local GPU Workhorse context cliff must still be tightened to 4000
+	localTier := res.Tiers[2]
+	if localTier.OptimalThreshold != 4000 {
+		t.Errorf("Expected local tier threshold to be optimized to 4000 even with LocalVRAMGB=16, got %d", localTier.OptimalThreshold)
+	}
+	if localTier.SynthesizedRule != "Tokens < 4000 && Retries < 2" {
+		t.Errorf("Expected local tier rule to tighten to 4000 tokens, got %q", localTier.SynthesizedRule)
+	}
+	if res.RetriesEliminated <= 0 {
+		t.Errorf("Expected retries eliminated > 0, got %d", res.RetriesEliminated)
+	}
+}
+
 func TestAnalyzeFleetDominance_EscalationModelDuplication(t *testing.T) {
 	// Cascade where Tier 4 duplicates the model of Tier 3 on an escalation path (Retries >= 5 after Retries < 5)
 	cfg := MultiTierConfig{

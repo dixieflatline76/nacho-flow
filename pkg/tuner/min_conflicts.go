@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -177,28 +178,40 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 			lastBest = report.TotalConflict
 		}
 
-		// Pick variable to repair
-		targetVar := report.MaxConflictVar
-		if len(report.VariableConflicts) == 0 && targetVar == "" {
+		// Collect candidate variables sorted by conflict descending
+		type varConflict struct {
+			name     string
+			conflict float64
+		}
+		var candidateVars []varConflict
+		for k, v := range report.VariableConflicts {
+			if v > 0 {
+				candidateVars = append(candidateVars, varConflict{name: k, conflict: v})
+			}
+		}
+		if len(candidateVars) == 0 && report.MaxConflictVar != "" {
+			candidateVars = append(candidateVars, varConflict{name: report.MaxConflictVar, conflict: report.TotalConflict})
+		}
+		if len(candidateVars) == 0 {
 			break
 		}
+
+		sort.Slice(candidateVars, func(i, j int) bool {
+			return candidateVars[i].conflict > candidateVars[j].conflict
+		})
 
 		// Epsilon-greedy perturbation to escape local optima
-		if rng.Float64() < epsilon && len(report.VariableConflicts) > 0 {
-			var keys []string
-			for k := range report.VariableConflicts {
-				keys = append(keys, k)
-			}
-			targetVar = keys[rng.Intn(len(keys))]
-		}
-
-		if targetVar == "" {
-			break
+		if rng.Float64() < epsilon && len(candidateVars) > 1 {
+			randIdx := 1 + rng.Intn(len(candidateVars)-1)
+			candidateVars[0], candidateVars[randIdx] = candidateVars[randIdx], candidateVars[0]
 		}
 
 		// Greedily reassign targetVar to minimize fleet conflict
 		bestValCfg := copyMultiTierConfig(&currentCfg)
 		minValConflict := report.TotalConflict
+
+		for _, cv := range candidateVars {
+			targetVar := cv.name
 
 		if strings.HasPrefix(targetVar, "tier_") {
 			// Variable format: "tier_<idx>:<attr>"
@@ -477,6 +490,11 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 					minValConflict = c
 					bestValCfg = candCfg
 				}
+			}
+		}
+
+			if minValConflict < report.TotalConflict {
+				break
 			}
 		}
 
