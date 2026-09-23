@@ -214,7 +214,12 @@ function buildDOM(): void {
     <div id="tuner-banner" style="display:none"></div>
     <span id="active-preset-badge"></span>
     <span id="server-version-chip"></span>
-    <button id="btn-edit-config"><svg></svg> config.yaml</button>
+    <button id="btn-edit-config"><svg></svg> <span id="btn-edit-config-text">config.yaml</span></button>
+    <select id="vram-select">
+      <option value="0">Auto / Any</option>
+      <option value="16" selected>16 GB</option>
+      <option value="24">24 GB</option>
+    </select>
     <button id="tab-past_1_hour"></button>
     <button id="tab-all_time"></button>
     <button id="tab-today"></button>
@@ -237,14 +242,18 @@ type DashboardWindow = Window & {
 // Jest setup
 // ---------------------------------------------------------------------------
 
+let lastAcquiredVsCodeApi: { getState: jest.Mock; setState: jest.Mock; postMessage: jest.Mock };
+
 beforeEach(() => {
   buildDOM();
 
-  (window as unknown as DashboardWindow).acquireVsCodeApi = jest.fn(() => ({
+  lastAcquiredVsCodeApi = {
     getState: jest.fn().mockReturnValue(null),
     setState: jest.fn(),
     postMessage: jest.fn(),
-  }));
+  };
+
+  (window as unknown as DashboardWindow).acquireVsCodeApi = jest.fn(() => lastAcquiredVsCodeApi);
 
   Object.defineProperty(window, 'localStorage', {
     value: {
@@ -847,6 +856,35 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       expect(content).toContain('Single-turn mode');
       expect(content).toContain('No repeated model failures detected in sample history');
       expect(content).toContain('+ when: "Tokens < 12000"');
+    });
+  });
+
+  describe('VRAM Selection and Toolbar Actions', () => {
+    it('synchronizes vram-select value from syncSnapshot message', () => {
+      postMessage('syncSnapshot', {
+        timestamp: Date.now(),
+        localVramGB: 24
+      });
+      const select = document.getElementById('vram-select') as HTMLSelectElement;
+      expect(select?.value).toBe('24');
+    });
+
+    it('triggers runOptimizer with active vram-select value', () => {
+      const select = document.getElementById('vram-select') as HTMLSelectElement;
+      select.value = '24';
+      (window as any).runOptimizer();
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'runOptimizer',
+        data: { vramGB: 24 }
+      });
+    });
+
+    it('triggers onVramChange and posts setLocalVramGB command', () => {
+      (window as any).onVramChange('32');
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'setLocalVramGB',
+        data: { vramGB: 32 }
+      });
     });
   });
 });

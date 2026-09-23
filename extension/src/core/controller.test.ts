@@ -625,6 +625,22 @@ describe('ExtensionController', () => {
       expect(mockRestClient.tune).toHaveBeenCalled();
       expect(mockDashboardPanel.updateOptimization).toHaveBeenCalledWith({ message: 'Optimal policy found' });
     });
+
+    it('should pass explicit vramGB to restClient.tune when provided', async () => {
+      const mockDashboardPanel = {
+        updateOptimization: jest.fn()
+      };
+      const mockRestClient = {
+        tune: jest.fn().mockResolvedValue({ message: 'Optimal policy with 24GB' })
+      };
+      (extensionController as any).restClient = mockRestClient;
+      (extensionController as any).dashboardPanel = mockDashboardPanel;
+
+      await extensionController.runOptimizer(24);
+
+      expect(mockRestClient.tune).toHaveBeenCalledWith(24);
+      expect(mockDashboardPanel.updateOptimization).toHaveBeenCalledWith({ message: 'Optimal policy with 24GB' });
+    });
   });
 
   describe('refreshDeals', () => {
@@ -1119,6 +1135,12 @@ default_tier:
 
       await messageHandler({ command: 'runOptimizer' });
       expect(runOptimizerSpy).toHaveBeenCalled();
+
+      await messageHandler({ command: 'runOptimizer', data: { vramGB: 24 } });
+      expect(runOptimizerSpy).toHaveBeenCalledWith(24);
+
+      await messageHandler({ command: 'setLocalVramGB', data: { vramGB: 32 } });
+      expect(vscode.workspace.getConfiguration('nachoFlow').update).toHaveBeenCalledWith('localVramGB', 32, vscode.ConfigurationTarget.Global);
 
       await messageHandler({ command: 'refreshDeals' });
       expect(refreshDealsSpy).toHaveBeenCalledWith(true);

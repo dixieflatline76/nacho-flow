@@ -39,6 +39,9 @@ export class DashboardPanel {
 	private getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.Uri): string {
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'resources', 'webview', 'dashboard.js'));
 		const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'resources', 'webview', 'dashboard.css'));
+		const vramSetting = (vscode?.workspace?.getConfiguration)
+			? (vscode.workspace.getConfiguration('nachoFlow').get<number>('localVramGB', 16) ?? 16)
+			: 16;
 
 		return `
 <!DOCTYPE html>
@@ -123,6 +126,19 @@ export class DashboardPanel {
 					<p class="section-subtitle">Routing Policy Tuning, Market Intelligence & Fault Tolerance</p>
 				</div>
 				<div class="header-toolbar">
+					<div class="vram-selector-group" title="Target local GPU VRAM ceiling for route tuning">
+						<label for="vram-select" class="vram-label">🎮 VRAM:</label>
+						<select id="vram-select" class="select-vram" onchange="onVramChange(this.value)">
+							<option value="0"${vramSetting === 0 ? ' selected' : ''}>Auto / Any</option>
+							<option value="6"${vramSetting === 6 ? ' selected' : ''}>6 GB</option>
+							<option value="8"${vramSetting === 8 ? ' selected' : ''}>8 GB</option>
+							<option value="12"${vramSetting === 12 ? ' selected' : ''}>12 GB</option>
+							<option value="16"${vramSetting === 16 ? ' selected' : ''}>16 GB</option>
+							<option value="24"${vramSetting === 24 ? ' selected' : ''}>24 GB</option>
+							<option value="32"${vramSetting === 32 ? ' selected' : ''}>32 GB</option>
+							<option value="48"${vramSetting === 48 ? ' selected' : ''}>48 GB</option>
+						</select>
+					</div>
 					<button id="btn-run-tuner" class="btn btn-toolbar btn-tuner" onclick="runOptimizer()">
 						<svg class="toolbar-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
 						Run Auto-Tuner
@@ -133,7 +149,7 @@ export class DashboardPanel {
 					</button>
 					<button id="btn-edit-config" class="btn btn-toolbar" onclick="editConfig()">
 						<svg class="toolbar-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-						config.yaml
+						<span id="btn-edit-config-text">config.yaml</span>
 					</button>
 				</div>
 			</div>

@@ -163,6 +163,11 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically restart the local engine on VS Code launch if it was running when VS Code closed"
+        },
+        "nachoFlow.localVramGB": {
+          "type": "integer",
+          "default": 16,
+          "description": "Local GPU VRAM memory limit in gigabytes (GB) for auto-tuning routing thresholds (0 for unconstrained / auto)"
         }
       }
     }

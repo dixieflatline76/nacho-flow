@@ -683,7 +683,12 @@ export class ExtensionController {
 						await this.loadDashboardData(true);
 						break;
 					case 'runOptimizer':
-						await this.runOptimizer();
+						await this.runOptimizer(message.data?.vramGB);
+						break;
+					case 'setLocalVramGB':
+						if (typeof message.data?.vramGB === 'number') {
+							await vscode.workspace.getConfiguration('nachoFlow').update('localVramGB', message.data.vramGB, vscode.ConfigurationTarget.Global);
+						}
 						break;
 					case 'refreshDeals':
 						await this.refreshDeals(true);
@@ -1050,7 +1055,7 @@ export class ExtensionController {
 		vscode.window.showErrorMessage(result.error);
 	}
 
-	public async runOptimizer(): Promise<void> {
+	public async runOptimizer(vramGB?: number): Promise<void> {
 		if (!this.restClient) {
 			vscode.window.showErrorMessage('Nacho Flow: Daemon client not initialized');
 			return;
@@ -1061,7 +1066,10 @@ export class ExtensionController {
 		}
 
 		try {
-			const result = await this.restClient.tune();
+			const targetVram = typeof vramGB === 'number'
+				? vramGB
+				: vscode.workspace.getConfiguration('nachoFlow').get<number>('localVramGB', 16);
+			const result = await this.restClient.tune(targetVram);
 			if (this.dashboardPanel) {
 				this.dashboardPanel.updateOptimization(result);
 			}
@@ -1542,6 +1550,8 @@ export class ExtensionController {
 			profileLabel
 		};
 
+		const localVramGB = vscode.workspace.getConfiguration('nachoFlow').get<number>('localVramGB', 16);
+
 		if (this.isLocalEngineOffline() || !this.restClient) {
 			return {
 				timestamp: Date.now(),
@@ -1554,7 +1564,8 @@ export class ExtensionController {
 				deals: null,
 				routes: null,
 				circuits: null,
-				config: null
+				config: null,
+				localVramGB
 			};
 		}
 
@@ -1605,7 +1616,8 @@ export class ExtensionController {
 				deals: null,
 				routes: null,
 				circuits: null,
-				config: null
+				config: null,
+				localVramGB
 			};
 		}
 
@@ -1620,7 +1632,8 @@ export class ExtensionController {
 			deals,
 			routes,
 			circuits,
-			config
+			config,
+			localVramGB
 		};
 	}
 

@@ -56,6 +56,11 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'sidebar', 'sidebar.js'));
 		const zooIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'icons', 'zoo.svg'));
 
+		const vramSetting = (vscode?.workspace?.getConfiguration)
+			? (vscode.workspace.getConfiguration('nachoFlow').get<number>('localVramGB', 16) ?? 16)
+			: 16;
+		const vramDisplay = vramSetting === 0 ? 'Auto / Unconstrained' : `${vramSetting} GB`;
+
 		return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -267,7 +272,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<div id="specs-modal" class="modal-overlay" style="display: none;">
 		<div class="modal-content">
 			<h3>ℹ️ Hardware & GPU VRAM Guide</h3>
-			<p style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 0;">Recommended local model: <strong>qwen2.5-coder:14b</strong></p>
+			<p style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 0;">Active Auto-Tuner VRAM Limit: <strong>${vramDisplay}</strong> &bull; Recommended local model: <strong>qwen2.5-coder:14b</strong></p>
 			<ul>
 				<li><strong>🎮 NVIDIA / AMD GPUs (Dedicated VRAM)</strong>:
 					<br/>• <strong>7B Models</strong>: Needs 6GB–8GB VRAM (e.g. RTX 3060/4060, RX 6600).

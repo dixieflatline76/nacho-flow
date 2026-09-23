@@ -135,4 +135,5 @@ export interface DashboardSnapshot {
 	optimization?: any | null;
 	timeWindow?: string;
 	routesRefreshInterval?: number;
+	localVramGB?: number;
 }

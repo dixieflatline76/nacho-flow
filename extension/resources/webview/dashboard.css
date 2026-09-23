@@ -159,7 +159,7 @@ body {
 	font-weight: 600;
 	cursor: pointer;
 	border: 1px solid transparent;
-	transition: all 0.2s ease;
+	transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
@@ -169,13 +169,14 @@ body {
 	background: rgba(255, 255, 255, 0.05);
 	color: var(--vscode-foreground);
 	border: 1px solid rgba(255, 255, 255, 0.12);
-	backdrop-filter: blur(4px);
+	transform: translateZ(0);
+	will-change: transform;
 }
 
 .btn-toolbar:hover {
 	background: rgba(255, 255, 255, 0.12);
 	border-color: rgba(255, 255, 255, 0.25);
-	transform: translateY(-1px);
+	transform: translateY(-1px) translateZ(0);
 }
 
 .btn-toolbar.btn-tuner {
@@ -198,6 +199,51 @@ body {
 .btn-toolbar.btn-deals:hover {
 	background: rgba(245, 158, 11, 0.18);
 	border-color: #fbbf24;
+}
+
+.vram-selector-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 6px;
+	padding: 3px 8px;
+	transform: translateZ(0);
+	will-change: transform;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.vram-selector-group:hover,
+.vram-selector-group:focus-within {
+	border-color: rgba(6, 182, 212, 0.4);
+	background: rgba(6, 182, 212, 0.06);
+}
+
+.vram-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #38bdf8;
+	letter-spacing: 0.3px;
+	user-select: none;
+	white-space: nowrap;
+}
+
+.select-vram {
+	background: transparent;
+	color: var(--vscode-foreground);
+	border: none;
+	font-size: 11px;
+	font-weight: 600;
+	font-family: inherit;
+	cursor: pointer;
+	outline: none;
+	padding: 3px 4px;
+}
+
+.select-vram option {
+	background-color: var(--vscode-dropdown-background, #1e1e1e);
+	color: var(--vscode-dropdown-foreground, #cccccc);
 }
 
 .toolbar-svg {

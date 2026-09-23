@@ -165,8 +165,9 @@ export class RestClient {
     }
 
     // Tune endpoint
-    public async tune(): Promise<any> {
-        return this.request('/api/v1/tune', {
+    public async tune(vramGB?: number): Promise<any> {
+        const query = (typeof vramGB === 'number' && vramGB > 0) ? `?vram_gb=${vramGB}` : '';
+        return this.request(`/api/v1/tune${query}`, {
             method: 'POST'
         });
     }

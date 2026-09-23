@@ -131,6 +131,12 @@
 		if (typeof snapshot.routesRefreshInterval !== 'undefined') {
 			window.setRoutesRefreshInterval(snapshot.routesRefreshInterval, false);
 		}
+		if (typeof snapshot.localVramGB !== 'undefined') {
+			const vramSelect = document.getElementById('vram-select');
+			if (vramSelect) {
+				vramSelect.value = String(snapshot.localVramGB);
+			}
+		}
 
 		// Synchronize header badge and config button
 		if (snapshot.engine) {
@@ -635,10 +641,15 @@
 		const btnEdit = document.getElementById('btn-edit-config');
 		if (btnEdit) {
 			const configText = data.isRemote ? 'Remote config.yaml' : `${data.label} (YAML)`;
-			const svg = btnEdit.querySelector('svg');
-			btnEdit.innerHTML = '';
-			if (svg) btnEdit.appendChild(svg);
-			btnEdit.append(' ' + configText);
+			const textSpan = document.getElementById('btn-edit-config-text');
+			if (textSpan) {
+				textSpan.textContent = configText;
+			} else {
+				const svg = btnEdit.querySelector('svg');
+				btnEdit.innerHTML = '';
+				if (svg) btnEdit.appendChild(svg);
+				btnEdit.append(' ' + configText);
+			}
 		}
 	}
 
@@ -1170,12 +1181,19 @@
 	};
 
 	window.runOptimizer = function() {
+		const vramSelect = document.getElementById('vram-select');
+		const vramGB = vramSelect ? parseInt(vramSelect.value, 10) : undefined;
 		const banner = document.getElementById('tuner-banner');
 		if (banner) {
 			banner.style.display = 'block';
 			banner.innerHTML = '<div class="loading">⚡ Running autonomous optimizer on telemetry observations...</div>';
 		}
-		vscode.postMessage({ command: 'runOptimizer' });
+		vscode.postMessage({ command: 'runOptimizer', data: { vramGB } });
+	};
+
+	window.onVramChange = function(value) {
+		const vramGB = parseInt(value, 10);
+		vscode.postMessage({ command: 'setLocalVramGB', data: { vramGB } });
 	};
 
 	window.refreshDeals = function() {

@@ -277,6 +277,22 @@ describe('RestClient', () => {
         expect.any(Function)
       );
     });
+
+    it('should append vram_gb query parameter when specified', async () => {
+      const mockResponse = { tuning: {} };
+      mockHttpRequest(mockResponse, 200);
+
+      const result = await restClient.tune(16);
+
+      expect(result).toEqual(mockResponse);
+      expect(http.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/api/v1/tune?vram_gb=16',
+          method: 'POST'
+        }),
+        expect.any(Function)
+      );
+    });
   });
 
   describe('getStats', () => {

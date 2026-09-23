@@ -22,6 +22,11 @@ jest.mock('vscode', () => ({
     joinPath: jest.fn().mockImplementation((...paths) => ({
       path: paths.join('/')
     }))
+  },
+  workspace: {
+    getConfiguration: jest.fn().mockReturnValue({
+      get: jest.fn().mockReturnValue(16)
+    })
   }
 }), { virtual: true });
 
