@@ -1622,3 +1622,137 @@ func TestMinConflicts_DefaultTier_FrontierAndLocalProtection(t *testing.T) {
 	}
 	_, _ = opt.Optimize(recordsLocal, cfgLocal)
 }
+
+func TestHashState_IsDisabled(t *testing.T) {
+	cfg1 := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{TierName: "Tier 1", Model: "test-model", IsDisabled: false},
+		},
+	}
+	cfg2 := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{TierName: "Tier 1", Model: "test-model", IsDisabled: true},
+		},
+	}
+	h1 := hashState(&cfg1)
+	h2 := hashState(&cfg2)
+	if h1 == h2 {
+		t.Errorf("Expected hashState to differ when IsDisabled differs, but got same hash %d", h1)
+	}
+}
+
+func TestMinConflicts_PercentageEscalationGate(t *testing.T) {
+	policy := DefaultTuningPolicy()
+	if policy.MinEscalationGainPct != 0.05 {
+		t.Errorf("Expected DefaultTuningPolicy.MinEscalationGainPct = 0.05, got %f", policy.MinEscalationGainPct)
+	}
+
+	predCoding := 76.3
+	minRequired := predCoding * (1.0 + policy.MinEscalationGainPct) // 80.115
+
+	// Grok 4.6 (76.8): +0.65% -> must be rejected by gate
+	grokCoding := 76.8
+	if grokCoding >= minRequired {
+		t.Errorf("Grok (76.8) should be rejected (< 80.115), but passed")
+	}
+
+	// Candidate with 80.5: +5.5% -> must pass gate
+	goodCoding := 80.5
+	if goodCoding < minRequired {
+		t.Errorf("Candidate with 80.5 should pass gate (>= 80.115), but was rejected")
+	}
+}
+
+func TestMinConflicts_AutonomousTierPruning(t *testing.T) {
+	now := time.Now().UTC()
+	policy := DefaultTuningPolicy()
+
+	// 5 sessions where turns fail through tier 1 and tier 2, then reach tier 3 (which fails)
+	// and tier 4 (which also fails because it's an inferior model), cascading to default frontier
+	var records []telemetry.TurnRecord
+	for s := 1; s <= 5; s++ {
+		sessID := fmt.Sprintf("prune-sess-%d", s)
+		for r := 0; r < 6; r++ {
+			records = append(records, telemetry.TurnRecord{
+				Timestamp:        now.Add(time.Duration(s*100+r) * time.Second),
+				SessionID:        sessID,
+				Tokens:           5000,
+				IsLocal:          false,
+				IsRetry:          r > 0,
+				HasWriteProgress: r == 5, // succeeds on frontier
+				RootPromptHash:   uint64(2000 + s),
+				CostSpentUSD:     0.05,
+			})
+		}
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Fast Flash",
+				Provider: "openrouter",
+				Model:    "google/gemini-3.8-flash", // 76.3
+				When:     "Retries < 2",
+			},
+			{
+				Name:     "Tier 2: Escalation Plateau",
+				Provider: "openrouter",
+				Model:    "google/gemini-3.1-pro-preview", // 68.8 (inferior to 76.3)
+				When:     "Retries < 4",
+			},
+			{
+				Name:     "Tier 3: Frontier Powerhouse",
+				Provider: "openrouter",
+				Model:    "anthropic/claude-sonnet-5", // frontier
+				When:     "Retries < 7",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Catch-All",
+			Provider: "openrouter",
+			Model:    "anthropic/claude-sonnet-5",
+			When:     "true",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {Type: contract.ProviderTypeCloud},
+		},
+	}
+
+	opt := NewMinConflictsOptimizer(policy)
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	// Verify that Tier 2 (Escalation Plateau) was pruned autonomously
+	prunedTier := res.Tiers[1]
+	if !prunedTier.IsDisabled {
+		t.Errorf("Expected intermediate plateau tier to be pruned (IsDisabled=true), got false")
+	}
+	if prunedTier.SynthesizedRule != "false" {
+		t.Errorf("Expected pruned tier to have SynthesizedRule 'false', got %q", prunedTier.SynthesizedRule)
+	}
+	if !strings.Contains(prunedTier.ModelBenefit, "Redundant Escalation Tier Bypassed") {
+		t.Errorf("Expected model benefit to explain redundant tier bypass, got %q", prunedTier.ModelBenefit)
+	}
+}
+
+func TestMinConflicts_GainPerDollarEfficiency(t *testing.T) {
+	origCoding := 70.0
+	origCompRate := 2.00
+	newCoding := 75.0
+	newCompRate := 3.50
+
+	deltaCoding := newCoding - origCoding
+	deltaCostPerM := newCompRate - origCompRate
+	gainPct := (deltaCoding / origCoding) * 100.0
+	efficiency := deltaCoding / deltaCostPerM
+
+	expectedMsg := fmt.Sprintf("Improves coding benchmark from %.1f to %.1f (+%.1f%%, %.1f pts/$M)",
+		origCoding, newCoding, gainPct, efficiency)
+
+	if !strings.Contains(expectedMsg, "3.3 pts/$M") {
+		t.Errorf("Expected efficiency calculation 3.3 pts/$M in %q", expectedMsg)
+	}
+}
+

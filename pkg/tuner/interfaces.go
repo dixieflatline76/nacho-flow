@@ -18,20 +18,22 @@ type TuningPolicy struct {
 	OddsRatioThreshold  float64 `json:"odds_ratio_threshold"`
 	MinSessions         int     `json:"min_sessions"`                                           // Minimum sessions for statistical significance
 	LocalVRAMGB         int     `json:"local_vram_gb,omitempty" yaml:"local_vram_gb,omitempty"` // Target local GPU VRAM ceiling in GB (0 = infer)
+	MinEscalationGainPct float64 `json:"min_escalation_gain_pct,omitempty" yaml:"min_escalation_gain_pct,omitempty"` // Minimum relative benchmark gain required for escalation tiers (default 0.05 = 5%)
 }
 
 // DefaultTuningPolicy returns the recommended balanced flow-state protection policy.
 func DefaultTuningPolicy() TuningPolicy {
 	return TuningPolicy{
-		Name:                "balanced_flow_state",
-		CostPerMillionCloud: 2.50,
-		RetryPenaltyUSD:     2.00,
-		CostWeight:          1.0,
-		TurnsWeight:         0.10,
-		MinOccurrences:      10,
-		OddsRatioThreshold:  1.5,
-		MinSessions:         5,
-		LocalVRAMGB:         0,
+		Name:                 "balanced_flow_state",
+		CostPerMillionCloud:  2.50,
+		RetryPenaltyUSD:      2.00,
+		CostWeight:           1.0,
+		TurnsWeight:          0.10,
+		MinOccurrences:       10,
+		OddsRatioThreshold:   1.5,
+		MinSessions:          5,
+		LocalVRAMGB:          0,
+		MinEscalationGainPct: 0.05,
 	}
 }
 

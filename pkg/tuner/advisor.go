@@ -63,7 +63,12 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 		if tier.OptimalRetries > 0 {
 			b.WriteString(fmt.Sprintf("  • Retry Bound:         %d max retries before escalation\n", tier.OptimalRetries))
 		}
-		if tier.RecommendedModel != "" && tier.RecommendedModel != tier.OriginalModel {
+		if tier.IsDisabled && strings.TrimSpace(tier.OriginalRule) != "false" {
+			b.WriteString("  • Routing Policy:      PRUNED / BYPASSED (when: \"false\")\n")
+			if tier.ModelBenefit != "" {
+				b.WriteString(fmt.Sprintf("    Benefit:             %s\n", tier.ModelBenefit))
+			}
+		} else if tier.RecommendedModel != "" && tier.RecommendedModel != tier.OriginalModel {
 			b.WriteString(fmt.Sprintf("  • Model Substitution:  %s -> %s\n", tier.OriginalModel, tier.RecommendedModel))
 			if tier.ModelBenefit != "" {
 				b.WriteString(fmt.Sprintf("    Benefit:             %s\n", tier.ModelBenefit))

@@ -318,6 +318,24 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 						isFrontier := currentCfg.Tiers[tierIdx].IsFrontier || IsFrontierModel(currentCfg.Tiers[tierIdx].Model)
 						isEscalationTier := currentCfg.Tiers[tierIdx].RetryFloor > 0 || (immediatePred != nil && immediatePred.CodingIndex >= 70.0)
 
+						// Autonomous Tier Pruning Candidate:
+						// Try disabling this intermediate escalation tier entirely.
+						// The optimizer compares pruning vs upgrading — whichever produces
+						// lower total fleet conflict C(X) wins.
+						if isEscalationTier && tierIdx > 0 && tierIdx < len(currentCfg.Tiers)-1 {
+							candCfg := copyMultiTierConfig(&currentCfg)
+							candCfg.Tiers[tierIdx].IsDisabled = true
+							candCfg.Tiers[tierIdx].Model = ""
+							if CheckHardConstraints(&candCfg) {
+								h := hashState(&candCfg)
+								c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
+								if !(tabuSet[h] && c >= bestConflict) && c < minValConflict {
+									minValConflict = c
+									bestValCfg = candCfg
+								}
+							}
+						}
+
 						tierRole := curation.RoleCodingWorkhorse
 						if currentCfg.Tiers[tierIdx].RequiresImages || (currentCfg.Tiers[tierIdx].SupportsVision && !currentCfg.Tiers[tierIdx].SupportsTools) {
 							tierRole = curation.RoleVisionWorkhorse
@@ -338,9 +356,14 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 							if immediatePred != nil && cand.ModelID == immediatePred.Model {
 								continue
 							}
-							// Escalation Progression: Require strictly higher capability or verified frontier class
+							// Escalation Progression: Require percentage cognitive leap (default 5%) or verified frontier class
+							minGain := opt.policy.MinEscalationGainPct
+							if minGain <= 0 {
+								minGain = 0.05
+							}
 							if isEscalationTier && immediatePred != nil {
-								if !cand.IsFrontier() && cand.CodingIndex <= immediatePred.CodingIndex {
+								minRequired := immediatePred.CodingIndex * (1.0 + minGain)
+								if !cand.IsFrontier() && cand.CodingIndex < minRequired {
 									continue
 								}
 							}
@@ -394,6 +417,29 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 							if c < minValConflict {
 								minValConflict = c
 								bestValCfg = candCfg
+							} else if math.Abs(c-minValConflict) < 0.01 && immediatePred != nil && !candCfg.Tiers[tierIdx].IsDisabled && !bestValCfg.Tiers[tierIdx].IsDisabled {
+								candEff := (cand.CodingIndex - immediatePred.CodingIndex)
+								rate := candCfg.Tiers[tierIdx].ComprehensiveRate
+								if rate <= 0 {
+									rate = cand.PromptCostPerMillion
+								}
+								if rate > 0 {
+									candEff /= rate
+								}
+
+								bestEff := (bestValCfg.Tiers[tierIdx].CodingIndex - immediatePred.CodingIndex)
+								bestRate := bestValCfg.Tiers[tierIdx].ComprehensiveRate
+								if bestRate <= 0 {
+									bestRate = bestValCfg.Tiers[tierIdx].PromptCostPerMillion
+								}
+								if bestRate > 0 {
+									bestEff /= bestRate
+								}
+
+								if candEff > bestEff {
+									minValConflict = c
+									bestValCfg = candCfg
+								}
 							}
 						}
 					}
@@ -563,11 +609,41 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 
 		recModel := tier.Model
 		var modelBenefit string
-		if recModel != "" && recModel != origModel {
+		if isDisabled && origModel != "" && strings.TrimSpace(origWhen) != "false" {
 			origCoding, _ := ResolveModelBenchmark(origModel)
-			origPrompt, origComp, _ := ResolveModelRates(origModel, tier.IsLocal)
+			var predCoding float64
+			for j := i - 1; j >= 0; j-- {
+				if !bestCfg.Tiers[j].IsDisabled {
+					predCoding = bestCfg.Tiers[j].CodingIndex
+					break
+				}
+			}
+			gainPct := 0.0
+			if predCoding > 0 && origCoding > 0 {
+				gainPct = ((origCoding - predCoding) / predCoding) * 100.0
+			}
+			sign := "+"
+			if gainPct < 0 {
+				sign = ""
+			}
+			modelBenefit = fmt.Sprintf(
+				"Redundant Escalation Tier Bypassed: Capability gain over predecessor (%s%.1f%%) does not justify intermediate retry burn; bypassing saves wasted turns",
+				sign, gainPct,
+			)
+			recModel = origModel
+		} else if recModel != "" && recModel != origModel {
+			origCoding, _ := ResolveModelBenchmark(origModel)
+			origPrompt, origComp, origCompRate := ResolveModelRates(origModel, tier.IsLocal)
 			if tier.CodingIndex > origCoding {
-				modelBenefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f", origCoding, tier.CodingIndex)
+				deltaCoding := tier.CodingIndex - origCoding
+				deltaCostPerM := tier.ComprehensiveRate - origCompRate
+				gainPct := (deltaCoding / origCoding) * 100.0
+				if deltaCostPerM > 0.01 {
+					efficiency := deltaCoding / deltaCostPerM
+					modelBenefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f (+%.1f%%, %.1f pts/$M)", origCoding, tier.CodingIndex, gainPct, efficiency)
+				} else {
+					modelBenefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f (+%.1f%%) at no additional cost", origCoding, tier.CodingIndex, gainPct)
+				}
 			} else if !tier.IsLocal && (tier.PromptCostPerMillion < origPrompt || tier.CompletionCostPerMillion < origComp) {
 				modelBenefit = fmt.Sprintf("Reduces cloud token pricing ($%.2f/M prompt vs $%.2f/M)", tier.PromptCostPerMillion, origPrompt)
 			} else {
@@ -633,10 +709,17 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	}
 
 	// Invariant: If optimization achieves zero savings and zero retries avoided,
-	// and no static fleet dominance conflicts were resolved,
+	// and no static fleet dominance conflicts were resolved, and no redundant tiers were pruned,
 	// the active configuration is already optimal. Preserve original rules and models for all tiers!
 	hasDominanceResolution := len(AnalyzeFleetDominance(&initialCfg)) > len(AnalyzeFleetDominance(&bestCfg))
-	if retriesAvoided <= 0 && savingsUSD <= 0.001 && !hasDominanceResolution {
+	hasPruning := false
+	for _, t := range tierResults {
+		if t.IsDisabled && strings.TrimSpace(t.OriginalRule) != "false" {
+			hasPruning = true
+			break
+		}
+	}
+	if retriesAvoided <= 0 && savingsUSD <= 0.001 && !hasDominanceResolution && !hasPruning {
 		defaultTierResult = nil
 		for i := range tierResults {
 			if !tierResults[i].IsDisabled {
@@ -718,6 +801,9 @@ func hashState(cfg *MultiTierConfig) uint64 {
 	const prime uint64 = 1099511628211
 
 	for _, t := range cfg.Tiers {
+		if t.IsDisabled {
+			h = (h ^ 0x04) * prime
+		}
 		// #nosec G115 - TokenThreshold and RetryBound are positive configuration limits
 		h = (h ^ uint64(t.TokenThreshold)) * prime
 		// #nosec G115 - TokenThreshold and RetryBound are positive configuration limits

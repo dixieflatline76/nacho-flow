@@ -25,19 +25,23 @@ func CheckHardConstraints(cfg *MultiTierConfig) bool {
 		return false
 	}
 
+	var lastActiveThreshold int
 	for i := 0; i < len(cfg.Tiers); i++ {
 		t := &cfg.Tiers[i]
+		if t.IsDisabled {
+			continue
+		}
 		// 1. Hardware Context Limit / VRAM ceiling
 		if t.MaxContext > 0 && t.TokenThreshold > 0 && t.TokenThreshold > t.MaxContext {
 			return false
 		}
 
-		// 2. Monotonic Context Hierarchy: T_i <= T_{i+1}
-		if i < len(cfg.Tiers)-1 {
-			next := &cfg.Tiers[i+1]
-			if t.TokenThreshold > 0 && next.TokenThreshold > 0 && t.TokenThreshold > next.TokenThreshold {
+		// 2. Monotonic Context Hierarchy across active tiers
+		if t.TokenThreshold > 0 {
+			if lastActiveThreshold > 0 && lastActiveThreshold > t.TokenThreshold {
 				return false
 			}
+			lastActiveThreshold = t.TokenThreshold
 		}
 	}
 

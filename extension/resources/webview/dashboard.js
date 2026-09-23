@@ -854,13 +854,14 @@
 				const restrictImages = !!tier.restrict_images;
 				const restrictTools = !!tier.restrict_tools;
 				const frictionKeywords = Array.isArray(tier.friction_keywords) ? tier.friction_keywords : [];
-				const isDisabled = !!tier.is_disabled || tier.synthesized_rule === 'false' || oldRule.trim() === 'false';
+				const isPruned = (!!tier.is_disabled || tier.synthesized_rule === 'false') && oldRule.trim() !== 'false';
+				const isDisabled = !isPruned && (!!tier.is_disabled || tier.synthesized_rule === 'false' || oldRule.trim() === 'false');
 				
-				const hasRuleChange = !isDisabled && tier.synthesized_rule && (oldRule.trim() !== tier.synthesized_rule.trim());
-				const hasModelChange = !!(tier.recommended_model && tier.original_model && tier.recommended_model !== tier.original_model);
-				const isUnchanged = !isDisabled && !hasRuleChange && !hasModelChange;
+				const hasRuleChange = !isDisabled && !isPruned && tier.synthesized_rule && (oldRule.trim() !== tier.synthesized_rule.trim());
+				const hasModelChange = !isPruned && !!(tier.recommended_model && tier.original_model && tier.recommended_model !== tier.original_model);
+				const isUnchanged = !isPruned && !isDisabled && !hasRuleChange && !hasModelChange;
 
-				if (!isDisabled && !isUnchanged) {
+				if (isPruned || (!isDisabled && !isUnchanged)) {
 					hasAnyChanges = true;
 				}
 
@@ -877,7 +878,13 @@
 				}
 
 				let diffContent = '';
-				if (isDisabled) {
+				if (isPruned) {
+					diffContent = `
+						<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
+						<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "false"</span></div>
+						${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #f59e0b; font-size: 0.85em;"><span class="diff-sign">✂️</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+					`;
+				} else if (isDisabled) {
 					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">🔒</span> <span class="diff-desc">Tier Disabled / Manual Only (when: "false") — No active traffic routed</span></div>`;
 				} else if (isUnchanged) {
 					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">✅</span> <span class="diff-desc">Current Rule Optimal (when: "${escapeHtml(oldRule)}") — No changes needed</span></div>`;
@@ -905,10 +912,10 @@
 							<div class="tier-pills-row">
 								${benchmarkPill}
 								${ratePill}
-								${isDisabled ? '<span class="signal-pill signal-pill-neutral">🔒 Disabled</span>' : ''}
-								${!isDisabled && !isDefault && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
-								${!isDisabled && !isDefault && retries ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
-								${!isDisabled ? `
+								${isPruned ? '<span class="signal-pill signal-pill-warning">✂️ Redundant Tier Bypassed</span>' : (isDisabled ? '<span class="signal-pill signal-pill-neutral">🔒 Disabled</span>' : '')}
+								${!isDisabled && !isPruned && !isDefault && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
+								${!isDisabled && !isPruned && !isDefault && retries ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
+								${!isDisabled && !isPruned ? `
 									<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
 										👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
 									</span>
@@ -916,7 +923,7 @@
 										🔧 Tools: ${restrictTools ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
 									</span>
 								` : ''}
-								${!isDisabled && frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
+								${!isDisabled && !isPruned && frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
 							</div>
 						</div>
 						<div class="tuner-diff-code">
