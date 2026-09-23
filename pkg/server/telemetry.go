@@ -60,6 +60,8 @@ func (s *Server) recordTelemetry(
 		}
 	}
 
+	failureCat := ClassifyTurnFailure(statusCode, reqCtx, targetTier)
+
 	s.tracker.Record(telemetry.Observation{
 		Tier:                      tierNum,
 		TierName:                  targetTier.Name,
@@ -102,6 +104,7 @@ func (s *Server) recordTelemetry(
 		HasWriteProgress:          reqCtx.HasWriteProgress,
 		HasTestPass:               reqCtx.HasTestPass,
 		HasTestFail:               reqCtx.HasTestFail,
+		FailureCategory:           failureCat,
 	})
 
 	reqLogger.Info("Completed proxy request",
@@ -113,6 +116,7 @@ func (s *Server) recordTelemetry(
 		slog.Int("status", statusCode),
 		slog.Bool("is_fallback", isFallback),
 		slog.Bool("is_retry", reqCtx.IsRetry),
+		slog.String("failure_category", string(failureCat)),
 		slog.Bool("cycle_breaker_triggered", reqCtx.CycleBreakerTriggered),
 		slog.Int("cycle_content_tokens", reqCtx.CycleContentTokens),
 		slog.Int("cycle_max_ngram_freq", reqCtx.CycleMaxNgramFreq),
@@ -126,4 +130,37 @@ func (s *Server) recordTelemetry(
 		slog.String("fairy_dust_entry", reqCtx.FairyDustEntry),
 		slog.Int("fairy_dust_count", reqCtx.FairyDustCount),
 	)
+}
+
+// ClassifyTurnFailure maps live request signals and HTTP outcome into a canonical FailureCategory.
+func ClassifyTurnFailure(statusCode int, reqCtx contract.RequestContext, targetTier contract.Tier) telemetry.FailureCategory {
+	// 1. Upstream / infrastructure transient failure (429 RateLimit, 408/504 Timeout, 500/502/503 Outage)
+	if statusCode == 429 || statusCode == 408 || (statusCode >= 500 && statusCode <= 599) {
+		return telemetry.FailureUpstream
+	}
+
+	// 2. Hardware / tier context boundary exceeded
+	if targetTier.MaxContext > 0 && reqCtx.Tokens > targetTier.MaxContext {
+		return telemetry.FailureContextLimit
+	}
+
+	// 3. Semantic reasoning loop / agent repetition stall
+	if reqCtx.CycleBreakerTriggered {
+		return telemetry.FailureReasoningLoop
+	}
+
+	// 4. Concrete execution failure (e.g. failing unit tests)
+	if reqCtx.HasTestFail {
+		return telemetry.FailureExecution
+	}
+
+	// 5. In-history or turn retry: determine if it failed on tool/schema invocation vs general execution
+	if reqCtx.IsRetry || reqCtx.HistoryErrors > 0 {
+		if reqCtx.HasTools && !reqCtx.HasToolProgress && !reqCtx.HasWriteProgress {
+			return telemetry.FailureToolSchema
+		}
+		return telemetry.FailureExecution
+	}
+
+	return telemetry.FailureNone
 }

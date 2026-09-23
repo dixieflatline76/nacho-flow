@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
@@ -200,9 +201,12 @@ func EvaluateFleetWithAttribution(
 			// Evaluate turn outcome & determine if turn failed
 			var turnFailed bool
 			var turnCost float64
+			isUpstreamTransient := turn.FailureCategory == telemetry.FailureUpstream || turn.StatusCode == 429 || (turn.StatusCode >= 500 && turn.StatusCode <= 599)
 
 			if targetTier.IsLocal {
-				if !turn.IsLocal {
+				if isUpstreamTransient {
+					// Non-model infrastructure error: do not charge wasted retry or fail turn
+				} else if !turn.IsLocal {
 					currentRetries++
 					totalWastedRetries++
 					turnFailed = true
@@ -240,7 +244,9 @@ func EvaluateFleetWithAttribution(
 				}
 				totalCostUSD += turnCost
 
-				if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
+				if isUpstreamTransient {
+					// Non-model infrastructure error: do not charge wasted retry or fail turn
+				} else if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
 					currentRetries = 0
 				} else {
 					currentRetries++

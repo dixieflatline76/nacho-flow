@@ -2,12 +2,25 @@ package telemetry
 
 import "time"
 
+// FailureCategory represents a classified failure mode for a prompt turn.
+type FailureCategory string
+
+const (
+	FailureNone          FailureCategory = ""
+	FailureUpstream      FailureCategory = "upstream_transient" // HTTP 429 RateLimit, 500/502/503/504 Server Error, Timeouts
+	FailureContextLimit  FailureCategory = "context_limit"     // Exceeded model or tier token context window
+	FailureToolSchema    FailureCategory = "tool_schema"       // Malformed tool calls, missing parameters, parameter schema mismatch
+	FailureExecution     FailureCategory = "execution"         // Command failures, test suite failures, non-zero exit codes
+	FailureReasoningLoop FailureCategory = "reasoning_loop"    // CycleBreaker tripped, semantic repetition loops, agent stall
+)
+
 // TurnRecord captures telemetry metadata for an individual prompt turn.
 type TurnRecord struct {
-	Timestamp                 time.Time `json:"timestamp"`
-	RequestID                 string    `json:"request_id"`
-	SessionID                 string    `json:"session_id,omitempty"`
-	Tokens                    int       `json:"tokens"`
+	Timestamp                 time.Time       `json:"timestamp"`
+	RequestID                 string          `json:"request_id"`
+	SessionID                 string          `json:"session_id,omitempty"`
+	Tokens                    int             `json:"tokens"`
+	FailureCategory           FailureCategory `json:"failure_category,omitempty"`
 	HasImages                 bool      `json:"has_images"`
 	HasTools                  bool      `json:"has_tools"`
 	Keywords                  []string  `json:"keywords,omitempty"`

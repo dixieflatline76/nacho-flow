@@ -1,5 +1,7 @@
 package tuner
 
+import "github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+
 // TierReplayConfig defines the routing guardrails and economic properties for an individual tier.
 type TierReplayConfig struct {
 	TierName                 string   `json:"tier_name"`
@@ -231,10 +233,14 @@ func replayMultiTierSessionInternal(
 		result.TierStats[selectedTierIdx].TurnsRouted++
 
 		// 3. Turn execution & Counterfactual Attribution
+		isUpstreamTransient := turn.FailureCategory == telemetry.FailureUpstream || turn.StatusCode == 429 || (turn.StatusCode >= 500 && turn.StatusCode <= 599)
+
 		if targetTier.IsLocal {
 			// 🚨 Counterfactual Attribution Trap:
 			// If historical turn ran on Cloud and succeeded, Local cannot be assumed to succeed.
-			if !turn.IsLocal {
+			if isUpstreamTransient {
+				// Non-model infrastructure error: do not penalize local tier
+			} else if !turn.IsLocal {
 				currentRetries++
 				result.TotalWastedRetries++
 				result.TierStats[selectedTierIdx].WastedRetries++
@@ -277,7 +283,10 @@ func replayMultiTierSessionInternal(
 
 			// Cloud resolution behavior with benchmark intelligence:
 			// High coding index (>= 70.0) models reliably resolve retries on escalation.
-			if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
+			// Transient upstream failures (429/503) do not penalize model capability.
+			if isUpstreamTransient {
+				// Non-model infrastructure error: do not penalize tier model
+			} else if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
 				currentRetries = 0
 			} else {
 				currentRetries++

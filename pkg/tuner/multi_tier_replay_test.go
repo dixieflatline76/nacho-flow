@@ -621,3 +621,73 @@ func TestMultiTierReplay_PositivePrerequisites(t *testing.T) {
 		t.Fatalf("Expected Tier 1 (Vision) to receive image turn, got 0!")
 	}
 }
+
+func TestMultiTierReplay_UpstreamExemption(t *testing.T) {
+	now := time.Now().UTC()
+	policy := DefaultTuningPolicy()
+
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:       "Tier 1: Cloud Workhorse",
+				Provider:       "openrouter",
+				IsLocal:        false,
+				CostPerMillion: 2.5,
+				CodingIndex:    65.0, // < 70, so regular retries are considered unresolved / wasted
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:       "Tier 2: Frontier",
+			Provider:       "anthropic",
+			IsLocal:        false,
+			CostPerMillion: 15.0,
+			CodingIndex:    85.0,
+		},
+	}
+
+	// Case A: Upstream 503 / FailureUpstream -> must NOT count as wasted retry
+	trajUpstream := SessionTrajectory{
+		SessionID: "sess-upstream",
+		Turns: []telemetry.TurnRecord{
+			{
+				Timestamp:       now,
+				Tokens:          1000,
+				IsLocal:         false,
+				IsRetry:         true,
+				StatusCode:      503,
+				FailureCategory: telemetry.FailureUpstream,
+				RootPromptHash:  0x999,
+			},
+		},
+	}
+
+	var resUpstream MultiTierReplayResult
+	ReplayMultiTierSession(&trajUpstream, &cfg, &policy, &resUpstream)
+
+	if resUpstream.TotalWastedRetries != 0 {
+		t.Errorf("Expected 0 wasted retries for upstream 503 outage, got %d", resUpstream.TotalWastedRetries)
+	}
+
+	// Case B: Normal retry on low-index model -> MUST count as wasted retry
+	trajNormalRetry := SessionTrajectory{
+		SessionID: "sess-normal-retry",
+		Turns: []telemetry.TurnRecord{
+			{
+				Timestamp:       now,
+				Tokens:          1000,
+				IsLocal:         false,
+				IsRetry:         true,
+				StatusCode:      200,
+				FailureCategory: telemetry.FailureExecution,
+				RootPromptHash:  0x999,
+			},
+		},
+	}
+
+	var resNormal MultiTierReplayResult
+	ReplayMultiTierSession(&trajNormalRetry, &cfg, &policy, &resNormal)
+
+	if resNormal.TotalWastedRetries != 1 {
+		t.Errorf("Expected 1 wasted retry for normal model retry on index 65, got %d", resNormal.TotalWastedRetries)
+	}
+}
