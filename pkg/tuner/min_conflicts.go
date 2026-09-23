@@ -39,6 +39,186 @@ var TokenCandidateValues = []int{1000, 2000, 4000, 8000, 12000, 16000, 20000, 24
 // RetryCandidateValues defines the discrete retry bound search domain.
 var RetryCandidateValues = []int{1, 2, 3, 4, 5, 6}
 
+// TabuMemory implements a circular FIFO tabu queue and set lookup.
+type TabuMemory struct {
+	queue []uint64
+	set   map[uint64]bool
+	size  int
+}
+
+// NewTabuMemory creates a tabu memory buffer of the specified capacity.
+func NewTabuMemory(size int) *TabuMemory {
+	return &TabuMemory{
+		queue: make([]uint64, 0, size),
+		set:   make(map[uint64]bool, size),
+		size:  size,
+	}
+}
+
+// Push adds a state hash, evicting the oldest element if at capacity.
+func (t *TabuMemory) Push(h uint64) {
+	if len(t.queue) >= t.size {
+		oldest := t.queue[0]
+		t.queue = t.queue[1:]
+		delete(t.set, oldest)
+	}
+	t.queue = append(t.queue, h)
+	t.set[h] = true
+}
+
+// Contains returns true if the state hash is in the tabu set.
+func (t *TabuMemory) Contains(h uint64) bool {
+	return t.set[h]
+}
+
+// CandidateConfigBuilder provides a fluent builder for generating speculative MultiTierConfig mutations.
+type CandidateConfigBuilder struct {
+	cfg MultiTierConfig
+}
+
+// NewCandidateBuilder initializes a builder starting from a base configuration deep copy.
+func NewCandidateBuilder(base *MultiTierConfig) *CandidateConfigBuilder {
+	return &CandidateConfigBuilder{
+		cfg: copyMultiTierConfig(base),
+	}
+}
+
+// WithTokenThreshold updates a tier's token threshold.
+func (b *CandidateConfigBuilder) WithTokenThreshold(tierIdx, val int) *CandidateConfigBuilder {
+	b.cfg.Tiers[tierIdx].TokenThreshold = val
+	return b
+}
+
+// WithRetryBound updates a tier's retry bound limit.
+func (b *CandidateConfigBuilder) WithRetryBound(tierIdx, val int) *CandidateConfigBuilder {
+	b.cfg.Tiers[tierIdx].RetryBound = val
+	return b
+}
+
+// WithToolRestriction updates a tier's tool restriction gate.
+func (b *CandidateConfigBuilder) WithToolRestriction(tierIdx int, restrict bool) *CandidateConfigBuilder {
+	b.cfg.Tiers[tierIdx].RestrictTools = restrict
+	return b
+}
+
+// WithImageRestriction updates a tier's vision/image restriction gate.
+func (b *CandidateConfigBuilder) WithImageRestriction(tierIdx int, restrict bool) *CandidateConfigBuilder {
+	b.cfg.Tiers[tierIdx].RestrictImages = restrict
+	return b
+}
+
+// WithPrunedTier disables an intermediate escalation tier.
+func (b *CandidateConfigBuilder) WithPrunedTier(tierIdx int) *CandidateConfigBuilder {
+	b.cfg.Tiers[tierIdx].IsDisabled = true
+	b.cfg.Tiers[tierIdx].Model = ""
+	return b
+}
+
+// WithModelCandidate substitutes a tier's model with a curated candidate.
+func (b *CandidateConfigBuilder) WithModelCandidate(tierIdx int, cand curation.ModelCuratedProfile) *CandidateConfigBuilder {
+	tier := &b.cfg.Tiers[tierIdx]
+	tier.Model = cand.ModelID
+	tier.CodingIndex = cand.CodingIndex
+	tier.ToolReliability = cand.ToolReliability
+	tier.IsFrontier = cand.IsFrontier()
+
+	candVision, candTools := ResolveModelCapabilities(cand.ModelID)
+	if cand.SupportsVision {
+		candVision = true
+	}
+	if cand.SupportsTools {
+		candTools = true
+	}
+	tier.SupportsVision = candVision
+	tier.SupportsTools = candTools
+
+	if !tier.IsLocal {
+		tier.PromptCostPerMillion = cand.PromptCostPerMillion
+		tier.CompletionCostPerMillion = cand.CompletionCostPerMillion
+		compRate := cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
+		tier.ComprehensiveRate = compRate
+		tier.CostPerMillion = compRate
+	} else {
+		tier.PromptCostPerMillion = 0
+		tier.CompletionCostPerMillion = 0
+		tier.ComprehensiveRate = 0
+		tier.CostPerMillion = 0
+	}
+	return b
+}
+
+// WithDefaultTierModel substitutes the fallback default tier's model.
+func (b *CandidateConfigBuilder) WithDefaultTierModel(cand curation.ModelCuratedProfile) *CandidateConfigBuilder {
+	dt := &b.cfg.DefaultTier
+	dt.Model = cand.ModelID
+	dt.CodingIndex = cand.CodingIndex
+	dt.ToolReliability = cand.ToolReliability
+	dt.IsFrontier = cand.IsFrontier()
+
+	candVision, candTools := ResolveModelCapabilities(cand.ModelID)
+	if cand.SupportsVision {
+		candVision = true
+	}
+	if cand.SupportsTools {
+		candTools = true
+	}
+	dt.SupportsVision = candVision
+	dt.SupportsTools = candTools
+
+	if !dt.IsLocal {
+		dt.PromptCostPerMillion = cand.PromptCostPerMillion
+		dt.CompletionCostPerMillion = cand.CompletionCostPerMillion
+		compRate := cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
+		dt.ComprehensiveRate = compRate
+		dt.CostPerMillion = compRate
+	} else {
+		dt.PromptCostPerMillion = 0
+		dt.CompletionCostPerMillion = 0
+		dt.ComprehensiveRate = 0
+		dt.CostPerMillion = 0
+	}
+	return b
+}
+
+// WithExcludedKeyword adds a keyword exclusion to the tier.
+func (b *CandidateConfigBuilder) WithExcludedKeyword(tierIdx int, kw string) *CandidateConfigBuilder {
+	if !hasKeyword([]string{kw}, b.cfg.Tiers[tierIdx].ExcludedKeywords) {
+		b.cfg.Tiers[tierIdx].ExcludedKeywords = append(b.cfg.Tiers[tierIdx].ExcludedKeywords, kw)
+	}
+	return b
+}
+
+// Build finalizes the candidate configuration copy.
+func (b *CandidateConfigBuilder) Build() MultiTierConfig {
+	return b.cfg
+}
+
+// repairContext holds intermediate state and buffers during local search repair moves.
+type repairContext struct {
+	opt            *MinConflictsOptimizer
+	trajectories   []SessionTrajectory
+	bestConflict   float64
+	minValConflict float64
+	bestValCfg     MultiTierConfig
+	tabu           *TabuMemory
+	evalBuf        *MultiTierReplayResult
+}
+
+func (rc *repairContext) evalCandidate(candCfg *MultiTierConfig) {
+	if !CheckHardConstraints(candCfg) {
+		return
+	}
+	h := hashState(candCfg)
+	c := EvaluateFleetConflict(rc.trajectories, candCfg, &rc.opt.policy, rc.evalBuf)
+	if rc.tabu.Contains(h) && c >= rc.bestConflict {
+		return
+	}
+	if c < rc.minValConflict {
+		rc.minValConflict = c
+		rc.bestValCfg = *candCfg
+	}
+}
+
 // Optimize executes the Min-Conflicts local repair loop over historical turn records.
 func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, currentConfig *contract.Config) (*TuningResult, error) {
 	if currentConfig == nil || len(currentConfig.Tiers) == 0 {
@@ -48,60 +228,10 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	}
 
 	if len(records) == 0 {
-		var tierResults []TierTuningResult
-		for _, tier := range currentConfig.Tiers {
-			isLocal := IsLocalTier(tier, currentConfig.Providers)
-			promptCost, compCost, compRate := ResolveModelRates(tier.Model, isLocal)
-			codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
-			isDisabled := strings.TrimSpace(tier.When) == "false"
-			if isDisabled {
-				tierResults = append(tierResults, TierTuningResult{
-					TierName:                 tier.Name,
-					Model:                    tier.Model,
-					OriginalModel:            tier.Model,
-					RecommendedModel:         tier.Model,
-					CodingIndex:              codingIndex,
-					ToolReliability:          toolReliability,
-					PromptCostPerMillion:     promptCost,
-					CompletionCostPerMillion: compCost,
-					ComprehensiveRate:        compRate,
-					IsDisabled:               true,
-					OptimalThreshold:         0,
-					OptimalRetries:           0,
-					OriginalRule:             tier.When,
-					SynthesizedRule:          "false",
-				})
-				continue
-			}
-			defaultThreshold := 16000
-			if tier.MaxContext > 0 && tier.MaxContext < defaultThreshold {
-				defaultThreshold = tier.MaxContext
-			}
-			rule, err := RewriteRuleAST(tier.When, defaultThreshold, 0, nil, false, false)
-			if err != nil {
-				rule = tier.When
-			}
-			tierResults = append(tierResults, TierTuningResult{
-				TierName:                 tier.Name,
-				Model:                    tier.Model,
-				OriginalModel:            tier.Model,
-				RecommendedModel:         tier.Model,
-				CodingIndex:              codingIndex,
-				ToolReliability:          toolReliability,
-				PromptCostPerMillion:     promptCost,
-				CompletionCostPerMillion: compCost,
-				ComprehensiveRate:        compRate,
-				OptimalThreshold:         defaultThreshold,
-				OptimalRetries:           0,
-				OriginalRule:             tier.When,
-				SynthesizedRule:          rule,
-			})
-		}
-		return &TuningResult{
-			Tiers: tierResults,
-		}, nil
+		return opt.handleEmptyRecords(currentConfig), nil
 	}
 
+	// 1. Group records into session trajectories
 	trajectories := GroupBySession(records)
 	if len(trajectories) == 0 {
 		trajectories = []SessionTrajectory{
@@ -138,18 +268,7 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 
 	// 4. Tabu Memory (circular FIFO queue of 10 state hashes)
 	const tabuSize = 10
-	tabuQueue := make([]uint64, 0, tabuSize)
-	tabuSet := make(map[uint64]bool)
-
-	pushTabu := func(h uint64) {
-		if len(tabuQueue) >= tabuSize {
-			oldest := tabuQueue[0]
-			tabuQueue = tabuQueue[1:]
-			delete(tabuSet, oldest)
-		}
-		tabuQueue = append(tabuQueue, h)
-		tabuSet[h] = true
-	}
+	tabu := NewTabuMemory(tabuSize)
 
 	// 5. Min-Conflicts Local Repair Loop
 	const maxIterations = 150
@@ -160,8 +279,14 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	// #nosec G404 - pseudo-random epsilon perturbation for heuristic search
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
+	rc := repairContext{
+		opt:          opt,
+		trajectories: trajectories,
+		tabu:         tabu,
+		evalBuf:      &evalBuf,
+	}
+
 	for iter := 0; iter < maxIterations; iter++ {
-		// Evaluate conflict ledger with fractional attribution
 		report := EvaluateFleetWithAttribution(trajectories, &currentCfg, &opt.policy, candidateKeywords)
 		if report.TotalConflict == 0 {
 			break
@@ -207,348 +332,49 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		}
 
 		// Greedily reassign targetVar to minimize fleet conflict
-		bestValCfg := copyMultiTierConfig(&currentCfg)
-		minValConflict := report.TotalConflict
+		rc.bestConflict = bestConflict
+		rc.minValConflict = report.TotalConflict
+		rc.bestValCfg = copyMultiTierConfig(&currentCfg)
 
 		for _, cv := range candidateVars {
 			targetVar := cv.name
 
-		if strings.HasPrefix(targetVar, "tier_") {
-			// Variable format: "tier_<idx>:<attr>"
-			parts := strings.Split(targetVar, ":")
-			if len(parts) == 2 {
-				tierIdxStr := strings.TrimPrefix(parts[0], "tier_")
-				attr := parts[1]
-				tierIdx, err := strconv.Atoi(tierIdxStr)
-				if err == nil && tierIdx >= 0 && tierIdx < len(currentCfg.Tiers) && !currentCfg.Tiers[tierIdx].IsDisabled {
-					switch attr {
-					case "tokens":
-						for _, candT := range TokenCandidateValues {
-							if currentCfg.Tiers[tierIdx].MaxContext > 0 && candT > currentCfg.Tiers[tierIdx].MaxContext {
-								continue
-							}
-							candCfg := copyMultiTierConfig(&currentCfg)
-							candCfg.Tiers[tierIdx].TokenThreshold = candT
-							if !CheckHardConstraints(&candCfg) {
-								continue
-							}
-							h := hashState(&candCfg)
-							c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
-							if tabuSet[h] && c >= bestConflict {
-								continue
-							}
-							if c < minValConflict {
-								minValConflict = c
-								bestValCfg = candCfg
-							}
-						}
-
-					case "retries":
-						for _, candR := range RetryCandidateValues {
-							candCfg := copyMultiTierConfig(&currentCfg)
-							candCfg.Tiers[tierIdx].RetryBound = candR
-							h := hashState(&candCfg)
-							c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
-							if tabuSet[h] && c >= bestConflict {
-								continue
-							}
-							if c < minValConflict {
-								minValConflict = c
-								bestValCfg = candCfg
-							}
-						}
-
-					case "tools":
-						for _, candTools := range []bool{true, false} {
-							candCfg := copyMultiTierConfig(&currentCfg)
-							candCfg.Tiers[tierIdx].RestrictTools = candTools
-							h := hashState(&candCfg)
-							c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
-							if tabuSet[h] && c >= bestConflict {
-								continue
-							}
-							if c < minValConflict {
-								minValConflict = c
-								bestValCfg = candCfg
-							}
-						}
-
-					case "images":
-						for _, candImages := range []bool{true, false} {
-							candCfg := copyMultiTierConfig(&currentCfg)
-							candCfg.Tiers[tierIdx].RestrictImages = candImages
-							h := hashState(&candCfg)
-							c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
-							if tabuSet[h] && c >= bestConflict {
-								continue
-							}
-							if c < minValConflict {
-								minValConflict = c
-								bestValCfg = candCfg
-							}
-						}
-
-					case "model":
-						// Preserve local model unless user explicitly requests local VRAM model substitution
-						if currentCfg.Tiers[tierIdx].IsLocal && opt.policy.LocalVRAMGB == 0 {
-							continue
-						}
-
-						// Identify immediate escalation predecessor in the retry hierarchy
-						var immediatePred *TierReplayConfig
-						for j := tierIdx - 1; j >= 0; j-- {
-							pred := &currentCfg.Tiers[j]
-							if pred.IsDisabled || pred.RequiresKickstart || pred.RequiresImages {
-								continue
-							}
-							isEscalation := false
-							if currentCfg.Tiers[tierIdx].RetryFloor > 0 && pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryFloor >= pred.RetryBound {
-								isEscalation = true
-							} else if pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryBound > pred.RetryBound {
-								isEscalation = true
-							} else if pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryBound == 0 {
-								isEscalation = true
-							}
-							if isEscalation {
-								immediatePred = pred
-								break
-							}
-						}
-
-						isFrontier := currentCfg.Tiers[tierIdx].IsFrontier || IsFrontierModel(currentCfg.Tiers[tierIdx].Model)
-						isEscalationTier := currentCfg.Tiers[tierIdx].RetryFloor > 0 || (immediatePred != nil && immediatePred.CodingIndex >= 70.0)
-
-						// Autonomous Tier Pruning Candidate:
-						// Try disabling this intermediate escalation tier entirely.
-						// The optimizer compares pruning vs upgrading — whichever produces
-						// lower total fleet conflict C(X) wins.
-						if isEscalationTier && tierIdx > 0 && tierIdx < len(currentCfg.Tiers)-1 {
-							candCfg := copyMultiTierConfig(&currentCfg)
-							candCfg.Tiers[tierIdx].IsDisabled = true
-							candCfg.Tiers[tierIdx].Model = ""
-							if CheckHardConstraints(&candCfg) {
-								h := hashState(&candCfg)
-								c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
-								if !(tabuSet[h] && c >= bestConflict) && c < minValConflict {
-									minValConflict = c
-									bestValCfg = candCfg
-								}
-							}
-						}
-
-						tierRole := curation.RoleCodingWorkhorse
-						if currentCfg.Tiers[tierIdx].RequiresImages || (currentCfg.Tiers[tierIdx].SupportsVision && !currentCfg.Tiers[tierIdx].SupportsTools) {
-							tierRole = curation.RoleVisionWorkhorse
-						} else if isFrontier || isEscalationTier {
-							tierRole = curation.RoleGeneral
-						}
-						candidates := curation.DefaultManager().ParetoCandidates(
-							tierRole,
-							currentCfg.Tiers[tierIdx].IsLocal,
-							currentCfg.Tiers[tierIdx].Model,
-							opt.policy.LocalVRAMGB,
-						)
-						for _, cand := range candidates {
-							if cand.ModelID == currentCfg.Tiers[tierIdx].Model {
-								continue
-							}
-							// Anti-Duplication: Never duplicate immediate escalation predecessor
-							if immediatePred != nil && cand.ModelID == immediatePred.Model {
-								continue
-							}
-							// Escalation Progression: Require percentage cognitive leap (default 5%) or verified frontier class
-							minGain := opt.policy.MinEscalationGainPct
-							if minGain <= 0 {
-								minGain = 0.05
-							}
-							if isEscalationTier && immediatePred != nil {
-								minRequired := immediatePred.CodingIndex * (1.0 + minGain)
-								if !cand.IsFrontier() && cand.CodingIndex < minRequired {
-									continue
-								}
-							}
-							// Frontier tier protection: never downgrade a frontier tier to a non-frontier or lower-benchmark model
-							if isFrontier {
-								if !cand.IsFrontier() && cand.CodingIndex < 80.0 {
-									continue
-								}
-								if currentCfg.Tiers[tierIdx].CodingIndex > 0 && cand.CodingIndex < currentCfg.Tiers[tierIdx].CodingIndex {
-									continue
-								}
-								if currentCfg.Tiers[tierIdx].ToolReliability > 0 && cand.ToolReliability < currentCfg.Tiers[tierIdx].ToolReliability {
-									continue
-								}
-							}
-							candCfg := copyMultiTierConfig(&currentCfg)
-							candCfg.Tiers[tierIdx].Model = cand.ModelID
-							candCfg.Tiers[tierIdx].CodingIndex = cand.CodingIndex
-							candCfg.Tiers[tierIdx].ToolReliability = cand.ToolReliability
-							candCfg.Tiers[tierIdx].IsFrontier = cand.IsFrontier()
-							candVision, candTools := ResolveModelCapabilities(cand.ModelID)
-							if cand.SupportsVision {
-								candVision = true
-							}
-							if cand.SupportsTools {
-								candTools = true
-							}
-							candCfg.Tiers[tierIdx].SupportsVision = candVision
-							candCfg.Tiers[tierIdx].SupportsTools = candTools
-							if !candCfg.Tiers[tierIdx].IsLocal {
-								candCfg.Tiers[tierIdx].PromptCostPerMillion = cand.PromptCostPerMillion
-								candCfg.Tiers[tierIdx].CompletionCostPerMillion = cand.CompletionCostPerMillion
-								compRate := cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
-								candCfg.Tiers[tierIdx].ComprehensiveRate = compRate
-								candCfg.Tiers[tierIdx].CostPerMillion = compRate
-							} else {
-								candCfg.Tiers[tierIdx].PromptCostPerMillion = 0
-								candCfg.Tiers[tierIdx].CompletionCostPerMillion = 0
-								candCfg.Tiers[tierIdx].ComprehensiveRate = 0
-								candCfg.Tiers[tierIdx].CostPerMillion = 0
-							}
-
-							if !CheckHardConstraints(&candCfg) {
-								continue
-							}
-							h := hashState(&candCfg)
-							c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
-							if tabuSet[h] && c >= bestConflict {
-								continue
-							}
-							if c < minValConflict {
-								minValConflict = c
-								bestValCfg = candCfg
-							} else if math.Abs(c-minValConflict) < 0.01 && immediatePred != nil && !candCfg.Tiers[tierIdx].IsDisabled && !bestValCfg.Tiers[tierIdx].IsDisabled {
-								candEff := (cand.CodingIndex - immediatePred.CodingIndex)
-								rate := candCfg.Tiers[tierIdx].ComprehensiveRate
-								if rate <= 0 {
-									rate = cand.PromptCostPerMillion
-								}
-								if rate > 0 {
-									candEff /= rate
-								}
-
-								bestEff := (bestValCfg.Tiers[tierIdx].CodingIndex - immediatePred.CodingIndex)
-								bestRate := bestValCfg.Tiers[tierIdx].ComprehensiveRate
-								if bestRate <= 0 {
-									bestRate = bestValCfg.Tiers[tierIdx].PromptCostPerMillion
-								}
-								if bestRate > 0 {
-									bestEff /= bestRate
-								}
-
-								if candEff > bestEff {
-									minValConflict = c
-									bestValCfg = candCfg
-								}
-							}
+			if strings.HasPrefix(targetVar, "tier_") {
+				parts := strings.Split(targetVar, ":")
+				if len(parts) == 2 {
+					tierIdxStr := strings.TrimPrefix(parts[0], "tier_")
+					attr := parts[1]
+					tierIdx, err := strconv.Atoi(tierIdxStr)
+					if err == nil && tierIdx >= 0 && tierIdx < len(currentCfg.Tiers) && !currentCfg.Tiers[tierIdx].IsDisabled {
+						switch attr {
+						case "tokens":
+							opt.repairTokens(&currentCfg, tierIdx, &rc)
+						case "retries":
+							opt.repairRetries(&currentCfg, tierIdx, &rc)
+						case "tools", "images":
+							opt.repairModalityGates(&currentCfg, tierIdx, attr, &rc)
+						case "model":
+							opt.repairModelOrPrune(&currentCfg, tierIdx, &rc)
 						}
 					}
 				}
+			} else if strings.HasPrefix(targetVar, "keyword:") {
+				kw := strings.TrimPrefix(targetVar, "keyword:")
+				opt.repairKeyword(&currentCfg, kw, &rc)
+			} else if targetVar == "default_tier:model" {
+				opt.repairDefaultTierModel(&currentCfg, currentConfig, &rc)
 			}
 
-		} else if strings.HasPrefix(targetVar, "keyword:") {
-			// Variable format: "keyword:<kw>"
-			kw := strings.TrimPrefix(targetVar, "keyword:")
-			// Test allocating exclusion to each tier
-			for tIdx := 0; tIdx < len(currentCfg.Tiers); tIdx++ {
-				candCfg := copyMultiTierConfig(&currentCfg)
-				if !hasKeyword([]string{kw}, candCfg.Tiers[tIdx].ExcludedKeywords) {
-					candCfg.Tiers[tIdx].ExcludedKeywords = append(candCfg.Tiers[tIdx].ExcludedKeywords, kw)
-				}
-				h := hashState(&candCfg)
-				c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
-				if tabuSet[h] && c >= bestConflict {
-					continue
-				}
-				if c < minValConflict {
-					minValConflict = c
-					bestValCfg = candCfg
-				}
-			}
-		} else if targetVar == "default_tier:model" {
-			isFrontierFallback := currentCfg.DefaultTier.IsFrontier || IsFrontierModel(currentConfig.DefaultTier.Model)
-
-			candidates := curation.DefaultManager().ParetoCandidates(
-				curation.RoleGeneral,
-				currentCfg.DefaultTier.IsLocal,
-				currentCfg.DefaultTier.Model,
-				opt.policy.LocalVRAMGB,
-			)
-			for _, cand := range candidates {
-				if cand.ModelID == currentCfg.DefaultTier.Model {
-					continue
-				}
-				// Frontier Safety Net Protection:
-				// Fallback catch-all tier must not be downgraded from Frontier to Budget Workhorse.
-				if isFrontierFallback {
-					if !cand.IsFrontier() && cand.CodingIndex < 80.0 {
-						continue
-					}
-					// Must not degrade coding capability or tool reliability on frontier fallback
-					if currentCfg.DefaultTier.CodingIndex > 0 && cand.CodingIndex < currentCfg.DefaultTier.CodingIndex {
-						continue
-					}
-					if currentCfg.DefaultTier.ToolReliability > 0 && cand.ToolReliability < currentCfg.DefaultTier.ToolReliability {
-						continue
-					}
-				} else {
-					// Workhorse fallback: enforce tool capability and baseline tool reliability
-					if !cand.SupportsTools || cand.ToolReliability < 30.0 {
-						continue
-					}
-				}
-				candCfg := copyMultiTierConfig(&currentCfg)
-				candCfg.DefaultTier.Model = cand.ModelID
-				candCfg.DefaultTier.CodingIndex = cand.CodingIndex
-				candCfg.DefaultTier.ToolReliability = cand.ToolReliability
-				candCfg.DefaultTier.IsFrontier = cand.IsFrontier()
-				candVision, candTools := ResolveModelCapabilities(cand.ModelID)
-				if cand.SupportsVision {
-					candVision = true
-				}
-				if cand.SupportsTools {
-					candTools = true
-				}
-				candCfg.DefaultTier.SupportsVision = candVision
-				candCfg.DefaultTier.SupportsTools = candTools
-				if !candCfg.DefaultTier.IsLocal {
-					candCfg.DefaultTier.PromptCostPerMillion = cand.PromptCostPerMillion
-					candCfg.DefaultTier.CompletionCostPerMillion = cand.CompletionCostPerMillion
-					compRate := cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
-					candCfg.DefaultTier.ComprehensiveRate = compRate
-					candCfg.DefaultTier.CostPerMillion = compRate
-				} else {
-					candCfg.DefaultTier.PromptCostPerMillion = 0
-					candCfg.DefaultTier.CompletionCostPerMillion = 0
-					candCfg.DefaultTier.ComprehensiveRate = 0
-					candCfg.DefaultTier.CostPerMillion = 0
-				}
-
-				if !CheckHardConstraints(&candCfg) {
-					continue
-				}
-				h := hashState(&candCfg)
-				c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, &evalBuf)
-				if tabuSet[h] && c >= bestConflict {
-					continue
-				}
-				if c < minValConflict {
-					minValConflict = c
-					bestValCfg = candCfg
-				}
-			}
-		}
-
-			if minValConflict < report.TotalConflict {
+			if rc.minValConflict < report.TotalConflict {
 				break
 			}
 		}
 
-		currentCfg = bestValCfg
-		pushTabu(hashState(&currentCfg))
+		currentCfg = rc.bestValCfg
+		tabu.Push(hashState(&currentCfg))
 
-		if minValConflict < bestConflict {
-			bestConflict = minValConflict
+		if rc.minValConflict < bestConflict {
+			bestConflict = rc.minValConflict
 			bestCfg = copyMultiTierConfig(&currentCfg)
 		}
 	}
@@ -557,6 +383,295 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	var finalBuf MultiTierReplayResult
 	ReplayMultiTierFleet(trajectories, &bestCfg, &opt.policy, &finalBuf)
 
+	return opt.synthesizeTuningResult(currentConfig, initialCfg, bestCfg, baselineBuf, finalBuf, trajectories, initialDominance)
+}
+
+// repairTokens explores candidate context thresholds for a tier.
+func (opt *MinConflictsOptimizer) repairTokens(currentCfg *MultiTierConfig, tierIdx int, rc *repairContext) {
+	for _, candT := range TokenCandidateValues {
+		if currentCfg.Tiers[tierIdx].MaxContext > 0 && candT > currentCfg.Tiers[tierIdx].MaxContext {
+			continue
+		}
+		candCfg := NewCandidateBuilder(currentCfg).
+			WithTokenThreshold(tierIdx, candT).
+			Build()
+		rc.evalCandidate(&candCfg)
+	}
+}
+
+// repairRetries explores candidate retry bounds for a tier.
+func (opt *MinConflictsOptimizer) repairRetries(currentCfg *MultiTierConfig, tierIdx int, rc *repairContext) {
+	for _, candR := range RetryCandidateValues {
+		candCfg := NewCandidateBuilder(currentCfg).
+			WithRetryBound(tierIdx, candR).
+			Build()
+		rc.evalCandidate(&candCfg)
+	}
+}
+
+// repairModalityGates explores restricting tools or images on a tier.
+func (opt *MinConflictsOptimizer) repairModalityGates(currentCfg *MultiTierConfig, tierIdx int, attr string, rc *repairContext) {
+	for _, val := range []bool{true, false} {
+		builder := NewCandidateBuilder(currentCfg)
+		if attr == "tools" {
+			builder.WithToolRestriction(tierIdx, val)
+		} else {
+			builder.WithImageRestriction(tierIdx, val)
+		}
+		candCfg := builder.Build()
+		rc.evalCandidate(&candCfg)
+	}
+}
+
+// repairModelOrPrune explores autonomous tier pruning and Pareto candidate model substitutions.
+func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig, tierIdx int, rc *repairContext) {
+	// Preserve local model unless user explicitly requests local VRAM model substitution
+	if currentCfg.Tiers[tierIdx].IsLocal && opt.policy.LocalVRAMGB == 0 {
+		return
+	}
+
+	// Identify immediate escalation predecessor in the retry hierarchy
+	var immediatePred *TierReplayConfig
+	for j := tierIdx - 1; j >= 0; j-- {
+		pred := &currentCfg.Tiers[j]
+		if pred.IsDisabled || pred.RequiresKickstart || pred.RequiresImages {
+			continue
+		}
+		isEscalation := false
+		if currentCfg.Tiers[tierIdx].RetryFloor > 0 && pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryFloor >= pred.RetryBound {
+			isEscalation = true
+		} else if pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryBound > pred.RetryBound {
+			isEscalation = true
+		} else if pred.RetryBound > 0 && currentCfg.Tiers[tierIdx].RetryBound == 0 {
+			isEscalation = true
+		}
+		if isEscalation {
+			immediatePred = pred
+			break
+		}
+	}
+
+	isFrontier := currentCfg.Tiers[tierIdx].IsFrontier || IsFrontierModel(currentCfg.Tiers[tierIdx].Model)
+	isEscalationTier := currentCfg.Tiers[tierIdx].RetryFloor > 0 || (immediatePred != nil && immediatePred.CodingIndex >= 70.0)
+
+	// Autonomous Tier Pruning Candidate:
+	// Try disabling this intermediate escalation tier entirely.
+	// Whichever produces lower total fleet conflict C(X) wins.
+	if isEscalationTier && tierIdx > 0 && tierIdx < len(currentCfg.Tiers)-1 {
+		candCfg := NewCandidateBuilder(currentCfg).
+			WithPrunedTier(tierIdx).
+			Build()
+		if CheckHardConstraints(&candCfg) {
+			h := hashState(&candCfg)
+			c := EvaluateFleetConflict(rc.trajectories, &candCfg, &rc.opt.policy, rc.evalBuf)
+			if !(rc.tabu.Contains(h) && c >= rc.bestConflict) && c < rc.minValConflict {
+				rc.minValConflict = c
+				rc.bestValCfg = candCfg
+			}
+		}
+	}
+
+	tierRole := curation.RoleCodingWorkhorse
+	if currentCfg.Tiers[tierIdx].RequiresImages || (currentCfg.Tiers[tierIdx].SupportsVision && !currentCfg.Tiers[tierIdx].SupportsTools) {
+		tierRole = curation.RoleVisionWorkhorse
+	} else if isFrontier || isEscalationTier {
+		tierRole = curation.RoleGeneral
+	}
+	candidates := curation.DefaultManager().ParetoCandidates(
+		tierRole,
+		currentCfg.Tiers[tierIdx].IsLocal,
+		currentCfg.Tiers[tierIdx].Model,
+		opt.policy.LocalVRAMGB,
+	)
+
+	for _, cand := range candidates {
+		if cand.ModelID == currentCfg.Tiers[tierIdx].Model {
+			continue
+		}
+		// Anti-Duplication: Never duplicate immediate escalation predecessor
+		if immediatePred != nil && cand.ModelID == immediatePred.Model {
+			continue
+		}
+		// Escalation Progression: Require percentage cognitive leap (default 5%) or verified frontier class
+		minGain := opt.policy.MinEscalationGainPct
+		if minGain <= 0 {
+			minGain = 0.05
+		}
+		if isEscalationTier && immediatePred != nil {
+			minRequired := immediatePred.CodingIndex * (1.0 + minGain)
+			if !cand.IsFrontier() && cand.CodingIndex < minRequired {
+				continue
+			}
+		}
+		// Frontier tier protection: never downgrade a frontier tier to a non-frontier or lower-benchmark model
+		if isFrontier {
+			if !cand.IsFrontier() && cand.CodingIndex < 80.0 {
+				continue
+			}
+			if currentCfg.Tiers[tierIdx].CodingIndex > 0 && cand.CodingIndex < currentCfg.Tiers[tierIdx].CodingIndex {
+				continue
+			}
+			if currentCfg.Tiers[tierIdx].ToolReliability > 0 && cand.ToolReliability < currentCfg.Tiers[tierIdx].ToolReliability {
+				continue
+			}
+		}
+
+		candCfg := NewCandidateBuilder(currentCfg).
+			WithModelCandidate(tierIdx, cand).
+			Build()
+
+		if !CheckHardConstraints(&candCfg) {
+			continue
+		}
+		h := hashState(&candCfg)
+		c := EvaluateFleetConflict(rc.trajectories, &candCfg, &rc.opt.policy, rc.evalBuf)
+		if rc.tabu.Contains(h) && c >= rc.bestConflict {
+			continue
+		}
+		if c < rc.minValConflict {
+			rc.minValConflict = c
+			rc.bestValCfg = candCfg
+		} else if math.Abs(c-rc.minValConflict) < 0.01 && immediatePred != nil && !candCfg.Tiers[tierIdx].IsDisabled && !rc.bestValCfg.Tiers[tierIdx].IsDisabled {
+			// Near-identical conflict tiebreaker: maximize gain per dollar
+			candEff := (cand.CodingIndex - immediatePred.CodingIndex)
+			rate := candCfg.Tiers[tierIdx].ComprehensiveRate
+			if rate <= 0 {
+				rate = cand.PromptCostPerMillion
+			}
+			if rate > 0 {
+				candEff /= rate
+			}
+
+			bestEff := (rc.bestValCfg.Tiers[tierIdx].CodingIndex - immediatePred.CodingIndex)
+			bestRate := rc.bestValCfg.Tiers[tierIdx].ComprehensiveRate
+			if bestRate <= 0 {
+				bestRate = rc.bestValCfg.Tiers[tierIdx].PromptCostPerMillion
+			}
+			if bestRate > 0 {
+				bestEff /= bestRate
+			}
+
+			if candEff > bestEff {
+				rc.minValConflict = c
+				rc.bestValCfg = candCfg
+			}
+		}
+	}
+}
+
+// repairKeyword explores assigning domain keywords to individual tiers.
+func (opt *MinConflictsOptimizer) repairKeyword(currentCfg *MultiTierConfig, kw string, rc *repairContext) {
+	for tIdx := 0; tIdx < len(currentCfg.Tiers); tIdx++ {
+		candCfg := NewCandidateBuilder(currentCfg).
+			WithExcludedKeyword(tIdx, kw).
+			Build()
+		rc.evalCandidate(&candCfg)
+	}
+}
+
+// repairDefaultTierModel explores Pareto candidate substitutions on the fallback tier.
+func (opt *MinConflictsOptimizer) repairDefaultTierModel(currentCfg *MultiTierConfig, currentConfig *contract.Config, rc *repairContext) {
+	isFrontierFallback := currentCfg.DefaultTier.IsFrontier || IsFrontierModel(currentConfig.DefaultTier.Model)
+
+	candidates := curation.DefaultManager().ParetoCandidates(
+		curation.RoleGeneral,
+		currentCfg.DefaultTier.IsLocal,
+		currentCfg.DefaultTier.Model,
+		opt.policy.LocalVRAMGB,
+	)
+	for _, cand := range candidates {
+		if cand.ModelID == currentCfg.DefaultTier.Model {
+			continue
+		}
+		if isFrontierFallback {
+			if !cand.IsFrontier() && cand.CodingIndex < 80.0 {
+				continue
+			}
+			if currentCfg.DefaultTier.CodingIndex > 0 && cand.CodingIndex < currentCfg.DefaultTier.CodingIndex {
+				continue
+			}
+			if currentCfg.DefaultTier.ToolReliability > 0 && cand.ToolReliability < currentCfg.DefaultTier.ToolReliability {
+				continue
+			}
+		} else {
+			if !cand.SupportsTools || cand.ToolReliability < 30.0 {
+				continue
+			}
+		}
+
+		candCfg := NewCandidateBuilder(currentCfg).
+			WithDefaultTierModel(cand).
+			Build()
+		rc.evalCandidate(&candCfg)
+	}
+}
+
+// handleEmptyRecords builds a default pass-through TuningResult when no historical telemetry is available.
+func (opt *MinConflictsOptimizer) handleEmptyRecords(currentConfig *contract.Config) *TuningResult {
+	var tierResults []TierTuningResult
+	for _, tier := range currentConfig.Tiers {
+		isLocal := IsLocalTier(tier, currentConfig.Providers)
+		promptCost, compCost, compRate := ResolveModelRates(tier.Model, isLocal)
+		codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
+		isDisabled := strings.TrimSpace(tier.When) == "false"
+		if isDisabled {
+			tierResults = append(tierResults, TierTuningResult{
+				TierName:                 tier.Name,
+				Model:                    tier.Model,
+				OriginalModel:            tier.Model,
+				RecommendedModel:         tier.Model,
+				CodingIndex:              codingIndex,
+				ToolReliability:          toolReliability,
+				PromptCostPerMillion:     promptCost,
+				CompletionCostPerMillion: compCost,
+				ComprehensiveRate:        compRate,
+				IsDisabled:               true,
+				OptimalThreshold:         0,
+				OptimalRetries:           0,
+				OriginalRule:             tier.When,
+				SynthesizedRule:          "false",
+			})
+			continue
+		}
+		defaultThreshold := 16000
+		if tier.MaxContext > 0 && tier.MaxContext < defaultThreshold {
+			defaultThreshold = tier.MaxContext
+		}
+		rule, err := RewriteRuleAST(tier.When, defaultThreshold, 0, nil, false, false)
+		if err != nil {
+			rule = tier.When
+		}
+		tierResults = append(tierResults, TierTuningResult{
+			TierName:                 tier.Name,
+			Model:                    tier.Model,
+			OriginalModel:            tier.Model,
+			RecommendedModel:         tier.Model,
+			CodingIndex:              codingIndex,
+			ToolReliability:          toolReliability,
+			PromptCostPerMillion:     promptCost,
+			CompletionCostPerMillion: compCost,
+			ComprehensiveRate:        compRate,
+			OptimalThreshold:         defaultThreshold,
+			OptimalRetries:           0,
+			OriginalRule:             tier.When,
+			SynthesizedRule:          rule,
+		})
+	}
+	return &TuningResult{
+		Tiers: tierResults,
+	}
+}
+
+// synthesizeTuningResult transforms the winning CSP configuration into human-readable TuningResults and AST rules.
+func (opt *MinConflictsOptimizer) synthesizeTuningResult(
+	currentConfig *contract.Config,
+	initialCfg MultiTierConfig,
+	bestCfg MultiTierConfig,
+	baselineBuf MultiTierReplayResult,
+	finalBuf MultiTierReplayResult,
+	trajectories []SessionTrajectory,
+	initialDominance []StaticDominanceConflict,
+) (*TuningResult, error) {
 	var tierResults []TierTuningResult
 	for i, tier := range bestCfg.Tiers {
 		var origWhen, origModel string
@@ -590,7 +705,7 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		} else if routingUnchanged {
 			synthRule = origWhen
 		} else if i < len(finalBuf.TierStats) && finalBuf.TierStats[i].TurnsRouted == 0 {
-			// Zero traffic reached this tier during replay -> preserve original rule strictly without dummy threshold additions!
+			// Zero traffic reached this tier during replay -> preserve original rule strictly
 			synthRule = origWhen
 		} else {
 			var err error
@@ -708,9 +823,6 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		savingsUSD = 0
 	}
 
-	// Invariant: If optimization achieves zero savings and zero retries avoided,
-	// and no static fleet dominance conflicts were resolved, and no redundant tiers were pruned,
-	// the active configuration is already optimal. Preserve original rules and models for all tiers!
 	hasDominanceResolution := len(AnalyzeFleetDominance(&initialCfg)) > len(AnalyzeFleetDominance(&bestCfg))
 	hasPruning := false
 	for _, t := range tierResults {
