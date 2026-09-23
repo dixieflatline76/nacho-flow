@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/hero-mascot.png" alt="Nacho Flow" width="700" />
+  <img src="images/hero-mascot.png" alt="Nacho Flow" width="700" />
 </p>
 
 # 🌮 Nacho Flow: Active Execution Runtime & Autonomous Agent Supervisor
@@ -22,7 +22,7 @@
 > **And let Nacho Flow get your coding groove back!**
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/dixieflatline76/nacho-flow/main/images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Analytics Dashboard, Sidebar Control Hub, and Cline Pairing" width="900" />
+  <img src="images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Analytics Dashboard, Sidebar Control Hub, and Cline Pairing" width="900" />
 </p>
 
 The **Nacho Flow VS Code Companion Extension** is the official in-editor control center for autonomous coding agents ([Cline](https://github.com/cline/cline), [Zoo Code](https://www.zoocode.dev), [Cursor](https://cursor.com), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Continue](https://continue.dev)). It bundles the compiled Go execution runtime directly inside the extension—giving you instant loop defense, in-flight context compaction, real-time financial telemetry, and zero-downtime preset switching with **zero CLI setup**.
@@ -130,14 +130,21 @@ Heat Seeker continuously scans 300+ cloud models on OpenRouter, discovering flas
 
 ---
 
-### 🎛️ 6. 1-Click Multi-Tier Auto-Tuning Optimizer
+### 🎤 6. 1-Click Auto-Tune (Pitch-Correct Your Tiers from Real Logs)
 
-Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns from `traffic.jsonl`:
-- **v3 Min-Conflicts CSP Local Search**: Evaluates multi-tier cascade routing across millions of simulated turns in milliseconds with zero heap allocations.
-- **6D Variable Repair**: Calibrates per-tier token thresholds, retry bounds, tool/vision modalities, high-friction keyword exclusions, and VRAM-bounded model substitutions.
-- **Vetted Model Catalog Metrics**: Pulls SWE-bench coding capability index scores and tool reliability ratings directly from the embedded catalog cache.
-- **Pareto Fleet Dominance**: Enforces multi-objective optimality across cost, latency, and retry rate.
-- **Instant 1-Click Adoption**: Review the visual rule diff banner in the dashboard and click **`Apply Recommendation`** to atomically update `config.yaml` with an automatic backup (`config.yaml.bak_<timestamp>`).
+Local models sound great until they try to hit notes they can't reach—cracking on 20k-token prompts, dropping tool calls, or dragging your agent through frustrating retry loops. But if you get paranoid and escalate too early, you end up paying stadium-tour prices to Claude for what should have been an acoustic coffee shop gig for $0.00.
+
+Click **`Run Auto-Tuner`** in the dashboard toolbar to pitch-correct your configuration against your actual coding sessions (`traffic.jsonl`):
+
+<p align="center">
+  <img src="images/vscode-autotuner-showcase.png" alt="Nacho Flow VS Code 1-Click Auto-Tuner Recommendation Banner and YAML Diff" width="850" />
+</p>
+
+- **Trajectory Replay in 81 ns (37M turns/sec)**: Replays complete multi-turn developer sessions in memory with zero heap allocations, evaluating true cascading escalation states instead of isolated single-turn guesses.
+- **Mutes Dead Tracks (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Automatically flags and bypasses middle tiers that never catch traffic or immediately fail and escalate, eliminating dead rule baggage and routing latency.
+- **Escalation Plateau Filter**: Rejects expensive tier escalations when a cheaper or local model delivers within 5% of the same success rate.
+- **Filters Out Mic Feedback (Failure Taxonomy)**: Distinguishes client aborts, network drops, and provider 429 rate limits from genuine model capability flaws—so temporary API outages never corrupt your routing thresholds.
+- **Visual Diff & 1-Click Apply**: Review the green/red YAML diff directly in the dashboard webview. Click **`Apply Recommendation`** to atomically update `config.yaml` with an automatic timestamped backup (`config.yaml.bak_<timestamp>`) and zero-downtime hot-reload.
 
 ---
 

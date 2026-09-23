@@ -17,7 +17,7 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 4. [Running Modes & OS Background Service Installation](#4-running-modes--os-background-service-installation)
 5. [IDE & Agent Integrations (Local & Multi-Device LAN)](#5-ide--agent-integrations-local--multi-device-lan)
 6. [Monitoring, Telemetry & Stats API](#6-monitoring-telemetry--stats-api)
-7. [Autonomous Rule Auto-Tuning (`nacho-flow tune`)](#7-autonomous-rule-auto-tuning-nacho-flow-tune)
+7. [🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)](#7--auto-tune-pitch-correct-your-tiers-nacho-flow-tune)
 8. [🔥 Heat Seeker: Live Model Deals & Discount Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-live-model-deals--discount-scout-nacho-flow-deals--nacho-flow-heat-seek)
 9. [🌶️ HotSauce Directives (In-Prompt Routing & Meta Commands)](#9-hotsauce-directives-in-prompt-routing--meta-commands)
    - [🧑‍💻 A Day in the Life: Practical Developer Walkthrough](DAY_IN_THE_LIFE.md)
@@ -1094,15 +1094,19 @@ curl http://127.0.0.1:8000/v1/stats
 
 ---
 
-## 7. Autonomous Rule Auto-Tuning (`nacho-flow tune`)
+## 7. 🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)
 
-Human developers shouldn't have to manually guess where their local GPU model starts struggling or how complex cascades interact. Nacho Flow features a built-in, pure Go **v3 Min-Conflicts Constraint Satisfaction Auto-Tuner** that replays your team's real-world traffic, identifies prompt failure bottlenecks, and generates human-readable multi-tier rule recommendations.
+Local models sound great until they try to hit high notes they can't reach—cracking on 20k-token prompts, butchering tool calls, or dragging your agent through painful retry loops. But if you get paranoid and escalate too early, you're paying stadium-tour prices to Claude for what should have been an acoustic coffee shop gig for $0.00.
+
+Auto-Tune replays your actual recorded coding sessions (`logs/traffic.jsonl`) through candidate multi-tier cascade configurations in memory (at 81 ns/session, 37M turns/sec) to find your models' exact failure boundaries, mute dead tiers, and pitch-correct your routing rules without manual guesswork.
 
 ### 7.1 How Auto-Tuning Works
-1. **Traffic Accumulation**: As you code, Nacho Flow automatically records turn and session metrics (tokens, retries, domain keywords, latency) to `logs/traffic.jsonl`.
-2. **Multi-Tier Cascade Replay**: Replays sessions against candidate configurations at **1,000,000 statements in 25ms** (zero heap allocations).
-3. **6D Parameter Optimization**: Optimizes per-tier token thresholds, retry bounds, tool/image modalities, friction keyword exclusions, and VRAM-bounded model substitutions.
-4. **Pareto Fleet Dominance**: Enforces multi-objective optimality across cost, latency, and retry rate with zero regressions.
+1. **Traffic Accumulation**: As you code, Nacho Flow automatically records multi-turn session metrics (tokens, retries, domain keywords, latency) to `logs/traffic.jsonl`.
+2. **Trajectory Replay (81 ns / 37M turns/sec)**: Replays whole multi-turn developer sessions in sequence with zero heap allocations, evaluating true cascading escalation states instead of isolated single-turn guesses.
+3. **Mutes Dead Tracks (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Automatically flags and bypasses middle tiers that never catch traffic or immediately fail and escalate, eliminating dead rule baggage and routing latency.
+4. **5% Escalation Plateau Filter**: Rejects expensive tier escalations when a cheaper or local model delivers within 5% of the same success rate.
+5. **Filters Out Mic Feedback (Failure Taxonomy)**: Distinguishes client aborts, network drops, and provider 429 rate limits from genuine model capability flaws—so temporary API outages never corrupt your routing thresholds.
+6. **Pareto Fleet Dominance**: Enforces multi-objective optimality across cost, latency, and retry rate with zero regressions.
 
 ### 7.2 Run Advisory Analysis (Dry-Run):
 ```bash

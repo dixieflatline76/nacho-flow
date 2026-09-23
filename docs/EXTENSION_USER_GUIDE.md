@@ -22,7 +22,7 @@ The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-
    - [4.3 🗜️ Nacho Token Saver (NTS) Live Telemetry Panel](#43-nacho-token-saver-nts-live-telemetry-panel)
    - [4.4 Live Route History Inspector](#44-live-route-history-inspector)
    - [4.5 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption](#45--heat-seeker-live-model-deals--1-click-tier-adoption)
-   - [4.6 🎛️ 1-Click Auto-Tuning Optimizer](#46-️-1-click-auto-tuning-optimizer)
+   - [4.6 🎤 1-Click Auto-Tune (Pitch-Correct Your Tiers from Real Logs)](#46--1-click-auto-tune-pitch-correct-your-tiers-from-real-logs)
    - [4.7 Interactive Circuit Breaker Management](#47-interactive-circuit-breaker-management)
 5. [Status Bar HUD & QuickPick Menu](#5-status-bar-hud--quickpick-menu)
 6. [Direct In-Chat Control Directives (`@nacho:`)](#6-direct-in-chat-control-directives-nacho)
@@ -455,13 +455,19 @@ Click **`📋 Copy`** on any deal card to copy the exact model ID (e.g. `google/
 
 ---
 
-### 4.6 🎛️ 1-Click Auto-Tuning Optimizer
+### 4.6 🎤 1-Click Auto-Tune (Pitch-Correct Your Tiers from Real Logs)
 
-Click **`Run Auto-Tuner`** in the dashboard toolbar to analyze historical turns from `traffic.jsonl`:
-- Uses statistical odds-ratio analysis to find the optimal token boundary where local model failure odds increase.
-- Recommends new context bounds (e.g. shifting `Tokens < 12000` → `Tokens < 14500`).
-- Identifies friction keywords (e.g. `concurrency`, `deadlock`) that frequently trigger local retries.
-- Displays a visual diff banner in the dashboard. Click **`Apply Recommendation`** to atomically update `config.yaml` with an automatic backup.
+Local models sound great until they try to hit high notes they can't reach—cracking on 20k-token prompts, dropping tool calls, or dragging your agent through frustrating retry loops. But if you get paranoid and escalate too early, you end up paying stadium-tour prices to Claude for what should have been an acoustic coffee shop gig for $0.00.
+
+Click **`Run Auto-Tuner`** in the dashboard toolbar (or trigger `Ctrl+Shift+P` → `Nacho Flow: Run Auto-Tuner & Optimize`) to pitch-correct your routing tiers against your actual recorded sessions (`traffic.jsonl`):
+
+![Nacho Flow VS Code Auto-Tuner UI Recommendation Banner](images/vscode-autotuner-showcase.png)
+
+- **Trajectory Replay in 81 ns (37M turns/sec)**: Replays whole multi-turn developer sessions in memory with zero heap allocations, evaluating true cascading escalation states instead of isolated single-turn guesses.
+- **Mutes Dead Tracks (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Automatically flags and bypasses middle tiers that never catch traffic or immediately fail and escalate, eliminating dead rule baggage and routing latency.
+- **Escalation Plateau Filter**: Rejects expensive tier escalations when a cheaper or local model delivers within 5% of the same success rate.
+- **Filters Out Mic Feedback (Failure Taxonomy)**: Distinguishes client aborts, network drops, and provider 429 rate limits from genuine model capability flaws—so temporary API outages never corrupt your routing thresholds.
+- **Visual Diff & 1-Click Apply**: Review the green/red YAML diff directly in the dashboard webview. Click **`Apply Recommendation`** to atomically update `config.yaml` with an automatic timestamped backup (`config.yaml.bak_<timestamp>`) and zero-downtime hot-reload.
 
 ---
 

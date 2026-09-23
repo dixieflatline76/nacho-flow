@@ -10,11 +10,14 @@ This guide teaches you how to write, optimize, test, and tune dynamic routing ru
    - [3.2 🏆 The 16GB VRAM Champion: Gemma 4 12B IT QAT & Perfected Ollama Tuning](#-the-16gb-vram-champion-gemma-4-12b-it-qat--perfected-ollama-tuning)
 4. [Real-World Rule Recipes](#4-real-world-rule-recipes)
 5. [Testing & Validating Your Rules](#5-testing--validating-your-rules)
-6. [Autonomous Multi-Tier Auto-Tuning (`nacho-flow tune`)](#6-autonomous-multi-tier-auto-tuning-nacho-flow-tune)
+6. [🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)](#6--auto-tune-pitch-correct-your-tiers-nacho-flow-tune)
    - [6.1 6D Constraint Satisfaction Formulation & Min-Conflicts Heuristic](#61-6d-constraint-satisfaction-formulation--min-conflicts-heuristic)
    - [6.2 Fractional Conflict Attribution & Fleet Dominance](#62-fractional-conflict-attribution--fleet-dominance)
    - [6.3 Step-by-Step Tuning Workflow & CLI Options](#63-step-by-step-tuning-workflow--cli-options)
    - [6.4 High-Throughput 1M-Statement Stress Testing (`nacho_stress`)](#64-high-throughput-1m-statement-stress-testing-nacho_stress)
+   - [6.5 Muting Dead Tracks (Autonomous Tier Pruning)](#65-muting-dead-tracks-autonomous-tier-pruning)
+   - [6.6 Escalation Plateau Gating (Stop Overpaying for Backing Vocals)](#66-escalation-plateau-gating-stop-overpaying-for-backing-vocals)
+   - [6.7 Filtering Out Mic Feedback (Telemetry Failure Taxonomy)](#67-filtering-out-mic-feedback-telemetry-failure-taxonomy)
 7. [Manual Heuristic Tuning Tips](#7-manual-heuristic-tuning-tips-for-custom-power-rules)
 8. [Agent-Specific Harness Tuning: Zoo Code vs. Cline](#8-agent-specific-harness-tuning-zoo-code-vs-cline)
 9. [🧚 Fairy Dusting & Cost Shield Architecture](#9-fairy-dusting--cost-shield-architecture)
@@ -475,9 +478,11 @@ If you use the [VS Code Companion Extension](EXTENSION_USER_GUIDE.md), open the 
 
 ---
 
-## 6. Autonomous Multi-Tier Auto-Tuning (`nacho-flow tune`)
+## 6. 🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)
 
-While manual rule crafting is powerful, human developers shouldn't have to guess where local open-weight models begin to struggle or how complex multi-tier cascades interact. Nacho Flow features an autonomous **v3 Min-Conflicts Constraint Satisfaction Auto-Tuner** that replays historical traffic logs, identifies bottleneck boundaries, and synthesizes optimal multi-tier routing rules.
+Local models sound great until they try to hit high notes they can't reach—cracking on 20k-token prompts, butchering tool calls, or dragging your agent through painful retry loops. But if you get paranoid and escalate too early, you're paying stadium-tour prices to Claude for what should have been an acoustic coffee shop gig for $0.00.
+
+Auto-Tune replays your actual recorded coding sessions (`logs/traffic.jsonl`) through candidate multi-tier cascade configurations in memory (at 81 ns/session, 37M turns/sec) to find your models' exact failure boundaries, mute dead tiers, and pitch-correct your routing rules without manual guesswork.
 
 ---
 
@@ -664,6 +669,46 @@ go run ./cmd/util/nacho_stress -turns 1000000 -runs 3
       Conflict Score: 12450.00 in 25.40 ms (0 allocs)
 =================================================================================
 ```
+
+---
+
+### 6.5 Muting Dead Tracks (Autonomous Tier Pruning)
+
+Every audio engineer knows you mute empty channels. When you configure multi-tier routing (e.g., Kickstart $\rightarrow$ Local 8B $\rightarrow$ Cloud 30B $\rightarrow$ Claude), it's common for middle tiers to become **dead weight**:
+- **Unreachable / Shadowed**: An earlier tier rule intercepts all matching traffic before this tier ever sees a turn (`turnsHandled == 0`).
+- **Immediate Escalation Churn**: The tier accepts a turn, but 100% of the time it immediately fails, triggers a retry, and escalates to the next tier anyway.
+
+```text
+✂️ Redundant Tier Bypassed: Tier 'Local 8B Intermediate' never handles a turn or escalates immediately.
+   Removing it eliminates 1 routing evaluation step without quality degradation.
+```
+
+Auto-Tune detects these useless tracks during session trajectory replay. If a tier handles zero productive turns across your evaluated sessions, Auto-Tune flags it for removal and prunes it from the synthesized rule recommendation—eliminating routing latency and keeping your `config.yaml` lean.
+
+---
+
+### 6.6 Escalation Plateau Gating (Stop Overpaying for Backing Vocals)
+
+When tuning multi-tier cascades, a naive optimizer might notice that escalating a turn to an expensive frontier model (like Claude 3.7 / Sonnet 5 at $3.00/M tokens) reduces the retry rate from 2.1% to 1.9%.
+
+Mathematically, that's a "gain." In practice, **you're paying 10× to 20× more per token for a negligible 0.2% improvement.**
+
+To prevent this budget bleed, Auto-Tune implements a **Percentage-Gated Escalation Plateau Filter** (`MinEscalationGainPct = 5%`):
+$$\Delta_{\text{gain}} = \frac{\text{Conflict}_{\text{current}} - \text{Conflict}_{\text{escalated}}}{\text{Conflict}_{\text{current}}}$$
+
+If escalating to the more expensive tier does not deliver at least a **5% relative reduction in conflict/failure rate**, the optimizer gates and rejects the escalation. Your local GPU or budget tier keeps the turn, saving significant dollars with zero noticeable reasoning drop.
+
+---
+
+### 6.7 Filtering Out Mic Feedback (Telemetry Failure Taxonomy)
+
+When an agent turn fails, naive log analyzers count it as a "model failure" and punish that tier's rating. But in the real world, turns fail for reasons that have nothing to do with whether the model is smart enough:
+- You hit `Ctrl+C` or canceled the prompt (`TimeoutOrCancel`).
+- The developer forgot to set an API key or had a malformed base URL (`AuthOrConfig`).
+- OpenRouter or Anthropic returned an HTTP 429 rate limit or 503 gateway outage (`RateLimitOrQuota`).
+- A prompt accidentally exceeded the provider's hard context limit (`ModelContextExceeded`).
+
+Auto-Tune classifies every error into an explicit **Failure Taxonomy** before calculating conflict attribution. **Upstream provider outages and client cancellations are fully exempted** from the solver's conflict penalty. We never blame the singer when the soundboard cuts the mic.
 
 ---
 
