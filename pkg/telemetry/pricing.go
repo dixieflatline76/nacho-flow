@@ -191,6 +191,26 @@ func (o *PricingOracle) updateProviderData(providerName string, newPrices map[st
 
 	o.metadataMap.Store(&mergedMap)
 	o.lastSynced.Store(time.Now().UnixNano())
+
+	// Dynamically register discovered endpoints with curation manager
+	dynamicProfiles := make(map[string]curation.ModelCuratedProfile, len(newPrices))
+	for modelID, meta := range newPrices {
+		role, codingScore, recTiers := o.classifier.ClassifyModel(meta)
+		dynamicProfiles[modelID] = curation.ModelCuratedProfile{
+			ModelID:                  modelID,
+			Name:                     meta.Name,
+			TierRole:                 role,
+			CodingIndex:              codingScore,
+			ToolReliability:          meta.AgenticIndex,
+			PromptCostPerMillion:     meta.PromptCostPerMillion,
+			CompletionCostPerMillion: meta.CompletionCostPerMillion,
+			SupportsVision:           meta.SupportsVision,
+			SupportsTools:            meta.SupportsTools,
+			RecommendedTiers:         recTiers,
+			BenchmarkSource:          "live_oracle",
+		}
+	}
+	curation.DefaultManager().RegisterDynamicModels(dynamicProfiles)
 }
 
 // LastSynced returns the UTC timestamp of the most recent successful pricing sync.

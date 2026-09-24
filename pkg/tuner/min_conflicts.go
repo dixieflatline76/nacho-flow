@@ -114,8 +114,8 @@ func (b *CandidateConfigBuilder) WithPrunedTier(tierIdx int) *CandidateConfigBui
 	return b
 }
 
-// WithModelCandidate substitutes a tier's model with a curated candidate.
-func (b *CandidateConfigBuilder) WithModelCandidate(tierIdx int, cand curation.ModelCuratedProfile) *CandidateConfigBuilder {
+// WithCandidateModel substitutes a tier's model with an evaluated CandidateModel.
+func (b *CandidateConfigBuilder) WithCandidateModel(tierIdx int, cand CandidateModel) *CandidateConfigBuilder {
 	tier := &b.cfg.Tiers[tierIdx]
 	tier.Model = cand.ModelID
 	tier.CodingIndex = cand.CodingIndex
@@ -135,7 +135,10 @@ func (b *CandidateConfigBuilder) WithModelCandidate(tierIdx int, cand curation.M
 	if !tier.IsLocal {
 		tier.PromptCostPerMillion = cand.PromptCostPerMillion
 		tier.CompletionCostPerMillion = cand.CompletionCostPerMillion
-		compRate := cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
+		compRate := cand.ComprehensiveRate
+		if compRate <= 0 {
+			compRate = cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
+		}
 		tier.ComprehensiveRate = compRate
 		tier.CostPerMillion = compRate
 	} else {
@@ -147,8 +150,13 @@ func (b *CandidateConfigBuilder) WithModelCandidate(tierIdx int, cand curation.M
 	return b
 }
 
-// WithDefaultTierModel substitutes the fallback default tier's model.
-func (b *CandidateConfigBuilder) WithDefaultTierModel(cand curation.ModelCuratedProfile) *CandidateConfigBuilder {
+// WithModelCandidate substitutes a tier's model with a curated candidate.
+func (b *CandidateConfigBuilder) WithModelCandidate(tierIdx int, cand curation.ModelCuratedProfile) *CandidateConfigBuilder {
+	return b.WithCandidateModel(tierIdx, ConvertProfileToCandidate(cand))
+}
+
+// WithDefaultTierCandidateModel substitutes the fallback default tier's model with an evaluated CandidateModel.
+func (b *CandidateConfigBuilder) WithDefaultTierCandidateModel(cand CandidateModel) *CandidateConfigBuilder {
 	dt := &b.cfg.DefaultTier
 	dt.Model = cand.ModelID
 	dt.CodingIndex = cand.CodingIndex
@@ -168,7 +176,10 @@ func (b *CandidateConfigBuilder) WithDefaultTierModel(cand curation.ModelCurated
 	if !dt.IsLocal {
 		dt.PromptCostPerMillion = cand.PromptCostPerMillion
 		dt.CompletionCostPerMillion = cand.CompletionCostPerMillion
-		compRate := cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
+		compRate := cand.ComprehensiveRate
+		if compRate <= 0 {
+			compRate = cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
+		}
 		dt.ComprehensiveRate = compRate
 		dt.CostPerMillion = compRate
 	} else {
@@ -178,6 +189,11 @@ func (b *CandidateConfigBuilder) WithDefaultTierModel(cand curation.ModelCurated
 		dt.CostPerMillion = 0
 	}
 	return b
+}
+
+// WithDefaultTierModel substitutes the fallback default tier's model.
+func (b *CandidateConfigBuilder) WithDefaultTierModel(cand curation.ModelCuratedProfile) *CandidateConfigBuilder {
+	return b.WithDefaultTierCandidateModel(ConvertProfileToCandidate(cand))
 }
 
 // WithExcludedKeyword adds a keyword exclusion to the tier.
@@ -383,11 +399,99 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		}
 	}
 
+	// 5b. Post-CSP model substitution sweep for active cloud tiers.
+	opt.sweepModelReplacements(trajectories, &bestCfg, &evalBuf, &bestConflict)
+
 	// 6. Synthesize final multi-tier rules and impact metrics
 	var finalBuf MultiTierReplayResult
 	ReplayMultiTierFleet(trajectories, &bestCfg, &opt.policy, &finalBuf)
 
 	return opt.synthesizeTuningResult(currentConfig, initialCfg, bestCfg, baselineBuf, finalBuf, trajectories, initialDominance)
+}
+
+// sweepModelReplacements performs a post-CSP pass over active cloud tiers with spend,
+// evaluating qualifying replacement candidates via CandidateFilterPipeline and CompositeValueScorer.
+func (opt *MinConflictsOptimizer) sweepModelReplacements(
+	trajectories []SessionTrajectory,
+	bestCfg *MultiTierConfig,
+	evalBuf *MultiTierReplayResult,
+	bestConflict *float64,
+) {
+	ReplayMultiTierFleet(trajectories, bestCfg, &opt.policy, evalBuf)
+	for i := 0; i < len(bestCfg.Tiers); i++ {
+		t := &bestCfg.Tiers[i]
+		if t.IsDisabled || t.IsLocal || t.Model == "" || t.IsFrontier {
+			continue
+		}
+		minSpend := DefaultMinCloudSpendUSD
+		if opt.policy.MinCloudSpendUSD > 0 {
+			minSpend = opt.policy.MinCloudSpendUSD
+		}
+		if i < len(evalBuf.TierStats) && (evalBuf.TierStats[i].TurnsRouted == 0 || evalBuf.TierStats[i].CostUSD < minSpend) {
+			continue
+		}
+
+		var immediatePred *TierReplayConfig
+		for j := i - 1; j >= 0; j-- {
+			if !bestCfg.Tiers[j].IsDisabled {
+				immediatePred = &bestCfg.Tiers[j]
+				break
+			}
+		}
+		var immediateSucc *TierReplayConfig
+		for j := i + 1; j < len(bestCfg.Tiers); j++ {
+			if !bestCfg.Tiers[j].IsDisabled {
+				immediateSucc = &bestCfg.Tiers[j]
+				break
+			}
+		}
+
+		tierRole := curation.RoleCodingWorkhorse
+		if t.RequiresImages || (t.SupportsVision && !t.SupportsTools) {
+			tierRole = curation.RoleVisionWorkhorse
+		} else if t.IsFrontier {
+			tierRole = curation.RoleGeneral
+		}
+
+		candidates := CollectCandidateModels(tierRole, t.IsLocal, t.Model, opt.policy.LocalVRAMGB, opt.policy.CandidateDeals)
+		pipeline := NewDefaultFilterPipeline()
+		scorer := &CompositeValueScorer{}
+
+		var bestCand *CandidateModel
+		var bestScore float64
+
+		for _, cand := range candidates {
+			fCtx := &FilterContext{
+				TargetTier:    t,
+				Candidate:     &cand,
+				ImmediatePred: immediatePred,
+				ImmediateSucc: immediateSucc,
+				Policy:        &opt.policy,
+			}
+			if passed, _ := pipeline.Evaluate(fCtx); !passed {
+				continue
+			}
+			s := scorer.Score(t, &cand)
+			if bestCand == nil || s > bestScore {
+				candCopy := cand
+				bestCand = &candCopy
+				bestScore = s
+			}
+		}
+
+		if bestCand != nil {
+			candCfg := NewCandidateBuilder(bestCfg).
+				WithCandidateModel(i, *bestCand).
+				Build()
+			if CheckHardConstraints(&candCfg) {
+				c := EvaluateFleetConflict(trajectories, &candCfg, &opt.policy, evalBuf)
+				if c <= *bestConflict {
+					*bestConflict = c
+					*bestCfg = candCfg
+				}
+			}
+		}
+	}
 }
 
 // repairTokens explores candidate context thresholds for a tier.
@@ -481,12 +585,24 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 	} else if isFrontier || isEscalationTier {
 		tierRole = curation.RoleGeneral
 	}
-	candidates := curation.DefaultManager().ParetoCandidates(
+	candidates := CollectCandidateModels(
 		tierRole,
 		currentCfg.Tiers[tierIdx].IsLocal,
 		currentCfg.Tiers[tierIdx].Model,
 		opt.policy.LocalVRAMGB,
+		opt.policy.CandidateDeals,
 	)
+
+	pipeline := NewDefaultFilterPipeline()
+	scorer := &CompositeValueScorer{}
+
+	var immediateSucc *TierReplayConfig
+	for j := tierIdx + 1; j < len(currentCfg.Tiers); j++ {
+		if !currentCfg.Tiers[j].IsDisabled {
+			immediateSucc = &currentCfg.Tiers[j]
+			break
+		}
+	}
 
 	for _, cand := range candidates {
 		if cand.ModelID == currentCfg.Tiers[tierIdx].Model {
@@ -496,17 +612,28 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 		if immediatePred != nil && cand.ModelID == immediatePred.Model {
 			continue
 		}
-		// Escalation Progression: Require percentage cognitive leap (default 5%) or verified frontier class
-		minGain := opt.policy.MinEscalationGainPct
-		if minGain <= 0 {
-			minGain = 0.05
+
+		// Evaluate candidate against specification filter pipeline
+		fCtx := &FilterContext{
+			TargetTier:    &currentCfg.Tiers[tierIdx],
+			Candidate:     &cand,
+			ImmediatePred: immediatePred,
+			ImmediateSucc: immediateSucc,
+			Policy:        &opt.policy,
 		}
-		if isEscalationTier && immediatePred != nil {
-			minRequired := immediatePred.CodingIndex * (1.0 + minGain)
-			if !cand.IsFrontier() && cand.CodingIndex < minRequired {
+		if passed, _ := pipeline.Evaluate(fCtx); !passed {
+			// For escalation tiers resolving capability failures, allow benchmark leap if frontier or meets escalation gain
+			minGain := opt.policy.MinEscalationGainPct
+			if minGain <= 0 {
+				minGain = 0.05
+			}
+			isEscalationUpgrade := isEscalationTier && immediatePred != nil &&
+				(cand.IsFrontier() || cand.CodingIndex >= immediatePred.CodingIndex*(1.0+minGain))
+			if !isEscalationUpgrade {
 				continue
 			}
 		}
+
 		// Frontier tier protection: never downgrade a frontier tier to a non-frontier or lower-benchmark model
 		if isFrontier {
 			if !cand.IsFrontier() && cand.CodingIndex < 80.0 {
@@ -521,7 +648,7 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 		}
 
 		candCfg := NewCandidateBuilder(currentCfg).
-			WithModelCandidate(tierIdx, cand).
+			WithCandidateModel(tierIdx, cand).
 			Build()
 
 		if !CheckHardConstraints(&candCfg) {
@@ -535,27 +662,12 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 		if c < rc.minValConflict {
 			rc.minValConflict = c
 			rc.bestValCfg = candCfg
-		} else if math.Abs(c-rc.minValConflict) < 0.01 && immediatePred != nil && !candCfg.Tiers[tierIdx].IsDisabled && !rc.bestValCfg.Tiers[tierIdx].IsDisabled {
-			// Near-identical conflict tiebreaker: maximize gain per dollar
-			candEff := (cand.CodingIndex - immediatePred.CodingIndex)
-			rate := candCfg.Tiers[tierIdx].ComprehensiveRate
-			if rate <= 0 {
-				rate = cand.PromptCostPerMillion
-			}
-			if rate > 0 {
-				candEff /= rate
-			}
-
-			bestEff := (rc.bestValCfg.Tiers[tierIdx].CodingIndex - immediatePred.CodingIndex)
-			bestRate := rc.bestValCfg.Tiers[tierIdx].ComprehensiveRate
-			if bestRate <= 0 {
-				bestRate = rc.bestValCfg.Tiers[tierIdx].PromptCostPerMillion
-			}
-			if bestRate > 0 {
-				bestEff /= bestRate
-			}
-
-			if candEff > bestEff {
+		} else if math.Abs(c-rc.minValConflict) < 0.01 && !candCfg.Tiers[tierIdx].IsDisabled && !rc.bestValCfg.Tiers[tierIdx].IsDisabled {
+			// Near-identical conflict tiebreaker: rank by CompositeValueScorer
+			candScore := scorer.Score(&currentCfg.Tiers[tierIdx], &cand)
+			bestCand := ConvertTierToCandidate(&rc.bestValCfg.Tiers[tierIdx])
+			bestScore := scorer.Score(&currentCfg.Tiers[tierIdx], &bestCand)
+			if candScore > bestScore {
 				rc.minValConflict = c
 				rc.bestValCfg = candCfg
 			}
@@ -763,7 +875,21 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 		} else if recModel != "" && recModel != origModel {
 			origCoding, _ := ResolveModelBenchmark(origModel)
 			origPrompt, origComp, origCompRate := ResolveModelRates(origModel, tier.IsLocal)
-			if tier.CodingIndex > origCoding {
+			if !tier.IsLocal && (tier.ComprehensiveRate < origCompRate || tier.PromptCostPerMillion < origPrompt || tier.CompletionCostPerMillion < origComp) {
+				savingsPct := 0.0
+				if origCompRate > 0 {
+					savingsPct = ((origCompRate - tier.ComprehensiveRate) / origCompRate) * 100.0
+				}
+				if tier.CodingIndex > origCoding {
+					gainPct := 0.0
+					if origCoding > 0 {
+						gainPct = ((tier.CodingIndex - origCoding) / origCoding) * 100.0
+					}
+					modelBenefit = fmt.Sprintf(BenefitMsgWithCognitiveGain, tier.CodingIndex, origCoding, gainPct, savingsPct, tier.ComprehensiveRate, origCompRate)
+				} else {
+					modelBenefit = fmt.Sprintf(BenefitMsgAtCognitiveParity, tier.CodingIndex, savingsPct, tier.ComprehensiveRate, origCompRate)
+				}
+			} else if tier.CodingIndex > origCoding {
 				deltaCoding := tier.CodingIndex - origCoding
 				deltaCostPerM := tier.ComprehensiveRate - origCompRate
 				gainPct := (deltaCoding / origCoding) * 100.0
@@ -773,8 +899,6 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 				} else {
 					modelBenefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f (+%.1f%%) at no additional cost", origCoding, tier.CodingIndex, gainPct)
 				}
-			} else if !tier.IsLocal && (tier.PromptCostPerMillion < origPrompt || tier.CompletionCostPerMillion < origComp) {
-				modelBenefit = fmt.Sprintf("Reduces cloud token pricing ($%.2f/M prompt vs $%.2f/M)", tier.PromptCostPerMillion, origPrompt)
 			} else {
 				modelBenefit = "Optimizes fleet cost-to-performance frontier"
 			}
@@ -845,14 +969,35 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 			break
 		}
 	}
+	hasModelChange := false
+	for _, t := range tierResults {
+		if t.RecommendedModel != "" && t.RecommendedModel != t.OriginalModel {
+			hasModelChange = true
+			break
+		}
+	}
+	if defaultTierResult != nil && defaultTierResult.RecommendedModel != defaultTierResult.OriginalModel {
+		hasModelChange = true
+	}
+
 	if retriesAvoided <= 0 && savingsUSD <= 0.001 && !hasDominanceResolution && !hasPruning {
-		defaultTierResult = nil
-		for i := range tierResults {
-			if !tierResults[i].IsDisabled {
-				tierResults[i].SynthesizedRule = tierResults[i].OriginalRule
+		if !hasModelChange {
+			defaultTierResult = nil
+			for i := range tierResults {
+				if !tierResults[i].IsDisabled {
+					tierResults[i].SynthesizedRule = tierResults[i].OriginalRule
+				}
+				tierResults[i].RecommendedModel = tierResults[i].OriginalModel
+				tierResults[i].ModelBenefit = ""
 			}
-			tierResults[i].RecommendedModel = tierResults[i].OriginalModel
-			tierResults[i].ModelBenefit = ""
+		} else {
+			// Rule Invariance: No retry or dominance pressure to mutate syntax,
+			// preserve AST rules while recommending qualifying replacement models
+			for i := range tierResults {
+				if !tierResults[i].IsDisabled {
+					tierResults[i].SynthesizedRule = tierResults[i].OriginalRule
+				}
+			}
 		}
 	}
 

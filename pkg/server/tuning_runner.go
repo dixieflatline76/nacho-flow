@@ -119,7 +119,7 @@ func (p *ProcessTuningRunner) RunTuning(ctx context.Context, configPath string, 
 	}
 
 	var result tuner.TuningResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &result); err != nil {
 		return nil, fmt.Errorf("failed to decode tuner worker JSON output: %w (output: %s)", err, stdout.String())
 	}
 
@@ -152,12 +152,20 @@ func (r *InProcessTuningRunner) RunTuning(ctx context.Context, configPath string
 		}
 	}
 
-	optimizer := r.server.tuner
+	cfg := r.server.GetConfig()
+	policy := tuner.DefaultTuningPolicy()
 	if r.LocalVRAMGB > 0 {
-		policy := tuner.DefaultTuningPolicy()
 		policy.LocalVRAMGB = r.LocalVRAMGB
-		optimizer = tuner.NewMinConflictsOptimizer(policy)
 	}
+	if cfg != nil {
+		if cfg.Kickstart.WriteOnly || cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+			policy.WriteOnly = true
+		}
+		if r.server.oracle != nil {
+			policy.CandidateDeals = r.server.oracle.GetDeals(cfg.Deals, 0.0, 0)
+		}
+	}
+	optimizer := tuner.NewMinConflictsOptimizer(policy)
 
-	return optimizer.OptimizeWithContext(ctx, records, r.server.GetConfig())
+	return optimizer.OptimizeWithContext(ctx, records, cfg)
 }

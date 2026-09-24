@@ -306,6 +306,39 @@ func (m *Manager) GetActiveCatalog() *CuratedCatalog {
 	return m.activeCatalog.Load()
 }
 
+// RegisterDynamicModels merges dynamically discovered model profiles into the active catalog lock-free.
+func (m *Manager) RegisterDynamicModels(models map[string]ModelCuratedProfile) {
+	if m == nil || len(models) == 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	active := m.activeCatalog.Load()
+	newModels := make(map[string]ModelCuratedProfile)
+	version := "1.0.0"
+	if active != nil && active.Models != nil {
+		version = active.Version
+		for k, v := range active.Models {
+			newModels[k] = v
+		}
+	}
+	for id, p := range models {
+		if p.ModelID == "" {
+			p.ModelID = id
+		}
+		newModels[id] = p
+	}
+
+	newCat := CuratedCatalog{
+		Version:   version,
+		UpdatedAt: time.Now().UTC(),
+		Models:    newModels,
+	}
+	m.activeCatalog.Store(&newCat)
+	m.activeIndex.Store(buildCatalogIndex(&newCat))
+}
+
 // SyncOTA checks the remote catalog URL, compares semver, and atomically upgrades active intelligence if newer.
 func (m *Manager) SyncOTA(ctx context.Context) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.remoteURL, nil)

@@ -19,22 +19,31 @@ type TuningPolicy struct {
 	MinSessions          int     `json:"min_sessions"`                                                               // Minimum sessions for statistical significance
 	LocalVRAMGB          int     `json:"local_vram_gb,omitempty" yaml:"local_vram_gb,omitempty"`                     // Target local GPU VRAM ceiling in GB (0 = infer)
 	MinEscalationGainPct float64 `json:"min_escalation_gain_pct,omitempty" yaml:"min_escalation_gain_pct,omitempty"` // Minimum relative benchmark gain required for escalation tiers (default 0.05 = 5%)
-	WriteOnly            bool    `json:"write_only,omitempty" yaml:"write_only,omitempty"`                           // Mode where forward progress requires file writes, shell writes, or passing tests
+	WriteOnly            bool                `json:"write_only,omitempty" yaml:"write_only,omitempty"`                           // Mode where forward progress requires file writes, shell writes, or passing tests
+	CandidateDeals        []contract.DealInfo `json:"candidate_deals,omitempty"`
+	CodingParityTolerance float64             `json:"coding_parity_tolerance,omitempty" yaml:"coding_parity_tolerance,omitempty"` // Maximum allowed coding index delta below current tier benchmark (default 0.5)
+	MinSavingsPct         float64             `json:"min_savings_pct,omitempty" yaml:"min_savings_pct,omitempty"`                 // Minimum cost reduction required for substitution (default 20.0%)
+	ContextWindowFloor    int                 `json:"context_window_floor,omitempty" yaml:"context_window_floor,omitempty"`       // Minimum fallback context length (default 32000)
+	MinCloudSpendUSD      float64             `json:"min_cloud_spend_usd,omitempty" yaml:"min_cloud_spend_usd,omitempty"`         // Minimum spend before considering model substitution (default 0.10)
 }
 
 // DefaultTuningPolicy returns the recommended balanced flow-state protection policy.
 func DefaultTuningPolicy() TuningPolicy {
 	return TuningPolicy{
-		Name:                 "balanced_flow_state",
-		CostPerMillionCloud:  2.50,
-		RetryPenaltyUSD:      2.00,
-		CostWeight:           1.0,
-		TurnsWeight:          0.10,
-		MinOccurrences:       10,
-		OddsRatioThreshold:   1.5,
-		MinSessions:          5,
-		LocalVRAMGB:          0,
-		MinEscalationGainPct: 0.05,
+		Name:                  "balanced_flow_state",
+		CostPerMillionCloud:   2.50,
+		RetryPenaltyUSD:       2.00,
+		CostWeight:            1.0,
+		TurnsWeight:           0.10,
+		MinOccurrences:        10,
+		OddsRatioThreshold:    1.5,
+		MinSessions:           5,
+		LocalVRAMGB:           0,
+		MinEscalationGainPct:  0.05,
+		CodingParityTolerance: DefaultCodingParityTolerance,
+		MinSavingsPct:         DefaultMinSavingsPct,
+		ContextWindowFloor:    DefaultContextWindowFloor,
+		MinCloudSpendUSD:      DefaultMinCloudSpendUSD,
 	}
 }
 

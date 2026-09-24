@@ -390,16 +390,12 @@ func EvaluateFleetWithAttribution(
 					penalty += costWeight * turnCost
 					variableLedger["default_tier:model"] += penalty
 				}
-			} else if turnCost > 0 && targetTier.Model != "" {
-				costCeiling := 3.0
-				if policy != nil && policy.CostPerMillionCloud > 0 {
-					costCeiling = policy.CostPerMillionCloud
+			} else if turnCost > 0 && targetTier.Model != "" && !targetTier.IsLocal {
+				minSpend := DefaultMinCloudSpendUSD
+				if policy != nil && policy.MinCloudSpendUSD > 0 {
+					minSpend = policy.MinCloudSpendUSD
 				}
-				tierCeiling := costCeiling
-				if selectedTierIdx == defaultTierIdx {
-					tierCeiling = 15.0
-				}
-				if targetTier.ComprehensiveRate > tierCeiling {
+				if targetTier.ComprehensiveRate > minSpend {
 					varVar := fmt.Sprintf("tier_%d:model", selectedTierIdx)
 					if selectedTierIdx == defaultTierIdx {
 						varVar = "default_tier:model"

@@ -903,3 +903,190 @@ func TestMinConflicts_DeterministicOracle_EdgeCasesMatrix(t *testing.T) {
 		})
 	}
 }
+
+// GenerateDeterministicOracleTraffic_Archetype5 produces high-volume, clean agentic coding traffic
+// routed exclusively to Tier 2 (Qwen3 Coder Plus at $1.46/1M) with zero retries.
+// This is the ground truth scenario where previous implementations returned "Routing Currently Optimal"
+// and were blind to cheaper market alternatives with equal or better coding index.
+func GenerateDeterministicOracleTraffic_Archetype5() []telemetry.TurnRecord {
+	now := time.Now().UTC()
+	var records []telemetry.TurnRecord
+
+	for s := 1; s <= 5; s++ {
+		sessID := "sess-oracle-archetype5-" + strconv.Itoa(s)
+		rootHash := uint64(9000 + s)
+
+		for turn := 1; turn <= 4; turn++ {
+			records = append(records, telemetry.TurnRecord{
+				Timestamp:          now.Add(time.Duration(s*100+turn) * time.Second),
+				SessionID:          sessID,
+				RootPromptHash:     rootHash,
+				Tokens:             40000,
+				IsLocal:            false,
+				IsRetry:            false,
+				Retries:            0,
+				HasTools:           true,
+				HasImages:          false,
+				HasWriteCapability: true,
+				HasWriteProgress:   true,
+				StatusCode:         200,
+				CostSpentUSD:       0.0584, // 40k tokens @ $1.46/1M
+			})
+		}
+	}
+	return records
+}
+
+// TestDeterministicOracle_Archetype5_ModelReplacement tests the deterministic qualification,
+// context window guarding, and selection of candidate replacement models.
+func TestDeterministicOracle_Archetype5_ModelReplacement(t *testing.T) {
+	records := GenerateDeterministicOracleTraffic_Archetype5()
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:       "Tier 1: Local GPU Workhorse",
+				Provider:   "ollama",
+				Model:      "gemma4:12b-it-qat",
+				When:       "Tokens < 8000 && Retries < 2",
+				MaxContext: 32000,
+			},
+			{
+				Name:       "Tier 2: Flagship Agent Coder (Qwen3 Coder Plus)",
+				Provider:   "openrouter",
+				Model:      "qwen/qwen3-coder-plus",
+				When:       "Tokens < 160000 && Retries < 2",
+				MaxContext: 160000,
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Catch-All",
+			Provider: "openrouter",
+			Model:    "anthropic/claude-sonnet-5",
+			When:     "true",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"ollama":     {Type: contract.ProviderTypeLocal},
+			"openrouter": {Type: contract.ProviderTypeCloud},
+		},
+	}
+
+	policy := DefaultTuningPolicy()
+	policy.CandidateDeals = []contract.DealInfo{
+		// Candidate A: Winning Replacement (Index 71.5 >= 70.0, 160k context, Tools, 81% savings)
+		{
+			ModelID:            "z-ai/glm-5.3-flash",
+			Name:               "Z.ai GLM 5.3 Flash",
+			CodingIndex:        71.5,
+			PromptCostPerM:     0.15,
+			CompletionCostPerM: 0.50,
+			ContextLength:      160000,
+			SupportsTools:      true,
+			SupportsVision:     true,
+			TierRole:           "coding_workhorse",
+		},
+		// Candidate B: Disqualified by ContextParityFilter (Context 128k < 160k tier limit)
+		{
+			ModelID:            "deepseek/v4-flash",
+			Name:               "DeepSeek V4 Flash",
+			CodingIndex:        69.5,
+			PromptCostPerM:     0.03,
+			CompletionCostPerM: 0.32,
+			ContextLength:      128000,
+			SupportsTools:      true,
+			TierRole:           "coding_workhorse",
+		},
+		// Candidate C: Disqualified by CognitiveParityFilter (Index 45.0 < 70.0)
+		{
+			ModelID:            "cheap-prose-coder",
+			Name:               "Cheap Prose Coder",
+			CodingIndex:        45.0,
+			PromptCostPerM:     0.05,
+			CompletionCostPerM: 0.10,
+			ContextLength:      160000,
+			SupportsTools:      true,
+			TierRole:           "coding_workhorse",
+		},
+		// Candidate D: Disqualified by ModalityFilter (Missing tool calling)
+		{
+			ModelID:            "text-only-genius",
+			Name:               "Text Only Genius",
+			CodingIndex:        75.0,
+			PromptCostPerM:     0.20,
+			CompletionCostPerM: 0.40,
+			ContextLength:      160000,
+			SupportsTools:      false,
+			TierRole:           "coding_workhorse",
+		},
+		// Candidate E: Disqualified by Batch Exclusion
+		{
+			ModelID:            "batch-discount:batch",
+			Name:               "Batch Discount (batch)",
+			CodingIndex:        74.0,
+			PromptCostPerM:     0.05,
+			CompletionCostPerM: 0.10,
+			ContextLength:      160000,
+			SupportsTools:      true,
+			TierRole:           "coding_workhorse",
+		},
+		// Candidate F: Disqualified by CostReductionFilter (Rate $3.00 > $1.46)
+		{
+			ModelID:            "expensive-flagship",
+			Name:               "Expensive Flagship",
+			CodingIndex:        78.0,
+			PromptCostPerM:     2.50,
+			CompletionCostPerM: 10.00,
+			ContextLength:      200000,
+			SupportsTools:      true,
+			TierRole:           "deep_reasoner",
+		},
+	}
+
+	opt := NewMinConflictsOptimizer(policy)
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed on Archetype 5 records: %v", err)
+	}
+
+	if len(res.Tiers) < 2 {
+		t.Fatalf("expected at least 2 tiers in result, got %d", len(res.Tiers))
+	}
+
+	// 1. Local Tier Immunity: Tier 1 (Ollama) MUST NOT be modified
+	tier1 := res.Tiers[0]
+	if tier1.RecommendedModel != "" && tier1.RecommendedModel != tier1.OriginalModel {
+		t.Errorf("LOCAL TIER VIOLATION: Local tier 1 was recommended for model change to %s", tier1.RecommendedModel)
+	}
+
+	// 2. Deterministic Replacement: Tier 2 MUST recommend Model A (z-ai/glm-5.3-flash)
+	tier2 := res.Tiers[1]
+	expectedModel := "z-ai/glm-5.3-flash"
+	if tier2.RecommendedModel != expectedModel {
+		t.Errorf("DETERMINISTIC WINNER MISMATCH: expected Tier 2 to recommend %q, got %q (benefit: %q)",
+			expectedModel, tier2.RecommendedModel, tier2.ModelBenefit)
+	}
+
+	// 3. Rule Invariance: Because history has 0 retries, routing rule MUST NOT be mutated
+	expectedRule := "Tokens < 160000 && Retries < 2"
+	if strings.TrimSpace(tier2.SynthesizedRule) != expectedRule {
+		t.Errorf("UNNECESSARY RULE MUTATION: expected rule %q to be preserved, got %q",
+			expectedRule, tier2.SynthesizedRule)
+	}
+
+	// 4. Financial Telemetry: Projected savings must reflect rate difference ($1.46 -> $0.275)
+	if res.ProjectedSavingsUSD <= 0.10 {
+		t.Errorf("FINANCIAL TELEMETRY ERROR: expected projected savings > $0.10, got $%.4f",
+			res.ProjectedSavingsUSD)
+	}
+
+	// 5. Plain-English Benefit: Must contain verified coding score comparison
+	if !strings.Contains(tier2.ModelBenefit, "Recommended Model Replacement") {
+		t.Errorf("BENEFIT NOTE ERROR: expected plain-English replacement note, got %q",
+			tier2.ModelBenefit)
+	}
+	if !strings.Contains(tier2.ModelBenefit, "71.5 vs 70.0") {
+		t.Errorf("BENEFIT NOTE ERROR: expected coding index comparison '71.5 vs 70.0', got %q",
+			tier2.ModelBenefit)
+	}
+}
+
