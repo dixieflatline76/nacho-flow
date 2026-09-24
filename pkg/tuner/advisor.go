@@ -14,6 +14,7 @@ func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
 		WithBanner().
 		WithSampleSize().
 		WithSessionDynamics().
+		WithContextInflationAudit().
 		WithModelRecovery().
 		WithDominanceConflicts().
 		WithTierPolicies().
@@ -67,6 +68,28 @@ func (b *AdvisoryReportBuilder) WithSessionDynamics() *AdvisoryReportBuilder {
 			b.res.TotalSessions, b.res.AvgTurnsPerSession, b.res.EscalationRate*100)
 	} else {
 		b.sb.WriteString("\n")
+	}
+	return b
+}
+
+// WithContextInflationAudit renders late-stage context cost inflation and read-burst escalation metrics.
+func (b *AdvisoryReportBuilder) WithContextInflationAudit() *AdvisoryReportBuilder {
+	if b.res.HighContextEscalationTurns == 0 && b.res.ReadBurstEscalations == 0 {
+		return b
+	}
+
+	b.sb.WriteString("\n🔥 LATE-CONTEXT COST INFLATION AUDIT:\n")
+	if b.res.HighContextEscalationTurns > 0 {
+		fmt.Fprintf(&b.sb, "  • High-Context Escalations (>100k tok): %d turns\n", b.res.HighContextEscalationTurns)
+		fmt.Fprintf(&b.sb, "  • High-Context Cloud Spend:            $%.2f / $%.2f (%.1f%% of total run cost)\n",
+			b.res.HighContextCostUSD, b.res.CurrentCostUSD, b.res.HighContextCostPct)
+	}
+	if b.res.ReadBurstEscalations > 0 {
+		fmt.Fprintf(&b.sb, "  • Read-Burst Escalations:               %d turns triggered by read-only tool sequences\n", b.res.ReadBurstEscalations)
+	}
+	b.sb.WriteString("  • Replay Engine Fidelity:               write_only progress simulation active\n")
+	if b.res.NTSProjectedSavingsUSD > 0 {
+		fmt.Fprintf(&b.sb, "  • NTS Context Compaction:               Projected savings ~$%.2f if enabled\n", b.res.NTSProjectedSavingsUSD)
 	}
 	return b
 }

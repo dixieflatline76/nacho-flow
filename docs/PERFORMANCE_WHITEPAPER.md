@@ -20,7 +20,7 @@ Indeed, popular enterprise gateways like **LiteLLM** add **$8.0\text{--}25.0\tex
 Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 - **Raw Pass-Through Proxy Latency**: **$0.184\text{ ms}$** ($184.7\,\mu\text{s}$)
 - **Full Deep-Inspection Latency** (Bearer Auth + AST Rules + Multi-Model Normalization): **$0.205\text{ ms}$** ($205.9\,\mu\text{s}$)
-- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,058\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
+- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,284\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
 - **Idle Memory Footprint**: **$< 25\text{ MB}$** (peaking under $111\text{ MB}$ at $500$ simultaneous client streams).
 
 | Gateway / Architecture | Runtime Engine | Inspection Depth | Added Latency (Overhead) | Relative Speed vs. Python |
@@ -300,11 +300,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$26686.9\text{ req/s}$** | $1.47\text{ ms}$ | $8.00\text{ ms}$ | $117.0\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$25525.1\text{ req/s}$** | $3.00\text{ ms}$ | $15.68\text{ ms}$ | $80.7\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$24322.4\text{ req/s}$** | $8.12\text{ ms}$ | $45.88\text{ ms}$ | $128.2\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$26081.8\text{ req/s}$** | $17.41\text{ ms}$ | $43.67\text{ ms}$ | $110.8\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$25855.6\text{ req/s}$** | $32.68\text{ ms}$ | $91.18\text{ ms}$ | $215.8\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$24278.0\text{ req/s}$** | $1.52\text{ ms}$ | $10.03\text{ ms}$ | $111.1\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$21967.2\text{ req/s}$** | $3.12\text{ ms}$ | $20.09\text{ ms}$ | $132.8\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$24326.4\text{ req/s}$** | $7.85\text{ ms}$ | $45.25\text{ ms}$ | $177.4\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$25206.3\text{ req/s}$** | $16.99\text{ ms}$ | $66.69\text{ ms}$ | $145.8\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$24505.1\text{ req/s}$** | $32.50\text{ ms}$ | $120.73\text{ ms}$ | $190.2\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 #### High-Concurrency Scaling Analysis:

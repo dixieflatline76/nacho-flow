@@ -109,27 +109,48 @@ func TestMinConflicts_RealLifeTraffic(t *testing.T) {
 	cfg := &contract.Config{
 		Tiers: []contract.Tier{
 			{
+				Name:     "Kickstart Escalation (Gemini 3.8 Flash)",
+				Provider: "openrouter",
+				Model:    "google/gemini-3.8-flash",
+				When:     "SessionKickstarted && Retries < 3",
+			},
+			{
+				Name:     "Tier: Multimodal Vision (Gemini 3.8 Flash)",
+				Provider: "openrouter",
+				Model:    "google/gemini-3.8-flash",
+				When:     "HasImages && Retries < 2",
+			},
+			{
 				Name:       "Tier 1: Local GPU Workhorse",
 				Provider:   "ollama",
+				Model:      "gemma4:12b-it-qat",
 				When:       "Tokens < 16000 && Retries < 2",
 				MaxContext: 32000,
 			},
 			{
-				Name:       "Tier 2: Cloud Coder",
+				Name:       "Tier 2: Flagship Agent Coder",
 				Provider:   "openrouter",
-				When:       "Tokens < 32000 && Retries < 3",
-				MaxContext: 64000,
+				Model:      "qwen/qwen3-coder-plus",
+				When:       "Tokens < 160000 && Retries < 2",
+				MaxContext: 160000,
+			},
+			{
+				Name:       "Tier 3: Debug & Reasoning Workhorse",
+				Provider:   "openrouter",
+				Model:      "google/gemini-3.8-flash",
+				When:       "Tokens < 260000 && Retries < 5",
+				MaxContext: 260000,
 			},
 		},
 		DefaultTier: contract.Tier{
-			Name:     "Tier 3: Frontier Fallback",
-			Provider: "anthropic",
+			Name:     "Tier 4: Frontier Powerhouse",
+			Provider: "openrouter",
+			Model:    "anthropic/claude-sonnet-5",
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"ollama":     {Type: contract.ProviderTypeLocal},
 			"openrouter": {Type: contract.ProviderTypeCloud},
-			"anthropic":  {Type: contract.ProviderTypeCloud},
 		},
 	}
 
@@ -146,8 +167,8 @@ func TestMinConflicts_RealLifeTraffic(t *testing.T) {
 	if res == nil {
 		t.Fatalf("expected non-nil TuningResult")
 	}
-	if len(res.Tiers) != 2 {
-		t.Fatalf("expected 2 tuned tiers, got %d", len(res.Tiers))
+	if len(res.Tiers) != 5 {
+		t.Fatalf("expected 5 tuned tiers, got %d", len(res.Tiers))
 	}
 
 	t.Logf("Real traffic tuned in %v across %d sessions (%d turns)",
@@ -155,6 +176,25 @@ func TestMinConflicts_RealLifeTraffic(t *testing.T) {
 	for i, tierRes := range res.Tiers {
 		t.Logf("  Tier %d (%s): Threshold=%d, Retries=%d, Rule=%q",
 			i+1, tierRes.TierName, tierRes.OptimalThreshold, tierRes.OptimalRetries, tierRes.SynthesizedRule)
+
+		// Assert each synthesized rule compiles cleanly and satisfies semantic invariants
+		AssertRuleSemanticInvariants(t, tierRes.SynthesizedRule, cfg.Tiers[i])
+	}
+
+	// 1. Kickstart Escalation must preserve SessionKickstarted
+	if !strings.Contains(res.Tiers[0].SynthesizedRule, "SessionKickstarted") {
+		t.Errorf("Kickstart tier lost SessionKickstarted guardrail: %s", res.Tiers[0].SynthesizedRule)
+	}
+
+	// 2. Multimodal Vision must preserve HasImages
+	if !strings.Contains(res.Tiers[1].SynthesizedRule, "HasImages") {
+		t.Errorf("Multimodal Vision tier lost HasImages guardrail: %s", res.Tiers[1].SynthesizedRule)
+	}
+
+	// 3. Local GPU must remain within max context
+	if res.Tiers[2].OptimalThreshold > cfg.Tiers[2].MaxContext {
+		t.Errorf("Local GPU optimal threshold (%d) exceeded MaxContext (%d)",
+			res.Tiers[2].OptimalThreshold, cfg.Tiers[2].MaxContext)
 	}
 }
 
@@ -685,6 +725,32 @@ func TestMinConflicts_MultiTierCascade_LocalContextCliff(t *testing.T) {
 			HasImages:          false,
 			RootPromptHash:     promptHash,
 		})
+
+		// Turn 5: Multimodal vision prompt (25000 tokens) -> routes to Vision tier
+		records = append(records, telemetry.TurnRecord{
+			Timestamp:          now.Add(time.Duration(s*100+5) * time.Second),
+			SessionID:          sessID,
+			Tokens:             25000,
+			IsLocal:            false,
+			IsRetry:            false,
+			HasWriteProgress:   true,
+			SessionKickstarted: false,
+			HasImages:          true,
+			RootPromptHash:     promptHash,
+		})
+
+		// Turn 6: Kickstart prompt (1500 tokens) -> routes to Kickstart tier
+		records = append(records, telemetry.TurnRecord{
+			Timestamp:          now.Add(time.Duration(s*100+6) * time.Second),
+			SessionID:          sessID,
+			Tokens:             1500,
+			IsLocal:            false,
+			IsRetry:            false,
+			HasWriteProgress:   true,
+			SessionKickstarted: true,
+			HasImages:          false,
+			RootPromptHash:     promptHash,
+		})
 	}
 
 	cfg := &contract.Config{
@@ -734,17 +800,18 @@ func TestMinConflicts_MultiTierCascade_LocalContextCliff(t *testing.T) {
 		t.Fatalf("Optimize failed: %v", err)
 	}
 
-	// 1. Kickstart Escalation must preserve original rule (no cannibalization)
+	// 1. Kickstart Escalation must receive traffic and preserve original rule (no cannibalization)
 	kickstart := res.Tiers[0]
 	if kickstart.SynthesizedRule != "SessionKickstarted && Retries < 3" {
 		t.Errorf("Kickstart tier mutated: expected %q, got %q", "SessionKickstarted && Retries < 3", kickstart.SynthesizedRule)
 	}
 
-	// 2. Multimodal Vision must preserve original rule
+	// 2. Multimodal Vision must receive traffic, preserve original rule, and enforce semantic invariant
 	vision := res.Tiers[1]
 	if vision.SynthesizedRule != "HasImages && Retries < 2" {
 		t.Errorf("Vision tier mutated: expected %q, got %q", "HasImages && Retries < 2", vision.SynthesizedRule)
 	}
+	AssertRuleSemanticInvariants(t, vision.SynthesizedRule, cfg.Tiers[1])
 
 	// 3. Local GPU Workhorse MUST receive traffic and optimize its context cliff down from 20000!
 	localTier := res.Tiers[2]
@@ -1756,3 +1823,101 @@ func TestMinConflicts_GainPerDollarEfficiency(t *testing.T) {
 	}
 }
 
+func TestMinConflicts_LoosensRetryForReadBursts(t *testing.T) {
+	now := time.Now().UTC()
+	policy := DefaultTuningPolicy()
+	policy.WriteOnly = true
+
+	// 5 sessions: each performs 2 read-only turns followed by 1 write turn at late context.
+	// With Retries < 2, the 3rd turn escalates to expensive Gemini Flash ($0.50/M).
+	// With Retries < 3, the 3rd turn stays on Qwen ($0.20/M), cutting costs.
+	var records []telemetry.TurnRecord
+	for s := 1; s <= 5; s++ {
+		sessID := fmt.Sprintf("read-burst-sess-%d", s)
+		rootHash := uint64(5000 + s)
+
+		// Turn 1: read_file
+		records = append(records, telemetry.TurnRecord{
+			Timestamp:          now.Add(time.Duration(s*100) * time.Second),
+			SessionID:          sessID,
+			Tokens:             20000,
+			IsLocal:            false,
+			HasTools:           true,
+			HasWriteCapability: true,
+			HasWriteProgress:   false,
+			RootPromptHash:     rootHash,
+			CostSpentUSD:       0.004,
+		})
+
+		// Turn 2: grep_search
+		records = append(records, telemetry.TurnRecord{
+			Timestamp:          now.Add(time.Duration(s*100+10) * time.Second),
+			SessionID:          sessID,
+			Tokens:             50000,
+			IsLocal:            false,
+			HasTools:           true,
+			HasWriteCapability: true,
+			HasWriteProgress:   false,
+			RootPromptHash:     rootHash,
+			CostSpentUSD:       0.010,
+		})
+
+		// Turn 3: late-context write at 120k tokens
+		records = append(records, telemetry.TurnRecord{
+			Timestamp:          now.Add(time.Duration(s*100+20) * time.Second),
+			SessionID:          sessID,
+			Tokens:             120000,
+			IsLocal:            false,
+			HasTools:           true,
+			HasWriteCapability: true,
+			HasWriteProgress:   true,
+			RootPromptHash:     rootHash,
+			CostSpentUSD:       0.060, // Flash escalation cost
+		})
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Qwen Coder Workhorse",
+				Provider: "openrouter",
+				Model:    "qwen/qwen3-coder-plus", // $0.20/M
+				When:     "Retries < 2",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Fallback Tier",
+			Provider: "openrouter",
+			Model:    "google/gemini-3.8-flash", // $0.50/M
+			When:     "true",
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {Type: contract.ProviderTypeCloud},
+		},
+	}
+
+	opt := NewMinConflictsOptimizer(policy)
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	// Verify that Tier 1's retry bound was loosened from Retries < 2 to Retries < 3 or < 4
+	tier1 := res.Tiers[0]
+	if tier1.OptimalRetries < 3 {
+		t.Errorf("Expected Tier 1 optimal retries to be loosened to >= 3 to absorb read bursts, got %d (rule: %q)",
+			tier1.OptimalRetries, tier1.SynthesizedRule)
+	}
+
+	if res.ProjectedSavingsUSD <= 0 {
+		t.Errorf("Expected projected savings > 0 when loosening retry bound, got %f", res.ProjectedSavingsUSD)
+	}
+
+	if res.HighContextEscalationTurns == 0 {
+		t.Errorf("Expected high context escalation turns > 0, got %d", res.HighContextEscalationTurns)
+	}
+
+	if res.ReadBurstEscalations == 0 {
+		t.Errorf("Expected read burst escalations > 0, got %d", res.ReadBurstEscalations)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
 // ModelPricing represents USD cost per million tokens.
@@ -380,6 +381,8 @@ func (o *PricingOracle) GetDeals(cfg contract.DealsConfig, benchmarkCostPerM flo
 		minCoding = contract.DefaultDealsMinCodingIndex
 		alertThreshold = contract.DefaultDealsAlertThresholdPct
 	}
+	excludeBatch := cfg.ShouldExcludeBatch()
+	excludeFree := cfg.ShouldExcludeFree()
 
 	var deals []contract.DealInfo
 	for modelID, meta := range *metaPtr {
@@ -393,6 +396,20 @@ func (o *PricingOracle) GetDeals(cfg contract.DealsConfig, benchmarkCostPerM flo
 			continue
 		}
 
+		lowerID := strings.ToLower(modelID)
+		lowerName := strings.ToLower(meta.Name)
+
+		// Filter out asynchronous batch models if exclude_batch is enabled
+		if excludeBatch && (strings.Contains(lowerID, ":batch") || strings.Contains(lowerName, "(batch)")) {
+			continue
+		}
+
+		// Filter out rate-limited free tier models if exclude_free is enabled
+		isModelFree := (meta.PromptCostPerMillion == 0 && meta.CompletionCostPerMillion == 0) || strings.Contains(lowerID, ":free")
+		if excludeFree && isModelFree {
+			continue
+		}
+
 		// Multi-tier capability & role classification
 		role, codingScore, recTiers := o.classifier.ClassifyModel(meta)
 
@@ -400,8 +417,17 @@ func (o *PricingOracle) GetDeals(cfg contract.DealsConfig, benchmarkCostPerM flo
 			continue
 		}
 
-		if minCoding > 0 && codingScore > 0 && codingScore < minCoding {
-			continue
+		// Coding capability qualification:
+		// 1. If actively benchmarked (codingScore > 0), enforce min_coding_index threshold.
+		// 2. If unbenchmarked (codingScore == 0), require recognized agentic role/tiers to prevent general prose/translation spam.
+		if codingScore > 0 {
+			if minCoding > 0 && codingScore < minCoding {
+				continue
+			}
+		} else {
+			if role == curation.RoleGeneral && len(recTiers) == 0 {
+				continue
+			}
 		}
 
 		var discountPct float64
@@ -422,6 +448,18 @@ func (o *PricingOracle) GetDeals(cfg contract.DealsConfig, benchmarkCostPerM flo
 			providerName = contract.ProviderOpenRouter
 		}
 
+		// Calculate Composite Agentic Value Score:
+		// Rewards high coding intelligence weighted by discount percentage:
+		// ValueScore = EffectiveScore * (1.0 + discountPct / 100.0)
+		effectiveScore := codingScore
+		if effectiveScore <= 0 {
+			effectiveScore = minCoding
+			if effectiveScore <= 0 {
+				effectiveScore = contract.DefaultDealsMinCodingIndex
+			}
+		}
+		valueScore := effectiveScore * (1.0 + discountPct/100.0)
+
 		deals = append(deals, contract.DealInfo{
 			Provider:           providerName,
 			ModelID:            modelID,
@@ -430,24 +468,28 @@ func (o *PricingOracle) GetDeals(cfg contract.DealsConfig, benchmarkCostPerM flo
 			PromptCostPerM:     meta.PromptCostPerMillion,
 			CompletionCostPerM: meta.CompletionCostPerMillion,
 			DiscountPct:        discountPct,
-			IsFree:             meta.PromptCostPerMillion == 0 && meta.CompletionCostPerMillion == 0,
+			IsFree:             isModelFree,
 			SupportsTools:      meta.SupportsTools,
 			SupportsVision:     meta.SupportsVision,
 			SupportsReasoning:  meta.SupportsReasoning,
 			TierRole:           string(role),
 			CodingIndex:        codingScore,
 			AgenticIndex:       meta.AgenticIndex,
+			ValueScore:         valueScore,
 			RecommendedTiers:   recTiers,
 			ExpiresAt:          meta.ExpiresAt,
 		})
 	}
 
-	// Sort by DiscountPct DESC, then CodingIndex DESC
+	// Rank by Composite Agentic Value Score DESC, then CodingIndex DESC, then DiscountPct DESC
 	sort.Slice(deals, func(i, j int) bool {
-		if deals[i].DiscountPct != deals[j].DiscountPct {
-			return deals[i].DiscountPct > deals[j].DiscountPct
+		if deals[i].ValueScore != deals[j].ValueScore {
+			return deals[i].ValueScore > deals[j].ValueScore
 		}
-		return deals[i].CodingIndex > deals[j].CodingIndex
+		if deals[i].CodingIndex != deals[j].CodingIndex {
+			return deals[i].CodingIndex > deals[j].CodingIndex
+		}
+		return deals[i].DiscountPct > deals[j].DiscountPct
 	})
 
 	if len(deals) > limit {

@@ -20,6 +20,7 @@ var (
 	restrictImagesRegex  = regexp.MustCompile(`(?i)(?:!\s*HasImages|\bHasImages\s*==\s*false\b)`)
 	requireImagesRegex   = regexp.MustCompile(`(?i)(?:^|[^!])\bHasImages\b(?:\s*==\s*true)?`)
 	restrictToolsRegex   = regexp.MustCompile(`(?i)(?:!\s*HasTools|\bHasTools\s*==\s*false\b)`)
+	requireToolsRegex    = regexp.MustCompile(`(?i)(?:^|[^!])\bHasTools\b(?:\s*==\s*true)?`)
 	extractKeywordsRegex = regexp.MustCompile(`(?i)\bkeywords\b`)
 )
 
@@ -78,6 +79,7 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 		restrictImages := restrictImagesRegex.MatchString(tier.When)
 		requiresImages := requireImagesRegex.MatchString(tier.When) && !restrictImages
 		restrictTools := restrictToolsRegex.MatchString(tier.When)
+		requiresTools := requireToolsRegex.MatchString(tier.When) && !restrictTools
 
 		supportsVision, supportsTools := ResolveModelCapabilities(tier.Model)
 		if tier.HasVision != nil {
@@ -90,6 +92,8 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 		}
 		if tier.HasTools != nil {
 			supportsTools = *tier.HasTools
+		} else if requiresTools {
+			supportsTools = true
 		}
 		if tier.StripTools {
 			supportsTools = false
@@ -163,6 +167,7 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 			SupportsTools:            supportsTools,
 			RequiresKickstart:        requiresKickstart,
 			RequiresImages:           requiresImages,
+			RequiresTools:            requiresTools,
 			RetryFloor:               retryFloor,
 			TokenThreshold:           threshold,
 			MaxContext:               tier.MaxContext,

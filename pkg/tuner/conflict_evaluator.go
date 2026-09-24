@@ -166,6 +166,9 @@ func EvaluateFleetWithAttribution(
 				if candidate.RequiresImages && !turn.HasImages {
 					continue
 				}
+				if candidate.RequiresTools && !turn.HasTools {
+					continue
+				}
 				if candidate.RetryFloor > 0 && currentRetries < candidate.RetryFloor {
 					continue
 				}
@@ -203,6 +206,17 @@ func EvaluateFleetWithAttribution(
 			var turnCost float64
 			isUpstreamTransient := turn.FailureCategory == telemetry.FailureUpstream || turn.StatusCode == 429 || (turn.StatusCode >= 500 && turn.StatusCode <= 599)
 
+			isWriteOnly := policy != nil && policy.WriteOnly
+			hasProgress := false
+			if isWriteOnly {
+				hasProgress = turn.HasWriteProgress || turn.HasShellWrite || turn.HasTestPass
+				if turn.HasTools && !turn.HasWriteCapability {
+					hasProgress = true
+				}
+			} else {
+				hasProgress = (!turn.IsRetry && !turn.HasTestFail) || turn.HasTestPass
+			}
+
 			if targetTier.IsLocal {
 				if isUpstreamTransient {
 					// Non-model infrastructure error: do not charge wasted retry or fail turn
@@ -210,6 +224,18 @@ func EvaluateFleetWithAttribution(
 					currentRetries++
 					totalWastedRetries++
 					turnFailed = true
+				} else if isWriteOnly {
+					if hasProgress {
+						currentRetries = 0
+					} else {
+						currentRetries++
+						if turn.HasTestFail || turn.IsRetry || retriesBeforeTurn >= 1 {
+							if turn.HasTestFail || turn.IsRetry {
+								totalWastedRetries++
+							}
+							turnFailed = true
+						}
+					}
 				} else if turn.IsRetry {
 					currentRetries++
 					totalWastedRetries++
@@ -246,6 +272,18 @@ func EvaluateFleetWithAttribution(
 
 				if isUpstreamTransient {
 					// Non-model infrastructure error: do not charge wasted retry or fail turn
+				} else if isWriteOnly {
+					if hasProgress || (turn.IsLocal && targetTier.CodingIndex >= 70.0) {
+						currentRetries = 0
+					} else {
+						currentRetries++
+						if turn.HasTestFail || turn.IsRetry || retriesBeforeTurn >= 1 {
+							if turn.HasTestFail || turn.IsRetry {
+								totalWastedRetries++
+							}
+							turnFailed = true
+						}
+					}
 				} else if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
 					currentRetries = 0
 				} else {

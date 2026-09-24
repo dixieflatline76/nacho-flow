@@ -193,12 +193,14 @@ func TestPricingOracle_GetDeals_QualityFilteringAndRanking(t *testing.T) {
 	classifier := NewClassifier(gallery)
 	oracle := NewPricingOracleWithClassifier(classifier)
 
-	// Setup 5 diverse models:
-	// 1. Gemini 2.5 Flash Lite: 96.7% discount, 68.1 coding index, tools
+	// Setup 6 diverse models:
+	// 1. Gemini 2.5 Flash Lite: 95.0% discount, 68.1 coding index, tools
 	// 2. Claude Sonnet 5: 0% discount (baseline benchmark $2.00), 97.4 coding index
 	// 3. Cheap non-tool model: 98% discount, 0 coding index, no tools
 	// 4. Free coding model: 100% discount, 75.0 coding index, tools
 	// 5. Cheap sub-threshold translation model: 90% discount, 20.0 coding index
+	// 6. Batch model: 97.5% discount, 68.1 coding index, tools
+	// 7. Qwen 2.5 Coder 32B: 92.5% discount ($0.15/1M), 73.7 coding index, tools
 	models := map[string]ModelMetadata{
 		"google/gemini-2.5-flash-lite": {
 			ModelPricing:  ModelPricing{PromptCostPerMillion: 0.10, CompletionCostPerMillion: 0.40},
@@ -207,6 +209,22 @@ func TestPricingOracle_GetDeals_QualityFilteringAndRanking(t *testing.T) {
 			ContextLength: 1048576,
 			SupportsTools: true,
 			CodingIndex:   68.1,
+		},
+		"google/gemini-2.5-flash-lite:batch": {
+			ModelPricing:  ModelPricing{PromptCostPerMillion: 0.05, CompletionCostPerMillion: 0.20},
+			ModelID:       "google/gemini-2.5-flash-lite:batch",
+			Name:          "Google: Gemini 2.5 Flash Lite (batch)",
+			ContextLength: 1048576,
+			SupportsTools: true,
+			CodingIndex:   68.1,
+		},
+		"qwen/qwen-2.5-coder-32b": {
+			ModelPricing:  ModelPricing{PromptCostPerMillion: 0.15, CompletionCostPerMillion: 0.60},
+			ModelID:       "qwen/qwen-2.5-coder-32b",
+			Name:          "Qwen: Qwen 2.5 Coder 32B",
+			ContextLength: 131072,
+			SupportsTools: true,
+			CodingIndex:   73.7,
 		},
 		"anthropic/claude-sonnet-5": {
 			ModelPricing:  ModelPricing{PromptCostPerMillion: 2.00, CompletionCostPerMillion: 10.00},
@@ -246,6 +264,7 @@ func TestPricingOracle_GetDeals_QualityFilteringAndRanking(t *testing.T) {
 	oracle.RegisterProvider(p, 0)
 	_ = oracle.Sync(context.Background())
 
+	// 1. Default deals config: ExcludeBatch=true, ExcludeFree=true
 	dealsCfg := contract.DealsConfig{
 		Enabled:           true,
 		AlertThresholdPct: 50.0,
@@ -255,17 +274,63 @@ func TestPricingOracle_GetDeals_QualityFilteringAndRanking(t *testing.T) {
 
 	deals := oracle.GetDeals(dealsCfg, 2.00, 10)
 	if len(deals) != 2 {
-		t.Fatalf("expected exactly 2 qualifying deals (free model and gemini-flash-lite), got %d", len(deals))
+		t.Fatalf("expected exactly 2 qualifying deals (qwen coder and gemini flash lite; excluding free and batch), got %d", len(deals))
 	}
 
-	// 1st place should be Free model (100% discount)
-	if deals[0].ModelID != "dots-studio/dots-3-note:free" || !deals[0].IsFree || deals[0].DiscountPct != 100.0 {
-		t.Errorf("expected free model at rank 1, got %+v", deals[0])
+	// 1st place should be Qwen 2.5 Coder 32B (ValueScore ~141.9 wins over Gemini's ~132.8)
+	if deals[0].ModelID != "qwen/qwen-2.5-coder-32b" || deals[0].ValueScore <= deals[1].ValueScore {
+		t.Errorf("expected qwen-2.5-coder-32b at rank 1 with highest ValueScore, got %+v", deals[0])
 	}
 
-	// 2nd place should be Gemini 2.5 Flash Lite (~95.0% discount against $2.00 benchmark)
-	if deals[1].ModelID != "google/gemini-2.5-flash-lite" || deals[1].DiscountPct < 94.0 {
+	// 2nd place should be Gemini 2.5 Flash Lite
+	if deals[1].ModelID != "google/gemini-2.5-flash-lite" {
 		t.Errorf("expected flash lite at rank 2, got %+v", deals[1])
+	}
+
+	// 2. Explicitly allow free models (exclude_free = false)
+	allowFree := false
+	dealsCfgWithFree := contract.DealsConfig{
+		Enabled:           true,
+		AlertThresholdPct: 50.0,
+		MinCodingIndex:    40.0,
+		RequireTools:      true,
+		ExcludeFree:       &allowFree,
+	}
+	dealsWithFree := oracle.GetDeals(dealsCfgWithFree, 2.00, 10)
+	if len(dealsWithFree) != 3 {
+		t.Fatalf("expected 3 deals when free models allowed, got %d", len(dealsWithFree))
+	}
+	hasFree := false
+	for _, d := range dealsWithFree {
+		if d.ModelID == "dots-studio/dots-3-note:free" && d.IsFree {
+			hasFree = true
+		}
+	}
+	if !hasFree {
+		t.Errorf("expected free model to be present when ExcludeFree=false")
+	}
+
+	// 3. Explicitly allow batch models (exclude_batch = false)
+	allowBatch := false
+	dealsCfgWithBatch := contract.DealsConfig{
+		Enabled:           true,
+		AlertThresholdPct: 50.0,
+		MinCodingIndex:    40.0,
+		RequireTools:      true,
+		ExcludeBatch:      &allowBatch,
+	}
+	dealsWithBatch := oracle.GetDeals(dealsCfgWithBatch, 2.00, 10)
+	if len(dealsWithBatch) != 3 {
+		t.Fatalf("expected 3 deals when batch models allowed, got %d", len(dealsWithBatch))
+	}
+	hasBatch := false
+	for _, d := range dealsWithBatch {
+		if d.ModelID == "google/gemini-2.5-flash-lite:batch" {
+			hasBatch = true
+		}
+	}
+	if !hasBatch {
+		t.Errorf("expected batch model to be present when ExcludeBatch=false")
 	}
 }
 
@@ -279,23 +344,27 @@ func TestPricingOracle_GetDeals_ZeroSafeAndDefaults(t *testing.T) {
 		t.Errorf("expected nil deals for empty oracle")
 	}
 
-	// Zero rates with default benchmark price
+	// Zero rates with default benchmark price and explicit ExcludeFree=false
 	p := &mockPricingProvider{
 		name: "openrouter",
 		prices: map[string]ModelMetadata{
-			"free-model": {
+			"free-coder": {
 				ModelPricing:  ModelPricing{PromptCostPerMillion: 0, CompletionCostPerMillion: 0},
-				ModelID:       "free-model",
+				ModelID:       "free-coder",
 				SupportsTools: true,
+				CodingIndex:   60.0,
 			},
 		},
 	}
 	oracle.RegisterProvider(p, 0)
 	_ = oracle.Sync(context.Background())
 
-	deals := oracle.GetDeals(contract.DealsConfig{}, 0, 5)
+	allowFree := false
+	deals := oracle.GetDeals(contract.DealsConfig{
+		ExcludeFree: &allowFree,
+	}, 0, 5)
 	if len(deals) != 1 || deals[0].DiscountPct != 100.0 {
-		t.Errorf("expected 100%% discount for zero rate model with default benchmark")
+		t.Errorf("expected 100%% discount for zero rate model with default benchmark, got: %+v", deals)
 	}
 }
 

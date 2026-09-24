@@ -1218,6 +1218,8 @@ deals:
   alert_threshold_pct: 50.0      # Minimum discount % required to surface deal (Default: 30.0%)
   min_coding_index: 60.0         # Minimum SWE-bench/coding score required (Default: 40.0)
   require_tools: true            # Only show models supporting tool/function calling (Default: true)
+  exclude_batch: true            # Filter out non-interactive asynchronous batch models (:batch) (Default: true)
+  exclude_free: true             # Filter out rate-limited free models (:free, $0.00) (Default: true)
 ```
 
 ### 8.3 REST Management API (`GET /api/v1/deals`)

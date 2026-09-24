@@ -436,6 +436,7 @@ func runTune(args []string) error {
 	apply := tuneFlags.Bool("apply", false, "Apply recommended rule optimizations to config.yaml")
 	strategyFlag := tuneFlags.String("strategy", "min_conflicts", "Optimization strategy: 'min_conflicts' (v3 multi-tier) or 'grid_sweep' (v2 single-tier)")
 	vramGB := tuneFlags.Int("vram-gb", 0, "Target local GPU VRAM ceiling in GB for local model substitution recommendations (e.g. 8, 16, 24; 0 = infer from current model)")
+	writeOnlyFlag := tuneFlags.Bool("write-only", false, "Force write-only forward progress simulation (defaults to active config setting)")
 
 	if err := tuneFlags.Parse(args); err != nil {
 		return err
@@ -462,6 +463,9 @@ func runTune(args []string) error {
 		policy := tuner.DefaultTuningPolicy()
 		if *vramGB > 0 {
 			policy.LocalVRAMGB = *vramGB
+		}
+		if *writeOnlyFlag || cfg.Kickstart.WriteOnly || cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+			policy.WriteOnly = true
 		}
 		optimizer = tuner.NewMinConflictsOptimizer(policy)
 	}

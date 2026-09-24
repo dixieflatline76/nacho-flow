@@ -137,7 +137,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **Dual-Lane Immunity Guards**: Even when NTS is enabled, strict immunity rules protect active file reads, edits (`write_to_file`, `apply_diff`, `editor`), and prompt caching breakpoints from mutation.
 
 ### ⚡ 3. High-Throughput Wire-Speed Core & Systems Architecture
-* **Zero-Allocation Fast Path**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,058 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU (Read-Copy-Update) state, stack-allocated streaming buffers (`sync.Pool`), and pooled HTTP transports with zero heap churn during proxying.
+* **Zero-Allocation Fast Path**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU (Read-Copy-Update) state, stack-allocated streaming buffers (`sync.Pool`), and pooled HTTP transports with zero heap churn during proxying.
 * **Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON with zero-copy stream rewrites.
 * **Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
 * **Streaming Delimiter Defense**: Prevents `<channel|>` and unicode-escaped delimiter leakage across streaming SSE chunk boundaries.

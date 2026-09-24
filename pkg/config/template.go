@@ -46,6 +46,8 @@ deals:
   alert_threshold_pct: 30.0
   min_coding_index: 40.0
   require_tools: true
+  exclude_batch: true
+  exclude_free: true
 
 # =============================================================================
 # 🛡️ AGENTIC TOOL FALLBACK SHIELD

@@ -657,11 +657,13 @@ func TestDealsCommandHandler_FreeModelAndCustomConfig(t *testing.T) {
 	oracle.RegisterProvider(&mockDealsProvider{}, 0)
 	_ = oracle.Sync(context.Background())
 
+	allowFree := false
 	cfg := &contract.Config{
 		Deals: contract.DealsConfig{
 			Enabled:           true,
 			AlertThresholdPct: 10.0,
 			MinCodingIndex:    50.0,
+			ExcludeFree:       &allowFree,
 		},
 	}
 

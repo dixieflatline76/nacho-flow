@@ -231,6 +231,10 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		return opt.handleEmptyRecords(currentConfig), nil
 	}
 
+	// if currentConfig.Kickstart.WriteOnly || currentConfig.CycleKiller.KickstartWriteOnly || currentConfig.CycleBreaker.KickstartWriteOnly {
+	// 	opt.policy.WriteOnly = true
+	// }
+
 	// 1. Group records into session trajectories
 	trajectories := GroupBySession(records)
 	if len(trajectories) == 0 {
@@ -688,8 +692,11 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 		}
 
 		var routingUnchanged bool
+		var origTier TierReplayConfig
+		var hasOrigTier bool
 		if i < len(initialCfg.Tiers) {
-			origTier := initialCfg.Tiers[i]
+			origTier = initialCfg.Tiers[i]
+			hasOrigTier = true
 			routingUnchanged = (tier.TokenThreshold == origTier.TokenThreshold &&
 				tier.RetryBound == origTier.RetryBound &&
 				tier.RestrictImages == origTier.RestrictImages &&
@@ -705,8 +712,15 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 		} else if routingUnchanged {
 			synthRule = origWhen
 		} else if i < len(finalBuf.TierStats) && finalBuf.TierStats[i].TurnsRouted == 0 {
-			// Zero traffic reached this tier during replay -> preserve original rule strictly
+			// Zero traffic reached this tier during replay -> preserve original rule and thresholds strictly
 			synthRule = origWhen
+			if hasOrigTier {
+				tier.TokenThreshold = origTier.TokenThreshold
+				tier.RetryBound = origTier.RetryBound
+				tier.RestrictImages = origTier.RestrictImages
+				tier.RestrictTools = origTier.RestrictTools
+				tier.ExcludedKeywords = origTier.ExcludedKeywords
+			}
 		} else {
 			var err error
 			synthRule, err = RewriteRuleAST(
@@ -852,18 +866,28 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 		avgTurns = float64(finalBuf.TotalTurns) / float64(len(trajectories))
 	}
 
+	highContextCostPct := 0.0
+	if baselineBuf.TotalCostUSD > 0 {
+		highContextCostPct = (baselineBuf.HighContextCostUSD / baselineBuf.TotalCostUSD) * 100.0
+	}
+
 	return &TuningResult{
-		Tiers:                    tierResults,
-		DefaultTier:              defaultTierResult,
-		CurrentCostUSD:           baselineBuf.TotalCostUSD,
-		ProjectedCostUSD:         finalBuf.TotalCostUSD,
-		ProjectedSavingsUSD:      savingsUSD,
-		RetriesEliminated:        retriesAvoided,
-		TotalSampleTurns:         finalBuf.TotalTurns,
-		TotalSessions:            len(trajectories),
-		AvgTurnsPerSession:       avgTurns,
-		EscalationRate:           escalationRate,
-		StaticDominanceConflicts: initialDominance,
+		Tiers:                      tierResults,
+		DefaultTier:                defaultTierResult,
+		CurrentCostUSD:             baselineBuf.TotalCostUSD,
+		ProjectedCostUSD:           finalBuf.TotalCostUSD,
+		ProjectedSavingsUSD:        savingsUSD,
+		RetriesEliminated:          retriesAvoided,
+		TotalSampleTurns:           finalBuf.TotalTurns,
+		TotalSessions:              len(trajectories),
+		AvgTurnsPerSession:         avgTurns,
+		EscalationRate:             escalationRate,
+		StaticDominanceConflicts:   initialDominance,
+		HighContextEscalationTurns: baselineBuf.HighContextEscalationTurns,
+		HighContextCostUSD:         baselineBuf.HighContextCostUSD,
+		HighContextCostPct:         highContextCostPct,
+		ReadBurstEscalations:       baselineBuf.ReadBurstEscalations,
+		NTSProjectedSavingsUSD:     baselineBuf.NTSProjectedSavingsUSD,
 	}, nil
 }
 
@@ -895,6 +919,7 @@ func copyMultiTierConfig(src *MultiTierConfig) MultiTierConfig {
 	}
 	dst := MultiTierConfig{
 		DefaultTier: src.DefaultTier,
+		WriteOnly:   src.WriteOnly,
 	}
 	for _, t := range src.Tiers {
 		tCopy := t
