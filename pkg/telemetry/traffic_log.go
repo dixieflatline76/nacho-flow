@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -198,11 +200,70 @@ func ReadRecords(filePath string, limit int) ([]TurnRecord, error) {
 	return records, scanner.Err()
 }
 
+// ClientCounts scans the traffic log and returns the observation count for each observed client ID.
+// Unset or empty client IDs are recorded under "unknown".
+func ClientCounts(filePath string) (map[string]int, error) {
+	filePath = filepath.Clean(filePath)
+	file, err := os.Open(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]int{}, nil
+		}
+		return nil, fmt.Errorf("failed to open traffic log for reading: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	counts := make(map[string]int)
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // up to 10MB lines
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var r TurnRecord
+		if err := json.Unmarshal(line, &r); err != nil {
+			continue
+		}
+		clientID := r.ClientID
+		if clientID == "" {
+			clientID = "unknown"
+		}
+		counts[clientID]++
+	}
+
+	return counts, scanner.Err()
+}
+
+// DistinctClients scans the traffic log and returns a sorted slice of unique client IDs observed.
+func DistinctClients(filePath string) ([]string, error) {
+	counts, err := ClientCounts(filePath)
+	if err != nil {
+		return nil, err
+	}
+	clients := make([]string, 0, len(counts))
+	for c := range counts {
+		clients = append(clients, c)
+	}
+	sort.Strings(clients)
+	return clients, nil
+}
+
 // ReadCompleteSessions reads historical TurnRecord entries preserving full session trajectories.
 // If maxSessions > 0, it returns all turns belonging to the most recent maxSessions complete sessions.
 // If maxSessions <= 0, it returns all turns across all recorded sessions without arbitrary truncation.
 // Lines that are corrupt or partially written (e.g. from concurrent writes at EOF) are safely skipped.
 func ReadCompleteSessions(filePath string, maxSessions int) ([]TurnRecord, error) {
+	return ReadCompleteSessionsFiltered(filePath, maxSessions, "")
+}
+
+// ReadCompleteSessionsFiltered reads historical TurnRecord entries preserving full session trajectories,
+// filtering to only turns/sessions that match clientFilter.
+// If clientFilter is empty or "all", all sessions are returned without client filtering.
+// Lines that are corrupt or partially written (e.g. from concurrent writes at EOF) are safely skipped.
+func ReadCompleteSessionsFiltered(filePath string, maxSessions int, clientFilter string) ([]TurnRecord, error) {
 	filePath = filepath.Clean(filePath)
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -221,6 +282,8 @@ func ReadCompleteSessions(filePath string, maxSessions int) ([]TurnRecord, error
 	buf := make([]byte, 1024*1024)
 	scanner.Buffer(buf, 10*1024*1024) // up to 10MB lines
 
+	filterActive := clientFilter != "" && !strings.EqualFold(clientFilter, "all")
+
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
@@ -232,6 +295,16 @@ func ReadCompleteSessions(filePath string, maxSessions int) ([]TurnRecord, error
 		if err := json.Unmarshal(line, &r); err != nil {
 			// Skip corrupted or incomplete trailing lines from concurrent appends
 			continue
+		}
+
+		if filterActive {
+			clientID := r.ClientID
+			if clientID == "" {
+				clientID = "unknown"
+			}
+			if !strings.EqualFold(clientID, clientFilter) {
+				continue
+			}
 		}
 
 		key := r.SessionID

@@ -53,6 +53,7 @@ type RequestContext struct {
 	FairyDusted               bool     `json:"fairy_dusted,omitempty"`
 	FairyDustEntry            string   `json:"fairy_dust_entry,omitempty"`
 	FairyDustCount            int      `json:"fairy_dust_count,omitempty"`
+	ClientID                  string   `json:"client_id,omitempty"`
 }
 
 // IsModelCoolingDown returns true if the specified model is currently cooling down on this session.

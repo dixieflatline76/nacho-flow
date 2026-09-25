@@ -246,6 +246,51 @@ body {
 	color: var(--vscode-dropdown-foreground, #cccccc);
 }
 
+.client-selector-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 6px;
+	padding: 3px 8px;
+	transform: translateZ(0);
+	will-change: transform;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.client-selector-group:hover,
+.client-selector-group:focus-within {
+	border-color: rgba(168, 85, 247, 0.4);
+	background: rgba(168, 85, 247, 0.06);
+}
+
+.client-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #c084fc;
+	letter-spacing: 0.3px;
+	user-select: none;
+	white-space: nowrap;
+}
+
+.select-client {
+	background: transparent;
+	color: var(--vscode-foreground);
+	border: none;
+	font-size: 11px;
+	font-weight: 600;
+	font-family: inherit;
+	cursor: pointer;
+	outline: none;
+	padding: 3px 4px;
+}
+
+.select-client option {
+	background-color: var(--vscode-dropdown-background, #1e1e1e);
+	color: var(--vscode-dropdown-foreground, #cccccc);
+}
+
 .toolbar-svg {
 	width: 14px;
 	height: 14px;

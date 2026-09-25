@@ -437,6 +437,7 @@ func runTune(args []string) error {
 	strategyFlag := tuneFlags.String("strategy", "min_conflicts", "Optimization strategy: 'min_conflicts' (v3 multi-tier) or 'grid_sweep' (v2 single-tier)")
 	vramGB := tuneFlags.Int("vram-gb", 0, "Target local GPU VRAM ceiling in GB for local model substitution recommendations (e.g. 8, 16, 24; 0 = infer from current model)")
 	writeOnlyFlag := tuneFlags.Bool("write-only", false, "Force write-only forward progress simulation (defaults to active config setting)")
+	clientFlag := tuneFlags.String("client", "all", "Client harness to optimize for (e.g. 'all', 'cline', 'zoo', 'cursor')")
 
 	if err := tuneFlags.Parse(args); err != nil {
 		return err
@@ -451,7 +452,7 @@ func runTune(args []string) error {
 	if limitSessions == 0 && *sampleLimit > 0 {
 		limitSessions = *sampleLimit
 	}
-	records, err := telemetry.ReadCompleteSessions(*trafficLogPath, limitSessions)
+	records, err := telemetry.ReadCompleteSessionsFiltered(*trafficLogPath, limitSessions, *clientFlag)
 	if err != nil {
 		return fmt.Errorf("failed to read traffic log at %s: %w", *trafficLogPath, err)
 	}

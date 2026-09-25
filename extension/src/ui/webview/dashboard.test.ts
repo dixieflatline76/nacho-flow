@@ -213,6 +213,14 @@ describe('DashboardPanel', () => {
       });
     });
 
+    it('should post updateClients message with clients and counts', () => {
+      dashboardPanel.updateClients({ clients: ['all', 'cline', 'zoo'], counts: { cline: 5, zoo: 2 } });
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'updateClients',
+        data: { clients: ['all', 'cline', 'zoo'], counts: { cline: 5, zoo: 2 } }
+      });
+    });
+
     it('should post syncSnapshot message with complete snapshot state', () => {
       const mockSnapshot: any = {
         timestamp: 123456789,

@@ -61,6 +61,7 @@ type TurnRecord struct {
 	HasWriteProgress   bool   `json:"has_write_progress,omitempty"`   // Did this turn produce file writes
 	HasTestPass        bool   `json:"has_test_pass,omitempty"`        // Did tests pass this turn
 	HasTestFail        bool   `json:"has_test_fail,omitempty"`        // Did tests fail this turn
+	ClientID           string `json:"client_id,omitempty"`            // Agent client identifier (cline, zoo, cursor, etc.)
 }
 
 // ObservationSink defines a decoupled consumer of observation events.

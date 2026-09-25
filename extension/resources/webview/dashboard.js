@@ -26,6 +26,9 @@
 			case 'updateOptimization':
 				updateOptimization(message.data);
 				break;
+			case 'updateClients':
+				updateClients(message.data);
+				break;
 			case 'setTimeWindow':
 				if (message.data && message.data.timeWindow) {
 					window.setTimeWindow(message.data.timeWindow, false);
@@ -135,6 +138,15 @@
 			const vramSelect = document.getElementById('vram-select');
 			if (vramSelect) {
 				vramSelect.value = String(snapshot.localVramGB);
+			}
+		}
+		if (snapshot.clients) {
+			updateClients(snapshot.clients);
+		}
+		if (snapshot.selectedClient) {
+			const clientSelect = document.getElementById('tuner-client-select');
+			if (clientSelect) {
+				clientSelect.value = snapshot.selectedClient;
 			}
 		}
 
@@ -767,6 +779,35 @@
 			.replace(/"/g, '&quot;');
 	}
 
+	function updateClients(data) {
+		const select = document.getElementById('tuner-client-select');
+		if (!select) return;
+
+		const currentVal = (currentState && currentState.selectedClient) || select.value || 'all';
+		const clients = (data && Array.isArray(data.clients)) ? data.clients : ['all'];
+		const counts = (data && data.counts) ? data.counts : {};
+
+		select.innerHTML = '';
+		clients.forEach(client => {
+			const option = document.createElement('option');
+			option.value = client;
+			if (client === 'all') {
+				option.textContent = 'All Clients';
+			} else {
+				const count = counts[client];
+				if (typeof count === 'number' && count > 0) {
+					option.textContent = `${client} (${count} turns)`;
+				} else {
+					option.textContent = client;
+				}
+			}
+			if (client === currentVal) {
+				option.selected = true;
+			}
+			select.appendChild(option);
+		});
+	}
+
 	function updateOptimization(optData) {
 		currentState.optimization = optData;
 		vscode.setState(currentState);
@@ -1190,12 +1231,21 @@
 	window.runOptimizer = function() {
 		const vramSelect = document.getElementById('vram-select');
 		const vramGB = vramSelect ? parseInt(vramSelect.value, 10) : undefined;
+		const clientSelect = document.getElementById('tuner-client-select');
+		const clientID = clientSelect && clientSelect.value && clientSelect.value !== 'all' ? clientSelect.value : undefined;
 		const banner = document.getElementById('tuner-banner');
 		if (banner) {
 			banner.style.display = 'block';
 			banner.innerHTML = '<div class="loading">⚡ Running autonomous optimizer on telemetry observations...</div>';
 		}
-		vscode.postMessage({ command: 'runOptimizer', data: { vramGB } });
+		const data = { vramGB };
+		if (clientID) data.clientID = clientID;
+		vscode.postMessage({ command: 'runOptimizer', data });
+	};
+
+	window.onClientChange = function(value) {
+		currentState = { ...currentState, selectedClient: value };
+		vscode.setState(currentState);
 	};
 
 	window.onVramChange = function(value) {

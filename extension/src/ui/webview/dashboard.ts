@@ -139,6 +139,12 @@ export class DashboardPanel {
 							<option value="48"${vramSetting === 48 ? ' selected' : ''}>48 GB</option>
 						</select>
 					</div>
+					<div class="client-selector-group" title="Target agent harness for route tuning">
+						<label for="tuner-client-select" class="client-label">🤖 Target:</label>
+						<select id="tuner-client-select" class="select-client" onchange="onClientChange(this.value)">
+							<option value="all">All Clients</option>
+						</select>
+					</div>
 					<button id="btn-run-tuner" class="btn btn-toolbar btn-tuner" onclick="runOptimizer()">
 						<svg class="toolbar-svg" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
 						Run Auto-Tuner
@@ -208,6 +214,10 @@ export class DashboardPanel {
 
 	public updateOptimization(data: any): void {
 		this.safePostMessage({ command: 'updateOptimization', data });
+	}
+
+	public updateClients(data: { clients: string[]; counts: Record<string, number> }): void {
+		this.safePostMessage({ command: 'updateClients', data });
 	}
 
 	public setTimeWindow(timeWindow: string): void {

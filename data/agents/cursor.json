@@ -2,6 +2,7 @@
   "id": "cursor",
   "name": "Cursor",
   "version": "1.0.0",
+  "user_agent_patterns": ["cursor"],
   "write_tools": ["edit_file", "create_file", "reapply", "insert_content", "modify_file"],
   "file_read_tools": ["read_file"],
   "read_tools": ["read_file"],

@@ -165,11 +165,24 @@ export class RestClient {
     }
 
     // Tune endpoint
-    public async tune(vramGB?: number): Promise<any> {
-        const query = (typeof vramGB === 'number' && vramGB > 0) ? `?vram_gb=${vramGB}` : '';
+    public async tune(vramGB?: number, clientID?: string): Promise<any> {
+        const params = new URLSearchParams();
+        if (typeof vramGB === 'number' && vramGB > 0) {
+            params.append('vram_gb', vramGB.toString());
+        }
+        if (clientID && clientID !== 'all') {
+            params.append('client_id', clientID);
+        }
+        const qs = params.toString();
+        const query = qs ? `?${qs}` : '';
         return this.request(`/api/v1/tune${query}`, {
             method: 'POST'
         });
+    }
+
+    // Telemetry Clients endpoint
+    public async getTelemetryClients(): Promise<{ clients: string[]; counts: Record<string, number> }> {
+        return this.request('/api/v1/telemetry/clients');
     }
 
     // Stats endpoint

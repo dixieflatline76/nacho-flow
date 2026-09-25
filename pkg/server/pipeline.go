@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -106,6 +107,7 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	if err != nil {
 		reqLogger.Warn("Failed to classify payload", slog.Any("error", err))
 	}
+	reqCtx.ClientID = agentregistry.DefaultRegistry().DetectClient(r.Header, body)
 
 	// Honor config toggle to disable in-prompt directives
 	if s.GetConfig().Router.EnableInPromptDirectives != nil && !*s.GetConfig().Router.EnableInPromptDirectives {

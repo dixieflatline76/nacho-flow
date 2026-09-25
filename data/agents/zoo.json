@@ -2,6 +2,7 @@
   "id": "zoo",
   "name": "Zoo Code",
   "version": "1.0.0",
+  "user_agent_patterns": ["zoo", "zoo-code"],
   "write_tools": [
     "write_to_file",
     "replace_in_file",

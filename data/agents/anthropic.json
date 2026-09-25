@@ -2,6 +2,7 @@
   "id": "anthropic",
   "name": "Anthropic Computer Use & Text Editor",
   "version": "1.0.0",
+  "user_agent_patterns": ["anthropic", "claude-cli"],
   "write_tools": ["str_replace_editor", "text_editor"],
   "file_read_tools": ["view"],
   "read_tools": ["view"],

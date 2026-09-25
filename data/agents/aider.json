@@ -2,6 +2,7 @@
   "id": "aider",
   "name": "Aider",
   "version": "1.0.0",
+  "user_agent_patterns": ["aider"],
   "write_tools": ["write_file", "patch_file", "apply_diff"],
   "file_read_tools": ["read_file"],
   "read_tools": ["read_file"],

@@ -683,7 +683,11 @@ export class ExtensionController {
 						await this.loadDashboardData(true);
 						break;
 					case 'runOptimizer':
-						await this.runOptimizer(message.data?.vramGB);
+						if (message.data?.clientID) {
+							await this.runOptimizer(message.data?.vramGB, message.data?.clientID);
+						} else {
+							await this.runOptimizer(message.data?.vramGB);
+						}
 						break;
 					case 'setLocalVramGB':
 						if (typeof message.data?.vramGB === 'number') {
@@ -1055,7 +1059,7 @@ export class ExtensionController {
 		vscode.window.showErrorMessage(result.error);
 	}
 
-	public async runOptimizer(vramGB?: number): Promise<void> {
+	public async runOptimizer(vramGB?: number, clientID?: string): Promise<void> {
 		if (!this.restClient) {
 			vscode.window.showErrorMessage('Nacho Flow: Daemon client not initialized');
 			return;
@@ -1069,7 +1073,9 @@ export class ExtensionController {
 			const targetVram = typeof vramGB === 'number'
 				? vramGB
 				: vscode.workspace.getConfiguration('nachoFlow').get<number>('localVramGB', 16);
-			const result = await this.restClient.tune(targetVram);
+			const result = clientID !== undefined
+				? await this.restClient.tune(targetVram, clientID)
+				: await this.restClient.tune(targetVram);
 			if (this.dashboardPanel) {
 				this.dashboardPanel.updateOptimization(result);
 			}
@@ -1587,14 +1593,18 @@ export class ExtensionController {
 		const healthPromise = typeof this.restClient.getHealth === 'function'
 			? Promise.resolve().then(() => this.restClient!.getHealth()).catch(() => null)
 			: Promise.resolve(null);
+		const clientsPromise = typeof this.restClient.getTelemetryClients === 'function'
+			? Promise.resolve().then(() => this.restClient!.getTelemetryClients()).catch(() => null)
+			: Promise.resolve(null);
 
-		const [stats, deals, routes, circuits, config, health] = await Promise.all([
+		const [stats, deals, routes, circuits, config, health, clients] = await Promise.all([
 			statsPromise,
 			dealsPromise,
 			routesPromise,
 			circuitsPromise,
 			configPromise,
-			healthPromise
+			healthPromise,
+			clientsPromise
 		]);
 
 		const serverVersion = health?.version || this.lastKnownServerVersion || '';
@@ -1617,7 +1627,8 @@ export class ExtensionController {
 				routes: null,
 				circuits: null,
 				config: null,
-				localVramGB
+				localVramGB,
+				clients: null
 			};
 		}
 
@@ -1633,7 +1644,8 @@ export class ExtensionController {
 			routes,
 			circuits,
 			config,
-			localVramGB
+			localVramGB,
+			clients
 		};
 	}
 
@@ -1645,6 +1657,10 @@ export class ExtensionController {
 		// Unified snapshot sync
 		if (typeof (this.dashboardPanel as any).syncSnapshot === 'function') {
 			(this.dashboardPanel as any).syncSnapshot(snapshot);
+		}
+
+		if (snapshot.clients && typeof (this.dashboardPanel as any).updateClients === 'function') {
+			(this.dashboardPanel as any).updateClients(snapshot.clients);
 		}
 
 		// Backward-compatible individual dispatches & status bar updates

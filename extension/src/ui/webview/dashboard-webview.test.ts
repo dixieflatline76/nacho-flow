@@ -220,6 +220,9 @@ function buildDOM(): void {
       <option value="16" selected>16 GB</option>
       <option value="24">24 GB</option>
     </select>
+    <select id="tuner-client-select">
+      <option value="all" selected>All Clients</option>
+    </select>
     <button id="tab-past_1_hour"></button>
     <button id="tab-all_time"></button>
     <button id="tab-today"></button>
@@ -884,6 +887,75 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
         command: 'setLocalVramGB',
         data: { vramGB: 32 }
+      });
+    });
+  });
+
+  describe('Client Partition Selection and Dynamic Population', () => {
+    it('populates tuner-client-select options on updateClients message', () => {
+      postMessage('updateClients', {
+        clients: ['all', 'cline', 'zoo'],
+        counts: { cline: 42, zoo: 17 }
+      });
+
+      const select = document.getElementById('tuner-client-select') as HTMLSelectElement;
+      expect(select.options.length).toBe(3);
+      expect(select.options[0].value).toBe('all');
+      expect(select.options[0].textContent).toBe('All Clients');
+      expect(select.options[1].value).toBe('cline');
+      expect(select.options[1].textContent).toBe('cline (42 turns)');
+      expect(select.options[2].value).toBe('zoo');
+      expect(select.options[2].textContent).toBe('zoo (17 turns)');
+    });
+
+    it('updates state on onClientChange', () => {
+      (window as any).onClientChange('cline');
+      expect(lastAcquiredVsCodeApi.setState).toHaveBeenCalled();
+      const lastState = lastAcquiredVsCodeApi.setState.mock.calls[lastAcquiredVsCodeApi.setState.mock.calls.length - 1][0];
+      expect(lastState.selectedClient).toBe('cline');
+    });
+
+    it('synchronizes client list and selection from syncSnapshot message', () => {
+      postMessage('syncSnapshot', {
+        timestamp: Date.now(),
+        clients: {
+          clients: ['all', 'cursor'],
+          counts: { cursor: 10 }
+        },
+        selectedClient: 'cursor'
+      });
+
+      const select = document.getElementById('tuner-client-select') as HTMLSelectElement;
+      expect(select.options.length).toBe(2);
+      expect(select.value).toBe('cursor');
+    });
+
+    it('passes clientID in runOptimizer when a specific client is selected', () => {
+      const vramSelect = document.getElementById('vram-select') as HTMLSelectElement;
+      vramSelect.value = '16';
+      const clientSelect = document.getElementById('tuner-client-select') as HTMLSelectElement;
+      clientSelect.innerHTML = '<option value="all">All Clients</option><option value="zoo" selected>zoo</option>';
+      clientSelect.value = 'zoo';
+
+      (window as any).runOptimizer();
+
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'runOptimizer',
+        data: { vramGB: 16, clientID: 'zoo' }
+      });
+    });
+
+    it('omits clientID from runOptimizer when client is all', () => {
+      const vramSelect = document.getElementById('vram-select') as HTMLSelectElement;
+      vramSelect.value = '16';
+      const clientSelect = document.getElementById('tuner-client-select') as HTMLSelectElement;
+      clientSelect.value = 'all';
+
+      (window as any).runOptimizer();
+
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'runOptimizer',
+        data: { vramGB: 16 }
       });
     });
   });

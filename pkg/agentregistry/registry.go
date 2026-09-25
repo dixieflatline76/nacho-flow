@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -47,6 +48,26 @@ type Registry struct {
 	sanitizerReplacements  [][]byte
 	sanitizerMarkers       [][]byte
 	silentTurnChunkBytes   []byte
+	clientMatchers         []clientMatcher
+	headerSignatures       []headerSignature
+	uniqueToolMatchers     []uniqueToolMatcher
+	registeredAgentsList   []string
+}
+
+type clientMatcher struct {
+	clientID string
+	pattern  string
+}
+
+type headerSignature struct {
+	clientID  string
+	headerKey string
+	pattern   string
+}
+
+type uniqueToolMatcher struct {
+	clientID string
+	toolName []byte
 }
 
 var (
@@ -117,6 +138,9 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 	modeHeuristicsMap := make(map[string]struct{})
 	questionHeuristicsMap := make(map[string]struct{})
 	errorSignaturesMap := make(map[string]struct{})
+	registeredAgentsMap := make(map[string]struct{})
+	allToolCounts := make(map[string]int)
+	allToolAgents := make(map[string]string)
 
 	type sanitizerRule struct {
 		target      []byte
@@ -170,6 +194,46 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 			}
 		}
 
+		if profile.ID != "" {
+			registeredAgentsMap[profile.ID] = struct{}{}
+		}
+		for _, pat := range profile.UserAgentPatterns {
+			if trimmed := strings.ToLower(strings.TrimSpace(pat)); trimmed != "" {
+				r.clientMatchers = append(r.clientMatchers, clientMatcher{
+					clientID: profile.ID,
+					pattern:  trimmed,
+				})
+			}
+		}
+		for k, v := range profile.HeaderSignatures {
+			if trimmedVal := strings.ToLower(strings.TrimSpace(v)); trimmedVal != "" && k != "" {
+				r.headerSignatures = append(r.headerSignatures, headerSignature{
+					clientID:  profile.ID,
+					headerKey: http.CanonicalHeaderKey(k),
+					pattern:   trimmedVal,
+				})
+			}
+		}
+		if profile.ID != "" && profile.ID != "standard" {
+			var agentTools []string
+			agentTools = append(agentTools, profile.WriteTools...)
+			agentTools = append(agentTools, profile.FileReadTools...)
+			agentTools = append(agentTools, profile.ReadTools...)
+			agentTools = append(agentTools, profile.CommandTools...)
+			agentTools = append(agentTools, profile.InteractiveTools...)
+			seenForAgent := make(map[string]struct{})
+			for _, t := range agentTools {
+				norm := strings.ToLower(strings.TrimSpace(t))
+				if norm != "" {
+					if _, already := seenForAgent[norm]; !already {
+						seenForAgent[norm] = struct{}{}
+						allToolCounts[norm]++
+						allToolAgents[norm] = profile.ID
+					}
+				}
+			}
+		}
+
 		for _, ps := range profile.ParameterSanitizers {
 			if len(ps.InvalidPatterns) != len(ps.Replacements) {
 				return fmt.Errorf("agentregistry: invalid parameter sanitizer rule for tool %q, parameter %q: pattern count (%d) does not match replacement count (%d)", ps.Tool, ps.Parameter, len(ps.InvalidPatterns), len(ps.Replacements))
@@ -202,6 +266,23 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 	for i, s := range r.errorSignaturesList {
 		r.errorSignaturesLower[i] = strings.ToLower(s)
 	}
+
+	r.registeredAgentsList = mapToSortedSlice(registeredAgentsMap)
+	for tool, count := range allToolCounts {
+		if count == 1 {
+			agentID := allToolAgents[tool]
+			r.uniqueToolMatchers = append(r.uniqueToolMatchers, uniqueToolMatcher{
+				clientID: agentID,
+				toolName: []byte("\"" + tool + "\""),
+			})
+		}
+	}
+	sort.Slice(r.uniqueToolMatchers, func(i, j int) bool {
+		return string(r.uniqueToolMatchers[i].toolName) < string(r.uniqueToolMatchers[j].toolName)
+	})
+	sort.Slice(r.clientMatchers, func(i, j int) bool {
+		return len(r.clientMatchers[i].pattern) > len(r.clientMatchers[j].pattern)
+	})
 
 	sort.Slice(rawRules, func(i, j int) bool {
 		if len(rawRules[i].target) != len(rawRules[j].target) {
@@ -1004,4 +1085,71 @@ func (r *Registry) SilentTurnResuscitationChunk() []byte {
 		return nil
 	}
 	return r.silentTurnChunkBytes
+}
+
+// DetectClient returns the canonical client ID based on HTTP headers and tool payload.
+// Returns "unknown" if no known signature matches.
+// Operates with zero heap allocations on the hot path (0 B/op, 0 allocs/op).
+func (r *Registry) DetectClient(headers http.Header, body []byte) string {
+	if r == nil {
+		return "unknown"
+	}
+
+	const (
+		canonicalClientID  = "X-Client-Id"
+		canonicalAgentID   = "X-Agent-Id"
+		canonicalUserAgent = "User-Agent"
+	)
+
+	// 1. Explicit override headers (X-Client-ID / X-Agent-ID)
+	if len(headers) > 0 {
+		if vals := headers[canonicalClientID]; len(vals) > 0 && vals[0] != "" {
+			return strings.ToLower(strings.TrimSpace(vals[0]))
+		}
+		if vals := headers[canonicalAgentID]; len(vals) > 0 && vals[0] != "" {
+			return strings.ToLower(strings.TrimSpace(vals[0]))
+		}
+
+		// 2. Custom header signatures from registered profiles
+		for _, sig := range r.headerSignatures {
+			if vals := headers[sig.headerKey]; len(vals) > 0 && vals[0] != "" {
+				if containsFold(vals[0], sig.pattern) {
+					return sig.clientID
+				}
+			}
+		}
+
+		// 3. User-Agent substring matching (zero-alloc scan)
+		if uas := headers[canonicalUserAgent]; len(uas) > 0 && uas[0] != "" {
+			ua := uas[0]
+			for _, cm := range r.clientMatchers {
+				if containsFold(ua, cm.pattern) {
+					return cm.clientID
+				}
+			}
+		}
+	}
+
+	// 4. Payload inspection fallback: match unique tools defined in registered profiles
+	if len(body) > 0 && len(r.uniqueToolMatchers) > 0 {
+		for _, utm := range r.uniqueToolMatchers {
+			if bytes.Contains(body, utm.toolName) {
+				return utm.clientID
+			}
+		}
+	}
+
+	return "unknown"
+}
+
+// RegisteredAgents returns a copy of all registered agent IDs in alphabetical order.
+func (r *Registry) RegisteredAgents() []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	res := make([]string, len(r.registeredAgentsList))
+	copy(res, r.registeredAgentsList)
+	return res
 }

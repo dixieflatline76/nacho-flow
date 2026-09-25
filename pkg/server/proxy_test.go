@@ -1583,6 +1583,7 @@ func TestProxy_RecordTelemetry_SessionFields(t *testing.T) {
 		HasWriteProgress:   true,
 		HasTestPass:        true,
 		HasTestFail:        false,
+		ClientID:           "cline",
 	}
 	usage := StreamUsage{PromptTokens: 1000, CompletionTokens: 200, TotalTokens: 1200}
 
@@ -1597,6 +1598,9 @@ func TestProxy_RecordTelemetry_SessionFields(t *testing.T) {
 	}
 
 	rec := sink.records[0]
+	if rec.ClientID != "cline" {
+		t.Errorf("Expected ClientID 'cline', got '%s'", rec.ClientID)
+	}
 	if rec.SessionID != "sess-live-proxy-12345" {
 		t.Errorf("Expected SessionID 'sess-live-proxy-12345', got '%s'", rec.SessionID)
 	}
@@ -1617,6 +1621,58 @@ func TestProxy_RecordTelemetry_SessionFields(t *testing.T) {
 	}
 	if rec.HasTestFail {
 		t.Errorf("Expected HasTestFail false, got true")
+	}
+}
+
+func TestProxy_ClientDetectionInPipeline(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","choices":[{"message":{"role":"assistant","content":"hello"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	tracker := telemetry.NewStatsTracker(100)
+	defer tracker.Close()
+
+	sink := &mockSessionTurnSink{}
+	tracker.AddSink(sink)
+
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {
+				BaseURL: mockUpstream.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{Name: "T1", Provider: "mock", Model: "qwen", When: "true"},
+		},
+		DefaultTier: contract.Tier{Name: "T1", Provider: "mock", Model: "qwen"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	cls := router.NewClassifier()
+	san := router.NewSanitizer()
+	oracle := telemetry.NewPricingOracle()
+
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, cls, san, oracle, tracker, nil, slog.Default())
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"test client detection"}]}`))
+	req.Header.Set("User-Agent", "Cline/3.1.0")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+	tracker.Flush()
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+
+	if len(sink.records) != 1 {
+		t.Fatalf("Expected 1 telemetry record emitted, got %d", len(sink.records))
+	}
+	if sink.records[0].ClientID != "cline" {
+		t.Errorf("Expected detected client_id 'cline', got '%s'", sink.records[0].ClientID)
 	}
 }
 

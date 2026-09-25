@@ -136,4 +136,6 @@ export interface DashboardSnapshot {
 	timeWindow?: string;
 	routesRefreshInterval?: number;
 	localVramGB?: number;
+	clients?: { clients: string[]; counts: Record<string, number> } | null;
+	selectedClient?: string;
 }

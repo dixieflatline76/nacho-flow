@@ -105,9 +105,11 @@ func (s *Server) recordTelemetry(
 		HasTestPass:               reqCtx.HasTestPass,
 		HasTestFail:               reqCtx.HasTestFail,
 		FailureCategory:           failureCat,
+		ClientID:                  reqCtx.ClientID,
 	})
 
 	reqLogger.Info("Completed proxy request",
+		slog.String("client_id", reqCtx.ClientID),
 		slog.String("session_key", reqCtx.SessionKey),
 		slog.String("tier", targetTier.Name),
 		slog.String("model", targetTier.Model),
