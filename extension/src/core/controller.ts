@@ -62,6 +62,7 @@ export class ExtensionController {
 
 		this.activeProfile = this.context.globalState?.get<string>('nachoFlow_activeProfile', defaultProfile) || defaultProfile;
 		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
+		this.statusBar.setIsRemote(this.isRemoteHost());
 
 		// Ensure global profile templates are available
 		await this.ensureGlobalProfiles();
@@ -618,6 +619,7 @@ export class ExtensionController {
 		// Sync base URL and active profile to status bar
 		this.statusBar.setBaseUrl(baseUrl);
 		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
+		this.statusBar.setIsRemote(engineMode === 'remote');
 
 		let profilesList: Array<{ id: string; label: string }> = [];
 		try {
@@ -677,6 +679,7 @@ export class ExtensionController {
 		// Sync base URL to status bar on client init
 		this.statusBar.setBaseUrl(baseUrl);
 		this.statusBar.setActivePreset(this.activePreset);
+		this.statusBar.setIsRemote(this.isRemoteHost());
 	}
 
 	private setupSSEHandlers(): void {

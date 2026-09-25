@@ -14,6 +14,7 @@ export class StatusBarManager {
 	private baseUrl: string = 'http://127.0.0.1:8000';
 	private activeProfile: string = 'profile1';
 	private activeProfileLabel: string = 'Profile 1';
+	private isRemote: boolean = false;
 
 	private get activePreset(): string {
 		return this.activeProfile;
@@ -37,6 +38,15 @@ export class StatusBarManager {
 		this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 		this.item.command = 'nacho-flow.showDashboard';
 		this.updateStatusBar();
+	}
+
+	public setIsRemote(isRemote: boolean): void {
+		this.isRemote = !!isRemote;
+		this.updateStatusBar();
+	}
+
+	public getIsRemote(): boolean {
+		return this.isRemote;
 	}
 
 	public setTimeWindow(timeWindow: string): void {
@@ -234,8 +244,13 @@ export class StatusBarManager {
 
 		if (!this.stats) {
 			md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`⚪ Offline\`\n\n`);
-			md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
-			md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
+			if (this.isRemote) {
+				md.appendMarkdown(`**Host:** \`${this.getBaseUrl()}\` &nbsp;•&nbsp; \`Remote Server\`\n\n`);
+				md.appendMarkdown(`Cannot connect to remote server at \`${this.getBaseUrl()}\`\n\n`);
+			} else {
+				md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
+				md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
+			}
 			md.appendMarkdown(`---\n\n[🔄 Open Dashboard / Retry](command:nacho-flow.showDashboard)`);
 			return md;
 		}
@@ -255,8 +270,12 @@ export class StatusBarManager {
 		}
 		
 		md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`🟢 Online\`\n\n`);
-		md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
-		md.appendMarkdown(`Host: \`${this.getBaseUrl()}\`\n\n`);
+		if (this.isRemote) {
+			md.appendMarkdown(`**Host:** \`${this.getBaseUrl()}\` &nbsp;•&nbsp; \`Remote Server\`\n\n`);
+		} else {
+			md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
+			md.appendMarkdown(`Host: \`${this.getBaseUrl()}\`\n\n`);
+		}
 		md.appendMarkdown(`| Metric | ${m.timeframeTitle} |\n`);
 		md.appendMarkdown(`| :--- | :--- |\n`);
 		md.appendMarkdown(`| **Est. Cost Saved** | **\`$${m.savedUSD.toFixed(2)}\`** *(${Math.round(m.reductionPct)}% saved)* |\n`);
