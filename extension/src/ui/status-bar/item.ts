@@ -13,6 +13,7 @@ export class StatusBarManager {
 	private timeWindow: string = 'all_time';
 	private baseUrl: string = 'http://127.0.0.1:8000';
 	private activeProfile: string = 'profile1';
+	private activeProfileLabel: string = 'Profile 1';
 
 	private get activePreset(): string {
 		return this.activeProfile;
@@ -54,15 +55,20 @@ export class StatusBarManager {
 		}
 	}
 
-	public setActiveProfile(profile: string): void {
+	public setActiveProfile(profile: string, label?: string): void {
 		if (profile && profile.trim() !== '') {
 			this.activeProfile = profile.trim();
+			if (label && label.trim() !== '') {
+				this.activeProfileLabel = label.trim();
+			} else {
+				this.activeProfileLabel = StatusBarManager.PROFILE_LABELS[this.activeProfile] || this.activeProfile;
+			}
 			this.updateStatusBar();
 		}
 	}
 
-	public setActivePreset(preset: string): void {
-		this.setActiveProfile(preset);
+	public setActivePreset(preset: string, label?: string): void {
+		this.setActiveProfile(preset, label);
 	}
 
 	public updateStats(stats: any): void {
@@ -73,13 +79,7 @@ export class StatusBarManager {
 	private updateStatusBar(): void {
 		if (this.stats === null) {
 			this.item.text = '$(circle-slash) Nacho: Offline';
-			const md = new vscode.MarkdownString(undefined, true);
-			md.isTrusted = true;
-			md.supportThemeIcons = true;
-			md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`⚪ Offline\`\n\n`);
-			md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
-			md.appendMarkdown(`---\n\n[🔄 Open Dashboard / Retry](command:nacho-flow.showDashboard)`);
-			this.item.tooltip = md;
+			this.item.tooltip = this.buildTooltip();
 		} else {
 			const metrics = this.extractMetricsForTimeWindow();
 			const suffix = this.timeWindow === 'past_1_hour' ? ' Past 1h' :
@@ -227,15 +227,20 @@ export class StatusBarManager {
 		md.isTrusted = true;
 		md.supportThemeIcons = true;
 
+		const displayLabel = this.activeProfileLabel || StatusBarManager.PROFILE_LABELS[this.activePreset] || this.activePreset;
+		const profileDropdown = `[▾ ${displayLabel}](command:nacho-flow.switchProfile "Click to choose or switch profile")`;
+		const addProfileLink = `[＋](command:nacho-flow.addProfile "Add new profile")`;
+		const renameProfileLink = `[✏️](command:nacho-flow.renameProfile "Rename active profile")`;
+
 		if (!this.stats) {
 			md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`⚪ Offline\`\n\n`);
+			md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
 			md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
 			md.appendMarkdown(`---\n\n[🔄 Open Dashboard / Retry](command:nacho-flow.showDashboard)`);
 			return md;
 		}
 
 		const m = metrics || this.extractMetricsForTimeWindow();
-		const presetLabel = StatusBarManager.PRESET_LABELS[this.activePreset] || this.activePreset;
 
 		const tw = this.timeWindow;
 		const link1h = tw === 'past_1_hour' ? '**✓ [1h](command:nacho-flow.setTimeWindowPast1Hour)**' : '[1h](command:nacho-flow.setTimeWindowPast1Hour)';
@@ -250,7 +255,8 @@ export class StatusBarManager {
 		}
 		
 		md.appendMarkdown(`### 🌮 Nacho Flow &nbsp;\`🟢 Online\`\n\n`);
-		md.appendMarkdown(`**${presetLabel}** &nbsp;•&nbsp; \`${this.getBaseUrl()}\`\n\n`);
+		md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
+		md.appendMarkdown(`Host: \`${this.getBaseUrl()}\`\n\n`);
 		md.appendMarkdown(`| Metric | ${m.timeframeTitle} |\n`);
 		md.appendMarkdown(`| :--- | :--- |\n`);
 		md.appendMarkdown(`| **Est. Cost Saved** | **\`$${m.savedUSD.toFixed(2)}\`** *(${Math.round(m.reductionPct)}% saved)* |\n`);

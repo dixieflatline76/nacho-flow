@@ -111,6 +111,18 @@
       {
         "command": "nacho-flow.resetProfileToDefault",
         "title": "Nacho Flow: Reset Active Profile to Factory Default Template"
+      },
+      {
+        "command": "nacho-flow.switchProfile",
+        "title": "Nacho Flow: Switch Profile"
+      },
+      {
+        "command": "nacho-flow.addProfile",
+        "title": "Nacho Flow: Add New Profile (+)"
+      },
+      {
+        "command": "nacho-flow.renameProfile",
+        "title": "Nacho Flow: Rename Active Profile"
       }
     ],
     "viewsContainers": {

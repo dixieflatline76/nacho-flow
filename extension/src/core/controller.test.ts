@@ -64,8 +64,19 @@ jest.mock('vscode', () => ({
       stat: jest.fn().mockRejectedValue(new Error('File not found')),
       createDirectory: jest.fn().mockResolvedValue(undefined),
       writeFile: jest.fn().mockResolvedValue(undefined),
-      readFile: jest.fn().mockResolvedValue(Buffer.from('port: 8000\n'))
+      readFile: jest.fn().mockResolvedValue(Buffer.from('port: 8000\n')),
+      readDirectory: jest.fn().mockResolvedValue([])
     }
+  },
+  FileType: {
+    Unknown: 0,
+    File: 1,
+    Directory: 2,
+    SymbolicLink: 64
+  },
+  QuickPickItemKind: {
+    Separator: -1,
+    Default: 0
   },
   ConfigurationTarget: {
     Global: 1,
@@ -152,6 +163,11 @@ describe('ExtensionController', () => {
   beforeEach(() => {
     // Reset mocks
     jest.clearAllMocks();
+    (vscode.workspace.fs.stat as jest.Mock).mockRejectedValue(new Error('File not found'));
+    (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValue(Buffer.from('port: 8000\n'));
+    (vscode.workspace.fs.writeFile as jest.Mock).mockResolvedValue(undefined);
+    (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValue([]);
+    (vscode.window.showInputBox as jest.Mock).mockReset();
 
     // Create mock context
     mockContext = {
@@ -1617,6 +1633,24 @@ default_tier:
       const resetSpy = jest.spyOn(extensionController, 'resetProfile').mockResolvedValue(true);
       await resetCall[1]();
       expect(resetSpy).toHaveBeenCalled();
+
+      const switchCmdCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.switchProfile');
+      expect(switchCmdCall).toBeDefined();
+      const switchCmdSpy = jest.spyOn(extensionController, 'switchProfile').mockResolvedValue(undefined);
+      await switchCmdCall[1]('profile2');
+      expect(switchCmdSpy).toHaveBeenCalledWith('profile2');
+
+      const addCmdCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.addProfile');
+      expect(addCmdCall).toBeDefined();
+      const addCmdSpy = jest.spyOn(extensionController, 'addProfile').mockResolvedValue(undefined);
+      await addCmdCall[1]();
+      expect(addCmdSpy).toHaveBeenCalled();
+
+      const renameCmdCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.renameProfile');
+      expect(renameCmdCall).toBeDefined();
+      const renameCmdSpy = jest.spyOn(extensionController, 'renameProfile').mockResolvedValue(undefined);
+      await renameCmdCall[1]('profile1');
+      expect(renameCmdSpy).toHaveBeenCalledWith('profile1');
     });
 
     it('should test setTimeWindow with globalState and dashboard panel', async () => {
@@ -2167,6 +2201,156 @@ default_tier:
       );
     });
 
+    it('should support dynamic profile names and getProfileLabel', async () => {
+      expect(extensionController.getProfileLabel('profile1')).toBe('Profile 1');
+      expect(extensionController.getProfileLabel('profile4')).toBe('Profile 4');
+      expect(extensionController.getProfileLabel('zoo')).toBe('Profile 2');
+      expect(extensionController.getProfileLabel('cline')).toBe('Profile 3');
+      expect(extensionController.getProfileLabel('unknown_custom')).toBe('unknown_custom');
+
+      await extensionController.setProfileName('profile1', 'Zoo GLM');
+      expect(extensionController.getProfileLabel('profile1')).toBe('Zoo GLM');
+      expect(extensionController.getProfileNames()).toEqual({ profile1: 'Zoo GLM' });
+
+      // Clear name
+      await extensionController.setProfileName('profile1', '');
+      expect(extensionController.getProfileLabel('profile1')).toBe('Profile 1');
+    });
+
+    it('should discover available profiles across storage and workspace', async () => {
+      (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValueOnce([
+        ['profile1.yaml', vscode.FileType.File],
+        ['profile2.yaml', vscode.FileType.File],
+        ['profile3.yaml', vscode.FileType.File],
+        ['profile4.yaml', vscode.FileType.File],
+        ['readme.txt', vscode.FileType.File]
+      ]);
+
+      const profiles = await extensionController.getAvailableProfiles();
+      expect(profiles.length).toBe(4);
+      expect(profiles[0].id).toBe('profile1');
+      expect(profiles[3].id).toBe('profile4');
+    });
+
+    it('should add a new numbered profile and prompt for name with validation', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValueOnce([
+        ['profile1.yaml', vscode.FileType.File],
+        ['profile2.yaml', vscode.FileType.File],
+        ['profile3.yaml', vscode.FileType.File]
+      ]);
+
+      (vscode.window.showInputBox as jest.Mock).mockImplementationOnce(async (options: any) => {
+        expect(options.validateInput('a'.repeat(25))).toBe('Name must be 24 characters or less');
+        expect(options.validateInput('Valid Name')).toBeNull();
+        return 'My Custom Profile';
+      });
+      const switchSpy = jest.spyOn(extensionController, 'switchProfile').mockResolvedValue(undefined);
+
+      await extensionController.addProfile();
+
+      expect(extensionController.getProfileLabel('profile4')).toBe('My Custom Profile');
+      expect(switchSpy).toHaveBeenCalledWith('profile4');
+    });
+
+    it('should handle template read failure in addProfile', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValueOnce([]);
+      (vscode.workspace.fs.readFile as jest.Mock).mockRejectedValueOnce(new Error('Template missing'));
+
+      await extensionController.addProfile();
+
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to create profile4.yaml')
+      );
+    });
+
+    it('should suppress addProfile and renameProfile in remote host mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      await extensionController.addProfile();
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Profile management is disabled in remote server mode')
+      );
+
+      await extensionController.renameProfile('profile1');
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Profile renaming is disabled in remote server mode')
+      );
+    });
+
+    it('should rename active profile and validate length', async () => {
+      (vscode.window.showInputBox as jest.Mock).mockImplementationOnce(async (options: any) => {
+        expect(options.validateInput('')).toBe('Profile name cannot be empty');
+        expect(options.validateInput('a'.repeat(25))).toBe('Profile name must be 24 characters or less');
+        expect(options.validateInput('Valid Name')).toBeNull();
+        return 'Renamed Profile';
+      });
+
+      await extensionController.renameProfile('profile2');
+      expect(extensionController.getProfileLabel('profile2')).toBe('Renamed Profile');
+    });
+
+    it('should show QuickPick when switchProfile is called without arguments', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      jest.spyOn(extensionController, 'getAvailableProfiles').mockResolvedValueOnce([
+        { id: 'profile1', label: 'Profile 1', number: 1, isWorkspace: false, uri: vscode.Uri.file('/p1.yaml') },
+        { id: 'profile2', label: 'Profile 2', number: 2, isWorkspace: false, uri: vscode.Uri.file('/p2.yaml') }
+      ]);
+
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({ profileId: 'profile2' });
+      jest.spyOn(extensionController as any, 'resolveProfileUri').mockResolvedValue({
+        uri: vscode.Uri.file('/p2.yaml'),
+        isWorkspace: false
+      });
+
+      await extensionController.switchProfile();
+      expect((extensionController as any).activeProfile).toBe('profile2');
+    });
+
+    it('should handle cancel, Add, and Rename in switchProfile QuickPick', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+
+      // Cancel
+      jest.spyOn(extensionController, 'getAvailableProfiles').mockResolvedValueOnce([]);
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce(undefined);
+      await extensionController.switchProfile();
+
+      // Add
+      jest.spyOn(extensionController, 'getAvailableProfiles').mockResolvedValueOnce([
+        { id: 'profile1', label: 'Profile 1', number: 1, isWorkspace: false, uri: vscode.Uri.file('/p1.yaml') }
+      ]);
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({ action: 'add' });
+      const addSpy = jest.spyOn(extensionController, 'addProfile').mockResolvedValue(undefined);
+      await extensionController.switchProfile();
+      expect(addSpy).toHaveBeenCalled();
+
+      // Rename
+      jest.spyOn(extensionController, 'getAvailableProfiles').mockResolvedValueOnce([
+        { id: 'profile1', label: 'Profile 1', number: 1, isWorkspace: false, uri: vscode.Uri.file('/p1.yaml') }
+      ]);
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({ action: 'rename' });
+      const renameSpy = jest.spyOn(extensionController, 'renameProfile').mockResolvedValue(undefined);
+      await extensionController.switchProfile();
+      expect(renameSpy).toHaveBeenCalled();
+    });
+
+    it('should scan workspace folders for .nacho profiles in getAvailableProfiles', async () => {
+      (vscode.workspace as any).workspaceFolders = [
+        { uri: vscode.Uri.file('/my/project') }
+      ];
+      (vscode.workspace.fs.readDirectory as jest.Mock)
+        .mockResolvedValueOnce([]) // global storage
+        .mockResolvedValueOnce([
+          ['profile7.yaml', vscode.FileType.File],
+          ['other.txt', vscode.FileType.File]
+        ]); // workspace folder
+
+      const profiles = await extensionController.getAvailableProfiles();
+      expect(profiles.some(p => p.id === 'profile7' && p.isWorkspace)).toBe(true);
+      (vscode.workspace as any).workspaceFolders = undefined;
+    });
+
     it('should handle onDidSaveTextDocument when active profile config is saved', async () => {
       await extensionController.initialize();
 
@@ -2289,6 +2473,15 @@ default_tier:
 
       await onMessage({ command: 'switchProfile', profileId: 'profile3' });
       expect(switchProfileSpy).toHaveBeenCalledWith('profile3');
+
+      const addProfileSpy = jest.spyOn(extensionController, 'addProfile').mockResolvedValue(undefined);
+      const renameProfileSpy = jest.spyOn(extensionController, 'renameProfile').mockResolvedValue(undefined);
+
+      await onMessage({ command: 'addProfile' });
+      expect(addProfileSpy).toHaveBeenCalled();
+
+      await onMessage({ command: 'renameProfile', profileId: 'profile2' });
+      expect(renameProfileSpy).toHaveBeenCalledWith('profile2');
 
       await onMessage({ command: 'resetProfile', profileId: 'profile2' });
       expect(resetProfileSpy).toHaveBeenCalledWith('profile2');

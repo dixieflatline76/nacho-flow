@@ -117,11 +117,19 @@ export interface TuningResult {
 export interface DashboardEngineState {
 	mode: 'local' | 'remote';
 	isOnline: boolean;
-	activeProfile: 'profile1' | 'profile2' | 'profile3';
+	activeProfile: string;
 	profileLabel: string;
 	isRemote: boolean;
 	version?: string;
 	offlineReason?: string;
+}
+
+export interface ProfileInfo {
+	id: string;
+	label: string;
+	number: number;
+	isWorkspace: boolean;
+	uri?: any;
 }
 
 export interface DashboardSnapshot {

@@ -224,6 +224,15 @@ describe('StatusBarManager', () => {
       expect((statusBarManager as any).activePreset).toBe('cline');
     });
 
+    it('should set active profile with custom label and render dropdown in tooltip', () => {
+      statusBarManager.setActiveProfile('profile2', 'Zoo GLM');
+      expect((statusBarManager as any).activeProfile).toBe('profile2');
+      expect((statusBarManager as any).activeProfileLabel).toBe('Zoo GLM');
+      expect(mockStatusBarItem.tooltip.value).toContain('[▾ Zoo GLM](command:nacho-flow.switchProfile');
+      expect(mockStatusBarItem.tooltip.value).toContain('[＋](command:nacho-flow.addProfile');
+      expect(mockStatusBarItem.tooltip.value).toContain('[✏️](command:nacho-flow.renameProfile');
+    });
+
     it('should set base url and update status bar', () => {
       statusBarManager.setBaseUrl('http://127.0.0.1:8000');
       expect((statusBarManager as any).baseUrl).toBe('http://127.0.0.1:8000');

@@ -27,7 +27,7 @@ export class ExtensionController {
 	private telemetryPoller: TelemetryPoller | null = null;
 	private activeTimeWindow: string = 'all_time';
 	private routesRefreshInterval: RefreshIntervalSeconds = 60;
-	private activeProfile: 'profile1' | 'profile2' | 'profile3' = 'profile1';
+	private activeProfile: string = 'profile1';
 	private lastKnownServerVersion: string = '';
 
 	public get activePreset(): string {
@@ -56,12 +56,12 @@ export class ExtensionController {
 
 		// Support migration from legacy nachoFlow_activePreset
 		const legacyPreset = this.context.globalState?.get<string>('nachoFlow_activePreset');
-		let defaultProfile: 'profile1' | 'profile2' | 'profile3' = 'profile1';
+		let defaultProfile = 'profile1';
 		if (legacyPreset === 'zoo') defaultProfile = 'profile2';
 		else if (legacyPreset === 'cline') defaultProfile = 'profile3';
 
-		this.activeProfile = this.context.globalState?.get<'profile1' | 'profile2' | 'profile3'>('nachoFlow_activeProfile', defaultProfile) || defaultProfile;
-		this.statusBar.setActiveProfile(this.activeProfile);
+		this.activeProfile = this.context.globalState?.get<string>('nachoFlow_activeProfile', defaultProfile) || defaultProfile;
+		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
 
 		// Ensure global profile templates are available
 		await this.ensureGlobalProfiles();
@@ -252,6 +252,18 @@ export class ExtensionController {
 
 			vscode.commands.registerCommand('nacho-flow.resetProfileToDefault', async () => {
 				await this.resetProfile(this.activeProfile);
+			}),
+
+			vscode.commands.registerCommand('nacho-flow.switchProfile', async (profileId?: string) => {
+				await this.switchProfile(profileId);
+			}),
+
+			vscode.commands.registerCommand('nacho-flow.addProfile', async () => {
+				await this.addProfile();
+			}),
+
+			vscode.commands.registerCommand('nacho-flow.renameProfile', async (profileId?: string) => {
+				await this.renameProfile(profileId);
 			})
 		);
 	}
@@ -431,21 +443,27 @@ export class ExtensionController {
 						this.showDashboard();
 						break;
 					case 'switchProfile': {
-						const profileId = message.profileId as 'profile1' | 'profile2' | 'profile3';
+						const profileId = message.profileId;
 						if (profileId) {
 							await this.switchProfile(profileId);
 						}
 						break;
 					}
+					case 'addProfile':
+						await this.addProfile();
+						break;
+					case 'renameProfile':
+						await this.renameProfile(message.profileId);
+						break;
 					case 'resetProfile': {
-						const profileId = (message.profileId || this.activeProfile) as 'profile1' | 'profile2' | 'profile3';
+						const profileId = message.profileId || this.activeProfile;
 						if (profileId) {
 							await this.resetProfile(profileId);
 						}
 						break;
 					}
 					case 'compareProfile': {
-						const profileId = (message.profileId || this.activeProfile) as 'profile1' | 'profile2' | 'profile3';
+						const profileId = message.profileId || this.activeProfile;
 						if (profileId) {
 							await this.compareProfileWithTemplate(profileId);
 						}
@@ -599,7 +617,19 @@ export class ExtensionController {
 
 		// Sync base URL and active profile to status bar
 		this.statusBar.setBaseUrl(baseUrl);
-		this.statusBar.setActiveProfile(this.activeProfile);
+		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
+
+		let profilesList: Array<{ id: string; label: string }> = [];
+		try {
+			const avail = await this.getAvailableProfiles();
+			profilesList = avail.map(p => ({ id: p.id, label: p.label }));
+		} catch (_) {
+			profilesList = [
+				{ id: 'profile1', label: this.getProfileLabel('profile1') },
+				{ id: 'profile2', label: this.getProfileLabel('profile2') },
+				{ id: 'profile3', label: this.getProfileLabel('profile3') }
+			];
+		}
 
 		this.sidebarProvider.updateState({
 			engineMode,
@@ -609,6 +639,7 @@ export class ExtensionController {
 			hasToken: !!token,
 			engineStatus,
 			providers,
+			profiles: profilesList,
 			activeProfile: this.activeProfile,
 			activePreset: this.activeProfile
 		});
@@ -1251,20 +1282,126 @@ export class ExtensionController {
 		}
 	}
 
+	private profileNames: Record<string, string> = {};
+
+	public getProfileNames(): Record<string, string> {
+		const persisted = this.context.globalState?.get<Record<string, string>>('nachoFlow_profileNames');
+		if (persisted && Object.keys(persisted).length > 0) {
+			this.profileNames = { ...persisted };
+		}
+		return this.profileNames;
+	}
+
+	public async setProfileName(profileId: string, name: string): Promise<void> {
+		const names = { ...this.getProfileNames() };
+		const trimmed = name.trim().slice(0, 24);
+		if (trimmed) {
+			names[profileId] = trimmed;
+		} else {
+			delete names[profileId];
+		}
+		this.profileNames = names;
+		await this.context.globalState?.update('nachoFlow_profileNames', names);
+		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
+		await this.syncSidebarState();
+	}
+
 	public getProfileLabel(profileId: string): string {
-		const labels: Record<string, string> = {
-			profile1: 'Profile 1',
-			profile2: 'Profile 2',
-			profile3: 'Profile 3',
+		const customNames = this.getProfileNames();
+		if (customNames[profileId]) {
+			return customNames[profileId];
+		}
+		const m = /^profile([0-9]+)$/i.exec(profileId);
+		if (m) {
+			return `Profile ${m[1]}`;
+		}
+		const legacyLabels: Record<string, string> = {
 			standard: 'Profile 1',
 			zoo: 'Profile 2',
 			cline: 'Profile 3'
 		};
-		return labels[profileId] || 'Profile 1';
+		return legacyLabels[profileId] || profileId;
 	}
 
 	public isRemoteHost(): boolean {
 		return this.authManager.getEngineMode() === 'remote';
+	}
+
+	public async getAvailableProfiles(): Promise<Array<{ id: string; label: string; number: number; isWorkspace: boolean; uri: vscode.Uri }>> {
+		await this.ensureGlobalProfiles();
+		const profileMap = new Map<string, { id: string; label: string; number: number; isWorkspace: boolean; uri: vscode.Uri }>();
+
+		// 1. Scan global storage
+		if (this.context.globalStorageUri) {
+			const profilesDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles');
+			try {
+				const entries = await vscode.workspace.fs.readDirectory(profilesDir);
+				for (const [name, type] of entries) {
+					if (type === vscode.FileType.File) {
+						const match = /^profile([0-9]+)\.ya?ml$/i.exec(name);
+						if (match) {
+							const num = parseInt(match[1], 10);
+							const id = `profile${num}`;
+							const uri = vscode.Uri.joinPath(profilesDir, name);
+							profileMap.set(id, {
+								id,
+								label: this.getProfileLabel(id),
+								number: num,
+								isWorkspace: false,
+								uri
+							});
+						}
+					}
+				}
+			} catch (_) {}
+		}
+
+		// 2. Scan workspace folders for .nacho/profile*.yaml
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (workspaceFolders && workspaceFolders.length > 0) {
+			for (const folder of workspaceFolders) {
+				const nachoDir = vscode.Uri.joinPath(folder.uri, '.nacho');
+				try {
+					const entries = await vscode.workspace.fs.readDirectory(nachoDir);
+					for (const [name, type] of entries) {
+						if (type === vscode.FileType.File) {
+							const match = /^profile([0-9]+)\.ya?ml$/i.exec(name);
+							if (match) {
+								const num = parseInt(match[1], 10);
+								const id = `profile${num}`;
+								const uri = vscode.Uri.joinPath(nachoDir, name);
+								profileMap.set(id, {
+									id,
+									label: this.getProfileLabel(id),
+									number: num,
+									isWorkspace: true,
+									uri
+								});
+							}
+						}
+					}
+				} catch (_) {}
+			}
+		}
+
+		// Ensure at minimum profile1, profile2, profile3 exist
+		for (let i = 1; i <= 3; i++) {
+			const id = `profile${i}`;
+			if (!profileMap.has(id)) {
+				const { uri, isWorkspace } = await this.resolveProfileUri(id);
+				profileMap.set(id, {
+					id,
+					label: this.getProfileLabel(id),
+					number: i,
+					isWorkspace,
+					uri
+				});
+			}
+		}
+
+		const list = Array.from(profileMap.values());
+		list.sort((a, b) => a.number - b.number);
+		return list;
 	}
 
 	private async ensureGlobalProfiles(): Promise<void> {
@@ -1304,9 +1441,11 @@ export class ExtensionController {
 		const normalizedId = (idStr === 'zoo' ? 'profile2' : (idStr === 'cline' ? 'profile3' : (idStr === 'standard' ? 'profile1' : idStr))) || 'profile1';
 		const candidateFilenames = [
 			`${normalizedId}.yaml`,
-			`config.${normalizedId}.yaml`
+			`config.${normalizedId}.yaml`,
+			`${idStr}.yaml`,
+			`config.${idStr}.yaml`
 		];
-		if (normalizedId === 'profile1') {
+		if (normalizedId === 'profile1' || idStr === 'profile1' || idStr === 'standard') {
 			candidateFilenames.push('config.yaml');
 		}
 
@@ -1332,15 +1471,23 @@ export class ExtensionController {
 
 		// 2. Check globalStorageUri (persistent user profiles across any workspace)
 		if (this.context.globalStorageUri) {
-			const globalProfileUri = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles', `${normalizedId}.yaml`);
-			try {
-				await vscode.workspace.fs.stat(globalProfileUri);
-				return { uri: globalProfileUri, isWorkspace: false };
-			} catch (_) {
-				await this.ensureGlobalProfiles();
+			for (const filename of candidateFilenames) {
+				const globalProfileUri = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles', filename);
 				try {
 					await vscode.workspace.fs.stat(globalProfileUri);
 					return { uri: globalProfileUri, isWorkspace: false };
+				} catch (_) {}
+			}
+
+			const defaultGlobalUri = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles', `${normalizedId}.yaml`);
+			try {
+				await vscode.workspace.fs.stat(defaultGlobalUri);
+				return { uri: defaultGlobalUri, isWorkspace: false };
+			} catch (_) {
+				await this.ensureGlobalProfiles();
+				try {
+					await vscode.workspace.fs.stat(defaultGlobalUri);
+					return { uri: defaultGlobalUri, isWorkspace: false };
 				} catch (_) {}
 			}
 		}
@@ -1348,7 +1495,13 @@ export class ExtensionController {
 		// 3. Fallback to bundled template in extension resources
 		if (this.context.extensionUri) {
 			const bundledUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${normalizedId}.yaml`);
-			return { uri: bundledUri, isWorkspace: false };
+			try {
+				await vscode.workspace.fs.stat(bundledUri);
+				return { uri: bundledUri, isWorkspace: false };
+			} catch (_) {
+				const fallbackUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
+				return { uri: fallbackUri, isWorkspace: false };
+			}
 		}
 
 		// 4. Ultimate fallback to local path
@@ -1359,10 +1512,15 @@ export class ExtensionController {
 		return await this.resolveProfileUri(presetId);
 	}
 
-	public async compareProfileWithTemplate(profileId: 'profile1' | 'profile2' | 'profile3'): Promise<void> {
+	public async compareProfileWithTemplate(profileId: string): Promise<void> {
 		const profileLabel = this.getProfileLabel(profileId);
 		const { uri: profileUri } = await this.resolveProfileUri(profileId);
-		const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+		let templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+		try {
+			await vscode.workspace.fs.stat(templateUri);
+		} catch (_) {
+			templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
+		}
 
 		let templateVersion = '1.1.0';
 		try {
@@ -1374,7 +1532,7 @@ export class ExtensionController {
 		await vscode.commands.executeCommand('vscode.diff', profileUri, templateUri, title);
 	}
 
-	public async resetProfile(profileId: 'profile1' | 'profile2' | 'profile3', askConfirmation = true): Promise<boolean> {
+	public async resetProfile(profileId: string, askConfirmation = true): Promise<boolean> {
 		if (this.isRemoteHost()) {
 			vscode.window.showInformationMessage('Nacho Flow: Profile reset is disabled in remote server mode.');
 			return false;
@@ -1382,7 +1540,12 @@ export class ExtensionController {
 
 		const profileLabel = this.getProfileLabel(profileId);
 		const { uri: profileUri } = await this.resolveProfileUri(profileId);
-		const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+		let templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+		try {
+			await vscode.workspace.fs.stat(templateUri);
+		} catch (_) {
+			templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
+		}
 
 		let templateVersion = '1.1.0';
 		try {
@@ -1428,18 +1591,155 @@ export class ExtensionController {
 		}
 	}
 
-	private async switchProfile(profileId: 'profile1' | 'profile2' | 'profile3'): Promise<void> {
+	public async addProfile(): Promise<void> {
+		if (this.isRemoteHost()) {
+			vscode.window.showInformationMessage('Nacho Flow: Profile management is disabled in remote server mode.');
+			return;
+		}
+
+		const existing = await this.getAvailableProfiles();
+		const maxNum = existing.reduce((max, p) => (p.number > max ? p.number : max), 0);
+		const nextNum = Math.max(maxNum + 1, 4);
+		const newId = `profile${nextNum}`;
+		const filename = `${newId}.yaml`;
+
+		if (!this.context.globalStorageUri || !this.context.extensionUri) return;
+		const profilesDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles');
+		try {
+			await vscode.workspace.fs.createDirectory(profilesDir);
+		} catch (_) {}
+
+		const targetUri = vscode.Uri.joinPath(profilesDir, filename);
+
+		// Copy from default template
+		try {
+			const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
+			const data = await vscode.workspace.fs.readFile(templateUri);
+			await vscode.workspace.fs.writeFile(targetUri, data);
+		} catch (err) {
+			vscode.window.showErrorMessage(`Nacho Flow: Failed to create ${filename}: ${err}`);
+			return;
+		}
+
+		// Prompt user for optional custom name
+		const enteredName = await vscode.window.showInputBox({
+			title: `🌮 Created Profile ${nextNum}`,
+			prompt: `Enter a custom name for Profile ${nextNum} (max 24 characters), or press Enter to keep default:`,
+			value: `Profile ${nextNum}`,
+			validateInput: (val: string) => {
+				if (val && val.trim().length > 24) {
+					return 'Name must be 24 characters or less';
+				}
+				return null;
+			}
+		});
+
+		if (enteredName && enteredName.trim() && enteredName.trim() !== `Profile ${nextNum}`) {
+			await this.setProfileName(newId, enteredName.trim());
+		}
+
+		// Switch to newly created profile
+		await this.switchProfile(newId);
+
+		// Open the newly created profile file for user editing
+		try {
+			const doc = await vscode.workspace.openTextDocument(targetUri);
+			await vscode.window.showTextDocument(doc);
+		} catch (_) {}
+
+		this.showTransientToast(`🌮 Created and switched to ${this.getProfileLabel(newId)}!`);
+	}
+
+	public async renameProfile(profileId?: string): Promise<void> {
+		if (this.isRemoteHost()) {
+			vscode.window.showInformationMessage('Nacho Flow: Profile renaming is disabled in remote server mode.');
+			return;
+		}
+
+		const targetId = profileId || this.activeProfile;
+		const currentLabel = this.getProfileLabel(targetId);
+
+		const newName = await vscode.window.showInputBox({
+			title: `🌮 Rename ${currentLabel}`,
+			prompt: `Enter new display name for ${currentLabel} (max 24 characters):`,
+			value: currentLabel,
+			validateInput: (val: string) => {
+				const trimmed = val ? val.trim() : '';
+				if (!trimmed) {
+					return 'Profile name cannot be empty';
+				}
+				if (trimmed.length > 24) {
+					return 'Profile name must be 24 characters or less';
+				}
+				return null;
+			}
+		});
+
+		if (newName && newName.trim()) {
+			await this.setProfileName(targetId, newName.trim());
+			this.showTransientToast(`🌮 Profile renamed to "${newName.trim()}"!`);
+		}
+	}
+
+	public async switchProfile(profileId?: string): Promise<void> {
 		if (this.isRemoteHost()) {
 			vscode.window.showInformationMessage('Nacho Flow: Profile switching is disabled in remote server mode.');
 			return;
 		}
+
+		// If called without profileId (e.g. from command palette or dropdown trigger in tooltip), show QuickPick
+		if (!profileId || typeof profileId !== 'string') {
+			const profiles = await this.getAvailableProfiles();
+			const items: Array<vscode.QuickPickItem & { profileId?: string; action?: string }> = profiles.map(p => ({
+				label: p.id === this.activeProfile ? `$(check) ${p.label}` : `$(gear) ${p.label}`,
+				description: p.id === this.activeProfile ? '(Active)' : (p.isWorkspace ? '(Workspace Override)' : ''),
+				detail: `Config file: ${p.id}.yaml`,
+				profileId: p.id
+			}));
+
+			items.push({ label: '', kind: vscode.QuickPickItemKind.Separator } as any);
+			items.push({
+				label: '$(plus) Add New Profile (+)',
+				description: `Creates Profile ${profiles.length + 1}`,
+				action: 'add'
+			});
+			items.push({
+				label: '$(edit) Rename Active Profile',
+				description: `Rename "${this.getProfileLabel(this.activeProfile)}"`,
+				action: 'rename'
+			});
+
+			const selected = await vscode.window.showQuickPick(items, {
+				placeHolder: `Select Nacho Flow Profile (Current: ${this.getProfileLabel(this.activeProfile)})`
+			});
+
+			if (!selected) return;
+
+			if (selected.action === 'add') {
+				await this.addProfile();
+				return;
+			}
+			if (selected.action === 'rename') {
+				await this.renameProfile();
+				return;
+			}
+			profileId = selected.profileId;
+		}
+
+		if (!profileId) return;
 
 		await this.ensureGlobalProfiles();
 		const { uri: profileUri, isWorkspace } = await this.resolveProfileUri(profileId);
 		const profileLabel = this.getProfileLabel(profileId);
 
 		// Schema version check against bundled template
-		const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+		let templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', `${profileId}.yaml`);
+		try {
+			await vscode.workspace.fs.stat(templateUri);
+		} catch (_) {
+			templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
+		}
+
 		let userVersion = '1.0.0';
 		let templateVersion = '1.1.0';
 		try {
@@ -1491,7 +1791,7 @@ export class ExtensionController {
 		// Persist active profile and update state
 		this.activeProfile = profileId;
 		await this.context.globalState?.update('nachoFlow_activeProfile', profileId);
-		this.statusBar.setActiveProfile(this.activeProfile);
+		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
 		const locationHint = isWorkspace ? ' (Workspace Override)' : '';
 
 		// If local engine is running, restart cleanly with --config <configPath>
