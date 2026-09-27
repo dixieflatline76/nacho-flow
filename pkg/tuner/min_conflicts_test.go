@@ -1829,8 +1829,8 @@ func TestMinConflicts_LoosensRetryForReadBursts(t *testing.T) {
 	policy.WriteOnly = true
 
 	// 5 sessions: each performs 2 read-only turns followed by 1 write turn at late context.
-	// With Retries < 2, the 3rd turn escalates to expensive Gemini Flash ($0.50/M).
-	// With Retries < 3, the 3rd turn stays on Qwen ($0.20/M), cutting costs.
+	// With Retries < 2, the 3rd turn escalates to expensive Frontier fallback ($10/M).
+	// With Retries < 3, the 3rd turn stays on Qwen ($1.46/M), cutting costs.
 	var records []telemetry.TurnRecord
 	for s := 1; s <= 5; s++ {
 		sessID := fmt.Sprintf("read-burst-sess-%d", s)
@@ -1872,7 +1872,7 @@ func TestMinConflicts_LoosensRetryForReadBursts(t *testing.T) {
 			HasWriteCapability: true,
 			HasWriteProgress:   true,
 			RootPromptHash:     rootHash,
-			CostSpentUSD:       0.060, // Flash escalation cost
+			CostSpentUSD:       0.060, // Frontier fallback escalation cost
 		})
 	}
 
@@ -1886,9 +1886,9 @@ func TestMinConflicts_LoosensRetryForReadBursts(t *testing.T) {
 			},
 		},
 		DefaultTier: contract.Tier{
-			Name:     "Default Fallback Tier",
+			Name:     "Default Fallback: Frontier Powerhouse",
 			Provider: "openrouter",
-			Model:    "google/gemini-3.8-flash", // $0.50/M
+			Model:    "anthropic/claude-sonnet-5",
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
