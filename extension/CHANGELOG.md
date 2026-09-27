@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Factory-Calibrated Multi-Profile Configuration Suite**: Bundled empirical production configurations for Profile 1 & 2 (Zoo Code / Standard Hybrid with GLM-5.3-Flash, 16k thinking lane) and Profile 3 (Cline Calibrated with Qwen3 Coder Plus, 4k thinking lane).
+- **Autonomous Fleet Dominance & Rule Optimization**: Enhanced Auto-Tuner with multi-tier candidate deal matching, selective recommendation checkboxes, and test churn immunity.
+- **Client-Partitioned Tuning & Telemetry**: Added agent client detection (Zoo Code, Cline, Cursor, Aider, Anthropic) in AgentRegistry, `/api/v1/telemetry/clients` API endpoint, and dashboard client selector.
+
+### Changed
+- **Bare-Metal Benchmark & Coverage Sync**: Updated performance whitepaper, docs, and landing page with verified 30,000+ req/s peak throughput and 95.8% global Go statement coverage.
+- **Decoupled Tuner Test Fixture**: Decoupled unit tests in `pkg/tuner` from project config using `baseline_config.yaml`.
+
 ## [1.3.0] - 2026-09-23
 
 ## [1.2.2] - 2026-09-19
