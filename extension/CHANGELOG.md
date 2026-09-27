@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-27
+
 ### Added
 - **Factory-Calibrated Multi-Profile Configuration Suite**: Bundled empirical production configurations for Profile 1 & 2 (Zoo Code / Standard Hybrid with GLM-5.3-Flash, 16k thinking lane) and Profile 3 (Cline Calibrated with Qwen3 Coder Plus, 4k thinking lane).
 - **Autonomous Fleet Dominance & Rule Optimization**: Enhanced Auto-Tuner with multi-tier candidate deal matching, selective recommendation checkboxes, and test churn immunity.
