@@ -62,9 +62,9 @@ flowchart LR
      - **API Key**: `sk-nacho-secret-key` *(or leave blank if auth disabled)*
 
 ### ⚡ Why OpenRouter is the Default Cloud Gateway for Nacho Flow
-* **One Unified Key**: A single API key and billing balance routes across **Qwen 3 Coder Plus**, **Gemini 3.8 Flash**, **Claude Sonnet 5**, and **Claude Opus 5** without managing separate vendor accounts or credit cards.
+* **One Unified Key**: A single API key and billing balance routes across **GLM-5.3-Flash**, **Qwen 3 Coder Plus**, **Gemini 3.8 Flash**, **DeepSeek V4**, and **Claude Opus 5** without managing separate vendor accounts or credit cards.
 * **The 90% Prompt Cache Multiplier**: OpenRouter passes through up to **90% caching discounts** on prompt tokens. Because Nacho Flow operates in **100% pristine context preservation mode**, historical prompt prefixes hit the cache byte-for-byte on every turn.
-* **Zero-Config Factory Profiles**: Nacho Flow's pre-configured factory profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) work out of the box with OpenRouter.
+* **Zero-Config Factory Profiles**: Nacho Flow's pre-configured factory profiles (`profile1.yaml` for Standard Hybrid / GLM-5.3-Flash, `profile2.yaml` for Zoo Code, `profile3.yaml` for Cline) work out of the box with OpenRouter.
 
 ---
 
@@ -164,7 +164,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **Safe Log Rotation & Cold Maintenance**: Rotates large `traffic.jsonl` and `router.log` files to timestamped `.bak` archives and resets stats directly from the VS Code sidebar without file locking issues.
 * **Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
 <!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (96.2% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.8% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 * **Zero Runtime Dependencies**: Single static binary with zero CGO, Node, or Python runtime requirements (`CGO_ENABLED=0`).
 

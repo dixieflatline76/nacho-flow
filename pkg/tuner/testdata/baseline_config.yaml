@@ -1,11 +1,11 @@
 # =============================================================================
-# 🌮 NACHO FLOW CONFIGURATION — PROFILE 3: CLINE CALIBRATED
-# Universal gateway configuration tuned for Cline step-by-step pair programming
-# Pipeline: Local GPU ($0) -> Qwen3 Coder Plus ($0.65/M) -> Gemini Flash ($0.75/M) -> DeepSeek V4 Pro
+# 🌮 NACHO FLOW CONFIGURATION — STANDARD HYBRID PIPELINE
+# Universal gateway configuration for autonomous coding agents (Cline, Zoo, Cursor, Aider)
+# Pipeline: Local GPU ($0) -> Fast Cloud ($0.65/M) -> Reasoning ($0.75/M) -> Frontier ($2/M)
 # =============================================================================
-version: "1.1.0"
+
 port: 8000
-host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
+host: "0.0.0.0" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
 
 # =============================================================================
 # 🔌 LLM PROVIDERS
@@ -31,6 +31,8 @@ deals:
   alert_threshold_pct: 30.0
   min_coding_index: 40.0
   require_tools: true
+  exclude_batch: true
+  exclude_free: true
 
 # =============================================================================
 # 🛡️ AGENTIC TOOL FALLBACK SHIELD
@@ -56,12 +58,15 @@ cycle_killer:
   model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
   retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
   max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
+
   thinking_lane:
     max_tokens: 4096                # Max reasoning tokens before budget repetition check
     max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
+
   content_lane:
     max_tokens: 6144                # Max non-tool content before budget repetition check
     max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
+
   tool_lane:
     max_tokens: 8192                # Max streaming tool call arguments before repetition enforcement
     max_write_tokens: 32768         # Max size for Category A file writes (zero-alloc fast path)
@@ -77,21 +82,26 @@ kickstart:
   # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
 
 # =============================================================================
-# 🗜️ NACHO TOKEN SAVER (NTS)
-# Wire-speed, zero-allocation in-place tool output compaction engine
+# 🧪 NACHO TOKEN SAVER (NTS) [EXPERIMENTAL / OPT-IN ONLY]
+# Wire-speed, zero-allocation in-place tool output compaction engine.
+#
+# ⚠️ NOTICE: DISABLED BY DEFAULT.
+# Empirical bake-offs proved that mutating conversation history breaks provider
+# KV prompt caching (causing cache misses) and can degrade agent diff matching.
+# Keep disabled for optimal coding agent performance unless actively experimenting.
 # =============================================================================
 nts:
-  enabled: false                     # Master switch for tool output compaction
+  enabled: false                    # Master switch (default: false / pristine context)
   strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
   resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
-  deduplicate_lines: false           # Pass 3: Collapse repeated consecutive lines (>3 times)
+  deduplicate_lines: false          # Pass 3: Collapse repeated consecutive lines (disabled by default)
   dedup_threshold: 3                # Consecutive duplicate threshold before collapse
-  strip_boilerplate: false           # Pass 4: Strip IDE tool boilerplate notices
-  normalize_whitespace: true        # Pass 5: Collapse multiple empty lines
+  strip_boilerplate: false          # Pass 4: Strip IDE tool boilerplate notices (disabled by default)
+  normalize_whitespace: false       # Pass 5: Collapse multiple empty lines (disabled by default)
   preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
   preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
-  compact_stale_file_reads: false    # 📦 Evict superseded historical file reads
+  compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
   stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 
 # =============================================================================
@@ -104,7 +114,7 @@ tiers:
   - name: "Kickstart Escalation (Gemini 3.8 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.8-flash"
-    when: "Retries < 1 && SessionKickstarted"
+    when: "SessionKickstarted && Retries < 3"
 
   # ---------------------------------------------------------------------------
   # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
@@ -112,61 +122,68 @@ tiers:
   - name: "Tier: Multimodal Vision (Gemini 3.8 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.8-flash"
-    when: "Retries < 6 && HasImages"
+    when: "HasImages && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (Quick Chat / Single Prompts < 4k)
+  # TIER 1: Local GPU Workhorse (Gemma 4 12B QAT) - 100% VRAM Offload
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
     model: "gemma4:12b-it-qat"
-    when: "Tokens < 4000 && Retries < 2"
+    when: "Tokens < 20000 && Retries < 2"
     strip_images: false
     max_context: 32000
 
   # ---------------------------------------------------------------------------
-  # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus)
-  # Alibaba first-party distilled Coder Plus: 1M context, 3x cheaper
+  # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus — $0.65 / $3.25 per 1M)
+  # Dense flagship coder: AST diff precision, ESM/TS compliance, post-compression resilience
   # ---------------------------------------------------------------------------
   - name: "Tier 2: Flagship Agent Coder (Qwen3 Coder Plus)"
     provider: "openrouter"
     model: "qwen/qwen3-coder-plus"
-    when: "Tokens < 160000 && Retries < 6"
+    when: "Tokens < 160000 && Retries < 2"
 
   # ---------------------------------------------------------------------------
-  # TIER 3: Workhorse & Full-Window Context (Gemini 3.8 Flash — $0.75 / $3.75 per 1M)
-  # Handles all normal agent work up to 1M tokens, plus initial retries (2-4)
+  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash — $0.75 / $3.75 per 1M)
+  # Takes over when Qwen fails a turn (Retries >= 2) or for deep context (>100k)
   # ---------------------------------------------------------------------------
   - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.8-flash"
-    when: "Tokens < 1000000 && Retries < 5"
+    when: "Tokens < 260000 && Retries < 5"
 
   # ---------------------------------------------------------------------------
-  # TIER 4: Frontier Powerhouse (DeepSeek V4 Pro — $0.96 / $1.91 per 1M)
-  # Strictly for heavy failure escalation (Retries 5-7), NEVER context size
+  # TIER 4: Large Context Synthesis (Gemini 3.1 Pro)
   # ---------------------------------------------------------------------------
-  - name: "Tier 4: Frontier Powerhouse (DeepSeek V4 Pro)"
+  - name: "Tier 4: Large Context Synthesis (Gemini 3.1 Pro)"
     provider: "openrouter"
-    model: "deepseek/deepseek-v4-pro"
-    when: "false"
+    model: "google/gemini-3.1-pro-preview"
+    when: "Retries < 7"
 
   # ---------------------------------------------------------------------------
-  # TIER 5: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
-  # Access via: @nacho:model="anthropic/claude-opus-5" or X-Spicy-Model
+  # TIER 5: Frontier Powerhouse (Claude Sonnet 5 — $2.00/$10.00 per 1M)
   # ---------------------------------------------------------------------------
-  - name: "Tier 5: Opus On-Demand (Spicy Only)"
+  - name: "Tier 5: Frontier Powerhouse (Claude Sonnet 5)"
+    provider: "openrouter"
+    model: "anthropic/claude-sonnet-5"
+    when: "Retries < 9"
+
+  # ---------------------------------------------------------------------------
+  # TIER 6: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
+  # Access via: X-Spicy-Model: anthropic/claude-opus-5 or Fairy Dust Checkpoints
+  # ---------------------------------------------------------------------------
+  - name: "Tier 6: Opus On-Demand (Spicy Only)"
     provider: "openrouter"
     model: "anthropic/claude-opus-5"
     when: "false"
 
 # =============================================================================
-# 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Gemini 3.8 Flash — $0.75 / $3.75)
+# 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Claude Sonnet 5)
 # =============================================================================
 default_tier:
-  name: "Default Catch-All (Gemini 3.8 Flash)"
+  name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
   provider: "openrouter"
-  model: "google/gemini-3.8-flash"
+  model: "anthropic/claude-sonnet-5"
   when: "true"
 
 # =============================================================================

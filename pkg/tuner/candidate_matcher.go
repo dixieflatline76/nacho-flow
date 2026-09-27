@@ -352,4 +352,3 @@ func ConvertTierToCandidate(t *TierReplayConfig) CandidateModel {
 		IsOpenWeights:            t.IsLocal,
 	}
 }
-

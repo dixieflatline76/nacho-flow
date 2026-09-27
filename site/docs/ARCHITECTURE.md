@@ -438,10 +438,10 @@ flowchart TD
 4. **Graceful Subprocess Termination**: Process trees on Windows are terminated using clean job objects/tree kills, safely suppressing expected `taskkill` exit codes (`4294967295`) without user-facing errors.
 
 ### 9.3 Dynamic Multi-Profile Lifecycle Management & Native `--config` Flag Isolation
-1. **User-Customizable Multi-Profile Architecture (`profile1`, `profile2`, `profile3`)**: The extension provides three independent, user-customizable configuration slots (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`). Users have total freedom to tailor each profile for any combination of models, context windows, providers, or workflows:
-   - **`Profile 1` (`profile1.yaml` / `config.yaml`)**: Fully customizable configuration slot (e.g. suggested for general-purpose daily coding with balanced local/cloud routing).
-   - **`Profile 2` (`profile2.yaml`)**: Fully customizable configuration slot (e.g. suggested for multi-agent workflows such as Zoo Code with strict JSON tool call handling).
-   - **`Profile 3` (`profile3.yaml`)**: Fully customizable configuration slot (e.g. suggested for XML-based tool agents such as Cline with relaxed prose ceilings).
+1. **User-Customizable Multi-Profile Architecture (`profile1`, `profile2`, `profile3`)**: The extension provides three independent, factory-calibrated and user-customizable configuration slots (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`):
+   - **`Profile 1` (`profile1.yaml` / `config.yaml`)**: Standard Hybrid Pipeline / Zoo Code Calibrated — general-purpose coding and multi-agent workflows (Zoo Code, Cursor, Aider) featuring local Gemma 4 12B QAT (Tier 1), Z-AI GLM-5.3-Flash (Tier 2 fast cloud), Gemini 3.8 Flash (Tier 3 fallback), 16k thinking lane, 12 repeat limit, and kickstart bypass (`SessionKickstarted && Retries < 3`).
+   - **`Profile 2` (`profile2.yaml`)**: Zoo Code Calibrated — dedicated profile slot for Zoo Code autonomous loops with calibrated GLM-5.3-Flash cloud routing and 16k thinking lane cycle killer parameters.
+   - **`Profile 3` (`profile3.yaml`)**: Cline Calibrated — tuned for Cline autonomous agent loops with Qwen3 Coder Plus (`qwen/qwen3-coder-plus`) Tier 2 routing, 4k thinking lane, and tight XML kickstart ceilings (`Retries < 1 && SessionKickstarted`).
 2. **Native `--config` Flag Passing**: When spawning or restarting the Go engine, `ProcessManager` passes the resolved absolute path directly via `nacho-flow.exe --config <path-to-profile.yaml>`. This guarantees that the native engine loads the exact targeted configuration file on startup without intermediate environment hacks or race conditions.
 3. **Workspace Override Resolution Cascade**: The extension resolves profiles hierarchically:
    - *Project-specific override*: Checks `./.nacho/profile*.yaml` (or `./profile*.yaml` if present in workspace root).

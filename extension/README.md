@@ -95,7 +95,10 @@ Manage your agent supervisor and model dispatcher directly from your editor side
   - **This Machine**: 1-click `▶ Start`, `⏹ Stop`, `🔄 Restart`, and interactive streaming `📄 Logs` for the bundled native Go engine.
   - **Remote Server**: Connect across LAN or Tailscale (e.g. `http://192.168.1.100:8000` or `http://gpu-box.internal:8000`) with optional Bearer Auth Token and instant `⚡ Test` ping. When switching to Remote Server, the local engine is cleanly stopped to free GPU memory, and automatically resumed when you switch back to This Machine.
 - **Configurable Routing Profiles with 1-Click Switching (`⚡ Switch`)**:
-  - Switch on the fly between three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with native process isolation.
+  - Switch on the fly between three independent, factory-calibrated configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with native process isolation:
+    - **Profile 1 (Standard Hybrid / Default)**: Proven $0.34 Pareto-optimal pipeline with `GLM-5.3-Flash` Tier 2, 16k CoT thinking lane, and balanced Kickstart.
+    - **Profile 2 (Zoo Code Calibrated)**: Tuned for autonomous coding agents with `GLM-5.3-Flash`, 16k thinking lane, 12x table repetition tolerance, and test self-healing loops.
+    - **Profile 3 (Cline Calibrated)**: Tuned for step-by-step interactive pair programming with `Qwen3 Coder Plus` Tier 2, 4k thinking lane, and immediate Kickstart (`Retries < 1`).
   - In local mode, switching cleanly restarts the native engine with the `--config <path>` flag. In remote mode, local profile mutation is safely disabled.
   - Click **`📝 Edit YAML`** (or the dashboard **`[📝 Profile X (YAML)]`** button) to open the active profile in the editor with auto-reload on save.
 - **Provider Status Monitoring**: Real-time discovery and health chips for local engines (Ollama, vLLM, llama.cpp) and cloud APIs (OpenRouter, DeepSeek, Anthropic).

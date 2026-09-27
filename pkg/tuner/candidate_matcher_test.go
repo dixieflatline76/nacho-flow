@@ -329,4 +329,3 @@ func BenchmarkCandidateFilterPipeline_Evaluate(b *testing.B) {
 		_, _ = pipeline.Evaluate(ctx)
 	}
 }
-

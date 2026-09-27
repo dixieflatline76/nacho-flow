@@ -113,13 +113,13 @@ Nacho Flow features three independent, fully customizable configuration profiles
   [ Profile 1           ▼ ]  [⚡ Switch]  [🔄 Reset]
 ```
 
-#### Available Profiles:
+#### Available Factory-Calibrated Profiles:
 
-| Profile | Target File | Suggested Use Case | Customizable Capabilities |
-| :--- | :--- | :--- | :--- |
-| **🌮 Profile 1** | `profile1.yaml` (`config.yaml`) | General-purpose coding, Aider, Cursor, Continue | Fully user-configurable; suggested for balanced local/cloud context boundaries and default coding workflows. |
-| **🤖 Profile 2** | `profile2.yaml` | Multi-agent workflows (e.g. Zoo Code) | Fully user-configurable; suggested for strict OpenAI JSON tool calling and aggressive loop prevention. |
-| **🛠️ Profile 3** | `profile3.yaml` | XML tool agents (e.g. Cline, Claude Dev) | Fully user-configurable; suggested for relaxed prose token ceilings and XML write tool extraction. |
+| Profile | Target File | Primary Tier 2 Engine | Thinking Lane Bounds | Kickstart Heuristic | Suggested Persona / Use Case |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **🌮 Profile 1** | `profile1.yaml` (`config.yaml`) | `z-ai/glm-5.3-flash` | 16,384 tokens (8-word n-gram, 12 repeats) | `SessionKickstarted && Retries < 3` | **Standard Hybrid (Default)**: Universal profile tuned for general-purpose autonomous agents, Aider, and full project builds. Proven $0.34 Pareto-optimal benchmark winner. |
+| **🤖 Profile 2** | `profile2.yaml` | `z-ai/glm-5.3-flash` | 16,384 tokens (12x repeat limit for tables/matrices) | `SessionKickstarted && Retries < 3` | **Zoo Code Calibrated**: Optimized for long-horizon autonomous workflows, extensive test self-healing loops, and tabular/matrix simulation outputs. |
+| **🛠️ Profile 3** | `profile3.yaml` | `qwen/qwen3-coder-plus` | 4,096 tokens (6x repeat limit) | `Retries < 1 && SessionKickstarted` | **Cline Calibrated**: Tuned for step-by-step interactive pair programming, rapid single-turn file diffs, and low-latency Alibaba Coder Plus inference. |
 
 > [!TIP]
 > **Total Customization Freedom**: Profiles 1, 2, and 3 are independent configuration slots for you to customize however you like. You can configure any profile with your preferred local models (Ollama, vLLM, llama.cpp), cloud endpoints (OpenRouter, DeepSeek, Anthropic), context boundaries, and custom AST rules.

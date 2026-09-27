@@ -375,4 +375,3 @@ tiers:
 		t.Errorf("Expected 3 total sessions, got %d", resAll.TotalSessions)
 	}
 }
-
