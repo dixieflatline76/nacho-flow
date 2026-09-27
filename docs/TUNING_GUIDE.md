@@ -217,7 +217,7 @@ ollama create gemma4:12b-it-qat -f Modelfile
 
 #### 🌮 Gateway Routing Configuration (`config.yaml` / Extension Profiles)
 
-In your Nacho Flow configuration (pre-configured in factory **Profile 1**, **Profile 2**, and **Profile 3**):
+In your Nacho Flow configuration (pre-configured in built-in **Profile 1**, **Profile 2**, and **Profile 3**):
 
 ```yaml
 tiers:
@@ -500,7 +500,7 @@ flowchart TD
         Tools["Tool Adherence Flags (HasTools)"]
         Vision["Vision Modality Flags (HasImages)"]
         KW["Friction Keywords (any(Keywords, ...))"]
-        Model["Hardware Model Selection (VRAM & Benchmarks)"]
+        Model["GPU Model Selection (VRAM & Benchmarks)"]
     end
 
     Logs["Historical Traffic Logs (traffic.jsonl)"] --> Replay["Zero-Alloc Fleet Replay Engine"]
@@ -518,12 +518,12 @@ flowchart TD
 3. **Tool Adherence Toggle (`HasTools`)**: Disables local routing when agent declares tools if local tool-calling reliability fails.
 4. **Vision Modality Toggle (`HasImages`)**: Prevents sending multi-modal image turns to text-only local models.
 5. **High-Friction Keyword Exclusions (`any(Keywords, ...)`)**: Isolates concepts with retry odds ratios $\ge 1.5\times$ baseline.
-6. **VRAM-Aware Model Substitution**: Inspects the vetted models catalog (`models.json`) to recommend drop-in model upgrades that fit within your target hardware ceiling (e.g. 16GB VRAM).
+6. **GPU VRAM-Aware Model Substitution**: Inspects the vetted models catalog (`models.json`) to recommend drop-in model upgrades that fit within your target GPU memory ceiling (e.g. 16GB VRAM).
 
 #### Hard Constraints vs. Soft Penalties:
 * **Hard Monotonicity Constraint**: Token thresholds across tiers must monotonically increase or remain valid ($T_0 \le T_1 \le ... \le T_n$). Non-monotonic configurations receive a conflict penalty of $+\infty$.
 * **Unbounded Default Tier Protection**: The final fallback tier must have no token or modality restriction ($T_{\text{default}} = \infty$) to guarantee 100% request completion.
-* **Hardware VRAM Ceilings**: Local model substitutions cannot exceed `--vram-gb`.
+* **GPU VRAM Ceilings**: Local model substitutions cannot exceed `--vram-gb`.
 * **Soft Cost & Friction Penalties**:
   $$\text{Objective Conflict} = \text{CloudDirectSpend} + (\text{LocalRetries} \times \text{RetryPenaltyUSD}) + (\text{SessionTurns} \times \text{TurnsWeight})$$
 

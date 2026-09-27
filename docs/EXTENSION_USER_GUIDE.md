@@ -18,7 +18,7 @@ The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-
    - [3.5 Maintenance & System Operations](#35-maintenance--system-operations)
 4. [Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Show Dashboard`)](#4-real-time-analytics-dashboard)
    - [4.1 Flight Instruments & Time-Window Telemetry](#41-flight-instruments--time-window-telemetry)
-   - [4.2 Cycle Killer Defense & Local Self-Healing](#42-cycle-killer-defense--local-self-healing)
+   - [4.2 Cycle Killer Defense & Local Recovery](#42-cycle-killer-defense--local-recovery)
    - [4.3 🗜️ Nacho Token Saver (NTS) Live Telemetry Panel](#43-nacho-token-saver-nts-live-telemetry-panel)
    - [4.4 Live Route History Inspector](#44-live-route-history-inspector)
    - [4.5 🔥 Heat Seeker: Live Model Deals & 1-Click Tier Adoption](#45--heat-seeker-live-model-deals--1-click-tier-adoption)
@@ -105,7 +105,7 @@ For developers hosting Nacho Flow on a dedicated GPU server, home lab workstatio
 
 ### 3.2 User-Configurable Profiles & 1-Click Switching (Profile 1, Profile 2, Profile 3)
 
-Nacho Flow features three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) that can be switched on the fly with **native process isolation, zero configuration drift, and factory template synchronization**:
+Nacho Flow features three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) that can be switched on the fly with **native process isolation, zero configuration drift, and built-in template synchronization**:
 
 ```text
 [⚡ 2. Routing Configuration]          [🔍 Diff] [📝 Edit YAML]
@@ -113,13 +113,13 @@ Nacho Flow features three independent, fully customizable configuration profiles
   [ Profile 1           ▼ ]  [⚡ Switch]  [🔄 Reset]
 ```
 
-#### Available Factory-Calibrated Profiles:
+#### Available Pre-Tuned Profiles:
 
 | Profile | Target File | Primary Tier 2 Engine | Thinking Lane Bounds | Kickstart Heuristic | Suggested Persona / Use Case |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **🌮 Profile 1** | `profile1.yaml` (`config.yaml`) | `z-ai/glm-5.3-flash` | 16,384 tokens (8-word n-gram, 12 repeats) | `SessionKickstarted && Retries < 3` | **Standard Hybrid (Default)**: Universal profile tuned for general-purpose autonomous agents, Aider, and full project builds. Proven $0.34 Pareto-optimal benchmark winner. |
-| **🤖 Profile 2** | `profile2.yaml` | `z-ai/glm-5.3-flash` | 16,384 tokens (12x repeat limit for tables/matrices) | `SessionKickstarted && Retries < 3` | **Zoo Code Calibrated**: Optimized for long-horizon autonomous workflows, extensive test self-healing loops, and tabular/matrix simulation outputs. |
-| **🛠️ Profile 3** | `profile3.yaml` | `qwen/qwen3-coder-plus` | 4,096 tokens (6x repeat limit) | `Retries < 1 && SessionKickstarted` | **Cline Calibrated**: Tuned for step-by-step interactive pair programming, rapid single-turn file diffs, and low-latency Alibaba Coder Plus inference. |
+| **🤖 Profile 2** | `profile2.yaml` | `z-ai/glm-5.3-flash` | 16,384 tokens (12x repeat limit for tables/matrices) | `SessionKickstarted && Retries < 3` | **Zoo Code Preset**: Optimized for long-horizon autonomous workflows, extensive test-and-debug loops, and tabular/matrix simulation outputs. |
+| **🛠️ Profile 3** | `profile3.yaml` | `qwen/qwen3-coder-plus` | 4,096 tokens (6x repeat limit) | `Retries < 1 && SessionKickstarted` | **Cline Preset**: Tuned for step-by-step interactive pair programming, rapid single-turn file diffs, and low-latency Alibaba Coder Plus inference. |
 
 > [!TIP]
 > **Total Customization Freedom**: Profiles 1, 2, and 3 are independent configuration slots for you to customize however you like. You can configure any profile with your preferred local models (Ollama, vLLM, llama.cpp), cloud endpoints (OpenRouter, DeepSeek, Anthropic), context boundaries, and custom AST rules.
@@ -134,9 +134,9 @@ Nacho Flow features three independent, fully customizable configuration profiles
    - **If the Local Engine is offline**: The extension updates your active profile selection so that the next time you click **`▶ Start`**, the engine automatically initializes with the chosen profile.
 3. **`🔍 Diff` (Side-by-Side Template Comparison)**:
    - Click **`🔍 Diff`** (command `nacho-flow.compareProfileWithTemplate`) in the section header to open VS Code's native side-by-side diff editor (`vscode.diff`).
-   - Compares your active customized profile against the clean, bundled factory template in real time, letting you easily spot new guardrail keys, schema additions, or upstream default updates without modifying your file.
-4. **`🔄 Reset` (Safe Factory Reset)**:
-   - Click **`Reset`** (command `nacho-flow.resetProfileToDefault`) to restore the selected profile back to its pristine factory preset.
+   - Compares your active customized profile against the clean, bundled default template in real time, letting you easily spot new guardrail keys, schema additions, or upstream default updates without modifying your file.
+4. **`🔄 Reset` (Safe Reset to Default)**:
+   - Click **`Reset`** (command `nacho-flow.resetProfileToDefault`) to restore the selected profile back to its pristine default preset.
    - **Safety First**: Automatically creates a timestamped backup copy (`profile<N>.yaml.bak`) of your existing customized file before replacing it, confirms via an explicit dialog, and automatically reloads the running gateway daemon with zero downtime.
 5. **`📝 Edit YAML` (Live Editing & Dynamic Sync)**:
    - Click **`📝 Edit YAML`** next to the section header (or the dynamic **`[📝 Profile X (YAML)]`** button in the dashboard) to open the active profile file directly in VS Code with full YAML syntax highlighting and schema validation. Saving changes automatically hot-reloads the daemon in real time.
@@ -148,7 +148,7 @@ Nacho Flow features three independent, fully customizable configuration profiles
 
 #### 🏷️ Config Schema Versioning & SemVer Drift Detection (`version: "1.2.2"`)
 
-Nacho Flow profiles feature top-level schema versioning (`version: "1.2.2"`). Whenever you switch profiles or boot the engine, the extension's SemVer validation engine compares your active profile against the latest extension factory templates:
+Nacho Flow profiles feature top-level schema versioning (`version: "1.2.2"`). Whenever you switch profiles or boot the engine, the extension's SemVer validation engine compares your active profile against the latest extension default templates:
 
 ```mermaid
 flowchart LR
@@ -156,17 +156,17 @@ flowchart LR
     ParseVer --> Compare{"SemVer Delta<br/>vs Template"}
     Compare -- "Equal / Patch" --> CleanBoot["🟢 Clean Boot<br/>(Seamless Execution)"]
     Compare -- "Minor Delta<br/>(v1.1.0 vs v1.2.2)" --> MinorAlert["🟡 Informational Notice<br/>• Compare Diff<br/>• Reset to Template<br/>• Use As Is"]
-    Compare -- "Major Delta<br/>(v1.x vs v2.0)" --> MajorAlert["🔴 Blocking Modal<br/>• Incompatible Schema<br/>• Safe Factory Reset (with .bak)"]
+    Compare -- "Major Delta<br/>(v1.x vs v2.0)" --> MajorAlert["🔴 Blocking Modal<br/>• Incompatible Schema<br/>• Safe Reset to Default (with .bak)"]
 ```
 
 * **Major Version Delta (Breaking Change)**:
   * Triggers a blocking modal dialog: `⚠️ Incompatible Configuration: Profile X is on schema v1.0.0, but Nacho Flow requires v2.0.0.`
-  * Requires a 1-click **Reset to Factory Default** (which automatically backs up your old file as `.bak`) before proceeding, preventing runtime crashes.
+  * Requires a 1-click **Reset to Default** (which automatically backs up your old file as `.bak`) before proceeding, preventing runtime crashes.
 * **Minor Version Delta (New Additive Features)**:
   * Displays an actionable notification: `🌮 Profile X is on config schema v1.1.0 (v1.2.2 available with new features). Would you like to review changes or reset to the new template?`
   * Offers three instant actions:
     1. **`Compare Diff`**: Opens side-by-side diff editor.
-    2. **`Reset to Factory Default`**: Restores pristine preset with `.bak` safety backup.
+    2. **`Reset to Default`**: Restores pristine preset with `.bak` safety backup.
     3. **`Use As Is`**: Continues running your customized configuration without interruption.
 * **Patch / Equal (Up-to-Date)**:
   * Profile is fully up-to-date; boots instantly with zero prompts.
@@ -177,13 +177,13 @@ flowchart LR
 When resolving profile files, the extension checks:
 1. **Explicit Project Override** (`.nacho/` or workspace root): Checks `./.nacho/profile<N>.yaml` (or `./profile<N>.yaml` / `./config.yaml` if previously present). Storing project overrides in the hidden `.nacho/` directory prevents workspace clutter, ensures Git cleanliness, and avoids accidental credential commits.
 2. **Global Storage Profiles (Default)**: `<globalStorage>/profiles/` (e.g. `<globalStorage>/profiles/profile1.yaml`, `profile2.yaml`, `profile3.yaml`). Stores your active personalized configuration centrally so all your workspace projects share your tuned models, API keys, and routing rules without repo pollution.
-3. **Bundled Factory Templates**: Built-in, factory-calibrated templates packaged directly with the extension resources.
+3. **Bundled Default Templates**: Built-in templates packaged directly with the extension resources.
 
 ---
 
 ### 3.3 🏆 Recommended Local Model for 16GB Cards: Gemma 4 12B IT QAT & Perfected Ollama Tuning
 
-All three factory profiles shipped with the extension are pre-tuned for **Google Gemma 4 12B Instruction-Tuned QAT** (`gemma4:12b-it-qat`), the gold-standard local workhorse for developers with **16 GB VRAM GPUs** (RTX 4080, RX 6900/9070 XT, Apple Silicon M-series 16GB/24GB).
+All three profile presets shipped with the extension are pre-tuned for **Google Gemma 4 12B Instruction-Tuned QAT** (`gemma4:12b-it-qat`), the gold-standard local workhorse for developers with **16 GB VRAM GPUs** (RTX 4080, RX 6900/9070 XT, Apple Silicon M-series 16GB/24GB).
 
 #### Why `gemma4:12b-it-qat` is the Extension's Recommended Tier 1 Model:
 - **100% VRAM GPU Offload (Zero Latency Penalty)**: Consumes only ~7.5 GB to 8.5 GB VRAM in 4-bit QAT mode. Leaves ~7 GB of headroom for OS graphics, editor buffers, and browser windows, completely eliminating CUDA/ROCm out-of-memory crashes.
@@ -369,13 +369,13 @@ At the top of the dashboard, live instrumentation cards display your financial a
 
 ---
 
-### 4.2 Cycle Killer Defense & Local Self-Healing
+### 4.2 Cycle Killer Defense & Local Recovery
 
 The **Cycle Killer** panel visualizes real-time protection against runaway agent failure loops:
 
 - **Murdied Loops**: Real-time counter of circular deliberation sequences terminated in $< 3\text{ seconds}$.
 - **Avoided Runaway GPU Minutes**: Estimated GPU compute minutes saved from endless prose generation.
-- **Local Self-Healing Rate ($0.00)**: Percentage of severed streams successfully recovered locally via `[SYSTEM OVERRIDE]` prompts without paying for cloud failover.
+- **Local Recovery Rate ($0.00)**: Percentage of severed streams successfully recovered locally via `[SYSTEM OVERRIDE]` prompts without paying for cloud failover.
 - **Fairy Dust Reviews**: Count of proactive quality checkpoints dispatched to frontier models after major code edits.
 
 ---
@@ -387,7 +387,7 @@ The **Nacho Token Saver (NTS)** panel monitors real-time in-flight context compa
 - **Total Tokens Saved (Avoided Context)**: Cumulative count of token payload eliminated across all evaluated turns (e.g., `1,426,821 tokens saved`).
 - **Payload Reduced (Wire Volume)**: Total bytes stripped from raw upstream buffers (e.g., `5.4 MB payload saved`), lowering round-trip network latency and memory overhead.
 - **Compacted Turns**: Number of agent request turns where redundant file reads or ANSI console noise were compacted (e.g., `852 compacted turns`).
-- **Dual-Lane Immunity Guard**: Zero-alloc safe path ensuring that code syntax, table-driven unit tests, Markdown structures, and file edits are 100% preserved while purging repetitive terminal spinners, carriage returns (`\r`), and redundant ANSI escapes.
+- **Dual-Lane Protection Guard**: Zero-alloc safe path ensuring that code syntax, table-driven unit tests, Markdown structures, and file edits are 100% preserved while purging repetitive terminal spinners, carriage returns (`\r`), and redundant ANSI escapes.
 - **Structural File Deduplication**: When an autonomous agent re-reads the same repository file across multiple conversation turns without interim modifications, NTS maintains semantic validity while compacting stale read outputs into structural digests.
 
 ---
@@ -399,7 +399,7 @@ Inspect the last 500 LLM requests processed by the gateway in real time:
 ```text
 TIME      TIER              MODEL                     TOKENS   LATENCY   REASON
 14:23:05  Local ROCm GPU    qwen2.5-coder:14b         4,210    1.2s      Tokens < 16k && !HasTools
-14:22:48  Cloud Frontier    anthropic/claude-sonnet-5 18,400   3.4s      Retries >= 2 (Auto-Heal)
+14:22:48  Cloud Frontier    anthropic/claude-sonnet-5 18,400   3.4s      Retries >= 2 (Auto-Escalate)
 14:21:12  Local ROCm GPU    qwen2.5-coder:14b         2,890    0.8s      @nacho:local
 ```
 

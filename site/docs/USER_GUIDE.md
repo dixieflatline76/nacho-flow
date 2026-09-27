@@ -364,9 +364,9 @@ nts:
   dedup_threshold: 3                # Consecutive duplicate threshold before collapse
   strip_boilerplate: false          # Pass 4: Strip IDE tool boilerplate notices (disabled by default)
   normalize_whitespace: false       # Pass 5: Collapse multiple empty lines (disabled by default)
-  preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
-  preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
-  preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
+  preserve_file_reads: true         # 🛡️ Dual-lane protection for read_file / view_file
+  preserve_file_writes: true        # 🛡️ Dual-lane protection for write_to_file / apply_diff
+  preserve_cache_control: true      # 🛡️ Dual-lane protection for prompt cache breakpoints
   compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
   stale_read_depth: 3               # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 ```
@@ -475,7 +475,7 @@ ollama create gemma4:12b-it-qat -f Modelfile
 
 #### 🌮 Gateway Routing Configuration (`config.yaml` / Extension Profiles)
 
-In your Nacho Flow configuration (pre-configured in factory **Profile 1**, **Profile 2**, and **Profile 3**):
+In your Nacho Flow configuration (pre-configured in built-in **Profile 1**, **Profile 2**, and **Profile 3**):
 
 ```yaml
 tiers:
@@ -662,7 +662,7 @@ flowchart LR
 5. **Pass 5: Whitespace Normalization (`normalize_whitespace: true`)**:
    Collapses runs of empty lines and extraneous trailing whitespace.
 
-#### 🛡️ Dual-Lane Immunity: Zero Risk of Context Corruption
+#### 🛡️ Dual-Lane Protection: Zero Risk of Context Corruption
 To guarantee that the LLM never loses critical reasoning context:
 * **`preserve_file_writes: true`**: File modifications (`write_to_file`, `replace_in_file`, `apply_diff`) are **never** altered or compacted. Every written character remains bit-for-bit pristine.
 * **`preserve_file_reads: true`**: Active file reads currently referenced by the agent are preserved.
@@ -681,7 +681,7 @@ When an agent inspects a file multiple times across a long session (e.g., readin
 | `dedup_threshold` | `int` | `3` | Number of consecutive identical lines permitted before collapsing. |
 | `strip_boilerplate` | `bool` | `false` | Strips repetitive IDE agent tool wrappers and status boilerplate (experimental). |
 | `normalize_whitespace` | `bool` | `false` | Trims trailing spaces and collapses consecutive empty lines (experimental). |
-| `preserve_file_writes` | `bool` | `true` | Full immunity for code writing tools (`write_to_file`, `apply_diff`, `editor`). |
+| `preserve_file_writes` | `bool` | `true` | Full protection for code writing tools (`write_to_file`, `apply_diff`, `editor`). |
 | `preserve_file_reads` | `bool` | `true` | Protects active file inspection turns from corruption. |
 | `preserve_cache_control`| `bool` | `true` | Preserves Anthropic/OpenRouter prompt cache annotations. |
 | `compact_stale_file_reads`| `bool` | `false` | Reclaims tokens by pruning superseded historical reads of the same file (experimental). |
@@ -728,7 +728,7 @@ Nacho Flow evaluates tiers sequentially from **top to bottom**. The **first tier
 * **Place Broad & Free Local Tiers in the MIDDLE:** Rules like `Tokens < 16000 && !HasImages && Retries < 2` should sit below specialized tiers to prevent shadowing reasoning prompts.
 * **Fallback Tier at the BOTTOM:** The `default_tier` acts as the safety net if none of the above match, or if an upstream local provider is unavailable.
 
-### 🛡️ Autonomous Self-Healing & Fallback Patterns
+### 🛡️ Autonomous Recovery & Fallback Patterns
 
 1. **Adaptive Token Estimator**:  
    Code and JSON payloads have a significantly higher token density (~3.0–3.2 chars/token) than standard English prose (~4.0 chars/token). Nacho Flow uses a self-calibrating Exponential Moving Average ($\alpha = 0.2$) estimator seeded at 3.2 chars/token with lock-free atomic updates from upstream `usage.prompt_tokens` feedback.

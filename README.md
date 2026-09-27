@@ -64,7 +64,7 @@ flowchart LR
 ### ⚡ Why OpenRouter is the Default Cloud Gateway for Nacho Flow
 * **One Unified Key**: A single API key and billing balance routes across **GLM-5.3-Flash**, **Qwen 3 Coder Plus**, **Gemini 3.8 Flash**, **DeepSeek V4**, and **Claude Opus 5** without managing separate vendor accounts or credit cards.
 * **The 90% Prompt Cache Multiplier**: OpenRouter passes through up to **90% caching discounts** on prompt tokens. Because Nacho Flow operates in **100% pristine context preservation mode**, historical prompt prefixes hit the cache byte-for-byte on every turn.
-* **Zero-Config Factory Profiles**: Nacho Flow's pre-configured factory profiles (`profile1.yaml` for Standard Hybrid / GLM-5.3-Flash, `profile2.yaml` for Zoo Code, `profile3.yaml` for Cline) work out of the box with OpenRouter.
+* **Zero-Config Built-in Presets**: Nacho Flow's pre-configured profile presets (`profile1.yaml` for Standard Hybrid / GLM-5.3-Flash, `profile2.yaml` for Zoo Code, `profile3.yaml` for Cline) work out of the box with OpenRouter.
 
 ---
 
@@ -120,7 +120,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 ## ✨ Key Features
 
 ### 🛡️ 1. Proactive Agent Supervision (Runtime Stream & Loop Defense)
-* **Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream across prose, thinking, and tool lanes (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s with protocol-safe error severance, while granting file writes full immunity so table-driven unit tests and repetitive structs are never falsely interrupted.
+* **Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream across prose, thinking, and tool lanes (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s with protocol-safe error severance, while protecting file writes so table-driven unit tests and repetitive structs are never falsely interrupted.
 * **Kickstart (Stall Resuscitation Engine)**: Detects consecutive non-write turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`). Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), jolting agents out of passive read/plan procrastination when implementation stalls.
 * **Agentic Tool Fallback Shield**: Sub-nanosecond sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
 * **Smarter Test-Loop Breaker**: Detects when an agent is repeatedly running failing tests without editing code, requiring concrete file write modifications to break idle accumulation.
@@ -134,7 +134,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **Zero-Alloc In-Place ANSI De-Noising (Opt-In)**: Terminal test executions spit out thousands of raw ANSI escape sequences, spinner animations, and carriage returns (`\r`). The NTS de-noising fast path (`pkg/nts`) purges them cleanly in-flight with zero heap allocation using mutable byte slices.
 * **Redundant File-Read Compaction (Experimental)**: When an agent inspects the same 1,000-line file four times across 20 turns, re-transmitting it burns 8,000 wasted tokens. NTS provides configurable depth-based compaction into structural digests while keeping the active turn fresh.
 * **Attention Defense for Open Weights**: Smaller open-weight models (8B–14B) suffer sharp reasoning degradation when prompt context exceeds 32k tokens. For constrained hardware, NTS can be selectively enabled in `config.yaml` to trade prompt cache hits for lower raw context memory footprint.
-* **Dual-Lane Immunity Guards**: Even when NTS is enabled, strict immunity rules protect active file reads, edits (`write_to_file`, `apply_diff`, `editor`), and prompt caching breakpoints from mutation.
+* **Dual-Lane Protection Guards**: Even when NTS is enabled, strict rules protect active file reads, edits (`write_to_file`, `apply_diff`, `editor`), and prompt caching breakpoints from mutation.
 
 ### ⚡ 3. High-Throughput Wire-Speed Core & Systems Architecture
 * **Zero-Allocation Fast Path**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU (Read-Copy-Update) state, stack-allocated streaming buffers (`sync.Pool`), and pooled HTTP transports with zero heap churn during proxying.
