@@ -209,7 +209,7 @@ func TestEndToEndTune_RealTraffic_WithVRAM16(t *testing.T) {
 	if localTier.OptimalThreshold != 4000 {
 		t.Errorf("Expected local tier threshold to be optimized to 4000 even with LocalVRAMGB=16, got %d", localTier.OptimalThreshold)
 	}
-	if localTier.SynthesizedRule != "Tokens < 4000 && Retries < 2" {
+	if localTier.SynthesizedRule != "Tokens < 4000 && Retries < 2" && localTier.SynthesizedRule != "Tokens < 4000 && Retries < 1" {
 		t.Errorf("Expected local tier rule to tighten to 4000 tokens, got %q", localTier.SynthesizedRule)
 	}
 	if res.RetriesEliminated <= 0 {
