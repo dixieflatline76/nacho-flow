@@ -177,7 +177,7 @@ Auto-Tune listens to your real recorded coding tracks (`logs/traffic.jsonl`) and
 * **Escalation Plateau Filter (Stop Overpaying for Backing Vocals)**: Blocks knee-jerk escalations to expensive frontier models when your local or budget model hits the note within 5% of the same success rate.
 * **Filters Out Mic Feedback (Failure Taxonomy)**: Distinguishes actual model capability failures from dropped Wi-Fi, client cancels, and upstream provider 429s so you never blame the singer when the soundboard cuts the mic.
 * **Wire-Speed Zero-Alloc Replay**: Replays multi-turn sessions at **81 ns/op (~37,000,000 turns/sec)** with 0 heap allocations.
-* **1-Click Master Track**: Review the clean YAML diff in your VS Code dashboard, click Apply, and the new mix is hot-swapped live with an automatic backup and zero downtime.
+* **Granular Selective Apply**: Review the clean YAML diff and proposed recommendations in your VS Code dashboard, cherry-pick exactly which tier adjustments to adopt via interactive checkboxes, and hot-swap the new mix live with an automatic timestamped backup and zero downtime.
 
 ---
 

@@ -81,7 +81,7 @@ Bring the power of Nacho Flow directly inside the developer's primary workspace 
   - Per-turn inspection of adaptive token bounds, keywords, and HotSauce directives (`@nacho:*`).
 - [x] **Interactive Visual Tuner Webview**:
   - GUI for `nacho-flow tune` rendering statistical cost-vs-retries trade-offs.
-  - One-click **"Apply Recommendation"** button updating `config.yaml` with automated timestamped backup creation.
+  - Granular selective checkboxes and **"Apply Selected Recommendations"** action updating `config.yaml` with automated timestamped backup creation.
 - [x] **Agentic Tool Fallback Shield**:
   - Real-time zero-allocation sliding tail-buffer prose-to-tool auto-wrapping intercepting conversational plan/question turns from local models and synthesizing schema-compliant `ask_followup_question` tool payloads to eliminate 3-strike agent harness crashes in Zoo Code and Cline.
 - [x] **In-Chat Directive Controls & Plan-Mode Protection**:
