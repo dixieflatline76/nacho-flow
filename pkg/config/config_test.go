@@ -732,8 +732,8 @@ func TestConfig_YDriveValidation(t *testing.T) {
 	if cfg.CycleKiller.ResolveContentMaxTokens() != 6144 {
 		t.Errorf("expected content max tokens 6144, got %d", cfg.CycleKiller.ResolveContentMaxTokens())
 	}
-	if cfg.CycleKiller.ResolveThinkingMaxTokens() != 4096 {
-		t.Errorf("expected thinking max tokens 4096, got %d", cfg.CycleKiller.ResolveThinkingMaxTokens())
+	if cfg.CycleKiller.ResolveThinkingMaxTokens() != 16384 {
+		t.Errorf("expected thinking max tokens 16384, got %d", cfg.CycleKiller.ResolveThinkingMaxTokens())
 	}
 	if cfg.CycleKiller.ResolveToolMaxTokens() != 8192 {
 		t.Errorf("expected tool max tokens 8192, got %d", cfg.CycleKiller.ResolveToolMaxTokens())

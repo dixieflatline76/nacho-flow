@@ -87,14 +87,23 @@ func GenerateSyntheticTrajectories(totalTurns int, seed uint64) []SessionTraject
 			if i > 0 && rng.IntN(100) < 30 {
 				tRecord.IsRetry = true
 				totalRetries++
+				if rng.IntN(100) < 60 {
+					tRecord.HasTestFail = true
+					if rng.IntN(100) < 50 {
+						tRecord.HasWriteProgress = true // churn loop: writes code while test fails
+					}
+				}
 			} else {
 				tRecord.IsRetry = false
+				// Progress & Resolution
+				if rng.IntN(100) < 40 {
+					tRecord.HasWriteProgress = true
+					if rng.IntN(100) < 40 {
+						tRecord.HasTestPass = true
+					}
+				}
 			}
 
-			// Progress & Resolution
-			if !tRecord.IsRetry && rng.IntN(100) < 40 {
-				tRecord.HasWriteProgress = true
-			}
 			if rng.IntN(100) < 2 {
 				tRecord.CycleBreakerTriggered = true
 			}

@@ -190,8 +190,8 @@ func NewDefaultFilterPipeline() *CandidateFilterPipeline {
 			&ContextParityFilter{},
 			&ModalityFilter{},
 			&CognitiveParityFilter{},
-			&CostReductionFilter{},
 			&DominanceOrderFilter{},
+			&CostReductionFilter{},
 		},
 	}
 }

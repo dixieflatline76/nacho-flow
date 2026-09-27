@@ -918,12 +918,21 @@
 					ratePill = `<span class="signal-pill signal-pill-rate">💵 Rate: $${Number(tier.comprehensive_rate).toFixed(2)}/1M</span>`;
 				}
 
+				const tierKey = isDefault ? 'default' : String(idx);
 				let diffContent = '';
 				if (isPruned) {
 					diffContent = `
-						<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
-						<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "false"</span></div>
-						${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #f59e0b; font-size: 0.85em;"><span class="diff-sign">✂️</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+						<div class="diff-action-block" id="diff-action-${tierKey}-rule">
+							<div class="diff-action-header">
+								<label class="tuner-action-toggle">
+									<input type="checkbox" class="tuner-item-check" data-tier-key="${tierKey}" data-field="rule" checked onchange="onTunerSelectionChange()">
+									<span class="tuner-action-title">Bypass Redundant Tier</span>
+								</label>
+							</div>
+							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
+							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "false"</span></div>
+							${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #f59e0b; font-size: 0.85em;"><span class="diff-sign">✂️</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+						</div>
 					`;
 				} else if (isDisabled) {
 					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">🔒</span> <span class="diff-desc">Tier Disabled / Manual Only (when: "false") — No active traffic routed</span></div>`;
@@ -932,15 +941,31 @@
 				} else {
 					if (hasModelChange) {
 						diffContent += `
-							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">model: "${escapeHtml(tier.original_model)}"</span></div>
-							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">model: "${escapeHtml(tier.recommended_model)}"</span></div>
-							${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #6ee7b7; font-size: 0.85em;"><span class="diff-sign">✨</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+							<div class="diff-action-block" id="diff-action-${tierKey}-model">
+								<div class="diff-action-header">
+									<label class="tuner-action-toggle">
+										<input type="checkbox" class="tuner-item-check" data-tier-key="${tierKey}" data-field="model" checked onchange="onTunerSelectionChange()">
+										<span class="tuner-action-title">${isDefault ? 'Replace Fallback Model' : 'Replace Model'}: <span class="model-name-orig">${escapeHtml(tier.original_model)}</span> &rarr; <span class="model-name-rec">${escapeHtml(tier.recommended_model)}</span></span>
+									</label>
+								</div>
+								<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">model: "${escapeHtml(tier.original_model)}"</span></div>
+								<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">model: "${escapeHtml(tier.recommended_model)}"</span></div>
+								${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #6ee7b7; font-size: 0.85em;"><span class="diff-sign">✨</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+							</div>
 						`;
 					}
 					if (hasRuleChange) {
 						diffContent += `
-							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
-							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "${escapeHtml(tier.synthesized_rule)}"</span></div>
+							<div class="diff-action-block" id="diff-action-${tierKey}-rule">
+								<div class="diff-action-header">
+									<label class="tuner-action-toggle">
+										<input type="checkbox" class="tuner-item-check" data-tier-key="${tierKey}" data-field="rule" checked onchange="onTunerSelectionChange()">
+										<span class="tuner-action-title">Update Routing Rule</span>
+									</label>
+								</div>
+								<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
+								<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "${escapeHtml(tier.synthesized_rule)}"</span></div>
+							</div>
 						`;
 					}
 				}
@@ -1026,13 +1051,24 @@
 					</div>
 				</div>
 
+				${hasAnyChanges ? `
+					<div class="tuner-presets-bar">
+						<span class="tuner-presets-label">⚡ Quick Presets:</span>
+						<div class="tuner-presets-buttons">
+							<button type="button" class="btn btn-preset btn-preset-rules" onclick="setTunerPreset('rules-only')">⚡ Rules Only</button>
+							<button type="button" class="btn btn-preset" onclick="setTunerPreset('all')">Select All</button>
+							<button type="button" class="btn btn-preset" onclick="setTunerPreset('none')">Deselect All</button>
+						</div>
+					</div>
+				` : ''}
+
 				<div class="tuner-diffs-container">
 					${tierDiffsHtml}
 				</div>
 
 				<div class="tuner-actions">
 					${hasAnyChanges 
-						? `<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Multi-Tier Policy to config.yaml</button>`
+						? `<button id="btn-apply-tuning" class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Multi-Tier Policy to config.yaml</button>`
 						: `<button class="btn btn-secondary" disabled style="opacity: 0.65; cursor: default;">✅ Current Policy is Optimal</button>`
 					}
 					<button class="btn btn-secondary" onclick="dismissTuner()">Dismiss</button>
@@ -1273,10 +1309,85 @@
 		vscode.postMessage({ command: 'resetCircuit', provider: provider });
 	};
 
+	window.setTunerPreset = function(preset) {
+		const checkboxes = document.querySelectorAll('.tuner-item-check');
+		checkboxes.forEach(cb => {
+			const field = cb.getAttribute('data-field');
+			if (preset === 'rules-only') {
+				cb.checked = (field === 'rule');
+			} else if (preset === 'all') {
+				cb.checked = true;
+			} else if (preset === 'none') {
+				cb.checked = false;
+			}
+		});
+		if (typeof window.onTunerSelectionChange === 'function') {
+			window.onTunerSelectionChange();
+		}
+	};
+
+	window.onTunerSelectionChange = function() {
+		const checkboxes = document.querySelectorAll('.tuner-item-check');
+		let checkedCount = 0;
+		checkboxes.forEach(cb => {
+			const block = cb.closest('.diff-action-block');
+			if (cb.checked) {
+				checkedCount++;
+				if (block) block.classList.remove('diff-block-dimmed');
+			} else {
+				if (block) block.classList.add('diff-block-dimmed');
+			}
+		});
+
+		const applyBtn = document.getElementById('btn-apply-tuning');
+		if (applyBtn) {
+			if (checkedCount === checkboxes.length) {
+				applyBtn.disabled = false;
+				applyBtn.classList.remove('btn-disabled');
+				applyBtn.classList.add('btn-primary', 'btn-glow');
+				applyBtn.innerHTML = 'Apply Optimized Multi-Tier Policy to config.yaml';
+			} else if (checkedCount > 0) {
+				applyBtn.disabled = false;
+				applyBtn.classList.remove('btn-disabled');
+				applyBtn.classList.add('btn-primary', 'btn-glow');
+				applyBtn.innerHTML = `Apply ${checkedCount} Selected Improvement${checkedCount > 1 ? 's' : ''} to config.yaml`;
+			} else {
+				applyBtn.disabled = true;
+				applyBtn.classList.remove('btn-primary', 'btn-glow');
+				applyBtn.classList.add('btn-disabled');
+				applyBtn.innerHTML = 'No Improvements Selected';
+			}
+		}
+	};
+
 	window.applyOptimization = function() {
+		if (!currentState.optimization) return;
+		const checkboxes = document.querySelectorAll('.tuner-item-check');
+		if (checkboxes.length === 0) {
+			vscode.postMessage({
+				command: 'applyOptimization',
+				data: currentState.optimization || undefined
+			});
+			return;
+		}
+
+		const opt = JSON.parse(JSON.stringify(currentState.optimization));
+		if (Array.isArray(opt.tiers)) {
+			opt.tiers.forEach((tier, idx) => {
+				const ruleCb = document.querySelector(`.tuner-item-check[data-tier-key="${idx}"][data-field="rule"]`);
+				const modelCb = document.querySelector(`.tuner-item-check[data-tier-key="${idx}"][data-field="model"]`);
+				if (ruleCb) tier.apply_rule = ruleCb.checked;
+				if (modelCb) tier.apply_model = modelCb.checked;
+			});
+		}
+		if (opt.default_tier) {
+			const defModelCb = document.querySelector(`.tuner-item-check[data-tier-key="default"][data-field="model"]`);
+			if (defModelCb) opt.default_tier.apply_model = defModelCb.checked;
+		}
+
 		vscode.postMessage({
 			command: 'applyOptimization',
-			data: currentState.optimization || undefined
+			data: opt
 		});
 	};
 

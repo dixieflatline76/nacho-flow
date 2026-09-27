@@ -1169,15 +1169,17 @@ export class ExtensionController {
 				const synthesizedRule = tier.synthesized_rule || tier.synthesizedRule;
 				const recommendedModel = tier.recommended_model || tier.recommendedModel;
 				const originalModel = tier.original_model || tier.originalModel;
+				const applyRule = tier.apply_rule !== false && tier.applyRule !== false;
+				const applyModel = tier.apply_model !== false && tier.applyModel !== false;
 
-				if (tierName && synthesizedRule) {
+				if (applyRule && tierName && synthesizedRule) {
 					const updatedYaml = this.replaceTierRuleInYaml(yamlContent, tierName, synthesizedRule);
 					if (updatedYaml !== yamlContent) {
 						yamlContent = updatedYaml;
 						appliedCount++;
 					}
 				}
-				if (tierName && recommendedModel && originalModel && recommendedModel !== originalModel) {
+				if (applyModel && tierName && recommendedModel && originalModel && recommendedModel !== originalModel) {
 					const updatedYaml = this.replaceTierModelInYaml(yamlContent, tierName, false, recommendedModel);
 					if (updatedYaml !== yamlContent) {
 						yamlContent = updatedYaml;
@@ -1191,7 +1193,8 @@ export class ExtensionController {
 				const defTierName = defTier.tier_name || defTier.tierName || 'Fallback';
 				const recModel = defTier.recommended_model || defTier.recommendedModel;
 				const origModel = defTier.original_model || defTier.originalModel;
-				if (recModel && origModel && recModel !== origModel) {
+				const applyDefModel = defTier.apply_model !== false && defTier.applyModel !== false;
+				if (applyDefModel && recModel && origModel && recModel !== origModel) {
 					const updatedYaml = this.replaceTierModelInYaml(yamlContent, defTierName, true, recModel);
 					if (updatedYaml !== yamlContent) {
 						yamlContent = updatedYaml;
@@ -1201,7 +1204,12 @@ export class ExtensionController {
 			}
 
 			if (appliedCount === 0) {
-				vscode.window.showWarningMessage('Nacho Flow: Could not locate matching tiers in config YAML');
+				const allDeselected = tiers.length > 0 && tiers.every(t => (t.apply_rule === false || t.applyRule === false) && (t.apply_model === false || t.applyModel === false));
+				if (allDeselected) {
+					vscode.window.showWarningMessage('Nacho Flow: No recommendations selected to apply');
+				} else {
+					vscode.window.showWarningMessage('Nacho Flow: Could not locate matching tiers in config YAML');
+				}
 				return;
 			}
 

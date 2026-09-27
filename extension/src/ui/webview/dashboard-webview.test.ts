@@ -860,6 +860,96 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       expect(content).toContain('No repeated model failures detected in sample history');
       expect(content).toContain('+ when: "Tokens < 12000"');
     });
+
+    it('renders granular checkboxes, presets bar, and supports selective apply', () => {
+      postMessage('updateOptimization', {
+        tiers: [
+          {
+            tier_name: 'Tier 2: Flagship Agent Coder',
+            original_rule: 'Tokens < 160000 && Retries < 4',
+            synthesized_rule: 'Tokens < 160000 && Retries < 1',
+            original_model: 'qwen/qwen3-coder-plus',
+            recommended_model: 'z-ai/glm-5.3-flash',
+            coding_index: 71.5
+          }
+        ],
+        default_tier: {
+          tier_name: 'Fallback Tier',
+          original_model: 'google/gemini-3.8-flash',
+          recommended_model: 'x-ai/grok-4.6',
+          coding_index: 76.8
+        },
+        total_sample_turns: 100,
+        projected_savings_usd: 12.5,
+        retries_eliminated: 81
+      });
+
+      const banner = document.getElementById('tuner-banner');
+      expect(banner?.style.display).toBe('block');
+
+      // 1. Presets toolbar rendered
+      const presetsBar = banner?.querySelector('.tuner-presets-bar');
+      expect(presetsBar).not.toBeNull();
+      expect(presetsBar?.textContent).toContain('Rules Only');
+      expect(presetsBar?.textContent).toContain('Select All');
+      expect(presetsBar?.textContent).toContain('Deselect All');
+
+      // 2. Three checkboxes rendered (Tier 2 rule, Tier 2 model, Fallback model)
+      const checkboxes = banner?.querySelectorAll('.tuner-item-check') as NodeListOf<HTMLInputElement>;
+      expect(checkboxes.length).toBe(3);
+      expect(Array.from(checkboxes).every(cb => cb.checked)).toBe(true);
+
+      const applyBtn = document.getElementById('btn-apply-tuning') as HTMLButtonElement;
+      expect(applyBtn).not.toBeNull();
+      expect(applyBtn.disabled).toBe(false);
+      expect(applyBtn.textContent).toContain('Apply Optimized Multi-Tier Policy to config.yaml');
+
+      // 3. Test "Rules Only" preset
+      (window as any).setTunerPreset('rules-only');
+      expect(checkboxes[0].checked).toBe(false); // Tier 2 model
+      expect(checkboxes[1].checked).toBe(true);  // Tier 2 rule
+      expect(checkboxes[2].checked).toBe(false); // Fallback model
+
+      // Check dimmed blocks
+      const modelBlock = document.getElementById('diff-action-0-model');
+      expect(modelBlock?.classList.contains('diff-block-dimmed')).toBe(true);
+      const ruleBlock = document.getElementById('diff-action-0-rule');
+      expect(ruleBlock?.classList.contains('diff-block-dimmed')).toBe(false);
+
+      // Button updates text to reflect 1 selected
+      expect(applyBtn.textContent).toBe('Apply 1 Selected Improvement to config.yaml');
+
+      // 4. Test applyOptimization with "Rules Only" selection
+      (window as any).applyOptimization();
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'applyOptimization',
+        data: expect.objectContaining({
+          tiers: [
+            expect.objectContaining({
+              tier_name: 'Tier 2: Flagship Agent Coder',
+              apply_rule: true,
+              apply_model: false
+            })
+          ],
+          default_tier: expect.objectContaining({
+            tier_name: 'Fallback Tier',
+            apply_model: false
+          })
+        })
+      });
+
+      // 5. Test "Deselect All" disables apply button
+      (window as any).setTunerPreset('none');
+      expect(Array.from(checkboxes).every(cb => !cb.checked)).toBe(true);
+      expect(applyBtn.disabled).toBe(true);
+      expect(applyBtn.textContent).toBe('No Improvements Selected');
+
+      // 6. Test "Select All" restores all
+      (window as any).setTunerPreset('all');
+      expect(Array.from(checkboxes).every(cb => cb.checked)).toBe(true);
+      expect(applyBtn.disabled).toBe(false);
+      expect(applyBtn.textContent).toContain('Apply Optimized Multi-Tier Policy to config.yaml');
+    });
   });
 
   describe('VRAM Selection and Toolbar Actions', () => {

@@ -342,6 +342,9 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		}
 
 		sort.Slice(candidateVars, func(i, j int) bool {
+			if candidateVars[i].conflict == candidateVars[j].conflict {
+				return candidateVars[i].name < candidateVars[j].name
+			}
 			return candidateVars[i].conflict > candidateVars[j].conflict
 		})
 

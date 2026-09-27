@@ -740,6 +740,212 @@ tiers:
       );
     });
 
+    it('should selectively apply rules when apply_model is false and apply_rule is true', async () => {
+      const mockRestClient = {
+        getConfigYaml: jest.fn().mockResolvedValue(sampleYaml),
+        updateConfigYaml: jest.fn().mockResolvedValue(undefined),
+        getStats: jest.fn().mockResolvedValue({ total_requests: 10 }),
+        getDeals: jest.fn().mockResolvedValue([]),
+        getRoutes: jest.fn().mockResolvedValue([]),
+        getCircuits: jest.fn().mockResolvedValue([]),
+        getConfig: jest.fn().mockResolvedValue({})
+      };
+      (extensionController as any).restClient = mockRestClient;
+      const mockDashboardPanel = {
+        updateOptimization: jest.fn(),
+        updateStats: jest.fn(),
+        updateDeals: jest.fn(),
+        updateRoutes: jest.fn(),
+        updateCircuits: jest.fn(),
+        updateConfig: jest.fn()
+      };
+      (extensionController as any).dashboardPanel = mockDashboardPanel;
+
+      await extensionController.applyOptimization({
+        tiers: [
+          {
+            tier_name: 'Tier 1: Local GPU Free',
+            synthesized_rule: 'Tokens < 64000 && Retries == 0',
+            original_model: 'gemma4:12b-it-qat',
+            recommended_model: 'deepseek/deepseek-chat',
+            apply_rule: true,
+            apply_model: false
+          }
+        ]
+      });
+
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledTimes(1);
+      const updatedYaml = mockRestClient.updateConfigYaml.mock.calls[0][0];
+      // Rule was updated:
+      expect(updatedYaml).toContain('Tokens < 64000 && Retries == 0');
+      // Model was NOT updated (original preserved):
+      expect(updatedYaml).toContain('model: gemma4:12b-it-qat');
+      expect(updatedYaml).not.toContain('deepseek/deepseek-chat');
+    });
+
+    it('should selectively apply model when apply_rule is false and apply_model is true', async () => {
+      const mockRestClient = {
+        getConfigYaml: jest.fn().mockResolvedValue(sampleYaml),
+        updateConfigYaml: jest.fn().mockResolvedValue(undefined),
+        getStats: jest.fn().mockResolvedValue({ total_requests: 10 }),
+        getDeals: jest.fn().mockResolvedValue([]),
+        getRoutes: jest.fn().mockResolvedValue([]),
+        getCircuits: jest.fn().mockResolvedValue([]),
+        getConfig: jest.fn().mockResolvedValue({})
+      };
+      (extensionController as any).restClient = mockRestClient;
+      const mockDashboardPanel = {
+        updateOptimization: jest.fn(),
+        updateStats: jest.fn(),
+        updateDeals: jest.fn(),
+        updateRoutes: jest.fn(),
+        updateCircuits: jest.fn(),
+        updateConfig: jest.fn()
+      };
+      (extensionController as any).dashboardPanel = mockDashboardPanel;
+
+      await extensionController.applyOptimization({
+        tiers: [
+          {
+            tier_name: 'Tier 1: Local GPU Free',
+            synthesized_rule: 'Tokens < 64000 && Retries == 0',
+            original_model: 'gemma4:12b-it-qat',
+            recommended_model: 'deepseek/deepseek-chat',
+            apply_rule: false,
+            apply_model: true
+          }
+        ]
+      });
+
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledTimes(1);
+      const updatedYaml = mockRestClient.updateConfigYaml.mock.calls[0][0];
+      // Rule was NOT updated (original preserved):
+      expect(updatedYaml).toContain('Tokens < 16000 && Retries == 0');
+      expect(updatedYaml).not.toContain('Tokens < 64000');
+      // Model WAS updated:
+      expect(updatedYaml).toContain('model: deepseek/deepseek-chat');
+    });
+
+    it('should selectively skip default_tier model when default_tier apply_model is false', async () => {
+      const yamlWithDefault = `${sampleYaml}default_tier:
+  name: "Fallback"
+  model: openai/gpt-4o
+`;
+      const mockRestClient = {
+        getConfigYaml: jest.fn().mockResolvedValue(yamlWithDefault),
+        updateConfigYaml: jest.fn().mockResolvedValue(undefined),
+        getStats: jest.fn().mockResolvedValue({ total_requests: 10 }),
+        getDeals: jest.fn().mockResolvedValue([]),
+        getRoutes: jest.fn().mockResolvedValue([]),
+        getCircuits: jest.fn().mockResolvedValue([]),
+        getConfig: jest.fn().mockResolvedValue({})
+      };
+      (extensionController as any).restClient = mockRestClient;
+      const mockDashboardPanel = {
+        updateOptimization: jest.fn(),
+        updateStats: jest.fn(),
+        updateDeals: jest.fn(),
+        updateRoutes: jest.fn(),
+        updateCircuits: jest.fn(),
+        updateConfig: jest.fn()
+      };
+      (extensionController as any).dashboardPanel = mockDashboardPanel;
+
+      await extensionController.applyOptimization({
+        tiers: [
+          {
+            tier_name: 'Tier 1: Local GPU Free',
+            synthesized_rule: 'Tokens < 64000 && Retries == 0',
+            apply_rule: true
+          }
+        ],
+        default_tier: {
+          tier_name: 'Fallback',
+          original_model: 'openai/gpt-4o',
+          recommended_model: 'x-ai/grok-4.6',
+          apply_model: false
+        }
+      });
+
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledTimes(1);
+      const updatedYaml = mockRestClient.updateConfigYaml.mock.calls[0][0];
+      expect(updatedYaml).toContain('model: openai/gpt-4o');
+      expect(updatedYaml).not.toContain('x-ai/grok-4.6');
+    });
+
+    it('should selectively apply default_tier model when default_tier apply_model is true', async () => {
+      const yamlWithDefault = `${sampleYaml}default_tier:
+  name: "Fallback"
+  model: openai/gpt-4o
+`;
+      const mockRestClient = {
+        getConfigYaml: jest.fn().mockResolvedValue(yamlWithDefault),
+        updateConfigYaml: jest.fn().mockResolvedValue(undefined),
+        getStats: jest.fn().mockResolvedValue({ total_requests: 10 }),
+        getDeals: jest.fn().mockResolvedValue([]),
+        getRoutes: jest.fn().mockResolvedValue([]),
+        getCircuits: jest.fn().mockResolvedValue([]),
+        getConfig: jest.fn().mockResolvedValue({})
+      };
+      (extensionController as any).restClient = mockRestClient;
+      const mockDashboardPanel = {
+        updateOptimization: jest.fn(),
+        updateStats: jest.fn(),
+        updateDeals: jest.fn(),
+        updateRoutes: jest.fn(),
+        updateCircuits: jest.fn(),
+        updateConfig: jest.fn()
+      };
+      (extensionController as any).dashboardPanel = mockDashboardPanel;
+
+      await extensionController.applyOptimization({
+        tiers: [
+          {
+            tier_name: 'Tier 1: Local GPU Free',
+            synthesized_rule: 'Tokens < 64000 && Retries == 0',
+            apply_rule: false
+          }
+        ],
+        default_tier: {
+          tier_name: 'Fallback',
+          original_model: 'openai/gpt-4o',
+          recommended_model: 'x-ai/grok-4.6',
+          apply_model: true
+        }
+      });
+
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalledTimes(1);
+      const updatedYaml = mockRestClient.updateConfigYaml.mock.calls[0][0];
+      expect(updatedYaml).toContain('model: x-ai/grok-4.6');
+      expect(updatedYaml).not.toContain('model: openai/gpt-4o');
+      expect(updatedYaml).toContain('Tokens < 16000 && Retries == 0');
+    });
+
+    it('should warn when all recommendations are deselected', async () => {
+      const warnSpy = jest.spyOn(vscode.window, 'showWarningMessage');
+      const mockRestClient = {
+        getConfigYaml: jest.fn().mockResolvedValue(sampleYaml),
+        updateConfigYaml: jest.fn().mockResolvedValue(undefined)
+      };
+      (extensionController as any).restClient = mockRestClient;
+
+      await extensionController.applyOptimization({
+        tiers: [
+          {
+            tier_name: 'Tier 1: Local GPU Free',
+            synthesized_rule: 'Tokens < 64000 && Retries == 0',
+            original_model: 'gemma4:12b-it-qat',
+            recommended_model: 'deepseek/deepseek-chat',
+            apply_rule: false,
+            apply_model: false
+          }
+        ]
+      });
+
+      expect(mockRestClient.updateConfigYaml).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith('Nacho Flow: No recommendations selected to apply');
+    });
+
     it('should handle applyOptimization errors gracefully', async () => {
       (extensionController as any).restClient = null;
       await extensionController.applyOptimization();

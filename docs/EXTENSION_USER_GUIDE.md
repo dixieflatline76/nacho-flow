@@ -467,7 +467,7 @@ Click **`Run Auto-Tuner`** in the dashboard toolbar (or trigger `Ctrl+Shift+P` �
 - **Mutes Dead Tracks (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Automatically flags and bypasses middle tiers that never catch traffic or immediately fail and escalate, eliminating dead rule baggage and routing latency.
 - **Escalation Plateau Filter**: Rejects expensive tier escalations when a cheaper or local model delivers within 5% of the same success rate.
 - **Filters Out Mic Feedback (Failure Taxonomy)**: Distinguishes client aborts, network drops, and provider 429 rate limits from genuine model capability flaws—so temporary API outages never corrupt your routing thresholds.
-- **Visual Diff & 1-Click Apply**: Review the green/red YAML diff directly in the dashboard webview. Click **`Apply Recommendation`** to atomically update `config.yaml` with an automatic timestamped backup (`config.yaml.bak_<timestamp>`) and zero-downtime hot-reload.
+- **Visual Diff & Granular Selective Apply**: Review the green/red YAML diff and individual proposed tuning recommendations directly in the dashboard webview. Use interactive checkboxes (with *Select All* / *Deselect All* controls) to cherry-pick exactly which tier adjustments or prunings you wish to adopt. Click **`Apply Selected Recommendations`** to atomically update `config.yaml` with an automatic timestamped backup (`config.yaml.bak_<timestamp>`) and zero-downtime hot-reload.
 
 ---
 

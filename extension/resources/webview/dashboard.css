@@ -682,6 +682,130 @@ body {
 	color: #10b981;
 }
 
+/* Granular Recommendation Checkboxes & Presets */
+.tuner-presets-bar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-bottom: 12px;
+	padding: 6px 12px;
+	background: rgba(255, 255, 255, 0.02);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 6px;
+}
+
+.tuner-presets-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #94a3b8;
+	margin-right: 4px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.tuner-presets-buttons {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.btn-preset {
+	padding: 3px 8px;
+	font-size: 11px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	color: #e2e8f0;
+	cursor: pointer;
+	transition: all 0.15s ease-in-out;
+}
+
+.btn-preset:hover {
+	background: rgba(255, 255, 255, 0.12);
+	border-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn-preset-rules {
+	background: rgba(56, 189, 248, 0.15);
+	border-color: rgba(56, 189, 248, 0.35);
+	color: #38bdf8;
+	font-weight: 600;
+}
+
+.btn-preset-rules:hover {
+	background: rgba(56, 189, 248, 0.25);
+	border-color: rgba(56, 189, 248, 0.5);
+	color: #7dd3fc;
+}
+
+.diff-action-block {
+	position: relative;
+	transition: opacity 0.2s ease, filter 0.2s ease;
+	border-radius: 4px;
+	padding: 4px 6px;
+	margin-bottom: 6px;
+	background: rgba(0, 0, 0, 0.15);
+}
+
+.diff-action-block:last-child {
+	margin-bottom: 0;
+}
+
+.diff-action-header {
+	display: flex;
+	align-items: center;
+	margin-bottom: 4px;
+}
+
+.tuner-action-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	user-select: none;
+	font-size: 11px;
+	color: #cbd5e1;
+}
+
+.tuner-item-check {
+	cursor: pointer;
+	width: 14px;
+	height: 14px;
+	accent-color: #38bdf8;
+	margin: 0;
+}
+
+.tuner-action-title {
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
+.tuner-action-title .model-name-orig {
+	color: #f87171;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.tuner-action-title .model-name-rec {
+	color: #4ade80;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.diff-block-dimmed {
+	opacity: 0.35;
+	filter: grayscale(80%);
+}
+
+.diff-block-dimmed .diff-line {
+	text-decoration: line-through;
+}
+
+.btn-disabled {
+	opacity: 0.5;
+	cursor: not-allowed !important;
+	pointer-events: none;
+}
+
 .tuner-actions {
 	margin-top: 4px;
 	display: flex;
