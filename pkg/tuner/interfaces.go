@@ -9,29 +9,41 @@ import (
 
 // TuningPolicy defines the cost-utility parameters and statistical thresholds for optimization.
 type TuningPolicy struct {
-	Name                string  `json:"name"`
-	CostPerMillionCloud float64 `json:"cost_per_million_cloud"`
-	RetryPenaltyUSD     float64 `json:"retry_penalty_usd"`
-	CostWeight          float64 `json:"cost_weight,omitempty"` // Weight for cloud cost (defaults to 1.0)
-	TurnsWeight         float64 `json:"turns_weight"`          // Penalty per average session turn
-	MinOccurrences      int     `json:"min_occurrences"`
-	OddsRatioThreshold  float64 `json:"odds_ratio_threshold"`
-	MinSessions         int     `json:"min_sessions"`                                           // Minimum sessions for statistical significance
-	LocalVRAMGB         int     `json:"local_vram_gb,omitempty" yaml:"local_vram_gb,omitempty"` // Target local GPU VRAM ceiling in GB (0 = infer)
+	Name                 string  `json:"name"`
+	CostPerMillionCloud  float64 `json:"cost_per_million_cloud"`
+	RetryPenaltyUSD      float64 `json:"retry_penalty_usd"`
+	CostWeight           float64 `json:"cost_weight,omitempty"` // Weight for cloud cost (defaults to 1.0)
+	TurnsWeight          float64 `json:"turns_weight"`          // Penalty per average session turn
+	MinOccurrences       int     `json:"min_occurrences"`
+	OddsRatioThreshold   float64 `json:"odds_ratio_threshold"`
+	MinSessions          int     `json:"min_sessions"`                                                               // Minimum sessions for statistical significance
+	LocalVRAMGB          int     `json:"local_vram_gb,omitempty" yaml:"local_vram_gb,omitempty"`                     // Target local GPU VRAM ceiling in GB (0 = infer)
+	MinEscalationGainPct float64 `json:"min_escalation_gain_pct,omitempty" yaml:"min_escalation_gain_pct,omitempty"` // Minimum relative benchmark gain required for escalation tiers (default 0.05 = 5%)
+	WriteOnly            bool                `json:"write_only,omitempty" yaml:"write_only,omitempty"`                           // Mode where forward progress requires file writes, shell writes, or passing tests
+	CandidateDeals        []contract.DealInfo `json:"candidate_deals,omitempty"`
+	CodingParityTolerance float64             `json:"coding_parity_tolerance,omitempty" yaml:"coding_parity_tolerance,omitempty"` // Maximum allowed coding index delta below current tier benchmark (default 0.5)
+	MinSavingsPct         float64             `json:"min_savings_pct,omitempty" yaml:"min_savings_pct,omitempty"`                 // Minimum cost reduction required for substitution (default 20.0%)
+	ContextWindowFloor    int                 `json:"context_window_floor,omitempty" yaml:"context_window_floor,omitempty"`       // Minimum fallback context length (default 32000)
+	MinCloudSpendUSD      float64             `json:"min_cloud_spend_usd,omitempty" yaml:"min_cloud_spend_usd,omitempty"`         // Minimum spend before considering model substitution (default 0.10)
 }
 
 // DefaultTuningPolicy returns the recommended balanced flow-state protection policy.
 func DefaultTuningPolicy() TuningPolicy {
 	return TuningPolicy{
-		Name:                "balanced_flow_state",
-		CostPerMillionCloud: 2.50,
-		RetryPenaltyUSD:     2.00,
-		CostWeight:          1.0,
-		TurnsWeight:         0.10,
-		MinOccurrences:      10,
-		OddsRatioThreshold:  1.5,
-		MinSessions:         5,
-		LocalVRAMGB:         0,
+		Name:                  "balanced_flow_state",
+		CostPerMillionCloud:   2.50,
+		RetryPenaltyUSD:       2.00,
+		CostWeight:            1.0,
+		TurnsWeight:           0.10,
+		MinOccurrences:        10,
+		OddsRatioThreshold:    1.5,
+		MinSessions:           5,
+		LocalVRAMGB:           0,
+		MinEscalationGainPct:  0.05,
+		CodingParityTolerance: DefaultCodingParityTolerance,
+		MinSavingsPct:         DefaultMinSavingsPct,
+		ContextWindowFloor:    DefaultContextWindowFloor,
+		MinCloudSpendUSD:      DefaultMinCloudSpendUSD,
 	}
 }
 
@@ -60,18 +72,23 @@ type TierTuningResult struct {
 
 // TuningResult captures the holistic fleet impact and per-tier policies.
 type TuningResult struct {
-	Tiers                    []TierTuningResult        `json:"tiers"`
-	DefaultTier              *TierTuningResult         `json:"default_tier,omitempty"`
-	CurrentCostUSD           float64                   `json:"current_cost_usd"`
-	ProjectedCostUSD         float64                   `json:"projected_cost_usd"`
-	ProjectedSavingsUSD      float64                   `json:"projected_savings_usd"`
-	RetriesEliminated        int                       `json:"retries_eliminated"`
-	TotalSampleTurns         int                       `json:"total_sample_turns"`
-	TotalSessions            int                       `json:"total_sessions"`
-	AvgTurnsPerSession       float64                   `json:"avg_turns_per_session"`
-	EscalationRate           float64                   `json:"escalation_rate"`
-	RecoveryStats            map[string]RecoveryStats  `json:"recovery_stats,omitempty"`
-	StaticDominanceConflicts []StaticDominanceConflict `json:"static_dominance_conflicts,omitempty"`
+	Tiers                      []TierTuningResult        `json:"tiers"`
+	DefaultTier                *TierTuningResult         `json:"default_tier,omitempty"`
+	CurrentCostUSD             float64                   `json:"current_cost_usd"`
+	ProjectedCostUSD           float64                   `json:"projected_cost_usd"`
+	ProjectedSavingsUSD        float64                   `json:"projected_savings_usd"`
+	RetriesEliminated          int                       `json:"retries_eliminated"`
+	TotalSampleTurns           int                       `json:"total_sample_turns"`
+	TotalSessions              int                       `json:"total_sessions"`
+	AvgTurnsPerSession         float64                   `json:"avg_turns_per_session"`
+	EscalationRate             float64                   `json:"escalation_rate"`
+	RecoveryStats              map[string]RecoveryStats  `json:"recovery_stats,omitempty"`
+	StaticDominanceConflicts   []StaticDominanceConflict `json:"static_dominance_conflicts,omitempty"`
+	HighContextEscalationTurns int                       `json:"high_context_escalation_turns,omitempty"` // Turns escalated to cloud at >100k tokens
+	HighContextCostUSD         float64                   `json:"high_context_cost_usd,omitempty"`         // Dollar spend on high-context escalations
+	HighContextCostPct         float64                   `json:"high_context_cost_pct,omitempty"`         // Percentage of baseline cost spent on high-context turns
+	ReadBurstEscalations       int                       `json:"read_burst_escalations,omitempty"`        // Escalations triggered by read-only tool sequences under write_only
+	NTSProjectedSavingsUSD     float64                   `json:"nts_projected_savings_usd,omitempty"`     // Projected savings if NTS context compaction is active
 }
 
 // OptimizationStrategy defines the contract for autonomous route tuning algorithms.

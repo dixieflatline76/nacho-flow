@@ -79,8 +79,21 @@
 		// Update proxy copy endpoint
 		updateProxyEndpoint();
 
-		// Sync profile dropdown to persisted active profile
+		// Sync profile dropdown to persisted active profile & populate options if profiles list provided
 		const profileSelector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
+		if (profileSelector && Array.isArray(state.profiles) && state.profiles.length > 0) {
+			const currentVal = profileSelector.value;
+			profileSelector.innerHTML = '';
+			for (const p of state.profiles) {
+				const opt = document.createElement('option');
+				opt.value = p.id;
+				opt.textContent = p.label;
+				profileSelector.appendChild(opt);
+			}
+			if (currentVal) {
+				profileSelector.value = currentVal;
+			}
+		}
 		const currentProfile = state.activeProfile || state.activePreset;
 		if (profileSelector && currentProfile) {
 			profileSelector.value = currentProfile;
@@ -413,6 +426,16 @@
 	// Profile selector functions
 	window.onProfileChanged = function(profileId) {
 		state.activeProfile = profileId;
+	};
+
+	window.addProfile = function() {
+		vscode.postMessage({ command: 'addProfile' });
+	};
+
+	window.renameProfile = function() {
+		const selector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
+		const profileId = (selector && selector.value) || state.activeProfile || 'profile1';
+		vscode.postMessage({ command: 'renameProfile', profileId });
 	};
 
 	window.switchProfile = function() {

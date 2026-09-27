@@ -7,7 +7,7 @@ This document details the performance characteristics, load-testing methodology,
 ## 1. Executive Summary
 
 <!-- BENCHMARK:EXECUTIVE_SUMMARY_START -->
-- **Peak Throughput**: **30,058 requests/second** under full production authentication and tool normalization load.
+- **Peak Throughput**: **30,284 requests/second** under full production authentication and tool normalization load.
 - **Pipeline Latency**: **~0.19 ms** raw pass-through overhead per request (**~0.22 ms** with full multi-model tool-call normalization).
 - **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
 - **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
@@ -70,11 +70,11 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 <!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **26686.9 req/s** | 1.47 ms | 8.00 ms | 117.0 MB |
-| **100 workers** | 50,000 | **100.0%** | **25525.1 req/s** | 3.00 ms | 15.68 ms | 80.7 MB |
-| **250 workers** | 75,000 | **100.0%** | **24322.4 req/s** | 8.12 ms | 45.88 ms | 128.2 MB |
-| **500 workers** | 100,000 | **100.0%** | **26081.8 req/s** | 17.41 ms | 43.67 ms | 110.8 MB |
-| **1000 workers** | 100,000 | **100.0%** | **25855.6 req/s** | 32.68 ms | 91.18 ms | 215.8 MB |
+| **50 workers** | 25,000 | **100.0%** | **24278.0 req/s** | 1.52 ms | 10.03 ms | 111.1 MB |
+| **100 workers** | 50,000 | **100.0%** | **21967.2 req/s** | 3.12 ms | 20.09 ms | 132.8 MB |
+| **250 workers** | 75,000 | **100.0%** | **24326.4 req/s** | 7.85 ms | 45.25 ms | 177.4 MB |
+| **500 workers** | 100,000 | **100.0%** | **25206.3 req/s** | 16.99 ms | 66.69 ms | 145.8 MB |
+| **1000 workers** | 100,000 | **100.0%** | **24505.1 req/s** | 32.50 ms | 120.73 ms | 190.2 MB |
 <!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
@@ -93,10 +93,10 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 <!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 27070.0 req/s | 26817.5 req/s | **-0.9%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.35 ms |
-| **50 workers** | 29155.9 req/s | 27376.5 req/s | **-6.1%** | **+0.12 ms** (1.01ms vs 1.13ms) | +1.79 ms |
-| **100 workers** | 29441.8 req/s | 26303.6 req/s | **-10.7%** | **+0.00 ms** (3.00ms vs 3.00ms) | +4.81 ms |
-| **200 workers** | 30058.4 req/s | 28664.4 req/s | **-4.6%** | **+0.49 ms** (5.52ms vs 6.00ms) | -0.99 ms |
+| **25 workers** | 26564.9 req/s | 24360.3 req/s | **-8.3%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.10 ms |
+| **50 workers** | 28447.9 req/s | 28260.5 req/s | **-0.7%** | **+0.28 ms** (1.23ms vs 1.50ms) | +0.92 ms |
+| **100 workers** | 28500.7 req/s | 26172.1 req/s | **-8.2%** | **+0.00 ms** (3.00ms vs 3.00ms) | +2.01 ms |
+| **200 workers** | 28505.7 req/s | 25933.6 req/s | **-9.0%** | **+0.51 ms** (6.00ms vs 6.51ms) | +3.96 ms |
 <!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 
@@ -213,30 +213,30 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | :--- | :--- | :--- |
 | `pkg/zeroalloc` | Zero-Allocation Byte Manipulators & In-Place Delimiter Sanitizers | **99.4%** |
 | `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **99.1%** |
-| `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **98.8%** |
 | `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **98.0%** |
 | `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **97.5%** |
 | `pkg/nts` | Nacho Token Saver Compactors, Stale Read Eliminators & CR Delimiting | **97.4%** |
-| `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **96.9%** |
+| `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.8%** |
-| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **96.2%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
+| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **95.9%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.9%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **95.7%** |
 | `pkg/agentregistry` | Modular Agent Catalog, Reasoning Parser & Tag Marker Compiler | **95.7%** |
-| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **95.3%** |
-| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.2%** |
+| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **95.5%** |
 | `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.2%** |
+| `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **95.2%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
+| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.0%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
 #### VS Code Companion Extension Coverage:
 <!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **15 / 15 Suites** | **303 / 303 (100%)** | **96.12% / 96.78% / 95.32%** |
+| **Extension Core & Webview Suite** | **15 / 15 Suites** | **308 / 308 (100%)** | **96.14% / 96.80% / 95.32%** |
 <!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---

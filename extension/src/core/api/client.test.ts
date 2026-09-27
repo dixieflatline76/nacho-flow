@@ -277,6 +277,56 @@ describe('RestClient', () => {
         expect.any(Function)
       );
     });
+
+    it('should append vram_gb query parameter when specified', async () => {
+      const mockResponse = { tuning: {} };
+      mockHttpRequest(mockResponse, 200);
+
+      const result = await restClient.tune(16);
+
+      expect(result).toEqual(mockResponse);
+      expect(http.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/api/v1/tune?vram_gb=16',
+          method: 'POST'
+        }),
+        expect.any(Function)
+      );
+    });
+
+    it('should append client_id query parameter when specified', async () => {
+      const mockResponse = { tuning: {} };
+      mockHttpRequest(mockResponse, 200);
+
+      const result = await restClient.tune(16, 'cline');
+
+      expect(result).toEqual(mockResponse);
+      expect(http.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/api/v1/tune?vram_gb=16&client_id=cline',
+          method: 'POST'
+        }),
+        expect.any(Function)
+      );
+    });
+  });
+
+  describe('getTelemetryClients', () => {
+    it('should make a GET request to /api/v1/telemetry/clients', async () => {
+      const mockResponse = { clients: ['all', 'cline', 'zoo'], counts: { cline: 10, zoo: 20 } };
+      mockHttpRequest(mockResponse, 200);
+
+      const result = await restClient.getTelemetryClients();
+
+      expect(result).toEqual(mockResponse);
+      expect(http.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/api/v1/telemetry/clients',
+          method: 'GET'
+        }),
+        expect.any(Function)
+      );
+    });
   });
 
   describe('getStats', () => {

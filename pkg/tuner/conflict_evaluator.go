@@ -3,6 +3,9 @@ package tuner
 import (
 	"fmt"
 	"math"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
 // ConflictReport captures the holistic conflict score and per-variable attribution ledger.
@@ -23,19 +26,23 @@ func CheckHardConstraints(cfg *MultiTierConfig) bool {
 		return false
 	}
 
+	var lastActiveThreshold int
 	for i := 0; i < len(cfg.Tiers); i++ {
 		t := &cfg.Tiers[i]
+		if t.IsDisabled {
+			continue
+		}
 		// 1. Hardware Context Limit / VRAM ceiling
 		if t.MaxContext > 0 && t.TokenThreshold > 0 && t.TokenThreshold > t.MaxContext {
 			return false
 		}
 
-		// 2. Monotonic Context Hierarchy: T_i <= T_{i+1}
-		if i < len(cfg.Tiers)-1 {
-			next := &cfg.Tiers[i+1]
-			if t.TokenThreshold > 0 && next.TokenThreshold > 0 && t.TokenThreshold > next.TokenThreshold {
+		// 2. Monotonic Context Hierarchy across active tiers
+		if t.TokenThreshold > 0 {
+			if lastActiveThreshold > 0 && lastActiveThreshold > t.TokenThreshold {
 				return false
 			}
+			lastActiveThreshold = t.TokenThreshold
 		}
 	}
 
@@ -159,6 +166,9 @@ func EvaluateFleetWithAttribution(
 				if candidate.RequiresImages && !turn.HasImages {
 					continue
 				}
+				if candidate.RequiresTools && !turn.HasTools {
+					continue
+				}
 				if candidate.RetryFloor > 0 && currentRetries < candidate.RetryFloor {
 					continue
 				}
@@ -194,12 +204,38 @@ func EvaluateFleetWithAttribution(
 			// Evaluate turn outcome & determine if turn failed
 			var turnFailed bool
 			var turnCost float64
+			isUpstreamTransient := turn.FailureCategory == telemetry.FailureUpstream || turn.StatusCode == 429 || (turn.StatusCode >= 500 && turn.StatusCode <= 599)
+
+			isWriteOnly := policy != nil && policy.WriteOnly
+			hasProgress := false
+			if isWriteOnly {
+				hasProgress = turn.HasWriteProgress || turn.HasShellWrite || turn.HasTestPass
+				if turn.HasTools && !turn.HasWriteCapability {
+					hasProgress = true
+				}
+			} else {
+				hasProgress = (!turn.IsRetry && !turn.HasTestFail) || turn.HasTestPass
+			}
 
 			if targetTier.IsLocal {
-				if !turn.IsLocal {
+				if isUpstreamTransient {
+					// Non-model infrastructure error: do not charge wasted retry or fail turn
+				} else if !turn.IsLocal {
 					currentRetries++
 					totalWastedRetries++
 					turnFailed = true
+				} else if isWriteOnly {
+					if hasProgress {
+						currentRetries = 0
+					} else {
+						currentRetries++
+						if turn.HasTestFail || turn.IsRetry || retriesBeforeTurn >= 1 {
+							if turn.HasTestFail || turn.IsRetry {
+								totalWastedRetries++
+							}
+							turnFailed = true
+						}
+					}
 				} else if turn.IsRetry {
 					currentRetries++
 					totalWastedRetries++
@@ -234,7 +270,21 @@ func EvaluateFleetWithAttribution(
 				}
 				totalCostUSD += turnCost
 
-				if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
+				if isUpstreamTransient {
+					// Non-model infrastructure error: do not charge wasted retry or fail turn
+				} else if isWriteOnly {
+					if hasProgress || (turn.IsLocal && targetTier.CodingIndex >= 70.0) {
+						currentRetries = 0
+					} else {
+						currentRetries++
+						if turn.HasTestFail || turn.IsRetry || retriesBeforeTurn >= 1 {
+							if turn.HasTestFail || turn.IsRetry {
+								totalWastedRetries++
+							}
+							turnFailed = true
+						}
+					}
+				} else if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
 					currentRetries = 0
 				} else {
 					currentRetries++
@@ -281,8 +331,30 @@ func EvaluateFleetWithAttribution(
 
 					// Candidate 5: Model Substitution (underperforming benchmark or missing modality)
 					canSubstituteModel := true
-					if targetTier.IsLocal && (policy == nil || policy.LocalVRAMGB == 0) {
-						canSubstituteModel = false
+					if targetTier.IsLocal {
+						if policy == nil || policy.LocalVRAMGB == 0 {
+							canSubstituteModel = false
+						} else {
+							hasModalityMismatch := (turn.HasImages && !targetTier.SupportsVision) || (turn.HasTools && !targetTier.SupportsTools)
+							if !hasModalityMismatch {
+								betterExists := false
+								candidates := curation.DefaultManager().ParetoCandidates(
+									curation.RoleCodingWorkhorse,
+									true,
+									targetTier.Model,
+									policy.LocalVRAMGB,
+								)
+								for _, cand := range candidates {
+									if cand.CodingIndex > targetTier.CodingIndex {
+										betterExists = true
+										break
+									}
+								}
+								if !betterExists {
+									canSubstituteModel = false
+								}
+							}
+						}
 					}
 					if canSubstituteModel && targetTier.Model != "" && (targetTier.CodingIndex < 70.0 || (turn.HasImages && !targetTier.SupportsVision) || (turn.HasTools && !targetTier.SupportsTools)) {
 						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:model", selectedTierIdx))
@@ -318,16 +390,12 @@ func EvaluateFleetWithAttribution(
 					penalty += costWeight * turnCost
 					variableLedger["default_tier:model"] += penalty
 				}
-			} else if turnCost > 0 && targetTier.Model != "" {
-				costCeiling := 3.0
-				if policy != nil && policy.CostPerMillionCloud > 0 {
-					costCeiling = policy.CostPerMillionCloud
+			} else if turnCost > 0 && targetTier.Model != "" && !targetTier.IsLocal {
+				minSpend := DefaultMinCloudSpendUSD
+				if policy != nil && policy.MinCloudSpendUSD > 0 {
+					minSpend = policy.MinCloudSpendUSD
 				}
-				tierCeiling := costCeiling
-				if selectedTierIdx == defaultTierIdx {
-					tierCeiling = 15.0
-				}
-				if targetTier.ComprehensiveRate > tierCeiling {
+				if targetTier.ComprehensiveRate > minSpend {
 					varVar := fmt.Sprintf("tier_%d:model", selectedTierIdx)
 					if selectedTierIdx == defaultTierIdx {
 						varVar = "default_tier:model"

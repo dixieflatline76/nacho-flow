@@ -2,6 +2,7 @@
   "id": "cline",
   "name": "Cline / Claude Dev",
   "version": "1.0.0",
+  "user_agent_patterns": ["cline", "claude-dev", "roo-cline"],
   "write_tools": ["editor", "write_to_file", "replace_in_file", "apply_patch"],
   "file_read_tools": ["read_file", "read_files"],
   "read_tools": ["read_files", "read_file", "list_files", "search_files", "list_code_definition_names"],

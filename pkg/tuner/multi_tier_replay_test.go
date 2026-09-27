@@ -621,3 +621,186 @@ func TestMultiTierReplay_PositivePrerequisites(t *testing.T) {
 		t.Fatalf("Expected Tier 1 (Vision) to receive image turn, got 0!")
 	}
 }
+
+func TestMultiTierReplay_UpstreamExemption(t *testing.T) {
+	now := time.Now().UTC()
+	policy := DefaultTuningPolicy()
+
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:       "Tier 1: Cloud Workhorse",
+				Provider:       "openrouter",
+				IsLocal:        false,
+				CostPerMillion: 2.5,
+				CodingIndex:    65.0, // < 70, so regular retries are considered unresolved / wasted
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:       "Tier 2: Frontier",
+			Provider:       "anthropic",
+			IsLocal:        false,
+			CostPerMillion: 15.0,
+			CodingIndex:    85.0,
+		},
+	}
+
+	// Case A: Upstream 503 / FailureUpstream -> must NOT count as wasted retry
+	trajUpstream := SessionTrajectory{
+		SessionID: "sess-upstream",
+		Turns: []telemetry.TurnRecord{
+			{
+				Timestamp:       now,
+				Tokens:          1000,
+				IsLocal:         false,
+				IsRetry:         true,
+				StatusCode:      503,
+				FailureCategory: telemetry.FailureUpstream,
+				RootPromptHash:  0x999,
+			},
+		},
+	}
+
+	var resUpstream MultiTierReplayResult
+	ReplayMultiTierSession(&trajUpstream, &cfg, &policy, &resUpstream)
+
+	if resUpstream.TotalWastedRetries != 0 {
+		t.Errorf("Expected 0 wasted retries for upstream 503 outage, got %d", resUpstream.TotalWastedRetries)
+	}
+
+	// Case B: Normal retry on low-index model -> MUST count as wasted retry
+	trajNormalRetry := SessionTrajectory{
+		SessionID: "sess-normal-retry",
+		Turns: []telemetry.TurnRecord{
+			{
+				Timestamp:       now,
+				Tokens:          1000,
+				IsLocal:         false,
+				IsRetry:         true,
+				StatusCode:      200,
+				FailureCategory: telemetry.FailureExecution,
+				RootPromptHash:  0x999,
+			},
+		},
+	}
+
+	var resNormal MultiTierReplayResult
+	ReplayMultiTierSession(&trajNormalRetry, &cfg, &policy, &resNormal)
+
+	if resNormal.TotalWastedRetries != 1 {
+		t.Errorf("Expected 1 wasted retry for normal model retry on index 65, got %d", resNormal.TotalWastedRetries)
+	}
+}
+
+func TestMultiTierReplay_WriteOnlyFidelity(t *testing.T) {
+	now := time.Now().UTC()
+
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:             "Tier 1: Qwen Coder Workhorse",
+				Model:                "qwen/qwen3-coder-plus",
+				Provider:             "openrouter",
+				IsLocal:              false,
+				RetryBound:           2,
+				CostPerMillion:       0.20,
+				PromptCostPerMillion: 0.20,
+				CodingIndex:          76.3, // >= 70.0!
+				SupportsTools:        true,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:             "Tier 2: Gemini Flash Escalation",
+			Model:                "google/gemini-3.8-flash",
+			Provider:             "openrouter",
+			IsLocal:              false,
+			CostPerMillion:       0.50,
+			PromptCostPerMillion: 0.50,
+			CodingIndex:          78.4,
+			SupportsTools:        true,
+		},
+	}
+
+	// Trajectory with 2 read-only turns, followed by 1 turn at high context (120k tokens)
+	traj := SessionTrajectory{
+		SessionID: "sess-read-burst",
+		Turns: []telemetry.TurnRecord{
+			{
+				// Turn 1: read_file (no write progress)
+				Timestamp:          now,
+				Tokens:             20000,
+				IsLocal:            false,
+				HasTools:           true,
+				HasWriteCapability: true,
+				HasWriteProgress:   false,
+				RootPromptHash:     0x111,
+			},
+			{
+				// Turn 2: grep_search (no write progress)
+				Timestamp:          now.Add(10 * time.Second),
+				Tokens:             50000,
+				IsLocal:            false,
+				HasTools:           true,
+				HasWriteCapability: true,
+				HasWriteProgress:   false,
+				RootPromptHash:     0x111,
+			},
+			{
+				// Turn 3: late-context turn at 120k tokens
+				Timestamp:          now.Add(20 * time.Second),
+				Tokens:             120000,
+				IsLocal:            false,
+				HasTools:           true,
+				HasWriteCapability: true,
+				HasWriteProgress:   true, // writes code!
+				RootPromptHash:     0x111,
+			},
+		},
+	}
+
+	// 1. In standard mode (WriteOnly = false):
+	// Because Qwen has CodingIndex 76.3 >= 70.0, every turn resets retries to 0.
+	// So turn 3 NEVER escalates (stays on Qwen).
+	policyStd := DefaultTuningPolicy()
+	policyStd.WriteOnly = false
+	var resStd MultiTierReplayResult
+	ReplayMultiTierSession(&traj, &cfg, &policyStd, &resStd)
+
+	if resStd.TierStats[0].TurnsRouted != 3 {
+		t.Errorf("Expected all 3 turns on Tier 1 under standard mode, got %d", resStd.TierStats[0].TurnsRouted)
+	}
+	if resStd.TierStats[1].TurnsRouted != 0 {
+		t.Errorf("Expected 0 turns escalated to Tier 2 under standard mode, got %d", resStd.TierStats[1].TurnsRouted)
+	}
+	if resStd.HighContextEscalationTurns != 0 {
+		t.Errorf("Expected 0 high-context escalations under standard mode, got %d", resStd.HighContextEscalationTurns)
+	}
+
+	// 2. In write_only mode (WriteOnly = true):
+	// Turns 1 and 2 are read-only -> retries accumulate to 1, then 2.
+	// Turn 3 arrives with retries=2. Tier 1 has RetryBound=2 (retries < 2 is false!).
+	// Turn 3 escalates to Tier 2 (Gemini Flash) at 120k tokens!
+	policyWO := DefaultTuningPolicy()
+	policyWO.WriteOnly = true
+	var resWO MultiTierReplayResult
+	ReplayMultiTierSession(&traj, &cfg, &policyWO, &resWO)
+
+	if resWO.TierStats[0].TurnsRouted != 2 {
+		t.Errorf("Expected exactly 2 turns on Tier 1 under write_only mode, got %d", resWO.TierStats[0].TurnsRouted)
+	}
+	if resWO.TierStats[1].TurnsRouted != 1 {
+		t.Errorf("Expected exactly 1 turn escalated to Tier 2 under write_only mode, got %d", resWO.TierStats[1].TurnsRouted)
+	}
+	if resWO.HighContextEscalationTurns != 1 {
+		t.Errorf("Expected 1 high-context escalation under write_only mode, got %d", resWO.HighContextEscalationTurns)
+	}
+	if resWO.ReadBurstEscalations != 1 {
+		t.Errorf("Expected 1 read-burst escalation under write_only mode, got %d", resWO.ReadBurstEscalations)
+	}
+	if resWO.HighContextCostUSD <= 0 {
+		t.Errorf("Expected high-context spend > 0, got %f", resWO.HighContextCostUSD)
+	}
+	if resWO.NTSProjectedSavingsUSD <= 0 {
+		t.Errorf("Expected NTS projected savings > 0, got %f", resWO.NTSProjectedSavingsUSD)
+	}
+}

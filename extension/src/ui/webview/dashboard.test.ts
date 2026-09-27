@@ -22,6 +22,11 @@ jest.mock('vscode', () => ({
     joinPath: jest.fn().mockImplementation((...paths) => ({
       path: paths.join('/')
     }))
+  },
+  workspace: {
+    getConfiguration: jest.fn().mockReturnValue({
+      get: jest.fn().mockReturnValue(16)
+    })
   }
 }), { virtual: true });
 
@@ -205,6 +210,14 @@ describe('DashboardPanel', () => {
       expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
         command: 'setTimeWindow',
         data: { timeWindow: 'this_week' }
+      });
+    });
+
+    it('should post updateClients message with clients and counts', () => {
+      dashboardPanel.updateClients({ clients: ['all', 'cline', 'zoo'], counts: { cline: 5, zoo: 2 } });
+      expect(mockWebviewPanel.webview.postMessage).toHaveBeenCalledWith({
+        command: 'updateClients',
+        data: { clients: ['all', 'cline', 'zoo'], counts: { cline: 5, zoo: 2 } }
       });
     });
 

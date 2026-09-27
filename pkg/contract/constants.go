@@ -56,6 +56,7 @@ const (
 	PathAPIStatsReset       = "/api/v1/stats/reset"
 	PathAPIStatsRecalculate = "/api/v1/stats/recalculate"
 	PathAPIDirective        = "/api/v1/directive"
+	PathAPITelemetryClients = "/api/v1/telemetry/clients"
 )
 
 // Provider names and API endpoint defaults.

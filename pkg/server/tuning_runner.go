@@ -16,6 +16,14 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/tuner"
 )
 
+// TuningParams encapsulates parameters for configuring an auto-tuning run.
+type TuningParams struct {
+	LocalVRAMGB int    `json:"local_vram_gb,omitempty"`
+	ClientID    string `json:"client_id,omitempty"`
+	WriteOnly   bool   `json:"write_only,omitempty"`
+	Apply       bool   `json:"apply,omitempty"`
+}
+
 // TuningRunner abstracts the execution of an auto-tuning optimization run.
 // This interface enables transparent switching between an isolated child worker process
 // (production) and an in-process solver (unit tests / fallback).
@@ -32,6 +40,7 @@ type ProcessTuningRunner struct {
 	MaxSessions    int
 	Strategy       string
 	LocalVRAMGB    int
+	ClientID       string
 	logger         *slog.Logger
 }
 
@@ -43,6 +52,7 @@ func NewProcessTuningRunner(executablePath string, logger *slog.Logger) *Process
 		MaxSessions:    0, // Uncapped: evaluate all complete sessions
 		Strategy:       "min_conflicts",
 		LocalVRAMGB:    0,
+		ClientID:       "all",
 		logger:         logger,
 	}
 }
@@ -73,6 +83,9 @@ func (p *ProcessTuningRunner) RunTuning(ctx context.Context, configPath string, 
 	}
 	if p.LocalVRAMGB > 0 {
 		args = append(args, fmt.Sprintf("--vram-gb=%d", p.LocalVRAMGB))
+	}
+	if p.ClientID != "" && !strings.EqualFold(p.ClientID, "all") {
+		args = append(args, fmt.Sprintf("--client=%s", p.ClientID))
 	}
 
 	// #nosec G204 - self-invoked executable for worker sub-process execution
@@ -119,7 +132,7 @@ func (p *ProcessTuningRunner) RunTuning(ctx context.Context, configPath string, 
 	}
 
 	var result tuner.TuningResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &result); err != nil {
 		return nil, fmt.Errorf("failed to decode tuner worker JSON output: %w (output: %s)", err, stdout.String())
 	}
 
@@ -131,11 +144,12 @@ func (p *ProcessTuningRunner) RunTuning(ctx context.Context, configPath string, 
 type InProcessTuningRunner struct {
 	server      *Server
 	LocalVRAMGB int
+	ClientID    string
 }
 
 // NewInProcessTuningRunner creates an InProcessTuningRunner bound to the given Server.
 func NewInProcessTuningRunner(server *Server) *InProcessTuningRunner {
-	return &InProcessTuningRunner{server: server, LocalVRAMGB: 0}
+	return &InProcessTuningRunner{server: server, LocalVRAMGB: 0, ClientID: "all"}
 }
 
 // RunTuning loads complete sessions and runs s.tuner.OptimizeWithContext in-process.
@@ -144,20 +158,41 @@ func (r *InProcessTuningRunner) RunTuning(ctx context.Context, configPath string
 		return nil, errors.New("auto-tuning optimizer is not initialized on this server")
 	}
 
-	records, err := telemetry.ReadCompleteSessions(trafficLogPath, 0)
+	records, err := telemetry.ReadCompleteSessionsFiltered(trafficLogPath, 0, r.ClientID)
 	if err != nil || len(records) == 0 {
 		// Fallback to in-memory ring buffer if traffic log is empty or unreadable
 		if r.server.ringBuffer != nil {
 			records = r.server.ringBuffer.GetRecent(500)
+			if r.ClientID != "" && !strings.EqualFold(r.ClientID, "all") {
+				filtered := make([]telemetry.TurnRecord, 0, len(records))
+				for _, rec := range records {
+					cid := rec.ClientID
+					if cid == "" {
+						cid = "unknown"
+					}
+					if strings.EqualFold(cid, r.ClientID) {
+						filtered = append(filtered, rec)
+					}
+				}
+				records = filtered
+			}
 		}
 	}
 
-	optimizer := r.server.tuner
+	cfg := r.server.GetConfig()
+	policy := tuner.DefaultTuningPolicy()
 	if r.LocalVRAMGB > 0 {
-		policy := tuner.DefaultTuningPolicy()
 		policy.LocalVRAMGB = r.LocalVRAMGB
-		optimizer = tuner.NewMinConflictsOptimizer(policy)
 	}
+	if cfg != nil {
+		if cfg.Kickstart.WriteOnly || cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+			policy.WriteOnly = true
+		}
+		if r.server.oracle != nil {
+			policy.CandidateDeals = r.server.oracle.GetDeals(cfg.Deals, 0.0, 0)
+		}
+	}
+	optimizer := tuner.NewMinConflictsOptimizer(policy)
 
-	return optimizer.OptimizeWithContext(ctx, records, r.server.GetConfig())
+	return optimizer.OptimizeWithContext(ctx, records, cfg)
 }

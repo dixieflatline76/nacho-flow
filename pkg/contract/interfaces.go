@@ -53,6 +53,7 @@ type RequestContext struct {
 	FairyDusted               bool     `json:"fairy_dusted,omitempty"`
 	FairyDustEntry            string   `json:"fairy_dust_entry,omitempty"`
 	FairyDustCount            int      `json:"fairy_dust_count,omitempty"`
+	ClientID                  string   `json:"client_id,omitempty"`
 }
 
 // IsModelCoolingDown returns true if the specified model is currently cooling down on this session.
@@ -442,9 +443,27 @@ func (p ProviderConfig) IsLocal() bool {
 // DealsConfig configures the spot market and discount detection engine.
 type DealsConfig struct {
 	Enabled           bool    `yaml:"enabled" json:"enabled"`
-	AlertThresholdPct float64 `yaml:"alert_threshold_pct" json:"alert_threshold_pct"` // default: 50.0 (%)
-	MinCodingIndex    float64 `yaml:"min_coding_index" json:"min_coding_index"`       // default: 40.0
-	RequireTools      bool    `yaml:"require_tools" json:"require_tools"`             // default: true
+	AlertThresholdPct float64 `yaml:"alert_threshold_pct" json:"alert_threshold_pct"`         // default: 30.0 (%)
+	MinCodingIndex    float64 `yaml:"min_coding_index" json:"min_coding_index"`               // default: 40.0
+	RequireTools      bool    `yaml:"require_tools" json:"require_tools"`                     // default: true
+	ExcludeBatch      *bool   `yaml:"exclude_batch,omitempty" json:"exclude_batch,omitempty"` // default: true
+	ExcludeFree       *bool   `yaml:"exclude_free,omitempty" json:"exclude_free,omitempty"`   // default: true
+}
+
+// ShouldExcludeBatch returns true if non-interactive batch endpoints should be filtered out (default: true).
+func (c DealsConfig) ShouldExcludeBatch() bool {
+	if c.ExcludeBatch != nil {
+		return *c.ExcludeBatch
+	}
+	return true
+}
+
+// ShouldExcludeFree returns true if heavily rate-limited free-tier endpoints should be filtered out (default: true).
+func (c DealsConfig) ShouldExcludeFree() bool {
+	if c.ExcludeFree != nil {
+		return *c.ExcludeFree
+	}
+	return true
 }
 
 // DealInfo represents an active promotional, subsidized, or high-value model deal.
@@ -463,6 +482,7 @@ type DealInfo struct {
 	TierRole           string   `json:"tier_role,omitempty"`
 	CodingIndex        float64  `json:"coding_index,omitempty"`
 	AgenticIndex       float64  `json:"agentic_index,omitempty"`
+	ValueScore         float64  `json:"value_score,omitempty"`
 	RecommendedTiers   []string `json:"recommended_tiers,omitempty"`
 	ExpiresAt          *string  `json:"expires_at,omitempty"`
 }

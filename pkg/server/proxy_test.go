@@ -1296,6 +1296,93 @@ func TestProxy_SessionRetry_AutoEscalatesToCloud(t *testing.T) {
 	}
 }
 
+func TestProxy_AgentChurnDuringTestFailureEscalates(t *testing.T) {
+	mockLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Local response"}}]}`))
+	}))
+	defer mockLocal.Close()
+
+	mockCloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Cloud response"}}]}`))
+	}))
+	defer mockCloud.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"local_p": {BaseURL: mockLocal.URL, Type: "local"},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+		},
+		Tiers: []contract.Tier{
+			{Name: "Tier Local", Model: "qwen-local", Provider: "local_p", When: "Retries < 2"},
+		},
+		DefaultTier: contract.Tier{Name: "Tier Cloud", Model: "claude-cloud", Provider: "cloud_p"},
+		Kickstart: contract.KickstartConfig{
+			WriteOnly: true,
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	srv := NewServer(cfg, evaluator, router.NewClassifier(), router.NewSanitizer())
+
+	sessionHeader := "agent-churn-session-99"
+
+	// Turn 0: Fresh task start -> Local
+	body0 := `{"model":"nacho-hybrid","messages":[{"role":"user","content":"Fix the blackjack hand calculation"}]}`
+	rec0 := httptest.NewRecorder()
+	req0 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body0))
+	req0.Header.Set("x-session-id", sessionHeader)
+	srv.ServeHTTP(rec0, req0)
+	if rec0.Header().Get(contract.HeaderNachoRouterTier) != "Tier Local" {
+		t.Fatalf("Turn 0 expected 'Tier Local', got %q", rec0.Header().Get(contract.HeaderNachoRouterTier))
+	}
+
+	// Turn 1: Agent writes a file edit, but tests FAIL.
+	// Churn: HasTools=true, HasWriteProgress=true, HasTestFail=true.
+	// In the presence of HasTestFail, it must NOT reset retries to 0; must increment retries to 1.
+	body1 := `{
+		"model":"nacho-hybrid",
+		"tools":[{"type":"function","function":{"name":"write_to_file"}}],
+		"messages":[
+			{"role":"user","content":"Fix the blackjack hand calculation"},
+			{"role":"assistant","content":"I will update hand.go","tool_calls":[{"id":"call_1","type":"function","function":{"name":"write_to_file","arguments":"{}"}}]},
+			{"role":"tool","tool_call_id":"call_1","content":"File saved successfully.\nFAIL: TestBlackjackHand\nexit status 1"}
+		]
+	}`
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body1))
+	req1.Header.Set("x-session-id", sessionHeader)
+	srv.ServeHTTP(rec1, req1)
+	if rec1.Header().Get(contract.HeaderNachoRouterTier) != "Tier Local" {
+		t.Fatalf("Turn 1 expected 'Tier Local' (retries=1 < 2), got %q", rec1.Header().Get(contract.HeaderNachoRouterTier))
+	}
+
+	// Turn 2: Agent writes another file edit, but tests FAIL AGAIN.
+	// Churn continues: HasTools=true, HasWriteProgress=true, HasTestFail=true.
+	// Must NOT reset retries to 0; must increment retries to 2.
+	body2 := `{
+		"model":"nacho-hybrid",
+		"tools":[{"type":"function","function":{"name":"write_to_file"}}],
+		"messages":[
+			{"role":"user","content":"Fix the blackjack hand calculation"},
+			{"role":"assistant","content":"I will update hand.go again","tool_calls":[{"id":"call_2","type":"function","function":{"name":"write_to_file","arguments":"{}"}}]},
+			{"role":"tool","tool_call_id":"call_2","content":"File saved successfully.\nFAIL: TestBlackjackHand\nexit status 1"}
+		]
+	}`
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body2))
+	req2.Header.Set("x-session-id", sessionHeader)
+	srv.ServeHTTP(rec2, req2)
+	// Because retries accumulated to 2, 'Retries < 2' evaluates to false -> MUST ESCALATE to Tier Cloud!
+	if rec2.Header().Get(contract.HeaderNachoRouterTier) != "Tier Cloud" {
+		t.Errorf("Turn 2 expected 'Tier Cloud' (auto-escalated after 2 failed edit attempts), got %q", rec2.Header().Get(contract.HeaderNachoRouterTier))
+	}
+}
+
 func TestProxy_IsDefectiveEmptyContent_Branches(t *testing.T) {
 	// Invalid JSON -> false
 	if isDefectiveEmptyContent([]byte("invalid json")) {
@@ -1583,6 +1670,7 @@ func TestProxy_RecordTelemetry_SessionFields(t *testing.T) {
 		HasWriteProgress:   true,
 		HasTestPass:        true,
 		HasTestFail:        false,
+		ClientID:           "cline",
 	}
 	usage := StreamUsage{PromptTokens: 1000, CompletionTokens: 200, TotalTokens: 1200}
 
@@ -1597,6 +1685,9 @@ func TestProxy_RecordTelemetry_SessionFields(t *testing.T) {
 	}
 
 	rec := sink.records[0]
+	if rec.ClientID != "cline" {
+		t.Errorf("Expected ClientID 'cline', got '%s'", rec.ClientID)
+	}
 	if rec.SessionID != "sess-live-proxy-12345" {
 		t.Errorf("Expected SessionID 'sess-live-proxy-12345', got '%s'", rec.SessionID)
 	}
@@ -1617,6 +1708,58 @@ func TestProxy_RecordTelemetry_SessionFields(t *testing.T) {
 	}
 	if rec.HasTestFail {
 		t.Errorf("Expected HasTestFail false, got true")
+	}
+}
+
+func TestProxy_ClientDetectionInPipeline(t *testing.T) {
+	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","choices":[{"message":{"role":"assistant","content":"hello"}}]}`))
+	}))
+	defer mockUpstream.Close()
+
+	tracker := telemetry.NewStatsTracker(100)
+	defer tracker.Close()
+
+	sink := &mockSessionTurnSink{}
+	tracker.AddSink(sink)
+
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"mock": {
+				BaseURL: mockUpstream.URL,
+				Type:    "local",
+			},
+		},
+		Tiers: []contract.Tier{
+			{Name: "T1", Provider: "mock", Model: "qwen", When: "true"},
+		},
+		DefaultTier: contract.Tier{Name: "T1", Provider: "mock", Model: "qwen"},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	cls := router.NewClassifier()
+	san := router.NewSanitizer()
+	oracle := telemetry.NewPricingOracle()
+
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, cls, san, oracle, tracker, nil, slog.Default())
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"test client detection"}]}`))
+	req.Header.Set("User-Agent", "Cline/3.1.0")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+	tracker.Flush()
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+
+	if len(sink.records) != 1 {
+		t.Fatalf("Expected 1 telemetry record emitted, got %d", len(sink.records))
+	}
+	if sink.records[0].ClientID != "cline" {
+		t.Errorf("Expected detected client_id 'cline', got '%s'", sink.records[0].ClientID)
 	}
 }
 

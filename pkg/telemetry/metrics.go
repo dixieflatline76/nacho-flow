@@ -136,6 +136,8 @@ type Observation struct {
 	HasWriteProgress   bool
 	HasTestPass        bool
 	HasTestFail        bool
+	FailureCategory    FailureCategory
+	ClientID           string
 }
 
 type minuteBucket struct {
@@ -625,6 +627,8 @@ func (s *StatsTracker) worker() {
 				HasWriteProgress:          obs.HasWriteProgress,
 				HasTestPass:               obs.HasTestPass,
 				HasTestFail:               obs.HasTestFail,
+				FailureCategory:           obs.FailureCategory,
+				ClientID:                  obs.ClientID,
 			}
 			for _, sink := range *sinksPtr {
 				sink.Emit(record)

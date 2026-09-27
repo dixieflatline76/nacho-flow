@@ -214,7 +214,15 @@ function buildDOM(): void {
     <div id="tuner-banner" style="display:none"></div>
     <span id="active-preset-badge"></span>
     <span id="server-version-chip"></span>
-    <button id="btn-edit-config"><svg></svg> config.yaml</button>
+    <button id="btn-edit-config"><svg></svg> <span id="btn-edit-config-text">config.yaml</span></button>
+    <select id="vram-select">
+      <option value="0">Auto / Any</option>
+      <option value="16" selected>16 GB</option>
+      <option value="24">24 GB</option>
+    </select>
+    <select id="tuner-client-select">
+      <option value="all" selected>All Clients</option>
+    </select>
     <button id="tab-past_1_hour"></button>
     <button id="tab-all_time"></button>
     <button id="tab-today"></button>
@@ -237,14 +245,18 @@ type DashboardWindow = Window & {
 // Jest setup
 // ---------------------------------------------------------------------------
 
+let lastAcquiredVsCodeApi: { getState: jest.Mock; setState: jest.Mock; postMessage: jest.Mock };
+
 beforeEach(() => {
   buildDOM();
 
-  (window as unknown as DashboardWindow).acquireVsCodeApi = jest.fn(() => ({
+  lastAcquiredVsCodeApi = {
     getState: jest.fn().mockReturnValue(null),
     setState: jest.fn(),
     postMessage: jest.fn(),
-  }));
+  };
+
+  (window as unknown as DashboardWindow).acquireVsCodeApi = jest.fn(() => lastAcquiredVsCodeApi);
 
   Object.defineProperty(window, 'localStorage', {
     value: {
@@ -847,6 +859,194 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
       expect(content).toContain('Single-turn mode');
       expect(content).toContain('No repeated model failures detected in sample history');
       expect(content).toContain('+ when: "Tokens < 12000"');
+    });
+
+    it('renders granular checkboxes, presets bar, and supports selective apply', () => {
+      postMessage('updateOptimization', {
+        tiers: [
+          {
+            tier_name: 'Tier 2: Flagship Agent Coder',
+            original_rule: 'Tokens < 160000 && Retries < 4',
+            synthesized_rule: 'Tokens < 160000 && Retries < 1',
+            original_model: 'qwen/qwen3-coder-plus',
+            recommended_model: 'z-ai/glm-5.3-flash',
+            coding_index: 71.5
+          }
+        ],
+        default_tier: {
+          tier_name: 'Fallback Tier',
+          original_model: 'google/gemini-3.8-flash',
+          recommended_model: 'x-ai/grok-4.6',
+          coding_index: 76.8
+        },
+        total_sample_turns: 100,
+        projected_savings_usd: 12.5,
+        retries_eliminated: 81
+      });
+
+      const banner = document.getElementById('tuner-banner');
+      expect(banner?.style.display).toBe('block');
+
+      // 1. Presets toolbar rendered
+      const presetsBar = banner?.querySelector('.tuner-presets-bar');
+      expect(presetsBar).not.toBeNull();
+      expect(presetsBar?.textContent).toContain('Rules Only');
+      expect(presetsBar?.textContent).toContain('Select All');
+      expect(presetsBar?.textContent).toContain('Deselect All');
+
+      // 2. Three checkboxes rendered (Tier 2 rule, Tier 2 model, Fallback model)
+      const checkboxes = banner?.querySelectorAll('.tuner-item-check') as NodeListOf<HTMLInputElement>;
+      expect(checkboxes.length).toBe(3);
+      expect(Array.from(checkboxes).every(cb => cb.checked)).toBe(true);
+
+      const applyBtn = document.getElementById('btn-apply-tuning') as HTMLButtonElement;
+      expect(applyBtn).not.toBeNull();
+      expect(applyBtn.disabled).toBe(false);
+      expect(applyBtn.textContent).toContain('Apply Optimized Multi-Tier Policy to config.yaml');
+
+      // 3. Test "Rules Only" preset
+      (window as any).setTunerPreset('rules-only');
+      expect(checkboxes[0].checked).toBe(false); // Tier 2 model
+      expect(checkboxes[1].checked).toBe(true);  // Tier 2 rule
+      expect(checkboxes[2].checked).toBe(false); // Fallback model
+
+      // Check dimmed blocks
+      const modelBlock = document.getElementById('diff-action-0-model');
+      expect(modelBlock?.classList.contains('diff-block-dimmed')).toBe(true);
+      const ruleBlock = document.getElementById('diff-action-0-rule');
+      expect(ruleBlock?.classList.contains('diff-block-dimmed')).toBe(false);
+
+      // Button updates text to reflect 1 selected
+      expect(applyBtn.textContent).toBe('Apply 1 Selected Improvement to config.yaml');
+
+      // 4. Test applyOptimization with "Rules Only" selection
+      (window as any).applyOptimization();
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'applyOptimization',
+        data: expect.objectContaining({
+          tiers: [
+            expect.objectContaining({
+              tier_name: 'Tier 2: Flagship Agent Coder',
+              apply_rule: true,
+              apply_model: false
+            })
+          ],
+          default_tier: expect.objectContaining({
+            tier_name: 'Fallback Tier',
+            apply_model: false
+          })
+        })
+      });
+
+      // 5. Test "Deselect All" disables apply button
+      (window as any).setTunerPreset('none');
+      expect(Array.from(checkboxes).every(cb => !cb.checked)).toBe(true);
+      expect(applyBtn.disabled).toBe(true);
+      expect(applyBtn.textContent).toBe('No Improvements Selected');
+
+      // 6. Test "Select All" restores all
+      (window as any).setTunerPreset('all');
+      expect(Array.from(checkboxes).every(cb => cb.checked)).toBe(true);
+      expect(applyBtn.disabled).toBe(false);
+      expect(applyBtn.textContent).toContain('Apply Optimized Multi-Tier Policy to config.yaml');
+    });
+  });
+
+  describe('VRAM Selection and Toolbar Actions', () => {
+    it('synchronizes vram-select value from syncSnapshot message', () => {
+      postMessage('syncSnapshot', {
+        timestamp: Date.now(),
+        localVramGB: 24
+      });
+      const select = document.getElementById('vram-select') as HTMLSelectElement;
+      expect(select?.value).toBe('24');
+    });
+
+    it('triggers runOptimizer with active vram-select value', () => {
+      const select = document.getElementById('vram-select') as HTMLSelectElement;
+      select.value = '24';
+      (window as any).runOptimizer();
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'runOptimizer',
+        data: { vramGB: 24 }
+      });
+    });
+
+    it('triggers onVramChange and posts setLocalVramGB command', () => {
+      (window as any).onVramChange('32');
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'setLocalVramGB',
+        data: { vramGB: 32 }
+      });
+    });
+  });
+
+  describe('Client Partition Selection and Dynamic Population', () => {
+    it('populates tuner-client-select options on updateClients message', () => {
+      postMessage('updateClients', {
+        clients: ['all', 'cline', 'zoo'],
+        counts: { cline: 42, zoo: 17 }
+      });
+
+      const select = document.getElementById('tuner-client-select') as HTMLSelectElement;
+      expect(select.options.length).toBe(3);
+      expect(select.options[0].value).toBe('all');
+      expect(select.options[0].textContent).toBe('All Clients');
+      expect(select.options[1].value).toBe('cline');
+      expect(select.options[1].textContent).toBe('cline (42 turns)');
+      expect(select.options[2].value).toBe('zoo');
+      expect(select.options[2].textContent).toBe('zoo (17 turns)');
+    });
+
+    it('updates state on onClientChange', () => {
+      (window as any).onClientChange('cline');
+      expect(lastAcquiredVsCodeApi.setState).toHaveBeenCalled();
+      const lastState = lastAcquiredVsCodeApi.setState.mock.calls[lastAcquiredVsCodeApi.setState.mock.calls.length - 1][0];
+      expect(lastState.selectedClient).toBe('cline');
+    });
+
+    it('synchronizes client list and selection from syncSnapshot message', () => {
+      postMessage('syncSnapshot', {
+        timestamp: Date.now(),
+        clients: {
+          clients: ['all', 'cursor'],
+          counts: { cursor: 10 }
+        },
+        selectedClient: 'cursor'
+      });
+
+      const select = document.getElementById('tuner-client-select') as HTMLSelectElement;
+      expect(select.options.length).toBe(2);
+      expect(select.value).toBe('cursor');
+    });
+
+    it('passes clientID in runOptimizer when a specific client is selected', () => {
+      const vramSelect = document.getElementById('vram-select') as HTMLSelectElement;
+      vramSelect.value = '16';
+      const clientSelect = document.getElementById('tuner-client-select') as HTMLSelectElement;
+      clientSelect.innerHTML = '<option value="all">All Clients</option><option value="zoo" selected>zoo</option>';
+      clientSelect.value = 'zoo';
+
+      (window as any).runOptimizer();
+
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'runOptimizer',
+        data: { vramGB: 16, clientID: 'zoo' }
+      });
+    });
+
+    it('omits clientID from runOptimizer when client is all', () => {
+      const vramSelect = document.getElementById('vram-select') as HTMLSelectElement;
+      vramSelect.value = '16';
+      const clientSelect = document.getElementById('tuner-client-select') as HTMLSelectElement;
+      clientSelect.value = 'all';
+
+      (window as any).runOptimizer();
+
+      expect(lastAcquiredVsCodeApi.postMessage).toHaveBeenCalledWith({
+        command: 'runOptimizer',
+        data: { vramGB: 16 }
+      });
     });
   });
 });

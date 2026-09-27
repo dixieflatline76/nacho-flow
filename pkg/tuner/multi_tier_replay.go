@@ -1,5 +1,7 @@
 package tuner
 
+import "github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+
 // TierReplayConfig defines the routing guardrails and economic properties for an individual tier.
 type TierReplayConfig struct {
 	TierName                 string   `json:"tier_name"`
@@ -23,6 +25,7 @@ type TierReplayConfig struct {
 	SupportsTools            bool     `json:"supports_tools"`
 	RequiresKickstart        bool     `json:"requires_kickstart"`
 	RequiresImages           bool     `json:"requires_images"`
+	RequiresTools            bool     `json:"requires_tools"`
 	RetryFloor               int      `json:"retry_floor"`
 	ExcludedKeywords         []string `json:"excluded_keywords"`
 }
@@ -34,6 +37,7 @@ const MaxSupportedTiers = 8
 type MultiTierConfig struct {
 	Tiers       []TierReplayConfig `json:"tiers"`        // Tiers 1 .. M-1 in priority order
 	DefaultTier TierReplayConfig   `json:"default_tier"` // Tier M (unconditional sink/fallback)
+	WriteOnly   bool               `json:"write_only,omitempty"`
 }
 
 // TierReplayStats accumulates turn statistics for a single tier during replay.
@@ -47,14 +51,18 @@ type TierReplayStats struct {
 
 // MultiTierReplayResult captures the simulated fleet/session replay outcome.
 type MultiTierReplayResult struct {
-	TotalTurns         int                                `json:"total_turns"`
-	TotalCostUSD       float64                            `json:"total_cost_usd"`
-	TotalWastedRetries int                                `json:"total_wasted_retries"`
-	TotalCycleTrips    int                                `json:"total_cycle_trips"`
-	EscalatedSessions  int                                `json:"escalated_sessions"`
-	ResolvedSessions   int                                `json:"resolved_sessions"`
-	TierStats          [MaxSupportedTiers]TierReplayStats `json:"tier_stats"`
-	NumTiers           int                                `json:"num_tiers"` // Count of active tiers (Tiers + DefaultTier)
+	TotalTurns                 int                                `json:"total_turns"`
+	TotalCostUSD               float64                            `json:"total_cost_usd"`
+	TotalWastedRetries         int                                `json:"total_wasted_retries"`
+	TotalCycleTrips            int                                `json:"total_cycle_trips"`
+	EscalatedSessions          int                                `json:"escalated_sessions"`
+	ResolvedSessions           int                                `json:"resolved_sessions"`
+	HighContextEscalationTurns int                                `json:"high_context_escalation_turns"`
+	HighContextCostUSD         float64                            `json:"high_context_cost_usd"`
+	ReadBurstEscalations       int                                `json:"read_burst_escalations"`
+	NTSProjectedSavingsUSD     float64                            `json:"nts_projected_savings_usd"`
+	TierStats                  [MaxSupportedTiers]TierReplayStats `json:"tier_stats"`
+	NumTiers                   int                                `json:"num_tiers"` // Count of active tiers (Tiers + DefaultTier)
 }
 
 // Reset clears the result accumulators for reuse without re-allocating.
@@ -65,6 +73,10 @@ func (r *MultiTierReplayResult) Reset() {
 	r.TotalCycleTrips = 0
 	r.EscalatedSessions = 0
 	r.ResolvedSessions = 0
+	r.HighContextEscalationTurns = 0
+	r.HighContextCostUSD = 0
+	r.ReadBurstEscalations = 0
+	r.NTSProjectedSavingsUSD = 0
 	for i := 0; i < len(r.TierStats); i++ {
 		r.TierStats[i] = TierReplayStats{}
 	}
@@ -161,6 +173,7 @@ func replayMultiTierSessionInternal(
 			currentRootHash = turn.RootPromptHash
 			currentRetries = 0
 		}
+		retriesBeforeTurn := currentRetries
 
 		// 2. Cascade selection: evaluate tiers 0 .. M-1 sequentially
 		selectedTierIdx := defaultTierIdx
@@ -179,6 +192,9 @@ func replayMultiTierSessionInternal(
 				continue
 			}
 			if candidate.RequiresImages && !turn.HasImages {
+				continue
+			}
+			if candidate.RequiresTools && !turn.HasTools {
 				continue
 			}
 			if candidate.RetryFloor > 0 && currentRetries < candidate.RetryFloor {
@@ -231,13 +247,39 @@ func replayMultiTierSessionInternal(
 		result.TierStats[selectedTierIdx].TurnsRouted++
 
 		// 3. Turn execution & Counterfactual Attribution
+		isUpstreamTransient := turn.FailureCategory == telemetry.FailureUpstream || turn.StatusCode == 429 || (turn.StatusCode >= 500 && turn.StatusCode <= 599)
+
+		isWriteOnly := policy != nil && policy.WriteOnly
+		hasProgress := false
+		if isWriteOnly {
+			hasProgress = turn.HasWriteProgress || turn.HasShellWrite || turn.HasTestPass
+			if turn.HasTools && !turn.HasWriteCapability {
+				// Plan mode read-only turns are immune to retry penalties
+				hasProgress = true
+			}
+		} else {
+			hasProgress = (!turn.IsRetry && !turn.HasTestFail) || turn.HasTestPass
+		}
+
 		if targetTier.IsLocal {
 			// 🚨 Counterfactual Attribution Trap:
 			// If historical turn ran on Cloud and succeeded, Local cannot be assumed to succeed.
-			if !turn.IsLocal {
+			if isUpstreamTransient {
+				// Non-model infrastructure error: do not penalize local tier
+			} else if !turn.IsLocal {
 				currentRetries++
 				result.TotalWastedRetries++
 				result.TierStats[selectedTierIdx].WastedRetries++
+			} else if isWriteOnly {
+				if hasProgress {
+					currentRetries = 0
+				} else {
+					currentRetries++
+					if turn.HasTestFail || turn.IsRetry {
+						result.TotalWastedRetries++
+						result.TierStats[selectedTierIdx].WastedRetries++
+					}
+				}
 			} else if turn.IsRetry {
 				currentRetries++
 				result.TotalWastedRetries++
@@ -275,9 +317,31 @@ func replayMultiTierSessionInternal(
 			result.TotalCostUSD += cost
 			result.TierStats[selectedTierIdx].CostUSD += cost
 
-			// Cloud resolution behavior with benchmark intelligence:
-			// High coding index (>= 70.0) models reliably resolve retries on escalation.
-			if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
+			// High-context escalation tracking (Tier 3+ or default fallback tier when escalated)
+			if selectedTierIdx > 1 || selectedTierIdx == defaultTierIdx {
+				if turn.Tokens > 100_000 {
+					result.HighContextEscalationTurns++
+					result.HighContextCostUSD += cost
+					result.NTSProjectedSavingsUSD += (float64(turn.Tokens) * 0.35 / 1_000_000.0) * targetTier.PromptCostPerMillion
+				}
+				if retriesBeforeTurn > 0 && !turn.HasTestFail {
+					result.ReadBurstEscalations++
+				}
+			}
+
+			if isUpstreamTransient {
+				// Non-model infrastructure error: do not penalize tier model
+			} else if isWriteOnly {
+				if hasProgress || (turn.IsLocal && targetTier.CodingIndex >= 70.0) {
+					currentRetries = 0
+				} else {
+					currentRetries++
+					if turn.HasTestFail || turn.IsRetry {
+						result.TotalWastedRetries++
+						result.TierStats[selectedTierIdx].WastedRetries++
+					}
+				}
+			} else if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
 				currentRetries = 0
 			} else {
 				currentRetries++

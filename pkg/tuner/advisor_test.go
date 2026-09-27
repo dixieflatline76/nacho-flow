@@ -368,3 +368,55 @@ func TestAdvisor_GeneratesReport_v2(t *testing.T) {
 		t.Errorf("Expected Retry Bound metric, got: %s", report)
 	}
 }
+
+func TestAdvisor_ContextInflationAudit(t *testing.T) {
+	result := &TuningResult{
+		TotalSampleTurns:           150,
+		TotalSessions:              10,
+		AvgTurnsPerSession:         15.0,
+		EscalationRate:             0.40,
+		CurrentCostUSD:             1.38,
+		ProjectedCostUSD:           0.86,
+		ProjectedSavingsUSD:        0.52,
+		HighContextEscalationTurns: 9,
+		HighContextCostUSD:         0.69,
+		HighContextCostPct:         50.0,
+		ReadBurstEscalations:       7,
+		NTSProjectedSavingsUSD:     0.52,
+		Tiers: []TierTuningResult{
+			{
+				TierName:         "Tier 2: Flagship Agent Coder",
+				OptimalThreshold: 32000,
+				OptimalRetries:   3,
+				SynthesizedRule:  "Tokens < 32000 && Retries < 3",
+			},
+		},
+	}
+
+	cfg := &contract.Config{
+		Tiers: []contract.Tier{
+			{Name: "Tier 2: Flagship Agent Coder", When: "Tokens < 32000 && Retries < 2", Provider: "openrouter"},
+		},
+	}
+
+	report := GenerateAdvisoryReport(result, cfg)
+
+	if !strings.Contains(report, "LATE-CONTEXT COST INFLATION AUDIT:") {
+		t.Errorf("Expected LATE-CONTEXT COST INFLATION AUDIT section, got: %s", report)
+	}
+	if !strings.Contains(report, "High-Context Escalations (>100k tok): 9 turns") {
+		t.Errorf("Expected High-Context Escalations line, got: %s", report)
+	}
+	if !strings.Contains(report, "High-Context Cloud Spend:            $0.69 / $1.38 (50.0% of total run cost)") {
+		t.Errorf("Expected High-Context Cloud Spend line, got: %s", report)
+	}
+	if !strings.Contains(report, "Read-Burst Escalations:               7 turns triggered by read-only tool sequences") {
+		t.Errorf("Expected Read-Burst Escalations line, got: %s", report)
+	}
+	if !strings.Contains(report, "write_only progress simulation active") {
+		t.Errorf("Expected write_only fidelity notice, got: %s", report)
+	}
+	if !strings.Contains(report, "NTS Context Compaction:               Projected savings ~$0.52 if enabled") {
+		t.Errorf("Expected NTS savings line, got: %s", report)
+	}
+}

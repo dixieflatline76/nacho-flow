@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -585,27 +586,45 @@ func (s *Server) handleAPITune(w http.ResponseWriter, r *http.Request) {
 			vramGB = v
 		}
 	}
-	if vramGB == 0 && r.Body != nil {
+	clientID := strings.TrimSpace(r.URL.Query().Get("client_id"))
+	if clientID == "" {
+		clientID = strings.TrimSpace(r.URL.Query().Get("client"))
+	}
+
+	if r.Body != nil {
 		var payload struct {
-			LocalVRAMGB int `json:"local_vram_gb"`
+			LocalVRAMGB int    `json:"local_vram_gb"`
+			ClientID    string `json:"client_id"`
+			WriteOnly   bool   `json:"write_only"`
+			Apply       bool   `json:"apply"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&payload)
-		if payload.LocalVRAMGB > 0 {
+		if vramGB == 0 && payload.LocalVRAMGB > 0 {
 			vramGB = payload.LocalVRAMGB
 		}
+		if clientID == "" && payload.ClientID != "" {
+			clientID = strings.TrimSpace(payload.ClientID)
+		}
+	}
+	if clientID == "" {
+		clientID = "all"
 	}
 
 	activeRunner := runner
-	if vramGB > 0 {
-		if procRunner, ok := runner.(*ProcessTuningRunner); ok {
-			cp := *procRunner
+	if procRunner, ok := runner.(*ProcessTuningRunner); ok {
+		cp := *procRunner
+		if vramGB > 0 {
 			cp.LocalVRAMGB = vramGB
-			activeRunner = &cp
-		} else if inProc, ok := runner.(*InProcessTuningRunner); ok {
-			cp := *inProc
-			cp.LocalVRAMGB = vramGB
-			activeRunner = &cp
 		}
+		cp.ClientID = clientID
+		activeRunner = &cp
+	} else if inProc, ok := runner.(*InProcessTuningRunner); ok {
+		cp := *inProc
+		if vramGB > 0 {
+			cp.LocalVRAMGB = vramGB
+		}
+		cp.ClientID = clientID
+		activeRunner = &cp
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -627,6 +646,44 @@ func (s *Server) handleAPITune(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// handleAPITelemetryClients serves GET /api/v1/telemetry/clients.
+// It returns distinct observed client IDs and their counts, merged with all registered agent profiles.
+func (s *Server) handleAPITelemetryClients(w http.ResponseWriter, r *http.Request) {
+	if s.setCORS(w, r) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	counts, err := telemetry.ClientCounts(s.trafficLogPath)
+	if err != nil {
+		counts = make(map[string]int)
+	}
+
+	clientList := make([]string, 0, len(counts))
+	for c, n := range counts {
+		if c != "all" && c != "" && n > 0 {
+			clientList = append(clientList, c)
+		}
+	}
+	sort.Strings(clientList)
+
+	clients := make([]string, 0, len(clientList)+1)
+	clients = append(clients, "all")
+	clients = append(clients, clientList...)
+
+	resp := map[string]interface{}{
+		"clients": clients,
+		"counts":  counts,
+	}
+
+	w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleAPIStatsReset serves POST /api/v1/stats/reset.

@@ -8,6 +8,8 @@ type AgentProfile struct {
 	ID                  string               `json:"id"`
 	Name                string               `json:"name"`
 	Version             string               `json:"version"`
+	UserAgentPatterns   []string             `json:"user_agent_patterns,omitempty"`
+	HeaderSignatures    map[string]string    `json:"header_signatures,omitempty"`
 	WriteTools          []string             `json:"write_tools"`
 	FileReadTools       []string             `json:"file_read_tools,omitempty"`
 	ReadTools           []string             `json:"read_tools"`

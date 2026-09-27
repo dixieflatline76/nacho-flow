@@ -137,7 +137,7 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **Dual-Lane Immunity Guards**: Even when NTS is enabled, strict immunity rules protect active file reads, edits (`write_to_file`, `apply_diff`, `editor`), and prompt caching breakpoints from mutation.
 
 ### ⚡ 3. High-Throughput Wire-Speed Core & Systems Architecture
-* **Zero-Allocation Fast Path**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,058 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU (Read-Copy-Update) state, stack-allocated streaming buffers (`sync.Pool`), and pooled HTTP transports with zero heap churn during proxying.
+* **Zero-Allocation Fast Path**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU (Read-Copy-Update) state, stack-allocated streaming buffers (`sync.Pool`), and pooled HTTP transports with zero heap churn during proxying.
 * **Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON with zero-copy stream rewrites.
 * **Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
 * **Streaming Delimiter Defense**: Prevents `<channel|>` and unicode-escaped delimiter leakage across streaming SSE chunk boundaries.
@@ -167,6 +167,17 @@ Autonomous coding agents operate in multi-turn feedback loops. As conversations 
 * **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (96.2% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 * **Zero Runtime Dependencies**: Single static binary with zero CGO, Node, or Python runtime requirements (`CGO_ENABLED=0`).
+
+### 🎤 6. Auto-Tune: Pitch-Correct Your Routing Rules
+Local models sound great until they try to hit high notes they can't reach—cracking on 20k-token prompts, butchering tool calls, or dragging your agent through painful retry loops. But if you get paranoid and escalate too early, you're paying stadium-tour prices to Claude for what should have been an acoustic coffee shop gig for $0.00.
+
+Auto-Tune listens to your real recorded coding tracks (`logs/traffic.jsonl`) and pitch-corrects your entire multi-tier mix in 25ms:
+* **Finds the Sweet Note (Token & Friction Limits)**: Replays your multi-turn conversation trajectories to find the exact threshold where your local GPU starts cracking, snapping rules to the sweet spot without manual guesswork.
+* **Mutes Dead Tracks (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Cuts out middle tiers that are just background hiss—if a tier never catches a turn or immediately drops out, Auto-Tune cuts it from the mix to kill routing latency and config noise.
+* **Escalation Plateau Filter (Stop Overpaying for Backing Vocals)**: Blocks knee-jerk escalations to expensive frontier models when your local or budget model hits the note within 5% of the same success rate.
+* **Filters Out Mic Feedback (Failure Taxonomy)**: Distinguishes actual model capability failures from dropped Wi-Fi, client cancels, and upstream provider 429s so you never blame the singer when the soundboard cuts the mic.
+* **Wire-Speed Zero-Alloc Replay**: Replays multi-turn sessions at **81 ns/op (~37,000,000 turns/sec)** with 0 heap allocations.
+* **Granular Selective Apply**: Review the clean YAML diff and proposed recommendations in your VS Code dashboard, cherry-pick exactly which tier adjustments to adopt via interactive checkboxes, and hot-swap the new mix live with an automatic timestamped backup and zero downtime.
 
 ---
 
@@ -320,12 +331,12 @@ Control routing rules, guardrails, and daemon telemetry directly from your edito
 
 ---
 
-### 4. Autonomous Multi-Tier Auto-Tuning (`nacho-flow tune`)
+### 4. 🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)
 
-Never guess where your local GPU model starts struggling. Nacho Flow includes an autonomous **v3 Min-Conflicts Constraint Satisfaction Optimizer** that analyzes your real-world traffic telemetry (`logs/traffic.jsonl`), identifies prompt failure bottlenecks, and synthesizes optimal multi-tier routing rules:
+Never guess where your local GPU model starts singing off-key. Auto-Tune replays your actual multi-turn sessions from `logs/traffic.jsonl`, eliminates off-key local retry loops, and mutes redundant middle tiers:
 
 ```bash
-# Advisory dry-run with multi-tier CSP heuristic local search
+# Advisory dry-run: replays real sessions with multi-tier CSP heuristic search
 nacho-flow tune
 
 # Target specific local GPU hardware ceiling (e.g. 16GB VRAM)
@@ -335,9 +346,14 @@ nacho-flow tune --vram-gb=16
 nacho-flow tune --apply
 ```
 
-* **Wire-Speed In-Memory Simulation**: Simulates **1,000,000 turn statements in 25ms** (~40M turns/sec) with zero heap allocations.
-* **6D Variable Repair**: Automatically optimizes per-tier token thresholds, retry bounds, tool/image modalities, keyword friction exclusions, and hardware-bounded model substitutions.
-* **Pareto Fleet Dominance**: Enforces multi-objective optimality across cost, latency, and retry rate.
+<p align="center">
+  <img src="images/vscode-autotuner-showcase.png" alt="Nacho Flow VS Code Auto-Tuner UI Recommendation Banner and Diff Review" width="850" />
+</p>
+
+* **Trajectory Replay (81 ns / 37M turns/sec)**: Tests candidate rules across whole multi-turn conversation sequences with zero heap allocations.
+* **Mutes Dead Tracks (`✂️ Redundant Tier Bypassed`)**: Automatically prunes tiers that never catch a turn or immediately fail and escalate.
+* **5% Escalation Plateau Filter**: Stops you from paying 10× more for Claude when your local or budget model hits within 5% of the same success rate.
+* **1-Click Review & Apply**: Review the rule diff directly in your terminal or the VS Code dashboard webview, with automatic `.bak` rollback safety.
 
 ---
 

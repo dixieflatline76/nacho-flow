@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -106,6 +107,7 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	if err != nil {
 		reqLogger.Warn("Failed to classify payload", slog.Any("error", err))
 	}
+	reqCtx.ClientID = agentregistry.DefaultRegistry().DetectClient(r.Header, body)
 
 	// Honor config toggle to disable in-prompt directives
 	if s.GetConfig().Router.EnableInPromptDirectives != nil && !*s.GetConfig().Router.EnableInPromptDirectives {
@@ -196,15 +198,18 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	cfg := s.GetConfig()
 
 	// Pass tool progress signal from classifier to session tracker.
-	// In write-only mode, genuine forward progress requires write progress or passing tests,
-	// preventing read-only command loops from resetting retries while tests fail.
-	turnProgress := reqCtx.HasToolProgress
+	// In agent loop mode, genuine forward progress requires verified test passes,
+	// or workspace actions conducted in an error-free state.
+	// An unverified write during active test failure is an attempted fix, NOT verified progress.
+	turnProgress := reqCtx.HasToolProgress && !reqCtx.HasTestFail
 	writeOnly := cfg.Kickstart.WriteOnly || cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly
 	if writeOnly {
-		turnProgress = reqCtx.HasWriteProgress || reqCtx.HasShellWrite || reqCtx.HasTestProgress
-		if reqCtx.HasTools && !reqCtx.HasWriteCapability {
+		turnProgress = reqCtx.HasTestProgress || ((reqCtx.HasWriteProgress || reqCtx.HasShellWrite) && !reqCtx.HasTestFail)
+		if reqCtx.HasTools && !reqCtx.HasWriteCapability && !reqCtx.HasTestFail {
 			turnProgress = turnProgress || reqCtx.HasToolProgress
 		}
+	} else if reqCtx.HasTestProgress {
+		turnProgress = true
 	}
 	retries, isRetry := s.sessionTracker.RecordTurnTask(
 		sessionKey,

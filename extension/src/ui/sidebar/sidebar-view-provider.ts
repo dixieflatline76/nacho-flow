@@ -56,6 +56,11 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'sidebar', 'sidebar.js'));
 		const zooIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'icons', 'zoo.svg'));
 
+		const vramSetting = (vscode?.workspace?.getConfiguration)
+			? (vscode.workspace.getConfiguration('nachoFlow').get<number>('localVramGB', 16) ?? 16)
+			: 16;
+		const vramDisplay = vramSetting === 0 ? 'Auto / Unconstrained' : `${vramSetting} GB`;
+
 		return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -161,6 +166,8 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 						<option value="profile2">Profile 2</option>
 						<option value="profile3">Profile 3</option>
 					</select>
+					<button class="btn btn-secondary btn-compact" id="btn-add-profile" onclick="addProfile()" title="Add new profile (+)">＋</button>
+					<button class="btn btn-secondary btn-compact" id="btn-rename-profile" onclick="renameProfile()" title="Rename active profile">✏️</button>
 					<button class="btn btn-primary btn-compact" id="btn-switch-profile" onclick="switchProfile()" title="Restart engine using selected profile">
 						<span class="brand-logo-svg" style="width: 12px; height: 12px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></span>
 						Switch
@@ -267,7 +274,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<div id="specs-modal" class="modal-overlay" style="display: none;">
 		<div class="modal-content">
 			<h3>ℹ️ Hardware & GPU VRAM Guide</h3>
-			<p style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 0;">Recommended local model: <strong>qwen2.5-coder:14b</strong></p>
+			<p style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 0;">Active Auto-Tuner VRAM Limit: <strong>${vramDisplay}</strong> &bull; Recommended local model: <strong>qwen2.5-coder:14b</strong></p>
 			<ul>
 				<li><strong>🎮 NVIDIA / AMD GPUs (Dedicated VRAM)</strong>:
 					<br/>• <strong>7B Models</strong>: Needs 6GB–8GB VRAM (e.g. RTX 3060/4060, RX 6600).

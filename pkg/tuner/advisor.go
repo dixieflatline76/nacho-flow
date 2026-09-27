@@ -8,134 +8,236 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
-// GenerateAdvisoryReport creates a human-readable CLI report from TuningResult.
+// GenerateAdvisoryReport creates a human-readable CLI report from TuningResult using the AdvisoryReportBuilder.
 func GenerateAdvisoryReport(res *TuningResult, cfg *contract.Config) string {
-	var b strings.Builder
+	return NewAdvisoryReportBuilder(res, cfg).
+		WithBanner().
+		WithSampleSize().
+		WithSessionDynamics().
+		WithContextInflationAudit().
+		WithModelRecovery().
+		WithDominanceConflicts().
+		WithTierPolicies().
+		WithFallbackPolicy().
+		WithFleetImpact().
+		WithConfigDiff().
+		WithApplyInstructions().
+		Build()
+}
 
-	b.WriteString("========================================================================================\n")
-	if res.TotalSessions > 0 {
-		b.WriteString("🌮 NACHO FLOW ADVISORY TUNING REPORT (v2 — Session Replay)\n")
+// AdvisoryReportBuilder constructs human-readable advisory CLI reports.
+type AdvisoryReportBuilder struct {
+	res *TuningResult
+	cfg *contract.Config
+	sb  strings.Builder
+}
+
+// NewAdvisoryReportBuilder creates a new fluent builder for tuning reports.
+func NewAdvisoryReportBuilder(res *TuningResult, cfg *contract.Config) *AdvisoryReportBuilder {
+	return &AdvisoryReportBuilder{
+		res: res,
+		cfg: cfg,
+	}
+}
+
+// WithBanner renders the main decorative header.
+func (b *AdvisoryReportBuilder) WithBanner() *AdvisoryReportBuilder {
+	b.sb.WriteString("========================================================================================\n")
+	if b.res.TotalSessions > 0 {
+		b.sb.WriteString("🌮 NACHO FLOW ADVISORY TUNING REPORT (v2 — Session Replay)\n")
 	} else {
-		b.WriteString("🌮 NACHO FLOW ADVISORY TUNING REPORT\n")
+		b.sb.WriteString("🌮 NACHO FLOW ADVISORY TUNING REPORT\n")
 	}
-	b.WriteString("========================================================================================\n\n")
+	b.sb.WriteString("========================================================================================\n\n")
+	return b
+}
 
-	b.WriteString(fmt.Sprintf("📊 Sample Size: %d historical prompt turns evaluated\n", res.TotalSampleTurns))
+// WithSampleSize renders the number of historical prompt turns analyzed.
+func (b *AdvisoryReportBuilder) WithSampleSize() *AdvisoryReportBuilder {
+	fmt.Fprintf(&b.sb, "📊 Sample Size: %d historical prompt turns evaluated\n", b.res.TotalSampleTurns)
+	return b
+}
 
-	if res.TotalSessions > 0 {
-		b.WriteString("\n🔄 SESSION DYNAMICS:\n")
-		b.WriteString(fmt.Sprintf("  • Total Sessions Evaluated:       %d\n", res.TotalSessions))
-		b.WriteString(fmt.Sprintf("  • Average Turns per Session:      %.1f\n", res.AvgTurnsPerSession))
-		b.WriteString(fmt.Sprintf("  • Cloud Escalation Rate:          %.1f%%\n", res.EscalationRate*100))
+// WithSessionDynamics renders multi-turn session trajectory statistics.
+func (b *AdvisoryReportBuilder) WithSessionDynamics() *AdvisoryReportBuilder {
+	if b.res.TotalSessions > 0 {
+		fmt.Fprintf(&b.sb, "\n🔄 SESSION DYNAMICS:\n"+
+			"  • Total Sessions Evaluated:       %d\n"+
+			"  • Average Turns per Session:      %.1f\n"+
+			"  • Cloud Escalation Rate:          %.1f%%\n",
+			b.res.TotalSessions, b.res.AvgTurnsPerSession, b.res.EscalationRate*100)
 	} else {
-		b.WriteString("\n")
+		b.sb.WriteString("\n")
+	}
+	return b
+}
+
+// WithContextInflationAudit renders late-stage context cost inflation and read-burst escalation metrics.
+func (b *AdvisoryReportBuilder) WithContextInflationAudit() *AdvisoryReportBuilder {
+	if b.res.HighContextEscalationTurns == 0 && b.res.ReadBurstEscalations == 0 {
+		return b
 	}
 
-	if len(res.RecoveryStats) > 0 {
-		b.WriteString("\n🩺 MODEL SELF-RECOVERY ANALYSIS:\n")
-		var models []string
-		for m := range res.RecoveryStats {
-			models = append(models, m)
-		}
-		sort.Strings(models)
-		for _, m := range models {
-			stat := res.RecoveryStats[m]
-			b.WriteString(fmt.Sprintf("  • %-24s Self-Recovery: %.1f%% (avg %.1f turns to recover)\n",
-				stat.Model+":", stat.SelfRecoveryRate*100, stat.AvgTurnsToRecover))
-		}
+	b.sb.WriteString("\n🔥 LATE-CONTEXT COST INFLATION AUDIT:\n")
+	if b.res.HighContextEscalationTurns > 0 {
+		fmt.Fprintf(&b.sb, "  • High-Context Escalations (>100k tok): %d turns\n", b.res.HighContextEscalationTurns)
+		fmt.Fprintf(&b.sb, "  • High-Context Cloud Spend:            $%.2f / $%.2f (%.1f%% of total run cost)\n",
+			b.res.HighContextCostUSD, b.res.CurrentCostUSD, b.res.HighContextCostPct)
+	}
+	if b.res.ReadBurstEscalations > 0 {
+		fmt.Fprintf(&b.sb, "  • Read-Burst Escalations:               %d turns triggered by read-only tool sequences\n", b.res.ReadBurstEscalations)
+	}
+	b.sb.WriteString("  • Replay Engine Fidelity:               write_only progress simulation active\n")
+	if b.res.NTSProjectedSavingsUSD > 0 {
+		fmt.Fprintf(&b.sb, "  • NTS Context Compaction:               Projected savings ~$%.2f if enabled\n", b.res.NTSProjectedSavingsUSD)
+	}
+	return b
+}
+
+// WithModelRecovery renders the self-recovery rates for models under transient retries.
+func (b *AdvisoryReportBuilder) WithModelRecovery() *AdvisoryReportBuilder {
+	if len(b.res.RecoveryStats) == 0 {
+		return b
 	}
 
-	if len(res.StaticDominanceConflicts) > 0 {
-		b.WriteString("\n⚠️ STATIC ROUTING DOMINANCE DEFECTS DETECTED:\n")
-		for _, c := range res.StaticDominanceConflicts {
-			b.WriteString(fmt.Sprintf("  • %s\n", c.Reason))
-		}
+	b.sb.WriteString("\n🩺 MODEL SELF-RECOVERY ANALYSIS:\n")
+	models := make([]string, 0, len(b.res.RecoveryStats))
+	for m := range b.res.RecoveryStats {
+		models = append(models, m)
+	}
+	sort.Strings(models)
+	for _, m := range models {
+		stat := b.res.RecoveryStats[m]
+		fmt.Fprintf(&b.sb, "  • %-24s Self-Recovery: %.1f%% (avg %.1f turns to recover)\n",
+			stat.Model+":", stat.SelfRecoveryRate*100, stat.AvgTurnsToRecover)
+	}
+	return b
+}
+
+// WithDominanceConflicts renders static routing defects if any were detected.
+func (b *AdvisoryReportBuilder) WithDominanceConflicts() *AdvisoryReportBuilder {
+	if len(b.res.StaticDominanceConflicts) == 0 {
+		return b
 	}
 
-	b.WriteString("\n🔍 MULTI-TIER ROUTING POLICIES:\n")
-	for i, tier := range res.Tiers {
-		b.WriteString(fmt.Sprintf("\n  [Tier %d: %s]\n", i+1, tier.TierName))
+	b.sb.WriteString("\n⚠️ STATIC ROUTING DOMINANCE DEFECTS DETECTED:\n")
+	for _, c := range b.res.StaticDominanceConflicts {
+		fmt.Fprintf(&b.sb, "  • %s\n", c.Reason)
+	}
+	return b
+}
+
+// WithTierPolicies renders the configured and recommended tier guardrails.
+func (b *AdvisoryReportBuilder) WithTierPolicies() *AdvisoryReportBuilder {
+	b.sb.WriteString("\n🔍 MULTI-TIER ROUTING POLICIES:\n")
+	for i, tier := range b.res.Tiers {
+		fmt.Fprintf(&b.sb, "\n  [Tier %d: %s]\n", i+1, tier.TierName)
 		if tier.OptimalThreshold > 0 {
-			b.WriteString(fmt.Sprintf("  • Context Threshold:   %d tokens\n", tier.OptimalThreshold))
+			fmt.Fprintf(&b.sb, "  • Context Threshold:   %d tokens\n", tier.OptimalThreshold)
 		} else {
-			b.WriteString("  • Context Threshold:   Unlimited\n")
+			b.sb.WriteString("  • Context Threshold:   Unlimited\n")
 		}
 		if tier.OptimalRetries > 0 {
-			b.WriteString(fmt.Sprintf("  • Retry Bound:         %d max retries before escalation\n", tier.OptimalRetries))
+			fmt.Fprintf(&b.sb, "  • Retry Bound:         %d max retries before escalation\n", tier.OptimalRetries)
 		}
-		if tier.RecommendedModel != "" && tier.RecommendedModel != tier.OriginalModel {
-			b.WriteString(fmt.Sprintf("  • Model Substitution:  %s -> %s\n", tier.OriginalModel, tier.RecommendedModel))
+		if tier.IsDisabled && strings.TrimSpace(tier.OriginalRule) != "false" {
+			b.sb.WriteString("  • Routing Policy:      PRUNED / BYPASSED (when: \"false\")\n")
 			if tier.ModelBenefit != "" {
-				b.WriteString(fmt.Sprintf("    Benefit:             %s\n", tier.ModelBenefit))
+				fmt.Fprintf(&b.sb, "    Benefit:             %s\n", tier.ModelBenefit)
+			}
+		} else if tier.RecommendedModel != "" && tier.RecommendedModel != tier.OriginalModel {
+			fmt.Fprintf(&b.sb, "  • Model Substitution:  %s -> %s\n", tier.OriginalModel, tier.RecommendedModel)
+			if tier.ModelBenefit != "" {
+				fmt.Fprintf(&b.sb, "    Benefit:             %s\n", tier.ModelBenefit)
 			}
 		}
 		if tier.RestrictImages {
-			b.WriteString("  • Multimodal Vision:   Restricted\n")
+			b.sb.WriteString("  • Multimodal Vision:   Restricted\n")
 		} else {
-			b.WriteString("  • Multimodal Vision:   Allowed\n")
+			b.sb.WriteString("  • Multimodal Vision:   Allowed\n")
 		}
 		if tier.RestrictTools {
-			b.WriteString("  • Agentic Tool Calls:  Restricted\n")
+			b.sb.WriteString("  • Agentic Tool Calls:  Restricted\n")
 		} else {
-			b.WriteString("  • Agentic Tool Calls:  Allowed\n")
+			b.sb.WriteString("  • Agentic Tool Calls:  Allowed\n")
 		}
 		if len(tier.FrictionKeywords) > 0 {
-			b.WriteString(fmt.Sprintf("  • Excluded Keywords:   %v\n", tier.FrictionKeywords))
+			fmt.Fprintf(&b.sb, "  • Excluded Keywords:   %v\n", tier.FrictionKeywords)
 		}
 	}
+	return b
+}
 
-	if res.DefaultTier != nil && res.DefaultTier.RecommendedModel != "" && res.DefaultTier.RecommendedModel != res.DefaultTier.OriginalModel {
-		b.WriteString(fmt.Sprintf("\n  [Fallback Tier: %s]\n", res.DefaultTier.TierName))
-		b.WriteString(fmt.Sprintf("  • Model Substitution:  %s -> %s\n", res.DefaultTier.OriginalModel, res.DefaultTier.RecommendedModel))
-		if res.DefaultTier.ModelBenefit != "" {
-			b.WriteString(fmt.Sprintf("    Benefit:             %s\n", res.DefaultTier.ModelBenefit))
+// WithFallbackPolicy renders the fallback tier recommendation.
+func (b *AdvisoryReportBuilder) WithFallbackPolicy() *AdvisoryReportBuilder {
+	if b.res.DefaultTier != nil && b.res.DefaultTier.RecommendedModel != "" && b.res.DefaultTier.RecommendedModel != b.res.DefaultTier.OriginalModel {
+		fmt.Fprintf(&b.sb, "\n  [Fallback Tier: %s]\n"+
+			"  • Model Substitution:  %s -> %s\n",
+			b.res.DefaultTier.TierName, b.res.DefaultTier.OriginalModel, b.res.DefaultTier.RecommendedModel)
+		if b.res.DefaultTier.ModelBenefit != "" {
+			fmt.Fprintf(&b.sb, "    Benefit:             %s\n", b.res.DefaultTier.ModelBenefit)
 		}
 	}
+	return b
+}
 
-	b.WriteString("\n📈 PROJECTED FLEET IMPACT:\n")
-	b.WriteString(fmt.Sprintf("  • Developer Retries Avoided: ~%d retries eliminated\n", res.RetriesEliminated))
-	if res.ProjectedSavingsUSD > 0 {
-		b.WriteString(fmt.Sprintf("  • Net Monthly Cost Optimization: $%.2f USD saved\n", res.ProjectedSavingsUSD))
+// WithFleetImpact renders projected savings and retries eliminated.
+func (b *AdvisoryReportBuilder) WithFleetImpact() *AdvisoryReportBuilder {
+	b.sb.WriteString("\n📈 PROJECTED FLEET IMPACT:\n")
+	fmt.Fprintf(&b.sb, "  • Developer Retries Avoided: ~%d retries eliminated\n", b.res.RetriesEliminated)
+	if b.res.ProjectedSavingsUSD > 0 {
+		fmt.Fprintf(&b.sb, "  • Net Monthly Cost Optimization: $%.2f USD saved\n", b.res.ProjectedSavingsUSD)
 	}
+	return b
+}
 
-	b.WriteString("\n🛠️ RECOMMENDED CONFIGURATION DIFF:\n")
-	b.WriteString("----------------------------------------------------------------------------------------\n")
+// WithConfigDiff renders the unified diff recommendation.
+func (b *AdvisoryReportBuilder) WithConfigDiff() *AdvisoryReportBuilder {
+	b.sb.WriteString("\n🛠️ RECOMMENDED CONFIGURATION DIFF:\n" +
+		"----------------------------------------------------------------------------------------\n")
 	var diffCount int
-	for _, tier := range res.Tiers {
+	for _, tier := range b.res.Tiers {
 		hasModelDiff := tier.RecommendedModel != "" && tier.RecommendedModel != tier.OriginalModel
 		hasRuleDiff := tier.SynthesizedRule != "" && tier.SynthesizedRule != tier.OriginalRule
 		if !hasModelDiff && !hasRuleDiff {
 			continue
 		}
 		diffCount++
-		b.WriteString(fmt.Sprintf("  Tier: %q\n", tier.TierName))
+		fmt.Fprintf(&b.sb, "  Tier: %q\n", tier.TierName)
 		if hasModelDiff {
-			b.WriteString(fmt.Sprintf("  - model: %q\n", tier.OriginalModel))
-			b.WriteString(fmt.Sprintf("  + model: %q\n", tier.RecommendedModel))
+			fmt.Fprintf(&b.sb, "  - model: %q\n  + model: %q\n", tier.OriginalModel, tier.RecommendedModel)
 		}
 		if hasRuleDiff {
 			if tier.OriginalRule != "" {
-				b.WriteString(fmt.Sprintf("  - when: %q\n", tier.OriginalRule))
+				fmt.Fprintf(&b.sb, "  - when: %q\n", tier.OriginalRule)
 			}
-			b.WriteString(fmt.Sprintf("  + when: %q\n", tier.SynthesizedRule))
+			fmt.Fprintf(&b.sb, "  + when: %q\n", tier.SynthesizedRule)
 		}
-		b.WriteString("\n")
+		b.sb.WriteString("\n")
 	}
-	if res.DefaultTier != nil && res.DefaultTier.RecommendedModel != "" && res.DefaultTier.RecommendedModel != res.DefaultTier.OriginalModel {
+	if b.res.DefaultTier != nil && b.res.DefaultTier.RecommendedModel != "" && b.res.DefaultTier.RecommendedModel != b.res.DefaultTier.OriginalModel {
 		diffCount++
-		b.WriteString(fmt.Sprintf("  Fallback Tier: %q\n", res.DefaultTier.TierName))
-		b.WriteString(fmt.Sprintf("  - model: %q\n", res.DefaultTier.OriginalModel))
-		b.WriteString(fmt.Sprintf("  + model: %q\n", res.DefaultTier.RecommendedModel))
-		b.WriteString("\n")
+		fmt.Fprintf(&b.sb, "  Fallback Tier: %q\n"+
+			"  - model: %q\n"+
+			"  + model: %q\n\n",
+			b.res.DefaultTier.TierName, b.res.DefaultTier.OriginalModel, b.res.DefaultTier.RecommendedModel)
 	}
 	if diffCount == 0 {
-		b.WriteString("  (No configuration changes recommended — active fleet policy is optimal)\n\n")
+		b.sb.WriteString("  (No configuration changes recommended — active fleet policy is optimal)\n\n")
 	}
-	b.WriteString("----------------------------------------------------------------------------------------\n\n")
+	b.sb.WriteString("----------------------------------------------------------------------------------------\n\n")
+	return b
+}
 
-	b.WriteString("To apply this recommendation with automatic backup:\n")
-	b.WriteString("  $ nacho-flow tune --apply\n")
-	b.WriteString("========================================================================================\n")
+// WithApplyInstructions renders the command for applying the generated recommendations.
+func (b *AdvisoryReportBuilder) WithApplyInstructions() *AdvisoryReportBuilder {
+	b.sb.WriteString("To apply this recommendation with automatic backup:\n" +
+		"  $ nacho-flow tune --apply\n" +
+		"========================================================================================\n")
+	return b
+}
 
-	return b.String()
+// Build finalizes the report string.
+func (b *AdvisoryReportBuilder) Build() string {
+	return b.sb.String()
 }

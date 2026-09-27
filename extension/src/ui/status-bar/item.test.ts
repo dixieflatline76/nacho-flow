@@ -224,11 +224,47 @@ describe('StatusBarManager', () => {
       expect((statusBarManager as any).activePreset).toBe('cline');
     });
 
+    it('should set active profile with custom label and render dropdown in tooltip', () => {
+      statusBarManager.setActiveProfile('profile2', 'Zoo GLM');
+      expect((statusBarManager as any).activeProfile).toBe('profile2');
+      expect((statusBarManager as any).activeProfileLabel).toBe('Zoo GLM');
+      expect(mockStatusBarItem.tooltip.value).toContain('[▾ Zoo GLM](command:nacho-flow.switchProfile');
+      expect(mockStatusBarItem.tooltip.value).toContain('[＋](command:nacho-flow.addProfile');
+      expect(mockStatusBarItem.tooltip.value).toContain('[✏️](command:nacho-flow.renameProfile');
+    });
+
     it('should set base url and update status bar', () => {
       statusBarManager.setBaseUrl('http://127.0.0.1:8000');
       expect((statusBarManager as any).baseUrl).toBe('http://127.0.0.1:8000');
       statusBarManager.setBaseUrl('   ');
       expect((statusBarManager as any).baseUrl).toBe('http://127.0.0.1:8000');
+    });
+
+    it('should suppress profile dropdown and display Remote Server in remote mode', () => {
+      statusBarManager.setIsRemote(true);
+      expect(statusBarManager.getIsRemote()).toBe(true);
+
+      // In offline state
+      statusBarManager.updateStats(null);
+      expect(mockStatusBarItem.tooltip.value).toContain('Remote Server');
+      expect(mockStatusBarItem.tooltip.value).not.toContain('command:nacho-flow.switchProfile');
+
+      // In online state
+      const stats = {
+        total_requests: 10,
+        total_tokens: 1000,
+        estimated_cost_saved_usd: 1.0,
+        cloud_api_spend_usd: 0.5,
+        tier_breakdown: { tier1_local_free: 5 }
+      };
+      statusBarManager.updateStats(stats);
+      expect(mockStatusBarItem.tooltip.value).toContain('Remote Server');
+      expect(mockStatusBarItem.tooltip.value).not.toContain('command:nacho-flow.switchProfile');
+
+      // Switching back to local mode restores profile dropdown
+      statusBarManager.setIsRemote(false);
+      expect(statusBarManager.getIsRemote()).toBe(false);
+      expect(mockStatusBarItem.tooltip.value).toContain('command:nacho-flow.switchProfile');
     });
   });
 

@@ -408,6 +408,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case contract.PathAPIDirective:
 			s.handleAPIDirective(w, r)
 			return
+		case contract.PathAPITelemetryClients:
+			s.handleAPITelemetryClients(w, r)
+			return
 		default:
 			http.Error(w, "Not found", http.StatusNotFound)
 			return

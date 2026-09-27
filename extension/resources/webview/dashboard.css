@@ -159,7 +159,7 @@ body {
 	font-weight: 600;
 	cursor: pointer;
 	border: 1px solid transparent;
-	transition: all 0.2s ease;
+	transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
@@ -169,13 +169,14 @@ body {
 	background: rgba(255, 255, 255, 0.05);
 	color: var(--vscode-foreground);
 	border: 1px solid rgba(255, 255, 255, 0.12);
-	backdrop-filter: blur(4px);
+	transform: translateZ(0);
+	will-change: transform;
 }
 
 .btn-toolbar:hover {
 	background: rgba(255, 255, 255, 0.12);
 	border-color: rgba(255, 255, 255, 0.25);
-	transform: translateY(-1px);
+	transform: translateY(-1px) translateZ(0);
 }
 
 .btn-toolbar.btn-tuner {
@@ -198,6 +199,96 @@ body {
 .btn-toolbar.btn-deals:hover {
 	background: rgba(245, 158, 11, 0.18);
 	border-color: #fbbf24;
+}
+
+.vram-selector-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 6px;
+	padding: 3px 8px;
+	transform: translateZ(0);
+	will-change: transform;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.vram-selector-group:hover,
+.vram-selector-group:focus-within {
+	border-color: rgba(6, 182, 212, 0.4);
+	background: rgba(6, 182, 212, 0.06);
+}
+
+.vram-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #38bdf8;
+	letter-spacing: 0.3px;
+	user-select: none;
+	white-space: nowrap;
+}
+
+.select-vram {
+	background: transparent;
+	color: var(--vscode-foreground);
+	border: none;
+	font-size: 11px;
+	font-weight: 600;
+	font-family: inherit;
+	cursor: pointer;
+	outline: none;
+	padding: 3px 4px;
+}
+
+.select-vram option {
+	background-color: var(--vscode-dropdown-background, #1e1e1e);
+	color: var(--vscode-dropdown-foreground, #cccccc);
+}
+
+.client-selector-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 6px;
+	padding: 3px 8px;
+	transform: translateZ(0);
+	will-change: transform;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.client-selector-group:hover,
+.client-selector-group:focus-within {
+	border-color: rgba(168, 85, 247, 0.4);
+	background: rgba(168, 85, 247, 0.06);
+}
+
+.client-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #c084fc;
+	letter-spacing: 0.3px;
+	user-select: none;
+	white-space: nowrap;
+}
+
+.select-client {
+	background: transparent;
+	color: var(--vscode-foreground);
+	border: none;
+	font-size: 11px;
+	font-weight: 600;
+	font-family: inherit;
+	cursor: pointer;
+	outline: none;
+	padding: 3px 4px;
+}
+
+.select-client option {
+	background-color: var(--vscode-dropdown-background, #1e1e1e);
+	color: var(--vscode-dropdown-foreground, #cccccc);
 }
 
 .toolbar-svg {
@@ -589,6 +680,130 @@ body {
 
 .diff-add .diff-sign {
 	color: #10b981;
+}
+
+/* Granular Recommendation Checkboxes & Presets */
+.tuner-presets-bar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-bottom: 12px;
+	padding: 6px 12px;
+	background: rgba(255, 255, 255, 0.02);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 6px;
+}
+
+.tuner-presets-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #94a3b8;
+	margin-right: 4px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.tuner-presets-buttons {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.btn-preset {
+	padding: 3px 8px;
+	font-size: 11px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	color: #e2e8f0;
+	cursor: pointer;
+	transition: all 0.15s ease-in-out;
+}
+
+.btn-preset:hover {
+	background: rgba(255, 255, 255, 0.12);
+	border-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn-preset-rules {
+	background: rgba(56, 189, 248, 0.15);
+	border-color: rgba(56, 189, 248, 0.35);
+	color: #38bdf8;
+	font-weight: 600;
+}
+
+.btn-preset-rules:hover {
+	background: rgba(56, 189, 248, 0.25);
+	border-color: rgba(56, 189, 248, 0.5);
+	color: #7dd3fc;
+}
+
+.diff-action-block {
+	position: relative;
+	transition: opacity 0.2s ease, filter 0.2s ease;
+	border-radius: 4px;
+	padding: 4px 6px;
+	margin-bottom: 6px;
+	background: rgba(0, 0, 0, 0.15);
+}
+
+.diff-action-block:last-child {
+	margin-bottom: 0;
+}
+
+.diff-action-header {
+	display: flex;
+	align-items: center;
+	margin-bottom: 4px;
+}
+
+.tuner-action-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	user-select: none;
+	font-size: 11px;
+	color: #cbd5e1;
+}
+
+.tuner-item-check {
+	cursor: pointer;
+	width: 14px;
+	height: 14px;
+	accent-color: #38bdf8;
+	margin: 0;
+}
+
+.tuner-action-title {
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
+.tuner-action-title .model-name-orig {
+	color: #f87171;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.tuner-action-title .model-name-rec {
+	color: #4ade80;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.diff-block-dimmed {
+	opacity: 0.35;
+	filter: grayscale(80%);
+}
+
+.diff-block-dimmed .diff-line {
+	text-decoration: line-through;
+}
+
+.btn-disabled {
+	opacity: 0.5;
+	cursor: not-allowed !important;
+	pointer-events: none;
 }
 
 .tuner-actions {

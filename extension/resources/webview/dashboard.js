@@ -26,6 +26,9 @@
 			case 'updateOptimization':
 				updateOptimization(message.data);
 				break;
+			case 'updateClients':
+				updateClients(message.data);
+				break;
 			case 'setTimeWindow':
 				if (message.data && message.data.timeWindow) {
 					window.setTimeWindow(message.data.timeWindow, false);
@@ -130,6 +133,21 @@
 		}
 		if (typeof snapshot.routesRefreshInterval !== 'undefined') {
 			window.setRoutesRefreshInterval(snapshot.routesRefreshInterval, false);
+		}
+		if (typeof snapshot.localVramGB !== 'undefined') {
+			const vramSelect = document.getElementById('vram-select');
+			if (vramSelect) {
+				vramSelect.value = String(snapshot.localVramGB);
+			}
+		}
+		if (snapshot.clients) {
+			updateClients(snapshot.clients);
+		}
+		if (snapshot.selectedClient) {
+			const clientSelect = document.getElementById('tuner-client-select');
+			if (clientSelect) {
+				clientSelect.value = snapshot.selectedClient;
+			}
 		}
 
 		// Synchronize header badge and config button
@@ -635,10 +653,15 @@
 		const btnEdit = document.getElementById('btn-edit-config');
 		if (btnEdit) {
 			const configText = data.isRemote ? 'Remote config.yaml' : `${data.label} (YAML)`;
-			const svg = btnEdit.querySelector('svg');
-			btnEdit.innerHTML = '';
-			if (svg) btnEdit.appendChild(svg);
-			btnEdit.append(' ' + configText);
+			const textSpan = document.getElementById('btn-edit-config-text');
+			if (textSpan) {
+				textSpan.textContent = configText;
+			} else {
+				const svg = btnEdit.querySelector('svg');
+				btnEdit.innerHTML = '';
+				if (svg) btnEdit.appendChild(svg);
+				btnEdit.append(' ' + configText);
+			}
 		}
 	}
 
@@ -756,6 +779,35 @@
 			.replace(/"/g, '&quot;');
 	}
 
+	function updateClients(data) {
+		const select = document.getElementById('tuner-client-select');
+		if (!select) return;
+
+		const currentVal = (currentState && currentState.selectedClient) || select.value || 'all';
+		const clients = (data && Array.isArray(data.clients)) ? data.clients : ['all'];
+		const counts = (data && data.counts) ? data.counts : {};
+
+		select.innerHTML = '';
+		clients.forEach(client => {
+			const option = document.createElement('option');
+			option.value = client;
+			if (client === 'all') {
+				option.textContent = 'All Clients';
+			} else {
+				const count = counts[client];
+				if (typeof count === 'number' && count > 0) {
+					option.textContent = `${client} (${count} turns)`;
+				} else {
+					option.textContent = client;
+				}
+			}
+			if (client === currentVal) {
+				option.selected = true;
+			}
+			select.appendChild(option);
+		});
+	}
+
 	function updateOptimization(optData) {
 		currentState.optimization = optData;
 		vscode.setState(currentState);
@@ -843,13 +895,14 @@
 				const restrictImages = !!tier.restrict_images;
 				const restrictTools = !!tier.restrict_tools;
 				const frictionKeywords = Array.isArray(tier.friction_keywords) ? tier.friction_keywords : [];
-				const isDisabled = !!tier.is_disabled || tier.synthesized_rule === 'false' || oldRule.trim() === 'false';
+				const isPruned = (!!tier.is_disabled || tier.synthesized_rule === 'false') && oldRule.trim() !== 'false';
+				const isDisabled = !isPruned && (!!tier.is_disabled || tier.synthesized_rule === 'false' || oldRule.trim() === 'false');
 				
-				const hasRuleChange = !isDisabled && tier.synthesized_rule && (oldRule.trim() !== tier.synthesized_rule.trim());
-				const hasModelChange = !!(tier.recommended_model && tier.original_model && tier.recommended_model !== tier.original_model);
-				const isUnchanged = !isDisabled && !hasRuleChange && !hasModelChange;
+				const hasRuleChange = !isDisabled && !isPruned && tier.synthesized_rule && (oldRule.trim() !== tier.synthesized_rule.trim());
+				const hasModelChange = !isPruned && !!(tier.recommended_model && tier.original_model && tier.recommended_model !== tier.original_model);
+				const isUnchanged = !isPruned && !isDisabled && !hasRuleChange && !hasModelChange;
 
-				if (!isDisabled && !isUnchanged) {
+				if (isPruned || (!isDisabled && !isUnchanged)) {
 					hasAnyChanges = true;
 				}
 
@@ -865,23 +918,54 @@
 					ratePill = `<span class="signal-pill signal-pill-rate">💵 Rate: $${Number(tier.comprehensive_rate).toFixed(2)}/1M</span>`;
 				}
 
+				const tierKey = isDefault ? 'default' : String(idx);
 				let diffContent = '';
-				if (isDisabled) {
+				if (isPruned) {
+					diffContent = `
+						<div class="diff-action-block" id="diff-action-${tierKey}-rule">
+							<div class="diff-action-header">
+								<label class="tuner-action-toggle">
+									<input type="checkbox" class="tuner-item-check" data-tier-key="${tierKey}" data-field="rule" checked onchange="onTunerSelectionChange()">
+									<span class="tuner-action-title">Bypass Redundant Tier</span>
+								</label>
+							</div>
+							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
+							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "false"</span></div>
+							${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #f59e0b; font-size: 0.85em;"><span class="diff-sign">✂️</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+						</div>
+					`;
+				} else if (isDisabled) {
 					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">🔒</span> <span class="diff-desc">Tier Disabled / Manual Only (when: "false") — No active traffic routed</span></div>`;
 				} else if (isUnchanged) {
 					diffContent = `<div class="diff-line diff-neutral"><span class="diff-sign">✅</span> <span class="diff-desc">Current Rule Optimal (when: "${escapeHtml(oldRule)}") — No changes needed</span></div>`;
 				} else {
 					if (hasModelChange) {
 						diffContent += `
-							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">model: "${escapeHtml(tier.original_model)}"</span></div>
-							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">model: "${escapeHtml(tier.recommended_model)}"</span></div>
-							${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #6ee7b7; font-size: 0.85em;"><span class="diff-sign">✨</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+							<div class="diff-action-block" id="diff-action-${tierKey}-model">
+								<div class="diff-action-header">
+									<label class="tuner-action-toggle">
+										<input type="checkbox" class="tuner-item-check" data-tier-key="${tierKey}" data-field="model" checked onchange="onTunerSelectionChange()">
+										<span class="tuner-action-title">${isDefault ? 'Replace Fallback Model' : 'Replace Model'}: <span class="model-name-orig">${escapeHtml(tier.original_model)}</span> &rarr; <span class="model-name-rec">${escapeHtml(tier.recommended_model)}</span></span>
+									</label>
+								</div>
+								<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">model: "${escapeHtml(tier.original_model)}"</span></div>
+								<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">model: "${escapeHtml(tier.recommended_model)}"</span></div>
+								${tier.model_benefit ? `<div class="diff-line diff-neutral" style="color: #6ee7b7; font-size: 0.85em;"><span class="diff-sign">✨</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+							</div>
 						`;
 					}
 					if (hasRuleChange) {
 						diffContent += `
-							<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
-							<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "${escapeHtml(tier.synthesized_rule)}"</span></div>
+							<div class="diff-action-block" id="diff-action-${tierKey}-rule">
+								<div class="diff-action-header">
+									<label class="tuner-action-toggle">
+										<input type="checkbox" class="tuner-item-check" data-tier-key="${tierKey}" data-field="rule" checked onchange="onTunerSelectionChange()">
+										<span class="tuner-action-title">Update Routing Rule</span>
+									</label>
+								</div>
+								<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">when: "${escapeHtml(oldRule)}"</span></div>
+								<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">when: "${escapeHtml(tier.synthesized_rule)}"</span></div>
+							</div>
 						`;
 					}
 				}
@@ -894,10 +978,10 @@
 							<div class="tier-pills-row">
 								${benchmarkPill}
 								${ratePill}
-								${isDisabled ? '<span class="signal-pill signal-pill-neutral">🔒 Disabled</span>' : ''}
-								${!isDisabled && !isDefault && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
-								${!isDisabled && !isDefault && retries ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
-								${!isDisabled ? `
+								${isPruned ? '<span class="signal-pill signal-pill-warning">✂️ Redundant Tier Bypassed</span>' : (isDisabled ? '<span class="signal-pill signal-pill-neutral">🔒 Disabled</span>' : '')}
+								${!isDisabled && !isPruned && !isDefault && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
+								${!isDisabled && !isPruned && !isDefault && retries ? `<span class="signal-pill signal-pill-accent">🔁 Retry Bound: ${retries} max retries</span>` : ''}
+								${!isDisabled && !isPruned ? `
 									<span class="signal-pill ${restrictImages ? 'signal-pill-warning' : 'signal-pill-clean'}">
 										👁️ Vision: ${restrictImages ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
 									</span>
@@ -905,7 +989,7 @@
 										🔧 Tools: ${restrictTools ? 'High Friction (Restricted)' : 'Clean (0% retry)'}
 									</span>
 								` : ''}
-								${!isDisabled && frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
+								${!isDisabled && !isPruned && frictionKeywords.length > 0 ? `<span class="signal-pill signal-pill-warning">⚠️ Friction Keywords: ${escapeHtml(frictionKeywords.join(', '))}</span>` : ''}
 							</div>
 						</div>
 						<div class="tuner-diff-code">
@@ -967,13 +1051,24 @@
 					</div>
 				</div>
 
+				${hasAnyChanges ? `
+					<div class="tuner-presets-bar">
+						<span class="tuner-presets-label">⚡ Quick Presets:</span>
+						<div class="tuner-presets-buttons">
+							<button type="button" class="btn btn-preset btn-preset-rules" onclick="setTunerPreset('rules-only')">⚡ Rules Only</button>
+							<button type="button" class="btn btn-preset" onclick="setTunerPreset('all')">Select All</button>
+							<button type="button" class="btn btn-preset" onclick="setTunerPreset('none')">Deselect All</button>
+						</div>
+					</div>
+				` : ''}
+
 				<div class="tuner-diffs-container">
 					${tierDiffsHtml}
 				</div>
 
 				<div class="tuner-actions">
 					${hasAnyChanges 
-						? `<button class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Multi-Tier Policy to config.yaml</button>`
+						? `<button id="btn-apply-tuning" class="btn btn-primary btn-glow" onclick="applyOptimization()">Apply Optimized Multi-Tier Policy to config.yaml</button>`
 						: `<button class="btn btn-secondary" disabled style="opacity: 0.65; cursor: default;">✅ Current Policy is Optimal</button>`
 					}
 					<button class="btn btn-secondary" onclick="dismissTuner()">Dismiss</button>
@@ -1170,12 +1265,28 @@
 	};
 
 	window.runOptimizer = function() {
+		const vramSelect = document.getElementById('vram-select');
+		const vramGB = vramSelect ? parseInt(vramSelect.value, 10) : undefined;
+		const clientSelect = document.getElementById('tuner-client-select');
+		const clientID = clientSelect && clientSelect.value && clientSelect.value !== 'all' ? clientSelect.value : undefined;
 		const banner = document.getElementById('tuner-banner');
 		if (banner) {
 			banner.style.display = 'block';
 			banner.innerHTML = '<div class="loading">⚡ Running autonomous optimizer on telemetry observations...</div>';
 		}
-		vscode.postMessage({ command: 'runOptimizer' });
+		const data = { vramGB };
+		if (clientID) data.clientID = clientID;
+		vscode.postMessage({ command: 'runOptimizer', data });
+	};
+
+	window.onClientChange = function(value) {
+		currentState = { ...currentState, selectedClient: value };
+		vscode.setState(currentState);
+	};
+
+	window.onVramChange = function(value) {
+		const vramGB = parseInt(value, 10);
+		vscode.postMessage({ command: 'setLocalVramGB', data: { vramGB } });
 	};
 
 	window.refreshDeals = function() {
@@ -1198,10 +1309,85 @@
 		vscode.postMessage({ command: 'resetCircuit', provider: provider });
 	};
 
+	window.setTunerPreset = function(preset) {
+		const checkboxes = document.querySelectorAll('.tuner-item-check');
+		checkboxes.forEach(cb => {
+			const field = cb.getAttribute('data-field');
+			if (preset === 'rules-only') {
+				cb.checked = (field === 'rule');
+			} else if (preset === 'all') {
+				cb.checked = true;
+			} else if (preset === 'none') {
+				cb.checked = false;
+			}
+		});
+		if (typeof window.onTunerSelectionChange === 'function') {
+			window.onTunerSelectionChange();
+		}
+	};
+
+	window.onTunerSelectionChange = function() {
+		const checkboxes = document.querySelectorAll('.tuner-item-check');
+		let checkedCount = 0;
+		checkboxes.forEach(cb => {
+			const block = cb.closest('.diff-action-block');
+			if (cb.checked) {
+				checkedCount++;
+				if (block) block.classList.remove('diff-block-dimmed');
+			} else {
+				if (block) block.classList.add('diff-block-dimmed');
+			}
+		});
+
+		const applyBtn = document.getElementById('btn-apply-tuning');
+		if (applyBtn) {
+			if (checkedCount === checkboxes.length) {
+				applyBtn.disabled = false;
+				applyBtn.classList.remove('btn-disabled');
+				applyBtn.classList.add('btn-primary', 'btn-glow');
+				applyBtn.innerHTML = 'Apply Optimized Multi-Tier Policy to config.yaml';
+			} else if (checkedCount > 0) {
+				applyBtn.disabled = false;
+				applyBtn.classList.remove('btn-disabled');
+				applyBtn.classList.add('btn-primary', 'btn-glow');
+				applyBtn.innerHTML = `Apply ${checkedCount} Selected Improvement${checkedCount > 1 ? 's' : ''} to config.yaml`;
+			} else {
+				applyBtn.disabled = true;
+				applyBtn.classList.remove('btn-primary', 'btn-glow');
+				applyBtn.classList.add('btn-disabled');
+				applyBtn.innerHTML = 'No Improvements Selected';
+			}
+		}
+	};
+
 	window.applyOptimization = function() {
+		if (!currentState.optimization) return;
+		const checkboxes = document.querySelectorAll('.tuner-item-check');
+		if (checkboxes.length === 0) {
+			vscode.postMessage({
+				command: 'applyOptimization',
+				data: currentState.optimization || undefined
+			});
+			return;
+		}
+
+		const opt = JSON.parse(JSON.stringify(currentState.optimization));
+		if (Array.isArray(opt.tiers)) {
+			opt.tiers.forEach((tier, idx) => {
+				const ruleCb = document.querySelector(`.tuner-item-check[data-tier-key="${idx}"][data-field="rule"]`);
+				const modelCb = document.querySelector(`.tuner-item-check[data-tier-key="${idx}"][data-field="model"]`);
+				if (ruleCb) tier.apply_rule = ruleCb.checked;
+				if (modelCb) tier.apply_model = modelCb.checked;
+			});
+		}
+		if (opt.default_tier) {
+			const defModelCb = document.querySelector(`.tuner-item-check[data-tier-key="default"][data-field="model"]`);
+			if (defModelCb) opt.default_tier.apply_model = defModelCb.checked;
+		}
+
 		vscode.postMessage({
 			command: 'applyOptimization',
-			data: currentState.optimization || undefined
+			data: opt
 		});
 	};
 

@@ -612,3 +612,145 @@ func TestTrafficLogger_Flush(t *testing.T) {
 		t.Errorf("Expected flush-req-1, got %s", records[0].RequestID)
 	}
 }
+
+func TestLegacyTrafficLogCompatibility(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "legacy_traffic.jsonl")
+
+	legacyLines := `{"timestamp":"2026-09-20T10:00:00Z","request_id":"req-leg-1","session_id":"sess-1","tokens":150,"selected_tier":"Tier 1"}
+{"timestamp":"2026-09-20T10:01:00Z","request_id":"req-leg-2","session_id":"sess-1","tokens":250,"selected_tier":"Tier 2"}
+`
+	if err := os.WriteFile(logPath, []byte(legacyLines), 0644); err != nil {
+		t.Fatalf("Failed to write legacy file: %v", err)
+	}
+
+	records, err := ReadRecords(logPath, 0)
+	if err != nil {
+		t.Fatalf("ReadRecords failed on legacy log: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("Expected 2 records, got %d", len(records))
+	}
+	for i, r := range records {
+		if r.ClientID != "" {
+			t.Errorf("Record %d: expected empty ClientID for legacy record, got %q", i, r.ClientID)
+		}
+	}
+
+	distinct, err := DistinctClients(logPath)
+	if err != nil {
+		t.Fatalf("DistinctClients failed: %v", err)
+	}
+	if len(distinct) != 1 || distinct[0] != "unknown" {
+		t.Fatalf("Expected [unknown], got %v", distinct)
+	}
+
+	counts, err := ClientCounts(logPath)
+	if err != nil {
+		t.Fatalf("ClientCounts failed: %v", err)
+	}
+	if counts["unknown"] != 2 {
+		t.Errorf("Expected 2 unknown records, got %d", counts["unknown"])
+	}
+}
+
+func TestDistinctClients_And_Counts(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "multi_client.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 100)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	logger.Emit(TurnRecord{RequestID: "r1", SessionID: "s1", ClientID: "cline"})
+	logger.Emit(TurnRecord{RequestID: "r2", SessionID: "s1", ClientID: "cline"})
+	logger.Emit(TurnRecord{RequestID: "r3", SessionID: "s2", ClientID: "zoo"})
+	logger.Emit(TurnRecord{RequestID: "r4", SessionID: "s3", ClientID: ""}) // legacy/unknown
+	logger.Close()
+
+	distinct, err := DistinctClients(logPath)
+	if err != nil {
+		t.Fatalf("DistinctClients failed: %v", err)
+	}
+	expected := []string{"cline", "unknown", "zoo"}
+	if len(distinct) != len(expected) {
+		t.Fatalf("Expected %v, got %v", expected, distinct)
+	}
+	for i, v := range expected {
+		if distinct[i] != v {
+			t.Errorf("At %d: expected %s, got %s", i, v, distinct[i])
+		}
+	}
+
+	counts, err := ClientCounts(logPath)
+	if err != nil {
+		t.Fatalf("ClientCounts failed: %v", err)
+	}
+	if counts["cline"] != 2 {
+		t.Errorf("Expected 2 cline records, got %d", counts["cline"])
+	}
+	if counts["zoo"] != 1 {
+		t.Errorf("Expected 1 zoo record, got %d", counts["zoo"])
+	}
+	if counts["unknown"] != 1 {
+		t.Errorf("Expected 1 unknown record, got %d", counts["unknown"])
+	}
+}
+
+func TestReadCompleteSessionsFiltered(t *testing.T) {
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "filtered_sessions.jsonl")
+
+	logger, err := NewTrafficLogger(logPath, 100)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	// Cline session: 2 turns
+	logger.Emit(TurnRecord{RequestID: "r1", SessionID: "s-cline", RootPromptHash: 111, ClientID: "cline"})
+	logger.Emit(TurnRecord{RequestID: "r2", SessionID: "s-cline", RootPromptHash: 111, ClientID: "cline"})
+	// Zoo session: 3 turns
+	logger.Emit(TurnRecord{RequestID: "r3", SessionID: "s-zoo", RootPromptHash: 222, ClientID: "zoo"})
+	logger.Emit(TurnRecord{RequestID: "r4", SessionID: "s-zoo", RootPromptHash: 222, ClientID: "zoo"})
+	logger.Emit(TurnRecord{RequestID: "r5", SessionID: "s-zoo", RootPromptHash: 222, ClientID: "zoo"})
+	logger.Close()
+
+	// Filter by cline
+	clineRecords, err := ReadCompleteSessionsFiltered(logPath, 0, "cline")
+	if err != nil {
+		t.Fatalf("ReadCompleteSessionsFiltered cline failed: %v", err)
+	}
+	if len(clineRecords) != 2 {
+		t.Fatalf("Expected 2 cline records, got %d", len(clineRecords))
+	}
+	for _, r := range clineRecords {
+		if r.ClientID != "cline" {
+			t.Errorf("Expected cline client ID, got %s", r.ClientID)
+		}
+	}
+
+	// Filter by zoo
+	zooRecords, err := ReadCompleteSessionsFiltered(logPath, 0, "zoo")
+	if err != nil {
+		t.Fatalf("ReadCompleteSessionsFiltered zoo failed: %v", err)
+	}
+	if len(zooRecords) != 3 {
+		t.Fatalf("Expected 3 zoo records, got %d", len(zooRecords))
+	}
+	for _, r := range zooRecords {
+		if r.ClientID != "zoo" {
+			t.Errorf("Expected zoo client ID, got %s", r.ClientID)
+		}
+	}
+
+	// Filter by all
+	allRecords, err := ReadCompleteSessionsFiltered(logPath, 0, "all")
+	if err != nil {
+		t.Fatalf("ReadCompleteSessionsFiltered all failed: %v", err)
+	}
+	if len(allRecords) != 5 {
+		t.Fatalf("Expected 5 total records, got %d", len(allRecords))
+	}
+}
+

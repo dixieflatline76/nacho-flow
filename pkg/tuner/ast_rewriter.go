@@ -12,10 +12,12 @@ import (
 )
 
 var (
-	tokenClauseRegex    = regexp.MustCompile(`(?i)^\s*tokens\s*[<>=]`)
-	retriesClauseRegex  = regexp.MustCompile(`(?i)^\s*(retries\s*[<>=!]+|!?isretry)`)
-	modalityClauseRegex = regexp.MustCompile(`(?i)^!?\s*has(images|tools)$`)
-	keywordClauseRegex  = regexp.MustCompile(`(?i)any\s*\(\s*keywords\s*,`)
+	tokenClauseRegex       = regexp.MustCompile(`(?i)^\s*tokens\s*[<>=]`)
+	retriesClauseRegex     = regexp.MustCompile(`(?i)^\s*(retries\s*<=?\s*\d+|retries\s*==\s*0|!?isretry\b)`)
+	modalityClauseRegex    = regexp.MustCompile(`(?i)^\s*(?:!\s*has(images|tools)|has(images|tools)\s*==\s*false)\s*$`)
+	keywordClauseRegex     = regexp.MustCompile(`(?i)any\s*\(\s*keywords\s*,`)
+	hasPositiveImagesRegex = regexp.MustCompile(`(?i)(?:^|[^!])\bhasimages\b(?:\s*==\s*true)?`)
+	hasPositiveToolsRegex  = regexp.MustCompile(`(?i)(?:^|[^!])\bhastools\b(?:\s*==\s*true)?`)
 )
 
 // RewriteRuleAST synthesizes an optimal expr expression while preserving existing custom guardrails
@@ -65,11 +67,23 @@ func RewriteRuleAST(existingWhen string, newThreshold int, optimalRetries int, f
 		clauses = append(clauses, fmt.Sprintf("Retries < %d", optimalRetries))
 	}
 
+	// Check if preserved already contains positive modality requirements to prevent contradictions
+	hasPositiveImages := false
+	hasPositiveTools := false
+	for _, p := range preserved {
+		if hasPositiveImagesRegex.MatchString(p) {
+			hasPositiveImages = true
+		}
+		if hasPositiveToolsRegex.MatchString(p) {
+			hasPositiveTools = true
+		}
+	}
+
 	// Empirical Modalities
-	if restrictImages {
+	if restrictImages && !hasPositiveImages {
 		clauses = append(clauses, "!HasImages")
 	}
-	if restrictTools {
+	if restrictTools && !hasPositiveTools {
 		clauses = append(clauses, "!HasTools")
 	}
 

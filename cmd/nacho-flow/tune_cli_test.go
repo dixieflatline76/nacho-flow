@@ -264,3 +264,115 @@ tiers:
 		}
 	})
 }
+
+func TestRunTune_ClientPartition(t *testing.T) {
+	tempDir := t.TempDir()
+	cfgPath := filepath.Join(tempDir, "config.yaml")
+	logPath := filepath.Join(tempDir, "traffic.jsonl")
+
+	sampleCfg := `providers:
+  local:
+    base_url: "http://localhost:11434"
+    type: "local"
+tiers:
+  - name: "Local GPU"
+    provider: "local"
+    model: "qwen2.5-coder:14b"
+    when: "Tokens < 4000"
+`
+	_ = os.WriteFile(cfgPath, []byte(sampleCfg), 0644)
+
+	tl, _ := telemetry.NewTrafficLogger(logPath, 100)
+	// Cline session 1
+	tl.Emit(telemetry.TurnRecord{
+		Timestamp:      time.Now().UTC(),
+		SessionID:      "cline-sess-1",
+		RootPromptHash: 111,
+		Tokens:         1500,
+		ClientID:       "cline",
+		IsLocal:        true,
+	})
+	// Zoo session 1
+	tl.Emit(telemetry.TurnRecord{
+		Timestamp:      time.Now().UTC(),
+		SessionID:      "zoo-sess-1",
+		RootPromptHash: 222,
+		Tokens:         8000,
+		ClientID:       "zoo",
+		IsLocal:        true,
+	})
+	// Zoo session 2
+	tl.Emit(telemetry.TurnRecord{
+		Timestamp:      time.Now().UTC(),
+		SessionID:      "zoo-sess-2",
+		RootPromptHash: 333,
+		Tokens:         12000,
+		ClientID:       "zoo",
+		IsLocal:        true,
+	})
+	_ = tl.Close()
+
+	// 1. Optimize for Cline only
+	outCline := captureStdout(func() {
+		err := runTune([]string{
+			"--config=" + cfgPath,
+			"--traffic-log=" + logPath,
+			"--client=cline",
+			"--format=json",
+		})
+		if err != nil {
+			t.Fatalf("runTune with --client=cline failed: %v", err)
+		}
+	})
+
+	var resCline tuner.TuningResult
+	if err := json.Unmarshal([]byte(strings.TrimSpace(outCline)), &resCline); err != nil {
+		t.Fatalf("Failed to parse JSON for cline: %v", err)
+	}
+	if resCline.TotalSessions != 1 {
+		t.Errorf("Expected 1 cline session, got %d", resCline.TotalSessions)
+	}
+
+	// 2. Optimize for Zoo only
+	outZoo := captureStdout(func() {
+		err := runTune([]string{
+			"--config=" + cfgPath,
+			"--traffic-log=" + logPath,
+			"--client=zoo",
+			"--format=json",
+		})
+		if err != nil {
+			t.Fatalf("runTune with --client=zoo failed: %v", err)
+		}
+	})
+
+	var resZoo tuner.TuningResult
+	if err := json.Unmarshal([]byte(strings.TrimSpace(outZoo)), &resZoo); err != nil {
+		t.Fatalf("Failed to parse JSON for zoo: %v", err)
+	}
+	if resZoo.TotalSessions != 2 {
+		t.Errorf("Expected 2 zoo sessions, got %d", resZoo.TotalSessions)
+	}
+
+	// 3. Optimize for All
+	outAll := captureStdout(func() {
+		err := runTune([]string{
+			"--config=" + cfgPath,
+			"--traffic-log=" + logPath,
+			"--client=all",
+			"--format=json",
+		})
+		if err != nil {
+			t.Fatalf("runTune with --client=all failed: %v", err)
+		}
+	})
+
+	var resAll tuner.TuningResult
+	if err := json.Unmarshal([]byte(strings.TrimSpace(outAll)), &resAll); err != nil {
+		t.Fatalf("Failed to parse JSON for all: %v", err)
+	}
+	if resAll.TotalSessions != 3 {
+		t.Errorf("Expected 3 total sessions, got %d", resAll.TotalSessions)
+	}
+}
+
