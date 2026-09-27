@@ -9,17 +9,17 @@ import (
 
 // TuningPolicy defines the cost-utility parameters and statistical thresholds for optimization.
 type TuningPolicy struct {
-	Name                 string  `json:"name"`
-	CostPerMillionCloud  float64 `json:"cost_per_million_cloud"`
-	RetryPenaltyUSD      float64 `json:"retry_penalty_usd"`
-	CostWeight           float64 `json:"cost_weight,omitempty"` // Weight for cloud cost (defaults to 1.0)
-	TurnsWeight          float64 `json:"turns_weight"`          // Penalty per average session turn
-	MinOccurrences       int     `json:"min_occurrences"`
-	OddsRatioThreshold   float64 `json:"odds_ratio_threshold"`
-	MinSessions          int     `json:"min_sessions"`                                                               // Minimum sessions for statistical significance
-	LocalVRAMGB          int     `json:"local_vram_gb,omitempty" yaml:"local_vram_gb,omitempty"`                     // Target local GPU VRAM ceiling in GB (0 = infer)
-	MinEscalationGainPct float64 `json:"min_escalation_gain_pct,omitempty" yaml:"min_escalation_gain_pct,omitempty"` // Minimum relative benchmark gain required for escalation tiers (default 0.05 = 5%)
-	WriteOnly            bool                `json:"write_only,omitempty" yaml:"write_only,omitempty"`                           // Mode where forward progress requires file writes, shell writes, or passing tests
+	Name                  string              `json:"name"`
+	CostPerMillionCloud   float64             `json:"cost_per_million_cloud"`
+	RetryPenaltyUSD       float64             `json:"retry_penalty_usd"`
+	CostWeight            float64             `json:"cost_weight,omitempty"` // Weight for cloud cost (defaults to 1.0)
+	TurnsWeight           float64             `json:"turns_weight"`          // Penalty per average session turn
+	MinOccurrences        int                 `json:"min_occurrences"`
+	OddsRatioThreshold    float64             `json:"odds_ratio_threshold"`
+	MinSessions           int                 `json:"min_sessions"`                                                               // Minimum sessions for statistical significance
+	LocalVRAMGB           int                 `json:"local_vram_gb,omitempty" yaml:"local_vram_gb,omitempty"`                     // Target local GPU VRAM ceiling in GB (0 = infer)
+	MinEscalationGainPct  float64             `json:"min_escalation_gain_pct,omitempty" yaml:"min_escalation_gain_pct,omitempty"` // Minimum relative benchmark gain required for escalation tiers (default 0.05 = 5%)
+	WriteOnly             bool                `json:"write_only,omitempty" yaml:"write_only,omitempty"`                           // Mode where forward progress requires file writes, shell writes, or passing tests
 	CandidateDeals        []contract.DealInfo `json:"candidate_deals,omitempty"`
 	CodingParityTolerance float64             `json:"coding_parity_tolerance,omitempty" yaml:"coding_parity_tolerance,omitempty"` // Maximum allowed coding index delta below current tier benchmark (default 0.5)
 	MinSavingsPct         float64             `json:"min_savings_pct,omitempty" yaml:"min_savings_pct,omitempty"`                 // Minimum cost reduction required for substitution (default 20.0%)

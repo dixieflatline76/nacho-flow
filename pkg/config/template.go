@@ -6,10 +6,11 @@ package config
 // DefaultStarterConfigTemplate is the canonical starter configuration
 // auto-initialized when nacho-flow boots on a clean environment without an existing config.yaml.
 const DefaultStarterConfigTemplate = `# =============================================================================
-# 🌮 NACHO FLOW CONFIGURATION
-# Agent Supervisor & Model Dispatcher
+# 🌮 NACHO FLOW CONFIGURATION — STANDARD HYBRID PIPELINE (DEFAULT)
+# Universal gateway configuration for autonomous coding agents (Cline, Zoo, Cursor, Aider)
+# Pipeline: Local GPU ($0) -> Fast Cloud ($0.65/M) -> Reasoning ($0.75/M) -> Frontier ($2/M)
 # =============================================================================
-
+version: "1.1.0"
 port: 8000
 host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
 
@@ -17,19 +18,10 @@ host: "127.0.0.1" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.
 # 🔌 LLM PROVIDERS
 # =============================================================================
 providers:
-  # ---------------------------------------------------------------------------
-  # 1. Local GPU Provider (Ollama / vLLM / SGLang)
-  # - Cost: $0.00 / 1M Tokens (100% Free Local Compute)
-  # ---------------------------------------------------------------------------
   ollama:
     base_url: "http://127.0.0.1:11434"
     type: "local"
 
-  # ---------------------------------------------------------------------------
-  # 2. OpenRouter Cloud Gateway
-  # - Role: Global routing to 300+ frontier and open-weight cloud models.
-  # - Secret: Resolves ENV_OPENROUTER_API_KEY from environment.
-  # ---------------------------------------------------------------------------
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
@@ -46,8 +38,6 @@ deals:
   alert_threshold_pct: 30.0
   min_coding_index: 40.0
   require_tools: true
-  exclude_batch: true
-  exclude_free: true
 
 # =============================================================================
 # 🛡️ AGENTIC TOOL FALLBACK SHIELD
@@ -69,14 +59,16 @@ agent_shield:
 cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
   phrase_length: 6                  # Default sliding n-gram window size (words) across lanes
-  budget_max_repeats: 5             # Default repeat threshold once lane token budget is exceeded
+  budget_max_repeats: 8             # Default repeat threshold once lane token budget is exceeded
   model_cooldown_seconds: 120       # 🧊 Model Cooldown: skip cycle-killed model on this session for 2m
   retry_floor: 3                    # 📈 Auto-Escalation: jump session retries to 3 on severed streams
   max_retries: 1                    # Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation
 
   thinking_lane:
-    max_tokens: 4096                # Max reasoning tokens before budget repetition check
-    max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
+    max_tokens: 16384               # Raised from 4096: allows deep CoT reasoning (GLM, DeepSeek R1, QwQ)
+    phrase_length: 8                # 8-word window prevents short table rows (e.g. H H H H H H) from tripping
+    max_repeats: 12                 # Raised from 6: tolerates matrix / table iterations and case evaluations
+    budget_max_repeats: 12          # Raised from 5: prevents natural prose recurrence from triggering false kills
 
   content_lane:
     max_tokens: 6144                # Max non-tool content before budget repetition check
@@ -86,7 +78,7 @@ cycle_killer:
     max_tokens: 8192                # Max streaming tool call arguments before repetition enforcement
     max_write_tokens: 32768         # Max size for Category A file writes (zero-alloc fast path)
     phrase_length: 4                # Tighter n-gram window to catch repeating 4-word shell commands
-    max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
+    max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
 
 kickstart:
   enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
@@ -97,26 +89,21 @@ kickstart:
   # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
 
 # =============================================================================
-# 🧪 NACHO TOKEN SAVER (NTS) [EXPERIMENTAL / OPT-IN ONLY]
-# Wire-speed, zero-allocation in-place tool output compaction engine.
-#
-# ⚠️ NOTICE: DISABLED BY DEFAULT.
-# Empirical bake-offs proved that mutating conversation history breaks provider
-# KV prompt caching (causing cache misses) and can degrade agent diff matching.
-# Keep disabled for optimal coding agent performance unless actively experimenting.
+# 🗜️ NACHO TOKEN SAVER (NTS)
+# Wire-speed, zero-allocation in-place tool output compaction engine
 # =============================================================================
 nts:
-  enabled: false                    # Master switch (default: false / pristine context)
+  enabled: false                     # Master switch for tool output compaction
   strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
   resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
-  deduplicate_lines: false          # Pass 3: Collapse repeated consecutive lines (disabled by default)
+  deduplicate_lines: false           # Pass 3: Collapse repeated consecutive lines (>3 times)
   dedup_threshold: 3                # Consecutive duplicate threshold before collapse
-  strip_boilerplate: false          # Pass 4: Strip IDE tool boilerplate notices (disabled by default)
-  normalize_whitespace: false       # Pass 5: Collapse multiple empty lines (disabled by default)
+  strip_boilerplate: false           # Pass 4: Strip IDE tool boilerplate notices
+  normalize_whitespace: true        # Pass 5: Collapse multiple empty lines
   preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
   preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
-  compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
+  compact_stale_file_reads: false    # 📦 Evict superseded historical file reads
   stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
 
 # =============================================================================
@@ -137,66 +124,61 @@ tiers:
   - name: "Tier: Multimodal Vision (Gemini 3.8 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.8-flash"
-    when: "HasImages && Retries < 2"
+    when: "Retries < 6 && HasImages"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (100% Free VRAM Offload)
+  # TIER 1: Local GPU Workhorse (Quick Chat / Single Prompts < 4k)
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
     model: "gemma4:12b-it-qat"
-    when: "Tokens < 20000 && Retries < 2"
+    when: "Tokens < 4000 && Retries < 2"
     strip_images: false
     max_context: 32000
 
   # ---------------------------------------------------------------------------
-  # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus — $0.65 / $3.25 per 1M)
+  # TIER 2: Flagship Agent Coder (GLM-5.3-Flash)
+  # Dense flagship coder: AST diff precision, routine editing < 160k tokens
   # ---------------------------------------------------------------------------
-  - name: "Tier 2: Flagship Agent Coder (Qwen3 Coder Plus)"
+  - name: "Tier 2: Flagship Agent Coder (GLM-5.3-Flash)"
     provider: "openrouter"
-    model: "qwen/qwen3-coder-plus"
-    when: "Tokens < 160000 && Retries < 2"
+    model: "z-ai/glm-5.3-flash"
+    when: "Tokens < 160000 && Retries < 6"
 
   # ---------------------------------------------------------------------------
-  # TIER 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash — $0.75 / $3.75 per 1M)
+  # TIER 3: Workhorse & Full-Window Context (Gemini 3.8 Flash — $0.75 / $3.75 per 1M)
+  # Handles all normal agent work up to 1M tokens, plus initial retries (2-4)
   # ---------------------------------------------------------------------------
   - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.8-flash"
-    when: "Tokens < 260000 && Retries < 5"
+    when: "Tokens < 1000000 && Retries < 5"
 
   # ---------------------------------------------------------------------------
-  # TIER 4: Large Context Synthesis (Gemini 3.1 Pro)
+  # TIER 4: Frontier Powerhouse (DeepSeek V4 Pro — $0.96 / $1.91 per 1M)
+  # Strictly for heavy failure escalation (Retries 5-7), NEVER context size
   # ---------------------------------------------------------------------------
-  - name: "Tier 4: Large Context Synthesis (Gemini 3.1 Pro)"
+  - name: "Tier 4: Frontier Powerhouse (DeepSeek V4 Pro)"
     provider: "openrouter"
-    model: "google/gemini-3.1-pro-preview"
-    when: "Retries < 7"
+    model: "deepseek/deepseek-v4-pro"
+    when: "false"
 
   # ---------------------------------------------------------------------------
-  # TIER 5: Frontier Powerhouse (Claude Sonnet 5 — $2.00/$10.00 per 1M)
+  # TIER 5: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
+  # Access via: @nacho:model="anthropic/claude-opus-5" or X-Spicy-Model
   # ---------------------------------------------------------------------------
-  - name: "Tier 5: Frontier Powerhouse (Claude Sonnet 5)"
-    provider: "openrouter"
-    model: "anthropic/claude-sonnet-5"
-    when: "Retries < 9"
-
-  # ---------------------------------------------------------------------------
-  # TIER 6: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
-  # Access via: X-Spicy-Model: anthropic/claude-opus-5 or Fairy Dust Checkpoints
-  # ---------------------------------------------------------------------------
-  - name: "Tier 6: Opus On-Demand (Spicy Only)"
+  - name: "Tier 5: Opus On-Demand (Spicy Only)"
     provider: "openrouter"
     model: "anthropic/claude-opus-5"
     when: "false"
 
 # =============================================================================
-# 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Claude Sonnet 5)
+# 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Gemini 3.8 Flash — $0.75 / $3.75)
 # =============================================================================
 default_tier:
-  name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
+  name: "Default Catch-All (Gemini 3.8 Flash)"
   provider: "openrouter"
-  model: "anthropic/claude-sonnet-5"
+  model: "google/gemini-3.8-flash"
   when: "true"
 
 # =============================================================================
@@ -213,11 +195,15 @@ fairy_dust:
       max_per_session: 5
       priority: 10
       prompt: >
-        [QUALITY CHECKPOINT - Tactical Review] You are a senior code reviewer
-        consulted mid-flight. Analyze the current codebase for: (1) logic bugs
-        and incorrect calculations, (2) compilation and type errors, (3) test failures
-        or broken assertions. Fix any issues immediately with tool calls. If
-        everything looks correct, confirm and continue the current task.
+        [QUALITY CHECKPOINT - ACTION REQUIRED]
+        You are an elite code reviewer consulted mid-flight. Your value is DIRECT CODE ACTIONS, NOT ESSAYS.
+        Do NOT write lengthy prose analysis, conversational reviews, or summaries.
+        MANDATORY: You must always emit an active tool call (such as executing ` + "`" + `go test ./...` + "`" + ` or file edits) or an explicit status message. You must NEVER finish your turn with an empty response or reasoning only.
+        Execute the following checks directly:
+        (1) STUBS & DUMMY IMPLEMENTATIONS: Find any functions that discard parameters, return hardcoded dummy values, or are left unfinished. Implement them now.
+        (2) LOOP & TERMINATION GUARDS: Inspect while/for loops and recursion for missing updates or infinite loops. Fix them immediately.
+        (3) COMPILATION & TESTS: Fix compilation errors, type mismatches, and broken assertions directly with tool calls (write_to_file, replace_file_content, execute_command).
+        If issues exist, emit tool calls immediately to fix them. If everything is verified and correct, output at most 1 sentence confirming status and continue the next task step with tools.
 
     # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
@@ -228,12 +214,13 @@ fairy_dust:
       max_per_session: 1
       priority: 100
       prompt: >
-        [QUALITY CHECKPOINT - Architecture Review] You are the lead architect
-        consulted for a strategic review. Evaluate: (1) Is the agent solving the
-        RIGHT problem? Compare current work against the original requirements.
-        (2) Is the overall architecture sound, or has it drifted into unnecessary
-        complexity? (3) Are there systemic issues (wrong patterns, missing
-        abstractions, repeated mistakes) that tactical fixes won't solve? If you
-        identify strategic drift, restructure the approach. If the trajectory is
-        correct, confirm the direction and continue.
+        [SPEC TRACEABILITY & DIRECTION AUDIT - ACTION REQUIRED]
+        You are the lead architect performing a requirements and trajectory audit.
+        Do NOT write lengthy analysis essays or commentary. Your value is ALIGNMENT AND EXECUTION.
+        MANDATORY: You must always emit an active tool call (such as executing tests or file edits) or an explicit status message. You must NEVER finish your turn with an empty response or reasoning only.
+        Execute the following checks immediately:
+        (1) SPEC AUDIT: Compare the active todo checklist against the user's original requirements. If any requirement is missing or untested, add it to the checklist. If a checklist does not exist, create one now.
+        (2) DIRECTION DOC: If the plan has drifted or lacks clear execution steps, write or update a concise direction plan.
+        (3) MISSING CODE & TESTS: Directly emit tool calls (write_to_file, replace_file_content, execute_command) to implement missing requirements.
+        If the trajectory is fully on track, output at most 1 sentence confirming direction and proceed with the next task step.
 `

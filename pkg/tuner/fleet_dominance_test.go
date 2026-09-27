@@ -84,7 +84,7 @@ func TestAnalyzeFleetDominance_Detection(t *testing.T) {
 }
 
 func TestEndToEndTune_RealTraffic(t *testing.T) {
-	cfg, err := config.LoadConfig("../../config.yaml")
+	cfg, err := config.LoadConfig("testdata/baseline_config.yaml")
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestEndToEndTune_RealTraffic(t *testing.T) {
 }
 
 func TestEndToEndTune_RealTraffic_WithVRAM16(t *testing.T) {
-	cfg, err := config.LoadConfig("../../config.yaml")
+	cfg, err := config.LoadConfig("testdata/baseline_config.yaml")
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
