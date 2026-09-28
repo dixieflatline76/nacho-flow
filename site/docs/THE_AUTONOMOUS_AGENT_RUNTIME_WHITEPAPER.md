@@ -34,7 +34,7 @@ flowchart TD
         direction TB
         NTS["1. Nacho Token Saver (NTS)<br/>Context Compaction & Stale Read Deduplication"]:::runtime
         Shield["2. Agent Shield & Cycle Breaker<br/>Tail-Buffer Repetition Killer & Zero-Alloc Matcher"]:::runtime
-        Normalizer["3. 3-Lane SSE Stream Normalizer<br/>Prose · &lt;think&gt; · Tool Args In-Place Sanitization"]:::runtime
+        Normalizer["3. 3-Lane SSE Stream Normalizer<br/>Prose · Thought Blocks · Tool Args In-Place Sanitization"]:::runtime
         Tuner["4. Min-Conflicts AST Router<br/>Hardware VRAM & Retry-Aware Dynamic Escalation"]:::runtime
         
         NTS --> Shield --> Normalizer --> Tuner
@@ -148,7 +148,7 @@ sequenceDiagram
     Note over Nacho: Agent Shield: Injects structured tool constraints
     Nacho->>Budget: Forward Plan Request
     Budget-->>Nacho: SSE Stream with Thought Monologue
-    Note over Nacho: 3-Lane Normalizer: Buffers & strips <think> tokens in 38ns
+    Note over Nacho: 3-Lane Normalizer: Buffers & strips thought tokens in 38ns
     Nacho-->>Agent: Clean, Validated OpenAI Wire Stream
     
     loop Coding & Verification Loop (Turns 2 to 64)
@@ -311,7 +311,7 @@ A non-negotiable requirement of an L4 execution runtime is that it must introduc
 Under Nacho Flow `v1.4.1`, benchmarks executed directly on physical hardware (AMD Ryzen 7 5700X3D, 16 threads, Windows 11) yield:
 
 ### High-Concurrency Stress Test (350,000 Requests)
-```text
+
 | Concurrency Level | Total Requests | Throughput (RPS) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 50 workers         | 25,000         | 27,499.9 req/s   | 1.51 ms     | 7.03 ms     | 101.2 MB         | 100.0% (0 errors) |
@@ -319,7 +319,6 @@ Under Nacho Flow `v1.4.1`, benchmarks executed directly on physical hardware (AM
 | 250 workers        | 75,000         | 26,101.2 req/s   | 7.84 ms     | 40.05 ms    | 124.6 MB         | 100.0% (0 errors) |
 | 500 workers        | 100,000        | 25,421.0 req/s   | 16.90 ms    | 56.38 ms    | 180.4 MB         | 100.0% (0 errors) |
 | 1,000 workers      | 100,000        | 24,410.7 req/s   | 32.36 ms    | 121.97 ms   | 248.8 MB         | 100.0% (0 errors) |
-```
 
 ### Zero-Allocation Fast-Path Verification
 ```text
