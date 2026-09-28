@@ -887,7 +887,7 @@ Because the Agent Registry runs out of the box, you do not need to manually conf
 > [!TIP]
 > **Help Us Expand the Agent Catalog!**
 > Did your agent encounter an unhandled validation error, a missing tool name, or an unsupported coding framework? We actively invite community contributions:
-> - Submit PRs adding or refining JSON specs in [`data/agents/<agent-name>.json`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/data/agents).
+> - Submit PRs adding or refining JSON specs in [`data/agents/<agent-name>.json`](https://github.com/dixieflatline76/nacho-flow/tree/main/data/agents).
 > - Share sanitized error logs, unexpected tool payloads, or suggestions in [GitHub Discussions](https://github.com/dixieflatline76/nacho-flow/discussions) or [Issues](https://github.com/dixieflatline76/nacho-flow/issues).
 > - Adding your agent's `write_tools` and `error_signatures` ensures instant failover escalation and stall protection for everyone.
 

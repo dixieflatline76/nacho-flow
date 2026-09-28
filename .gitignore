@@ -25,6 +25,7 @@ stats.json
 *.tmp.*
 config.tmp.*.yaml
 scratch/
+scripts/*.html
 
 # Configuration backups & environment
 .env

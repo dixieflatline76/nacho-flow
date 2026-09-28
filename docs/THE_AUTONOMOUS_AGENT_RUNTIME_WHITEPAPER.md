@@ -173,7 +173,7 @@ sequenceDiagram
 Nacho Flow separates raw SSE token streams into three isolated, concurrent processing pipelines:
 1. **The Prose Lane:** Standard conversational text directed to developer logs.
 2. **The Reasoning Lane:** Thought tokens (`<think>`, `<|channel|>thought`) isolated in real time and converted into structured metadata accordions.
-3. **The Tool Argument Lane:** Zero-allocation in-place byte sanitizers ([`StripSubslicesInPlace`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/zeroalloc/bytes.go), [`ContainsFoldASCII`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/zeroalloc/bytes.go)) executing in **38.76 nanoseconds** with **0 heap allocations**, guaranteeing that editor diffs never contain thought leakage.
+3. **The Tool Argument Lane:** Zero-allocation in-place byte sanitizers ([`StripSubslicesInPlace`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/zeroalloc/bytes.go), [`ContainsFoldASCII`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/zeroalloc/bytes.go)) executing in **38.76 nanoseconds** with **0 heap allocations**, guaranteeing that editor diffs never contain thought leakage.
 
 ### 4.2 In-Flight Stream Healing & V8 Crash Prevention
 If an upstream model terminates prematurely or emits an unclosed JSON string, Nacho Flow's stream healer detects the boundary violation, syntactically patches missing closing quotes and braces in flight, and emits a clean SSE completion delimiter (`data: [DONE]`). The client harness receives valid JSON, preventing `position 515` crashes.
@@ -185,7 +185,7 @@ NTS intercepts inbound prompt payloads and dynamically compresses them before up
 * **Cache-Boundary Preservation:** Preserves strict prompt cache prefix alignments, cutting active token volume by **25%–40%** without degrading model reasoning.
 
 ### 4.4 Agent Shield & Tail-Buffer Cycle Breaker (`pkg/router/shield`)
-Nacho Flow maintains a lock-free, zero-allocation sliding ring tail-buffer ([`TailBuffer`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/router/shield/tail_buffer.go)) that evaluates token streams in **4.44 nanoseconds**:
+Nacho Flow maintains a lock-free, zero-allocation sliding ring tail-buffer ([`TailBuffer`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/router/shield/tail_buffer.go)) that evaluates token streams in **4.44 nanoseconds**:
 * Monitors n-gram repetition to detect infinite tool-calling loops.
 * Employs profile-tuned thresholds (e.g., Profile 2 allows 12 repeats of 8-word n-grams) so large data tables and ASCII card matrices are never prematurely severed.
 * Detects stalled agents and injects structured synthetic kickstarts to resume forward progress.
@@ -194,7 +194,7 @@ Nacho Flow maintains a lock-free, zero-allocation sliding ring tail-buffer ([`Ta
 Rather than relying on manual rule configuration, `nacho-flow tune` reads historical `traffic.jsonl` trajectories and executes a vectorized **Min-Conflicts Local Search**:
 * Enforces hard GPU VRAM ceilings (e.g., `--vram-gb=16`).
 * Identifies capability inversions (pruning tiers that escalate to inferior coding models).
-* Rewrites routing policies using pure AST tree-walking ([`pkg/tuner/ast_rewriter.go`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/pkg/tuner/ast_rewriter.go)) to guarantee mathematical safety across complex boolean routing expressions.
+* Rewrites routing policies using pure AST tree-walking ([`pkg/tuner/ast_rewriter.go`](https://github.com/dixieflatline76/nacho-flow/blob/main/pkg/tuner/ast_rewriter.go)) to guarantee mathematical safety across complex boolean routing expressions.
 
 ---
 
