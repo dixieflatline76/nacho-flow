@@ -330,10 +330,48 @@ func BenchmarkRuleEngine_Evaluate(b *testing.B) {
 	engine := NewRuleEngine(questions, nil)
 	tail := []byte("I have summarized the technical design. Are you satisfied with this plan?")
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
 	for b.Loop() {
 		engine.Evaluate(tail)
+	}
+}
+
+func BenchmarkRuleEngine_Evaluate_NoQuestionMark_ZeroAlloc(b *testing.B) {
+	questions := []string{
+		"are you satisfied", "would you like", "should i",
+		"do you approve", "please confirm", "let me know if",
+	}
+	engine := NewRuleEngine(questions, nil)
+	tail := []byte("I have summarized the technical design. Please confirm how we should proceed.")
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		engine.Evaluate(tail)
+	}
+}
+
+func TestRuleEngine_ZeroAllocations(t *testing.T) {
+	questions := []string{
+		"are you satisfied", "would you like", "should i",
+		"do you approve", "please confirm", "let me know if",
+	}
+	engine := NewRuleEngine(questions, nil)
+
+	testTails := [][]byte{
+		[]byte("Are you satisfied?"),
+		[]byte("Please confirm how to proceed."),
+		[]byte("Normal text that does not match anything."),
+		[]byte("Ready to implement."),
+	}
+
+	for _, tail := range testTails {
+		allocs := testing.AllocsPerRun(1000, func() {
+			engine.Evaluate(tail)
+		})
+		if allocs != 0 {
+			t.Errorf("RuleEngine.Evaluate allocated %f heap objects for %q, expected 0", allocs, string(tail))
+		}
 	}
 }
