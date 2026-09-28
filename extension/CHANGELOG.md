@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-28
+
+### Added
+- **`pkg/zeroalloc.ContainsFoldASCII`**: Zero-allocation ASCII case-insensitive subslice search (`38.76 ns/op @ 0 B/op, 0 allocs/op`) with 99.5% statement coverage.
+
+### Fixed
+- **Rule AST Expression Rewriter**: Eliminated regex hybrid splicing in favor of pure `expr/ast` tree walking for robust context variable rewriting.
+- **Agent Shield Tail Buffer**: Eliminated heap allocation in `RuleEngine.Evaluate` on trailing prose without question marks (`0 B/op, 0 allocs/op`).
+- **Benchmark Stress Test Harness**: Bounded `MaxConnsPerHost` to 2,000 in `nacho_bench` to prevent Windows loopback socket thread exhaustion under high concurrency.
+- **Benchmark & Coverage Parity**: Synchronized bare-metal benchmark tables (29,795.4 req/s peak under full auth + normalization) and test coverage (95.6% global Go statement coverage).
+
 ## [1.4.0] - 2026-09-27
 
 ### Added
