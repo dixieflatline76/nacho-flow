@@ -86,4 +86,3 @@ func (e *RuleEngine) Evaluate(tail []byte) (matched bool, intent string) {
 
 	return false, ""
 }
-

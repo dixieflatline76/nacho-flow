@@ -574,4 +574,3 @@ func BenchmarkContainsFoldASCII_ZeroAlloc(b *testing.B) {
 		_ = ContainsFoldASCII(haystack, needle)
 	}
 }
-

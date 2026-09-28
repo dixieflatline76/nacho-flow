@@ -596,8 +596,9 @@ func runStandardABBench() ([]StepResult, []StepResult) {
 			Timeout:   5 * time.Second,
 			KeepAlive: 90 * time.Second,
 		}).DialContext,
-		MaxIdleConns:        50000,
-		MaxIdleConnsPerHost: 25000,
+		MaxIdleConns:        10000,
+		MaxIdleConnsPerHost: 2000,
+		MaxConnsPerHost:     2000,
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
 	}
@@ -662,8 +663,9 @@ func runFullStressTest() []StepResult {
 			Timeout:   5 * time.Second,
 			KeepAlive: 90 * time.Second,
 		}).DialContext,
-		MaxIdleConns:        50000,
-		MaxIdleConnsPerHost: 25000,
+		MaxIdleConns:        10000,
+		MaxIdleConnsPerHost: 2000,
+		MaxConnsPerHost:     2000,
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
 	}
