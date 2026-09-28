@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +12,8 @@ import (
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 )
+
+var testRetryFloorRegex = regexp.MustCompile(`(?i)retries\s*>=\s*(\d+)`)
 
 // GenerateDeterministicOracleTraffic produces synthetic telemetry records with mathematically provable
 // optimal routing configurations across 4 archetypes:
@@ -324,7 +327,7 @@ func AssertRuleSemanticInvariants(t *testing.T, rule string, tier contract.Tier)
 
 	// 6. Retry Floor Requirement: If tier has Retries >= N, turns with Retries < N MUST evaluate to false
 	if strings.Contains(tier.When, "Retries >=") {
-		floorMatch := extractRetryFloorRegex.FindStringSubmatch(tier.When)
+		floorMatch := testRetryFloorRegex.FindStringSubmatch(tier.When)
 		if len(floorMatch) > 1 {
 			floorVal, _ := strconv.Atoi(floorMatch[1])
 			if floorVal > 0 {

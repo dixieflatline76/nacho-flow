@@ -241,6 +241,20 @@ func TestNoHardcodedModelSwitchesInTunerSource(t *testing.T) {
 	}
 }
 
+func TestNoRegexInBridgeOrRewriter(t *testing.T) {
+	files := []string{"config_bridge.go", "ast_rewriter.go"}
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("Failed to read %s: %v", file, err)
+		}
+		src := string(content)
+		if strings.Contains(src, "\"regexp\"") || strings.Contains(src, "regexp.") {
+			t.Errorf("Regex / AST hybrid trap detected: %s still contains regexp! AST node traversal must be used instead.", file)
+		}
+	}
+}
+
 func TestExtractRoutingState_PositivePrerequisites(t *testing.T) {
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
