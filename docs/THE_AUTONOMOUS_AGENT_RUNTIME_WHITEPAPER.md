@@ -42,7 +42,7 @@ flowchart TD
 
     LocalGPU["🖥️ L2: Local Workstation GPU<br/>(Ollama / vLLM)<br/><b>$0.00 / Iterative Turns</b>"]:::backend
     BudgetCloud["⚡ L2: Dense High-Capability Cloud<br/>(GLM-5.3-Flash / Qwen3-Coder)<br/><b>$0.65 / 1M Tokens</b>"]:::backend
-    FrontierCloud["☁️ L1: Flagship Frontier Reasoning<br/>(Claude Sonnet 5 / Opus 5 / DeepSeek-R1)<br/><b>Targeted Reasoning Escalation</b>"]:::frontier
+    FrontierCloud["☁️ L1: Flagship Frontier Reasoning<br/>(Claude Sonnet 5 / Opus 5 / DeepSeek-V4.1-Flash)<br/><b>Targeted Reasoning Escalation</b>"]:::frontier
 
     Client -->|Raw Tool Calls & History| NachoRuntime
     Tuner -->|Routine Turns & Scaffolding| LocalGPU
@@ -53,7 +53,7 @@ flowchart TD
 ### The AI Coding Stack Taxonomy (L1–L4)
 To diagnose why autonomous coding breaks down, we formalize the four distinct layers of the modern agentic stack:
 
-* **Layer 1 (L1) — Foundation Weights & Models:** The underlying neural network parameters (e.g., Claude Sonnet 5, Opus 5, GLM-5.3-Flash, Qwen 3 Coder, DeepSeek-R1).
+* **Layer 1 (L1) — Foundation Weights & Models:** The underlying neural network parameters (e.g., Claude Sonnet 5, Opus 5, GLM-5.3-Flash, Qwen 3 Coder, DeepSeek-V4.1-Flash).
 * **Layer 2 (L2) — Inference & Serving Infrastructure:** Hosting runtimes exposing wire endpoints (e.g., vLLM, Ollama, OpenRouter, llama.cpp).
 * **Layer 3 (L3) — Agent Orchestrators & Harnesses:** Client-side IDE extensions, CLI agents, and task planners managing conversation state, prompt templates, and tool dispatch (e.g., Zoo Code v3.84, OpenCode, Cursor Agent).
 * **Layer 4 (L4) — Execution Runtime & Agent Supervisor (Nacho Flow):** The deterministic, wire-speed mediation fabric operating between L3 and L2. It inspects payloads in real-time, heals malformed streams in flight, breaks repetition cycles, compacts accumulating history, and enforces hardware-aware routing.
@@ -66,7 +66,7 @@ When developers attempt long-running autonomous workflows (40+ turns), they enco
 
 ### 2.1 The "Context Snowball" & The 90% Redundant Context Tax
 In multi-turn autonomous loops, agent harnesses re-transmit the entire transcript—including prior tool inputs, multi-file contents, compiler error traces, and terminal logs—on every single turn.
-* **$O(N^2)$ Token Transfer:** While per-turn prompt size grows linearly, cumulative token consumption across the session scales quadratically. By turn 40, an agent prompt routinely exceeds 100,000 tokens.
+* **O(N²) Token Transfer:** While per-turn prompt size grows linearly, cumulative token consumption across the session scales quadratically. By turn 40, an agent prompt routinely exceeds 100,000 tokens.
 * **The Redundant Context Tax:** Telemetry audits show that **85% to 95% of prompt tokens in late turns are identical, unchanged context** (stale file reads from turn 5, repeated terminal ANSI escapes, duplicated directory listings).
 * **Context Degradation & Attention Rot:** As context windows balloon, open-weights models suffer from severe needle-in-a-haystack attention loss. Models lose track of initial architectural requirements, hallucinate previously resolved bugs, and generate contradictory implementations.
 
@@ -209,7 +209,7 @@ An autonomous agent running inside [Zoo Code](https://zoocode.dev) v3.84 was ini
 3. **Table-Driven Basic Strategy:** Complete S17/DAS strategy matrix for hard totals, soft totals, and pair splits with legal action fallbacks.
 4. **ANSI UI & Interactive Trainer:** Terminal card rendering (`[ 10♠ ] [  A♥ ]`), `NO_COLOR` support, formatted bankroll prompts, and `-hint` basic strategy advice.
 5. **High-Performance Monte Carlo Engine:** CLI flag `-sim -n 10000` calculating win/loss/push percentages, net EV, duration, and rounds/second.
-6. **Acceptance Gates:** 10,000-round simulation exit code 0; test coverage $\ge 80\%$ across all packages; `go test -race` passing with zero data races.
+6. **Acceptance Gates:** 10,000-round simulation exit code 0; test coverage ≥ 80% across all packages; `go test -race` passing with zero data races.
 
 ### 5.2 Telemetry & Execution Scorecard
 
@@ -266,10 +266,10 @@ if roundNet > 0 {
 ### 5.4 Acceptance Gate Verification & Statistical Analysis
 All acceptance gates passed with zero human intervention:
 * `go run main.go -sim -n 10000`: **10,000 rounds simulated in 5.2 milliseconds (1,923,076 rounds/sec)**. Across these 10,000 rounds, split hands yielded 10,412 total evaluated hands (~2.0M hands/sec). 
-* **Statistical EV Rigor:** The simulation output reported: Wins 43.5%, Losses 47.6%, Pushes 8.8%, Net EV **$-0.04\%$**. 
-  * *Statistical Context:* Under standard multi-deck S17/DAS rules, theoretical basic strategy carries a house edge of approximately **$-0.52\%$**. 
-  * For $N = 10,000$ rounds, standard deviation is $\sigma = \sqrt{N} \times 1.15 \approx 115\text{ units}$, giving a standard error of $\mathrm{SE} \approx \pm 1.15\%$ (and a 95% confidence interval of $\pm 2.25\%$).
-  * The observed EV of $-0.04\%$ represents an expected $+0.48\%$ sample variance fluctuation ($< 0.5\sigma$ from theoretical expectation), well within normal statistical distribution.
+* **Statistical EV Rigor:** The simulation output reported: Wins 43.5%, Losses 47.6%, Pushes 8.8%, Net EV **-0.04%**. 
+  * *Statistical Context:* Under standard multi-deck S17/DAS rules, theoretical basic strategy carries a house edge of approximately **-0.52%**. 
+  * For N = 10,000 rounds, standard deviation is σ = √(N) × 1.15 ≈ 115 units, giving a standard error of SE ≈ ±1.15% (and a 95% confidence interval of ±2.25%).
+  * The observed EV of -0.04% represents an expected +0.48% sample variance fluctuation (< 0.5σ from theoretical expectation), well within normal statistical distribution.
 * `go test -race -cover ./...`:
   * `internal/ui`: **98.7%**
   * `internal/strategy`: **93.6%**
@@ -329,7 +329,7 @@ BenchmarkContainsFoldASCII_ZeroAlloc-16                31,206,358   38.76 ns/op 
 BenchmarkTailBuffer_Append-16                           4,895,271  243.80 ns/op    0 B/op    0 allocs/op
 ```
 
-At **~25,000 to 30,000 requests/second** and **$< 250\mu\text{s}$** end-to-end proxy overhead, Nacho Flow operates at wire speed.
+At **~25,000 to 30,000 requests/second** and **< 250 µs** end-to-end proxy overhead, Nacho Flow operates at wire speed.
 
 ---
 
@@ -337,10 +337,10 @@ At **~25,000 to 30,000 requests/second** and **$< 250\mu\text{s}$** end-to-end p
 
 In adherence to empirical rigor, we explicitly disclose the methodological boundaries of this report:
 
-1. **Single-Project Scope ($N=1$ End-to-End Task):** The primary empirical dataset derives from building a standard-library Go 1.26 system (CLI, state machine, basic strategy matrix, concurrency, and Monte Carlo engine). While representative of full-stack compiled systems programming, turn trajectories and context accumulation rates may differ across dynamically typed codebases (Python/TypeScript), massive monolithic repositories, or complex database migrations.
+1. **Single-Project Scope (N = 1 End-to-End Task):** The primary empirical dataset derives from building a standard-library Go 1.26 system (CLI, state machine, basic strategy matrix, concurrency, and Monte Carlo engine). While representative of full-stack compiled systems programming, turn trajectories and context accumulation rates may differ across dynamically typed codebases (Python/TypeScript), massive monolithic repositories, or complex database migrations.
 2. **Agent Harness Coupling (Zoo Code):** All autonomous runs were orchestrated via Zoo Code v3.84 as the Layer 3 client. While Nacho Flow provides a strict OpenAI-compatible wire API compatible with OpenCode, Cursor Agent, and other modern harnesses, variations in system prompt structure, tool schema definitions, and client-side history truncation across harnesses will introduce variance in total turn counts.
 3. **Model Family Specialization:** The budget evaluation focused on dense open-weights cloud inference via `z-ai/glm-5.3-flash` ($0.65/M) paired with local workstation fallbacks. Alternative open-weights architectures (e.g., DeepSeek-V3, Qwen 3 Coder 32B, Mistral Large) possess varying baseline tool-calling adherence and may trigger different rates of stream normalizer interventions.
-4. **Builder Evaluation (Experimenter Bias):** Nacho Flow was designed and evaluated by the same engineering team. To mitigate experimenter bias, all benchmark acceptance gates were automated, machine-verifiable, and executed independently of the author (`go test -race` passing cleanly, $\ge 80\%$ test coverage assertion, and quantitative Monte Carlo EV bounds). All raw telemetry logs, commit hashes, and configurations are preserved for independent reproduction.
+4. **Builder Evaluation (Experimenter Bias):** Nacho Flow was designed and evaluated by the same engineering team. To mitigate experimenter bias, all benchmark acceptance gates were automated, machine-verifiable, and executed independently of the author (`go test -race` passing cleanly, ≥ 80% test coverage assertion, and quantitative Monte Carlo EV bounds). All raw telemetry logs, commit hashes, and configurations are preserved for independent reproduction.
 
 ---
 
