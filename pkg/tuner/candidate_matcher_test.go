@@ -323,9 +323,8 @@ func BenchmarkCandidateFilterPipeline_Evaluate(b *testing.B) {
 		Candidate:  cand,
 	}
 
-	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = pipeline.Evaluate(ctx)
 	}
 }
