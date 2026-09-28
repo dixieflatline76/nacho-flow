@@ -412,3 +412,165 @@ func BenchmarkReplaceSubslicesInPlace_ZeroAlloc(b *testing.B) {
 		_ = ReplaceSubslicesInPlace(scratch, targets, replacements)
 	}
 }
+
+func TestContainsFoldASCII(t *testing.T) {
+	tests := []struct {
+		name     string
+		haystack string
+		needle   string
+		expected bool
+	}{
+		{
+			name:     "empty haystack and empty needle",
+			haystack: "",
+			needle:   "",
+			expected: true,
+		},
+		{
+			name:     "non-empty haystack and empty needle",
+			haystack: "hello world",
+			needle:   "",
+			expected: true,
+		},
+		{
+			name:     "empty haystack and non-empty needle",
+			haystack: "",
+			needle:   "a",
+			expected: false,
+		},
+		{
+			name:     "needle longer than haystack",
+			haystack: "hi",
+			needle:   "hello",
+			expected: false,
+		},
+		{
+			name:     "exact match same case",
+			haystack: "are you satisfied",
+			needle:   "are you satisfied",
+			expected: true,
+		},
+		{
+			name:     "exact match needle lower haystack upper",
+			haystack: "ARE YOU SATISFIED",
+			needle:   "are you satisfied",
+			expected: true,
+		},
+		{
+			name:     "exact match needle upper haystack lower",
+			haystack: "please confirm",
+			needle:   "PLEASE CONFIRM",
+			expected: true,
+		},
+		{
+			name:     "mixed case both",
+			haystack: "ThIs Is A TeSt",
+			needle:   "tHiS iS a tEsT",
+			expected: true,
+		},
+		{
+			name:     "prefix match",
+			haystack: "Would you like a plan? Yes.",
+			needle:   "would you like",
+			expected: true,
+		},
+		{
+			name:     "middle match",
+			haystack: "Prefix text. Are you satisfied? Suffix.",
+			needle:   "are you satisfied",
+			expected: true,
+		},
+		{
+			name:     "suffix match",
+			haystack: "I am ready to implement",
+			needle:   "ready to implement",
+			expected: true,
+		},
+		{
+			name:     "partial false start then true match",
+			haystack: "whowhowould you like",
+			needle:   "would you like",
+			expected: true,
+		},
+		{
+			name:     "partial match at end without full needle",
+			haystack: "here is a question: would you",
+			needle:   "would you like",
+			expected: false,
+		},
+		{
+			name:     "no match distinct characters",
+			haystack: "completely different text",
+			needle:   "are you satisfied",
+			expected: false,
+		},
+		{
+			name:     "utf8 multi-byte prefix and suffix with ascii match",
+			haystack: "日本語 are you satisfied 日本語",
+			needle:   "are you satisfied",
+			expected: true,
+		},
+		{
+			name:     "utf8 multi-byte exact match",
+			haystack: "日本語テスト",
+			needle:   "日本語",
+			expected: true,
+		},
+		{
+			name:     "nil slices",
+			haystack: "",
+			needle:   "",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var hBytes, nBytes []byte
+			if tt.haystack != "" {
+				hBytes = []byte(tt.haystack)
+			}
+			if tt.needle != "" {
+				nBytes = []byte(tt.needle)
+			}
+			got := ContainsFoldASCII(hBytes, nBytes)
+			if got != tt.expected {
+				t.Fatalf("ContainsFoldASCII(%q, %q) = %v; want %v", tt.haystack, tt.needle, got, tt.expected)
+			}
+		})
+	}
+
+	// Explicit nil slice tests
+	if !ContainsFoldASCII(nil, nil) {
+		t.Errorf("expected true for ContainsFoldASCII(nil, nil)")
+	}
+	if !ContainsFoldASCII([]byte("abc"), nil) {
+		t.Errorf("expected true for ContainsFoldASCII([]byte(\"abc\"), nil)")
+	}
+	if ContainsFoldASCII(nil, []byte("abc")) {
+		t.Errorf("expected false for ContainsFoldASCII(nil, []byte(\"abc\"))")
+	}
+}
+
+func TestContainsFoldASCII_ZeroAlloc(t *testing.T) {
+	haystack := []byte("I have summarized the technical design. Please confirm how we should proceed.")
+	needle := []byte("please confirm")
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		_ = ContainsFoldASCII(haystack, needle)
+	})
+	if allocs != 0 {
+		t.Fatalf("ContainsFoldASCII allocated %f heap objects, expected 0", allocs)
+	}
+}
+
+func BenchmarkContainsFoldASCII_ZeroAlloc(b *testing.B) {
+	haystack := []byte("I have summarized the technical design. Please confirm how we should proceed.")
+	needle := []byte("please confirm")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		_ = ContainsFoldASCII(haystack, needle)
+	}
+}

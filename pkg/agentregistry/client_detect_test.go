@@ -140,8 +140,7 @@ func BenchmarkDetectClient_UserAgent(b *testing.B) {
 	h.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) cline/3.5.0 VSCode/1.93.0")
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = reg.DetectClient(h, nil)
 	}
 }
@@ -153,8 +152,7 @@ func BenchmarkDetectClient_ToolPayload(b *testing.B) {
 	body := []byte(`{"messages":[{"role":"user","content":"test"}],"tools":[{"name":"multi_replace_file_content"}]}`)
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = reg.DetectClient(h, body)
 	}
 }

@@ -3,6 +3,8 @@ package shield
 import (
 	"bytes"
 	"strings"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/zeroalloc"
 )
 
 // DefaultQuestionPhrases are the baseline heuristics for conversational plans & questions.
@@ -68,18 +70,16 @@ func (e *RuleEngine) Evaluate(tail []byte) (matched bool, intent string) {
 		return true, "question"
 	}
 
-	lower := bytes.ToLower(trimmed)
-
-	// 2. Question phrases
+	// 2. Question phrases (zero-allocation case-insensitive search)
 	for _, phrase := range e.questionPhrases {
-		if bytes.Contains(lower, phrase) {
+		if zeroalloc.ContainsFoldASCII(trimmed, phrase) {
 			return true, "question"
 		}
 	}
 
-	// 3. Mode switch phrases
+	// 3. Mode switch phrases (zero-allocation case-insensitive search)
 	for _, phrase := range e.modePhrases {
-		if bytes.Contains(lower, phrase) {
+		if zeroalloc.ContainsFoldASCII(trimmed, phrase) {
 			return true, "mode_switch"
 		}
 	}

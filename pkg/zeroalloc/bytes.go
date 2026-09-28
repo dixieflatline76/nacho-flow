@@ -297,3 +297,52 @@ func ReplaceSubslicesInPlace(b []byte, targets [][]byte, replacements [][]byte) 
 
 	return b[:w]
 }
+
+// ContainsFoldASCII reports whether needle is within haystack, using ASCII case-folding.
+// Both haystack and needle may contain mixed-case ASCII bytes.
+// Non-ASCII bytes are matched exact.
+// Operates strictly with zero heap allocations (0 B/op, 0 allocs/op).
+func ContainsFoldASCII(haystack, needle []byte) bool {
+	n := len(needle)
+	if n == 0 {
+		return true
+	}
+	if len(haystack) < n {
+		return false
+	}
+
+	b0 := needle[0]
+	b0Lower := b0
+	b0Upper := b0
+	if b0 >= 'a' && b0 <= 'z' {
+		b0Upper = b0 - 32
+	} else if b0 >= 'A' && b0 <= 'Z' {
+		b0Lower = b0 + 32
+	}
+
+	limit := len(haystack) - n
+	for i := 0; i <= limit; i++ {
+		h0 := haystack[i]
+		if h0 == b0Lower || h0 == b0Upper {
+			match := true
+			for j := 1; j < n; j++ {
+				hb := haystack[i+j]
+				if hb >= 'A' && hb <= 'Z' {
+					hb += 32
+				}
+				nb := needle[j]
+				if nb >= 'A' && nb <= 'Z' {
+					nb += 32
+				}
+				if hb != nb {
+					match = false
+					break
+				}
+			}
+			if match {
+				return true
+			}
+		}
+	}
+	return false
+}

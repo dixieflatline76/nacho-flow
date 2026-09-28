@@ -2,22 +2,13 @@ package tuner
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
 	"github.com/expr-lang/expr/parser"
-)
-
-var (
-	tokenClauseRegex       = regexp.MustCompile(`(?i)^\s*tokens\s*[<>=]`)
-	retriesClauseRegex     = regexp.MustCompile(`(?i)^\s*(retries\s*<=?\s*\d+|retries\s*==\s*0|!?isretry\b)`)
-	modalityClauseRegex    = regexp.MustCompile(`(?i)^\s*(?:!\s*has(images|tools)|has(images|tools)\s*==\s*false)\s*$`)
-	keywordClauseRegex     = regexp.MustCompile(`(?i)any\s*\(\s*keywords\s*,`)
-	hasPositiveImagesRegex = regexp.MustCompile(`(?i)(?:^|[^!])\bhasimages\b(?:\s*==\s*true)?`)
-	hasPositiveToolsRegex  = regexp.MustCompile(`(?i)(?:^|[^!])\bhastools\b(?:\s*==\s*true)?`)
 )
 
 // RewriteRuleAST synthesizes an optimal expr expression while preserving existing custom guardrails
@@ -26,7 +17,7 @@ func RewriteRuleAST(existingWhen string, newThreshold int, optimalRetries int, f
 	if newThreshold < 0 {
 		return "", fmt.Errorf("optimal threshold cannot be negative, got %d", newThreshold)
 	}
-	if newThreshold == 0 && tokenClauseRegex.MatchString(existingWhen) {
+	if newThreshold == 0 && containsTokenConstraint(existingWhen) {
 		return "", fmt.Errorf("optimal threshold must be positive for token-constrained tier, got %d", newThreshold)
 	}
 
@@ -71,10 +62,10 @@ func RewriteRuleAST(existingWhen string, newThreshold int, optimalRetries int, f
 	hasPositiveImages := false
 	hasPositiveTools := false
 	for _, p := range preserved {
-		if hasPositiveImagesRegex.MatchString(p) {
+		if hasPositivePrerequisiteClause(p, "HasImages") {
 			hasPositiveImages = true
 		}
-		if hasPositiveToolsRegex.MatchString(p) {
+		if hasPositivePrerequisiteClause(p, "HasTools") {
 			hasPositiveTools = true
 		}
 	}
@@ -190,17 +181,73 @@ func splitConjuncts(exprStr string) []string {
 // isAutoTunableClause returns true if a conjunct is managed directly by the optimizer (Tokens, Retries, Modalities, Keywords).
 func isAutoTunableClause(clause string, tuningRetries bool) bool {
 	c := strings.TrimSpace(clause)
-	if tokenClauseRegex.MatchString(c) {
-		return true
+	if c == "" {
+		return false
 	}
-	if tuningRetries && retriesClauseRegex.MatchString(c) {
-		return true
+	tree, err := parser.Parse(c)
+	if err != nil {
+		return false
 	}
-	if modalityClauseRegex.MatchString(c) {
-		return true
+	node := tree.Node
+
+	// 1. Tokens comparison: Tokens <op> N
+	if b, ok := node.(*ast.BinaryNode); ok {
+		if b.Operator == "<" || b.Operator == "<=" || b.Operator == ">" || b.Operator == ">=" || b.Operator == "==" {
+			if isIdent(b.Left, "Tokens") || isIdent(b.Right, "Tokens") {
+				return true
+			}
+		}
 	}
-	if keywordClauseRegex.MatchString(c) {
-		return true
+
+	// 2. Retries constraint (only if tuningRetries is true)
+	if tuningRetries {
+		if b, ok := node.(*ast.BinaryNode); ok {
+			if isIdent(b.Left, "Retries") {
+				if b.Operator == "<" || b.Operator == "<=" {
+					return true
+				}
+				if b.Operator == "==" {
+					if val, ok := getIntLit(b.Right); ok && val == 0 {
+						return true
+					}
+				}
+			}
+		}
+		if isIdent(node, "IsRetry") {
+			return true
+		}
+		if u, ok := node.(*ast.UnaryNode); ok && u.Operator == "!" {
+			if isIdent(u.Node, "IsRetry") {
+				return true
+			}
+		}
 	}
+
+	// 3. Modalities: !HasImages, !HasTools, HasImages == false, HasTools == false
+	if u, ok := node.(*ast.UnaryNode); ok && u.Operator == "!" {
+		if isIdent(u.Node, "HasImages") || isIdent(u.Node, "HasTools") {
+			return true
+		}
+	}
+	if b, ok := node.(*ast.BinaryNode); ok && b.Operator == "==" {
+		if (isIdent(b.Left, "HasImages") && isBoolLit(b.Right, false)) ||
+			(isIdent(b.Right, "HasImages") && isBoolLit(b.Left, false)) ||
+			(isIdent(b.Left, "HasTools") && isBoolLit(b.Right, false)) ||
+			(isIdent(b.Right, "HasTools") && isBoolLit(b.Left, false)) {
+			return true
+		}
+	}
+
+	// 4. Keywords: any(Keywords, ...) or !any(Keywords, ...)
+	target := node
+	if u, ok := node.(*ast.UnaryNode); ok && u.Operator == "!" {
+		target = u.Node
+	}
+	if bi, ok := target.(*ast.BuiltinNode); ok && strings.EqualFold(bi.Name, "any") {
+		if len(bi.Arguments) > 0 && isIdent(bi.Arguments[0], "Keywords") {
+			return true
+		}
+	}
+
 	return false
 }

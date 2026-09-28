@@ -1,27 +1,10 @@
 package tuner
 
 import (
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
-)
-
-var (
-	extractTokenRegex        = regexp.MustCompile(`(?i)tokens\s*<\s*(\d+)`)
-	extractRetriesRegex      = regexp.MustCompile(`(?i)retries\s*<\s*(\d+)`)
-	extractRetryFloorRegex   = regexp.MustCompile(`(?i)retries\s*>=\s*(\d+)`)
-	extractRetryFloorGtRegex = regexp.MustCompile(`(?i)retries\s*>\s*(\d+)`)
-	extractKwRegex           = regexp.MustCompile(`'([^']+)'|"([^"]+)"`)
-
-	kickstartClauseRegex = regexp.MustCompile(`(?i)\bSessionKickstarted\b(?:\s*==\s*true)?`)
-	restrictImagesRegex  = regexp.MustCompile(`(?i)(?:!\s*HasImages|\bHasImages\s*==\s*false\b)`)
-	requireImagesRegex   = regexp.MustCompile(`(?i)(?:^|[^!])\bHasImages\b(?:\s*==\s*true)?`)
-	restrictToolsRegex   = regexp.MustCompile(`(?i)(?:!\s*HasTools|\bHasTools\s*==\s*false\b)`)
-	requireToolsRegex    = regexp.MustCompile(`(?i)(?:^|[^!])\bHasTools\b(?:\s*==\s*true)?`)
-	extractKeywordsRegex = regexp.MustCompile(`(?i)\bkeywords\b`)
 )
 
 // ResolveModelRates resolves realistic prompt and completion rates per million tokens.
@@ -75,11 +58,13 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 		promptCost, compCost, compRate := ResolveModelRates(tier.Model, isLocal)
 		codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
 
-		requiresKickstart := kickstartClauseRegex.MatchString(tier.When)
-		restrictImages := restrictImagesRegex.MatchString(tier.When)
-		requiresImages := requireImagesRegex.MatchString(tier.When) && !restrictImages
-		restrictTools := restrictToolsRegex.MatchString(tier.When)
-		requiresTools := requireToolsRegex.MatchString(tier.When) && !restrictTools
+		parsed := extractRoutingFromWhenAST(tier.When)
+
+		requiresKickstart := parsed.RequiresKickstart
+		restrictImages := parsed.RestrictImages
+		requiresImages := parsed.RequiresImages
+		restrictTools := parsed.RestrictTools
+		requiresTools := parsed.RequiresTools
 
 		supportsVision, supportsTools := ResolveModelCapabilities(tier.Model)
 		if tier.HasVision != nil {
@@ -106,49 +91,21 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 
 		isDisabled := strings.TrimSpace(tier.When) == "false"
 
-		threshold := 0
-		if m := extractTokenRegex.FindStringSubmatch(tier.When); len(m) > 1 {
-			if v, err := strconv.Atoi(m[1]); err == nil && v > 0 {
-				threshold = v
-			}
-		} else if isLocal {
+		threshold := parsed.TokenThreshold
+		if threshold == 0 && isLocal {
 			threshold = 16000
 			if tier.MaxContext > 0 && tier.MaxContext < threshold {
 				threshold = tier.MaxContext
 			}
 		}
 
-		retryBound := 0
-		if m := extractRetriesRegex.FindStringSubmatch(tier.When); len(m) > 1 {
-			if v, err := strconv.Atoi(m[1]); err == nil && v > 0 {
-				retryBound = v
-			}
-		} else if isLocal {
+		retryBound := parsed.RetryBound
+		if retryBound == 0 && isLocal {
 			retryBound = 2
 		}
 
-		retryFloor := 0
-		if m := extractRetryFloorRegex.FindStringSubmatch(tier.When); len(m) > 1 {
-			if v, err := strconv.Atoi(m[1]); err == nil && v > 0 {
-				retryFloor = v
-			}
-		} else if m := extractRetryFloorGtRegex.FindStringSubmatch(tier.When); len(m) > 1 {
-			if v, err := strconv.Atoi(m[1]); err == nil && v >= 0 {
-				retryFloor = v + 1
-			}
-		}
-
-		var excludedKws []string
-		if extractKeywordsRegex.MatchString(tier.When) {
-			matches := extractKwRegex.FindAllStringSubmatch(tier.When, -1)
-			for _, m := range matches {
-				if len(m) > 1 && m[1] != "" {
-					excludedKws = append(excludedKws, m[1])
-				} else if len(m) > 2 && m[2] != "" {
-					excludedKws = append(excludedKws, m[2])
-				}
-			}
-		}
+		retryFloor := parsed.RetryFloor
+		excludedKws := parsed.ExcludedKeywords
 
 		result.Tiers = append(result.Tiers, TierReplayConfig{
 			TierName:                 tier.Name,
