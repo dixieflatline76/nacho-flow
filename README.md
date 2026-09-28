@@ -443,7 +443,7 @@ For in-depth guides, benchmark data, and architecture deep-dives:
 - **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->30,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware.
 - **[Systems Performance Whitepaper](docs/PERFORMANCE_WHITEPAPER.md)**: Near-zero allocation systems architecture deep dive, detailing wire-speed streaming fast paths compared to LiteLLM and Bifrost.
 - **[A/B Benchmark Case Study Whitepaper](docs/BENCHMARKS_AB_CASE_STUDY.md)**: Empirical developer study proving $94.7\%$ cost reduction using local GPU routing.
-- **[The Autonomous Agent Runtime Whitepaper](docs/THE_AUTONOMOUS_AGENT_RUNTIME_WHITEPAPER.md)**: The $0.44 autonomous full-stack run, why background autonomy demands an execution runtime, and unit economics vs Cursor.
+- **[The Autonomous Agent Runtime Whitepaper](docs/THE_AUTONOMOUS_AGENT_RUNTIME_WHITEPAPER.md)**: Why autonomous agents fail in production (context snowballs, protocol fragility, test fraud) and how Nacho Flow achieves the $0.44 full-stack engineering run.
 - **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules.
 - **[User Guide](docs/USER_GUIDE.md)**: Full configuration reference, custom `expr` tier rules, OS service setup, and IDE walkthroughs.
 - **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Development prerequisites, TDD workflow, plugin extension guide, and benchmarking.
