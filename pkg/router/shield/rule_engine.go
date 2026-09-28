@@ -3,6 +3,8 @@ package shield
 import (
 	"bytes"
 	"strings"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/zeroalloc"
 )
 
 // DefaultQuestionPhrases are the baseline heuristics for conversational plans & questions.
@@ -70,14 +72,14 @@ func (e *RuleEngine) Evaluate(tail []byte) (matched bool, intent string) {
 
 	// 2. Question phrases (zero-allocation case-insensitive search)
 	for _, phrase := range e.questionPhrases {
-		if containsFoldASCII(trimmed, phrase) {
+		if zeroalloc.ContainsFoldASCII(trimmed, phrase) {
 			return true, "question"
 		}
 	}
 
 	// 3. Mode switch phrases (zero-allocation case-insensitive search)
 	for _, phrase := range e.modePhrases {
-		if containsFoldASCII(trimmed, phrase) {
+		if zeroalloc.ContainsFoldASCII(trimmed, phrase) {
 			return true, "mode_switch"
 		}
 	}
@@ -85,42 +87,3 @@ func (e *RuleEngine) Evaluate(tail []byte) (matched bool, intent string) {
 	return false, ""
 }
 
-// containsFoldASCII checks if haystack contains needle case-insensitively for ASCII bytes.
-// needle MUST already be lowercase (as prepared by NewRuleEngine).
-// Operates strictly with zero heap allocations (0 B/op, 0 allocs/op).
-func containsFoldASCII(haystack, needle []byte) bool {
-	n := len(needle)
-	if n == 0 {
-		return true
-	}
-	if len(haystack) < n {
-		return false
-	}
-	firstLower := needle[0]
-	firstUpper := firstLower
-	if firstLower >= 'a' && firstLower <= 'z' {
-		firstUpper = firstLower - 32
-	}
-
-	limit := len(haystack) - n
-	for i := 0; i <= limit; i++ {
-		b := haystack[i]
-		if b == firstLower || b == firstUpper {
-			match := true
-			for j := 1; j < n; j++ {
-				hb := haystack[i+j]
-				if hb >= 'A' && hb <= 'Z' {
-					hb += 32
-				}
-				if hb != needle[j] {
-					match = false
-					break
-				}
-			}
-			if match {
-				return true
-			}
-		}
-	}
-	return false
-}
