@@ -26,6 +26,7 @@ func TestDefaultRegistry_EmbeddedCatalog(t *testing.T) {
 		"create_file", "reapply", "insert_content", "modify_file",
 		"write_file", "patch_file", "str_replace_editor", "text_editor",
 		"save_file", "create_or_update_file", "put_file",
+		"update_todo_list", "updateTodoList", "todo_list",
 	}
 	for _, tool := range expectedWriteTools {
 		if !reg.IsWriteTool(tool) {
