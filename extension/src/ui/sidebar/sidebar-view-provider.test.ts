@@ -42,7 +42,7 @@ describe('SidebarViewProvider', () => {
       expect(mockWebviewView.webview.options.enableScripts).toBe(true);
       expect(mockWebviewView.webview.html).toContain('<!DOCTYPE html>');
       expect(mockWebviewView.webview.html).toContain('🌮 Nacho Flow');
-      expect(mockWebviewView.webview.html).toContain('qwen2.5-coder:14b');
+      expect(mockWebviewView.webview.html).toContain('qwen3.8-coder:14b');
       expect(mockWebviewView.webview.onDidReceiveMessage).toHaveBeenCalledWith(messageHandler);
     });
   });

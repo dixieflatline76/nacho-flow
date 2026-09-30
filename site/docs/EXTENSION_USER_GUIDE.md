@@ -398,9 +398,9 @@ Inspect the last 500 LLM requests processed by the gateway in real time:
 
 ```text
 TIME      TIER              MODEL                     TOKENS   LATENCY   REASON
-14:23:05  Local ROCm GPU    qwen2.5-coder:14b         4,210    1.2s      Tokens < 16k && !HasTools
+14:23:05  Local GPU         qwen3.8-coder:14b         4,210    1.2s      Tokens < 16k && !HasTools
 14:22:48  Cloud Frontier    anthropic/claude-sonnet-5 18,400   3.4s      Retries >= 2 (Auto-Escalate)
-14:21:12  Local ROCm GPU    qwen2.5-coder:14b         2,890    0.8s      @nacho:local
+14:21:12  Local GPU         qwen3.8-coder:14b         2,890    0.8s      @nacho:local
 ```
 
 - Click any turn to expand full prompt metadata, token breakdowns, input/output costs, cache hit counts, and execution trace.
@@ -621,7 +621,7 @@ If another application is using port 8000, Nacho Flow emits a structured diagnos
 If your local Ollama or vLLM instance crashes from context overflow:
 - Nacho Flow catches the failure and transparently routes that turn to your cloud fallback tier with **zero broken loops**.
 - The provider status chip in the sidebar turns red (`Circuit OPEN`).
-- Restart your local model in your terminal (`ollama run qwen2.5-coder:14b`).
+- Restart your local model in your terminal (`ollama run qwen3.8-coder:14b`).
 - Click **`Reset Circuit Breakers`** in the sidebar or dashboard to immediately restore GPU traffic.
 
 ### 3. Remote Server Connection Timeout

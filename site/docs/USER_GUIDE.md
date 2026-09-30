@@ -47,7 +47,7 @@ flowchart LR
    ollama pull gemma4:12b-it-qat
 
    # Or for 8GB VRAM workstations:
-   ollama pull qwen2.5-coder:7b
+   ollama pull qwen3.8-coder:7b
    ```
 2. **Install Nacho Flow & Create `config.yaml`**:
    ```bash
@@ -231,8 +231,8 @@ tiers:
     when: "HasImages"
 
   # Tier 3: Local GPU (100% Free, Routine tasks < 16k context, auto-escalates after 2 retries)
-  - name: "Local ROCm GPU"
-    model: "qwen2.5-coder:14b"
+  - name: "Local GPU"
+    model: "qwen3.8-coder:14b"
     provider: "ollama"
     max_context: 16384
     when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
@@ -542,7 +542,7 @@ tiers:
 
   # Scenario 3: Specialized Local Model with Tailored Parser Pipeline
   - name: "Local Qwen Coder (Selective Normalizers)"
-    model: "qwen2.5-coder:14b"
+    model: "qwen3.8-coder:14b"
     provider: "ollama"
     when: "Tokens < 8000"
     shield: true
@@ -975,7 +975,7 @@ Once you have pointed Zoo Code, Cline, or Cursor to Nacho Flow, test your setup 
 1. **Check Live Terminal Logs (or VS Code Output Channel `🌮 Nacho Flow Engine`)**:
    You will see an instant routing log line:
    ```text
-   INFO Routing request tier="Local GPU" model=qwen2.5-coder:14b provider=ollama tokens=4,120 is_fallback=false
+   INFO Routing request tier="Local GPU" model=qwen3.8-coder:14b provider=ollama tokens=4,120 is_fallback=false
    ```
 2. **Type `@nacho:status` Directly in Agent Chat**:
    Ask your agent: `@nacho:status`. Nacho Flow intercepts the query in $< 7\text{ ns}$ ($0.00 cost, 0 upstream tokens) and replies instantly with live stats:

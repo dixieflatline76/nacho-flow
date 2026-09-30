@@ -8,7 +8,7 @@ This guide illustrates a realistic, end-to-end workday using **Nacho Flow** alon
 
 - **Developer**: Alex, Senior Systems Engineer.
 - **Project**: High-throughput distributed event pipeline in Go.
-- **Hardware**: Workstation with an RTX 4080 (16GB VRAM) running [Ollama](https://ollama.com) (`gemma4:12b-it-qat` or `qwen2.5-coder:14b`).
+- **Hardware**: Workstation with an RTX 4080 (16GB VRAM) running [Ollama](https://ollama.com) (`gemma4:12b-it-qat` or `qwen3.8-coder:14b`).
 - **Cloud Gateway**: Single [OpenRouter](https://openrouter.ai) API key covering frontier models (Claude 3.7 Sonnet, DeepSeek-R1, Gemini 2.5 Flash).
 - **Agent Config**: Base URL set to `http://127.0.0.1:8000/v1`, Model ID: `nacho-hybrid`.
 - **VS Code Extension**: Nacho Flow Companion installed, live telemetry visible in the Status Bar.

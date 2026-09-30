@@ -16,177 +16,68 @@
   <a href="https://github.com/dixieflatline76/nacho-flow/pkgs/container/nacho-flow"><img src="https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white" alt="Docker GHCR"></a>
 </p>
 
-> **Don't give up on local models and open-source coding agents just yet.**
-> Stop letting tools like Cline and Zoo Code burn your credit card on infinite loops. Nacho Flow runs the simple stuff on your own GPU for free, kicks your agent when it gets stuck reading files, and only spends money on Claude when things get hard.
+> Nacho Flow sits between your coding agent and your LLM backends. Routine turns run on your local GPU for $0.00. Complex reasoning escalates to frontier models automatically. Loop detection kills runaway agents in < 3s.
 
-**Nacho Flow** is an active execution runtime and model dispatcher built in pure Go. It sits between autonomous coding agents ([Cline](https://github.com/cline/cline), [Zoo Code](https://www.zoocode.dev), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://cursor.com), [Continue](https://continue.dev)) and LLM backends, dynamically evaluating each turn to route between **local GPUs** ([Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [llama.cpp](https://github.com/ggerganov/llama.cpp)) and **frontier endpoints** ([OpenRouter](https://openrouter.ai), [DeepSeek](https://www.deepseek.com), [Langdock](https://www.langdock.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)). Includes an integrated **VS Code Companion Extension** with real-time cost telemetry, visual route inspector, and one-click agent setup.
+**Nacho Flow** is a hybrid model dispatcher and agent supervisor written in pure Go. Point [Cline](https://github.com/cline/cline), [Zoo Code](https://www.zoocode.dev), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://cursor.com), or [Continue](https://continue.dev) at `http://localhost:8000/v1` and it handles the rest.
 
-🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)  
-💸 **Latest Research**: [The Frontier Tax: Empirical 1:1 Control Study on Raw Claude Sonnet 5 vs. Nacho Flow](docs/FRONTIER_CONTROL_STUDY_2026.md) *(5.7× cheaper, 12 minutes faster)*  
+🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)
+💸 **Latest Research**: [The Frontier Tax: 1:1 Claude Sonnet 5 vs. Nacho Flow](docs/FRONTIER_CONTROL_STUDY_2026.md) *(5.7x cheaper, 12 minutes faster)*
 Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
 
 ---
 
-## ⚡ 60-Second Quickstart (Get Started in 3 Steps)
+## What It Does
 
-Nacho Flow runs the simple stuff on your local workstation for **$0.00**, and escalates to frontier models only when deep reasoning is needed:
+- **Hybrid routing**: Local GPU -> budget cloud -> frontier, evaluated per-turn via [deterministic AST bytecode rules](docs/TUNING_GUIDE.md) (`Tokens`, `Retries`, `Keywords`, `HasTools`, `HasImages`)
+- **Cycle Killer**: Monitors live SSE streams across thinking/prose/tool lanes. Kills repetition loops in < 3s, injects a local $0.00 override to force tool action, never interrupts file writes
+- **Kickstart**: Detects consecutive non-write turns (analysis paralysis) and injects resuscitation prompts or escalates to a smarter model
+- **Tool Normalizer**: Converts 8 raw tool-call format families (Hermes, Mistral, Llama 3, ReAct, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON -- no harness crashes
+- **Fairy Dust**: Programmable frontier checkpoints every N file writes for quality audits (without running expensive models all day)
+- **Cost engine**: Prompt-cache-aware billing tracking input, output, and cache tokens at exact provider rates
+- **Auto-Tune**: Replays your `logs/traffic.jsonl` to find optimal tier thresholds (`nacho-flow tune`)
+- **VS Code extension**: Bundles the Go binary, live financial telemetry, route inspector, one-click preset switching. Zero CLI setup. [Install from Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow)
+- **Wire-speed core**: < 0.19ms routing overhead, <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END -->, lock-free atomic RCU state, zero heap churn during proxying
+- **Zero runtime dependencies**: Single static binary, CGO_ENABLED=0, no Node or Python required
+<!-- COVERAGE:SUMMARY_START -->
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+<!-- COVERAGE:SUMMARY_END -->
+
+> **NTS (experimental token compaction)** is available but disabled by default to preserve prompt cache stability and prevent diff drift. See [NTS docs](docs/USER_GUIDE.md) if you need it for extreme context limits.
+
+---
+
+## Quickstart (3 Steps)
 
 ```mermaid
 flowchart LR
-    Step1["<b>Step 1: Local GPU ($0.00)</b><br/><code>ollama run gemma4:12b-it-qat</code>"]
-    Step2["<b>Step 2: Cloud Gateway</b><br/>OpenRouter Key (1 Unified Key)"]
-    Step3["<b>Step 3: Point Your Agent</b><br/><code>http://127.0.0.1:8000/v1</code>"]
+    Step1["**Step 1: Local GPU ($0.00)**<br/><code>ollama run gemma4:12b-it-qat</code>"]
+    Step2["**Step 2: Cloud Gateway**<br/>OpenRouter Key (1 Unified Key)"]
+    Step3["**Step 3: Point Your Agent**<br/><code>http://127.0.0.1:8000/v1</code>"]
 
     Step1 --> Step2 --> Step3
 ```
 
-1. **Step 1: Local Workstation GPU ($0.00)**  
-   Install [Ollama](https://ollama.com/download) and pull the recommended 16GB VRAM coding champion:
+1. **Local GPU ($0.00)** -- Install [Ollama](https://ollama.com/download) and pull a coding model:
    ```bash
    ollama run gemma4:12b-it-qat
    ```
-   > 💡 **Workstation Pro-Tip**: To prevent Ollama from silently truncating long agent prompts, set `OLLAMA_CONTEXT_LENGTH=32768` in your environment (`setx OLLAMA_CONTEXT_LENGTH 32768` on Windows, or `launchctl setenv OLLAMA_CONTEXT_LENGTH 32768` on macOS). See [User Guide](docs/USER_GUIDE.md#crucial-workstation-setup-configure-ollama_context_length32768).
+   > Set `OLLAMA_CONTEXT_LENGTH=32768` to prevent prompt truncation (`setx OLLAMA_CONTEXT_LENGTH 32768` on Windows). See [User Guide](docs/USER_GUIDE.md#crucial-workstation-setup-configure-ollama_context_length32768).
 
-2. **Step 2: Cloud Gateway via OpenRouter (1 Key for All Frontier Models)**  
-   Grab a single API key from [OpenRouter](https://openrouter.ai/keys) to power all cloud tiers (Qwen 3 Coder Plus, Gemini 3.8 Flash, Claude Sonnet 5).
+2. **Cloud Gateway via OpenRouter** -- One key for all frontier tiers (Qwen 3 Coder Plus, Gemini 3.8 Flash, Claude Sonnet 5):
    ```bash
    export OPENROUTER_API_KEY="sk-or-v1-..."
    ```
 
-3. **Step 3: Start Nacho Flow & Connect Your Agent**  
-   - **VS Code Extension (Bundled Runtime)**: Install [Nacho Flow from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow), click `▶ Start` in the sidebar.
+3. **Start Nacho Flow & Connect Your Agent**
+   - **VS Code Extension**: Install [from Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow), click `Start` in the sidebar.
    - **Standalone CLI**: Run `nacho-flow` in your terminal.
-   - **In your coding agent (Cline, Zoo Code, Cursor, Aider, OpenCode)**:
-     - **Base URL**: `http://127.0.0.1:8000/v1`
-     - **Model ID**: `nacho-hybrid`
-     - **API Key**: `sk-nacho-secret-key` *(or leave blank if auth disabled)*
-
-### ⚡ Why OpenRouter is the Default Cloud Gateway for Nacho Flow
-* **One Unified Key**: A single API key and billing balance routes across **GLM-5.3-Flash**, **Qwen 3 Coder Plus**, **Gemini 3.8 Flash**, **DeepSeek V4**, and **Claude Opus 5** without managing separate vendor accounts or credit cards.
-* **The 90% Prompt Cache Multiplier**: OpenRouter passes through up to **90% caching discounts** on prompt tokens. Because Nacho Flow operates in **100% pristine context preservation mode**, historical prompt prefixes hit the cache byte-for-byte on every turn.
-* **Zero-Config Built-in Presets**: Nacho Flow's pre-configured profile presets (`profile1.yaml` for Standard Hybrid / GLM-5.3-Flash, `profile2.yaml` for Zoo Code, `profile3.yaml` for Cline) work out of the box with OpenRouter.
+   - Set your agent's **Base URL** to `http://127.0.0.1:8000/v1`, **Model ID** to `nacho-hybrid`.
 
 ---
 
-## 🌟 The Problem: The Token Snowball Trap
+## Installation
 
-### 💡 The Origin Story
-I built Nacho Flow after hitting a very familiar wall: I ran out of free AI coding assistant daily tokens mid-session, topped up an OpenRouter account with €10, and watched €2.50 disappear on a single prompt turn just asking the agent to analyze the `docs/` folder in the Spice project for context.
-
-Autonomous coding agents operate in multi-turn feedback loops. As conversations progress, agent harnesses re-send the full transcript, file contents, and execution logs with every prompt turn:
-1. **The Context Snowball**: An agent session starts at 2,000 tokens. By Turn 15, it is re-transmitting 45,000+ tokens with *every single prompt*.
-2. **The $2.50 Trivial Turn**: When paying cloud rates per million tokens, asking the agent to check a 1-line typo, run a linter, or execute `git status` burns $1.50–$3.00 just to process the background context.
-3. **The Local Dilemma & Open-Weight Collapse**: Running 100% locally on Ollama/vLLM is free, but unmanaged open models quickly hit reasoning ceilings, get trapped in repetition death spirals, or crash harnesses with malformed tool calls.
-4. **The Hybrid Edge Solution**: Nacho Flow evaluates prompt metadata in sub-millisecond Go. Routine turns (inspections, syntax fixes, unit tests) stay on your local GPU for **$0.00**. Complex multi-file reasoning automatically escalates to Claude or DeepSeek-R1.
-
----
-
-## 📊 Real-World Session Economics (65-Turn Agent Task)
-
-| Metric | Pure Cloud (Claude Sonnet 5 direct) | Nacho Flow Hybrid (Local GPU + Cloud Escalation) | Savings / Impact |
-| :--- | :--- | :--- | :--- |
-| **Total Session Cost** | **$14.80** | **$0.78** | **94.7% Spend Reduction** |
-| **Local GPU Turns ($0.00)** | 0 turns (0% hardware ROI) | **48 turns** (Ollama / vLLM) | Max workstation GPU utilization |
-| **Cloud Escalation Turns** | 65 turns (100% paid) | **17 turns** (DeepSeek-R1 / Claude) | 100% reasoning fidelity preserved |
-| **Total Tokens Billed** | 2,180,000 tokens | 410,000 tokens | **81.2% fewer tokens sent to cloud** |
-| **Failover Protection** | None (Fails on API errors) | **Automatic Circuit Breaker & sub-millisecond failover** | Zero broken agent loops |
-
-> [!NOTE]
-> **Live Empirical Telemetry (Autonomous Coding Benchmarks)**:
-> In benchmarked tasks pairing Cline and Zoo Code with local models (Qwen2.5-Coder / Gemma), Nacho Flow's supervisor intercepted **22 runaway loops** with a **100% Stage 1 local heal rate** ($0.00 compute waste), rescuing **83.6 minutes** of GPU lockup. Nacho Flow defaults to 100% pristine context preservation so frontier models hit **96%+ prompt cache rates**, while preserving the zero-alloc **Nacho Token Saver (NTS)** engine in `pkg/nts` as an opt-in research pipeline.
-> 
-> 💸 **1:1 Empirical Control Test (September 2026)**: In a head-to-head control trial building an educational Go Blackjack engine and Monte Carlo simulator with Zoo Code, **Raw Claude Sonnet 5 cost $4.87 and took 31.5 minutes** (despite 97.4% prompt cache hit rate), while **Nacho Flow cost $0.85 and finished in 19.5 minutes** (5.7× cheaper, 12 minutes faster). See the full [Frontier Control Study Whitepaper](docs/FRONTIER_CONTROL_STUDY_2026.md).
-
----
-
-## 🥊 Nacho Flow vs. Cloud-Only Routers (e.g. OpenRouter Auto, LiteLLM)
-
-| Dimension | Cloud Routers (e.g. `openrouter/auto`) | Nacho Flow (Agent Supervisor & Model Dispatcher) |
-| :--- | :--- | :--- |
-| **Routing Domain** | **Cloud-to-Cloud only** (100% paid). | **Hybrid Dispatch** (Local GPU $\leftrightarrow$ Cloud APIs). |
-| **Cost Floor** | **$0.00 is impossible**. Every prompt incurs cloud fees. | **$0.00 for routine turns** on local hardware. |
-| **Hardware Utilization** | Completely ignores your local GPU / NPU. | Maximizes local VRAM on early turns before context limits are reached. |
-| **Routing Logic** | Black-box trailing 7-day community spend. | **Deterministic AST Bytecode Rules** (`Tokens`, `Retries`, `Keywords`). |
-| **Target Providers** | Single cloud aggregator lock-in. | **Any Provider**: [Ollama](https://ollama.com), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Langdock](https://www.langdock.com), [Azure](https://azure.microsoft.com), [DeepSeek](https://www.deepseek.com), [OpenRouter](https://openrouter.ai). |
-| **Open-Source Tool Fixing** | None for local models. | **Normalizes 8 tool-calling format families & thinking tags on the fly**. |
-| **In-Flight Context Compaction**| None (forwards context uncompressed). | **Pristine by default** (96%+ KV prompt cache hits) + **NTS Labs** (experimental opt-in compaction engine). |
-| **Local Self-Healing** | None. | **Circuit Breakers & Delayed Header streaming failovers**. |
-
-> [!TIP]
-> **They are complementary!** You can configure `openrouter/auto` as your cloud fallback tier inside Nacho Flow: run routine prompt turns on your local GPU for **$0.00**, and let OpenRouter Auto Router pick the best cloud model whenever prompts exceed local limits.
-
----
-
-## ✨ Key Features
-
-### 🛡️ 1. Proactive Agent Supervision (Runtime Stream & Loop Defense)
-* **Cycle Killer (In-Flight Stream Breaker)**: Monitors the live token stream across prose, thinking, and tool lanes (*"Qu'est-ce que c'est?"*). Kills repetitive N-gram loops and runaway prose in $<3$s with protocol-safe error severance, while protecting file writes so table-driven unit tests and repetitive structs are never falsely interrupted.
-* **Kickstart (Stall Resuscitation Engine)**: Detects consecutive non-write turns and injects authoritative resuscitation prompts or escalates to smarter models (`when: "SessionKickstarted"`). Auto-suspends during exploration via extensible schema detection (`HasWriteCapability`), jolting agents out of passive read/plan procrastination when implementation stalls.
-* **Agentic Tool Fallback Shield**: Sub-nanosecond sliding tail-buffer analysis ($4.67\text{ ns/op}$, $0\text{ B/op}$) intercepting conversational plans or questions from local models (Gemma 4, DeepSeek-R1, Qwen) in agentic IDEs (Zoo Code, Cline) and auto-synthesizing schema-compliant `ask_followup_question` tool calls to eliminate 3-strike deadlocks.
-* **Smarter Test-Loop Breaker**: Detects when an agent is repeatedly running failing tests without editing code, requiring concrete file write modifications to break idle accumulation.
-* **Fairy Dust (Programmable Milestone Checkpoints)**: A cadenced intervention engine. Deploy frontier reasoning models (e.g. Claude Opus) precisely every $N$ writes for quality verification without continuous frontier spend.
-
-### 🧪 2. Nacho Labs: Token Saver (NTS — Experimental Opt-In Engine)
-> [!NOTE]
-> **Production Default: Disabled (`enabled: false`) for Pristine Context Stability**
-> Modern frontier models (Claude 3.7 / Sonnet 5, Qwen 3 Coder Plus, Gemini 3.8 Flash) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context breaks KV caches and induces diff matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted). Nacho Flow defaults to **100% pristine context preservation** for optimal speed, cache hits, and accuracy. NTS is maintained as an experimental opt-in research pipeline (`pkg/nts`) for developers investigating extreme context limits.
-
-* **Zero-Alloc In-Place ANSI De-Noising (Opt-In)**: Terminal test executions spit out thousands of raw ANSI escape sequences, spinner animations, and carriage returns (`\r`). The NTS de-noising fast path (`pkg/nts`) purges them cleanly in-flight with zero heap allocation using mutable byte slices.
-* **Redundant File-Read Compaction (Experimental)**: When an agent inspects the same 1,000-line file four times across 20 turns, re-transmitting it burns 8,000 wasted tokens. NTS provides configurable depth-based compaction into structural digests while keeping the active turn fresh.
-* **Attention Defense for Open Weights**: Smaller open-weight models (8B–14B) suffer sharp reasoning degradation when prompt context exceeds 32k tokens. For constrained hardware, NTS can be selectively enabled in `config.yaml` to trade prompt cache hits for lower raw context memory footprint.
-* **Dual-Lane Protection Guards**: Even when NTS is enabled, strict rules protect active file reads, edits (`write_to_file`, `apply_diff`, `editor`), and prompt caching breakpoints from mutation.
-
-### ⚡ 3. High-Throughput Wire-Speed Core & Systems Architecture
-* **Zero-Allocation Fast Path**: Adds < 0.19 ms routing overhead and sustains <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END --> using lock-free atomic RCU (Read-Copy-Update) state, stack-allocated streaming buffers (`sync.Pool`), and pooled HTTP transports with zero heap churn during proxying.
-* **Universal Strategy-Pipeline Tool Normalizer**: Converts 8 raw tool-call format families (Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, Llama 3 `<function>`, Claude XML `<invoke>`, ReAct `Action:`, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON with zero-copy stream rewrites.
-* **Reasoning Stream Normalization (`<think>`)**: Intercepts SSE streams from DeepSeek-R1, QwQ, Qwen 2.5 (`<|im_start|>think`), and Anthropic-style models (`<thinking>`), converting reasoning tokens into `<think>...</think>` tags in real time for client UI accordions.
-* **Streaming Delimiter Defense**: Prevents `<channel|>` and unicode-escaped delimiter leakage across streaming SSE chunk boundaries.
-* **Response Quality Validation & Delayed Headers**: Peeks initial SSE stream chunks before committing `HTTP 200` headers to enable transparent cloud failover if a local model returns an empty payload or unexpected termination.
-
-### 🎯 4. Dynamic Model Routing & Cost Engine
-* **Deterministic AST Bytecode Rules (`expr-lang/expr`)**: Compiles tier expressions into cached Go bytecode evaluated top-to-bottom in sub-microseconds (`Tokens`, `Retries`, `Keywords`, `HasTools`, `HasImages`).
-* **Automatic Multimodal Vision Routing**: Inspects incoming payloads for base64 images or image URLs and deterministically routes them to vision-capable model tiers with automated image stripping for text-only fallbacks.
-* **Cost-Safe Default Shield & Unrouted Tiers**: Eliminates runaway frontier billing by placing Claude Sonnet at the safety net while isolating expensive models (Claude Opus) behind `when: "false"` for on-demand checkpoints only.
-* **Prompt Cache-Aware Cost Engine**: Automatically ingests upstream provider prompt caching discounts (~80% off prompt tokens from OpenRouter/DeepSeek/Anthropic) using a 3-tier priority oracle for dollar-accurate billing and ROI tracking.
-* **"Heat Seeker" Live Model Deals**: Built-in deal scout finding flash discounts, subsidized models, and free endpoints with tier recommendations (`nacho-flow deals` / `nacho-flow heat-seek` & `GET /api/v1/deals`).
-* **Local Circuit Breakers & Retries**: Tracks consecutive connection/5xx failures and auto-escalates to cloud fallback tiers with sub-millisecond in-memory dispatch.
-
-### 🕹️ 5. Developer Control Plane & IDE Integration
-* **Official VS Code Companion Extension**: Bundles the native Go binary directly—zero CLI or Go toolchain needed. Features a zero-polling SSE background HUD, live financial telemetry, visual route inspector, and one-click preset hot-swapper (Standard / Zoo Code / Cline).
-
-<p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow">
-    <img src="images/vscode-extension-showcase.png" alt="Nacho Flow VS Code Extension - Live Analytics Dashboard, Sidebar Control Hub, and Cline Pairing" width="850" />
-  </a>
-</p>
-
-* **HotSauce In-Chat Directives (`@nacho:...`)**: Steer routing tiers and session guardrails on-the-fly directly from your editor chat (`@nacho:local`, `@nacho:cloud`, `@nacho:reasoning`, `@nacho:kickstart-off`, `@nacho:reset`).
-* **Safe Log Rotation & Cold Maintenance**: Rotates large `traffic.jsonl` and `router.log` files to timestamped `.bak` archives and resets stats directly from the VS Code sidebar without file locking issues.
-* **Cross-Platform Service Manager**: Runs interactively as a CLI or installs as a native background daemon on Windows (Windows Service), Linux (`systemd`), and macOS (`launchd`).
-<!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
-<!-- COVERAGE:SUMMARY_END -->
-* **Zero Runtime Dependencies**: Single static binary with zero CGO, Node, or Python runtime requirements (`CGO_ENABLED=0`).
-
-### 🎤 6. Auto-Tune: Pitch-Correct Your Routing Rules
-Local models sound great until they try to hit high notes they can't reach—cracking on 20k-token prompts, butchering tool calls, or dragging your agent through painful retry loops. But if you get paranoid and escalate too early, you're paying stadium-tour prices to Claude for what should have been an acoustic coffee shop gig for $0.00.
-
-Auto-Tune listens to your real recorded coding tracks (`logs/traffic.jsonl`) and pitch-corrects your entire multi-tier mix in 25ms:
-* **Finds the Sweet Note (Token & Friction Limits)**: Replays your multi-turn conversation trajectories to find the exact threshold where your local GPU starts cracking, snapping rules to the sweet spot without manual guesswork.
-* **Mutes Dead Tracks (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Cuts out middle tiers that are just background hiss—if a tier never catches a turn or immediately drops out, Auto-Tune cuts it from the mix to kill routing latency and config noise.
-* **Escalation Plateau Filter (Stop Overpaying for Backing Vocals)**: Blocks knee-jerk escalations to expensive frontier models when your local or budget model hits the note within 5% of the same success rate.
-* **Filters Out Mic Feedback (Failure Taxonomy)**: Distinguishes actual model capability failures from dropped Wi-Fi, client cancels, and upstream provider 429s so you never blame the singer when the soundboard cuts the mic.
-* **Wire-Speed Zero-Alloc Replay**: Replays multi-turn sessions at **81 ns/op (~37,000,000 turns/sec)** with 0 heap allocations.
-* **Granular Selective Apply**: Review the clean YAML diff and proposed recommendations in your VS Code dashboard, cherry-pick exactly which tier adjustments to adopt via interactive checkboxes, and hot-swap the new mix live with an automatic timestamped backup and zero downtime.
-
----
-
-## 🛠️ Quickstart
-
-### 1. Installation
-
-**Visual Studio Code Extension (All-in-One Runtime)**:
-Install directly from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow) (bundles the native Go routing binary with zero CLI setup):
+**VS Code Extension (All-in-One Runtime)**:
 ```bash
 code --install-extension dixieflatline76.nacho-flow
 ```
@@ -208,34 +99,29 @@ docker run -d -p 8000:8000 \
 brew install dixieflatline76/nacho-flow/nacho-flow
 ```
 
-**Pre-compiled Binaries**:
-Download the latest signed release for Windows, Linux, or macOS from [GitHub Releases](https://github.com/dixieflatline76/nacho-flow/releases).
+**Pre-compiled Binaries**: [GitHub Releases](https://github.com/dixieflatline76/nacho-flow/releases)
 
-**Or install via Go**:
+**Go**:
 ```bash
 go install github.com/dixieflatline76/nacho-flow/cmd/nacho-flow@latest
 ```
 
 ---
 
-### 2. Configuration (`config.yaml`)
+## Configuration (`config.yaml`)
 
 Create a `config.yaml` in your project folder or `~/.config/nacho-flow/config.yaml`:
 
 ```yaml
 port: 8000
-host: "127.0.0.1" # Local loopback isolation. Use "0.0.0.0" for LAN access.
-# Inbound Client Auth (Optional: Secures gateway on LAN / 0.0.0.0)
+host: "127.0.0.1"
 auth_token: "sk-nacho-secret-key"
 
-# Upstream Providers (Local GPUs, Cloud Gateways, Private Tenants)
 providers:
-  # Local GPU (Ollama / vLLM / llama.cpp - $0.00 cost)
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
     type: "local"
 
-  # OpenRouter Cloud Gateway
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
@@ -243,34 +129,29 @@ providers:
       HTTP-Referer: "https://spicebox.dev"
       X-Title: "nacho-flow"
 
-  # Langdock Enterprise / Private Tenant
   langdock:
     base_url: "https://api.langdock.com/v1"
     api_key: "ENV_LANGDOCK_API_KEY"
 
-# Dynamic Routing Tiers (Evaluated top-to-bottom: First Match Wins)
+# Tiers evaluated top-to-bottom: first match wins
 tiers:
-  # Tier 1: Concurrency & Complex Reasoning Keywords
   - name: "Cloud Reasoning"
     model: "deepseek/deepseek-r1"
     provider: "openrouter"
     when: "any(Keywords, { # in ['deadlock', 'mutex', 'race', 'concurrency', 'atomic'] })"
 
-  # Tier 2: Multimodal Vision (Screenshots attached)
   - name: "Cloud Vision"
     model: "google/gemini-2.5-flash-lite"
     provider: "openrouter"
     when: "HasImages"
 
-  # Tier 3: Local ROCm GPU (100% Free, Routine tasks < 16k context, auto-escalates after 2 retries)
-  - name: "Local ROCm GPU"
-    model: "qwen2.5-coder:14b"
+  - name: "Local GPU"
+    model: "qwen3.8-coder:14b"
     provider: "ollama"
     max_context: 16384
     when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
     strip_images: true
 
-  # Tier 4: Fast Agentic Cloud (Large context >= 16k, active tools, or retry recovery)
   - name: "Cloud Agentic Fast"
     model: "qwen/qwen3-coder-30b-a3b-instruct"
     provider: "openrouter"
@@ -282,87 +163,70 @@ default_tier:
   provider: "openrouter"
   when: "true"
 
-# In-Flight Stream Defense & Session Resuscitation
 cycle_killer:
   enabled: true
-  max_tool_tokens: 8192         # RFC-002: In-flight streaming tool argument loop breaker
-  repetition_threshold: 3       # Kills repeating n-grams in < 3 seconds
-  kickstart_threshold: 5        # Resuscitates agents stuck in idle read-only loops
+  max_tool_tokens: 8192
+  repetition_threshold: 3
+  kickstart_threshold: 5
 
-# Periodic Proactive Frontier Quality Reviews (Cost-Safe Sonnet 5 default)
 fairy_dust:
   enabled: true
   entries:
     - name: "Tactical Code Review"
-      frequency: 15             # Checkpoint every 15 file writes
+      frequency: 15
       provider: "openrouter"
       model: "anthropic/claude-sonnet-5"
     - name: "Strategic Architecture Review"
-      frequency: 40             # Deep audit every 40 file writes
+      frequency: 40
       provider: "openrouter"
-      # model: "anthropic/claude-opus-5"
-      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
+      model: "anthropic/claude-sonnet-5"
 ```
 
 ---
 
-### 3. In-Chat Control Directives (`@nacho:`)
+## In-Chat Control Directives (`@nacho:`)
 
-Control routing rules, guardrails, and daemon telemetry directly from your editor chat without restarting the gateway:
+Control routing and guardrails directly from your editor chat without restarting the gateway:
 
-| Category | Directive | Example | Action |
-| :--- | :--- | :--- | :--- |
-| **Session Switches** | `@nacho:kickstart-off` / `on` | `@nacho:kickstart-off` | Suspend / resume Kickstart idle stall escalation |
-| | `@nacho:cyclekiller-off` / `on` | `@nacho:cyclekiller-off` | Suspend / resume Cycle Killer stream loop breaker |
-| | `@nacho:shield-off` / `on` | `@nacho:shield-off` | Suspend / resume synthetic tool-call synthesis |
-| | `@nacho:raw-on` / `off` | `@nacho:raw-on` | Enable / disable raw unadulterated SSE stream |
-| | `@nacho:fairydust-off` / `on` | `@nacho:fairydust-off` | Suspend / resume periodic frontier checkpoints |
-| **Inspection & Reset** | `@nacho:toggles` | `@nacho:toggles` | Display live session switches ($0.00 / 0 tokens) |
-| | `@nacho:status` | `@nacho:status` | Display daemon telemetry, spend & saved dollars |
-| | `@nacho:reset` | `@nacho:reset` | Hard reset turn counter & restore default switches |
-| **Single-Turn Overrides** | `@nacho:local` | `@nacho:local fix typo` | Force current turn to Local GPU ($0.00) |
-| | `@nacho:cloud` | `@nacho:cloud audit code`| Force current turn to Cloud Fallback tier |
-| | `@nacho:reasoning` | `@nacho:reasoning solve math`| Force current turn to DeepSeek-R1 / o1 |
+| Category | Directive | Action |
+| :--- | :--- | :--- |
+| **Session Switches** | `@nacho:kickstart-off` / `on` | Suspend / resume Kickstart idle stall escalation |
+| | `@nacho:cyclekiller-off` / `on` | Suspend / resume Cycle Killer stream loop breaker |
+| | `@nacho:shield-off` / `on` | Suspend / resume synthetic tool-call synthesis |
+| | `@nacho:raw-on` / `off` | Enable / disable raw upstream SSE stream |
+| | `@nacho:fairydust-off` / `on` | Suspend / resume periodic frontier checkpoints |
+| **Inspection & Reset** | `@nacho:toggles` | Display live session switches ($0.00 / 0 tokens) |
+| | `@nacho:status` | Display daemon telemetry, spend & saved dollars |
+| | `@nacho:reset` | Hard reset turn counter & restore default switches |
+| **Single-Turn Overrides** | `@nacho:local` | Force current turn to Local GPU ($0.00) |
+| | `@nacho:cloud` | Force current turn to Cloud Fallback tier |
+| | `@nacho:reasoning` | Force current turn to DeepSeek-R1 / o1 |
 
-> [!TIP]
-> **Plan Mode Auto-Detection**: When your agent switches into Plan Mode (declaring zero write tools), Nacho Flow automatically detects `HasWriteCapability == false` and **suspends Kickstart idle escalation**—no manual toggles required!
->
-> 🧑‍💻 **Mastering Directives**: See how these directives and automatic tier escalations work in a real workday with Cline and Zoo Code in our **[Day in the Life Developer Walkthrough](docs/DAY_IN_THE_LIFE.md)**.
+> **Plan Mode Auto-Detection**: When your agent switches into Plan Mode (zero write tools declared), Nacho Flow automatically detects `HasWriteCapability == false` and suspends Kickstart -- no manual toggles required.
 
 ---
 
-### 4. 🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)
+## Auto-Tune (`nacho-flow tune`)
 
-Never guess where your local GPU model starts singing off-key. Auto-Tune replays your actual multi-turn sessions from `logs/traffic.jsonl`, eliminates off-key local retry loops, and mutes redundant middle tiers:
+Replays your actual `logs/traffic.jsonl` to find where your local GPU starts failing, prune dead tiers, and stop over-escalating to expensive frontier models:
 
 ```bash
-# Advisory dry-run: replays real sessions with multi-tier CSP heuristic search
+# Advisory dry-run
 nacho-flow tune
 
-# Target specific local GPU hardware ceiling (e.g. 16GB VRAM)
+# Target specific VRAM ceiling
 nacho-flow tune --vram-gb=16
 
-# Atomically apply recommended rules with automatic timestamped backup (.bak)
+# Apply recommendations with timestamped backup
 nacho-flow tune --apply
 ```
 
-<p align="center">
-  <img src="images/vscode-autotuner-showcase.png" alt="Nacho Flow VS Code Auto-Tuner UI Recommendation Banner and Diff Review" width="850" />
-</p>
-
-* **Trajectory Replay (81 ns / 37M turns/sec)**: Tests candidate rules across whole multi-turn conversation sequences with zero heap allocations.
-* **Mutes Dead Tracks (`✂️ Redundant Tier Bypassed`)**: Automatically prunes tiers that never catch a turn or immediately fail and escalate.
-* **5% Escalation Plateau Filter**: Stops you from paying 10× more for Claude when your local or budget model hits within 5% of the same success rate.
-* **1-Click Review & Apply**: Review the rule diff directly in your terminal or the VS Code dashboard webview, with automatic `.bak` rollback safety.
-
 ---
 
-### 5. Running as a Background Daemon
-
-To make Nacho Flow run continuously in the background (starts automatically on OS boot):
+## Running as a Background Daemon
 
 ```bash
-# Install as a native OS service (Windows Service / systemd / launchd)
+# Install as native OS service (Windows Service / systemd / launchd)
 nacho-flow service install
 
 # Start the background daemon
@@ -371,107 +235,85 @@ nacho-flow service start
 
 ---
 
-### 6. Connect Your IDE & Coding Agents
+## Connect Your IDE
 
-Nacho Flow exposes a standard OpenAI-compatible proxy endpoint on `http://localhost:8000/v1`. Since Nacho Flow dynamically routes and rewrites model IDs turn-by-turn based on your `config.yaml` tier rules, you can use `nacho-hybrid` (or any string) as your Model ID.
+Nacho Flow exposes a standard OpenAI-compatible proxy at `http://localhost:8000/v1`. Use `nacho-hybrid` as your Model ID.
 
-#### 🦁 Zoo Code & Cline (VS Code)
-In **Settings** (Gear Icon $\rightarrow$ API Configuration):
-* **API Provider**: `OpenAI Compatible`
-* **Base URL**: `http://localhost:8000/v1` *(or `http://127.0.0.1:8000/v1`)*
-* **API Key**: `sk-nacho-secret-key` *(Matches `auth_token` if configured; otherwise use any string like `sk-local`)*
-* **Model ID**: `nacho-hybrid`
-* Under **Custom Model Info**:
-  * **Supports Images / Vision**: `Enabled`
-  * **Supports Computer Use / Tools**: `Enabled`
-  * **Context Window**: `128,000` tokens
-  * **Max Output**: `8,192` tokens
+#### Zoo Code & Cline
+- **API Provider**: `OpenAI Compatible`
+- **Base URL**: `http://localhost:8000/v1`
+- **API Key**: `sk-nacho-secret-key`
+- **Model ID**: `nacho-hybrid`
+- Enable **Supports Images**, **Supports Tools**, Context Window `128,000`, Max Output `8,192`
 
-#### ⚡ OpenCode (Terminal Agent)
+#### OpenCode
 ```bash
 export OPENAI_BASE_URL="http://127.0.0.1:8000/v1"
 export OPENAI_API_KEY="sk-nacho-secret-key"
 opencode --model openai/nacho-hybrid
 ```
 
-#### 🤖 Aider (CLI Pair Programmer)
+#### Aider
 ```bash
 export OPENAI_API_BASE="http://127.0.0.1:8000/v1"
 export OPENAI_API_KEY="sk-nacho-secret-key"
 aider --model openai/nacho-hybrid
 ```
 
-#### 🖱️ Cursor
-In **Cursor Settings** $\rightarrow$ **Models**:
-* **OpenAI API Base URL**: `http://localhost:8000/v1`
-* **OpenAI API Key**: `sk-nacho-secret-key` *(or any dummy string)*
-* Add custom model: `nacho-hybrid`
+#### Cursor
+- **OpenAI API Base URL**: `http://localhost:8000/v1`
+- **OpenAI API Key**: `sk-nacho-secret-key`
+- Add custom model: `nacho-hybrid`
 
-#### ⏩ Continue.dev
-In `~/.continue/config.json`:
+#### Continue.dev
 ```json
 {
-  "models": [
-    {
-      "title": "Nacho Flow (Hybrid Local + Cloud)",
-      "provider": "openai",
-      "model": "nacho-hybrid",
-      "apiBase": "http://127.0.0.1:8000/v1",
-      "apiKey": "sk-nacho-secret-key"
-    }
-  ]
+  "models": [{
+    "title": "Nacho Flow (Hybrid Local + Cloud)",
+    "provider": "openai",
+    "model": "nacho-hybrid",
+    "apiBase": "http://127.0.0.1:8000/v1",
+    "apiKey": "sk-nacho-secret-key"
+  }]
 }
 ```
 
 ---
 
-## 🗺️ Product Roadmap
+## Documentation
 
-See our comprehensive **[Product & Commercial Roadmap (ROADMAP.md)](ROADMAP.md)** for detailed phase milestones spanning the open-source data plane, VS Code companion extension, remote fleet protocol, and commercial SaaS control plane.
+Visit **[spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)** for the full documentation portal.
 
----
-
-## 📚 Documentation
-
-Visit the official website and interactive documentation portal at **[spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)**.
-
-For in-depth guides, benchmark data, and architecture deep-dives:
-- **[Interactive Docs Hub](https://spicebox.dev/nacho-flow/docs.html)**: Live web documentation with interactive diagrams and search.
-- **[VS Code Companion Extension Guide](docs/EXTENSION_USER_GUIDE.md)**: Sidebar control hub, status bar widget, route inspector, and agent setup.
-- **[Product & Commercial Roadmap](ROADMAP.md)**: Open-source data plane, IDE extension, fleet protocol, and SaaS control plane.
-- **[Architecture & System Design](docs/ARCHITECTURE.md)**: Deep dive into the pipeline, RCU concurrency model, lock-free pricing oracle, and async telemetry.
-- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->30,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware.
-- **[Systems Performance Whitepaper](docs/PERFORMANCE_WHITEPAPER.md)**: Near-zero allocation systems architecture deep dive, detailing wire-speed streaming fast paths compared to LiteLLM and Bifrost.
-- **[A/B Benchmark Case Study Whitepaper](docs/BENCHMARKS_AB_CASE_STUDY.md)**: Empirical developer study proving $94.7\%$ cost reduction using local GPU routing.
-- **[The Autonomous Agent Runtime Whitepaper](docs/THE_AUTONOMOUS_AGENT_RUNTIME_WHITEPAPER.md)**: Why autonomous agents fail in production (context snowballs, protocol fragility, test fraud) and how Nacho Flow achieves the $0.44 full-stack engineering run.
-- **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules.
-- **[User Guide](docs/USER_GUIDE.md)**: Full configuration reference, custom `expr` tier rules, OS service setup, and IDE walkthroughs.
-- **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Development prerequisites, TDD workflow, plugin extension guide, and benchmarking.
-- **[Contributing](CONTRIBUTING.md)**: Guidelines for opening issues, code style, and pull requests.
-
-## 🌮 Support Nacho Flow
-
-Nacho Flow is 100% free and open source for individual developers and open-source projects. It was born out of sheer engineering frustration while building [**Spice**](https://spicebox.dev/), when autonomous coding agents kept burning hundreds of dollars in API credits on runaway loops and planning stalls.
-
-If Nacho Flow saved your sanity, your workflow, or your API bill:
-* **Don't buy me a coffee.** Instead, consider grabbing a copy of **Spice** on the [**Mac App Store**](https://apps.apple.com/us/app/spice-wallpaper-manager/id6760980759?mt=12) or [**Microsoft Store**](https://apps.microsoft.com/detail/9NPBQ3C91WPF) (or leaving it a 5-star review). You get a beautiful, native desktop utility in return, and it directly funds continued open-source development.
-* **On Linux or dev containers?** Give [**Nacho Flow a star on GitHub**](https://github.com/dixieflatline76/nacho-flow). It boosts repository visibility and helps fellow developers discover local agent routing!
+- **[User Guide](docs/USER_GUIDE.md)**: Full configuration reference, custom tier rules, OS service setup, IDE walkthroughs
+- **[VS Code Extension Guide](docs/EXTENSION_USER_GUIDE.md)**: Sidebar control hub, status bar, route inspector, agent setup
+- **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules
+- **[Architecture & System Design](docs/ARCHITECTURE.md)**: Pipeline internals, RCU concurrency model, lock-free pricing oracle
+- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->30,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware
+- **[Frontier Tax Control Study](docs/FRONTIER_CONTROL_STUDY_2026.md)**: 1:1 Claude Sonnet 5 empirical benchmark
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: TDD workflow, plugin extension guide, benchmarking
+- **[Product Roadmap](ROADMAP.md)**: Phase milestones for open-source, extension, fleet, and SaaS
+- **[Contributing](CONTRIBUTING.md)**: Code style, issue guidelines, pull requests
 
 ---
 
-## 📜 Licensing & Commercial Options
+## Support Nacho Flow
 
-Nacho Flow is available under a **Dual-Licensing Model**:
+Nacho Flow is 100% free and open source. If it saved your sanity or your API bill:
 
-1. **Free & Open-Source (GNU AGPL-3.0 with API Interoperability Exception)**:
-   * 100% free for individual developers, open-source projects, and local evaluation under GNU AGPL-3.0.
-   * **API Interoperability**: Calling Nacho Flow's OpenAI-compatible APIs (`/v1/*`) from client applications, agent harnesses, or IDEs does not cause your private code to be deemed a derivative work (see our [Section 7 Exception in LICENSE](LICENSE)).
-   * **Reciprocal Copyleft**: Modifying and distributing or network-hosting Nacho Flow requires complete source code disclosure under AGPL-3.0.
-2. **Spicebox Commercial & Enterprise OEM License**:
-   * For organizations requiring enterprise fleet deployments, closed-source software embedding, commercial SaaS hosting, corporate "No-AGPL" compliance, priority SLAs, and full IP indemnification.
-   * See **[COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)** or contact [`karl@spicebox.dev`](mailto:karl@spicebox.dev).
+- **Don't buy me a coffee.** Grab a copy of **Spice** on the [Mac App Store](https://apps.apple.com/us/app/spice-wallpaper-manager/id6760980759?mt=12) or [Microsoft Store](https://apps.microsoft.com/detail/9NPBQ3C91WPF) -- you get a native desktop utility, and it funds continued development.
+- **On Linux?** [Star Nacho Flow on GitHub](https://github.com/dixieflatline76/nacho-flow) to help other devs find it.
 
-Contributions are accepted under our **[Contributor License Agreement (.github/CLA.md)](.github/CLA.md)**.
+---
+
+## Licensing
+
+**Dual-Licensing Model**:
+
+1. **Free & Open-Source (GNU AGPL-3.0 with API Interoperability Exception)**: Free for individual developers, open-source projects, and local evaluation. Calling Nacho Flow's OpenAI-compatible APIs from client apps or IDEs does not make your code a derivative work. Modifying and distributing or network-hosting Nacho Flow requires source disclosure under AGPL-3.0.
+
+2. **Spicebox Commercial & Enterprise OEM License**: For enterprise fleet deployments, closed-source embedding, commercial SaaS hosting, and IP indemnification. See **[COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)** or contact [`karl@spicebox.dev`](mailto:karl@spicebox.dev).
+
+Contributions accepted under our **[Contributor License Agreement (.github/CLA.md)](.github/CLA.md)**.
 
 ---
 

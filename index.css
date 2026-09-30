@@ -1,21 +1,21 @@
 :root {
-    --bg-color: #090a0f;
-    --bg-surface: #111218;
-    --card-bg: rgba(255, 255, 255, 0.03);
-    --card-hover: rgba(255, 255, 255, 0.06);
+    --bg-color: #14120b;
+    --bg-surface: #1b1913;
+    --card-bg: rgba(237, 236, 236, 0.03);
+    --card-hover: rgba(237, 236, 236, 0.06);
     --border-color: rgba(255, 255, 255, 0.08);
-    --border-hover: rgba(245, 158, 11, 0.4);
+    --border-hover: rgba(245, 158, 11, 0.35);
     --accent-color: #f59e0b;
     --accent-hover: #fbbf24;
     --accent-glow: rgba(245, 158, 11, 0.2);
     --accent-dim: rgba(245, 158, 11, 0.1);
-    --text-primary: #ffffff;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --text-primary: #edecec;
+    --text-secondary: rgba(237, 236, 236, 0.65);
+    --text-muted: rgba(237, 236, 236, 0.4);
     --cyan: #38bdf8;
     --green: #10b981;
     --purple: #a855f7;
-    --glass-bg: rgba(15, 17, 24, 0.75);
+    --glass-bg: rgba(20, 18, 11, 0.85);
     --glass-blur: 14px;
 }
 
@@ -644,15 +644,13 @@ body.menu-locked {
 }
 
 h1 {
-    font-size: clamp(1.9rem, 2.5vw, 2.55rem);
-    font-weight: 800;
-    letter-spacing: -1.2px;
-    line-height: 1.25;
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: clamp(2.2rem, 3.2vw, 3.2rem);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
     margin-bottom: 1.3rem;
-    background: linear-gradient(180deg, #ffffff 40%, #cbd5e1 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-primary);
     max-width: 1180px;
     margin-left: auto;
     margin-right: auto;
