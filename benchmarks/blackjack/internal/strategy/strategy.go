@@ -1,8 +1,8 @@
 package strategy
 
 import (
-	"blackjack/internal/game"
 	"blackjack/internal/deck"
+	"blackjack/internal/game"
 )
 
 // Basic strategy tables: 4-8 decks, S17, DAS.

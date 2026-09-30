@@ -13,13 +13,13 @@ import (
 
 // ANSI escape sequences for colored output.
 const (
-	ANSIReset  = "\033[0m"
-	ANSIBold   = "\033[1m"
-	ANSIRed    = "\033[31m"
-	ANSIGreen  = "\033[32m"
-	ANSIYellow = "\033[33m"
-	ANSIWhite  = "\033[37m"
-	ANSICyan   = "\033[36m"
+	ANSIReset   = "\033[0m"
+	ANSIBold    = "\033[1m"
+	ANSIRed     = "\033[31m"
+	ANSIGreen   = "\033[32m"
+	ANSIYellow  = "\033[33m"
+	ANSIWhite   = "\033[37m"
+	ANSICyan    = "\033[36m"
 	ANSIMagenta = "\033[35m"
 )
 

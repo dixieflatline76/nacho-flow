@@ -274,11 +274,11 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<div id="specs-modal" class="modal-overlay" style="display: none;">
 		<div class="modal-content">
 			<h3>ℹ️ Hardware & GPU VRAM Guide</h3>
-			<p style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 0;">Active Auto-Tuner VRAM Limit: <strong>${vramDisplay}</strong> &bull; Recommended local model: <strong>qwen2.5-coder:14b</strong></p>
+			<p style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 0;">Active Auto-Tuner VRAM Limit: <strong>${vramDisplay}</strong> &bull; Recommended local model: <strong>qwen3.8-coder:14b</strong></p>
 			<ul>
 				<li><strong>🎮 NVIDIA / AMD GPUs (Dedicated VRAM)</strong>:
-					<br/>• <strong>7B Models</strong>: Needs 6GB–8GB VRAM (e.g. RTX 3060/4060, RX 6600).
-					<br/>• <strong>14B Models</strong>: Needs 10GB–12GB VRAM (e.g. RTX 3080/4070, RX 6800).
+					<br/>• <strong>7B Models</strong>: Needs 6GB-8GB VRAM (e.g. RTX 3060/4060, RX 6600).
+					<br/>• <strong>14B Models</strong>: Needs 10GB-12GB VRAM (e.g. RTX 3080/4070, RX 6800).
 				</li>
 				<li><strong>🍎 Apple Silicon (M1 / M2 / M3 / M4)</strong>:
 					<br/>• Uses Unified Memory (system RAM is shared between CPU & GPU).

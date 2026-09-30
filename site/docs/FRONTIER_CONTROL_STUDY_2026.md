@@ -496,7 +496,7 @@ Consider a team of **10 software engineers**, each running **5 autonomous coding
 A decision-maker evaluating Nacho Flow cares about operational reality:
 
 * **"What if my developers don't have an RTX 4090?"**  
-  Nacho Flow does not require flagship workstation silicon. Laptops with 8GB–16GB VRAM (or Apple Silicon unified memory) run quantized 7B/8B models (e.g. `qwen2.5-coder:7b-instruct-q4_K_M` or `gemma2:9b`) smoothly for early scaffolding. Furthermore, on developer machines with **zero local GPU**, Tier 1 can be pointed to an ultra-low-cost cloud endpoint (such as DeepSeek V3 at $0.20/M), retaining **over 75% of total savings**.
+  Nacho Flow does not require flagship workstation silicon. Laptops with 8GB-16GB VRAM (or Apple Silicon unified memory) run quantized 7B/8B models (e.g. `qwen3.8-coder:7b-instruct-q4_K_M` or `gemma4:12b-it-qat`) smoothly for early scaffolding. Furthermore, on developer machines with **zero local GPU**, Tier 1 can be pointed to an ultra-low-cost cloud endpoint (such as DeepSeek V3 at $0.20/M), retaining **over 75% of total savings**.
 * **"What if run-to-run variance means the real multiplier is 'only' 3× instead of 5.7×?"**  
   Even under conservative assumptions where Sonnet has an unusually clean run, saving 65% of agent spend pays for adopting Nacho Flow within **10 to 12 sessions**.
 * **Zero Integration Friction**: Zero agent code changes. Point Zoo Code, Cline, Aider, or Cursor to `http://127.0.0.1:8000/v1` with a single unified OpenRouter API key.

@@ -111,7 +111,7 @@ Not sure what token limits to set for your local workstation? Use this reference
 
 | Workstation Hardware | VRAM | Recommended Local Model | Suggested `Tokens` Bound |
 | :--- | :--- | :--- | :--- |
-| **8 GB VRAM** (RTX 3060/4060, Apple M1/M2 8GB) | 8 GB | `qwen2.5-coder:7b` | `Tokens < 8000` |
+| **8 GB VRAM** (RTX 3060/4060, Apple M1/M2 8GB) | 8 GB | `qwen3.8-coder:7b` | `Tokens < 8000` |
 | **16 GB VRAM** (Radeon RX 6900/9070 XT, RTX 4080) | 16 GB | `gemma4:12b-it-qat` (🏆 **Recommended**) / `qwen-3.8:27b` (`IQ3_S`) | `Tokens < 20000` |
 | **24 GB VRAM** (RTX 3090/4090, Apple M-Max 32GB) | 24 GB | `qwen-3.8:27b` (`Q4_K_M`) / `ornith-1.5:35b` | `Tokens < 32000` |
 | **32 GB+ VRAM / Mac Studio** | 32 GB+ | `qwen-3.8:27b` (`Q8`) / `deepseek-r1:32b` | `Tokens < 48000` |
@@ -262,7 +262,7 @@ tiers:
     when: "HasImages"
 
   - name: "Local ROCm / CUDA GPU"
-    model: "qwen2.5-coder:14b"
+    model: "qwen3.8-coder:14b"
     provider: "local_gpu"
     max_context: 16384
     when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
@@ -301,7 +301,7 @@ tiers:
 
   # Everything else < 12k context without prior retries -> Local GPU
   - name: "Local Fast"
-    model: "qwen2.5-coder:14b"
+    model: "qwen3.8-coder:14b"
     provider: "local_gpu"
     max_context: 16384
     when: "Tokens < 12000 && !HasImages && Retries < 2"
@@ -362,12 +362,12 @@ tiers:
 ---
 
 ### Recipe 6: Tailored Tool Parsing for Local Open-Weight Models
-When running specialized local models (such as Qwen 2.5 Coder or Mistral NeMo) that output structured tool calls in Markdown code blocks or bare JSON, but produce code diffs containing words like `Action: ` that could trip ReAct regexes:
+When running specialized local models (such as Qwen 3.8 Coder or Mistral NeMo) that output structured tool calls in Markdown code blocks or bare JSON, but produce code diffs containing words like `Action: ` that could trip ReAct regexes:
 
 ```yaml
 tiers:
   - name: "Local Qwen Coder (Selective Parsers)"
-    model: "qwen2.5-coder:14b"
+    model: "qwen3.8-coder:14b"
     provider: "local_gpu"
     max_context: 16384
     when: "Tokens < 12000 && !HasImages && Retries < 2"
@@ -724,7 +724,7 @@ Auto-Tune classifies every error into an explicit **Failure Taxonomy** before ca
 
 ### 7.2 Tuning Tool Normalizers & Eliminating Regex False Positives
 Modern open-weight models have vastly different formatting behaviors:
-* **Disable ReAct on Structured Code Models**: Advanced coder models (like `qwen2.5-coder:14b` or `deepseek-chat`) output standard JSON or markdown blocks. If they generate code diffs or commit messages containing phrases like `Action: Added mutex lock`, aggressive ReAct regexes can trigger false-positive tool extractions. Set `normalizers.react: false` on tiers dedicated to structured models.
+* **Disable ReAct on Structured Code Models**: Advanced coder models (like `qwen3.8-coder:14b` or `deepseek-chat`) output standard JSON or markdown blocks. If they generate code diffs or commit messages containing phrases like `Action: Added mutex lock`, aggressive ReAct regexes can trigger false-positive tool extractions. Set `normalizers.react: false` on tiers dedicated to structured models.
 * **Keep Markdown Fences Active for Ollama/vLLM**: Many open-source models wrap their function calls in ` ```json ... ``` ` blocks. Setting `normalizers.markdown: true` ensures these are converted to standard OpenAI `tool_calls` without breaking client JSON parsers.
 * **Raw Passthrough for Benchmarking**: If you want to benchmark raw upstream token velocity or test custom client parsers without proxy interception, set `raw: true` or use `@nacho:raw` in your prompt.
 
@@ -732,7 +732,7 @@ Modern open-weight models have vastly different formatting behaviors:
 
 ### 7.3 Tuning the Agentic Fallback Shield
 In agent IDEs like Zoo Code or Cline, agents expect models to always invoke tools (`read_file`, `execute_command`). When smaller local models output conversational plans or ask questions ("Should I proceed with the edit?"), agent harnesses fail with "Model did not invoke a tool" 3-strike deadlocks.
-* **For Interactive Coding (IDE)**: Keep `shield: true` (default). Nacho Flow's sliding tail-buffer (4.67ns, 0 allocs) detects trailing question heuristics and wraps the text into an `ask_followup_question` tool call, prompting you in the UI instead of crashing.
+* **For Interactive Coding (IDE)**: Keep `shield: true` (default). Nacho Flow detects trailing question heuristics and wraps the text into an `ask_followup_question` tool call, prompting you in the UI instead of crashing.
 * **For Headless CI & Batch Scripts**: Set `shield: false` on your batch tier (or splash `@nacho:no-shield` in prompts). Automated scripts don't have interactive humans to answer tool questions, so returning raw conversational text prevents test runner timeouts.
 
 ---
@@ -887,7 +887,7 @@ If you want to manually disable or re-enable Kickstart or Cycle Killer mid-sessi
 - **In-Prompt Directive**: Type `@nacho:status` directly into your chat prompt to see total tokens routed locally vs to cloud and dollars saved.
 - **CLI Log Output**: When running interactively, the daemon prints green routing log entries:
   ```text
-  INFO Routing request tier="Local ROCm GPU" model=qwen2.5-coder:14b tokens=4,120 is_fallback=false
+  INFO Routing request tier="Local ROCm GPU" model=qwen3.8-coder:14b tokens=4,120 is_fallback=false
   ```
 
 ### Q: What happens if Ollama or my local GPU runs out of VRAM or crashes?

@@ -25,10 +25,10 @@ func makeHand(rankList []deck.Rank) *Hand {
 
 func TestHandTotalSoftHard(t *testing.T) {
 	cases := []struct {
-		name        string
-		ranks       []deck.Rank
-		expectHard  int
-		expectSoft  int
+		name         string
+		ranks        []deck.Rank
+		expectHard   int
+		expectSoft   int
 		expectIsSoft bool
 	}{
 		{"A+K (blackjack)", []deck.Rank{deck.Ace, deck.King}, 11, 21, true},

@@ -102,13 +102,13 @@ func (c Card) String() string {
 
 // Shoe represents a multi-deck shoe (1-8 standard 52-card decks).
 type Shoe struct {
-	cards            []Card
-	cursor           int
-	numDecks         int
-	penetration      float64
-	cutCardIndex     int
-	needsReshuffle   bool
-	rng              *rand.Rand
+	cards          []Card
+	cursor         int
+	numDecks       int
+	penetration    float64
+	cutCardIndex   int
+	needsReshuffle bool
+	rng            *rand.Rand
 }
 
 var (
