@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Sidebar Provider Cards Auto-Refresh**: Wired active profile `<select>` dropdown `onProfileChanged` to automatically trigger profile switching and daemon restart without requiring manual clicks on the secondary "Switch" button.
-- **Sidebar Profile UX Simplification**: Removed the redundant "Switch" button since selecting from the profile dropdown immediately applies the profile and reloads the engine, giving the profile dropdown full horizontal clearance in narrow side panels.
+- **Sidebar Profile UX & Width Optimization**: Removed the redundant "Switch" button and converted single-action controls into compact icon/action buttons (`.btn-icon`, `.btn-action`), expanding the active profile dropdown to occupy all available horizontal width (~2.5× wider) so long profile labels are not truncated in narrow sidebars.
 - **SSE Telemetry Event Synchronization**: Corrected camelCase event subscriptions (`routeCompleted`, `circuitStateChanged`, `configUpdated`) in the extension controller to match Go telemetry's canonical snake_case events (`route_completed`, `circuit_state_changed`, `config_updated`), ensuring disk hot-reloads and circuit breaker state changes immediately update the active providers panel and dashboard.
 - **Process Manager Restart Port Polling**: Replaced fixed 600ms sleep on restart with health-check polling loop to guarantee TCP port release before spawning new daemon processes.
 

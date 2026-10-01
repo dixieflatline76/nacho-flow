@@ -195,6 +195,7 @@ input[type="password"]:focus {
 
 select {
 	flex: 1;
+	min-width: 0;
 	background: var(--vscode-input-background, #1e1e1e);
 	color: var(--vscode-input-foreground, #ccc);
 	border: 1px solid var(--vscode-input-border, #3c3c3c);
@@ -317,6 +318,27 @@ select:focus {
 	width: auto;
 	flex: 1;
 	justify-content: center;
+}
+
+.btn-icon {
+	width: 26px;
+	height: 26px;
+	min-width: 26px;
+	padding: 0;
+	flex: 0 0 26px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 12px;
+	line-height: 1;
+}
+
+.btn-action {
+	width: auto;
+	flex: 0 0 auto;
+	padding: 5px 10px;
+	font-size: 11px;
+	white-space: nowrap;
 }
 
 /* Partner Item Cards */
