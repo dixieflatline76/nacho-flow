@@ -4,6 +4,7 @@
 package zeroalloc
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -572,5 +573,116 @@ func BenchmarkContainsFoldASCII_ZeroAlloc(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		_ = ContainsFoldASCII(haystack, needle)
+	}
+}
+
+func TestExtractQuotedField(t *testing.T) {
+	jsonPayload := []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello \"world\"\n"}}`)
+	val, ok := ExtractQuotedField(jsonPayload, []byte(`"text":`))
+	if !ok {
+		t.Fatalf("expected ExtractQuotedField to find text")
+	}
+	expected := `"hello \"world\"\n"`
+	if string(val) != expected {
+		t.Fatalf("expected %s, got %s", expected, string(val))
+	}
+
+	// Missing key
+	_, ok = ExtractQuotedField(jsonPayload, []byte(`"nonexistent":`))
+	if ok {
+		t.Fatalf("expected ok=false for nonexistent key")
+	}
+
+	// Malformed (no quote)
+	_, ok = ExtractQuotedField([]byte(`{"text": 123}`), []byte(`"text":`))
+	if ok {
+		t.Fatalf("expected ok=false for non-quoted value")
+	}
+
+	// Zero-alloc verification
+	allocs := testing.AllocsPerRun(1000, func() {
+		_, _ = ExtractQuotedField(jsonPayload, []byte(`"text":`))
+	})
+	if allocs != 0 {
+		t.Fatalf("ExtractQuotedField allocated %f heap objects, expected 0", allocs)
+	}
+}
+
+func TestAppendEscapedJSONString(t *testing.T) {
+	buf := make([]byte, 0, 128)
+	out := AppendEscapedJSONString(buf, "hello \"world\"\n\r\t")
+	expected := `"hello \"world\"\n\r\t"`
+	if string(out) != expected {
+		t.Fatalf("expected %s, got %s", expected, string(out))
+	}
+
+	// Zero-alloc verification
+	allocs := testing.AllocsPerRun(1000, func() {
+		scratch := make([]byte, 0, 128)
+		_ = AppendEscapedJSONString(scratch, "hello \"world\"\n\r\t")
+	})
+	if allocs != 0 {
+		t.Fatalf("AppendEscapedJSONString allocated %f heap objects, expected 0", allocs)
+	}
+}
+
+func TestWriteEscapedJSONString(t *testing.T) {
+	var buf bytes.Buffer
+	buf.Grow(128)
+	WriteEscapedJSONString(&buf, "hello \"world\"\n\r\t\x00")
+	expected := `"hello \"world\"\n\r\t\u0000"`
+	if buf.String() != expected {
+		t.Fatalf("expected %s, got %s", expected, buf.String())
+	}
+
+	// Zero-alloc verification with pre-allocated buffer
+	var benchBuf bytes.Buffer
+	benchBuf.Grow(128)
+	allocs := testing.AllocsPerRun(1000, func() {
+		benchBuf.Reset()
+		WriteEscapedJSONString(&benchBuf, "hello \"world\"\n\r\t")
+	})
+	if allocs != 0 {
+		t.Fatalf("WriteEscapedJSONString allocated %f heap objects, expected 0", allocs)
+	}
+}
+
+func TestLookupCompositeKey(t *testing.T) {
+	m := map[string]int{
+		"anthropic::claude-sonnet-5": 100,
+		"openai::gpt-4o":             200,
+	}
+
+	// Case-insensitive prefix match
+	if v, ok := LookupCompositeKey(m, "Anthropic", "::", "claude-sonnet-5"); !ok || v != 100 {
+		t.Errorf("expected 100, got %d (ok=%v)", v, ok)
+	}
+
+	// Non-existent key
+	if _, ok := LookupCompositeKey(m, "anthropic", "::", "non-existent"); ok {
+		t.Errorf("expected not found")
+	}
+
+	// Nil map safety
+	if _, ok := LookupCompositeKey[int](nil, "anthropic", "::", "claude-sonnet-5"); ok {
+		t.Errorf("expected not found on nil map")
+	}
+
+	// Zero-alloc verification
+	allocs := testing.AllocsPerRun(1000, func() {
+		_, _ = LookupCompositeKey(m, "Anthropic", "::", "claude-sonnet-5")
+	})
+	if allocs != 0 {
+		t.Fatalf("LookupCompositeKey allocated %f heap objects, expected 0", allocs)
+	}
+}
+
+func BenchmarkLookupCompositeKey_ZeroAlloc(b *testing.B) {
+	m := map[string]int{
+		"anthropic::claude-sonnet-5": 100,
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _ = LookupCompositeKey(m, "Anthropic", "::", "claude-sonnet-5")
 	}
 }

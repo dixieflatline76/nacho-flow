@@ -3,8 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -261,5 +263,97 @@ func TestRegistry_CircuitsStatusAndReset(t *testing.T) {
 	// Reset with empty string
 	if !reg.ResetCircuit("") {
 		t.Errorf("expected ResetCircuit('') to succeed")
+	}
+}
+
+func TestGenericLLMProvider_BuildUpstreamRequest_And_Stream(t *testing.T) {
+	// 1. Cloud provider with Auth and Custom Headers
+	pCloud := NewGenericLLMProvider("cloud", contract.ProviderConfig{
+		BaseURL: "https://api.openai.com/v1",
+		APIKey:  "sk-test-123",
+		Headers: map[string]string{
+			"X-Custom-Header": "custom-val",
+		},
+	})
+
+	inReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o"}`))
+	inReq.Header.Set("User-Agent", "TestClient/1.0")
+
+	outReq, err := pCloud.BuildUpstreamRequest(context.Background(), inReq, "gpt-4o", []byte(`{"model":"gpt-4o"}`))
+	if err != nil {
+		t.Fatalf("BuildUpstreamRequest failed: %v", err)
+	}
+
+	if outReq.URL.String() != "https://api.openai.com/v1/chat/completions" {
+		t.Errorf("expected URL https://api.openai.com/v1/chat/completions, got %s", outReq.URL.String())
+	}
+	if outReq.Header.Get("Authorization") != "Bearer sk-test-123" {
+		t.Errorf("expected Bearer sk-test-123, got %s", outReq.Header.Get("Authorization"))
+	}
+	if outReq.Header.Get("X-Custom-Header") != "custom-val" {
+		t.Errorf("expected custom header preserved, got %s", outReq.Header.Get("X-Custom-Header"))
+	}
+	if outReq.Header.Get("User-Agent") != "TestClient/1.0" {
+		t.Errorf("expected client header forwarded")
+	}
+
+	// 2. Local provider strips Authorization
+	pLocal := NewGenericLLMProvider("ollama", contract.ProviderConfig{
+		BaseURL: "http://127.0.0.1:11434",
+		Type:    contract.ProviderTypeLocal,
+	})
+	inReqLocal := httptest.NewRequest(http.MethodPost, "/chat/completions", nil)
+	inReqLocal.Header.Set("Authorization", "Bearer unwanted-token")
+
+	outReqLocal, err := pLocal.BuildUpstreamRequest(context.Background(), inReqLocal, "llama3", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("BuildUpstreamRequest local failed: %v", err)
+	}
+	if outReqLocal.Header.Get("Authorization") != "" {
+		t.Errorf("expected Authorization header to be stripped for local provider")
+	}
+	if outReqLocal.URL.String() != "http://127.0.0.1:11434/chat/completions" {
+		t.Errorf("expected URL http://127.0.0.1:11434/chat/completions, got %s", outReqLocal.URL.String())
+	}
+
+	// 3. Invalid target URL
+	pBad := NewGenericLLMProvider("bad", contract.ProviderConfig{
+		BaseURL: "::://bad url",
+	})
+	if _, err := pBad.BuildUpstreamRequest(context.Background(), inReq, "gpt-4o", nil); err == nil {
+		t.Errorf("expected error for invalid target URL")
+	}
+
+	// 4. WrapResponseStream and TranslateResponseBody
+	mockResp := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader("stream data")),
+	}
+	rc := pCloud.WrapResponseStream(mockResp)
+	b, _ := io.ReadAll(rc)
+	if string(b) != "stream data" {
+		t.Errorf("expected pass-through stream body")
+	}
+
+	rawBody := []byte(`{"result":"ok"}`)
+	transBody, err := pCloud.TranslateResponseBody(200, rawBody)
+	if err != nil || string(transBody) != string(rawBody) {
+		t.Errorf("expected pass-through translated response body")
+	}
+
+	// 5. singleJoiningSlash tests
+	tests := []struct {
+		a, b, want string
+	}{
+		{"http://a.com/", "/v1", "http://a.com/v1"},
+		{"http://a.com", "v1", "http://a.com/v1"},
+		{"http://a.com/", "v1", "http://a.com/v1"},
+		{"http://a.com", "/v1", "http://a.com/v1"},
+	}
+	for _, tc := range tests {
+		got := singleJoiningSlash(tc.a, tc.b)
+		if got != tc.want {
+			t.Errorf("singleJoiningSlash(%q, %q) = %q, want %q", tc.a, tc.b, got, tc.want)
+		}
 	}
 }

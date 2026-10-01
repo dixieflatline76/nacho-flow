@@ -553,6 +553,14 @@ func TestCurationManager_AdditionalCoverage(t *testing.T) {
 		t.Errorf("expected to find ANTHROPIC/CLAUDE-SONNET-5:V1 via uppercase untagged lookup")
 	}
 
+	// Catalog declared aliases
+	if p, ok := mgr.Lookup("claude-3-7-sonnet-20250219"); !ok || p.ModelID != "anthropic/claude-3-7-sonnet" {
+		t.Errorf("expected to find anthropic/claude-3-7-sonnet via alias claude-3-7-sonnet-20250219, got %v, ok=%v", p, ok)
+	}
+	if p, ok := mgr.Lookup("anthropic/claude-3-7-sonnet-20250219"); !ok || p.ModelID != "anthropic/claude-3-7-sonnet" {
+		t.Errorf("expected to find anthropic/claude-3-7-sonnet via prefixed alias, got %v, ok=%v", p, ok)
+	}
+
 	// buildCatalogIndex with nil and empty
 	if idx := buildCatalogIndex(nil); idx == nil || len(idx.exactMap) != 0 {
 		t.Errorf("expected empty index for nil catalog")
@@ -607,5 +615,75 @@ func TestCurationManager_AdditionalCoverage(t *testing.T) {
 	}
 	if _, ok := emptyMgr.Lookup("test"); ok {
 		t.Errorf("expected false for lookup on empty manager")
+	}
+}
+
+func TestCurationManager_RegisterDynamicModels(t *testing.T) {
+	mgr := NewManager("", "")
+
+	// 1. Nil manager and empty models no-op tests
+	var nilMgr *Manager
+	nilMgr.RegisterDynamicModels(map[string]ModelCuratedProfile{"m": {}})
+	mgr.RegisterDynamicModels(nil)
+	mgr.RegisterDynamicModels(map[string]ModelCuratedProfile{})
+
+	// 2. Register brand new dynamic model with empty ModelID
+	newModels := map[string]ModelCuratedProfile{
+		"provider/brand-new-model": {
+			Name:             "Brand New Model",
+			SupportsVision:   true,
+			SupportsTools:    true,
+			CodingIndex:      88.0,
+			ToolReliability:  92.0,
+			TierRole:         RoleCodingWorkhorse,
+			RecommendedTiers: []string{"workhorse"},
+		},
+	}
+	mgr.RegisterDynamicModels(newModels)
+
+	prof, ok := mgr.Lookup("provider/brand-new-model")
+	if !ok {
+		t.Fatalf("expected to find dynamically registered model")
+	}
+	if prof.ModelID != "provider/brand-new-model" {
+		t.Errorf("expected ModelID to be set from map key, got %q", prof.ModelID)
+	}
+
+	// 3. Register dynamic model updating existing model with default fallback fields
+	updateModels := map[string]ModelCuratedProfile{
+		"provider/brand-new-model": {
+			ModelID:          "provider/brand-new-model",
+			Name:             "Updated Brand New Model",
+			SupportsVision:   false,       // existing was true
+			SupportsTools:    false,       // existing was true
+			CodingIndex:      0,           // existing was 88.0
+			ToolReliability:  0,           // existing was 92.0
+			TierRole:         RoleGeneral, // existing was RoleCodingWorkhorse
+			RecommendedTiers: nil,         // existing was ["workhorse"]
+		},
+	}
+	mgr.RegisterDynamicModels(updateModels)
+
+	updatedProf, ok := mgr.Lookup("provider/brand-new-model")
+	if !ok {
+		t.Fatalf("expected to find updated dynamic model")
+	}
+	if !updatedProf.SupportsVision {
+		t.Errorf("expected SupportsVision to be preserved from existing")
+	}
+	if !updatedProf.SupportsTools {
+		t.Errorf("expected SupportsTools to be preserved from existing")
+	}
+	if updatedProf.CodingIndex != 88.0 {
+		t.Errorf("expected CodingIndex 88.0 preserved from existing, got %f", updatedProf.CodingIndex)
+	}
+	if updatedProf.ToolReliability != 92.0 {
+		t.Errorf("expected ToolReliability 92.0 preserved from existing, got %f", updatedProf.ToolReliability)
+	}
+	if updatedProf.TierRole != RoleCodingWorkhorse {
+		t.Errorf("expected TierRole RoleCodingWorkhorse preserved from existing, got %q", updatedProf.TierRole)
+	}
+	if len(updatedProf.RecommendedTiers) == 0 {
+		t.Errorf("expected RecommendedTiers preserved from existing")
 	}
 }

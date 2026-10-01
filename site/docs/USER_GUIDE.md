@@ -216,6 +216,12 @@ providers:
     type: "cloud"
     api_key: "ENV_DEEPSEEK_API_KEY"
 
+  # 5. Direct Native Anthropic (Messages API with automatic prompt caching & wire normalization)
+  anthropic:
+    base_url: "https://api.anthropic.com"
+    type: "anthropic"
+    api_key: "ENV_ANTHROPIC_API_KEY"
+
 # Ordered Dynamic Routing Tiers (Evaluated from top to bottom: First Match Wins)
 tiers:
   # Tier 1: Concurrency & Complex Reasoning Keywords
@@ -686,6 +692,48 @@ When an agent inspects a file multiple times across a long session (e.g., readin
 | `preserve_cache_control`| `bool` | `true` | Preserves Anthropic/OpenRouter prompt cache annotations. |
 | `compact_stale_file_reads`| `bool` | `false` | Reclaims tokens by pruning superseded historical reads of the same file (experimental). |
 | `stale_read_depth` | `int` | `3` | Number of recent reads to keep per file before historical eviction. |
+
+---
+
+### 2.8 Native Anthropic Provider (Direct Messages API & Prompt Caching)
+
+Nacho Flow includes a native, high-performance direct provider adapter for Anthropic (`type: "anthropic"`). This bypasses third-party aggregator latency and communicates directly with the Anthropic Messages API (`https://api.anthropic.com/v1/messages`).
+
+#### Key Capabilities:
+- **Wire-Speed Zero-SDK Protocol Translation**: Automatically translates client OpenAI-formatted requests into Anthropic Messages API payloads, and normalizes Anthropic SSE event streams (`message_start`, `content_block_delta`, `message_delta`) back to standard OpenAI chunk streams with zero heap allocations.
+- **Native Ephemeral Prompt Caching**: Billed input tokens are dynamically tracked across Base Input Tokens, Cache Creation Tokens ($3.75/M), and Cache Read Tokens ($0.30/M, a 90% discount). Telemetry and dashboard analytics accurately record counterfactual savings.
+- **Zero-Allocation Dated Alias Resolution**: Agent clients often request dated snapshot names (e.g. `claude-3-7-sonnet-20250219`, `claude-3-5-sonnet-20241022`, or `claude-3-7-sonnet-latest`). Nacho Flow resolves these instantly at zero-alloc overhead to the canonical model IDs while preserving exact pricing telemetry.
+
+#### Configuration Example (`config.yaml`):
+
+```yaml
+providers:
+  anthropic:
+    base_url: "https://api.anthropic.com"
+    type: "anthropic"
+    api_key: "ENV_ANTHROPIC_API_KEY"
+
+tiers:
+  # Tier 1: Sonnet 5 Workhorse (Direct Anthropic)
+  - name: "Tier 1: Claude Sonnet (Medium)"
+    provider: "anthropic"
+    model: "claude-sonnet-5"
+    reasoning_effort: "medium"
+    when: "Retries < 4"
+
+  # Tier 2: Opus 5 Escalation
+  - name: "Tier 2: Claude Opus (Medium)"
+    provider: "anthropic"
+    model: "claude-opus-5"
+    reasoning_effort: "medium"
+    when: "Retries >= 4"
+
+default_tier:
+  name: "Default: Claude Sonnet"
+  provider: "anthropic"
+  model: "claude-sonnet-5"
+  when: "true"
+```
 
 ---
 

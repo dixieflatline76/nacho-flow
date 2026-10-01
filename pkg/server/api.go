@@ -376,7 +376,11 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 	// 5b. Dynamically reconfigure PricingOracle providers upon hot-reload
 	if s.oracle != nil {
 		for id, p := range merged.Providers {
-			if factory, ok := telemetry.LookupPricingFactory(id); ok {
+			factory, ok := telemetry.LookupPricingFactory(id)
+			if !ok && p.Type != "" {
+				factory, ok = telemetry.LookupPricingFactory(string(p.Type))
+			}
+			if ok {
 				prov, interval := factory(id, p, 0)
 				s.oracle.RegisterProvider(prov, interval)
 			}

@@ -144,10 +144,16 @@ func TestPricingOracle_AsyncProviderPolling_COW(t *testing.T) {
 	oracle.StartBackgroundSync(ctx, 50*time.Millisecond)
 
 	// Wait for background loops to populate
-	time.Sleep(45 * time.Millisecond)
-
-	_, foundFast := oracle.GetPrice("fast_provider", "model-fast")
-	_, foundSlow := oracle.GetPrice("slow_provider", "model-slow")
+	deadline := time.Now().Add(500 * time.Millisecond)
+	foundFast, foundSlow := false, false
+	for time.Now().Before(deadline) {
+		_, foundFast = oracle.GetPrice("fast_provider", "model-fast")
+		_, foundSlow = oracle.GetPrice("slow_provider", "model-slow")
+		if foundFast && foundSlow {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	if !foundFast || !foundSlow {
 		t.Errorf("expected both fast and slow provider models to be present via COW merging (fast=%v, slow=%v)", foundFast, foundSlow)
@@ -538,5 +544,49 @@ func TestPricingOracle_GetAllPricing(t *testing.T) {
 	}
 	if all["openrouter::qwen"].PromptCostPerMillion != 0.2 {
 		t.Errorf("expected price 0.2, got %f", all["openrouter::qwen"].PromptCostPerMillion)
+	}
+}
+
+func TestPricingOracle_AnthropicNativeAndPromptCaching(t *testing.T) {
+	oracle := NewPricingOracle()
+
+	// 1. Direct pricing fallback for Claude Sonnet (unregistered in OpenRouter metadata)
+	price, found := oracle.GetPrice("anthropic", "claude-sonnet-5")
+	if !found {
+		t.Fatalf("expected pricing found for anthropic/claude-sonnet-5")
+	}
+	if price.PromptCostPerMillion <= 0 || price.CompletionCostPerMillion <= 0 {
+		t.Fatalf("expected non-zero rates, got prompt=%f, comp=%f", price.PromptCostPerMillion, price.CompletionCostPerMillion)
+	}
+
+	// 2. Financial calculation: 20k prompt (15k cached), 2k completion
+	spent, saved := oracle.CalculateFinancials("anthropic", "claude-sonnet-5", false, 20000, 2000, 15000, 0, 0)
+	if spent <= 0 {
+		t.Errorf("expected positive spent for Anthropic turn, got %f", spent)
+	}
+	if saved <= 0 {
+		t.Errorf("expected positive savings from 15k cached tokens, got %f", saved)
+	}
+
+	// 3. Direct pricing fallback for Claude Opus
+	priceOpus, foundOpus := oracle.GetPrice("anthropic", "claude-opus-5")
+	if !foundOpus || priceOpus.CompletionCostPerMillion < price.CompletionCostPerMillion {
+		t.Errorf("expected Opus rates higher than Sonnet, got %v", priceOpus)
+	}
+}
+
+func BenchmarkPricingOracle_GetPrice_ZeroAlloc(b *testing.B) {
+	oracle := NewPricingOracle()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _ = oracle.GetPrice("anthropic", "claude-sonnet-5")
+	}
+}
+
+func BenchmarkPricingOracle_GetModelMetadata_ZeroAlloc(b *testing.B) {
+	oracle := NewPricingOracle()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _ = oracle.GetModelMetadata("anthropic", "claude-sonnet-5")
 	}
 }

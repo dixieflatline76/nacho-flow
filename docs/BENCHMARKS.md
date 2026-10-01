@@ -70,11 +70,11 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 <!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **23993.0 req/s** | 1.56 ms | 9.95 ms | 69.6 MB |
-| **100 workers** | 50,000 | **100.0%** | **23075.2 req/s** | 3.13 ms | 18.59 ms | 96.9 MB |
-| **250 workers** | 75,000 | **100.0%** | **25770.1 req/s** | 7.92 ms | 40.97 ms | 140.7 MB |
-| **500 workers** | 100,000 | **100.0%** | **25348.6 req/s** | 16.42 ms | 68.55 ms | 184.9 MB |
-| **1000 workers** | 100,000 | **100.0%** | **26257.9 req/s** | 36.70 ms | 63.02 ms | 224.2 MB |
+| **50 workers** | 25,000 | **100.0%** | **25979.5 req/s** | 1.51 ms | 8.64 ms | 77.1 MB |
+| **100 workers** | 50,000 | **100.0%** | **24547.2 req/s** | 3.17 ms | 16.76 ms | 177.0 MB |
+| **250 workers** | 75,000 | **100.0%** | **25194.0 req/s** | 8.26 ms | 40.33 ms | 120.8 MB |
+| **500 workers** | 100,000 | **100.0%** | **25608.1 req/s** | 13.87 ms | 71.78 ms | 214.7 MB |
+| **1000 workers** | 100,000 | **100.0%** | **25440.5 req/s** | 33.78 ms | 81.51 ms | 240.5 MB |
 <!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
@@ -93,10 +93,10 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 <!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 27609.9 req/s | 24002.3 req/s | **-13.1%** | **+0.00 ms** (1.00ms vs 1.00ms) | +1.46 ms |
-| **50 workers** | 29154.0 req/s | 25098.8 req/s | **-13.9%** | **+0.16 ms** (1.39ms vs 1.56ms) | +2.74 ms |
-| **100 workers** | 28049.9 req/s | 25936.2 req/s | **-7.5%** | **+0.01 ms** (3.00ms vs 3.01ms) | +2.95 ms |
-| **200 workers** | 28097.0 req/s | 27577.0 req/s | **-1.9%** | **+0.42 ms** (6.02ms vs 6.45ms) | -2.18 ms |
+| **25 workers** | 27734.6 req/s | 27400.9 req/s | **-1.2%** | **+0.00 ms** (1.00ms vs 1.00ms) | +0.36 ms |
+| **50 workers** | 28610.5 req/s | 27413.7 req/s | **-4.2%** | **+0.20 ms** (1.31ms vs 1.51ms) | +1.22 ms |
+| **100 workers** | 28291.9 req/s | 27177.1 req/s | **-3.9%** | **+0.01 ms** (3.00ms vs 3.01ms) | -0.01 ms |
+| **200 workers** | 28116.9 req/s | 26842.5 req/s | **-4.5%** | **+0.49 ms** (6.16ms vs 6.65ms) | +0.73 ms |
 <!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 
@@ -211,25 +211,25 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 <!-- COVERAGE:GO_TABLE_START -->
 | Package / Subsystem | Primary Responsibility | Statement Coverage |
 | :--- | :--- | :--- |
-| `pkg/zeroalloc` | Zero-Allocation Byte Manipulators & In-Place Delimiter Sanitizers | **99.5%** |
 | `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **99.1%** |
-| `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **98.4%** |
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **98.0%** |
 | `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **97.5%** |
 | `pkg/nts` | Nacho Token Saver Compactors, Stale Read Eliminators & CR Delimiting | **97.4%** |
 | `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **96.9%** |
+| `pkg/zeroalloc` | Zero-Allocation Byte Manipulators & In-Place Delimiter Sanitizers | **96.9%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.8%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
+| `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.9%** |
+| `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **95.7%** |
 | `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **95.2%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.1%** |
+| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.1%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
-| `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.0%** |
 | `pkg/agentregistry` | Modular Agent Catalog, Reasoning Parser & Tag Marker Compiler | **95.0%** |
-| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **94.9%** |
-| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **94.6%** |
-| `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **89.9%** |
+| `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **94.6%** |
+| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **94.4%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.0%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
 #### VS Code Companion Extension Coverage:

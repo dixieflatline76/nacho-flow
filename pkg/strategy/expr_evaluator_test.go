@@ -396,6 +396,54 @@ func TestExprEvaluator_CoolingDownModels(t *testing.T) {
 	}
 }
 
+func TestTurn0Hardcoding_MessageCount(t *testing.T) {
+	tiers := []contract.Tier{
+		{
+			Name:     "Turn 0 Kickoff",
+			Model:    "z-ai/glm-5.3-flash",
+			Provider: "openrouter",
+			When:     "MessageCount <= 2",
+		},
+		{
+			Name:     "Local Cluster Workhorse",
+			Model:    "qwen3.8-27b",
+			Provider: "llama_cluster",
+			When:     "Tokens < 30000",
+		},
+	}
+	defaultTier := contract.Tier{
+		Name:     "Default Cloud",
+		Model:    "google/gemini-3.8-flash",
+		Provider: "openrouter",
+	}
+
+	eval, err := NewExprEvaluator(tiers, defaultTier)
+	if err != nil {
+		t.Fatalf("NewExprEvaluator error: %v", err)
+	}
+
+	// Turn 0: Fresh prompt (1 or 2 messages in payload) -> must match Turn 0 Kickoff (GLM)
+	turn0 := contract.RequestContext{MessageCount: 1, Tokens: 25000}
+	res0, err := eval.SelectTier(turn0)
+	if err != nil || res0.Name != "Turn 0 Kickoff" {
+		t.Fatalf("expected Turn 0 Kickoff, got %q (err: %v)", res0.Name, err)
+	}
+
+	// Turn 1+: Conversation history has 3+ messages -> falls through to Local Cluster Workhorse!
+	turn1 := contract.RequestContext{MessageCount: 4, Tokens: 25000}
+	res1, err := eval.SelectTier(turn1)
+	if err != nil || res1.Name != "Local Cluster Workhorse" {
+		t.Fatalf("expected Local Cluster Workhorse, got %q (err: %v)", res1.Name, err)
+	}
+
+	// Turn 10: Conversation history exceeds 30k -> falls through to Default Cloud
+	turn10 := contract.RequestContext{MessageCount: 20, Tokens: 45000}
+	res10, err := eval.SelectTier(turn10)
+	if err != nil || res10.Name != "Default Cloud" {
+		t.Fatalf("expected Default Cloud, got %q (err: %v)", res10.Name, err)
+	}
+}
+
 // BenchmarkExprEvaluator measures nanosecond tier evaluation speed.
 func BenchmarkExprEvaluator(b *testing.B) {
 	tiers := []contract.Tier{

@@ -271,6 +271,12 @@ type CircuitBreakerProvider interface {
     CircuitBreaker() *CircuitBreaker
 }
 
+type ProtocolProvider interface {
+    BuildUpstreamRequest(ctx context.Context, r *http.Request, model string, body []byte) (*http.Request, error)
+    WrapResponseStream(resp *http.Response) io.ReadCloser
+    TranslateResponseBody(statusCode int, body []byte) ([]byte, error)
+}
+
 type PricingProvider interface {
     Name() string
     FetchPricing(ctx context.Context) (map[string]ModelPricing, error)
@@ -278,7 +284,9 @@ type PricingProvider interface {
 ```
 
 > [!NOTE]
-> The concrete `*CircuitBreaker` (`pkg/provider/circuit_breaker.go`) manages thread-safe health transitions via atomic state machines, providing `AllowRequest() bool`, `RecordSuccess()`, `RecordFailure()`, and `State() CircuitState`.
+> - The concrete `*CircuitBreaker` (`pkg/provider/circuit_breaker.go`) manages thread-safe health transitions via atomic state machines, providing `AllowRequest() bool`, `RecordSuccess()`, `RecordFailure()`, and `State() CircuitState`.
+> - The `ProtocolProvider` interface (`pkg/provider/interfaces.go`) enables native, zero-SDK protocol translation for non-OpenAI endpoints (such as `AnthropicProvider` for Anthropic Messages API with native prompt caching and on-the-fly SSE chunk normalization) without bloating proxy dispatch logic.
+
 
 ---
 

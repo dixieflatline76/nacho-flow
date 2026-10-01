@@ -505,9 +505,10 @@ func TestReadCompleteSessions_PreservesFullTrajectories(t *testing.T) {
 	sessionBTurns := 0
 	sessionCTurns := 0
 	for _, r := range records {
-		if r.SessionID == "sess-B" {
+		switch r.SessionID {
+		case "sess-B":
 			sessionBTurns++
-		} else if r.SessionID == "sess-C" {
+		case "sess-C":
 			sessionCTurns++
 		}
 	}
