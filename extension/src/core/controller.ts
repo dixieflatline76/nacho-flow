@@ -685,18 +685,18 @@ export class ExtensionController {
 	private setupSSEHandlers(): void {
 		if (!this.sseClient) return;
 		
-		this.sseClient.subscribe('routeCompleted', (_data) => {
-			// Handle route completion
+		this.sseClient.subscribe('route_completed', (_data) => {
 			this.updateStats();
 		});
 		
-		this.sseClient.subscribe('circuitStateChanged', (_data) => {
-			// Handle circuit state change
+		this.sseClient.subscribe('circuit_state_changed', async (_data) => {
+			await this.syncSidebarState();
 			this.updateStats();
 		});
 		
-		this.sseClient.subscribe('configUpdated', (_data) => {
-			// Handle config update
+		this.sseClient.subscribe('config_updated', async (_data) => {
+			await this.syncSidebarState();
+			await this.loadDashboardData();
 			this.updateStats();
 		});
 	}

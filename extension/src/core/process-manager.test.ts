@@ -276,7 +276,10 @@ describe('ProcessManager', () => {
 			// Test stop when no child process exists
 			expect(await processManager.stop()).toBe(true);
 
-			// Test restart
+			// Test restart with port-release polling
+			jest.spyOn(processManager, 'checkHealth')
+				.mockResolvedValueOnce(true)
+				.mockResolvedValueOnce(false);
 			jest.spyOn(processManager, 'start').mockResolvedValue({ success: true });
 			const restartResult = await processManager.restart('http://127.0.0.1:8000');
 			expect(restartResult.success).toBe(true);
