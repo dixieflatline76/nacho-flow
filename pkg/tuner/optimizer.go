@@ -209,6 +209,10 @@ func containsAny(slice []string, targets ...string) bool {
 
 // OptimizeWithContext executes the optimization algorithm respecting context cancellation/timeout.
 func (opt *CostPenaltyOptimizer) OptimizeWithContext(ctx context.Context, records []telemetry.TurnRecord, currentConfig *contract.Config) (*TuningResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	type resultPair struct {
 		res *TuningResult
 		err error
@@ -224,6 +228,9 @@ func (opt *CostPenaltyOptimizer) OptimizeWithContext(ctx context.Context, record
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case r := <-done:
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return r.res, r.err
 	}
 }

@@ -1041,6 +1041,10 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 
 // OptimizeWithContext executes the optimization algorithm respecting context cancellation/timeout.
 func (opt *MinConflictsOptimizer) OptimizeWithContext(ctx context.Context, records []telemetry.TurnRecord, currentConfig *contract.Config) (*TuningResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	type resultPair struct {
 		res *TuningResult
 		err error
@@ -1056,6 +1060,9 @@ func (opt *MinConflictsOptimizer) OptimizeWithContext(ctx context.Context, recor
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case r := <-done:
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return r.res, r.err
 	}
 }
