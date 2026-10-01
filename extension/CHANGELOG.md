@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.5.0] - 2026-10-01
 
+### Fixed
+- **Sidebar Provider Cards Auto-Refresh**: Wired active profile `<select>` dropdown `onProfileChanged` to automatically trigger profile switching and daemon restart without requiring manual clicks on the secondary "Switch" button.
+- **SSE Telemetry Event Synchronization**: Corrected camelCase event subscriptions (`routeCompleted`, `circuitStateChanged`, `configUpdated`) in the extension controller to match Go telemetry's canonical snake_case events (`route_completed`, `circuit_state_changed`, `config_updated`), ensuring disk hot-reloads and circuit breaker state changes immediately update the active providers panel and dashboard.
+- **Process Manager Restart Port Polling**: Replaced fixed 600ms sleep on restart with health-check polling loop to guarantee TCP port release before spawning new daemon processes.
+
 ## [1.4.3] - 2026-09-30
 
 ## [1.4.2] - 2026-09-29
