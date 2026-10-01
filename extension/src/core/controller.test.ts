@@ -1180,9 +1180,9 @@ default_tier:
       await extensionController.initialize();
 
       // Verify that subscribe was called for each event type
-      expect((extensionController as any).sseClient.subscribe).toHaveBeenCalledWith('routeCompleted', expect.any(Function));
-      expect((extensionController as any).sseClient.subscribe).toHaveBeenCalledWith('circuitStateChanged', expect.any(Function));
-      expect((extensionController as any).sseClient.subscribe).toHaveBeenCalledWith('configUpdated', expect.any(Function));
+      expect((extensionController as any).sseClient.subscribe).toHaveBeenCalledWith('route_completed', expect.any(Function));
+      expect((extensionController as any).sseClient.subscribe).toHaveBeenCalledWith('circuit_state_changed', expect.any(Function));
+      expect((extensionController as any).sseClient.subscribe).toHaveBeenCalledWith('config_updated', expect.any(Function));
     });
 
     it('should safely handle when SSE client is null', () => {
@@ -1192,7 +1192,7 @@ default_tier:
   });
 
   describe('SSE event handlers', () => {
-    it('should update stats when routeCompleted event is received', async () => {
+    it('should update stats when route_completed event is received', async () => {
       // Mock auth manager methods
       jest.spyOn(AuthManager.prototype, 'getBaseUrl').mockResolvedValue('http://localhost:8000');
       jest.spyOn(AuthManager.prototype, 'getAuthToken').mockResolvedValue('test-token');
@@ -1202,8 +1202,8 @@ default_tier:
 
       await extensionController.initialize();
 
-      // Get the routeCompleted handler
-      const routeCompletedHandler = (extensionController as any).sseClient.subscribe.mock.calls.find((call: any) => call[0] === 'routeCompleted')[1];
+      // Get the route_completed handler
+      const routeCompletedHandler = (extensionController as any).sseClient.subscribe.mock.calls.find((call: any) => call[0] === 'route_completed')[1];
 
       // Call the handler
       routeCompletedHandler({});
@@ -1212,43 +1212,49 @@ default_tier:
       expect(updateStatsSpy).toHaveBeenCalled();
     });
 
-    it('should update stats when circuitStateChanged event is received', async () => {
+    it('should update stats and sync sidebar when circuit_state_changed event is received', async () => {
       // Mock auth manager methods
       jest.spyOn(AuthManager.prototype, 'getBaseUrl').mockResolvedValue('http://localhost:8000');
       jest.spyOn(AuthManager.prototype, 'getAuthToken').mockResolvedValue('test-token');
 
-      // Mock updateStats method
+      // Mock updateStats and syncSidebarState methods
       const updateStatsSpy = jest.spyOn(ExtensionController.prototype as any, 'updateStats').mockResolvedValue(undefined);
+      const syncSidebarSpy = jest.spyOn(ExtensionController.prototype as any, 'syncSidebarState').mockResolvedValue(undefined);
 
       await extensionController.initialize();
 
-      // Get the circuitStateChanged handler
-      const circuitStateChangedHandler = (extensionController as any).sseClient.subscribe.mock.calls.find((call: any) => call[0] === 'circuitStateChanged')[1];
+      // Get the circuit_state_changed handler
+      const circuitStateChangedHandler = (extensionController as any).sseClient.subscribe.mock.calls.find((call: any) => call[0] === 'circuit_state_changed')[1];
 
       // Call the handler
-      circuitStateChangedHandler({});
+      await circuitStateChangedHandler({});
 
-      // Verify that updateStats was called
+      // Verify that syncSidebarState and updateStats were called
+      expect(syncSidebarSpy).toHaveBeenCalled();
       expect(updateStatsSpy).toHaveBeenCalled();
     });
 
-    it('should update stats when configUpdated event is received', async () => {
+    it('should update stats and sync sidebar when config_updated event is received', async () => {
       // Mock auth manager methods
       jest.spyOn(AuthManager.prototype, 'getBaseUrl').mockResolvedValue('http://localhost:8000');
       jest.spyOn(AuthManager.prototype, 'getAuthToken').mockResolvedValue('test-token');
 
-      // Mock updateStats method
+      // Mock updateStats, syncSidebarState, and loadDashboardData methods
       const updateStatsSpy = jest.spyOn(ExtensionController.prototype as any, 'updateStats').mockResolvedValue(undefined);
+      const syncSidebarSpy = jest.spyOn(ExtensionController.prototype as any, 'syncSidebarState').mockResolvedValue(undefined);
+      const loadDashboardSpy = jest.spyOn(ExtensionController.prototype as any, 'loadDashboardData').mockResolvedValue(undefined);
 
       await extensionController.initialize();
 
-      // Get the configUpdated handler
-      const configUpdatedHandler = (extensionController as any).sseClient.subscribe.mock.calls.find((call: any) => call[0] === 'configUpdated')[1];
+      // Get the config_updated handler
+      const configUpdatedHandler = (extensionController as any).sseClient.subscribe.mock.calls.find((call: any) => call[0] === 'config_updated')[1];
 
       // Call the handler
-      configUpdatedHandler({});
+      await configUpdatedHandler({});
 
-      // Verify that updateStats was called
+      // Verify that syncSidebarState, loadDashboardData, and updateStats were called
+      expect(syncSidebarSpy).toHaveBeenCalled();
+      expect(loadDashboardSpy).toHaveBeenCalled();
       expect(updateStatsSpy).toHaveBeenCalled();
     });
 

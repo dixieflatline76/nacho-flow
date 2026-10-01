@@ -426,6 +426,7 @@
 	// Profile selector functions
 	window.onProfileChanged = function(profileId) {
 		state.activeProfile = profileId;
+		window.switchProfile();
 	};
 
 	window.addProfile = function() {

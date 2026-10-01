@@ -499,7 +499,12 @@ export class ProcessManager {
 	): Promise<{ success: boolean; error?: string; parsedError?: ParsedStartupError }> {
 		const executeRestart = async () => {
 			await this.stop(daemonUrl, authToken);
-			await new Promise((r) => setTimeout(r, 600));
+			// Wait for port to be released (max 2s)
+			for (let i = 0; i < 20; i++) {
+				const stillUp = await this.checkHealth(daemonUrl, 100);
+				if (!stillUp) break;
+				await new Promise((r) => setTimeout(r, 100));
+			}
 			return await this.start(daemonUrl, configPath);
 		};
 
