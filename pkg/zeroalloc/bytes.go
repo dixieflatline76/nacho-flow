@@ -7,6 +7,7 @@ package zeroalloc
 
 import (
 	"bytes"
+	"strings"
 )
 
 // StripSubsliceInPlace removes all occurrences of target from b in-place.
@@ -345,4 +346,135 @@ func ContainsFoldASCII(haystack, needle []byte) bool {
 		}
 	}
 	return false
+}
+
+// ExtractQuotedField finds the raw quoted JSON string value for key (e.g. `"text":`) in b,
+// returning the subslice including the opening and closing quotes (e.g. `"hello world"`).
+// It correctly handles escaped characters (`\"`, `\\`) and operates with strictly zero heap allocations (0 B/op, 0 allocs/op).
+func ExtractQuotedField(b, key []byte) ([]byte, bool) {
+	idx := bytes.Index(b, key)
+	if idx == -1 {
+		return nil, false
+	}
+	p := b[idx+len(key):]
+	start := -1
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if c == '"' {
+			start = i
+			break
+		}
+		if c != ' ' && c != '\t' && c != '\r' && c != '\n' {
+			return nil, false
+		}
+	}
+	if start == -1 {
+		return nil, false
+	}
+
+	inEscape := false
+	for i := start + 1; i < len(p); i++ {
+		if inEscape {
+			inEscape = false
+			continue
+		}
+		if p[i] == '\\' {
+			inEscape = true
+			continue
+		}
+		if p[i] == '"' {
+			return p[start : i+1], true
+		}
+	}
+	return nil, false
+}
+
+// AppendEscapedJSONString appends a JSON-quoted and escaped representation of s into dst
+// without invoking json.Marshal or heap allocations (0 allocs/op when cap(dst) is sufficient).
+func AppendEscapedJSONString(dst []byte, s string) []byte {
+	dst = append(dst, '"')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '\\', '"':
+			dst = append(dst, '\\', c)
+		case '\n':
+			dst = append(dst, '\\', 'n')
+		case '\r':
+			dst = append(dst, '\\', 'r')
+		case '\t':
+			dst = append(dst, '\\', 't')
+		default:
+			if c < 0x20 {
+				const hex = "0123456789abcdef"
+				dst = append(dst, '\\', 'u', '0', '0', hex[c>>4], hex[c&0xf])
+			} else {
+				dst = append(dst, c)
+			}
+		}
+	}
+	return append(dst, '"')
+}
+
+// WriteEscapedJSONString writes a JSON-quoted and escaped representation of s directly into buf
+// without invoking json.Marshal or heap allocations (0 allocs/op if buf has sufficient capacity).
+func WriteEscapedJSONString(buf *bytes.Buffer, s string) {
+	buf.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '\\', '"':
+			buf.WriteByte('\\')
+			buf.WriteByte(c)
+		case '\n':
+			buf.WriteString(`\n`)
+		case '\r':
+			buf.WriteString(`\r`)
+		case '\t':
+			buf.WriteString(`\t`)
+		default:
+			if c < 0x20 {
+				const hex = "0123456789abcdef"
+				buf.WriteString(`\u00`)
+				buf.WriteByte(hex[c>>4])
+				buf.WriteByte(hex[c&0xf])
+			} else {
+				buf.WriteByte(c)
+			}
+		}
+	}
+	buf.WriteByte('"')
+}
+
+// LookupCompositeKey searches map m for a composite key formatted as {prefix}{sep}{suffix}
+// with case-insensitive ASCII normalization on prefix, guaranteeing strictly zero heap allocations (0 B/op, 0 allocs/op)
+// by leveraging a stack-allocated buffer and the Go runtime mapaccess_faststr optimization.
+func LookupCompositeKey[V any](m map[string]V, prefix, sep, suffix string) (V, bool) {
+	if m == nil {
+		var zero V
+		return zero, false
+	}
+	need := len(prefix) + len(sep) + len(suffix)
+	if need <= 128 {
+		var buf [128]byte
+		n := copy(buf[:], prefix)
+		for i := 0; i < n; i++ {
+			if buf[i] >= 'A' && buf[i] <= 'Z' {
+				buf[i] += 'a' - 'A'
+			}
+		}
+		n += copy(buf[n:], sep)
+		n += copy(buf[n:], suffix)
+		// Compiler optimization in mapaccess1_faststr: m[string(buf[:n])] avoids heap allocation
+		if v, ok := m[string(buf[:n])]; ok {
+			return v, true
+		}
+	} else {
+		key := strings.ToLower(prefix) + sep + suffix
+		if v, ok := m[key]; ok {
+			return v, true
+		}
+	}
+	var zero V
+	return zero, false
 }

@@ -159,7 +159,8 @@ func (p *program) run(s service.Service) error {
 	p.slog = appLogger
 	p.mu.Unlock()
 
-	cfg, err := config.LoadConfig(*configPathFlag)
+	rawCfgPath := *configPathFlag
+	cfg, err := config.LoadConfig(rawCfgPath)
 	if err != nil {
 		if serviceInteractiveFunc() {
 			fmt.Printf("\n🌮 Nacho Flow %s (https://spicebox.dev/nacho-flow/)\n\n", contract.Version)
@@ -201,7 +202,11 @@ func (p *program) run(s service.Service) error {
 	modelClassifier := telemetry.NewClassifier(curationMgr)
 	oracle := telemetry.NewPricingOracleWithClassifier(modelClassifier)
 	for id, p := range cfg.Providers {
-		if factory, ok := telemetry.LookupPricingFactory(id); ok {
+		factory, ok := telemetry.LookupPricingFactory(id)
+		if !ok && p.Type != "" {
+			factory, ok = telemetry.LookupPricingFactory(string(p.Type))
+		}
+		if ok {
 			prov, syncInterval := factory(id, p, 0)
 			oracle.RegisterProvider(prov, syncInterval)
 		}
@@ -296,8 +301,8 @@ func (p *program) run(s service.Service) error {
 	}
 	srvHandler.SetTuningRunner(server.NewProcessTuningRunner("", appLogger))
 	activeConfigPath := contract.DefaultConfigFileName
-	if *configPathFlag != "" {
-		activeConfigPath = *configPathFlag
+	if rawCfgPath != "" {
+		activeConfigPath = rawCfgPath
 	}
 	if abs, err := filepath.Abs(activeConfigPath); err == nil {
 		activeConfigPath = abs

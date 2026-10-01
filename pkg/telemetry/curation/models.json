@@ -83,14 +83,92 @@
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai"
     },
-    "anthropic/claude-haiku-4.5": {
-      "name": "Anthropic: Claude Haiku 4.5",
+    "anthropic/claude-3-5-haiku": {
+      "name": "Anthropic: Claude 3.5 Haiku",
+      "aliases": [
+        "claude-3-5-haiku-20241022",
+        "claude-3-5-haiku-latest"
+      ],
       "tier_role": "general",
-      "coding_index": 43.9,
-      "tool_reliability": 8,
+      "coding_index": 60,
+      "tool_reliability": 85,
       "prompt_cost_per_million": 1,
       "completion_cost_per_million": 5,
       "recommended_tiers": null,
+      "supports_vision": true,
+      "supports_tools": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-3-5-sonnet": {
+      "name": "Anthropic: Claude 3.5 Sonnet",
+      "aliases": [
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-sonnet-latest"
+      ],
+      "tier_role": "coding_workhorse",
+      "coding_index": 73,
+      "tool_reliability": 90,
+      "prompt_cost_per_million": 3,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "supports_vision": true,
+      "supports_tools": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-3-7-sonnet": {
+      "name": "Anthropic: Claude 3.7 Sonnet",
+      "aliases": [
+        "claude-3-7-sonnet-20250219",
+        "claude-3-7-sonnet-latest"
+      ],
+      "tier_role": "coding_workhorse",
+      "coding_index": 75,
+      "tool_reliability": 90,
+      "prompt_cost_per_million": 3,
+      "completion_cost_per_million": 15,
+      "recommended_tiers": [
+        "tier_4_frontier",
+        "tier_3_workhorse"
+      ],
+      "supports_vision": true,
+      "supports_tools": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-3-opus": {
+      "name": "Anthropic: Claude 3 Opus",
+      "aliases": [
+        "claude-3-opus-20240229",
+        "claude-3-opus-latest"
+      ],
+      "tier_role": "deep_reasoner",
+      "coding_index": 70,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 15,
+      "completion_cost_per_million": 75,
+      "recommended_tiers": [
+        "tier_4_frontier"
+      ],
+      "supports_vision": true,
+      "supports_tools": true,
+      "benchmark_source": "artificial_analysis",
+      "provenance_url": "https://artificialanalysis.ai"
+    },
+    "anthropic/claude-haiku-4.5": {
+      "name": "Anthropic: Claude Haiku 4.5",
+      "tier_role": "general",
+      "coding_index": 60,
+      "tool_reliability": 85,
+      "prompt_cost_per_million": 1,
+      "completion_cost_per_million": 5,
+      "recommended_tiers": null,
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai"
     },
@@ -225,27 +303,34 @@
     },
     "anthropic/claude-opus-5": {
       "name": "Anthropic: Claude Opus 5",
+      "aliases": [
+        "claude-opus-5-latest"
+      ],
       "tier_role": "deep_reasoner",
-      "coding_index": 78,
-      "tool_reliability": 56.5,
-      "prompt_cost_per_million": 5,
-      "completion_cost_per_million": 25,
+      "coding_index": 80,
+      "tool_reliability": 90,
+      "prompt_cost_per_million": 15,
+      "completion_cost_per_million": 75,
       "recommended_tiers": [
         "tier_4_frontier"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai"
     },
     "anthropic/claude-opus-5:batch": {
       "name": "Anthropic: Claude Opus 5 (batch)",
       "tier_role": "deep_reasoner",
-      "coding_index": 78,
-      "tool_reliability": 56.5,
-      "prompt_cost_per_million": 2.5,
-      "completion_cost_per_million": 12.5,
+      "coding_index": 80,
+      "tool_reliability": 90,
+      "prompt_cost_per_million": 7.5,
+      "completion_cost_per_million": 37.5,
       "recommended_tiers": [
         "tier_4_frontier"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai"
     },
@@ -321,29 +406,36 @@
     },
     "anthropic/claude-sonnet-5": {
       "name": "Anthropic: Claude Sonnet 5",
+      "aliases": [
+        "claude-sonnet-5-latest"
+      ],
       "tier_role": "coding_workhorse",
-      "coding_index": 71.5,
-      "tool_reliability": 43.6,
-      "prompt_cost_per_million": 2,
-      "completion_cost_per_million": 10,
+      "coding_index": 75,
+      "tool_reliability": 90,
+      "prompt_cost_per_million": 3,
+      "completion_cost_per_million": 15,
       "recommended_tiers": [
         "tier_4_frontier",
         "tier_3_workhorse"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai"
     },
     "anthropic/claude-sonnet-5:batch": {
       "name": "Anthropic: Claude Sonnet 5 (batch)",
       "tier_role": "coding_workhorse",
-      "coding_index": 71.5,
-      "tool_reliability": 43.6,
-      "prompt_cost_per_million": 1,
-      "completion_cost_per_million": 5,
+      "coding_index": 75,
+      "tool_reliability": 90,
+      "prompt_cost_per_million": 1.5,
+      "completion_cost_per_million": 7.5,
       "recommended_tiers": [
         "tier_4_frontier",
         "tier_3_workhorse"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai"
     },

@@ -21,6 +21,7 @@ const (
 type ModelCuratedProfile struct {
 	ModelID                  string   `json:"model_id,omitempty"`
 	Name                     string   `json:"name"`
+	Aliases                  []string `json:"aliases,omitempty"`
 	TierRole                 TierRole `json:"tier_role"`
 	CodingIndex              float64  `json:"coding_index"`     // Artificial Analysis / SWE-bench index
 	ToolReliability          float64  `json:"tool_reliability"` // 0.0 - 100.0%

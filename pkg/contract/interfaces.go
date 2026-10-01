@@ -423,6 +423,9 @@ const (
 	// ProviderTypeCloud designates metered cloud APIs (e.g. OpenRouter, Anthropic, OpenAI, DeepSeek Cloud).
 	// Incurred cost is calculated against live or cached token rate pricing tables.
 	ProviderTypeCloud ProviderType = "cloud"
+
+	// ProviderTypeAnthropic designates native Anthropic Messages API cloud endpoints.
+	ProviderTypeAnthropic ProviderType = "anthropic"
 )
 
 // ProviderConfig defines a first-class LLM provider configuration.

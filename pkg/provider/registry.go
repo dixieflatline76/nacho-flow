@@ -27,8 +27,14 @@ func NewRegistryFromConfig(cfg *contract.Config) *Registry {
 	}
 
 	for id, pCfg := range cfg.Providers {
-		provider := NewGenericLLMProvider(id, pCfg)
-		r.Register(provider)
+		var p LLMProvider
+		switch pCfg.Type {
+		case contract.ProviderTypeAnthropic:
+			p = NewAnthropicProvider(id, pCfg)
+		default:
+			p = NewGenericLLMProvider(id, pCfg)
+		}
+		r.Register(p)
 	}
 
 	return r

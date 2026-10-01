@@ -12,6 +12,7 @@ import (
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
+	"github.com/dixieflatline76/nacho-flow/pkg/zeroalloc"
 )
 
 // ModelPricing represents USD cost per million tokens.
@@ -210,7 +211,11 @@ func (o *PricingOracle) updateProviderData(providerName string, newPrices map[st
 			BenchmarkSource:          "live_oracle",
 		}
 	}
-	curation.DefaultManager().RegisterDynamicModels(dynamicProfiles)
+	if o.classifier != nil && o.classifier.gallery != nil {
+		o.classifier.gallery.RegisterDynamicModels(dynamicProfiles)
+	} else {
+		curation.DefaultManager().RegisterDynamicModels(dynamicProfiles)
+	}
 }
 
 // LastSynced returns the UTC timestamp of the most recent successful pricing sync.
@@ -255,22 +260,56 @@ func (o *PricingOracle) GetPrice(provider, model string) (ModelPricing, bool) {
 
 // GetModelMetadata looks up the enriched metadata for a given provider and model. Lock-free $O(1)$.
 func (o *PricingOracle) GetModelMetadata(provider, model string) (ModelMetadata, bool) {
+	if o == nil {
+		return ModelMetadata{}, false
+	}
 	mPtr := o.metadataMap.Load()
 	if mPtr == nil {
 		return ModelMetadata{}, false
 	}
 	m := *mPtr
 
-	key := fmt.Sprintf("%s%s%s", strings.ToLower(provider), contract.PricingNamespaceSeparator, model)
-	if meta, ok := m[key]; ok {
-		return meta, true
-	}
-
+	// Priority 1a: Direct model key match (zero allocations)
 	if meta, ok := m[model]; ok {
 		return meta, true
 	}
 
+	// Priority 1b: Namespaced key match (provider::model) via zeroalloc composite lookup
+	if provider != "" {
+		if meta, ok := zeroalloc.LookupCompositeKey(m, provider, contract.PricingNamespaceSeparator, model); ok {
+			return meta, true
+		}
+	}
+
+	// Priority 2: Fall back to Curated Gallery / Catalog for native or unmapped providers
+	if o.classifier != nil && o.classifier.gallery != nil {
+		if profile, found := o.classifier.gallery.Lookup(model); found {
+			return modelMetadataFromCuratedProfile(profile), true
+		}
+	} else if (provider == "" || strings.EqualFold(provider, string(contract.ProviderTypeAnthropic))) &&
+		(strings.EqualFold(provider, string(contract.ProviderTypeAnthropic)) || strings.HasPrefix(strings.ToLower(model), "claude") || strings.HasPrefix(strings.ToLower(model), "anthropic/")) {
+		if profile, found := curation.DefaultManager().Lookup(model); found {
+			return modelMetadataFromCuratedProfile(profile), true
+		}
+	}
+
 	return ModelMetadata{}, false
+}
+
+func modelMetadataFromCuratedProfile(profile curation.ModelCuratedProfile) ModelMetadata {
+	return ModelMetadata{
+		ModelPricing: ModelPricing{
+			PromptCostPerMillion:     profile.PromptCostPerMillion,
+			CompletionCostPerMillion: profile.CompletionCostPerMillion,
+		},
+		ModelID:           profile.ModelID,
+		Name:              profile.Name,
+		SupportsVision:    profile.SupportsVision,
+		SupportsTools:     profile.SupportsTools,
+		SupportsReasoning: profile.TierRole == curation.RoleDeepReasoner || profile.TierRole == curation.RoleCodingWorkhorse,
+		AgenticIndex:      profile.ToolReliability,
+		CodingIndex:       profile.CodingIndex,
+	}
 }
 
 // GetAllPricing returns a shallow copy of the active pricing map. Lock-free.
@@ -360,10 +399,11 @@ func (o *PricingOracle) CalculateFinancials(provider, model string, isLocal bool
 		uncachedPromptTokens = 0
 	}
 
-	// Heuristic: cached tokens pay 20% of prompt rate (80% discount).
-	// Only two providers exist: Ollama (local=$0) and OpenRouter (cloud).
-	// OpenRouter reports usage.cost (handled above), so this is a safety fallback.
-	const cacheDiscountMultiplier = 0.20
+	// Cache-aware prompt cost: Anthropic charges 10% on cache read (90% discount).
+	cacheDiscountMultiplier := 0.20
+	if strings.EqualFold(provider, "anthropic") {
+		cacheDiscountMultiplier = 0.10
+	}
 
 	promptCost := (float64(uncachedPromptTokens) / contract.TokensPerMillion) * pricing.PromptCostPerMillion
 	if cachedTokens > 0 {

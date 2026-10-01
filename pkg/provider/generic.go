@@ -1,9 +1,13 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,4 +97,70 @@ func (p *GenericLLMProvider) Ping(ctx context.Context) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return nil
+}
+
+// BuildUpstreamRequest constructs a standard OpenAI-compatible ChatCompletion HTTP request.
+func (p *GenericLLMProvider) BuildUpstreamRequest(ctx context.Context, r *http.Request, model string, body []byte) (*http.Request, error) {
+	targetURL, err := url.Parse(p.config.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid target URL for provider '%s': %w", p.id, err)
+	}
+
+	reqPath := r.URL.Path
+	targetBasePath := strings.TrimRight(targetURL.Path, "/")
+	if strings.HasSuffix(targetBasePath, "/v1") && strings.HasPrefix(reqPath, "/v1/") {
+		reqPath = strings.TrimPrefix(reqPath, "/v1")
+	}
+	fullTargetURL := singleJoiningSlash(targetURL.String(), reqPath)
+
+	// #nosec G704 - outgoing proxy request to configured upstream provider endpoint
+	outReq, err := http.NewRequestWithContext(ctx, r.Method, fullTargetURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create upstream request for provider '%s': %w", p.id, err)
+	}
+
+	// Forward client headers
+	for k, vv := range r.Header {
+		for _, v := range vv {
+			outReq.Header.Add(k, v)
+		}
+	}
+	outReq.Host = targetURL.Host
+
+	// Strip client auth headers for local engines (Ollama, llama.cpp)
+	if p.config.IsLocal() {
+		outReq.Header.Del("Authorization")
+	} else if p.config.APIKey != "" {
+		outReq.Header.Set("Authorization", "Bearer "+p.config.APIKey)
+	}
+
+	// Apply custom provider headers
+	for k, v := range p.config.Headers {
+		outReq.Header.Set(k, v)
+	}
+	outReq.Header.Set("Content-Length", strconv.Itoa(len(body)))
+
+	return outReq, nil
+}
+
+// WrapResponseStream passes through the raw response stream unmodified for standard OpenAI providers.
+func (p *GenericLLMProvider) WrapResponseStream(resp *http.Response) io.ReadCloser {
+	return resp.Body
+}
+
+// TranslateResponseBody passes through the response bytes unmodified for standard OpenAI providers.
+func (p *GenericLLMProvider) TranslateResponseBody(statusCode int, body []byte) ([]byte, error) {
+	return body, nil
+}
+
+func singleJoiningSlash(a, b string) string {
+	aslashes := strings.HasSuffix(a, "/")
+	bslashes := strings.HasPrefix(b, "/")
+	switch {
+	case aslashes && bslashes:
+		return a + b[1:]
+	case !aslashes && !bslashes:
+		return a + "/" + b
+	}
+	return a + b
 }

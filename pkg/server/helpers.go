@@ -101,3 +101,19 @@ func mergeUniqueSlices(base, custom []string) []string {
 	}
 	return result
 }
+
+// copyStreamHeaders copies response headers from upstream to client writer,
+// filtering out hop-by-hop headers according to RFC 7230 and preventing chunked stream corruption.
+func copyStreamHeaders(dst http.Header, src http.Header) {
+	for k, vv := range src {
+		switch strings.ToLower(k) {
+		case "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+			"te", "trailers", "transfer-encoding", "upgrade", "content-length":
+			continue
+		default:
+			for _, v := range vv {
+				dst.Add(k, v)
+			}
+		}
+	}
+}

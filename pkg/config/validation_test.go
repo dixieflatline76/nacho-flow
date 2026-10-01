@@ -22,6 +22,10 @@ func TestValidateConfig_Valid(t *testing.T) {
 				BaseURL: "https://openrouter.ai/api/v1",
 				Type:    contract.ProviderTypeCloud,
 			},
+			"anthropic": {
+				BaseURL: "https://api.anthropic.com",
+				Type:    contract.ProviderTypeAnthropic,
+			},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -110,7 +114,7 @@ func TestValidateConfig_InvalidOrMissingType(t *testing.T) {
 				t.Fatalf("expected error for provider type %q, got nil", tc.providerType)
 			}
 			errMsg := err.Error()
-			if !strings.Contains(errMsg, "type' is required and must be 'local' or 'cloud'") {
+			if !strings.Contains(errMsg, "type' is required and must be 'local', 'cloud', or 'anthropic'") {
 				t.Errorf("error does not contain required guidance: %s", errMsg)
 			}
 			if !strings.Contains(errMsg, "Example for local engines") || !strings.Contains(errMsg, "Example for cloud APIs") {

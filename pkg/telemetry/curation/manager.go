@@ -153,6 +153,21 @@ func buildCatalogIndex(cat *CuratedCatalog) *catalogIndex {
 			putIfBetter(idx.normalizedMap, normalizeModelKey(profile.Name), profile, id)
 		}
 
+		for _, alias := range profile.Aliases {
+			if alias == "" {
+				continue
+			}
+			putIfBetter(idx.exactMap, alias, profile, id)
+			putIfBetter(idx.exactMap, strings.ToLower(alias), profile, id)
+			putIfBetter(idx.normalizedMap, normalizeModelKey(alias), profile, id)
+			if slash := strings.Index(id, "/"); slash >= 0 && !strings.Contains(alias, "/") {
+				prefixed := id[:slash+1] + alias
+				putIfBetter(idx.exactMap, prefixed, profile, id)
+				putIfBetter(idx.exactMap, strings.ToLower(prefixed), profile, id)
+				putIfBetter(idx.normalizedMap, normalizeModelKey(prefixed), profile, id)
+			}
+		}
+
 		idx.modelList = append(idx.modelList, catalogModelEntry{
 			key:           lowerID,
 			normalizedKey: normID,
@@ -326,6 +341,26 @@ func (m *Manager) RegisterDynamicModels(models map[string]ModelCuratedProfile) {
 	for id, p := range models {
 		if p.ModelID == "" {
 			p.ModelID = id
+		}
+		if existing, exists := newModels[id]; exists {
+			if !p.SupportsVision && existing.SupportsVision {
+				p.SupportsVision = true
+			}
+			if !p.SupportsTools && existing.SupportsTools {
+				p.SupportsTools = true
+			}
+			if p.CodingIndex == 0 && existing.CodingIndex > 0 {
+				p.CodingIndex = existing.CodingIndex
+			}
+			if p.ToolReliability == 0 && existing.ToolReliability > 0 {
+				p.ToolReliability = existing.ToolReliability
+			}
+			if len(p.RecommendedTiers) == 0 && len(existing.RecommendedTiers) > 0 {
+				p.RecommendedTiers = existing.RecommendedTiers
+			}
+			if (p.TierRole == "" || p.TierRole == RoleGeneral) && existing.TierRole != "" && existing.TierRole != RoleGeneral {
+				p.TierRole = existing.TierRole
+			}
 		}
 		newModels[id] = p
 	}
