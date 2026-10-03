@@ -3065,3 +3065,245 @@ func TestProxy_CloudProvider_HistoryPreserved(t *testing.T) {
 		t.Fatalf("expected user prompt to be preserved for cloud provider, got:\n%s", body)
 	}
 }
+
+func TestPipeline_IngressNTSCompaction_RoutesToLowerTier(t *testing.T) {
+	var localHits, cloudHits int
+	var mu sync.Mutex
+
+	mockLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		localHits++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-local","choices":[{"index":0,"message":{"role":"assistant","content":"local response"}}]}`))
+	}))
+	defer mockLocal.Close()
+
+	mockCloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		cloudHits++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-cloud","choices":[{"index":0,"message":{"role":"assistant","content":"cloud response"}}]}`))
+	}))
+	defer mockCloud.Close()
+
+	bTrue := true
+	cfg := &contract.Config{
+		Port: 8000,
+		NTS: contract.NTSConfig{
+			Enabled:   &bTrue,
+			StripANSI: &bTrue,
+			ResolveCR: &bTrue,
+		},
+		Providers: map[string]contract.ProviderConfig{
+			"local-prov": {BaseURL: mockLocal.URL, Type: contract.ProviderTypeLocal},
+			"cloud-prov": {BaseURL: mockCloud.URL, Type: contract.ProviderTypeCloud},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Small Local Context",
+				Model:    "local-model",
+				Provider: "local-prov",
+				When:     "Tokens < 4000",
+			},
+			{
+				Name:     "Tier 2: Cloud Fallback",
+				Model:    "cloud-model",
+				Provider: "cloud-prov",
+				When:     "true",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Tier 2: Cloud Fallback",
+			Model:    "cloud-model",
+			Provider: "cloud-prov",
+			When:     "true",
+		},
+	}
+
+	evaluator, err := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	if err != nil {
+		t.Fatalf("failed to create evaluator: %v", err)
+	}
+
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	// Construct tool progress payload:
+	// Base context: ~8,000 bytes (~2,000 tokens)
+	// Tool output with ANSI progress: ~10,000 bytes (~2,500 tokens)
+	// Total raw: ~18,000 bytes (~4,500 tokens)
+	ansiToolProgress := strings.Repeat("\x1b[32m[Progress] item 1234567890\x1b[0m\r", 250) + "Final complete line\n"
+	basePrompt := strings.Repeat("system and user instructions context text. ", 180)
+
+	payloadMap := map[string]interface{}{
+		"model": "nacho-hybrid",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": basePrompt,
+			},
+			map[string]interface{}{
+				"role":    "assistant",
+				"content": nil,
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id":   "call_download_1",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      "download_data",
+							"arguments": "{}",
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_download_1",
+				"content":      ansiToolProgress,
+			},
+			map[string]interface{}{
+				"role":    "user",
+				"content": "Please analyze the downloaded data.",
+			},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(payloadMap)
+	if err != nil {
+		t.Fatalf("failed to marshal payload: %v", err)
+	}
+
+	// Verify raw tokens exceed 4000
+	rawCtx, err := classifier.Classify(bodyBytes)
+	if err != nil {
+		t.Fatalf("failed to classify raw payload: %v", err)
+	}
+	if rawCtx.Tokens < 4000 {
+		t.Fatalf("expected rawCtx.Tokens >= 4000, got %d (len=%d)", rawCtx.Tokens, len(bodyBytes))
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bodyBytes))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	mu.Lock()
+	lHits := localHits
+	cHits := cloudHits
+	mu.Unlock()
+
+	// Prior to fix, raw tokens (~4500) >= 4000 causes routing to Tier 2 (cloudHits=1, localHits=0).
+	// With ingress NTS compaction, compacted tokens (~2125) < 4000 routes to Tier 1 (localHits=1, cloudHits=0).
+	if lHits != 1 || cHits != 0 {
+		t.Fatalf("Ingress compaction routing failure: expected Tier 1 (localHits=1, cloudHits=0), got localHits=%d, cloudHits=%d", lHits, cHits)
+	}
+}
+
+type mockSimpleLLMProvider struct {
+	id      string
+	name    string
+	baseURL string
+	isLocal bool
+	apiKey  string
+	headers map[string]string
+}
+
+func (m *mockSimpleLLMProvider) ID() string                { return m.id }
+func (m *mockSimpleLLMProvider) Name() string              { return m.name }
+func (m *mockSimpleLLMProvider) BaseURL() string           { return m.baseURL }
+func (m *mockSimpleLLMProvider) IsLocal() bool             { return m.isLocal }
+func (m *mockSimpleLLMProvider) GetAPIKey() string         { return m.apiKey }
+func (m *mockSimpleLLMProvider) GetHeaders() map[string]string { return m.headers }
+
+func TestServer_Dispatch_FallbackAndHelpersCoverage(t *testing.T) {
+	cfg := &contract.Config{Port: 8000}
+	srv := NewServer(cfg, nil, nil, nil)
+
+	// 1. buildOutboundRequest with custom LLMProvider (non-ProtocolProvider) with /v1 prefix, auth, headers
+	pCustom := &mockSimpleLLMProvider{
+		id:      "custom-cloud",
+		name:    "Custom Cloud",
+		baseURL: "https://api.example.com/v1",
+		isLocal: false,
+		apiKey:  "sk-test-key-123",
+		headers: map[string]string{"X-Test-Hdr": "custom-val"},
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`))
+	r.Header.Set("User-Agent", "NachoFlowTest")
+	body := []byte(`{"model":"nacho-hybrid"}`)
+
+	outReq, err := srv.buildOutboundRequest(context.Background(), r, pCustom, "gpt-4o", body)
+	if err != nil {
+		t.Fatalf("unexpected error building outbound request: %v", err)
+	}
+	if outReq.Header.Get("Authorization") != "Bearer sk-test-key-123" {
+		t.Errorf("expected Bearer token, got: %s", outReq.Header.Get("Authorization"))
+	}
+	if outReq.Header.Get("X-Test-Hdr") != "custom-val" {
+		t.Errorf("expected custom header, got: %s", outReq.Header.Get("X-Test-Hdr"))
+	}
+
+	// 2. buildOutboundRequest with local provider (should delete Authorization header)
+	pLocal := &mockSimpleLLMProvider{
+		id:      "custom-local",
+		name:    "Custom Local",
+		baseURL: "http://127.0.0.1:11434",
+		isLocal: true,
+	}
+	rLocal := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`))
+	rLocal.Header.Set("Authorization", "Bearer stale-token")
+	outReqLocal, err := srv.buildOutboundRequest(context.Background(), rLocal, pLocal, "llama-3", body)
+	if err != nil {
+		t.Fatalf("unexpected error building local request: %v", err)
+	}
+	if outReqLocal.Header.Get("Authorization") != "" {
+		t.Errorf("expected Authorization header deleted for local provider, got: %s", outReqLocal.Header.Get("Authorization"))
+	}
+
+	// 3. buildOutboundRequest with malformed URL
+	pBadURL := &mockSimpleLLMProvider{
+		id:      "bad-url",
+		baseURL: "://invalid-url",
+	}
+	_, errBad := srv.buildOutboundRequest(context.Background(), r, pBadURL, "bad-model", body)
+	if errBad == nil {
+		t.Errorf("expected error for malformed URL, got nil")
+	}
+
+	// 4. wrapResponseStream and translateResponseBody with simple LLMProvider fallback
+	resp := &http.Response{
+		Body: io.NopCloser(strings.NewReader("sample response stream")),
+	}
+	wrapped := srv.wrapResponseStream(resp, pCustom)
+	if wrapped != resp.Body {
+		t.Errorf("expected fallback wrapResponseStream to return resp.Body")
+	}
+
+	translated, err := srv.translateResponseBody(http.StatusOK, []byte("raw response"), pCustom)
+	if err != nil || string(translated) != "raw response" {
+		t.Errorf("expected fallback translateResponseBody to return raw bytes, got %s, err=%v", string(translated), err)
+	}
+
+	// 5. preparePayload with StripImages and control tokens
+	tierWithStripImages := contract.Tier{
+		Name:        "Test Tier",
+		Model:       "test-model",
+		StripImages: true,
+	}
+	bodyWithControlTokens := []byte(`{"model":"old","messages":[{"role":"user","content":"<|im_start|>system\ntest<|im_end|>"}]}`)
+	prepared := srv.preparePayload(r, &tierWithStripImages, pLocal, bodyWithControlTokens)
+	if len(prepared) == 0 {
+		t.Errorf("expected non-empty prepared body")
+	}
+}
+
+

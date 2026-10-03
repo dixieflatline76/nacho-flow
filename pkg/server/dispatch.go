@@ -127,8 +127,8 @@ func (s *Server) dispatchTier(
 		return
 	}
 
-	// 2. Prepare payload (model rewrite, reasoning effort, stream options, sanitization, NTS)
-	preparedBody, ntsTokensSaved, ntsBytesSaved := s.preparePayload(r, &targetTier, targetProvider, body)
+	// 2. Prepare payload (model rewrite, reasoning effort, stream options, sanitization)
+	preparedBody := s.preparePayload(r, &targetTier, targetProvider, body)
 
 	// 3. Build outbound request via polymorphic provider adapter (Open-Closed Pattern)
 	outReq, err := s.buildOutboundRequest(r.Context(), r, targetProvider, targetTier.Model, preparedBody)
@@ -163,9 +163,9 @@ func (s *Server) dispatchTier(
 	// 5. Delegate to specialized stage handler (Streaming vs Unary)
 	isStreaming := strings.Contains(resp.Header.Get(contract.HeaderContentType), contract.ContentTypeEventStream)
 	if isStreaming {
-		s.handleStreaming(w, r, reqCtx, targetTier, targetProvider, resp, body, startTime, reqLogger, isFallback, activeFeatures, ntsTokensSaved, ntsBytesSaved)
+		s.handleStreaming(w, r, reqCtx, targetTier, targetProvider, resp, body, startTime, reqLogger, isFallback, activeFeatures, reqCtx.NTSTokensSaved, reqCtx.NTSBytesSaved)
 	} else {
-		s.handleNonStreaming(w, r, reqCtx, targetTier, targetProvider, resp, body, startTime, reqLogger, isFallback, activeFeatures, ntsTokensSaved, ntsBytesSaved)
+		s.handleNonStreaming(w, r, reqCtx, targetTier, targetProvider, resp, body, startTime, reqLogger, isFallback, activeFeatures, reqCtx.NTSTokensSaved, reqCtx.NTSBytesSaved)
 	}
 }
 
@@ -219,13 +219,13 @@ func (s *Server) buildOutboundRequest(ctx context.Context, r *http.Request, p pr
 }
 
 // preparePayload performs model rewriting, reasoning effort injection, stream options enforcement,
-// vision sanitization, local token scrubbing, and NTS token compression with zero deep interface{} allocations.
+// vision sanitization, and local token scrubbing with zero deep interface{} allocations.
 func (s *Server) preparePayload(
 	r *http.Request,
 	targetTier *contract.Tier,
 	targetProvider provider.LLMProvider,
 	body []byte,
-) ([]byte, int, int) {
+) []byte {
 	preparedBody := body
 
 	// Fast top-level JSON modification using map[string]json.RawMessage.
@@ -274,24 +274,7 @@ func (s *Server) preparePayload(
 		}
 	}
 
-	var ntsTokensSaved, ntsBytesSaved int
-	if ntsTr := s.GetNTSTransformer(); ntsTr != nil {
-		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
-			if transformed, res, err := ntsTr.TransformAnthropic(preparedBody); err == nil && !res.Bypassed {
-				preparedBody = transformed
-				ntsTokensSaved = res.TokensSaved
-				ntsBytesSaved = res.BytesSaved
-			}
-		} else {
-			if transformed, res, err := ntsTr.TransformOpenAI(preparedBody); err == nil && !res.Bypassed {
-				preparedBody = transformed
-				ntsTokensSaved = res.TokensSaved
-				ntsBytesSaved = res.BytesSaved
-			}
-		}
-	}
-
-	return preparedBody, ntsTokensSaved, ntsBytesSaved
+	return preparedBody
 }
 
 func (s *Server) wrapResponseStream(resp *http.Response, p provider.LLMProvider) io.ReadCloser {

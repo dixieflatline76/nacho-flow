@@ -54,6 +54,9 @@ type RequestContext struct {
 	FairyDustEntry            string   `json:"fairy_dust_entry,omitempty"`
 	FairyDustCount            int      `json:"fairy_dust_count,omitempty"`
 	ClientID                  string   `json:"client_id,omitempty"`
+	RawTokens                 int      `json:"raw_tokens,omitempty"`
+	NTSTokensSaved            int      `json:"nts_tokens_saved,omitempty"`
+	NTSBytesSaved             int      `json:"nts_bytes_saved,omitempty"`
 }
 
 // IsModelCoolingDown returns true if the specified model is currently cooling down on this session.

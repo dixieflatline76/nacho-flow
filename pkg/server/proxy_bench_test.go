@@ -81,3 +81,36 @@ func BenchmarkProxy_ChatCompletions_EndToEnd(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkPipeline_Ingress_Disabled_ZeroAlloc(b *testing.B) {
+	bFalse := false
+	cfg := &contract.Config{
+		Port: 8000,
+		NTS:  contract.NTSConfig{Enabled: &bFalse},
+	}
+	srv := NewServer(cfg, nil, nil, nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		tr := srv.GetNTSTransformer()
+		if tr != nil {
+			b.Fatal("expected nil transformer when disabled")
+		}
+	}
+}
+
+func BenchmarkPipeline_Ingress_AtomicLoad_ZeroAlloc(b *testing.B) {
+	cfg := &contract.Config{Port: 8000}
+	srv := NewServer(cfg, nil, nil, nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		tr := srv.GetNTSTransformer()
+		if tr == nil {
+			b.Fatal("expected non-nil transformer when default")
+		}
+	}
+}
+

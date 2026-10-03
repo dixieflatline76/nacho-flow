@@ -102,11 +102,32 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	}
 	_ = r.Body.Close()
 
+	// 0. Wire-speed ingress context compaction (NTS)
+	var ntsTokensSaved, ntsBytesSaved int
+	if ntsTr := s.GetNTSTransformer(); ntsTr != nil {
+		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
+			if transformed, res, err := ntsTr.TransformAnthropic(body); err == nil && !res.Bypassed {
+				body = transformed
+				ntsTokensSaved = res.TokensSaved
+				ntsBytesSaved = res.BytesSaved
+			}
+		} else {
+			if transformed, res, err := ntsTr.TransformOpenAI(body); err == nil && !res.Bypassed {
+				body = transformed
+				ntsTokensSaved = res.TokensSaved
+				ntsBytesSaved = res.BytesSaved
+			}
+		}
+	}
+
 	// 1. Classify request metadata
 	reqCtx, err := s.classifier.Classify(body)
 	if err != nil {
 		reqLogger.Warn("Failed to classify payload", slog.Any("error", err))
 	}
+	reqCtx.NTSTokensSaved = ntsTokensSaved
+	reqCtx.NTSBytesSaved = ntsBytesSaved
+	reqCtx.RawTokens = reqCtx.Tokens + ntsTokensSaved
 	reqCtx.ClientID = agentregistry.DefaultRegistry().DetectClient(r.Header, body)
 
 	// Honor config toggle to disable in-prompt directives
@@ -410,6 +431,9 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		slog.String("model", targetTier.Model),
 		slog.String("provider", targetTier.Provider),
 		slog.Int("tokens", reqCtx.Tokens),
+		slog.Int("raw_tokens", reqCtx.RawTokens),
+		slog.Int("nts_tokens_saved", reqCtx.NTSTokensSaved),
+		slog.Int("nts_bytes_saved", reqCtx.NTSBytesSaved),
 		slog.Bool("has_images", reqCtx.HasImages),
 		slog.Bool("has_tools", reqCtx.HasTools),
 		slog.Int("retries", reqCtx.Retries),
