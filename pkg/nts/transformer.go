@@ -1,6 +1,7 @@
 package nts
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 
@@ -39,6 +40,11 @@ func (t *Transformer) TransformOpenAI(body []byte) ([]byte, ReductionResult, err
 }
 
 func (t *Transformer) transformPayload(body []byte) ([]byte, ReductionResult, error) {
+	// Zero-allocation fast bypass: if payload contains no candidate tool outputs or reasoning markers
+	if !t.hasCandidateCompaction(body) && isCleanMessagesArray(body) {
+		return body, ReductionResult{Bypassed: true, BypassReason: "no_candidates"}, nil
+	}
+
 	var req map[string]interface{}
 	if err := json.Unmarshal(body, &req); err != nil {
 		return body, ReductionResult{Bypassed: true, BypassReason: "unmarshal_error"}, err
@@ -57,6 +63,8 @@ func (t *Transformer) transformPayload(body []byte) ([]byte, ReductionResult, er
 	toolNames := indexToolNames(msgs)
 	modified, totalResult := t.processMessages(msgs, toolNames)
 	if !modified {
+		totalResult.Bypassed = true
+		totalResult.BypassReason = "no_modifications"
 		return body, totalResult, nil
 	}
 
@@ -135,10 +143,42 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 		staleIDs = IdentifyStaleToolCallIDs(msgs, depth)
 	}
 
-	for _, msgItem := range msgs {
+	var historicalAssistantIndices map[int]struct{}
+	if t.pipeline.config.StripHistoricalReasoning {
+		var assistantIndices []int
+		for idx, msgItem := range msgs {
+			if msg, ok := msgItem.(map[string]interface{}); ok {
+				if role, _ := msg["role"].(string); role == "assistant" {
+					assistantIndices = append(assistantIndices, idx)
+				}
+			}
+		}
+		keepTurns := t.pipeline.config.KeepRecentReasoningTurns
+		if keepTurns < 0 {
+			keepTurns = 0
+		}
+		cutoff := len(assistantIndices) - keepTurns
+		if cutoff > 0 {
+			historicalAssistantIndices = make(map[int]struct{}, cutoff)
+			for i := 0; i < cutoff; i++ {
+				historicalAssistantIndices[assistantIndices[i]] = struct{}{}
+			}
+		}
+	}
+
+	for idx, msgItem := range msgs {
 		msg, ok := msgItem.(map[string]interface{})
 		if !ok {
 			continue
+		}
+
+		// Historical assistant reasoning compaction
+		if historicalAssistantIndices != nil {
+			if _, isHistorical := historicalAssistantIndices[idx]; isHistorical {
+				if t.pruneAssistantReasoning(msg, &total) {
+					modified = true
+				}
+			}
 		}
 
 		// Format A: OpenAI role == "tool"
@@ -432,3 +472,269 @@ func extractContentString(content interface{}) string {
 		return ""
 	}
 }
+
+// DefaultSilentTurnMessage is injected into historical assistant messages that become empty
+// after reasoning pruning, preventing Anthropic RFC 400 "content cannot be empty" violations.
+const DefaultSilentTurnMessage = "Proceeding with next step."
+
+// pruneAssistantReasoning strips historical reasoning blocks, OpenAI reasoning fields,
+// and inline thinking tags from an assistant message while preserving surviving content,
+// tool calls, and cache control breakpoints.
+func (t *Transformer) pruneAssistantReasoning(msg map[string]interface{}, total *ReductionResult) bool {
+	modified := false
+
+	// 1. Delete OpenAI top-level reasoning fields
+	reasoningFields := []string{"reasoning_content", "reasoning", "reason"}
+	for _, field := range reasoningFields {
+		if val, exists := msg[field]; exists {
+			var fieldBytes int
+			switch v := val.(type) {
+			case string:
+				fieldBytes = len(v)
+			case []byte:
+				fieldBytes = len(v)
+			default:
+				if b, err := json.Marshal(v); err == nil {
+					fieldBytes = len(b)
+				}
+			}
+			savedBytes := fieldBytes + len(field) + 4
+			savedTokens := (savedBytes + 3) / 4
+			total.merge(ReductionResult{
+				OriginalBytes: savedBytes,
+				ReducedBytes:  0,
+				BytesSaved:    savedBytes,
+				TokensSaved:   savedTokens,
+			})
+			delete(msg, field)
+			modified = true
+		}
+	}
+
+	// 2. Handle assistant content
+	switch contentVal := msg["content"].(type) {
+	case []interface{}:
+		var surviving []interface{}
+		var migratedCacheControl interface{}
+		blocksModified := false
+
+		for _, item := range contentVal {
+			part, ok := item.(map[string]interface{})
+			if !ok {
+				surviving = append(surviving, item)
+				continue
+			}
+
+			partType, _ := part["type"].(string)
+			if isReasoningBlockType(partType) {
+				blocksModified = true
+				if cc, ok := part["cache_control"]; ok && cc != nil {
+					migratedCacheControl = cc
+				}
+				partBytes := calculateBlockLength(part)
+				savedTokens := (partBytes + 3) / 4
+				total.merge(ReductionResult{
+					OriginalBytes: partBytes,
+					ReducedBytes:  0,
+					BytesSaved:    partBytes,
+					TokensSaved:   savedTokens,
+				})
+				continue
+			}
+
+			// If text block, strip any inline thinking tags
+			if partType == "text" {
+				if text, ok := part["text"].(string); ok && len(text) > 0 {
+					strippedText, saved := stripInlineThinking(text)
+					if saved > 0 {
+						blocksModified = true
+						part["text"] = strippedText
+						total.merge(ReductionResult{
+							OriginalBytes: len(text),
+							ReducedBytes:  len(strippedText),
+							BytesSaved:    saved,
+							TokensSaved:   (saved + 3) / 4,
+						})
+					}
+				}
+			}
+
+			surviving = append(surviving, part)
+		}
+
+		if blocksModified {
+			modified = true
+			// Anthropic RFC 400 guard: content array cannot be empty
+			if len(surviving) == 0 {
+				fallback := map[string]interface{}{
+					"type": "text",
+					"text": DefaultSilentTurnMessage,
+				}
+				if t.pipeline.config.PreserveCacheControl && migratedCacheControl != nil {
+					fallback["cache_control"] = migratedCacheControl
+					migratedCacheControl = nil
+				}
+				surviving = append(surviving, fallback)
+			} else if t.pipeline.config.PreserveCacheControl && migratedCacheControl != nil {
+				// Migrate cache control to the first surviving block if it lacks one
+				if firstBlock, ok := surviving[0].(map[string]interface{}); ok {
+					if _, hasCC := firstBlock["cache_control"]; !hasCC {
+						firstBlock["cache_control"] = migratedCacheControl
+						migratedCacheControl = nil
+					}
+				}
+			}
+			msg["content"] = surviving
+		}
+
+	case string:
+		if len(contentVal) > 0 {
+			strippedText, saved := stripInlineThinking(contentVal)
+			if saved > 0 {
+				modified = true
+				total.merge(ReductionResult{
+					OriginalBytes: len(contentVal),
+					ReducedBytes:  len(strippedText),
+					BytesSaved:    saved,
+					TokensSaved:   (saved + 3) / 4,
+				})
+				if strings.TrimSpace(strippedText) == "" {
+					hasToolCalls := false
+					if tc, ok := msg["tool_calls"].([]interface{}); ok && len(tc) > 0 {
+						hasToolCalls = true
+					}
+					if !hasToolCalls {
+						msg["content"] = DefaultSilentTurnMessage
+					} else {
+						msg["content"] = ""
+					}
+				} else {
+					msg["content"] = strippedText
+				}
+			}
+		}
+
+	default:
+		hasToolCalls := false
+		if tc, ok := msg["tool_calls"].([]interface{}); ok && len(tc) > 0 {
+			hasToolCalls = true
+		}
+		if !hasToolCalls && modified {
+			msg["content"] = DefaultSilentTurnMessage
+		}
+	}
+
+	return modified
+}
+
+func isReasoningBlockType(t string) bool {
+	switch t {
+	case "thinking", "redacted_thinking", "thought", "reasoning":
+		return true
+	default:
+		return false
+	}
+}
+
+func calculateBlockLength(part map[string]interface{}) int {
+	for _, f := range []string{"thinking", "data", "thought", "reasoning", "text"} {
+		if s, ok := part[f].(string); ok {
+			return len(s)
+		}
+	}
+	b, _ := json.Marshal(part)
+	return len(b)
+}
+
+func stripInlineThinking(s string) (string, int) {
+	if s == "" {
+		return "", 0
+	}
+	if strings.IndexByte(s, '<') == -1 {
+		return s, 0
+	}
+
+	reg := agentregistry.DefaultRegistry()
+	replacer := reg.TagReplacer()
+	canonical := replacer.Replace(s)
+
+	if !strings.Contains(canonical, "<think>") && !strings.Contains(canonical, "</think>") {
+		if canonical == s {
+			return s, 0
+		}
+		saved := len(s) - len(canonical)
+		if saved < 0 {
+			saved = 0
+		}
+		return canonical, saved
+	}
+
+	var sb strings.Builder
+	cur := canonical
+	for {
+		openIdx := strings.Index(cur, "<think>")
+		if openIdx == -1 {
+			rest := cur
+			if strings.Contains(rest, "</think>") {
+				rest = strings.ReplaceAll(rest, "</think>", "")
+			}
+			sb.WriteString(rest)
+			break
+		}
+
+		prefix := cur[:openIdx]
+		if strings.Contains(prefix, "</think>") {
+			prefix = strings.ReplaceAll(prefix, "</think>", "")
+		}
+		sb.WriteString(prefix)
+
+		afterOpen := cur[openIdx+len("<think>"):]
+		closeIdx := strings.Index(afterOpen, "</think>")
+		if closeIdx == -1 {
+			break
+		}
+
+		cur = afterOpen[closeIdx+len("</think>"):]
+	}
+
+	result := sb.String()
+	saved := len(s) - len(result)
+	if saved < 0 {
+		saved = 0
+	}
+	return result, saved
+}
+
+func (t *Transformer) hasCandidateCompaction(body []byte) bool {
+	if bytes.Contains(body, []byte(`"tool`)) {
+		return true
+	}
+	if t.pipeline.config.StripHistoricalReasoning && bytes.Contains(body, []byte(`"assistant"`)) {
+		if bytes.IndexByte(body, '<') != -1 ||
+			bytes.Contains(body, []byte(`"reason`)) ||
+			bytes.Contains(body, []byte(`"thinking"`)) ||
+			bytes.Contains(body, []byte(`"thought"`)) ||
+			bytes.Contains(body, []byte(`\u003c`)) ||
+			bytes.Contains(body, []byte(`\u003C`)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCleanMessagesArray(body []byte) bool {
+	idx := bytes.Index(body, []byte(`"messages"`))
+	if idx == -1 {
+		return false
+	}
+	rest := body[idx+len(`"messages"`):]
+	for i := 0; i < len(rest); i++ {
+		c := rest[i]
+		if c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == ':' {
+			continue
+		}
+		return c == '['
+	}
+	return false
+}
+

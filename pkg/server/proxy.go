@@ -276,47 +276,39 @@ func NewServerWithTelemetryAndRegistry(
 	return srv
 }
 
+func setIf[T any](dst *T, src *T) {
+	if src != nil {
+		*dst = *src
+	}
+}
+
+func setIfPositive[T ~int](dst *T, src T) {
+	if src > 0 {
+		*dst = src
+	}
+}
+
 func BuildNTSTransformer(cfg contract.NTSConfig) *nts.Transformer {
 	ntsCfg := nts.DefaultConfig()
-	if cfg.Enabled != nil {
-		ntsCfg.Enabled = *cfg.Enabled
-	}
+	setIf(&ntsCfg.Enabled, cfg.Enabled)
 	if !ntsCfg.Enabled {
 		return nil
 	}
-	if cfg.StripANSI != nil {
-		ntsCfg.StripANSI = *cfg.StripANSI
-	}
-	if cfg.ResolveCR != nil {
-		ntsCfg.ResolveCR = *cfg.ResolveCR
-	}
-	if cfg.DeduplicateLines != nil {
-		ntsCfg.DeduplicateLines = *cfg.DeduplicateLines
-	}
-	if cfg.DedupThreshold > 0 {
-		ntsCfg.DedupThreshold = cfg.DedupThreshold
-	}
-	if cfg.StripBoilerplate != nil {
-		ntsCfg.StripBoilerplate = *cfg.StripBoilerplate
-	}
-	if cfg.NormalizeWhitespace != nil {
-		ntsCfg.NormalizeWhitespace = *cfg.NormalizeWhitespace
-	}
-	if cfg.PreserveFileReads != nil {
-		ntsCfg.PreserveFileReads = *cfg.PreserveFileReads
-	}
-	if cfg.PreserveFileWrites != nil {
-		ntsCfg.PreserveFileWrites = *cfg.PreserveFileWrites
-	}
-	if cfg.PreserveCacheControl != nil {
-		ntsCfg.PreserveCacheControl = *cfg.PreserveCacheControl
-	}
-	if cfg.CompactStaleFileReads != nil {
-		ntsCfg.CompactStaleFileReads = *cfg.CompactStaleFileReads
-	}
-	if cfg.StaleReadDepth > 0 {
-		ntsCfg.StaleReadDepth = cfg.StaleReadDepth
-	}
+
+	setIf(&ntsCfg.StripANSI, cfg.StripANSI)
+	setIf(&ntsCfg.ResolveCR, cfg.ResolveCR)
+	setIf(&ntsCfg.DeduplicateLines, cfg.DeduplicateLines)
+	setIfPositive(&ntsCfg.DedupThreshold, cfg.DedupThreshold)
+	setIf(&ntsCfg.StripBoilerplate, cfg.StripBoilerplate)
+	setIf(&ntsCfg.NormalizeWhitespace, cfg.NormalizeWhitespace)
+	setIf(&ntsCfg.PreserveFileReads, cfg.PreserveFileReads)
+	setIf(&ntsCfg.PreserveFileWrites, cfg.PreserveFileWrites)
+	setIf(&ntsCfg.PreserveCacheControl, cfg.PreserveCacheControl)
+	setIf(&ntsCfg.CompactStaleFileReads, cfg.CompactStaleFileReads)
+	setIfPositive(&ntsCfg.StaleReadDepth, cfg.StaleReadDepth)
+	setIf(&ntsCfg.StripHistoricalReasoning, cfg.StripHistoricalReasoning)
+	setIf(&ntsCfg.KeepRecentReasoningTurns, cfg.KeepRecentReasoningTurns)
+
 	return nts.NewTransformer(ntsCfg)
 }
 

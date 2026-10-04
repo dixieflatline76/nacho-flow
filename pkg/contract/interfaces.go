@@ -531,8 +531,10 @@ type NTSConfig struct {
 	PreserveFileReads     *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
 	PreserveFileWrites    *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
 	PreserveCacheControl  *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
-	CompactStaleFileReads *bool `yaml:"compact_stale_file_reads,omitempty" json:"compact_stale_file_reads,omitempty"`
-	StaleReadDepth        int   `yaml:"stale_read_depth,omitempty" json:"stale_read_depth,omitempty"`
+	CompactStaleFileReads    *bool `yaml:"compact_stale_file_reads,omitempty" json:"compact_stale_file_reads,omitempty"`
+	StaleReadDepth           int   `yaml:"stale_read_depth,omitempty" json:"stale_read_depth,omitempty"`
+	StripHistoricalReasoning *bool `yaml:"strip_historical_reasoning,omitempty" json:"strip_historical_reasoning,omitempty"`
+	KeepRecentReasoningTurns *int  `yaml:"keep_recent_reasoning_turns,omitempty" json:"keep_recent_reasoning_turns,omitempty"`
 }
 
 // Config defines the top-level configuration loaded from config.yaml.

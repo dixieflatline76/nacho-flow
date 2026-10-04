@@ -128,7 +128,7 @@ func (s *Server) dispatchTier(
 	}
 
 	// 2. Prepare payload (model rewrite, reasoning effort, stream options, sanitization)
-	preparedBody := s.preparePayload(r, &targetTier, targetProvider, body)
+	preparedBody := s.preparePayload(&targetTier, targetProvider, body)
 
 	// 3. Build outbound request via polymorphic provider adapter (Open-Closed Pattern)
 	outReq, err := s.buildOutboundRequest(r.Context(), r, targetProvider, targetTier.Model, preparedBody)
@@ -221,7 +221,6 @@ func (s *Server) buildOutboundRequest(ctx context.Context, r *http.Request, p pr
 // preparePayload performs model rewriting, reasoning effort injection, stream options enforcement,
 // vision sanitization, and local token scrubbing with zero deep interface{} allocations.
 func (s *Server) preparePayload(
-	r *http.Request,
 	targetTier *contract.Tier,
 	targetProvider provider.LLMProvider,
 	body []byte,

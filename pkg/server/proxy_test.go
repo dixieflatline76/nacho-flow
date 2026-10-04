@@ -3300,10 +3300,54 @@ func TestServer_Dispatch_FallbackAndHelpersCoverage(t *testing.T) {
 		StripImages: true,
 	}
 	bodyWithControlTokens := []byte(`{"model":"old","messages":[{"role":"user","content":"<|im_start|>system\ntest<|im_end|>"}]}`)
-	prepared := srv.preparePayload(r, &tierWithStripImages, pLocal, bodyWithControlTokens)
+	prepared := srv.preparePayload(&tierWithStripImages, pLocal, bodyWithControlTokens)
 	if len(prepared) == 0 {
 		t.Errorf("expected non-empty prepared body")
 	}
 }
+
+func TestBuildNTSTransformer_AllBranches(t *testing.T) {
+	bTrue := true
+	bFalse := false
+	turns := 2
+
+	// 1. Disabled
+	trNil := BuildNTSTransformer(contract.NTSConfig{Enabled: &bFalse})
+	if trNil != nil {
+		t.Fatalf("expected nil transformer when disabled")
+	}
+
+	// 2. All branches enabled
+	cfg := contract.NTSConfig{
+		Enabled:                  &bTrue,
+		StripANSI:                &bTrue,
+		ResolveCR:                &bTrue,
+		DeduplicateLines:         &bTrue,
+		DedupThreshold:           4,
+		StripBoilerplate:         &bTrue,
+		NormalizeWhitespace:      &bTrue,
+		PreserveFileReads:        &bTrue,
+		PreserveFileWrites:       &bTrue,
+		PreserveCacheControl:     &bTrue,
+		CompactStaleFileReads:    &bTrue,
+		StaleReadDepth:           5,
+		StripHistoricalReasoning: &bTrue,
+		KeepRecentReasoningTurns: &turns,
+	}
+	tr := BuildNTSTransformer(cfg)
+	if tr == nil {
+		t.Fatalf("expected non-nil transformer")
+	}
+	if tr.Pipeline().Config().DedupThreshold != 4 {
+		t.Errorf("expected DedupThreshold 4, got %d", tr.Pipeline().Config().DedupThreshold)
+	}
+	if tr.Pipeline().Config().StaleReadDepth != 5 {
+		t.Errorf("expected StaleReadDepth 5, got %d", tr.Pipeline().Config().StaleReadDepth)
+	}
+	if tr.Pipeline().Config().KeepRecentReasoningTurns != 2 {
+		t.Errorf("expected KeepRecentReasoningTurns 2, got %d", tr.Pipeline().Config().KeepRecentReasoningTurns)
+	}
+}
+
 
 
