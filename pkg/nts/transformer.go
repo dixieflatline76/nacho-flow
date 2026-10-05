@@ -292,7 +292,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				continue
 			}
 
-			newContent, res, changed := t.compactToolContent(msg["content"], toolName, hasCache)
+			newContent, res, changed := t.compactToolContent(msg["content"], toolName)
 			if changed {
 				msg["content"] = newContent
 				total.merge(res)
@@ -324,7 +324,8 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				for _, partItem := range contentList {
 					if part, ok := partItem.(map[string]interface{}); ok {
 						partType, _ := part["type"].(string)
-						if partType == "text" {
+						switch partType {
+						case "text":
 							if textStr, ok := part["text"].(string); ok && strings.Contains(textStr, "environment_details") {
 								if newText, res, remChanged := remindersCtx.CompactReminders(textStr); remChanged {
 									part["text"] = newText
@@ -333,7 +334,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 									changedIndices[idx] = struct{}{}
 								}
 							}
-						} else if partType == "tool_result" {
+						case "tool_result":
 							if textStr, ok := part["content"].(string); ok && strings.Contains(textStr, "environment_details") {
 								if newText, res, remChanged := remindersCtx.CompactReminders(textStr); remChanged {
 									part["content"] = newText
@@ -374,7 +375,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				continue
 			}
 
-			newContent, res, changed := t.compactToolContent(part["content"], toolName, hasCache)
+			newContent, res, changed := t.compactToolContent(part["content"], toolName)
 			if changed {
 				part["content"] = newContent
 				total.merge(res)
@@ -428,7 +429,7 @@ func (t *Transformer) tryEvictStaleRead(content interface{}, id string, isError,
 // compactToolContent handles tool content in both string form and content-block list form.
 // Deterministic per-message passes execute unconditionally so sliding cache breakpoints
 // never cause retroactive byte mutations on subsequent turns.
-func (t *Transformer) compactToolContent(content interface{}, toolName string, hasCache bool) (interface{}, ReductionResult, bool) {
+func (t *Transformer) compactToolContent(content interface{}, toolName string) (interface{}, ReductionResult, bool) {
 	category := categorizeToolName(toolName)
 
 	switch val := content.(type) {
