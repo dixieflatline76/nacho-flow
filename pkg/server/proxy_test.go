@@ -4,20 +4,25 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
+	"github.com/dixieflatline76/nacho-flow/pkg/store"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
@@ -2822,6 +2827,56 @@ func TestInjectCorrectionPrompt(t *testing.T) {
 	if string(injectCorrectionPrompt(noMessages, "prompt")) != string(noMessages) {
 		t.Errorf("expected payload without messages returned unchanged")
 	}
+
+	// 5. Tool order preserved, no \u003c, prefix byte-identical
+	reqWithTools := []byte(`{"tools":[{"name":"z_tool"},{"name":"a_tool"}],"messages":[{"role":"user","content":"a < b & c"}],"seed":99999999999999999}`)
+	origCopy := append([]byte(nil), reqWithTools...)
+	promptWithSpecialChars := `Refactor: ensure <tag> & "quotes" and 'single' \ backslash works!`
+	resSpecial := injectCorrectionPrompt(reqWithTools, promptWithSpecialChars)
+
+	// Input buffer must remain unchanged
+	if !bytes.Equal(reqWithTools, origCopy) {
+		t.Errorf("injectCorrectionPrompt mutated the input slice!")
+	}
+
+	// Tool order must be preserved (not alphabetical)
+	zIdx := bytes.Index(resSpecial, []byte("z_tool"))
+	aIdx := bytes.Index(resSpecial, []byte("a_tool"))
+	if zIdx == -1 || aIdx == -1 || zIdx > aIdx {
+		t.Errorf("Tool order was not preserved in injectCorrectionPrompt: %s", string(resSpecial))
+	}
+
+	// No \u003c introduced
+	if bytes.Contains(resSpecial, []byte(`\u003c`)) {
+		t.Errorf("injectCorrectionPrompt introduced \\u003c: %s", string(resSpecial))
+	}
+
+	// Must be valid JSON
+	if !json.Valid(resSpecial) {
+		t.Errorf("injectCorrectionPrompt produced invalid JSON: %s", string(resSpecial))
+	}
+
+	// 6. Empty messages array
+	emptyMsgBody := []byte(`{"model":"gpt-4","messages":[]}`)
+	resEmpty := injectCorrectionPrompt(emptyMsgBody, "wake up")
+	if !json.Valid(resEmpty) {
+		t.Errorf("injectCorrectionPrompt on empty messages produced invalid JSON: %s", string(resEmpty))
+	}
+	if !strings.Contains(string(resEmpty), `[{"role":"user","content":"wake up"}]`) {
+		t.Errorf("unexpected output on empty messages: %s", string(resEmpty))
+	}
+
+	// 7. Non-array messages field returns body unchanged
+	notAnArray := []byte(`{"messages":"not-an-array"}`)
+	if string(injectCorrectionPrompt(notAnArray, "p")) != string(notAnArray) {
+		t.Errorf("expected string messages returned unchanged")
+	}
+
+	// 8. Unclosed messages array returns body unchanged
+	unclosedArray := []byte(`{"messages": [`)
+	if string(injectCorrectionPrompt(unclosedArray, "p")) != string(unclosedArray) {
+		t.Errorf("expected unclosed messages returned unchanged")
+	}
 }
 
 func TestServer_ServeHTTP_EdgeBranches(t *testing.T) {
@@ -3216,11 +3271,11 @@ type mockSimpleLLMProvider struct {
 	headers map[string]string
 }
 
-func (m *mockSimpleLLMProvider) ID() string                { return m.id }
-func (m *mockSimpleLLMProvider) Name() string              { return m.name }
-func (m *mockSimpleLLMProvider) BaseURL() string           { return m.baseURL }
-func (m *mockSimpleLLMProvider) IsLocal() bool             { return m.isLocal }
-func (m *mockSimpleLLMProvider) GetAPIKey() string         { return m.apiKey }
+func (m *mockSimpleLLMProvider) ID() string                    { return m.id }
+func (m *mockSimpleLLMProvider) Name() string                  { return m.name }
+func (m *mockSimpleLLMProvider) BaseURL() string               { return m.baseURL }
+func (m *mockSimpleLLMProvider) IsLocal() bool                 { return m.isLocal }
+func (m *mockSimpleLLMProvider) GetAPIKey() string             { return m.apiKey }
 func (m *mockSimpleLLMProvider) GetHeaders() map[string]string { return m.headers }
 
 func TestServer_Dispatch_FallbackAndHelpersCoverage(t *testing.T) {
@@ -3349,5 +3404,576 @@ func TestBuildNTSTransformer_AllBranches(t *testing.T) {
 	}
 }
 
+func TestPreparePayload_NoHTMLEscaping(t *testing.T) {
+	srv := &Server{}
+	tier := &contract.Tier{
+		Model: "test-model",
+	}
+	// Body containing HTML characters: <, >, &
+	body := []byte(`{"model":"old","messages":[{"role":"user","content":"if (a < b && c > d) return true;"}]}`)
+	prepared := srv.preparePayload(tier, nil, body)
 
+	if bytes.Contains(prepared, []byte(`\u003c`)) || bytes.Contains(prepared, []byte(`\u003e`)) || bytes.Contains(prepared, []byte(`\u0026`)) {
+		t.Errorf("preparePayload introduced HTML escape sequences: %s", string(prepared))
+	}
+	if !bytes.Contains(prepared, []byte("a < b && c > d")) {
+		t.Errorf("preparePayload did not preserve literal HTML characters: %s", string(prepared))
+	}
+}
 
+func TestPreparePayload_PreservesKeyOrderAndPrecision(t *testing.T) {
+	srv := &Server{}
+	tier := &contract.Tier{
+		Model:           "new-model-xyz",
+		ReasoningEffort: "high",
+	}
+
+	// Payload with custom key order and a >2^53 integer
+	body := []byte(`{"tools":[{"name":"bash"}],"model":"old","seed":9007199254740993,"stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	prepared := srv.preparePayload(tier, nil, body)
+
+	// Top-level key order must be preserved: tools before model, model before seed, seed before stream, stream before messages
+	toolsIdx := bytes.Index(prepared, []byte(`"tools"`))
+	modelIdx := bytes.Index(prepared, []byte(`"model"`))
+	seedIdx := bytes.Index(prepared, []byte(`"seed"`))
+	streamIdx := bytes.Index(prepared, []byte(`"stream"`))
+	msgsIdx := bytes.Index(prepared, []byte(`"messages"`))
+
+	if !(toolsIdx < modelIdx && modelIdx < seedIdx && seedIdx < streamIdx && streamIdx < msgsIdx) {
+		t.Errorf("Top-level key order was not preserved in preparePayload: %s", string(prepared))
+	}
+
+	// Seed must retain exact value
+	if !bytes.Contains(prepared, []byte(`9007199254740993`)) {
+		t.Errorf("seed precision lost: %s", string(prepared))
+	}
+
+	// Model must be replaced
+	if !bytes.Contains(prepared, []byte(`"new-model-xyz"`)) {
+		t.Errorf("model was not updated: %s", string(prepared))
+	}
+
+	// stream_options must include include_usage: true
+	if !bytes.Contains(prepared, []byte(`"include_usage":true`)) && !bytes.Contains(prepared, []byte(`"include_usage": true`)) {
+		t.Errorf("stream_options missing include_usage: %s", string(prepared))
+	}
+
+	// Output must be valid JSON
+	if !json.Valid(prepared) {
+		t.Errorf("preparePayload produced invalid JSON: %s", string(prepared))
+	}
+}
+
+func TestPreparePayload_EdgeBranches(t *testing.T) {
+	srv := &Server{}
+	tier := &contract.Tier{
+		Model: "short",
+	}
+
+	// 1. Replacement with shorter model name leaves original buffer untouched
+	inPlaceBody := []byte(`{"model":"very-long-model-name-here","other":"keep"}`)
+	outInPlace := srv.preparePayload(tier, nil, inPlaceBody)
+	if !strings.Contains(string(outInPlace), `"model":"short"`) {
+		t.Errorf("expected replacement: %s", string(outInPlace))
+	}
+	if !bytes.Equal(inPlaceBody, []byte(`{"model":"very-long-model-name-here","other":"keep"}`)) {
+		t.Errorf("preparePayload mutated input buffer!")
+	}
+
+	// 2. stream_options already has include_usage: false
+	tierStream := &contract.Tier{Model: "m", ReasoningEffort: "low"}
+	bodyWithOpts := []byte(`{"model":"old","stream":true,"stream_options":{"include_usage":false}}`)
+	outOpts := srv.preparePayload(tierStream, nil, bodyWithOpts)
+	if !strings.Contains(string(outOpts), `"include_usage":true`) {
+		t.Errorf("expected include_usage replaced with true: %s", string(outOpts))
+	}
+
+	// 3. stream_options is null (non-object)
+	bodyNullOpts := []byte(`{"model":"old","stream":true,"stream_options":null}`)
+	outNullOpts := srv.preparePayload(tierStream, nil, bodyNullOpts)
+	if !strings.Contains(string(outNullOpts), `"stream_options":{"include_usage":true}`) {
+		t.Errorf("expected null stream_options replaced: %s", string(outNullOpts))
+	}
+
+	// 4. Duplicate keys at top level
+	bodyDup := []byte(`{"model":"first","other":1,"model":"second"}`)
+	outDup := srv.preparePayload(tier, nil, bodyDup)
+	if strings.Contains(string(outDup), "first") || strings.Contains(string(outDup), "second") {
+		t.Errorf("expected all occurrences of model replaced: %s", string(outDup))
+	}
+
+	// 5. Empty object {}
+	bodyEmpty := []byte(`{}`)
+	outEmpty := srv.preparePayload(tierStream, nil, bodyEmpty)
+	if !strings.Contains(string(outEmpty), `"model":"m"`) || !strings.Contains(string(outEmpty), `"reasoning_effort":"low"`) {
+		t.Errorf("expected inserted model and reasoning_effort in empty object: %s", string(outEmpty))
+	}
+
+	// 6. Malformed JSON inputs return body unchanged
+	malformed := [][]byte{
+		[]byte(`not json`),
+		[]byte(`[1, 2, 3]`),
+		[]byte(`{unquoted: 1}`),
+		[]byte(`{"key" 1}`),
+		[]byte(`{"key": `),
+		[]byte(`{"key": invalid}`),
+		[]byte(`{"model":}`),
+		[]byte(`{"model":"gpt",`),
+		[]byte(`{"model":`),
+	}
+	for _, m := range malformed {
+		res := srv.preparePayload(tier, nil, m)
+		if !bytes.Equal(res, m) {
+			t.Errorf("expected malformed JSON returned unchanged: %s", string(res))
+		}
+	}
+
+	// 7. Empty or unclosed JSON
+	if res := srv.preparePayload(tier, nil, []byte("")); len(res) != 0 {
+		t.Errorf("expected empty body returned unchanged")
+	}
+	if res := srv.preparePayload(tier, nil, []byte("{")); !bytes.Equal(res, []byte("{")) {
+		t.Errorf("expected bare { returned unchanged")
+	}
+
+	// 8. stream_options with include_usage already true
+	bodyTrueOpts := []byte(`{"model":"old","stream":true,"stream_options":{"include_usage":true}}`)
+	outTrueOpts := srv.preparePayload(tierStream, nil, bodyTrueOpts)
+	if !strings.Contains(string(outTrueOpts), `"include_usage":true`) {
+		t.Errorf("expected include_usage kept: %s", string(outTrueOpts))
+	}
+
+	// 9. stream_options is empty object {}
+	bodyEmptyOpts := []byte(`{"model":"old","stream":true,"stream_options":{}}`)
+	outEmptyOpts := srv.preparePayload(tierStream, nil, bodyEmptyOpts)
+	if !strings.Contains(string(outEmptyOpts), `"stream_options":{"include_usage":true}`) {
+		t.Errorf("expected empty stream_options populated: %s", string(outEmptyOpts))
+	}
+
+	// 10. stream_options has custom fields but not include_usage
+	bodyCustomOpts := []byte(`{"model":"old","stream":true,"stream_options":{"custom":123}}`)
+	outCustomOpts := srv.preparePayload(tierStream, nil, bodyCustomOpts)
+	if !strings.Contains(string(outCustomOpts), `"include_usage":true`) || !strings.Contains(string(outCustomOpts), `"custom":123`) {
+		t.Errorf("expected include_usage appended to stream_options: %s", string(outCustomOpts))
+	}
+
+	// 11. Bare empty object {}
+	bodyEmptyObj := []byte(`{}`)
+	outEmptyObj := srv.preparePayload(tierStream, nil, bodyEmptyObj)
+	if !strings.Contains(string(outEmptyObj), `"model":"m"`) || !strings.Contains(string(outEmptyObj), `"reasoning_effort":"low"`) {
+		t.Errorf("expected populated empty object: %s", string(outEmptyObj))
+	}
+
+	// 12. Missing model but has other elements
+	bodyNoModel := []byte(`{"stream":true,"seed":123}`)
+	outNoModel := srv.preparePayload(tierStream, nil, bodyNoModel)
+	if !strings.Contains(string(outNoModel), `"model":"m"`) || !strings.Contains(string(outNoModel), `"stream_options":{"include_usage":true}`) {
+		t.Errorf("expected model injected: %s", string(outNoModel))
+	}
+}
+
+func TestPreparePayload_LeavesCallerBodyUnmodified(t *testing.T) {
+	srv := &Server{}
+	body := []byte(`{"model":"some-very-long-client-model","reasoning_effort":"medium","messages":[{"role":"user","content":"hi"}]}`)
+	orig := append([]byte(nil), body...)
+
+	prepared := srv.preparePayload(&contract.Tier{Model: "short", ReasoningEffort: "low"}, nil, body)
+
+	// 1. Output must be valid JSON with the new model
+	if !json.Valid(prepared) {
+		t.Fatalf("prepared is not valid JSON: %s", string(prepared))
+	}
+	if !bytes.Contains(prepared, []byte(`"model":"short"`)) {
+		t.Errorf("prepared does not contain short model: %s", string(prepared))
+	}
+
+	// 2. Caller's original body slice must be 100% byte-identical
+	if !bytes.Equal(body, orig) {
+		t.Fatalf("caller's body slice was mutated! got: %s, want: %s", string(body), string(orig))
+	}
+}
+
+func TestIsDefectiveEmptyContent_EdgeBranches(t *testing.T) {
+	// not valid JSON
+	if isDefectiveEmptyContent([]byte("invalid json")) {
+		t.Errorf("expected false on invalid json")
+	}
+	// invalid choice
+	if !isDefectiveEmptyContent([]byte(`{"choices":["not-an-object"]}`)) {
+		t.Errorf("expected defective on non-object choice")
+	}
+	// choice with non-object message
+	if !isDefectiveEmptyContent([]byte(`{"choices":[{"message":"not-object"}]}`)) {
+		t.Errorf("expected defective on non-object message")
+	}
+	// choice with invalid message JSON
+	if !isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content": 123}}]}`)) {
+		t.Errorf("expected defective on invalid message JSON")
+	}
+	// empty choices array
+	if !isDefectiveEmptyContent([]byte(`{"choices":[]}`)) {
+		t.Errorf("expected defective on empty choices")
+	}
+	// choice with reasoning only
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"","reasoning":"pondering"}}]}`)) {
+		t.Errorf("expected non-defective on reasoning content")
+	}
+	// choice with tool calls only
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"","tool_calls":[{"id":"call_1"}]}}]}`)) {
+		t.Errorf("expected non-defective on tool calls")
+	}
+	// choice with reasoning_content
+	if isDefectiveEmptyContent([]byte(`{"choices":[{"message":{"content":"","reasoning_content":"deep pondering"}}]}`)) {
+		t.Errorf("expected non-defective on reasoning_content")
+	}
+	// choice with primitive message
+	if !isDefectiveEmptyContent([]byte(`{"choices":[{"message":123}]}`)) {
+		t.Errorf("expected defective on primitive message")
+	}
+}
+
+func TestPurgeAllLogs_FallbackPaths(t *testing.T) {
+	srv := &Server{
+		directivePath:  t.TempDir() + "/directive.json",
+		trafficLogPath: t.TempDir() + "/traffic.jsonl",
+		exitFunc:       func(int) {},
+	}
+	w := httptest.NewRecorder()
+	srv.handlePurgeAllLogsDirective(w, DirectiveRequest{})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	srv2 := &Server{
+		exitFunc: func(int) {},
+	}
+	w2 := httptest.NewRecorder()
+	srv2.handlePurgeAllLogsDirective(w2, DirectiveRequest{})
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	ds, _ := store.NewDiskStore(filepath.Join(t.TempDir(), "stats.json"))
+	srv3 := &Server{
+		diskStore: ds,
+		exitFunc:  func(int) {},
+	}
+	w3 := httptest.NewRecorder()
+	srv3.handlePurgeAllLogsDirective(w3, DirectiveRequest{})
+	if w3.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w3.Code)
+	}
+
+	blockingFile := filepath.Join(t.TempDir(), "block")
+	_ = os.WriteFile(blockingFile, []byte("x"), 0600)
+	srvErr := &Server{
+		directivePath: filepath.Join(blockingFile, "sub", "directive.json"),
+		exitFunc:      func(int) {},
+	}
+	wErr := httptest.NewRecorder()
+	srvErr.handlePurgeAllLogsDirective(wErr, DirectiveRequest{})
+	if wErr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", wErr.Code)
+	}
+}
+
+func BenchmarkPreparePayload_LargeFixture(b *testing.B) {
+	srv := &Server{}
+	tier := &contract.Tier{
+		Model:           "claude-3-5-sonnet",
+		ReasoningEffort: "medium",
+	}
+
+	// Create a large 600 KB payload with tools and many messages
+	var buf bytes.Buffer
+	buf.WriteString(`{"tools":[{"name":"bash"},{"name":"editor"}],"model":"old-model","stream":true,"messages":[`)
+	for i := 0; i < 200; i++ {
+		if i > 0 {
+			buf.WriteString(`,`)
+		}
+		buf.WriteString(`{"role":"user","content":"message content line `)
+		buf.WriteString(strings.Repeat("lots of tokens and text in history ", 50))
+		buf.WriteString(`"}`)
+	}
+	buf.WriteString(`]}`)
+	payload := buf.Bytes()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = srv.preparePayload(tier, nil, payload)
+	}
+}
+
+func TestDumpOutbound_Disabled(t *testing.T) {
+	t.Setenv("NACHO_DUMP_OUTBOUND", "")
+	req, err := http.NewRequest(http.MethodPost, "http://localhost/test", bytes.NewReader([]byte(`{"hello":"world"}`)))
+	if err != nil {
+		t.Fatalf("failed to create req: %v", err)
+	}
+	logger := slog.Default()
+	dumpOutbound(req, logger)
+	// Nothing panicked or errored
+}
+
+func TestDumpOutbound_NilOrNoGetBody(t *testing.T) {
+	t.Setenv("NACHO_DUMP_OUTBOUND", t.TempDir())
+	logger := slog.Default()
+	dumpOutbound(nil, logger)
+
+	req := &http.Request{}
+	dumpOutbound(req, logger)
+}
+
+func TestDumpOutbound_Enabled(t *testing.T) {
+	dumpDir := t.TempDir()
+	t.Setenv("NACHO_DUMP_OUTBOUND", dumpDir)
+
+	payload := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`)
+	req, err := http.NewRequest(http.MethodPost, "http://localhost/test", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("failed to create req: %v", err)
+	}
+	logger := slog.Default()
+	dumpOutbound(req, logger)
+
+	files, err := os.ReadDir(dumpDir)
+	if err != nil {
+		t.Fatalf("failed to read dump dir: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 dump file, got %d", len(files))
+	}
+
+	dumped, err := os.ReadFile(filepath.Join(dumpDir, files[0].Name()))
+	if err != nil {
+		t.Fatalf("failed to read dumped file: %v", err)
+	}
+	if !bytes.Equal(dumped, payload) {
+		t.Errorf("dumped payload mismatch: got %s, want %s", string(dumped), string(payload))
+	}
+
+	info, err := files[0].Info()
+	if err != nil {
+		t.Fatalf("failed to get file info: %v", err)
+	}
+	// Verify file mode includes 0600 permissions
+	if info.Mode().Perm()&0600 != 0600 {
+		t.Errorf("expected 0600 perm, got %v", info.Mode().Perm())
+	}
+}
+
+func TestDumpOutbound_UnwritableDirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	// Create a regular file where the directory would be, causing MkdirAll to fail
+	blockingFile := filepath.Join(tempDir, "blocked")
+	if err := os.WriteFile(blockingFile, []byte("blocker"), 0600); err != nil {
+		t.Fatalf("failed to create blocking file: %v", err)
+	}
+
+	invalidDir := filepath.Join(blockingFile, "sub")
+	t.Setenv("NACHO_DUMP_OUTBOUND", invalidDir)
+
+	payload := []byte(`{"test":123}`)
+	req, err := http.NewRequest(http.MethodPost, "http://localhost/test", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("failed to create req: %v", err)
+	}
+	logger := slog.Default()
+	// Must not panic, request continues
+	dumpOutbound(req, logger)
+}
+
+func TestDumpOutbound_Errors(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("NACHO_DUMP_OUTBOUND", tempDir)
+	logger := slog.Default()
+
+	// 1. GetBody error
+	reqGetBodyErr := &http.Request{
+		GetBody: func() (io.ReadCloser, error) {
+			return nil, errors.New("get body error")
+		},
+	}
+	dumpOutbound(reqGetBodyErr, logger)
+
+	// 2. Read error
+	reqReadErr := &http.Request{
+		GetBody: func() (io.ReadCloser, error) {
+			return io.NopCloser(iotest.ErrReader(errors.New("read error"))), nil
+		},
+	}
+	dumpOutbound(reqReadErr, logger)
+}
+
+func TestInjectCorrectionPrompt_EdgeCases(t *testing.T) {
+	// 1. Missing messages
+	if res := injectCorrectionPrompt([]byte(`{}`), "prompt"); !bytes.Equal(res, []byte(`{}`)) {
+		t.Errorf("expected unchanged: %s", string(res))
+	}
+	// 2. Messages is not an array
+	if res := injectCorrectionPrompt([]byte(`{"messages":"not an array"}`), "prompt"); !bytes.Equal(res, []byte(`{"messages":"not an array"}`)) {
+		t.Errorf("expected unchanged: %s", string(res))
+	}
+	// 3. Messages is unclosed
+	if res := injectCorrectionPrompt([]byte(`{"messages":[`), "prompt"); !bytes.Equal(res, []byte(`{"messages":[`)) {
+		t.Errorf("expected unchanged: %s", string(res))
+	}
+	// 4. Empty messages array
+	resEmpty := injectCorrectionPrompt([]byte(`{"messages":[]}`), "custom")
+	if !bytes.Contains(resEmpty, []byte(`"role":"user","content":"custom"`)) {
+		t.Errorf("expected custom prompt in empty array: %s", string(resEmpty))
+	}
+	// 5. Default prompt
+	resDef := injectCorrectionPrompt([]byte(`{"messages":[]}`), "")
+	if !bytes.Contains(resDef, []byte(contract.CycleBreakerDefaultCorrectionPrompt)) {
+		t.Errorf("expected default prompt: %s", string(resDef))
+	}
+}
+
+func TestReplayCapturedFixtures(t *testing.T) {
+	scratchDir := `C:\Users\karlk\.gemini\antigravity-ide\brain\44c3d9a2-2eff-4331-ab35-baa30a415a0d\scratch`
+	fixtures := []struct {
+		file     string
+		expected int
+	}{
+		{"req_final.json", 6},
+		{"req_new.json", 3},
+		{"req_run3.json", 5},
+	}
+
+	if _, err := os.Stat(scratchDir); os.IsNotExist(err) {
+		t.Skip("scratch directory does not exist on this environment")
+	}
+
+	bTrue := true
+	bFalse := false
+	i3 := 3
+	tr := BuildNTSTransformer(contract.NTSConfig{
+		Enabled:                  &bTrue,
+		StripANSI:                &bTrue,
+		ResolveCR:                &bTrue,
+		DeduplicateLines:         &bFalse,
+		DedupThreshold:           3,
+		StripBoilerplate:         &bFalse,
+		NormalizeWhitespace:      &bTrue,
+		PreserveFileReads:        &bTrue,
+		PreserveFileWrites:       &bTrue,
+		PreserveCacheControl:     &bTrue,
+		CompactStaleFileReads:    &bFalse,
+		StaleReadDepth:           3,
+		StripHistoricalReasoning: &bTrue,
+		KeepRecentReasoningTurns: &i3,
+	})
+
+	srv := &Server{}
+	tier := &contract.Tier{
+		Model:           "claude-3-7-sonnet-20250219",
+		ReasoningEffort: "high",
+	}
+
+	for _, f := range fixtures {
+		fullPath := filepath.Join(scratchDir, f.file)
+		raw, err := os.ReadFile(fullPath)
+		if err != nil {
+			t.Skipf("fixture %s not found: %v", f.file, err)
+			continue
+		}
+
+		in := append([]byte(nil), raw...)
+
+		// 1. Replay through NTS
+		outNTS, resNTS, err := tr.TransformOpenAI(in)
+		if err != nil {
+			t.Fatalf("[%s] NTS transform error: %v", f.file, err)
+		}
+
+		actualDiff := len(raw) - len(outNTS)
+		if resNTS.BytesSaved != actualDiff {
+			t.Errorf("[%s] BytesSaved mismatch: reported %d, actual diff %d", f.file, resNTS.BytesSaved, actualDiff)
+		}
+
+		if bytes.Count(outNTS, []byte(`\u003c`)) > bytes.Count(raw, []byte(`\u003c`)) {
+			t.Errorf("[%s] NTS introduced \\u003c", f.file)
+		}
+
+		// 2. Replay through preparePayload
+		outPrep := srv.preparePayload(tier, nil, outNTS)
+		if bytes.Count(outPrep, []byte(`\u003c`)) > bytes.Count(raw, []byte(`\u003c`)) {
+			t.Errorf("[%s] preparePayload introduced \\u003c", f.file)
+		}
+
+		// 3. Verify valid JSON
+		if !json.Valid(outPrep) {
+			t.Errorf("[%s] output is invalid JSON", f.file)
+		}
+	}
+}
+
+func TestServer_Dispatch_FallbackPreservesPristineBody(t *testing.T) {
+	var fallbackBody []byte
+	tsFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer tsFail.Close()
+
+	tsFallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		fallbackBody = b
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer tsFallback.Close()
+
+	pFail := &mockSimpleLLMProvider{
+		id:      "prov_fail",
+		name:    "Prov Fail",
+		baseURL: tsFail.URL,
+	}
+	pFallback := &mockSimpleLLMProvider{
+		id:      "prov_fallback",
+		name:    "Prov Fallback",
+		baseURL: tsFallback.URL,
+	}
+
+	reg := provider.NewRegistry()
+	reg.Register(pFail)
+	reg.Register(pFallback)
+
+	cfg := &contract.Config{
+		Port: 8000,
+		DefaultTier: contract.Tier{
+			Name:     "default",
+			Provider: "prov_fallback",
+			Model:    "fallback-model",
+		},
+		Tiers: []contract.Tier{
+			{Name: "default", Provider: "prov_fallback", Model: "fallback-model"},
+			// Primary only shortens the model and inserts no keys. Before the fix this was
+			// the in-place path that corrupted the body reused by the fallback.
+			{Name: "primary", Provider: "prov_fail", Model: "short"},
+		},
+	}
+	evaluator, _ := strategy.NewExprEvaluator(nil, contract.Tier{Model: "default"})
+	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, router.NewClassifier(), router.NewSanitizer(), nil, nil, reg, slog.Default())
+
+	clientBody := []byte(`{"model":"very-long-client-model-name-12345","messages":[{"role":"user","content":"test"}]}`)
+	origClientBody := append([]byte(nil), clientBody...)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(clientBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.dispatchTier(w, req, contract.RequestContext{Tokens: 10}, cfg.Tiers[1], clientBody, time.Now(), slog.Default(), false)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Equal(clientBody, origClientBody) {
+		t.Fatalf("primary tier mutated the client body: %s", string(clientBody))
+	}
+	want := `{"model":"fallback-model","messages":[{"role":"user","content":"test"}]}`
+	if string(fallbackBody) != want {
+		t.Fatalf("fallback payload mismatch:\n got: %s\nwant: %s", string(fallbackBody), want)
+	}
+}

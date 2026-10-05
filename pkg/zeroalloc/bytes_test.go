@@ -616,6 +616,13 @@ func TestAppendEscapedJSONString(t *testing.T) {
 		t.Fatalf("expected %s, got %s", expected, string(out))
 	}
 
+	// Backspace and form-feed must emit \b and \f instead of \u0008 and \u000c
+	bfOut := AppendEscapedJSONString(nil, "a\bb\fc")
+	expectedBF := `"a\bb\fc"`
+	if string(bfOut) != expectedBF {
+		t.Fatalf("AppendEscapedJSONString(\"a\\bb\\fc\") = %s, want %s", string(bfOut), expectedBF)
+	}
+
 	// Zero-alloc verification
 	allocs := testing.AllocsPerRun(1000, func() {
 		scratch := make([]byte, 0, 128)
@@ -633,6 +640,13 @@ func TestWriteEscapedJSONString(t *testing.T) {
 	expected := `"hello \"world\"\n\r\t\u0000"`
 	if buf.String() != expected {
 		t.Fatalf("expected %s, got %s", expected, buf.String())
+	}
+
+	buf.Reset()
+	WriteEscapedJSONString(&buf, "a\bb\fc")
+	expectedBF := `"a\bb\fc"`
+	if buf.String() != expectedBF {
+		t.Fatalf("WriteEscapedJSONString(\"a\\bb\\fc\") = %s, want %s", buf.String(), expectedBF)
 	}
 
 	// Zero-alloc verification with pre-allocated buffer

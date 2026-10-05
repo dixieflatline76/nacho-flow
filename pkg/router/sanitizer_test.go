@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -133,5 +134,21 @@ func BenchmarkSanitizer(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_, _ = sanitizer.SanitizePayload(inputJSON, false)
+	}
+}
+
+func TestSanitizePayload_NoHTMLEscaping(t *testing.T) {
+	sanitizer := NewSanitizer()
+	inputJSON := `{"messages":[{"role":"user","content":"@nacho:cloud if x < 10 && y > 20"}]}`
+	out, mod := sanitizer.SanitizePayload([]byte(inputJSON), true)
+	if !mod {
+		t.Fatalf("expected payload to be modified")
+	}
+
+	if bytes.Contains(out, []byte(`\u003c`)) || bytes.Contains(out, []byte(`\u003e`)) || bytes.Contains(out, []byte(`\u0026`)) {
+		t.Errorf("SanitizePayload introduced HTML escape sequences: %s", string(out))
+	}
+	if !bytes.Contains(out, []byte("x < 10 && y > 20")) {
+		t.Errorf("SanitizePayload did not preserve literal HTML characters: %s", string(out))
 	}
 }

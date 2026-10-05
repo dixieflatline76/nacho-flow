@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/wirejson"
 )
 
 type HistorySanitizer struct{}
@@ -91,7 +92,7 @@ func (s *HistorySanitizer) SanitizePayload(body []byte, targetHasVision bool) ([
 		return body, false
 	}
 
-	sanitized, err := json.Marshal(raw)
+	sanitized, err := wirejson.Marshal(raw)
 	if err != nil {
 		return body, false
 	}

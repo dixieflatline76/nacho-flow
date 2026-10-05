@@ -2,13 +2,13 @@ package server
 
 import (
 	"bytes"
-	"encoding/json"
 	"strings"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
+	"github.com/dixieflatline76/nacho-flow/pkg/zeroalloc"
 )
 
 func hasCandidateToolTokens(b []byte) bool {
@@ -105,25 +105,50 @@ func injectCorrectionPrompt(body []byte, prompt string) []byte {
 	if prompt == "" {
 		prompt = contract.CycleBreakerDefaultCorrectionPrompt
 	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(body, &payload); err != nil {
+
+	_, valStart, valEnd, ok := zeroalloc.ObjectField(body, 0, len(body), "messages")
+	if !ok || valStart >= valEnd {
 		return body
 	}
 
-	messages, ok := payload["messages"].([]interface{})
-	if !ok {
+	// Must be an array: starts with '[' and ends with ']'
+	iStart := valStart
+	for iStart < valEnd && (body[iStart] == ' ' || body[iStart] == '\t' || body[iStart] == '\n' || body[iStart] == '\r') {
+		iStart++
+	}
+	if iStart >= valEnd || body[iStart] != '[' {
 		return body
 	}
 
-	overrideMsg := map[string]interface{}{
-		"role":    "user",
-		"content": prompt,
+	iEnd := valEnd - 1
+	for iEnd > iStart && (body[iEnd] == ' ' || body[iEnd] == '\t' || body[iEnd] == '\n' || body[iEnd] == '\r') {
+		iEnd--
 	}
-	payload["messages"] = append(messages, overrideMsg)
-
-	reencoded, err := json.Marshal(payload)
-	if err != nil {
+	if iEnd <= iStart || body[iEnd] != ']' {
 		return body
 	}
-	return reencoded
+
+	// Check if array has existing elements
+	hasElements := false
+	for k := iStart + 1; k < iEnd; k++ {
+		if body[k] != ' ' && body[k] != '\t' && body[k] != '\n' && body[k] != '\r' {
+			hasElements = true
+			break
+		}
+	}
+
+	var msgBuf []byte
+	if hasElements {
+		msgBuf = append(msgBuf, ',')
+	}
+	msgBuf = append(msgBuf, `{"role":"user","content":`...)
+	msgBuf = zeroalloc.AppendEscapedJSONString(msgBuf, prompt)
+	msgBuf = append(msgBuf, '}')
+
+	// Safety Rule 4: never modify body; allocate a fresh destination buffer
+	out := make([]byte, 0, len(body)+len(msgBuf))
+	out = append(out, body[:iEnd]...)
+	out = append(out, msgBuf...)
+	out = append(out, body[iEnd:]...)
+	return out
 }

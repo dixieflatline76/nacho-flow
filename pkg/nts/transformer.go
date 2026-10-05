@@ -3,9 +3,13 @@ package nts
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
+	"github.com/dixieflatline76/nacho-flow/pkg/wirejson"
+	"github.com/dixieflatline76/nacho-flow/pkg/zeroalloc"
 )
 
 // targetJSONFields are field names within inner-JSON payloads that carry tool output text.
@@ -61,16 +65,95 @@ func (t *Transformer) transformPayload(body []byte) ([]byte, ReductionResult, er
 	}
 
 	toolNames := indexToolNames(msgs)
-	modified, totalResult := t.processMessages(msgs, toolNames)
+	modified, totalResult, changedIndices := t.processMessages(msgs, toolNames)
 	if !modified {
 		totalResult.Bypassed = true
 		totalResult.BypassReason = "no_modifications"
 		return body, totalResult, nil
 	}
 
-	newBody, err := json.Marshal(req)
-	if err != nil {
-		return body, totalResult, err
+	// Message-level targeted splicing: locate "messages" array in the raw input body
+	_, valStart, valEnd, ok := zeroalloc.ObjectField(body, 0, len(body), "messages")
+	if !ok {
+		newBody, err := wirejson.Marshal(req)
+		return newBody, totalResult, err
+	}
+
+	type msgSpan struct {
+		start, end int
+	}
+	var spans []msgSpan
+	pos := valStart + 1
+	for {
+		start, end, next, ok := zeroalloc.NextElement(body, pos, valEnd)
+		if !ok {
+			break
+		}
+		spans = append(spans, msgSpan{start: start, end: end})
+		pos = next
+	}
+
+	if len(spans) != len(msgs) {
+		slog.Warn("NTS message count mismatch between scanner and JSON parser, falling back to full marshal",
+			"scanner_count", len(spans), "json_count", len(msgs))
+		newBody, err := wirejson.Marshal(req)
+		return newBody, totalResult, err
+	}
+
+	var edits []zeroalloc.Edit
+	for idx, sp := range spans {
+		if _, changed := changedIndices[idx]; !changed {
+			continue
+		}
+		msgBytes, err := wirejson.Marshal(msgs[idx])
+		if err != nil {
+			newBody, mErr := wirejson.Marshal(req)
+			return newBody, totalResult, mErr
+		}
+		edits = append(edits, zeroalloc.Edit{
+			Start: sp.start,
+			End:   sp.end,
+			Repl:  msgBytes,
+		})
+	}
+
+	sort.Slice(edits, func(i, j int) bool {
+		return edits[i].Start < edits[j].Start
+	})
+
+	fits := true
+	extraCap := 0
+	for _, e := range edits {
+		spanLen := e.End - e.Start
+		if len(e.Repl) > spanLen {
+			fits = false
+			extraCap += len(e.Repl) - spanLen
+		}
+	}
+
+	var newBody []byte
+	if fits {
+		// In-place edit when all replacements fit (Safety Rule 1 & 5)
+		if out, ok := zeroalloc.SpliceInPlace(body, edits); ok {
+			newBody = out
+		}
+	}
+
+	if newBody == nil {
+		// Growth fallback into fresh buffer
+		dst := make([]byte, 0, len(body)+extraCap)
+		if out, ok := zeroalloc.SpliceInto(dst, body, edits); ok {
+			newBody = out
+		} else {
+			full, err := wirejson.Marshal(req)
+			return full, totalResult, err
+		}
+	}
+
+	totalResult.BytesSaved = len(body) - len(newBody)
+	totalResult.TokensSaved = totalResult.BytesSaved / 4
+	if totalResult.TokensSaved < 0 {
+		totalResult.TokensSaved = 0
 	}
 
 	return newBody, totalResult, nil
@@ -130,9 +213,10 @@ func indexToolNames(msgs []interface{}) map[string]string {
 }
 
 // processMessages traverses messages, identifies tool outputs, and applies compaction in-place.
-func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]string) (bool, ReductionResult) {
+func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]string) (bool, ReductionResult, map[int]struct{}) {
 	var total ReductionResult
 	modified := false
+	changedIndices := make(map[int]struct{})
 
 	var staleIDs map[string]struct{}
 	if t.pipeline.config.CompactStaleFileReads {
@@ -177,6 +261,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 			if _, isHistorical := historicalAssistantIndices[idx]; isHistorical {
 				if t.pruneAssistantReasoning(msg, &total) {
 					modified = true
+					changedIndices[idx] = struct{}{}
 				}
 			}
 		}
@@ -193,6 +278,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				msg["content"] = StaleFileReadNotice
 				total.merge(res)
 				modified = true
+				changedIndices[idx] = struct{}{}
 				continue
 			}
 
@@ -201,6 +287,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				msg["content"] = newContent
 				total.merge(res)
 				modified = true
+				changedIndices[idx] = struct{}{}
 			}
 			continue
 		}
@@ -227,6 +314,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				part["content"] = StaleFileReadNotice
 				total.merge(res)
 				modified = true
+				changedIndices[idx] = struct{}{}
 				continue
 			}
 
@@ -235,11 +323,12 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				part["content"] = newContent
 				total.merge(res)
 				modified = true
+				changedIndices[idx] = struct{}{}
 			}
 		}
 	}
 
-	return modified, total
+	return modified, total, changedIndices
 }
 
 func (t *Transformer) tryEvictStaleRead(content interface{}, id string, isError, hasCache bool, staleIDs map[string]struct{}) (ReductionResult, bool) {
@@ -352,7 +441,7 @@ func (t *Transformer) compactInnerJSON(raw []byte, cat ToolCategory) (string, Re
 			}
 		}
 		if modified {
-			if reencoded, err := json.Marshal(items); err == nil {
+			if reencoded, err := wirejson.Marshal(items); err == nil {
 				return string(reencoded), total, true
 			}
 		}
@@ -362,7 +451,7 @@ func (t *Transformer) compactInnerJSON(raw []byte, cat ToolCategory) (string, Re
 			return "", ReductionResult{}, false
 		}
 		if t.compactItemFields(item, cat, &total) {
-			if reencoded, err := json.Marshal(item); err == nil {
+			if reencoded, err := wirejson.Marshal(item); err == nil {
 				return string(reencoded), total, true
 			}
 		}
@@ -737,4 +826,3 @@ func isCleanMessagesArray(body []byte) bool {
 	}
 	return false
 }
-

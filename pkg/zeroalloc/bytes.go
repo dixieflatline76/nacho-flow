@@ -404,6 +404,10 @@ func AppendEscapedJSONString(dst []byte, s string) []byte {
 			dst = append(dst, '\\', 'r')
 		case '\t':
 			dst = append(dst, '\\', 't')
+		case '\b':
+			dst = append(dst, '\\', 'b')
+		case '\f':
+			dst = append(dst, '\\', 'f')
 		default:
 			if c < 0x20 {
 				const hex = "0123456789abcdef"
@@ -432,6 +436,10 @@ func WriteEscapedJSONString(buf *bytes.Buffer, s string) {
 			buf.WriteString(`\r`)
 		case '\t':
 			buf.WriteString(`\t`)
+		case '\b':
+			buf.WriteString(`\b`)
+		case '\f':
+			buf.WriteString(`\f`)
 		default:
 			if c < 0x20 {
 				const hex = "0123456789abcdef"

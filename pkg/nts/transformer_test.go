@@ -1,14 +1,13 @@
 package nts_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/nts"
 )
-
-
 
 // TestTransformer_StripReasoning_AnthropicBlocks verifies that historical assistant
 // content blocks with type "thinking", "redacted_thinking", "thought", and "reasoning"
@@ -789,4 +788,183 @@ func BenchmarkNTS_CleanPayload_ZeroAlloc(b *testing.B) {
 	}
 }
 
+func TestTransformer_InnerJSON_NoHTMLEscaping(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	tr := nts.NewTransformer(cfg)
 
+	// Tool result that is itself JSON containing HTML chars and ANSI codes
+	reqJSON := `{
+		"model": "gpt-4o",
+		"messages": [
+			{"role": "user", "content": "run command"},
+			{"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "bash", "arguments": "{}"}}]},
+			{"role": "tool", "tool_call_id": "call_1", "content": "[{\"type\":\"text\",\"text\":\"a < b \\u001b[31mred\"}]"}
+		],
+		"tools": [{"type": "function", "function": {"name": "bash"}}]
+	}`
+
+	out, res, err := tr.TransformOpenAI([]byte(reqJSON))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Bypassed {
+		t.Fatalf("expected payload to be modified, but was bypassed")
+	}
+
+	// Output must NOT contain \u003c inside the JSON string or anywhere else
+	if bytes.Contains(out, []byte(`\u003c`)) {
+		t.Errorf("TransformOpenAI introduced HTML escape \\u003c into output: %s", string(out))
+	}
+
+	// Decode the transformed message to ensure inner tool content contains "a < b"
+	var parsed struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("failed unmarshaling output: %v", err)
+	}
+
+	var toolContent string
+	for _, m := range parsed.Messages {
+		if m.Role == "tool" {
+			toolContent = m.Content
+			break
+		}
+	}
+	if strings.Contains(toolContent, `\u003c`) {
+		t.Errorf("Tool content contains literal \\u003c: %s", toolContent)
+	}
+	if !strings.Contains(toolContent, "a < b") {
+		t.Errorf("Tool content does not contain 'a < b': %s", toolContent)
+	}
+}
+
+func TestTransformer_EditedTurn_NoHTMLEscaping(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	tr := nts.NewTransformer(cfg)
+
+	// User message with HTML chars, followed by tool output with ANSI codes
+	reqJSON := `{
+		"model": "gpt-4o",
+		"messages": [
+			{"role": "user", "content": "if (x < y && y > z) { return true; }"},
+			{"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "bash", "arguments": "{}"}}]},
+			{"role": "tool", "tool_call_id": "call_1", "content": "output with \u001b[32mgreen\u001b[0m"}
+		],
+		"tools": [{"type": "function", "function": {"name": "bash"}}]
+	}`
+
+	out, res, err := tr.TransformOpenAI([]byte(reqJSON))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Bypassed {
+		t.Fatalf("expected payload to be modified, but was bypassed")
+	}
+
+	if bytes.Contains(out, []byte(`\u003c`)) || bytes.Contains(out, []byte(`\u003e`)) || bytes.Contains(out, []byte(`\u0026`)) {
+		t.Errorf("TransformOpenAI introduced HTML escape sequences: %s", string(out))
+	}
+	if !bytes.Contains(out, []byte("x < y && y > z")) {
+		t.Errorf("TransformOpenAI did not preserve literal HTML characters in user content: %s", string(out))
+	}
+}
+
+func TestTransformer_PreservesToolsAndUnchangedMessages(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	tr := nts.NewTransformer(cfg)
+
+	// Tools defined in specific order with nested objects
+	toolsJSON := `[{"name":"z_tool","description":"desc z"},{"name":"a_tool","description":"desc a"}]`
+	reqJSON := `{"seed":9007199254740993,"tools":` + toolsJSON + `,"messages":[{"role":"user","content":"keep this unmodified"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"z_tool","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"strip \u001b[31mcolor\u001b[0m"},{"role":"user","content":"second user message"}]}`
+
+	in := []byte(reqJSON)
+	inCopy := append([]byte(nil), in...)
+
+	out, res, err := tr.TransformOpenAI(in)
+	if err != nil {
+		t.Fatalf("TransformOpenAI error: %v", err)
+	}
+	if res.Bypassed {
+		t.Fatalf("expected modification")
+	}
+
+	// 1. tools array must be byte-identical
+	if !bytes.Contains(out, []byte(toolsJSON)) {
+		t.Errorf("tools array was not byte-identical to input: %s", string(out))
+	}
+
+	// 2. Unchanged messages must be byte-identical
+	if !bytes.Contains(out, []byte(`{"role":"user","content":"keep this unmodified"}`)) {
+		t.Errorf("unchanged first message was re-encoded: %s", string(out))
+	}
+	if !bytes.Contains(out, []byte(`{"role":"user","content":"second user message"}`)) {
+		t.Errorf("unchanged second message was re-encoded: %s", string(out))
+	}
+
+	// 3. Large integer seed > 2^53 must be preserved
+	if !bytes.Contains(out, []byte(`"seed":9007199254740993`)) {
+		t.Errorf("seed was mutated or reordered: %s", string(out))
+	}
+
+	// 4. BytesSaved must match actual wire length difference
+	actualDiff := len(inCopy) - len(out)
+	if res.BytesSaved != actualDiff {
+		t.Errorf("BytesSaved = %d, want exact wire diff %d", res.BytesSaved, actualDiff)
+	}
+
+	// 5. Deterministic: running again on same input produces byte-identical output
+	in2 := append([]byte(nil), inCopy...)
+	out2, _, err2 := tr.TransformOpenAI(in2)
+	if err2 != nil || !bytes.Equal(out, out2) {
+		t.Errorf("TransformOpenAI was not deterministic")
+	}
+}
+
+func TestTransformer_GrowthFallback(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.StripHistoricalReasoning = true
+	cfg.KeepRecentReasoningTurns = 0
+
+	tr := nts.NewTransformer(cfg)
+
+	// Assistant message with empty thinking block is shorter (68 bytes) than the fallback text block (75+ bytes)
+	reqJSON := `{"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":""}]},{"role":"user","content":"next"}]}`
+
+	out, res, err := tr.TransformAnthropic([]byte(reqJSON))
+	if err != nil {
+		t.Fatalf("TransformAnthropic error: %v", err)
+	}
+	if res.Bypassed {
+		t.Fatalf("expected payload to be modified, but was bypassed")
+	}
+
+	if !bytes.Contains(out, []byte("Proceeding with next step.")) {
+		t.Errorf("expected fallback text in growth output: %s", string(out))
+	}
+}
+
+func TestTransformer_ScannerMismatchFallback(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	tr := nts.NewTransformer(cfg)
+
+	// Duplicate messages key: first has 2 elements, second has 1 element.
+	// ObjectField finds the first (len(spans)=2), json.Unmarshal keeps the second (len(msgs)=1).
+	reqJSON := `{"messages":[{"role":"user","content":"first"},{"role":"user","content":"second"}],"messages":[{"role":"tool","tool_call_id":"call_1","content":"\u001b[31mstuff\u001b[0m"}]}`
+
+	out, res, err := tr.TransformOpenAI([]byte(reqJSON))
+	if err != nil {
+		t.Fatalf("TransformOpenAI error: %v", err)
+	}
+	if res.Bypassed {
+		t.Fatalf("expected modification")
+	}
+
+	// Should have safely fallen back to wirejson.Marshal without panic
+	if !bytes.Contains(out, []byte("stuff")) {
+		t.Errorf("expected transformed tool content in output: %s", string(out))
+	}
+}
