@@ -873,6 +873,69 @@ func TestTransformer_RealTasksDatasetReplay(t *testing.T) {
 	}
 }
 
+func TestTransformer_RealTasksDatasetReplay_AllPasses(t *testing.T) {
+	tasksDir := filepath.Join(os.Getenv("APPDATA"), "Code", "User", "globalStorage", "zoocodeorganization.zoo-code", "tasks")
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil {
+		t.Skip("skipping real tasks replay: tasks directory not found")
+	}
+
+	cfg := DefaultConfig()
+	cfg.CompactStaleFileReads = true
+	cfg.DeduplicateReminders = true
+	cfg.RemindersRefreshInterval = 10
+	cfg.CollapseVerboseTests = true
+	cfg.DeduplicateToolOutputs = true
+	cfg.MinDuplicateOutputBytes = 200
+	tr := NewTransformer(cfg)
+
+	totalBytesSaved := 0
+	tasksWithCompaction := 0
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		histPath := filepath.Join(tasksDir, e.Name(), "api_conversation_history.json")
+		data, err := os.ReadFile(histPath)
+		if err != nil {
+			continue
+		}
+
+		var rawMsgs []interface{}
+		if err := json.Unmarshal(data, &rawMsgs); err != nil {
+			continue
+		}
+
+		payload := map[string]interface{}{
+			"messages": rawMsgs,
+		}
+		rawPayload, _ := json.Marshal(payload)
+
+		transformed, res, err := tr.TransformAnthropic(rawPayload)
+		if err != nil {
+			t.Fatalf("task %s failed to transform: %v", e.Name(), err)
+		}
+
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(transformed, &parsed); err != nil {
+			t.Fatalf("task %s transformed output is invalid JSON: %v", e.Name(), err)
+		}
+
+		if res.BytesSaved > 0 {
+			tasksWithCompaction++
+			totalBytesSaved += res.BytesSaved
+		}
+	}
+
+	t.Logf("Real Tasks Replay (All Passes): %d tasks compacted, %d total bytes saved (~%d tokens)",
+		tasksWithCompaction, totalBytesSaved, (totalBytesSaved+3)/4)
+	if tasksWithCompaction == 0 || totalBytesSaved == 0 {
+		t.Errorf("expected real tasks dataset to produce positive savings, got 0 bytes")
+	}
+}
+
+
 func TestIdentifyStaleToolCallIDs_ConfigurableDepth(t *testing.T) {
 	msgs := []interface{}{
 		map[string]interface{}{

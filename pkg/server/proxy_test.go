@@ -3388,6 +3388,11 @@ func TestBuildNTSTransformer_AllBranches(t *testing.T) {
 		StaleReadDepth:           5,
 		StripHistoricalReasoning: &bTrue,
 		KeepRecentReasoningTurns: &turns,
+		DeduplicateReminders:     &bTrue,
+		RemindersRefreshInterval: 7,
+		CollapseVerboseTests:     &bTrue,
+		DeduplicateToolOutputs:   &bTrue,
+		MinDuplicateOutputBytes:  350,
 	}
 	tr := BuildNTSTransformer(cfg)
 	if tr == nil {
@@ -3401,6 +3406,21 @@ func TestBuildNTSTransformer_AllBranches(t *testing.T) {
 	}
 	if tr.Pipeline().Config().KeepRecentReasoningTurns != 2 {
 		t.Errorf("expected KeepRecentReasoningTurns 2, got %d", tr.Pipeline().Config().KeepRecentReasoningTurns)
+	}
+	if !tr.Pipeline().Config().DeduplicateReminders {
+		t.Errorf("expected DeduplicateReminders true")
+	}
+	if tr.Pipeline().Config().RemindersRefreshInterval != 7 {
+		t.Errorf("expected RemindersRefreshInterval 7, got %d", tr.Pipeline().Config().RemindersRefreshInterval)
+	}
+	if !tr.Pipeline().Config().CollapseVerboseTests {
+		t.Errorf("expected CollapseVerboseTests true")
+	}
+	if !tr.Pipeline().Config().DeduplicateToolOutputs {
+		t.Errorf("expected DeduplicateToolOutputs true")
+	}
+	if tr.Pipeline().Config().MinDuplicateOutputBytes != 350 {
+		t.Errorf("expected MinDuplicateOutputBytes 350, got %d", tr.Pipeline().Config().MinDuplicateOutputBytes)
 	}
 }
 

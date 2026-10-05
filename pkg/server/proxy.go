@@ -308,6 +308,11 @@ func BuildNTSTransformer(cfg contract.NTSConfig) *nts.Transformer {
 	setIfPositive(&ntsCfg.StaleReadDepth, cfg.StaleReadDepth)
 	setIf(&ntsCfg.StripHistoricalReasoning, cfg.StripHistoricalReasoning)
 	setIf(&ntsCfg.KeepRecentReasoningTurns, cfg.KeepRecentReasoningTurns)
+	setIf(&ntsCfg.DeduplicateReminders, cfg.DeduplicateReminders)
+	setIfPositive(&ntsCfg.RemindersRefreshInterval, cfg.RemindersRefreshInterval)
+	setIf(&ntsCfg.CollapseVerboseTests, cfg.CollapseVerboseTests)
+	setIf(&ntsCfg.DeduplicateToolOutputs, cfg.DeduplicateToolOutputs)
+	setIfPositive(&ntsCfg.MinDuplicateOutputBytes, cfg.MinDuplicateOutputBytes)
 
 	return nts.NewTransformer(ntsCfg)
 }

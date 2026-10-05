@@ -681,6 +681,15 @@ nts:
   strip_boilerplate: true
   normalize_whitespace: true
   preserve_cache_control: true
+  compact_stale_file_reads: true
+  stale_read_depth: 5
+  strip_historical_reasoning: true
+  keep_recent_reasoning_turns: 2
+  deduplicate_reminders: true
+  reminders_refresh_interval: 10
+  collapse_verbose_tests: true
+  deduplicate_tool_outputs: true
+  min_duplicate_output_bytes: 250
 providers:
   local_gpu:
     base_url: "http://127.0.0.1:11434/v1"
@@ -708,8 +717,25 @@ tiers:
 	if cfg.NTS.StripANSI == nil || !*cfg.NTS.StripANSI ||
 		cfg.NTS.StripBoilerplate == nil || !*cfg.NTS.StripBoilerplate ||
 		cfg.NTS.NormalizeWhitespace == nil || !*cfg.NTS.NormalizeWhitespace ||
-		cfg.NTS.PreserveCacheControl == nil || !*cfg.NTS.PreserveCacheControl {
+		cfg.NTS.PreserveCacheControl == nil || !*cfg.NTS.PreserveCacheControl ||
+		cfg.NTS.CompactStaleFileReads == nil || !*cfg.NTS.CompactStaleFileReads ||
+		cfg.NTS.StripHistoricalReasoning == nil || !*cfg.NTS.StripHistoricalReasoning ||
+		cfg.NTS.DeduplicateReminders == nil || !*cfg.NTS.DeduplicateReminders ||
+		cfg.NTS.CollapseVerboseTests == nil || !*cfg.NTS.CollapseVerboseTests ||
+		cfg.NTS.DeduplicateToolOutputs == nil || !*cfg.NTS.DeduplicateToolOutputs {
 		t.Errorf("Expected all NTS boolean flags to be true")
+	}
+	if cfg.NTS.StaleReadDepth != 5 {
+		t.Errorf("Expected StaleReadDepth 5, got %d", cfg.NTS.StaleReadDepth)
+	}
+	if cfg.NTS.KeepRecentReasoningTurns == nil || *cfg.NTS.KeepRecentReasoningTurns != 2 {
+		t.Errorf("Expected KeepRecentReasoningTurns 2, got %v", cfg.NTS.KeepRecentReasoningTurns)
+	}
+	if cfg.NTS.RemindersRefreshInterval != 10 {
+		t.Errorf("Expected RemindersRefreshInterval 10, got %d", cfg.NTS.RemindersRefreshInterval)
+	}
+	if cfg.NTS.MinDuplicateOutputBytes != 250 {
+		t.Errorf("Expected MinDuplicateOutputBytes 250, got %d", cfg.NTS.MinDuplicateOutputBytes)
 	}
 }
 

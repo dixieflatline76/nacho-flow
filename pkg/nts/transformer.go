@@ -250,6 +250,16 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 		}
 	}
 
+	var remindersCtx *DeduplicateRemindersContext
+	if t.pipeline.config.DeduplicateReminders {
+		remindersCtx = NewDeduplicateRemindersContext(t.pipeline.config.RemindersRefreshInterval)
+	}
+
+	var toolDedupCtx *ToolDedupContext
+	if t.pipeline.config.DeduplicateToolOutputs {
+		toolDedupCtx = NewToolDedupContext(t.pipeline.config.MinDuplicateOutputBytes)
+	}
+
 	for idx, msgItem := range msgs {
 		msg, ok := msgItem.(map[string]interface{})
 		if !ok {
@@ -289,7 +299,53 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				modified = true
 				changedIndices[idx] = struct{}{}
 			}
+
+			if toolDedupCtx != nil {
+				if dedupContent, dedupRes, dedupChanged := toolDedupCtx.Deduplicate(msg["content"], toolName, isErr); dedupChanged {
+					msg["content"] = dedupContent
+					total.merge(dedupRes)
+					modified = true
+					changedIndices[idx] = struct{}{}
+				}
+			}
 			continue
+		}
+
+		// Format C: Messages with <environment_details> REMINDERS table (User messages & Tool results)
+		if remindersCtx != nil {
+			if contentStr, ok := msg["content"].(string); ok && strings.Contains(contentStr, "environment_details") {
+				if newContent, res, remChanged := remindersCtx.CompactReminders(contentStr); remChanged {
+					msg["content"] = newContent
+					total.merge(res)
+					modified = true
+					changedIndices[idx] = struct{}{}
+				}
+			} else if contentList, ok := msg["content"].([]interface{}); ok {
+				for _, partItem := range contentList {
+					if part, ok := partItem.(map[string]interface{}); ok {
+						partType, _ := part["type"].(string)
+						if partType == "text" {
+							if textStr, ok := part["text"].(string); ok && strings.Contains(textStr, "environment_details") {
+								if newText, res, remChanged := remindersCtx.CompactReminders(textStr); remChanged {
+									part["text"] = newText
+									total.merge(res)
+									modified = true
+									changedIndices[idx] = struct{}{}
+								}
+							}
+						} else if partType == "tool_result" {
+							if textStr, ok := part["content"].(string); ok && strings.Contains(textStr, "environment_details") {
+								if newText, res, remChanged := remindersCtx.CompactReminders(textStr); remChanged {
+									part["content"] = newText
+									total.merge(res)
+									modified = true
+									changedIndices[idx] = struct{}{}
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 
 		// Format B: Content blocks with type == "tool_result" (Anthropic / Zoo Code / Vercel AI)
@@ -324,6 +380,15 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 				total.merge(res)
 				modified = true
 				changedIndices[idx] = struct{}{}
+			}
+
+			if toolDedupCtx != nil {
+				if dedupContent, dedupRes, dedupChanged := toolDedupCtx.Deduplicate(part["content"], toolName, isErr); dedupChanged {
+					part["content"] = dedupContent
+					total.merge(dedupRes)
+					modified = true
+					changedIndices[idx] = struct{}{}
+				}
 			}
 		}
 	}
@@ -361,11 +426,9 @@ func (t *Transformer) tryEvictStaleRead(content interface{}, id string, isError,
 }
 
 // compactToolContent handles tool content in both string form and content-block list form.
+// Deterministic per-message passes execute unconditionally so sliding cache breakpoints
+// never cause retroactive byte mutations on subsequent turns.
 func (t *Transformer) compactToolContent(content interface{}, toolName string, hasCache bool) (interface{}, ReductionResult, bool) {
-	if t.pipeline.config.PreserveCacheControl && hasCache {
-		return content, ReductionResult{}, false
-	}
-
 	category := categorizeToolName(toolName)
 
 	switch val := content.(type) {
@@ -796,6 +859,9 @@ func stripInlineThinking(s string) (string, int) {
 
 func (t *Transformer) hasCandidateCompaction(body []byte) bool {
 	if bytes.Contains(body, []byte(`"tool`)) {
+		return true
+	}
+	if t.pipeline.config.DeduplicateReminders && bytes.Contains(body, []byte(`environment_details`)) {
 		return true
 	}
 	if t.pipeline.config.StripHistoricalReasoning && bytes.Contains(body, []byte(`"assistant"`)) {

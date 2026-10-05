@@ -19,7 +19,14 @@ type AgentProfile struct {
 	ModeHeuristics      []string             `json:"mode_heuristics,omitempty"`
 	QuestionHeuristics  []string             `json:"question_heuristics,omitempty"`
 	ErrorSignatures     []string             `json:"error_signatures,omitempty"`
-	ParameterSanitizers []ParameterSanitizer `json:"parameter_sanitizers,omitempty"`
+	ParameterSanitizers           []ParameterSanitizer           `json:"parameter_sanitizers,omitempty"`
+	RepetitiveEnvironmentSections []RepetitiveEnvironmentSection `json:"repetitive_environment_sections,omitempty"`
+}
+
+// RepetitiveEnvironmentSection defines metadata for identifying repetitive context wrappers (e.g. todo lists, reminders).
+type RepetitiveEnvironmentSection struct {
+	WrapperTag   string `json:"wrapper_tag"`
+	HeaderMarker string `json:"header_marker"`
 }
 
 // ParameterSanitizer defines argument pattern replacements to heal model-generated parameter errors in-place.

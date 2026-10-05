@@ -3,10 +3,12 @@ package nts_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/nts"
+	"github.com/dixieflatline76/nacho-flow/pkg/wirejson"
 )
 
 // TestTransformer_StripReasoning_AnthropicBlocks verifies that historical assistant
@@ -968,3 +970,409 @@ func TestTransformer_ScannerMismatchFallback(t *testing.T) {
 		t.Errorf("expected transformed tool content in output: %s", string(out))
 	}
 }
+
+func TestTransformer_DeterministicCompaction_WithCacheControl(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.PreserveCacheControl = true
+	tr := nts.NewTransformer(cfg)
+
+	// Tool result with ANSI color and cache_control.
+	// Deterministic stream passes (ANSI strip, CR resolution, whitespace) must execute
+	// so the message is byte-identical whether cache_control is present or absent.
+	reqWithCache := `{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","cache_control":{"type":"ephemeral"},"content":"\u001b[32mhello world\u001b[0m\r\n"}]}]}`
+	reqWithoutCache := `{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"\u001b[32mhello world\u001b[0m\r\n"}]}]}`
+
+	outWith, resWith, err := tr.TransformAnthropic([]byte(reqWithCache))
+	if err != nil {
+		t.Fatalf("TransformAnthropic with cache_control error: %v", err)
+	}
+	if resWith.Bypassed {
+		t.Fatalf("expected payload with cache_control to be modified deterministically")
+	}
+
+	outWithout, resWithout, err := tr.TransformAnthropic([]byte(reqWithoutCache))
+	if err != nil {
+		t.Fatalf("TransformAnthropic without cache_control error: %v", err)
+	}
+	if resWithout.Bypassed {
+		t.Fatalf("expected payload without cache_control to be modified deterministically")
+	}
+
+	if !bytes.Contains(outWith, []byte("hello world")) || bytes.Contains(outWith, []byte("\u001b[32m")) {
+		t.Errorf("expected ANSI stripped in cached output: %s", string(outWith))
+	}
+	if !bytes.Contains(outWithout, []byte("hello world")) || bytes.Contains(outWithout, []byte("\u001b[32m")) {
+		t.Errorf("expected ANSI stripped in non-cached output: %s", string(outWithout))
+	}
+}
+
+func TestTransformer_DeduplicateReminders_EndToEnd(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.DeduplicateReminders = true
+	cfg.RemindersRefreshInterval = 10
+	tr := nts.NewTransformer(cfg)
+
+	env1 := "<environment_details>\n# Current Time\n2026-10-05T12:00:00Z\n\nREMINDERS\n\n| # | Task |\n| 1 | Test |\n</environment_details>"
+	env2 := "<environment_details>\n# Current Time\n2026-10-05T12:01:00Z\n\nREMINDERS\n\n| # | Task |\n| 1 | Test |\n</environment_details>"
+
+	req := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": env1},
+			map[string]interface{}{"role": "assistant", "content": "I will run the test."},
+			map[string]interface{}{"role": "user", "content": env2},
+		},
+	}
+	rawReq, _ := wirejson.Marshal(req)
+
+	out, res, err := tr.TransformAnthropic(rawReq)
+	if err != nil {
+		t.Fatalf("TransformAnthropic error: %v", err)
+	}
+	if res.Bypassed {
+		t.Fatalf("expected payload to be transformed, but was bypassed")
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	msgs := parsed["messages"].([]interface{})
+	msg0 := msgs[0].(map[string]interface{})["content"].(string)
+	msg2 := msgs[2].(map[string]interface{})["content"].(string)
+
+	// Turn 0 must have full table
+	if !strings.Contains(msg0, "| # | Task |") {
+		t.Errorf("expected full table in Turn 0: %s", msg0)
+	}
+	// Turn 2 must have tombstone and NOT full table
+	if !strings.Contains(msg2, nts.RemindersUnchangedNotice) {
+		t.Errorf("expected tombstone in Turn 2: %s", msg2)
+	}
+	if strings.Contains(msg2, "| # | Task |") {
+		t.Errorf("expected table removed in Turn 2: %s", msg2)
+	}
+
+	// Verify no HTML escaping in the output byte stream
+	if bytes.Contains(out, []byte(`\u003c`)) || bytes.Contains(out, []byte(`\u003C`)) {
+		t.Errorf("output contains HTML escape sequences: %s", string(out))
+	}
+}
+
+func TestTransformer_DeduplicateToolOutputs_EndToEnd(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.DeduplicateToolOutputs = true
+	cfg.MinDuplicateOutputBytes = 200
+	tr := nts.NewTransformer(cfg)
+
+	var sb strings.Builder
+	for i := 0; i < 10; i++ {
+		sb.WriteString(fmt.Sprintf("Step %02d: verified module checksum and package signature successfully\n", i))
+	}
+	repeatedOutput := sb.String()
+	if len(repeatedOutput) < 200 {
+		t.Fatalf("expected output >= 200 bytes, got %d", len(repeatedOutput))
+	}
+
+	// 1. Anthropic format
+	reqAnthropic := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "tool_use",
+						"id":   "call_cmd_1",
+						"name": "execute_command",
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":         "tool_result",
+						"tool_use_id":  "call_cmd_1",
+						"tool_name":    "execute_command",
+						"content":      repeatedOutput,
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "tool_use",
+						"id":   "call_cmd_2",
+						"name": "execute_command",
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":         "tool_result",
+						"tool_use_id":  "call_cmd_2",
+						"tool_name":    "execute_command",
+						"content":      repeatedOutput,
+					},
+				},
+			},
+		},
+	}
+	rawAnthropic, _ := wirejson.Marshal(reqAnthropic)
+
+	outAnthropic, resA, errA := tr.TransformAnthropic(rawAnthropic)
+	if errA != nil {
+		t.Fatalf("TransformAnthropic error: %v", errA)
+	}
+	if resA.Bypassed {
+		t.Fatalf("expected payload to be transformed, but was bypassed")
+	}
+
+	var parsedA map[string]interface{}
+	if err := json.Unmarshal(outAnthropic, &parsedA); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+	msgsA := parsedA["messages"].([]interface{})
+	turn1Content := msgsA[1].(map[string]interface{})["content"].([]interface{})[0].(map[string]interface{})["content"].(string)
+	turn3Content := msgsA[3].(map[string]interface{})["content"].([]interface{})[0].(map[string]interface{})["content"].(string)
+
+	if !strings.Contains(turn1Content, "Step 00: verified module checksum") {
+		t.Errorf("expected first tool execution to preserve output: %s", turn1Content)
+	}
+	if !strings.Contains(turn3Content, "[Output identical to previous command execution above") {
+		t.Errorf("expected second tool execution to be replaced with tombstone: %s", turn3Content)
+	}
+
+	// 2. OpenAI format
+	reqOpenAI := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id":   "call_oa_1",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name": "bash",
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_oa_1",
+				"name":         "bash",
+				"content":      repeatedOutput,
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id":   "call_oa_2",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name": "bash",
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_oa_2",
+				"name":         "bash",
+				"content":      repeatedOutput,
+			},
+		},
+	}
+	rawOpenAI, _ := wirejson.Marshal(reqOpenAI)
+
+	outOpenAI, resO, errO := tr.TransformOpenAI(rawOpenAI)
+	if errO != nil {
+		t.Fatalf("TransformOpenAI error: %v", errO)
+	}
+	if resO.Bypassed {
+		t.Fatalf("expected OpenAI payload to be transformed, but was bypassed")
+	}
+
+	var parsedO map[string]interface{}
+	if err := json.Unmarshal(outOpenAI, &parsedO); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+	msgsO := parsedO["messages"].([]interface{})
+	turn1ContentO := msgsO[1].(map[string]interface{})["content"].(string)
+	turn3ContentO := msgsO[3].(map[string]interface{})["content"].(string)
+
+	if !strings.Contains(turn1ContentO, "Step 00: verified module checksum") {
+		t.Errorf("expected first tool execution to preserve output: %s", turn1ContentO)
+	}
+	if !strings.Contains(turn3ContentO, "[Output identical to previous command execution above") {
+		t.Errorf("expected second tool execution to be replaced with tombstone: %s", turn3ContentO)
+	}
+}
+
+func TestTransformer_MultiTurn_CacheInvariance(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.DeduplicateReminders = true
+	cfg.RemindersRefreshInterval = 5
+	cfg.CollapseVerboseTests = true
+	cfg.DeduplicateToolOutputs = true
+	cfg.MinDuplicateOutputBytes = 150
+	cfg.PreserveCacheControl = true
+	tr := nts.NewTransformer(cfg)
+
+	remindersTable := "# REMINDERS\n| # | Rule |\n|---|---|\n| 1 | Never mutate without tests |\n| 2 | Keep KV cache byte-neutral |"
+	gitStatusOutput := "On branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n\tmodified: pkg/server/dispatch.go\n\tmodified: pkg/nts/transformer.go\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n"
+
+	cargoTestOutput := `running 4 tests
+test board::tests::test_new_board ... ok
+test board::tests::test_is_safe ... ok
+test board::tests::test_failing ... FAILED
+test board::tests::test_ignored ... ignored
+
+failures:
+
+---- board::tests::test_failing stdout ----
+thread 'board::tests::test_failing' panicked at 'assertion failed: 5 == 8'
+
+failures:
+    board::tests::test_failing
+
+test result: FAILED. 2 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.05s
+`
+
+	var allMessages []map[string]interface{}
+	// Turn 0: User initial prompt
+	allMessages = append(allMessages, map[string]interface{}{
+		"role": "user",
+		"content": fmt.Sprintf("<environment_details>\n# Current Time\n2026-10-05T12:00:00Z\n\n%s\n</environment_details>\nPlease fix the tests.", remindersTable),
+	})
+
+	type transformedTurn struct {
+		rawMessages [][]byte
+	}
+	var history []transformedTurn
+
+	const totalTurns = 12
+	for k := 1; k <= totalTurns; k++ {
+		// Assistant turn
+		callID := fmt.Sprintf("call_%d", k)
+		toolName := "execute_command"
+		if k%2 == 1 {
+			// Cargo test
+			allMessages = append(allMessages, map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "tool_use",
+						"id":   callID,
+						"name": toolName,
+					},
+				},
+			})
+			// Tool result turn
+			allMessages = append(allMessages, map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": callID,
+						"tool_name":   toolName,
+						"content":     fmt.Sprintf("<environment_details>\n# Current Time\n2026-10-05T12:%02d:00Z\n\n%s\n</environment_details>\n%s", k, remindersTable, cargoTestOutput),
+					},
+				},
+			})
+		} else {
+			// Git status (repeating identical output)
+			allMessages = append(allMessages, map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "tool_use",
+						"id":   callID,
+						"name": toolName,
+					},
+				},
+			})
+			allMessages = append(allMessages, map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": callID,
+						"tool_name":   toolName,
+						"content":     fmt.Sprintf("<environment_details>\n# Current Time\n2026-10-05T12:%02d:00Z\n\n%s\n</environment_details>\n%s", k, remindersTable, gitStatusOutput),
+					},
+				},
+			})
+		}
+
+		// Deep copy current messages up to current turn
+		currentMsgs := make([]interface{}, len(allMessages))
+		for i, m := range allMessages {
+			data, _ := json.Marshal(m)
+			var copied map[string]interface{}
+			_ = json.Unmarshal(data, &copied)
+			currentMsgs[i] = copied
+		}
+
+		// Set sliding cache breakpoint on the last user message
+		lastUserIdx := len(currentMsgs) - 1
+		if userMsg, ok := currentMsgs[lastUserIdx].(map[string]interface{}); ok {
+			if contentList, ok := userMsg["content"].([]interface{}); ok && len(contentList) > 0 {
+				if block, ok := contentList[0].(map[string]interface{}); ok {
+					block["cache_control"] = map[string]interface{}{"type": "ephemeral"}
+				}
+			}
+		}
+
+		req := map[string]interface{}{
+			"messages": currentMsgs,
+		}
+		rawReq, _ := wirejson.Marshal(req)
+
+		out, res, err := tr.TransformAnthropic(rawReq)
+		if err != nil {
+			t.Fatalf("Turn %d TransformAnthropic failed: %v", k, err)
+		}
+		if res.Bypassed {
+			t.Fatalf("Turn %d expected transformation, was bypassed", k)
+		}
+
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(out, &parsed); err != nil {
+			t.Fatalf("Turn %d unmarshal failed: %v", k, err)
+		}
+		parsedMsgs := parsed["messages"].([]interface{})
+
+		var currentRawMsgs [][]byte
+		for _, pm := range parsedMsgs {
+			mBytes, _ := wirejson.Marshal(pm)
+			currentRawMsgs = append(currentRawMsgs, mBytes)
+		}
+
+		// Cache Invariant Check against previous turn
+		if len(history) > 0 {
+			prevTurn := history[len(history)-1]
+			// All historical messages up to len(prevTurn.rawMessages)-1 (excluding the one that had cache_control in prev turn)
+			// MUST be byte-for-byte identical!
+			prevBreakpointIdx := len(prevTurn.rawMessages) - 1
+			for j := 0; j < prevBreakpointIdx; j++ {
+				prevBytes := prevTurn.rawMessages[j]
+				currBytes := currentRawMsgs[j]
+				if !bytes.Equal(prevBytes, currBytes) {
+					t.Fatalf("Cache invariance violated between turn %d and turn %d at message index %d:\nPREV: %s\nCURR: %s",
+						k-1, k, j, string(prevBytes), string(currBytes))
+				}
+			}
+		}
+
+		history = append(history, transformedTurn{rawMessages: currentRawMsgs})
+	}
+}
+
+
+
+

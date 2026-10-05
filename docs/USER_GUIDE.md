@@ -375,6 +375,13 @@ nts:
   preserve_cache_control: true      # 🛡️ Dual-lane protection for prompt cache breakpoints
   compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
   stale_read_depth: 3               # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
+  strip_historical_reasoning: false # 🧠 Strip reasoning from historical assistant turns
+  keep_recent_reasoning_turns: 3    # 🧠 Keep reasoning for the most recent N assistant turns
+  deduplicate_reminders: false      # 📋 Deduplicate repeated reminder tables in <environment_details>
+  reminders_refresh_interval: 10    # 📋 Re-emit full reminders table every K turns
+  collapse_verbose_tests: false     # 🧪 Collapse verbose test passing lines across Go, Cargo, Pytest, Jest
+  deduplicate_tool_outputs: false   # 🔁 Deduplicate identical generic tool execution outputs
+  min_duplicate_output_bytes: 200   # 🔁 Minimum output length in bytes for duplicate referencing
 ```
 
 > [!TIP]
@@ -692,6 +699,13 @@ When an agent inspects a file multiple times across a long session (e.g., readin
 | `preserve_cache_control`| `bool` | `true` | Preserves Anthropic/OpenRouter prompt cache annotations. |
 | `compact_stale_file_reads`| `bool` | `false` | Reclaims tokens by pruning superseded historical reads of the same file (experimental). |
 | `stale_read_depth` | `int` | `3` | Number of recent reads to keep per file before historical eviction. |
+| `strip_historical_reasoning` | `bool` | `false` | Prunes historical reasoning blocks and thinking tags from older assistant turns (experimental). |
+| `keep_recent_reasoning_turns` | `int` | `3` | Number of most recent assistant turns to preserve reasoning verbatim. |
+| `deduplicate_reminders` | `bool` | `false` | Deduplicates identical repeated reminder tables in `<environment_details>` blocks (experimental). |
+| `reminders_refresh_interval` | `int` | `10` | Frequency in turns to re-emit the full reminders table. |
+| `collapse_verbose_tests` | `bool` | `false` | In-place zero-allocation collapse of passing tests across Go, Rust, Python, and Node (experimental). |
+| `deduplicate_tool_outputs` | `bool` | `false` | Replaces large identical command execution outputs with contextual references (experimental). |
+| `min_duplicate_output_bytes` | `int` | `200` | Minimum output length in bytes for command execution deduplication. |
 
 ---
 

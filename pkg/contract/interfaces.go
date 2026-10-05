@@ -535,6 +535,11 @@ type NTSConfig struct {
 	StaleReadDepth           int   `yaml:"stale_read_depth,omitempty" json:"stale_read_depth,omitempty"`
 	StripHistoricalReasoning *bool `yaml:"strip_historical_reasoning,omitempty" json:"strip_historical_reasoning,omitempty"`
 	KeepRecentReasoningTurns *int  `yaml:"keep_recent_reasoning_turns,omitempty" json:"keep_recent_reasoning_turns,omitempty"`
+	DeduplicateReminders     *bool `yaml:"deduplicate_reminders,omitempty" json:"deduplicate_reminders,omitempty"`
+	RemindersRefreshInterval int   `yaml:"reminders_refresh_interval,omitempty" json:"reminders_refresh_interval,omitempty"`
+	CollapseVerboseTests     *bool `yaml:"collapse_verbose_tests,omitempty" json:"collapse_verbose_tests,omitempty"`
+	DeduplicateToolOutputs   *bool `yaml:"deduplicate_tool_outputs,omitempty" json:"deduplicate_tool_outputs,omitempty"`
+	MinDuplicateOutputBytes  int   `yaml:"min_duplicate_output_bytes,omitempty" json:"min_duplicate_output_bytes,omitempty"`
 }
 
 // Config defines the top-level configuration loaded from config.yaml.

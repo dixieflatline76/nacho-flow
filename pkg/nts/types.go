@@ -31,6 +31,11 @@ type Config struct {
 	StaleReadDepth           int  `json:"stale_read_depth" yaml:"stale_read_depth"` // Number of recent reads to preserve per file (default: 3)
 	StripHistoricalReasoning bool `json:"strip_historical_reasoning" yaml:"strip_historical_reasoning"`
 	KeepRecentReasoningTurns int  `json:"keep_recent_reasoning_turns" yaml:"keep_recent_reasoning_turns"` // Number of recent assistant turns to preserve reasoning (default: 3)
+	DeduplicateReminders     bool `json:"deduplicate_reminders" yaml:"deduplicate_reminders"`
+	RemindersRefreshInterval int  `json:"reminders_refresh_interval" yaml:"reminders_refresh_interval"` // Re-emit full reminders table every K turns (default: 10)
+	CollapseVerboseTests     bool `json:"collapse_verbose_tests" yaml:"collapse_verbose_tests"`
+	DeduplicateToolOutputs   bool `json:"deduplicate_tool_outputs" yaml:"deduplicate_tool_outputs"`
+	MinDuplicateOutputBytes  int  `json:"min_duplicate_output_bytes" yaml:"min_duplicate_output_bytes"` // Minimum bytes for duplicate tool output referencing (default: 200)
 }
 
 // DefaultConfig returns the production default configuration for NTS.
@@ -50,6 +55,11 @@ func DefaultConfig() Config {
 		StaleReadDepth:           3,
 		StripHistoricalReasoning: true,
 		KeepRecentReasoningTurns: 3,
+		DeduplicateReminders:     false,
+		RemindersRefreshInterval: 10,
+		CollapseVerboseTests:     false,
+		DeduplicateToolOutputs:   false,
+		MinDuplicateOutputBytes:  200,
 	}
 }
 

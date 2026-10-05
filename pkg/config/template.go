@@ -105,6 +105,13 @@ nts:
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
   compact_stale_file_reads: false    # 📦 Evict superseded historical file reads
   stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
+  strip_historical_reasoning: false # 🧠 Strip reasoning from historical assistant turns
+  keep_recent_reasoning_turns: 3    # 🧠 Keep reasoning for the most recent N assistant turns
+  deduplicate_reminders: false      # 📋 Deduplicate repeated reminder tables in <environment_details>
+  reminders_refresh_interval: 10    # 📋 Re-emit full reminders table every K turns
+  collapse_verbose_tests: false     # 🧪 Collapse verbose test passing lines across Go, Cargo, Pytest, Jest
+  deduplicate_tool_outputs: false   # 🔁 Deduplicate identical generic tool execution outputs
+  min_duplicate_output_bytes: 200   # 🔁 Minimum output length in bytes for duplicate referencing
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
