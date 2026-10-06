@@ -521,18 +521,13 @@ type FairyDustConfig struct {
 
 // NTSConfig configures the Nacho Token Saver (NTS) in-place compaction engine.
 type NTSConfig struct {
-	Enabled               *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	StripANSI             *bool `yaml:"strip_ansi,omitempty" json:"strip_ansi,omitempty"`
-	ResolveCR             *bool `yaml:"resolve_cr,omitempty" json:"resolve_cr,omitempty"`
-	DeduplicateLines      *bool `yaml:"deduplicate_lines,omitempty" json:"deduplicate_lines,omitempty"`
-	DedupThreshold        int   `yaml:"dedup_threshold,omitempty" json:"dedup_threshold,omitempty"`
-	StripBoilerplate      *bool `yaml:"strip_boilerplate,omitempty" json:"strip_boilerplate,omitempty"`
-	NormalizeWhitespace   *bool `yaml:"normalize_whitespace,omitempty" json:"normalize_whitespace,omitempty"`
-	PreserveFileReads     *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
-	PreserveFileWrites    *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
-	PreserveCacheControl  *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
-	CompactStaleFileReads    *bool `yaml:"compact_stale_file_reads,omitempty" json:"compact_stale_file_reads,omitempty"`
-	StaleReadDepth           int   `yaml:"stale_read_depth,omitempty" json:"stale_read_depth,omitempty"`
+	Enabled                  *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	StripANSI                *bool `yaml:"strip_ansi,omitempty" json:"strip_ansi,omitempty"`
+	ResolveCR                *bool `yaml:"resolve_cr,omitempty" json:"resolve_cr,omitempty"`
+	NormalizeWhitespace      *bool `yaml:"normalize_whitespace,omitempty" json:"normalize_whitespace,omitempty"`
+	PreserveFileReads        *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
+	PreserveFileWrites       *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
+	PreserveCacheControl     *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
 	StripHistoricalReasoning *bool `yaml:"strip_historical_reasoning,omitempty" json:"strip_historical_reasoning,omitempty"`
 	KeepRecentReasoningTurns *int  `yaml:"keep_recent_reasoning_turns,omitempty" json:"keep_recent_reasoning_turns,omitempty"`
 	DeduplicateReminders     *bool `yaml:"deduplicate_reminders,omitempty" json:"deduplicate_reminders,omitempty"`

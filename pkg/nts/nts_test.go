@@ -96,95 +96,6 @@ func TestResolveCarriageReturnsInPlace(t *testing.T) {
 	}
 }
 
-func TestCollapseDuplicatesInPlace(t *testing.T) {
-	tests := []struct {
-		name      string
-		threshold int
-		input     string
-		expected  string
-	}{
-		{
-			name:      "warning storm collapsed",
-			threshold: 3,
-			input: "ts-jest (WARN): Using hybrid module\n" +
-				"ts-jest (WARN): Using hybrid module\n" +
-				"ts-jest (WARN): Using hybrid module\n" +
-				"ts-jest (WARN): Using hybrid module\n" +
-				"ts-jest (WARN): Using hybrid module\n" +
-				"Next step executed.\n",
-			expected: "ts-jest (WARN): Using hybrid module\n" +
-				"  [... identical line repeated 4 times ...]\n" +
-				"Next step executed.\n",
-		},
-		{
-			name:      "under threshold not collapsed",
-			threshold: 3,
-			input:     "warn 1\nwarn 1\nwarn 2\n",
-			expected:  "warn 1\nwarn 1\nwarn 2\n",
-		},
-		{
-			name:      "empty lines not counted as warning storm",
-			threshold: 3,
-			input:     "\n\n\n\ncode\n",
-			expected:  "\n\n\n\ncode\n", // Whitespace normalizer handles empty lines
-		},
-		{
-			name:      "ascii box rows not collapsed",
-			threshold: 3,
-			input:     "+---------------+\n|               |\n|               |\n|               |\n|               |\n+---------------+\n",
-			expected:  "+---------------+\n|               |\n|               |\n|               |\n|               |\n+---------------+\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			buf := []byte(tt.input)
-			out := CollapseDuplicatesInPlace(buf, tt.threshold)
-			if string(out) != tt.expected {
-				t.Errorf("got %q, want %q", string(out), tt.expected)
-			}
-		})
-	}
-}
-
-func TestStripToolBoilerplateInPlace(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "strip apply diff notice",
-			input:    "<notice>Making multiple related changes in a single apply_diff is more efficient</notice>\nFile updated successfully.\n",
-			expected: "File updated successfully.\n",
-		},
-		{
-			name:     "strip notice without closing tag",
-			input:    "<notice>Making multiple related changes in a single apply_diff is more efficient\nAll 3 hunks applied.\n",
-			expected: "All 3 hunks applied.\n",
-		},
-		{
-			name:     "strip node trace-warnings boilerplate",
-			input:    "Warning: experimental feature\n(Use `node --trace-warnings ...` to show where the warning was created)\nApp running.\n",
-			expected: "Warning: experimental feature\nApp running.\n",
-		},
-		{
-			name:     "compact error_details diff match dump",
-			input:    "<error_details>\nNo sufficiently similar match found (99% similar, needs 100%)\nDebug Info:\n- Similarity Score: 99%\n- Required Threshold: 100%\nSearch Content:\nline 1\nline 2\nBest Match Found:\nline 1\nline 2\n</error_details>\n",
-			expected: "<error_details>\nNo sufficiently similar match found (99% similar, needs 100%)\nDebug Info:\n- Similarity Score: 99%\n- Required Threshold: 100%\n</error_details>\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			buf := []byte(tt.input)
-			out := StripToolBoilerplateInPlace(buf)
-			if string(out) != tt.expected {
-				t.Errorf("got %q, want %q", string(out), tt.expected)
-			}
-		})
-	}
-}
 
 func TestNormalizeWhitespaceInPlace(t *testing.T) {
 	tests := []struct {
@@ -311,29 +222,6 @@ func BenchmarkResolveCarriageReturnsInPlace_ZeroAlloc(b *testing.B) {
 	}
 }
 
-func BenchmarkStripToolBoilerplateInPlace_ZeroAlloc(b *testing.B) {
-	input := []byte("<notice>Making multiple related changes in a single apply_diff is more efficient</notice>\n(Use `node --trace-warnings ...` to show where the warning was created)\n<error_details>\nSearch Content:\nline 1\nline 2\n</error_details>\nValid output line.")
-	buf := make([]byte, len(input))
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for b.Loop() {
-		copy(buf, input)
-		_ = StripToolBoilerplateInPlace(buf)
-	}
-}
-
-func BenchmarkCollapseDuplicatesInPlace_ZeroAlloc(b *testing.B) {
-	input := []byte("ts-jest (WARN): Using hybrid module\nts-jest (WARN): Using hybrid module\nts-jest (WARN): Using hybrid module\nts-jest (WARN): Using hybrid module\nUnique line.\n")
-	buf := make([]byte, len(input))
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for b.Loop() {
-		copy(buf, input)
-		_ = CollapseDuplicatesInPlace(buf, 3)
-	}
-}
 
 func BenchmarkPipeline_Process_ZeroAlloc(b *testing.B) {
 	pipeline := NewPipeline(DefaultConfig())
@@ -358,10 +246,7 @@ func TestPipeline_SequentialCompaction(t *testing.T) {
 	pipeline := NewPipeline(cfg)
 
 	input := "\x1b[31mts-jest (WARN)\x1b[0m\rts-jest (WARN): Using hybrid module\n" +
-		"ts-jest (WARN): Using hybrid module\n" +
-		"ts-jest (WARN): Using hybrid module\n" +
 		"ts-jest (WARN): Using hybrid module   \t\n\n\n\n" +
-		"<notice>Making multiple related changes in a single apply_diff is more efficient</notice>\n" +
 		"Tests passed.\n\n\n"
 
 	buf := []byte(input)
@@ -377,12 +262,6 @@ func TestPipeline_SequentialCompaction(t *testing.T) {
 	}
 	if strings.Contains(outStr, "\r") {
 		t.Errorf("output still contains carriage returns")
-	}
-	if strings.Contains(outStr, "<notice>") {
-		t.Errorf("output still contains boilerplate notice")
-	}
-	if !strings.Contains(outStr, "repeated 3 times") {
-		t.Errorf("output missing duplicate collapse marker, got:\n%s", outStr)
 	}
 	if strings.Contains(outStr, "\n\n\n") {
 		t.Errorf("output contains uncollapsed blank lines")
@@ -698,28 +577,12 @@ func TestEdgeCasesAndBranchCoverage(t *testing.T) {
 		}
 	})
 
-	// 2. Dedup edge cases: threshold <= 1, empty buffer
-	t.Run("Dedup edge cases", func(t *testing.T) {
-		empty := CollapseDuplicatesInPlace(nil, 3)
-		if len(empty) != 0 {
-			t.Errorf("expected empty slice")
-		}
-		lowThresh := CollapseDuplicatesInPlace([]byte("test\n"), 1)
-		if string(lowThresh) != "test\n" {
-			t.Errorf("got %q, want test\\n", string(lowThresh))
-		}
-	})
-
-	// 3. Pipeline edge cases: DedupThreshold <= 0, Config() getter, disabled, empty
+	// 2. Pipeline edge cases: Config() getter, disabled, empty
 	t.Run("Pipeline edge cases", func(t *testing.T) {
 		cfg := Config{
-			Enabled:        false,
-			DedupThreshold: -1,
+			Enabled: false,
 		}
 		p := NewPipeline(cfg)
-		if p.Config().DedupThreshold != 3 {
-			t.Errorf("expected DedupThreshold defaulted to 3")
-		}
 
 		resDisabled := p.Process([]byte("test"), CategoryGeneric)
 		if !resDisabled.Bypassed || resDisabled.BypassReason != "disabled_or_empty" {
@@ -1028,43 +891,6 @@ func TestTransformer_ClineAndZooPayloads(t *testing.T) {
 	})
 }
 
-func TestCollapseDuplicatesInPlace_NoTrailingNewlinePanic(t *testing.T) {
-	tests := []struct {
-		name      string
-		input     string
-		threshold int
-		expected  string
-	}{
-		{
-			name:      "Cline 3x False panic regression - no trailing newline",
-			input:     "False\nFalse\nFalse",
-			threshold: 3,
-			expected:  "False\nFalse\nFalse",
-		},
-		{
-			name:      "2x test without trailing newline",
-			input:     "test\ntest",
-			threshold: 3,
-			expected:  "test\ntest",
-		},
-		{
-			name:      "Collapsible repeat without trailing newline",
-			input:     "This is a very long line that exceeds the collapse notice length\nThis is a very long line that exceeds the collapse notice length\nThis is a very long line that exceeds the collapse notice length",
-			threshold: 3,
-			expected:  "This is a very long line that exceeds the collapse notice length\n  [... identical line repeated 2 times ...]",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			buf := []byte(tt.input)
-			res := CollapseDuplicatesInPlace(buf, tt.threshold)
-			if string(res) != tt.expected {
-				t.Fatalf("expected:\n%q\ngot:\n%q", tt.expected, string(res))
-			}
-		})
-	}
-}
 
 func BenchmarkNTS_InPlaceCompaction(t *testing.B) {
 	cfg := DefaultConfig()
@@ -1260,120 +1086,6 @@ func TestTransformer_LazyIndexToolNames(t *testing.T) {
 	}
 }
 
-func TestTransformer_StaleReadEviction_Parity(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.CompactStaleFileReads = true
-	cfg.StaleReadDepth = 1
-	tr := NewTransformer(cfg)
-
-	// OpenAI Format
-	openAIReq := map[string]interface{}{
-		"messages": []interface{}{
-			map[string]interface{}{
-				"role": "assistant",
-				"tool_calls": []interface{}{
-					map[string]interface{}{
-						"id": "tc1",
-						"function": map[string]interface{}{
-							"name":      "read_file",
-							"arguments": `{"path":"main.go"}`,
-						},
-					},
-				},
-			},
-			map[string]interface{}{
-				"role":         "tool",
-				"tool_call_id": "tc1",
-				"content":      "package main\n\nfunc main() {\n\tprintln(1)\n}\n",
-			},
-			map[string]interface{}{
-				"role": "assistant",
-				"tool_calls": []interface{}{
-					map[string]interface{}{
-						"id": "tc2",
-						"function": map[string]interface{}{
-							"name":      "write_to_file",
-							"arguments": `{"path":"main.go"}`,
-						},
-					},
-				},
-			},
-			map[string]interface{}{
-				"role":         "tool",
-				"tool_call_id": "tc2",
-				"content":      "File saved successfully",
-			},
-		},
-	}
-	openAIBody, _ := json.Marshal(openAIReq)
-	_, resOAI, err := tr.TransformOpenAI(openAIBody)
-	if err != nil {
-		t.Fatalf("TransformOpenAI failed: %v", err)
-	}
-
-	// Anthropic Format with equivalent turns
-	anthropicReq := map[string]interface{}{
-		"messages": []interface{}{
-			map[string]interface{}{
-				"role": "assistant",
-				"content": []interface{}{
-					map[string]interface{}{
-						"type":  "tool_use",
-						"id":    "tc1",
-						"name":  "read_file",
-						"input": map[string]interface{}{"path": "main.go"},
-					},
-				},
-			},
-			map[string]interface{}{
-				"role": "user",
-				"content": []interface{}{
-					map[string]interface{}{
-						"type":        "tool_result",
-						"tool_use_id": "tc1",
-						"content":     "package main\n\nfunc main() {\n\tprintln(1)\n}\n",
-					},
-				},
-			},
-			map[string]interface{}{
-				"role": "assistant",
-				"content": []interface{}{
-					map[string]interface{}{
-						"type":  "tool_use",
-						"id":    "tc2",
-						"name":  "write_to_file",
-						"input": map[string]interface{}{"path": "main.go"},
-					},
-				},
-			},
-			map[string]interface{}{
-				"role": "user",
-				"content": []interface{}{
-					map[string]interface{}{
-						"type":        "tool_result",
-						"tool_use_id": "tc2",
-						"content":     "File saved successfully",
-					},
-				},
-			},
-		},
-	}
-	anthropicBody, _ := json.Marshal(anthropicReq)
-	_, resAnthropic, err := tr.TransformAnthropic(anthropicBody)
-	if err != nil {
-		t.Fatalf("TransformAnthropic failed: %v", err)
-	}
-
-	if resOAI.OriginalBytes != resAnthropic.OriginalBytes {
-		t.Errorf("OriginalBytes mismatch: OAI=%d, Anthropic=%d", resOAI.OriginalBytes, resAnthropic.OriginalBytes)
-	}
-	if resOAI.BytesSaved != resAnthropic.BytesSaved {
-		t.Errorf("BytesSaved mismatch: OAI=%d, Anthropic=%d", resOAI.BytesSaved, resAnthropic.BytesSaved)
-	}
-	if resOAI.TokensSaved != resAnthropic.TokensSaved {
-		t.Errorf("TokensSaved mismatch: OAI=%d, Anthropic=%d", resOAI.TokensSaved, resAnthropic.TokensSaved)
-	}
-}
 
 func BenchmarkTransformer_TransformOpenAI_ToolOutput(b *testing.B) {
 	cfg := DefaultConfig()

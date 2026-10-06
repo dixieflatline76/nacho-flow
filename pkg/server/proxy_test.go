@@ -2104,18 +2104,13 @@ func TestServer_NTSConfigInitialization(t *testing.T) {
 	bTrue := true
 	cfg := &contract.Config{
 		NTS: contract.NTSConfig{
-			Enabled:               &bTrue,
-			StripANSI:             &bTrue,
-			ResolveCR:             &bTrue,
-			DeduplicateLines:      &bTrue,
-			DedupThreshold:        3,
-			StripBoilerplate:      &bTrue,
-			NormalizeWhitespace:   &bTrue,
-			PreserveFileReads:     &bTrue,
-			PreserveFileWrites:    &bTrue,
-			PreserveCacheControl:  &bTrue,
-			CompactStaleFileReads: &bTrue,
-			StaleReadDepth:        4,
+			Enabled:              &bTrue,
+			StripANSI:            &bTrue,
+			ResolveCR:            &bTrue,
+			NormalizeWhitespace:  &bTrue,
+			PreserveFileReads:    &bTrue,
+			PreserveFileWrites:   &bTrue,
+			PreserveCacheControl: &bTrue,
 		},
 		DefaultTier: contract.Tier{
 			Model: "mock-model",
@@ -2700,9 +2695,9 @@ func TestProxy_NTSTokenSaver_CompactsToolOutputAndRecordsTelemetry(t *testing.T)
 	if bytes.Contains(upstreamBytes, []byte("\x1b[31mError")) {
 		t.Errorf("Expected ANSI codes to be stripped from tool output, but found in upstream body: %s", string(upstreamBytes))
 	}
-	// 2. Duplicate warnings should be collapsed
-	if !bytes.Contains(upstreamBytes, []byte("identical line repeated 3 times")) {
-		t.Errorf("Expected duplicate warnings to be collapsed, but notice not found: %s", string(upstreamBytes))
+	// 2. Carriage return overwrite should be resolved
+	if bytes.Contains(upstreamBytes, []byte("Loading...")) {
+		t.Errorf("Expected carriage return to overwrite 'Loading...', but found in upstream body: %s", string(upstreamBytes))
 	}
 	// 3. File read tool output MUST be preserved bit-for-bit (immunity test)
 	if !bytes.Contains(upstreamBytes, []byte(`\u001b[31m escaped comments`)) {
@@ -2910,7 +2905,7 @@ func TestServer_ServeHTTP_EdgeBranches(t *testing.T) {
 	}
 }
 
-func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
+func TestServer_NTS_HotReload_EndToEnd_ANSIProof(t *testing.T) {
 	var mu sync.Mutex
 	var receivedBody []byte
 
@@ -2948,8 +2943,8 @@ func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
 			Provider: "mock",
 		},
 		NTS: contract.NTSConfig{
-			Enabled:          &bTrue,
-			StripBoilerplate: &bTrue,
+			Enabled:   &bTrue,
+			StripANSI: &bTrue,
 		},
 	}
 
@@ -2963,11 +2958,11 @@ func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
 		"messages": [
 			{"role": "user", "content": "run tests"},
 			{"role": "assistant", "content": "", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "execute_command", "arguments": "{}"}}]},
-			{"role": "tool", "tool_call_id": "call_1", "name": "execute_command", "content": "Running test suite\n(Use ` + "`node --trace-warnings ...`" + ` to show where the warning was created)\nAll tests passed"}
+			{"role": "tool", "tool_call_id": "call_1", "name": "execute_command", "content": "Running test suite\n\u001b[31mFailed test\u001b[0m\nAll tests passed"}
 		]
 	}`
 
-	// 1. Turn 1: NTS enabled with strip_boilerplate: true
+	// 1. Turn 1: NTS enabled with strip_ansi: true
 	req1 := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(testPayload))
 	rec1 := httptest.NewRecorder()
 	srv.ServeHTTP(rec1, req1)
@@ -2978,8 +2973,8 @@ func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
 	mu.Lock()
 	body1 := string(receivedBody)
 	mu.Unlock()
-	if strings.Contains(body1, "trace-warnings") {
-		t.Fatalf("expected boilerplate to be STRIPPED on turn 1, but upstream received:\n%s", body1)
+	if strings.Contains(body1, "\u001b[31m") || strings.Contains(body1, "\\u001b[31m") {
+		t.Fatalf("expected ANSI escapes to be STRIPPED on turn 1, but upstream received:\n%s", body1)
 	}
 
 	// 2. Hot-Reload: Toggle NTS to enabled: false WITHOUT restarting server
@@ -3003,8 +2998,8 @@ func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
 	mu.Lock()
 	body2 := string(receivedBody)
 	mu.Unlock()
-	if !strings.Contains(body2, "trace-warnings") {
-		t.Fatalf("expected boilerplate to be PRESERVED after hot-reload disabled NTS, but it was missing:\n%s", body2)
+	if !strings.Contains(body2, "\u001b[31m") && !strings.Contains(body2, "\\u001b[31m") {
+		t.Fatalf("expected ANSI escapes to be PRESERVED after hot-reload disabled NTS, but it was missing:\n%s", body2)
 	}
 }
 
@@ -3377,15 +3372,10 @@ func TestBuildNTSTransformer_AllBranches(t *testing.T) {
 		Enabled:                  &bTrue,
 		StripANSI:                &bTrue,
 		ResolveCR:                &bTrue,
-		DeduplicateLines:         &bTrue,
-		DedupThreshold:           4,
-		StripBoilerplate:         &bTrue,
 		NormalizeWhitespace:      &bTrue,
 		PreserveFileReads:        &bTrue,
 		PreserveFileWrites:       &bTrue,
 		PreserveCacheControl:     &bTrue,
-		CompactStaleFileReads:    &bTrue,
-		StaleReadDepth:           5,
 		StripHistoricalReasoning: &bTrue,
 		KeepRecentReasoningTurns: &turns,
 		DeduplicateReminders:     &bTrue,
@@ -3397,12 +3387,6 @@ func TestBuildNTSTransformer_AllBranches(t *testing.T) {
 	tr := BuildNTSTransformer(cfg)
 	if tr == nil {
 		t.Fatalf("expected non-nil transformer")
-	}
-	if tr.Pipeline().Config().DedupThreshold != 4 {
-		t.Errorf("expected DedupThreshold 4, got %d", tr.Pipeline().Config().DedupThreshold)
-	}
-	if tr.Pipeline().Config().StaleReadDepth != 5 {
-		t.Errorf("expected StaleReadDepth 5, got %d", tr.Pipeline().Config().StaleReadDepth)
 	}
 	if tr.Pipeline().Config().KeepRecentReasoningTurns != 2 {
 		t.Errorf("expected KeepRecentReasoningTurns 2, got %d", tr.Pipeline().Config().KeepRecentReasoningTurns)
@@ -3867,21 +3851,15 @@ func TestReplayCapturedFixtures(t *testing.T) {
 	}
 
 	bTrue := true
-	bFalse := false
 	i3 := 3
 	tr := BuildNTSTransformer(contract.NTSConfig{
 		Enabled:                  &bTrue,
 		StripANSI:                &bTrue,
 		ResolveCR:                &bTrue,
-		DeduplicateLines:         &bFalse,
-		DedupThreshold:           3,
-		StripBoilerplate:         &bFalse,
 		NormalizeWhitespace:      &bTrue,
 		PreserveFileReads:        &bTrue,
 		PreserveFileWrites:       &bTrue,
 		PreserveCacheControl:     &bTrue,
-		CompactStaleFileReads:    &bFalse,
-		StaleReadDepth:           3,
 		StripHistoricalReasoning: &bTrue,
 		KeepRecentReasoningTurns: &i3,
 	})

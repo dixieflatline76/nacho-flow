@@ -423,9 +423,7 @@ func TestAPI_Config_NTS_HotReload(t *testing.T) {
 		"strip_ansi": true,
 		"resolve_cr": true,
 		"normalize_whitespace": true,
-		"deduplicate_lines": false,
-		"strip_boilerplate": false,
-		"compact_stale_file_reads": false
+		"collapse_verbose_tests": false
 	}}`, basePayload)
 	req = httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(enableNTSPayload))
 	req.Header.Set("Authorization", "Bearer test-secret-token")
@@ -446,14 +444,14 @@ func TestAPI_Config_NTS_HotReload(t *testing.T) {
 	if !tr.Pipeline().Config().StripANSI {
 		t.Errorf("expected StripANSI to be true, got false")
 	}
-	if tr.Pipeline().Config().DeduplicateLines {
-		t.Errorf("expected DeduplicateLines to be false, got true")
+	if tr.Pipeline().Config().CollapseVerboseTests {
+		t.Errorf("expected CollapseVerboseTests to be false, got true")
 	}
 
-	// 3. Hot-reload toggling deduplicate_lines back to true
+	// 3. Hot-reload toggling collapse_verbose_tests back to true
 	toggleDedupPayload := fmt.Sprintf(`{%s, "nts": {
 		"enabled": true,
-		"deduplicate_lines": true
+		"collapse_verbose_tests": true
 	}}`, basePayload)
 	req = httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(toggleDedupPayload))
 	req.Header.Set("Authorization", "Bearer test-secret-token")
@@ -461,15 +459,15 @@ func TestAPI_Config_NTS_HotReload(t *testing.T) {
 	srv.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK on NTS toggle dedup hot-reload, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 200 OK on NTS toggle collapse_verbose_tests hot-reload, got %d: %s", w.Code, w.Body.String())
 	}
 
 	tr2 := srv.GetNTSTransformer()
 	if tr2 == nil {
 		t.Fatal("expected NTS transformer to be non-nil")
 	}
-	if !tr2.Pipeline().Config().DeduplicateLines {
-		t.Errorf("expected DeduplicateLines to be true after hot-reload toggle, got false")
+	if !tr2.Pipeline().Config().CollapseVerboseTests {
+		t.Errorf("expected CollapseVerboseTests to be true after hot-reload toggle, got false")
 	}
 }
 

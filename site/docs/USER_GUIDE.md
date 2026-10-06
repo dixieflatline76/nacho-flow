@@ -366,15 +366,10 @@ nts:
   enabled: false                    # Master switch (default: false / pristine context)
   strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
   resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
-  deduplicate_lines: false          # Pass 3: Collapse repeated consecutive lines (disabled by default)
-  dedup_threshold: 3                # Consecutive duplicate threshold before collapse
-  strip_boilerplate: false          # Pass 4: Strip IDE tool boilerplate notices (disabled by default)
-  normalize_whitespace: false       # Pass 5: Collapse multiple empty lines (disabled by default)
+  normalize_whitespace: false       # Pass 3: Collapse multiple empty lines (disabled by default)
   preserve_file_reads: true         # 🛡️ Dual-lane protection for read_file / view_file
   preserve_file_writes: true        # 🛡️ Dual-lane protection for write_to_file / apply_diff
   preserve_cache_control: true      # 🛡️ Dual-lane protection for prompt cache breakpoints
-  compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
-  stale_read_depth: 3               # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
   strip_historical_reasoning: false # 🧠 Strip reasoning from historical assistant turns
   keep_recent_reasoning_turns: 3    # 🧠 Keep reasoning for the most recent N assistant turns
   deduplicate_reminders: false      # 📋 Deduplicate repeated reminder tables in <environment_details>
@@ -658,21 +653,17 @@ When explicitly enabled via `nts.enabled: true`, **Nacho Token Saver (NTS)** pro
 
 ```mermaid
 flowchart LR
-    Raw["Raw Request Payload<br/>(45,000 Tokens)"] --> NTS["🗜️ NTS Pipeline<br/>1. Strip ANSI Escapes<br/>2. Resolve CR Overwrites<br/>3. Deduplicate Lines<br/>4. Strip IDE Boilerplate<br/>5. Normalize Whitespace<br/>6. Prune Stale File Reads"]
+    Raw["Raw Request Payload<br/>(45,000 Tokens)"] --> NTS["🗜️ NTS Pipeline<br/>1. Strip ANSI Escapes<br/>2. Resolve CR Overwrites<br/>3. Normalize Whitespace"]
     NTS --> Compacted["Compacted Payload<br/>(27,000 Tokens)<br/><b>~40% Token Reduction</b>"]
     Compacted --> Upstream["Upstream LLM Provider"]
 ```
 
-#### The 5-Pass Compaction Pipeline:
+#### The 3-Pass Compaction Pipeline:
 1. **Pass 1: ANSI & OSC Sequence Stripping (`strip_ansi: true`)**:
    Terminal commands (e.g. `npm test`, `cargo build`, `pytest`) output color codes, cursor repositioning sequences, and terminal window titles. NTS cleans these out using zero-allocation byte slice scanning.
 2. **Pass 2: Carriage Return Resolution (`resolve_cr: true`)**:
    CLI progress bars and spinners (such as `vite`, `pip`, or `docker pull`) update terminal lines using `\r` (carriage return). Traditional proxies send every intermediate progress percentage to the LLM (hundreds of useless tokens). NTS evaluates `\r` in-place, preserving only the final completed line state.
-3. **Pass 3: Duplicate Line Collapsing (`deduplicate_lines: true`, `dedup_threshold: 3`)**:
-   Long logs with repetitive warnings or empty progress markers are collapsed to the threshold with a concise truncation notice.
-4. **Pass 4: IDE Tool Boilerplate Removal (`strip_boilerplate: true`)**:
-   Coding agents inject repetitive tool headers and notices (e.g., Cline parameter instructions, Zoo Code notices, or agent status messages). NTS strips non-semantic boilerplate.
-5. **Pass 5: Whitespace Normalization (`normalize_whitespace: true`)**:
+3. **Pass 3: Whitespace Normalization (`normalize_whitespace: true`)**:
    Collapses runs of empty lines and extraneous trailing whitespace.
 
 #### 🛡️ Dual-Lane Protection: Zero Risk of Context Corruption
@@ -681,24 +672,16 @@ To guarantee that the LLM never loses critical reasoning context:
 * **`preserve_file_reads: true`**: Active file reads currently referenced by the agent are preserved.
 * **`preserve_cache_control: true`**: Upstream prompt-cache breakpoints (e.g., Anthropic `cache_control: {"type": "ephemeral"}`) are strictly protected so prompt caching remains 100% effective.
 
-#### 📦 Stale Read Elimination (`compact_stale_file_reads: true`, `stale_read_depth: 3`):
-When an agent inspects a file multiple times across a long session (e.g., reading `models.go` on Turn 2, Turn 8, and Turn 19), historical earlier versions of that file read are superseded. NTS retains the **3 most recent reads** (`stale_read_depth: 3`) of each file path, safely evicting older historical duplicates to reclaim thousands of tokens while preventing model amnesia.
-
 #### Configuration Options:
 | Setting | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `false` | Master switch (default: false for 100% pristine context stability). |
 | `strip_ansi` | `bool` | `true` | Strips ANSI escape codes from shell and command execution logs. |
 | `resolve_cr` | `bool` | `true` | Resolves terminal `\r` progress spinners to their final line state. |
-| `deduplicate_lines` | `bool` | `false` | Collapses consecutive identical lines exceeding the threshold (experimental). |
-| `dedup_threshold` | `int` | `3` | Number of consecutive identical lines permitted before collapsing. |
-| `strip_boilerplate` | `bool` | `false` | Strips repetitive IDE agent tool wrappers and status boilerplate (experimental). |
 | `normalize_whitespace` | `bool` | `false` | Trims trailing spaces and collapses consecutive empty lines (experimental). |
 | `preserve_file_writes` | `bool` | `true` | Full protection for code writing tools (`write_to_file`, `apply_diff`, `editor`). |
 | `preserve_file_reads` | `bool` | `true` | Protects active file inspection turns from corruption. |
 | `preserve_cache_control`| `bool` | `true` | Preserves Anthropic/OpenRouter prompt cache annotations. |
-| `compact_stale_file_reads`| `bool` | `false` | Reclaims tokens by pruning superseded historical reads of the same file (experimental). |
-| `stale_read_depth` | `int` | `3` | Number of recent reads to keep per file before historical eviction. |
 | `strip_historical_reasoning` | `bool` | `false` | Prunes historical reasoning blocks and thinking tags from older assistant turns (experimental). |
 | `keep_recent_reasoning_turns` | `int` | `3` | Number of most recent assistant turns to preserve reasoning verbatim. |
 | `deduplicate_reminders` | `bool` | `false` | Deduplicates identical repeated reminder tables in `<environment_details>` blocks (experimental). |

@@ -176,7 +176,7 @@ func BenchmarkTestCollapse_Bypass(b *testing.B) {
 	data := []byte("On branch main\nYour branch is up to date with 'origin/main'.\nnothing to commit, working tree clean\n")
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = nts.CollapseVerboseTestsInPlace(data)
 	}
 }
@@ -194,7 +194,7 @@ func BenchmarkTestCollapse_Cargo(b *testing.B) {
 	buf := make([]byte, len(raw))
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(buf, raw)
 		_ = nts.CollapseVerboseTestsInPlace(buf)
 	}
@@ -215,7 +215,7 @@ func BenchmarkTestCollapse_Go(b *testing.B) {
 	buf := make([]byte, len(raw))
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(buf, raw)
 		_ = nts.CollapseVerboseTestsInPlace(buf)
 	}

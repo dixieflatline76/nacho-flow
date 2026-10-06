@@ -124,7 +124,7 @@ func (d *SanitizedConfigDTO) ToMap() map[string]any {
 	if d.FairyDust.Enabled != nil {
 		res["fairy_dust"] = d.FairyDust
 	}
-	if d.NTS.Enabled != nil || d.NTS.StripANSI != nil || d.NTS.ResolveCR != nil || d.NTS.DeduplicateLines != nil || d.NTS.StripBoilerplate != nil || d.NTS.NormalizeWhitespace != nil || d.NTS.CompactStaleFileReads != nil {
+	if d.NTS.Enabled != nil || d.NTS.StripANSI != nil || d.NTS.ResolveCR != nil || d.NTS.NormalizeWhitespace != nil || d.NTS.CollapseVerboseTests != nil || d.NTS.DeduplicateReminders != nil {
 		res["nts"] = d.NTS
 	}
 	return res
@@ -197,7 +197,7 @@ func SerializeConfigYAML(cfg *contract.Config) ([]byte, error) {
 	if cfg.FairyDust.Enabled != nil {
 		res["fairy_dust"] = cfg.FairyDust
 	}
-	if cfg.NTS.Enabled != nil || cfg.NTS.StripANSI != nil || cfg.NTS.ResolveCR != nil || cfg.NTS.DeduplicateLines != nil || cfg.NTS.StripBoilerplate != nil || cfg.NTS.NormalizeWhitespace != nil || cfg.NTS.CompactStaleFileReads != nil {
+	if cfg.NTS.Enabled != nil || cfg.NTS.StripANSI != nil || cfg.NTS.ResolveCR != nil || cfg.NTS.NormalizeWhitespace != nil || cfg.NTS.CollapseVerboseTests != nil || cfg.NTS.DeduplicateReminders != nil {
 		res["nts"] = cfg.NTS
 	}
 	return yaml.Marshal(res)

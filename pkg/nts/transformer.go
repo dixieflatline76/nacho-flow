@@ -218,15 +218,6 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 	modified := false
 	changedIndices := make(map[int]struct{})
 
-	var staleIDs map[string]struct{}
-	if t.pipeline.config.CompactStaleFileReads {
-		depth := t.pipeline.config.StaleReadDepth
-		if depth <= 0 {
-			depth = 3
-		}
-		staleIDs = IdentifyStaleToolCallIDs(msgs, depth)
-	}
-
 	var historicalAssistantIndices map[int]struct{}
 	if t.pipeline.config.StripHistoricalReasoning {
 		var assistantIndices []int
@@ -280,17 +271,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 		if role, _ := msg["role"].(string); role == "tool" {
 			toolCallID, _ := msg["tool_call_id"].(string)
 			toolName := resolveToolName(msg["name"], toolCallID, toolNames)
-			hasCache := hasCacheControl(msg)
 			isErr, _ := msg["is_error"].(bool)
-
-			// Evict stale file reads before standard compaction (with tool error immunity)
-			if res, evicted := t.tryEvictStaleRead(msg["content"], toolCallID, isErr, hasCache, staleIDs); evicted {
-				msg["content"] = StaleFileReadNotice
-				total.merge(res)
-				modified = true
-				changedIndices[idx] = struct{}{}
-				continue
-			}
 
 			newContent, res, changed := t.compactToolContent(msg["content"], toolName)
 			if changed {
@@ -363,17 +344,7 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 
 			toolUseID, _ := part["tool_use_id"].(string)
 			toolName := resolveToolName(part["tool_name"], toolUseID, toolNames)
-			hasCache := hasCacheControl(part)
 			isErr, _ := part["is_error"].(bool)
-
-			// Evict stale file reads before standard compaction (with tool error immunity)
-			if res, evicted := t.tryEvictStaleRead(part["content"], toolUseID, isErr, hasCache, staleIDs); evicted {
-				part["content"] = StaleFileReadNotice
-				total.merge(res)
-				modified = true
-				changedIndices[idx] = struct{}{}
-				continue
-			}
 
 			newContent, res, changed := t.compactToolContent(part["content"], toolName)
 			if changed {
@@ -397,34 +368,6 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 	return modified, total, changedIndices
 }
 
-func (t *Transformer) tryEvictStaleRead(content interface{}, id string, isError, hasCache bool, staleIDs map[string]struct{}) (ReductionResult, bool) {
-	if staleIDs == nil || id == "" {
-		return ReductionResult{}, false
-	}
-	if _, isStale := staleIDs[id]; !isStale {
-		return ReductionResult{}, false
-	}
-	if t.pipeline.config.PreserveCacheControl && hasCache {
-		return ReductionResult{}, false
-	}
-	contentStr := extractContentString(content)
-	if IsToolError(contentStr, isError) {
-		return ReductionResult{}, false
-	}
-
-	origBytes := calculateContentLength(content)
-	reducedBytes := len(StaleFileReadNotice)
-	saved := origBytes - reducedBytes
-	if saved < 0 {
-		saved = 0
-	}
-	return ReductionResult{
-		OriginalBytes: origBytes,
-		ReducedBytes:  reducedBytes,
-		BytesSaved:    saved,
-		TokensSaved:   (saved + 3) / 4,
-	}, true
-}
 
 // compactToolContent handles tool content in both string form and content-block list form.
 // Deterministic per-message passes execute unconditionally so sliding cache breakpoints

@@ -11,9 +11,6 @@ type Pipeline struct {
 
 // NewPipeline creates a new Pipeline configured with the given options.
 func NewPipeline(cfg Config) *Pipeline {
-	if cfg.DedupThreshold <= 0 {
-		cfg.DedupThreshold = 3
-	}
 	return &Pipeline{config: cfg}
 }
 
@@ -68,12 +65,7 @@ func (p *Pipeline) Process(b []byte, category ToolCategory) ReductionResult {
 		b = ResolveCarriageReturnsInPlace(b)
 	}
 
-	// Pass 3: Tool boilerplate & notice stripping
-	if len(b) > 0 && p.config.StripBoilerplate {
-		b = StripToolBoilerplateInPlace(b)
-	}
-
-	// Pass 3.5: Multi-language verbose test output collapse (Go, Rust, Python, Node)
+	// Pass 3: Multi-language verbose test output collapse (Go, Rust, Python, Node)
 	if len(b) > 0 && p.config.CollapseVerboseTests && category == CategoryGeneric {
 		b = CollapseVerboseTestsInPlace(b)
 	}
@@ -81,11 +73,6 @@ func (p *Pipeline) Process(b []byte, category ToolCategory) ReductionResult {
 	// Pass 4: Whitespace cascade & trailing empty line normalization
 	if len(b) > 0 && p.config.NormalizeWhitespace {
 		b = NormalizeWhitespaceInPlace(b)
-	}
-
-	// Pass 5: Consecutive duplicate lines collapsing
-	if len(b) > 0 && p.config.DeduplicateLines {
-		b = CollapseDuplicatesInPlace(b, p.config.DedupThreshold)
 	}
 
 	duration := time.Since(start)

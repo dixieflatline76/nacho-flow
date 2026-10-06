@@ -131,11 +131,8 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **Multi-Pass Request Compaction**: Before transmitting payloads upstream, `ntsTransformer.TransformOpenAI` or `TransformAnthropic` evaluates historical tool outputs and command execution logs in-place.
 - **Pass 1 (ANSI / OSC Escapes)**: Strips terminal color codes and window title sequences.
 - **Pass 2 (Carriage Returns)**: Overwrites `\r` progress spinners from build tools (`npm`, `pip`, `docker`) in-place, keeping only final progress lines.
-- **Pass 3 (Duplicate Deduplication - Experimental)**: Collapses consecutive identical log lines exceeding `dedup_threshold` (default: 3).
-- **Pass 4 (IDE Boilerplate - Experimental)**: Strips repetitive parameter notices and agent tool wrapper banners.
-- **Pass 5 (Whitespace - Experimental)**: Normalizes excessive empty lines.
+- **Pass 3 (Whitespace - Experimental)**: Normalizes excessive empty lines.
 - **Dual-Lane Protection**: Strictly preserves code modification tools (`write_to_file`, `replace_in_file`, `apply_diff`, `editor`), active file reads, and upstream prompt caching breakpoints (`cache_control: {"type": "ephemeral"}`).
-- **Stale Read Eviction (`stale_read_depth: 3` - Experimental)**: Provides configurable depth-based compaction of older historical file reads into structural notices.
 - **Zero-Allocation Byte Pipeline (`pkg/zeroalloc`)**: Operates strictly in-place with single-pass read/write cursors ($w \le r$), delivering wire-speed performance with zero heap churn.
 
 ### Stage 4: Circuit-Breaker-Aware Dispatch & Strict Fallback Bypass (`pkg/server/proxy.go`, `pkg/provider/circuit_breaker.go`)

@@ -94,15 +94,10 @@ nts:
   enabled: false                    # Master switch (default: false / pristine context)
   strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
   resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
-  deduplicate_lines: false          # Pass 3: Collapse repeated consecutive lines (disabled by default)
-  dedup_threshold: 3                # Consecutive duplicate threshold before collapse
-  strip_boilerplate: false          # Pass 4: Strip IDE tool boilerplate notices (disabled by default)
-  normalize_whitespace: false       # Pass 5: Collapse multiple empty lines (disabled by default)
+  normalize_whitespace: false       # Pass 3: Collapse multiple empty lines (disabled by default)
   preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
   preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
-  compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
-  stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
   strip_historical_reasoning: false # 🧠 Strip reasoning from historical assistant turns
   keep_recent_reasoning_turns: 3    # 🧠 Keep reasoning for the most recent N assistant turns
   deduplicate_reminders: false      # 📋 Deduplicate repeated reminder tables in <environment_details>

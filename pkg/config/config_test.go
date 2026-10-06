@@ -675,14 +675,9 @@ func TestConfig_NTS_Parsing(t *testing.T) {
 port: 9000
 nts:
   enabled: true
-  deduplicate_lines: true
-  dedup_threshold: 4
   strip_ansi: true
-  strip_boilerplate: true
   normalize_whitespace: true
   preserve_cache_control: true
-  compact_stale_file_reads: true
-  stale_read_depth: 5
   strip_historical_reasoning: true
   keep_recent_reasoning_turns: 2
   deduplicate_reminders: true
@@ -711,22 +706,14 @@ tiers:
 	if cfg.NTS.Enabled == nil || !*cfg.NTS.Enabled {
 		t.Errorf("Expected NTS.Enabled to be true")
 	}
-	if cfg.NTS.DedupThreshold != 4 {
-		t.Errorf("Expected DedupThreshold 4, got %d", cfg.NTS.DedupThreshold)
-	}
 	if cfg.NTS.StripANSI == nil || !*cfg.NTS.StripANSI ||
-		cfg.NTS.StripBoilerplate == nil || !*cfg.NTS.StripBoilerplate ||
 		cfg.NTS.NormalizeWhitespace == nil || !*cfg.NTS.NormalizeWhitespace ||
 		cfg.NTS.PreserveCacheControl == nil || !*cfg.NTS.PreserveCacheControl ||
-		cfg.NTS.CompactStaleFileReads == nil || !*cfg.NTS.CompactStaleFileReads ||
 		cfg.NTS.StripHistoricalReasoning == nil || !*cfg.NTS.StripHistoricalReasoning ||
 		cfg.NTS.DeduplicateReminders == nil || !*cfg.NTS.DeduplicateReminders ||
 		cfg.NTS.CollapseVerboseTests == nil || !*cfg.NTS.CollapseVerboseTests ||
 		cfg.NTS.DeduplicateToolOutputs == nil || !*cfg.NTS.DeduplicateToolOutputs {
 		t.Errorf("Expected all NTS boolean flags to be true")
-	}
-	if cfg.NTS.StaleReadDepth != 5 {
-		t.Errorf("Expected StaleReadDepth 5, got %d", cfg.NTS.StaleReadDepth)
 	}
 	if cfg.NTS.KeepRecentReasoningTurns == nil || *cfg.NTS.KeepRecentReasoningTurns != 2 {
 		t.Errorf("Expected KeepRecentReasoningTurns 2, got %v", cfg.NTS.KeepRecentReasoningTurns)

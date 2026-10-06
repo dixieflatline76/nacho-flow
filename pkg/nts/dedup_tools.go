@@ -2,7 +2,15 @@ package nts
 
 import (
 	"fmt"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 )
+
+// IsToolError checks whether a tool output represents an execution error or failure.
+// Tool errors are immune to compaction and must always remain visible to the agent.
+func IsToolError(content string, isError bool) bool {
+	return agentregistry.DefaultRegistry().IsToolError(content, isError)
+}
 
 // DefaultMinDuplicateOutputBytes is the default minimum byte length for a generic
 // tool output to be considered for duplicate replacement.
