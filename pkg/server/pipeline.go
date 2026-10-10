@@ -364,7 +364,11 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		targetTier = s.GetConfig().DefaultTier
 	}
 
-	// 4.5: Escalation budget — prevent runaway frontier costs
+	// 4.5: Escalation budget — Anti-Latching Circuit Breaker (Do NOT remove)
+	// Workhorse tiers require Retries < N. Once errors accumulate (Retries >= N), workhorses are
+	// locked out and requests fall through to DefaultTier. Without this block, high retries permanently
+	// latch the session onto DefaultTier for 15+ turns (+115% cost spike). After MaxEscalationTurns (3),
+	// this breaker forcibly de-escalates back to a workhorse tier, letting tool progress reset Retries=0.
 	defaultTierName := s.GetConfig().DefaultTier.Name
 	if targetTier.Name == defaultTierName {
 		budgetExhausted := s.sessionTracker.RecordEscalation(sessionKey)

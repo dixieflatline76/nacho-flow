@@ -31,6 +31,9 @@
   "interactive_tools": [
     "ask_followup_question"
   ],
+  "cycle_killer_exempt_tools": [
+    "attempt_completion"
+  ],
   "mode_tool": "switch_mode",
   "mode_heuristics": [
     "switch to code mode",

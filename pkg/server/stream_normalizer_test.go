@@ -1080,6 +1080,55 @@ func TestStreamNormalizer_ClineXML_WriteToFile_Immunity(t *testing.T) {
 	}
 }
 
+func TestStreamNormalizer_AttemptCompletion_DeliverableLinksImmune(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// The exact 4-gram repetition from Turn 56 of nts revert run 1 zoo glm:
+	// Repeating markdown links: internal/deck/deck.go producing 4-gram: internal deck deck go
+	linkPhrase := "Created file [internal/deck/deck.go](internal/deck/deck.go) successfully. "
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"attempt_completion\",\"arguments\":\"{\\\"result\\\":\\\"\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: [DONE]\n\n",
+		linkPhrase, linkPhrase, linkPhrase, linkPhrase,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	var reason string
+	for {
+		_, err := norm.Read(buf)
+		if v, res := norm.CheckCycleViolation(); v {
+			violated = true
+			reason = res
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if violated {
+		t.Fatalf("expected attempt_completion deliverable links to be immune from cycle violation, but was severed: %s", reason)
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
+	}
+}
+
 func TestStreamNormalizer_ClineXML_Editor_Immunity(t *testing.T) {
 	enabled := true
 	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{

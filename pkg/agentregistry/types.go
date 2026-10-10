@@ -15,6 +15,7 @@ type AgentProfile struct {
 	ReadTools           []string             `json:"read_tools"`
 	CommandTools        []string             `json:"command_tools"`
 	InteractiveTools    []string             `json:"interactive_tools,omitempty"`
+	CycleKillerExemptTools []string          `json:"cycle_killer_exempt_tools,omitempty"`
 	ModeTool            string               `json:"mode_tool,omitempty"`
 	ModeHeuristics      []string             `json:"mode_heuristics,omitempty"`
 	QuestionHeuristics  []string             `json:"question_heuristics,omitempty"`

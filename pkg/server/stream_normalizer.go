@@ -928,7 +928,7 @@ func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
 			s.hasActiveToolCall = true
 			if s.toolChunksScratch[i].Function.Name != "" {
 				name := s.toolChunksScratch[i].Function.Name
-				if router.IsBuiltinWriteTool(name) {
+				if router.IsBuiltinWriteTool(name) || router.IsBuiltinCycleKillerExempt(name) {
 					s.currentToolCategory = shield.ToolCategoryFileWrite
 				} else {
 					s.currentToolCategory = shield.ToolCategoryCommand

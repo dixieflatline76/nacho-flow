@@ -12,6 +12,7 @@
   "read_tools": ["read_file", "view_file", "cat", "list_files", "search_files"],
   "command_tools": ["bash", "sh", "terminal", "exec", "cmd", "pwsh", "powershell", "run_command", "execute_command"],
   "interactive_tools": ["ask_question", "ask_followup_question", "user_prompt"],
+  "cycle_killer_exempt_tools": ["attempt_completion", "finish", "complete_task"],
   "question_heuristics": [
     "are you satisfied",
     "would you like",

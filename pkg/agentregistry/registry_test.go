@@ -533,6 +533,57 @@ func BenchmarkRegistry_IsToolError(b *testing.B) {
 	}
 }
 
+func TestRegistry_IsCycleKillerExempt(t *testing.T) {
+	reg := DefaultRegistry()
+
+	// Registered exempt tools
+	exemptTools := []string{
+		"attempt_completion",
+		"finish",
+		"complete_task",
+		"ATTEMPT_COMPLETION",
+		"Attempt_Completion",
+	}
+	for _, tool := range exemptTools {
+		if !reg.IsCycleKillerExempt(tool) {
+			t.Errorf("expected tool %q to be cycle killer exempt", tool)
+		}
+	}
+
+	// Non-exempt tools
+	nonExempt := []string{
+		"execute_command",
+		"bash",
+		"sh",
+		"read_file",
+		"write_to_file",
+		"replace_file_content",
+		"custom_mcp_tool",
+		"",
+	}
+	for _, tool := range nonExempt {
+		if reg.IsCycleKillerExempt(tool) {
+			t.Errorf("expected tool %q NOT to be cycle killer exempt", tool)
+		}
+	}
+
+	// List check
+	list := reg.CycleKillerExemptToolsList()
+	if len(list) == 0 {
+		t.Errorf("expected non-empty CycleKillerExemptToolsList")
+	}
+}
+
+func BenchmarkRegistry_IsCycleKillerExempt(b *testing.B) {
+	reg := DefaultRegistry()
+	tool := "attempt_completion"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = reg.IsCycleKillerExempt(tool)
+	}
+}
+
 func TestAgentRegistry_AllToolProfilesContract(t *testing.T) {
 	reg := DefaultRegistry()
 
