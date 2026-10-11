@@ -136,5 +136,3 @@ func BenchmarkPipeline_Ingress_Bypass_ZeroAlloc(b *testing.B) {
 		}
 	}
 }
-
-

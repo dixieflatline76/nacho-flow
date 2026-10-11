@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -237,7 +236,7 @@ func (s *Server) preparePayload(
 	// Fast zero-alloc top-level JSON field editing.
 	// Only modified fields (model, reasoning_effort, stream_options) are touched;
 	// tools, messages, seeds, and key order remain 100% byte-identical to the client's payload.
-	if edited := modifyTopLevelPayload(body, targetTier); len(edited) > 0 {
+	if edited := modifyTopLevelPayload(body, targetTier, targetProvider); len(edited) > 0 {
 		preparedBody = edited
 	}
 
@@ -273,7 +272,32 @@ func (s *Server) translateResponseBody(statusCode int, body []byte, p provider.L
 	return body, nil
 }
 
-func modifyTopLevelPayload(body []byte, targetTier *contract.Tier) []byte {
+// deleteMemberSpan calculates the byte range [delStart, delEnd) to cleanly delete a JSON object member
+// [kStart, vEnd) along with its associated comma delimiter, avoiding syntax errors.
+func deleteMemberSpan(body []byte, kStart, vEnd, startObj, closeObj int) (int, int) {
+	// 1. Prefer deleting preceding comma if it exists (for members after the first)
+	p := kStart - 1
+	for p > startObj && (body[p] == ' ' || body[p] == '\t' || body[p] == '\n' || body[p] == '\r') {
+		p--
+	}
+	if p > startObj && body[p] == ',' {
+		return p, vEnd
+	}
+
+	// 2. If first member, delete up to and including succeeding comma
+	n := vEnd
+	for n < closeObj && (body[n] == ' ' || body[n] == '\t' || body[n] == '\n' || body[n] == '\r') {
+		n++
+	}
+	if n < closeObj && body[n] == ',' {
+		return kStart, n + 1
+	}
+
+	// 3. Sole member in object: remove member bounds
+	return kStart, vEnd
+}
+
+func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvider provider.LLMProvider) []byte {
 	// Find top-level object bounds
 	startObj := 0
 	for startObj < len(body) && (body[startObj] == ' ' || body[startObj] == '\t' || body[startObj] == '\n' || body[startObj] == '\r') {
@@ -291,19 +315,32 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier) []byte {
 		return body
 	}
 
-	var edits []zeroalloc.Edit
+	isOpenRouter := provider.IsOpenRouter(targetProvider)
 
-	modelRepl := zeroalloc.AppendEscapedJSONString(nil, targetTier.Model)
+	var editsBuf [8]zeroalloc.Edit
+	edits := editsBuf[:0]
+
+	var modelRepl []byte
 	var reRepl []byte
 	if targetTier.ReasoningEffort != "" {
 		reRepl = zeroalloc.AppendEscapedJSONString(nil, targetTier.ReasoningEffort)
 	}
 
 	foundModel := false
-	foundRE := false
+	type memberSpan struct {
+		kStart int
+		kEnd   int
+		vStart int
+		vEnd   int
+	}
+	var reSpansBuf [4]memberSpan
+	reSpans := reSpansBuf[:0]
+	var reasoningSpansBuf [4]memberSpan
+	reasoningSpans := reasoningSpansBuf[:0]
 	isStream := false
 	type span struct{ start, end int }
-	var streamOptionsSpans []span
+	var streamOptionsSpansBuf [4]span
+	streamOptionsSpans := streamOptionsSpansBuf[:0]
 
 	// Scan top-level members to locate existing keys (handling duplicate keys by recording all occurrences)
 	i := startObj + 1
@@ -351,15 +388,24 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier) []byte {
 		}
 		i = vEnd
 
-		key := string(body[kStart+1 : kEnd-1])
-		switch key {
+		switch string(body[kStart+1 : kEnd-1]) {
 		case "model":
 			foundModel = true
-			edits = append(edits, zeroalloc.Edit{Start: vStart, End: vEnd, Repl: modelRepl})
+			if vEnd-vStart >= 2 && body[vStart] == '"' && body[vEnd-1] == '"' && string(body[vStart+1:vEnd-1]) == targetTier.Model {
+				// Model already matches target tier; zero edits, zero allocations
+			} else {
+				if modelRepl == nil {
+					modelRepl = zeroalloc.AppendEscapedJSONString(nil, targetTier.Model)
+				}
+				edits = append(edits, zeroalloc.Edit{Start: vStart, End: vEnd, Repl: modelRepl})
+			}
 		case "reasoning_effort":
 			if targetTier.ReasoningEffort != "" {
-				foundRE = true
-				edits = append(edits, zeroalloc.Edit{Start: vStart, End: vEnd, Repl: reRepl})
+				reSpans = append(reSpans, memberSpan{kStart: kStart, kEnd: kEnd, vStart: vStart, vEnd: vEnd})
+			}
+		case "reasoning":
+			if targetTier.ReasoningEffort != "" && isOpenRouter {
+				reasoningSpans = append(reasoningSpans, memberSpan{kStart: kStart, kEnd: kEnd, vStart: vStart, vEnd: vEnd})
 			}
 		case "stream":
 			valBytes := bytes.TrimSpace(body[vStart:vEnd])
@@ -428,16 +474,84 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier) []byte {
 		if hasTopLevelElements || len(topIns) > 0 {
 			topIns = append(topIns, ',')
 		}
+		if modelRepl == nil {
+			modelRepl = zeroalloc.AppendEscapedJSONString(nil, targetTier.Model)
+		}
 		topIns = append(topIns, `"model":`...)
 		topIns = append(topIns, modelRepl...)
 	}
-	if targetTier.ReasoningEffort != "" && !foundRE {
-		if hasTopLevelElements || len(topIns) > 0 {
-			topIns = append(topIns, ',')
+
+	// Reasoning Normalization: Config YAML is the single source of truth.
+	// If targetTier.ReasoningEffort is unset, we inject nothing and leave payload untouched.
+	// If configured, we mechanically translate to target provider dialect (nested for OpenRouter, flat for Cloud/Local).
+	if targetTier.ReasoningEffort != "" {
+		if isOpenRouter {
+			var orVal []byte
+			orVal = append(orVal, `{"effort":`...)
+			orVal = append(orVal, reRepl...)
+			orVal = append(orVal, '}')
+
+			if len(reasoningSpans) > 0 {
+				// Replace the value of the first "reasoning" key
+				edits = append(edits, zeroalloc.Edit{
+					Start: reasoningSpans[0].vStart,
+					End:   reasoningSpans[0].vEnd,
+					Repl:  orVal,
+				})
+				// If duplicate "reasoning" keys exist, delete them
+				for _, sp := range reasoningSpans[1:] {
+					dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
+					edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
+				}
+				// Any flat "reasoning_effort" fields MUST be stripped to prevent upstream OpenRouter 400 collisions
+				for _, sp := range reSpans {
+					dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
+					edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
+				}
+			} else if len(reSpans) > 0 {
+				// Inbound request had flat "reasoning_effort" but no "reasoning".
+				// Mutate the first "reasoning_effort" key-value directly into "reasoning": {"effort": ...}
+				var orMember []byte
+				orMember = append(orMember, `"reasoning":`...)
+				orMember = append(orMember, orVal...)
+				edits = append(edits, zeroalloc.Edit{
+					Start: reSpans[0].kStart,
+					End:   reSpans[0].vEnd,
+					Repl:  orMember,
+				})
+				// Delete any duplicate "reasoning_effort" fields
+				for _, sp := range reSpans[1:] {
+					dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
+					edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
+				}
+			} else {
+				// Neither was present: insert nested reasoning before closeObj
+				if hasTopLevelElements || len(topIns) > 0 {
+					topIns = append(topIns, ',')
+				}
+				topIns = append(topIns, `"reasoning":`...)
+				topIns = append(topIns, orVal...)
+			}
+		} else {
+			// Standard Cloud / Local: flat "reasoning_effort"
+			if len(reSpans) > 0 {
+				for _, sp := range reSpans {
+					edits = append(edits, zeroalloc.Edit{
+						Start: sp.vStart,
+						End:   sp.vEnd,
+						Repl:  reRepl,
+					})
+				}
+			} else {
+				if hasTopLevelElements || len(topIns) > 0 {
+					topIns = append(topIns, ',')
+				}
+				topIns = append(topIns, `"reasoning_effort":`...)
+				topIns = append(topIns, reRepl...)
+			}
 		}
-		topIns = append(topIns, `"reasoning_effort":`...)
-		topIns = append(topIns, reRepl...)
 	}
+
 	if isStream && len(streamOptionsSpans) == 0 {
 		if hasTopLevelElements || len(topIns) > 0 {
 			topIns = append(topIns, ',')
@@ -448,10 +562,16 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier) []byte {
 		edits = append(edits, zeroalloc.Edit{Start: closeObj, End: closeObj, Repl: topIns})
 	}
 
-	// Sort edits by Start offset
-	sort.Slice(edits, func(a, b int) bool {
-		return edits[a].Start < edits[b].Start
-	})
+	if len(edits) == 0 {
+		return body
+	}
+
+	// Sort edits by Start offset in-place without interface boxing
+	for a := 1; a < len(edits); a++ {
+		for b := a; b > 0 && edits[b].Start < edits[b-1].Start; b-- {
+			edits[b], edits[b-1] = edits[b-1], edits[b]
+		}
+	}
 
 	// Calculate extra capacity needed if any edits expand
 	extraCap := 0
@@ -495,15 +615,18 @@ func dumpOutbound(outReq *http.Request, reqLogger *slog.Logger) {
 		return
 	}
 
-	if err := os.MkdirAll(dumpDir, 0700); err != nil {
-		reqLogger.Warn("Failed to create outbound dump directory", slog.String("dir", dumpDir), slog.Any("error", err))
+	cleanDir := filepath.Clean(dumpDir)
+	// #nosec G703 - diagnostic dump directory explicitly configured via environment variable
+	if err := os.MkdirAll(cleanDir, 0700); err != nil {
+		reqLogger.Warn("Failed to create outbound dump directory", slog.String("dir", cleanDir), slog.Any("error", err))
 		return
 	}
 
 	cnt := atomic.AddUint64(&dumpCounter, 1)
 	filename := fmt.Sprintf("outbound_%d_%06d.json", time.Now().UnixMilli(), cnt)
-	filePath := filepath.Join(dumpDir, filename)
+	filePath := filepath.Join(cleanDir, filename)
 
+	// #nosec G703 - diagnostic dump file path constructed from clean directory and internal counter
 	if err := os.WriteFile(filePath, bodyBytes, 0600); err != nil {
 		reqLogger.Warn("Failed to write outbound dump file", slog.String("file", filePath), slog.Any("error", err))
 		return

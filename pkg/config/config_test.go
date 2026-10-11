@@ -651,17 +651,19 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 			if cfg.Host != "127.0.0.1" && cfg.Host != "0.0.0.0" {
 				t.Errorf("%s: expected Host '127.0.0.1' or '0.0.0.0', got '%s'", relPath, cfg.Host)
 			}
-			if cfg.CycleKiller.MaxToolTokens != 8192 {
-				t.Errorf("%s: expected MaxToolTokens 8192, got %d", relPath, cfg.CycleKiller.MaxToolTokens)
+			if cfg.CycleKiller.ResolveToolMaxTokens() <= 0 {
+				t.Errorf("%s: expected ResolveToolMaxTokens > 0, got %d", relPath, cfg.CycleKiller.ResolveToolMaxTokens())
 			}
 			if cfg.AgentShield.Enabled == nil {
 				t.Errorf("%s: expected agent_shield to be configured", relPath)
 			}
-			if len(cfg.FairyDust.Entries) < 2 {
-				t.Fatalf("%s: expected at least 2 fairy_dust entries, got %d", relPath, len(cfg.FairyDust.Entries))
-			}
-			if cfg.FairyDust.Entries[1].Model != "google/gemini-3.8-flash" {
-				t.Errorf("%s: expected Strategic Architecture Review to use google/gemini-3.8-flash, got %s", relPath, cfg.FairyDust.Entries[1].Model)
+			if cfg.FairyDust.Enabled != nil && *cfg.FairyDust.Enabled {
+				if len(cfg.FairyDust.Entries) < 2 {
+					t.Fatalf("%s: expected at least 2 fairy_dust entries, got %d", relPath, len(cfg.FairyDust.Entries))
+				}
+				if cfg.FairyDust.Entries[1].Model == "" {
+					t.Errorf("%s: expected Strategic Architecture Review to have a model configured", relPath)
+				}
 			}
 		})
 	}

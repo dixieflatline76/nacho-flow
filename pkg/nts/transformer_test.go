@@ -1091,10 +1091,10 @@ func TestTransformer_DeduplicateToolOutputs_EndToEnd(t *testing.T) {
 				"role": "user",
 				"content": []interface{}{
 					map[string]interface{}{
-						"type":         "tool_result",
-						"tool_use_id":  "call_cmd_1",
-						"tool_name":    "execute_command",
-						"content":      repeatedOutput,
+						"type":        "tool_result",
+						"tool_use_id": "call_cmd_1",
+						"tool_name":   "execute_command",
+						"content":     repeatedOutput,
 					},
 				},
 			},
@@ -1112,10 +1112,10 @@ func TestTransformer_DeduplicateToolOutputs_EndToEnd(t *testing.T) {
 				"role": "user",
 				"content": []interface{}{
 					map[string]interface{}{
-						"type":         "tool_result",
-						"tool_use_id":  "call_cmd_2",
-						"tool_name":    "execute_command",
-						"content":      repeatedOutput,
+						"type":        "tool_result",
+						"tool_use_id": "call_cmd_2",
+						"tool_name":   "execute_command",
+						"content":     repeatedOutput,
 					},
 				},
 			},
@@ -1246,7 +1246,7 @@ test result: FAILED. 2 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; 
 	var allMessages []map[string]interface{}
 	// Turn 0: User initial prompt
 	allMessages = append(allMessages, map[string]interface{}{
-		"role": "user",
+		"role":    "user",
 		"content": fmt.Sprintf("<environment_details>\n# Current Time\n2026-10-05T12:00:00Z\n\n%s\n</environment_details>\nPlease fix the tests.", remindersTable),
 	})
 
@@ -1372,7 +1372,3 @@ test result: FAILED. 2 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; 
 		history = append(history, transformedTurn{rawMessages: currentRawMsgs})
 	}
 }
-
-
-
-

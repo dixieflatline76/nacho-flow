@@ -365,7 +365,7 @@
 		let model = modelName;
 		if (!model) {
 			const ollamaP = (state.providers || []).find(p => p.id === 'ollama');
-			model = (ollamaP && ollamaP.models && ollamaP.models.length > 0) ? ollamaP.models[0] : 'gemma4:12b-it-qat';
+			model = (ollamaP && ollamaP.models && ollamaP.models.length > 0) ? ollamaP.models[0] : 'qwen3-coder:30b';
 		}
 		vscode.postMessage({ command: 'copyToClipboard', text: `ollama run ${model}`, label: `Ollama pull command (${model})` });
 	};

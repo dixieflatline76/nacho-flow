@@ -270,19 +270,19 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<div id="specs-modal" class="modal-overlay" style="display: none;">
 		<div class="modal-content">
 			<h3>ℹ️ Hardware & GPU VRAM Guide</h3>
-			<p style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 0;">Active Auto-Tuner VRAM Limit: <strong>${vramDisplay}</strong> &bull; Recommended local model: <strong>qwen3.8-coder:14b</strong></p>
+			<p style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 0;">Active Auto-Tuner VRAM Limit: <strong>${vramDisplay}</strong> &bull; Recommended local model: <strong>qwen3-coder:30b</strong></p>
 			<ul>
-				<li><strong>🎮 NVIDIA / AMD GPUs (Dedicated VRAM)</strong>:
-					<br/>• <strong>7B Models</strong>: Needs 6GB-8GB VRAM (e.g. RTX 3060/4060, RX 6600).
-					<br/>• <strong>14B Models</strong>: Needs 10GB-12GB VRAM (e.g. RTX 3080/4070, RX 6800).
+				<li><strong>🎮 Dedicated GPUs (NVIDIA / AMD)</strong>:
+					<br/>• <strong>8GB VRAM</strong>: Runs lightweight models (e.g. <code>phi4-mini</code>, <code>qwen3:8b</code>).
+					<br/>• <strong>16GB–24GB VRAM</strong>: Runs workhorse models (e.g. <code>qwen3-coder:30b</code> MoE, <code>devstral-small-2</code>).
 				</li>
 				<li><strong>🍎 Apple Silicon (M1 / M2 / M3 / M4)</strong>:
 					<br/>• Uses Unified Memory (system RAM is shared between CPU & GPU).
-					<br/>• <strong>16GB+ RAM</strong>: Runs 14B models at full GPU acceleration.
-					<br/>• <strong>8GB RAM</strong>: Runs 7B or 3B models.
+					<br/>• <strong>16GB–24GB+ RAM</strong>: Runs <code>qwen3-coder:30b</code> or <code>devstral-small-2</code> at full acceleration.
+					<br/>• <strong>8GB RAM</strong>: Runs <code>phi4-mini</code> or <code>qwen3:8b</code>.
 				</li>
 				<li><strong>💻 CPU Mode (RAM Fallback)</strong>:
-					<br/>• If no dedicated GPU is available, Ollama will run in standard system RAM (functional, but slower token generation).
+					<br/>• If no dedicated GPU is available, local engines (llama.cpp, vLLM, Ollama) can run in system RAM with <code>phi4-mini</code>.
 				</li>
 			</ul>
 			<button class="btn btn-secondary btn-compact" onclick="closeSpecsModal()">Close</button>

@@ -1,0 +1,45 @@
+{
+  "id": "kilo",
+  "name": "Kilo Code",
+  "version": "1.0.0",
+  "user_agent_patterns": ["kilo", "kilo-code", "kilo_code"],
+  "write_tools": [
+    "edit",
+    "write",
+    "todowrite"
+  ],
+  "file_read_tools": [
+    "read"
+  ],
+  "read_tools": [
+    "read",
+    "glob",
+    "grep",
+    "list_dir"
+  ],
+  "command_tools": [
+    "bash"
+  ],
+  "interactive_tools": [
+    "open_plan",
+    "plan_exit"
+  ],
+  "cycle_killer_exempt_tools": [
+    "plan_exit"
+  ],
+  "mode_tool": "plan_exit",
+  "mode_heuristics": [
+    "switch to code mode",
+    "switch to plan mode",
+    "ready to implement",
+    "plan is ready"
+  ],
+  "error_signatures": [
+    "Could not find oldString in the file",
+    "No changes to apply: oldString and newString are identical",
+    "The user has specified a rule which prevents you from using this specific tool call",
+    "Command failed with exit code",
+    "File does not exist",
+    "Error: "
+  ]
+}

@@ -114,7 +114,7 @@ func TestValidateConfig_InvalidOrMissingType(t *testing.T) {
 				t.Fatalf("expected error for provider type %q, got nil", tc.providerType)
 			}
 			errMsg := err.Error()
-			if !strings.Contains(errMsg, "type' is required and must be 'local', 'cloud', or 'anthropic'") {
+			if !strings.Contains(errMsg, "type' is required and must be 'local', 'cloud', 'anthropic', or 'openrouter'") {
 				t.Errorf("error does not contain required guidance: %s", errMsg)
 			}
 			if !strings.Contains(errMsg, "Example for local engines") || !strings.Contains(errMsg, "Example for cloud APIs") {

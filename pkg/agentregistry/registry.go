@@ -21,39 +21,39 @@ import (
 
 // Registry maintains an in-memory index of agent profiles, tool categories, and shell commands.
 type Registry struct {
-	mu                     sync.RWMutex
-	writeTools             map[string]struct{}
-	writeToolsList         []string
-	fileReadTools          map[string]struct{}
-	fileReadToolsList      []string
+	mu                         sync.RWMutex
+	writeTools                 map[string]struct{}
+	writeToolsList             []string
+	fileReadTools              map[string]struct{}
+	fileReadToolsList          []string
 	cycleKillerExemptTools     map[string]struct{}
 	cycleKillerExemptToolsList []string
-	allKnownTools          map[string]struct{}
-	shellWriteCommands     map[string]struct{}
-	shellWritePipes        []string
-	contextualCommands     map[string][]string
-	redirections           []string
-	writeTagByteMarkers    [][]byte
-	interactiveToolsLookup map[string]struct{}
-	interactiveToolsList   []string
-	modeHeuristicsList     []string
-	questionHeuristicsList []string
-	errorSignaturesList    []string
-	errorSignaturesLower   []string
-	manifest               Manifest
-	reasoningCatalog       ReasoningCatalog
-	tagReplacer            *strings.Replacer
-	reasoningByteMarkers   [][]byte
-	controlTokensBytes     [][]byte
-	delimiterPrefixes      [][]byte
-	sanitizerTargets       [][]byte
-	sanitizerReplacements  [][]byte
-	sanitizerMarkers       [][]byte
-	silentTurnChunkBytes   []byte
-	clientMatchers         []clientMatcher
-	headerSignatures       []headerSignature
-	uniqueToolMatchers     []uniqueToolMatcher
-	registeredAgentsList   []string
+	allKnownTools              map[string]struct{}
+	shellWriteCommands         map[string]struct{}
+	shellWritePipes            []string
+	contextualCommands         map[string][]string
+	redirections               []string
+	writeTagByteMarkers        [][]byte
+	interactiveToolsLookup     map[string]struct{}
+	interactiveToolsList       []string
+	modeHeuristicsList         []string
+	questionHeuristicsList     []string
+	errorSignaturesList        []string
+	errorSignaturesLower       []string
+	manifest                   Manifest
+	reasoningCatalog           ReasoningCatalog
+	tagReplacer                *strings.Replacer
+	reasoningByteMarkers       [][]byte
+	controlTokensBytes         [][]byte
+	delimiterPrefixes          [][]byte
+	sanitizerTargets           [][]byte
+	sanitizerReplacements      [][]byte
+	sanitizerMarkers           [][]byte
+	silentTurnChunkBytes       []byte
+	clientMatchers             []clientMatcher
+	headerSignatures           []headerSignature
+	uniqueToolMatchers         []uniqueToolMatcher
+	registeredAgentsList       []string
 }
 
 type clientMatcher struct {

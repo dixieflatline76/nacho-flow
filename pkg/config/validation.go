@@ -24,9 +24,9 @@ func ValidateConfig(cfg *contract.Config) error {
 		if strings.TrimSpace(p.BaseURL) == "" {
 			return fmt.Errorf("config error: provider '%s' is missing required 'base_url'", id)
 		}
-		if p.Type != contract.ProviderTypeLocal && p.Type != contract.ProviderTypeCloud && p.Type != contract.ProviderTypeAnthropic {
+		if p.Type != contract.ProviderTypeLocal && p.Type != contract.ProviderTypeCloud && p.Type != contract.ProviderTypeAnthropic && p.Type != contract.ProviderTypeOpenRouter {
 			return fmt.Errorf(
-				"provider %q: 'type' is required and must be 'local', 'cloud', or 'anthropic' (got %q).\n"+
+				"provider %q: 'type' is required and must be 'local', 'cloud', 'anthropic', or 'openrouter' (got %q).\n"+
 					"  Example for local engines (Ollama, vLLM, LM Studio, llama.cpp):\n"+
 					"    %s:\n"+
 					"      base_url: %s\n"+

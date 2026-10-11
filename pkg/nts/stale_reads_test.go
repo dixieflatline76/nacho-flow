@@ -935,7 +935,6 @@ func TestTransformer_RealTasksDatasetReplay_AllPasses(t *testing.T) {
 	}
 }
 
-
 func TestIdentifyStaleToolCallIDs_ConfigurableDepth(t *testing.T) {
 	msgs := []interface{}{
 		map[string]interface{}{

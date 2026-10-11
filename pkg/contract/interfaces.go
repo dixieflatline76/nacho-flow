@@ -429,6 +429,9 @@ const (
 
 	// ProviderTypeAnthropic designates native Anthropic Messages API cloud endpoints.
 	ProviderTypeAnthropic ProviderType = "anthropic"
+
+	// ProviderTypeOpenRouter designates OpenRouter aggregator cloud endpoints.
+	ProviderTypeOpenRouter ProviderType = "openrouter"
 )
 
 // ProviderConfig defines a first-class LLM provider configuration.
@@ -521,16 +524,16 @@ type FairyDustConfig struct {
 
 // NTSConfig configures the Nacho Token Saver (NTS) in-place compaction engine.
 type NTSConfig struct {
-	Enabled               *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	StripANSI             *bool `yaml:"strip_ansi,omitempty" json:"strip_ansi,omitempty"`
-	ResolveCR             *bool `yaml:"resolve_cr,omitempty" json:"resolve_cr,omitempty"`
-	DeduplicateLines      *bool `yaml:"deduplicate_lines,omitempty" json:"deduplicate_lines,omitempty"`
-	DedupThreshold        int   `yaml:"dedup_threshold,omitempty" json:"dedup_threshold,omitempty"`
-	StripBoilerplate      *bool `yaml:"strip_boilerplate,omitempty" json:"strip_boilerplate,omitempty"`
-	NormalizeWhitespace   *bool `yaml:"normalize_whitespace,omitempty" json:"normalize_whitespace,omitempty"`
-	PreserveFileReads     *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
-	PreserveFileWrites    *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
-	PreserveCacheControl  *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
+	Enabled                  *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	StripANSI                *bool `yaml:"strip_ansi,omitempty" json:"strip_ansi,omitempty"`
+	ResolveCR                *bool `yaml:"resolve_cr,omitempty" json:"resolve_cr,omitempty"`
+	DeduplicateLines         *bool `yaml:"deduplicate_lines,omitempty" json:"deduplicate_lines,omitempty"`
+	DedupThreshold           int   `yaml:"dedup_threshold,omitempty" json:"dedup_threshold,omitempty"`
+	StripBoilerplate         *bool `yaml:"strip_boilerplate,omitempty" json:"strip_boilerplate,omitempty"`
+	NormalizeWhitespace      *bool `yaml:"normalize_whitespace,omitempty" json:"normalize_whitespace,omitempty"`
+	PreserveFileReads        *bool `yaml:"preserve_file_reads,omitempty" json:"preserve_file_reads,omitempty"`
+	PreserveFileWrites       *bool `yaml:"preserve_file_writes,omitempty" json:"preserve_file_writes,omitempty"`
+	PreserveCacheControl     *bool `yaml:"preserve_cache_control,omitempty" json:"preserve_cache_control,omitempty"`
 	CompactStaleFileReads    *bool `yaml:"compact_stale_file_reads,omitempty" json:"compact_stale_file_reads,omitempty"`
 	StaleReadDepth           int   `yaml:"stale_read_depth,omitempty" json:"stale_read_depth,omitempty"`
 	StripHistoricalReasoning *bool `yaml:"strip_historical_reasoning,omitempty" json:"strip_historical_reasoning,omitempty"`

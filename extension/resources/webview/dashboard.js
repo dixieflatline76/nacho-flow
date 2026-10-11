@@ -474,13 +474,13 @@
 				<div class="supervisor-row">
 					<div class="supervisor-bracket bracket-kickstart">
 						<div class="bracket-header">
-							<span class="bracket-title">⚡ Kickstart: Stall Resuscitation Engine</span>
+							<span class="bracket-title">⚡ Kickstart: Idle Loop Defense</span>
 						</div>
 						<div class="bracket-cards">
 							<div class="ck-item kickstart-chip">
 								<div class="ck-value">${kickstarts} <span class="ck-unit">Sessions</span></div>
-								<div class="ck-label">⚡ Kickstart Resuscitations</div>
-								<div class="ck-sub">Stalled sessions rescued out of passive read/plan procrastination</div>
+								<div class="ck-label">⚡ Kickstart Interventions</div>
+								<div class="ck-sub">Stalled sessions prompted to resume active tool and code execution</div>
 							</div>
 						</div>
 					</div>

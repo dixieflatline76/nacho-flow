@@ -362,7 +362,7 @@ describe('windowCycleKiller — timeframe selection (v0.8.4 daemon, all windows 
   it('renders supervisor sub-brackets with Qu\'est-ce que c\'est?, Kickstart, and Fairy Dust', () => {
     setWindow('all_time');
     expect(ckContent()).toContain("Cycle Killer (Qu'est-ce que c'est?): In-Flight Stream Breaker");
-    expect(ckContent()).toContain('Kickstart: Stall Resuscitation Engine');
+    expect(ckContent()).toContain('Kickstart: Idle Loop Defense');
     expect(ckContent()).toContain('Fairy Dust: Programmable Quality Checkpoints');
   });
 });

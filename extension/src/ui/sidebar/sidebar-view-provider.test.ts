@@ -42,7 +42,7 @@ describe('SidebarViewProvider', () => {
       expect(mockWebviewView.webview.options.enableScripts).toBe(true);
       expect(mockWebviewView.webview.html).toContain('<!DOCTYPE html>');
       expect(mockWebviewView.webview.html).toContain('🌮 Nacho Flow');
-      expect(mockWebviewView.webview.html).toContain('qwen3.8-coder:14b');
+      expect(mockWebviewView.webview.html).toContain('qwen3-coder:30b');
       expect(mockWebviewView.webview.onDidReceiveMessage).toHaveBeenCalledWith(messageHandler);
     });
   });
@@ -69,10 +69,10 @@ describe('SidebarViewProvider', () => {
     });
 
     it('should post updateOllamaStatus message', () => {
-      provider.updateOllamaStatus({ connected: true, models: ['qwen2.5-coder:14b'] });
+      provider.updateOllamaStatus({ connected: true, models: ['qwen3-coder:30b'] });
       expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({
         command: 'updateOllamaStatus',
-        data: { connected: true, models: ['qwen2.5-coder:14b'] }
+        data: { connected: true, models: ['qwen3-coder:30b'] }
       });
     });
 

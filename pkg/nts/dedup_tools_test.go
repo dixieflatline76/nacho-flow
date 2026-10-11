@@ -183,4 +183,3 @@ func TestToolDedup_EdgeCases(t *testing.T) {
 		t.Fatalf("non-text blocks should bypass")
 	}
 }
-

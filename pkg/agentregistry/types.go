@@ -5,21 +5,21 @@ package agentregistry
 
 // AgentProfile defines the tool capabilities and tool names of a specific AI coding agent.
 type AgentProfile struct {
-	ID                  string               `json:"id"`
-	Name                string               `json:"name"`
-	Version             string               `json:"version"`
-	UserAgentPatterns   []string             `json:"user_agent_patterns,omitempty"`
-	HeaderSignatures    map[string]string    `json:"header_signatures,omitempty"`
-	WriteTools          []string             `json:"write_tools"`
-	FileReadTools       []string             `json:"file_read_tools,omitempty"`
-	ReadTools           []string             `json:"read_tools"`
-	CommandTools        []string             `json:"command_tools"`
-	InteractiveTools    []string             `json:"interactive_tools,omitempty"`
-	CycleKillerExemptTools []string          `json:"cycle_killer_exempt_tools,omitempty"`
-	ModeTool            string               `json:"mode_tool,omitempty"`
-	ModeHeuristics      []string             `json:"mode_heuristics,omitempty"`
-	QuestionHeuristics  []string             `json:"question_heuristics,omitempty"`
-	ErrorSignatures     []string             `json:"error_signatures,omitempty"`
+	ID                            string                         `json:"id"`
+	Name                          string                         `json:"name"`
+	Version                       string                         `json:"version"`
+	UserAgentPatterns             []string                       `json:"user_agent_patterns,omitempty"`
+	HeaderSignatures              map[string]string              `json:"header_signatures,omitempty"`
+	WriteTools                    []string                       `json:"write_tools"`
+	FileReadTools                 []string                       `json:"file_read_tools,omitempty"`
+	ReadTools                     []string                       `json:"read_tools"`
+	CommandTools                  []string                       `json:"command_tools"`
+	InteractiveTools              []string                       `json:"interactive_tools,omitempty"`
+	CycleKillerExemptTools        []string                       `json:"cycle_killer_exempt_tools,omitempty"`
+	ModeTool                      string                         `json:"mode_tool,omitempty"`
+	ModeHeuristics                []string                       `json:"mode_heuristics,omitempty"`
+	QuestionHeuristics            []string                       `json:"question_heuristics,omitempty"`
+	ErrorSignatures               []string                       `json:"error_signatures,omitempty"`
 	ParameterSanitizers           []ParameterSanitizer           `json:"parameter_sanitizers,omitempty"`
 	RepetitiveEnvironmentSections []RepetitiveEnvironmentSection `json:"repetitive_environment_sections,omitempty"`
 }

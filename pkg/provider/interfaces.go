@@ -54,3 +54,20 @@ type ProtocolProvider interface {
 	WrapResponseStream(resp *http.Response) io.ReadCloser
 	TranslateResponseBody(statusCode int, body []byte) ([]byte, error)
 }
+
+// OpenRouterProviderMarker is an optional capability interface identifying OpenRouter endpoints.
+type OpenRouterProviderMarker interface {
+	IsOpenRouter() bool
+}
+
+// IsOpenRouter returns true if the provider is an OpenRouter endpoint.
+// Lock-free, zero heap allocation.
+func IsOpenRouter(p LLMProvider) bool {
+	if p == nil {
+		return false
+	}
+	if orm, ok := p.(OpenRouterProviderMarker); ok {
+		return orm.IsOpenRouter()
+	}
+	return false
+}
