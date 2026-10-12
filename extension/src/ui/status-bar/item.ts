@@ -118,10 +118,12 @@ export class StatusBarManager {
 		let ckHeals = 0;
 		let ckKicks = 0;
 		let fdTriggers = 0;
+		let tsRecovered = 0;
+		let tsSlaps = 0;
 		let timeframeTitle = 'All Time (Cumulative)';
 
 		if (!this.stats) {
-			return { totalReqs, localReqs, totalTokens, localTokens, spentUSD, savedUSD, reductionPct, localPct: 0, timeframeTitle, ntsTokens, ntsBytes, ntsCompactedTurns, ckHeals, ckKicks, fdTriggers };
+			return { totalReqs, localReqs, totalTokens, localTokens, spentUSD, savedUSD, reductionPct, localPct: 0, timeframeTitle, ntsTokens, ntsBytes, ntsCompactedTurns, ckHeals, ckKicks, fdTriggers, tsRecovered, tsSlaps };
 		}
 
 		if (this.timeWindow === 'past_1_hour') {
@@ -139,6 +141,8 @@ export class StatusBarManager {
 			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
 			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
 			fdTriggers = w?.fairy_dust?.total_triggers || 0;
+			tsRecovered = (w?.thought_slap?.recovered_tool_calls || 0) + (w?.thought_slap?.recovered_text_content || 0) || w?.thought_slap?.recovered || 0;
+			tsSlaps = w?.thought_slap?.total_slaps || 0;
 			timeframeTitle = 'Past 1 Hour (Rolling 60m)';
 		} else if (this.timeWindow === 'today') {
 			const w = this.stats.windows?.today;
@@ -155,6 +159,8 @@ export class StatusBarManager {
 			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
 			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
 			fdTriggers = w?.fairy_dust?.total_triggers || 0;
+			tsRecovered = (w?.thought_slap?.recovered_tool_calls || 0) + (w?.thought_slap?.recovered_text_content || 0) || w?.thought_slap?.recovered || 0;
+			tsSlaps = w?.thought_slap?.total_slaps || 0;
 			timeframeTitle = 'Today (Active 24h)';
 		} else if (this.timeWindow === 'yesterday') {
 			const w = this.stats.windows?.yesterday;
@@ -171,7 +177,9 @@ export class StatusBarManager {
 			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
 			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
 			fdTriggers = w?.fairy_dust?.total_triggers || 0;
-			timeframeTitle = 'Yesterday (Prior 24h)';
+			tsRecovered = (w?.thought_slap?.recovered_tool_calls || 0) + (w?.thought_slap?.recovered_text_content || 0) || w?.thought_slap?.recovered || 0;
+			tsSlaps = w?.thought_slap?.total_slaps || 0;
+			timeframeTitle = 'Yesterday (Prior 24h UTC)';
 		} else if (this.timeWindow === 'this_week') {
 			const w = this.stats.windows?.this_week;
 			totalReqs = w?.requests || 0;
@@ -187,7 +195,9 @@ export class StatusBarManager {
 			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
 			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
 			fdTriggers = w?.fairy_dust?.total_triggers || 0;
-			timeframeTitle = 'This Week (Current ISO Week)';
+			tsRecovered = (w?.thought_slap?.recovered_tool_calls || 0) + (w?.thought_slap?.recovered_text_content || 0) || w?.thought_slap?.recovered || 0;
+			tsSlaps = w?.thought_slap?.total_slaps || 0;
+			timeframeTitle = 'This Week (Current Week)';
 		} else if (this.timeWindow === 'this_month') {
 			const w = this.stats.windows?.this_month;
 			totalReqs = w?.requests || 0;
@@ -203,6 +213,8 @@ export class StatusBarManager {
 			ckHeals = w?.cycle_killer?.stage1_local_heals || 0;
 			ckKicks = w?.cycle_killer?.session_kickstarts || 0;
 			fdTriggers = w?.fairy_dust?.total_triggers || 0;
+			tsRecovered = (w?.thought_slap?.recovered_tool_calls || 0) + (w?.thought_slap?.recovered_text_content || 0) || w?.thought_slap?.recovered || 0;
+			tsSlaps = w?.thought_slap?.total_slaps || 0;
 			timeframeTitle = 'This Month (Current Month)';
 		} else {
 			// All Time
@@ -220,12 +232,14 @@ export class StatusBarManager {
 			ckHeals = w?.cycle_killer?.stage1_local_heals || this.stats.cycle_killer?.stage1_local_heals || 0;
 			ckKicks = w?.cycle_killer?.session_kickstarts || this.stats.cycle_killer?.session_kickstarts || 0;
 			fdTriggers = w?.fairy_dust?.total_triggers || this.stats.fairy_dust?.total_triggers || 0;
+			tsRecovered = (w?.thought_slap?.recovered_tool_calls || 0) + (w?.thought_slap?.recovered_text_content || 0) || w?.thought_slap?.recovered || (this.stats.thought_slap?.recovered_tool_calls || 0) + (this.stats.thought_slap?.recovered_text_content || 0) || this.stats.thought_slap?.recovered || 0;
+			tsSlaps = w?.thought_slap?.total_slaps || this.stats.thought_slap?.total_slaps || 0;
 			timeframeTitle = 'All Time (Cumulative)';
 		}
 
 		const localPct = totalTokens > 0 ? Math.round((localTokens / totalTokens) * 100) : (totalReqs > 0 ? Math.round((localReqs / totalReqs) * 100) : 0);
 
-		return { totalReqs, localReqs, totalTokens, localTokens, spentUSD, savedUSD, reductionPct, localPct, timeframeTitle, ntsTokens, ntsBytes, ntsCompactedTurns, ckHeals, ckKicks, fdTriggers };
+		return { totalReqs, localReqs, totalTokens, localTokens, spentUSD, savedUSD, reductionPct, localPct, timeframeTitle, ntsTokens, ntsBytes, ntsCompactedTurns, ckHeals, ckKicks, fdTriggers, tsRecovered, tsSlaps };
 	}
 
 	private calculateLocalPercentage(): number {
@@ -240,6 +254,7 @@ export class StatusBarManager {
 		const displayLabel = this.activeProfileLabel || StatusBarManager.PROFILE_LABELS[this.activePreset] || this.activePreset;
 		const profileDropdown = `[▾ ${displayLabel}](command:nacho-flow.switchProfile "Click to choose or switch profile")`;
 		const addProfileLink = `[＋](command:nacho-flow.addProfile "Add new profile")`;
+		const deleteProfileLink = `[－](command:nacho-flow.deleteProfile "Delete custom profile")`;
 		const renameProfileLink = `[✏️](command:nacho-flow.renameProfile "Rename active profile")`;
 
 		if (!this.stats) {
@@ -248,7 +263,7 @@ export class StatusBarManager {
 				md.appendMarkdown(`**Host:** \`${this.getBaseUrl()}\` &nbsp;•&nbsp; \`Remote Server\`\n\n`);
 				md.appendMarkdown(`Cannot connect to remote server at \`${this.getBaseUrl()}\`\n\n`);
 			} else {
-				md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
+				md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${deleteProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
 				md.appendMarkdown(`Cannot connect to \`${this.getBaseUrl()}\`\n\n`);
 			}
 			md.appendMarkdown(`---\n\n[🔄 Open Dashboard / Retry](command:nacho-flow.showDashboard)`);
@@ -273,7 +288,7 @@ export class StatusBarManager {
 		if (this.isRemote) {
 			md.appendMarkdown(`**Host:** \`${this.getBaseUrl()}\` &nbsp;•&nbsp; \`Remote Server\`\n\n`);
 		} else {
-			md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
+			md.appendMarkdown(`**Profile:** ${profileDropdown} &nbsp;&nbsp; ${addProfileLink} &nbsp;|&nbsp; ${deleteProfileLink} &nbsp;|&nbsp; ${renameProfileLink}\n\n`);
 			md.appendMarkdown(`Host: \`${this.getBaseUrl()}\`\n\n`);
 		}
 		md.appendMarkdown(`| Metric | ${m.timeframeTitle} |\n`);
@@ -282,7 +297,8 @@ export class StatusBarManager {
 		md.appendMarkdown(`| **Cloud API Spend** | \`$${m.spentUSD.toFixed(2)}\` |\n`);
 		md.appendMarkdown(`| **Local GPU ($0.00)** | \`${m.localPct}%\` *(${m.localReqs}/${m.totalReqs} turns)* |\n`);
 		md.appendMarkdown(`| **Nacho Token Saver** | \`${m.ntsTokens.toLocaleString()} tokens\` *(${formatBytes(m.ntsBytes)} saved • ${m.ntsCompactedTurns} turns)* |\n`);
-		md.appendMarkdown(`| **Agent Supervisor** | \`${m.ckHeals} loops healed • ${m.ckKicks} kicks • ${m.fdTriggers} fairy dust\` |\n`);
+		const slapSupervisor = m.tsSlaps > 0 ? ` • ${m.tsRecovered}/${m.tsSlaps} slaps rescued` : '';
+		md.appendMarkdown(`| **Agent Supervisor** | \`${m.ckHeals} loops healed • ${m.ckKicks} kicks${slapSupervisor} • ${m.fdTriggers} fairy dust\` |\n`);
 		md.appendMarkdown(`| **Total Prompt Turns** | \`${m.totalReqs}\` *(${m.totalTokens.toLocaleString()} tokens)* |\n\n`);
 		md.appendMarkdown(`Timeframe: ${switchLinks}\n\n`);
 		md.appendMarkdown(`---\n\n`);

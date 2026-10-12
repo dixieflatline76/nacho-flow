@@ -64,6 +64,7 @@ jest.mock('vscode', () => ({
       stat: jest.fn().mockRejectedValue(new Error('File not found')),
       createDirectory: jest.fn().mockResolvedValue(undefined),
       writeFile: jest.fn().mockResolvedValue(undefined),
+      delete: jest.fn().mockResolvedValue(undefined),
       readFile: jest.fn().mockResolvedValue(Buffer.from('port: 8000\n')),
       readDirectory: jest.fn().mockResolvedValue([])
     }
@@ -166,6 +167,7 @@ describe('ExtensionController', () => {
     (vscode.workspace.fs.stat as jest.Mock).mockRejectedValue(new Error('File not found'));
     (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValue(Buffer.from('port: 8000\n'));
     (vscode.workspace.fs.writeFile as jest.Mock).mockResolvedValue(undefined);
+    (vscode.workspace.fs.delete as jest.Mock).mockResolvedValue(undefined);
     (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValue([]);
     (vscode.window.showInputBox as jest.Mock).mockReset();
 
@@ -1858,11 +1860,17 @@ default_tier:
       await addCmdCall[1]();
       expect(addCmdSpy).toHaveBeenCalled();
 
-      const renameCmdCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.renameProfile');
+       const renameCmdCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.renameProfile');
       expect(renameCmdCall).toBeDefined();
       const renameCmdSpy = jest.spyOn(extensionController, 'renameProfile').mockResolvedValue(undefined);
       await renameCmdCall[1]('profile1');
       expect(renameCmdSpy).toHaveBeenCalledWith('profile1');
+
+      const deleteCmdCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(c => c[0] === 'nacho-flow.deleteProfile');
+      expect(deleteCmdCall).toBeDefined();
+      const deleteCmdSpy = jest.spyOn(extensionController, 'deleteProfile').mockResolvedValue(true);
+      await deleteCmdCall[1]('profile4');
+      expect(deleteCmdSpy).toHaveBeenCalledWith('profile4');
     });
 
     it('should test setTimeWindow with globalState and dashboard panel', async () => {
@@ -2545,6 +2553,90 @@ default_tier:
       const renameSpy = jest.spyOn(extensionController, 'renameProfile').mockResolvedValue(undefined);
       await extensionController.switchProfile();
       expect(renameSpy).toHaveBeenCalled();
+
+      // Delete
+      jest.spyOn(extensionController, 'getAvailableProfiles').mockResolvedValueOnce([
+        { id: 'profile1', label: 'Profile 1', number: 1, isWorkspace: false, uri: vscode.Uri.file('/p1.yaml') }
+      ]);
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({ action: 'delete' });
+      const deleteSpy = jest.spyOn(extensionController, 'deleteProfile').mockResolvedValue(true);
+      await extensionController.switchProfile();
+      expect(deleteSpy).toHaveBeenCalled();
+    });
+
+    it('should suppress deleteProfile in remote host mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      const res = await extensionController.deleteProfile('profile4');
+      expect(res).toBe(false);
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Profile deletion is disabled in remote server mode')
+      );
+    });
+
+    it('should prevent deleting built-in profiles 1..3', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+
+      for (const p of ['profile1', 'profile2', 'profile3']) {
+        const res = await extensionController.deleteProfile(p);
+        expect(res).toBe(false);
+        expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+          expect.stringContaining('Built-in profiles (Profile 1, 2, 3) cannot be deleted')
+        );
+      }
+    });
+
+    it('should prevent deleteProfile without args when no deletable profiles exist', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      jest.spyOn(extensionController, 'getAvailableProfiles').mockResolvedValueOnce([
+        { id: 'profile1', label: 'Profile 1', number: 1, isWorkspace: false, uri: vscode.Uri.file('/p1.yaml') },
+        { id: 'profile2', label: 'Profile 2', number: 2, isWorkspace: false, uri: vscode.Uri.file('/p2.yaml') },
+        { id: 'profile3', label: 'Profile 3', number: 3, isWorkspace: false, uri: vscode.Uri.file('/p3.yaml') }
+      ]);
+
+      const res = await extensionController.deleteProfile();
+      expect(res).toBe(false);
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Built-in profiles (Profile 1, 2, 3) cannot be deleted')
+      );
+    });
+
+    it('should prompt QuickPick when deleteProfile is called without args and delete selected profile', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      jest.spyOn(extensionController, 'getAvailableProfiles').mockResolvedValueOnce([
+        { id: 'profile1', label: 'Profile 1', number: 1, isWorkspace: false, uri: vscode.Uri.file('/p1.yaml') },
+        { id: 'profile4', label: 'Custom Profile 4', number: 4, isWorkspace: false, uri: vscode.Uri.file('/p4.yaml') }
+      ]);
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({ profileId: 'profile4' });
+      (vscode.window.showWarningMessage as jest.Mock).mockResolvedValueOnce('Delete Profile');
+      (vscode.workspace.fs.delete as jest.Mock).mockResolvedValue(undefined);
+
+      const res = await extensionController.deleteProfile();
+      expect(res).toBe(true);
+      expect(vscode.workspace.fs.delete).toHaveBeenCalled();
+    });
+
+    it('should cancel deleteProfile if confirmation dialog is rejected', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (vscode.window.showWarningMessage as jest.Mock).mockResolvedValueOnce('Cancel');
+
+      const res = await extensionController.deleteProfile('profile4');
+      expect(res).toBe(false);
+      expect(vscode.workspace.fs.delete).not.toHaveBeenCalled();
+    });
+
+    it('should cleanly switch to profile1 when active profile is deleted', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (extensionController as any).activeProfile = 'profile4';
+      const switchSpy = jest.spyOn(extensionController, 'switchProfile').mockImplementation(async (id: any) => {
+        (extensionController as any).activeProfile = id;
+      });
+      (vscode.window.showWarningMessage as jest.Mock).mockResolvedValueOnce('Delete Profile');
+      (vscode.workspace.fs.delete as jest.Mock).mockResolvedValue(undefined);
+
+      const res = await extensionController.deleteProfile('profile4');
+      expect(res).toBe(true);
+      expect(switchSpy).toHaveBeenCalledWith('profile1');
+      expect(vscode.workspace.fs.delete).toHaveBeenCalled();
     });
 
     it('should scan workspace folders for .nacho profiles in getAvailableProfiles', async () => {
@@ -2691,6 +2783,10 @@ default_tier:
 
       await onMessage({ command: 'addProfile' });
       expect(addProfileSpy).toHaveBeenCalled();
+
+      const deleteProfileSpy = jest.spyOn(extensionController, 'deleteProfile').mockResolvedValue(true);
+      await onMessage({ command: 'deleteProfile', profileId: 'profile4' });
+      expect(deleteProfileSpy).toHaveBeenCalledWith('profile4');
 
       await onMessage({ command: 'renameProfile', profileId: 'profile2' });
       expect(renameProfileSpy).toHaveBeenCalledWith('profile2');

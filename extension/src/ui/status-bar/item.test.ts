@@ -206,7 +206,7 @@ describe('StatusBarManager', () => {
       statusBarManager.setTimeWindow('yesterday');
       expect(statusBarManager.getTimeWindow()).toBe('yesterday');
       expect(mockStatusBarItem.text).toBe('🌮 $5.50 Saved Yesterday (85% Local)');
-      expect(mockStatusBarItem.tooltip.value).toContain('Yesterday (Prior 24h)');
+      expect(mockStatusBarItem.tooltip.value).toContain('Yesterday (Prior 24h UTC)');
 
       statusBarManager.setTimeWindow('this_week');
       expect(mockStatusBarItem.text).toBe('🌮 $12.00 Saved This Week (75% Local)');
@@ -230,7 +230,41 @@ describe('StatusBarManager', () => {
       expect((statusBarManager as any).activeProfileLabel).toBe('Zoo GLM');
       expect(mockStatusBarItem.tooltip.value).toContain('[▾ Zoo GLM](command:nacho-flow.switchProfile');
       expect(mockStatusBarItem.tooltip.value).toContain('[＋](command:nacho-flow.addProfile');
+      expect(mockStatusBarItem.tooltip.value).toContain('[－](command:nacho-flow.deleteProfile');
       expect(mockStatusBarItem.tooltip.value).toContain('[✏️](command:nacho-flow.renameProfile');
+    });
+
+    it('should format thought slap rescued metrics in agent supervisor tooltip row', () => {
+      const stats = {
+        total_requests: 10,
+        total_tokens: 1000,
+        estimated_cost_saved_usd: 1.0,
+        cloud_api_spend_usd: 0.5,
+        cycle_killer: {
+          total_interventions: 4,
+          stage1_local_heals: 3,
+          stage2_cloud_escalations: 1,
+          session_kickstarts: 1
+        },
+        fairy_dust: {
+          total_triggers: 2
+        },
+        thought_slap: {
+          total_slaps: 5,
+          recovered_tool_calls: 3,
+          recovered_text_content: 1,
+          truncated_exhausted: 1,
+          recovery_rate_pct: 80,
+          total_extra_tokens: 4200,
+          total_extra_cost_usd: 0.012
+        }
+      };
+
+      statusBarManager.updateStats(stats);
+      expect(mockStatusBarItem.tooltip.value).toContain('3 loops healed');
+      expect(mockStatusBarItem.tooltip.value).toContain('1 kicks');
+      expect(mockStatusBarItem.tooltip.value).toContain('4/5 slaps rescued');
+      expect(mockStatusBarItem.tooltip.value).toContain('2 fairy dust');
     });
 
     it('should set base url and update status bar', () => {

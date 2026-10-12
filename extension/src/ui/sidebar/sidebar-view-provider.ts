@@ -167,6 +167,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 						<option value="profile3">Profile 3</option>
 					</select>
 					<button class="btn btn-secondary btn-icon" id="btn-add-profile" onclick="addProfile()" title="Add new profile (+)">＋</button>
+					<button class="btn btn-secondary btn-icon" id="btn-delete-profile" onclick="deleteProfile()" title="Delete custom profile (－)">－</button>
 					<button class="btn btn-secondary btn-icon" id="btn-rename-profile" onclick="renameProfile()" title="Rename active profile">✏️</button>
 					<button class="btn btn-secondary btn-action" id="btn-reset-profile" onclick="resetProfile()" title="Reset selected profile to factory default template">
 						Reset

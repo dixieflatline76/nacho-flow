@@ -494,9 +494,141 @@ emit final terminal:
 
 ---
 
-### Phase 6 — Documentation, release, validation run
-- **CHANGELOG**: breaking-change section with the full key migration table (§5.4).
-- **Docs**: USER_GUIDE Kickstart section rewritten as "Read slap & thought slap"; TUNING_GUIDE §9.3; ARCHITECTURE.md; site `docs.html` and `index.html` Kickstart card; ROADMAP; all `SessionKickstarted` references.
+### Phase 6 — Dashboard & Telemetry Visualization (Extension Webview & Status Bar)
+
+**Motivation**: The Go engine emits rich Thought Slap metrics (`thought_slap: { total_slaps, recovered, exhausted, extra_tokens, extra_cost }`) and route-level telemetry (`thought_slap_attempts`, `thought_slap_outcome`, `thought_slap_tier`, `session_thought_slap_count`). Currently, the VS Code Extension Dashboard webview and Status Bar only visualize Cycle Killer, Kickstart Read Slap, and Fairy Dust. Phase 6 surfaces Thought Slap across the dashboard and flight instruments.
+
+**6.0 TypeScript Eventing Architecture & Cross-Frame Topology**
+
+The extension is partitioned into 3 isolated execution contexts communicating via an asynchronous, event-driven message bus centered on `ExtensionController`:
+
+```mermaid
+graph TD
+    subgraph GoEngine ["Go Model Dispatcher (:8000)"]
+        SSEBroker["/api/v1/events (SSE)"]
+        RestEndpoints["/api/v1/stats, /routes, /circuits"]
+    end
+
+    subgraph Host ["Extension Host (Node.js Process)"]
+        Controller["ExtensionController (SSOT Hub)"]
+        Poller["TelemetryPoller (Single-Flight Lock)"]
+        SSE["SSEClient (Auto-reconnect)"]
+        ProcessMgr["ProcessManager (Child Process / CLI)"]
+    end
+
+    subgraph UI ["VS Code UI Shell"]
+        StatusBar["StatusBarManager (Native Widget)"]
+    end
+
+    subgraph Webviews ["Webview Runtimes (Browser Contexts)"]
+        SidebarView["Sidebar WebviewView (sidebar.js)"]
+        DashboardView["Dashboard WebviewPanel (dashboard.js)"]
+    end
+
+    SSEBroker -->|route_completed, circuit_state_changed, config_updated| SSE
+    SSE -->|onEvent| Controller
+    Poller -->|executeTick: interval 15s/30s/60s| Controller
+    Controller -->|pollTelemetry / buildDashboardSnapshot| RestEndpoints
+
+    Controller -->|updateStats / setTimeWindow| StatusBar
+    Controller -->|syncState / updateEngineStatus| SidebarView
+    Controller -->|syncSnapshot / updateStats / updateRoutes| DashboardView
+
+    SidebarView -->|postMessage: start, stop, restart, switchProfile| Controller
+    DashboardView -->|postMessage: setTimeWindow, refreshAll, runOptimizer, resetCircuit| Controller
+```
+
+- **Top-Down State Flow (SSOT Snapshot Pipeline)**:
+  `ExtensionController.buildDashboardSnapshot()` queries `/v1/stats`, `/v1/deals`, `/v1/routes`, `/v1/circuits`, `/v1/config`, and `/v1/clients` in parallel via `Promise.all`. The resulting immutable `DashboardSnapshot` carries an epoch `timestamp: Date.now()`. When received by `dashboard.js`, the monotonic filter verifies `snapshot.timestamp >= currentState.timestamp`. Any out-of-order snapshots caused by network latency or rapid profile switching are immediately dropped.
+- **Push vs. Pull Synchronization**:
+  1. *Real-time SSE*: `/api/v1/events` pushes `route_completed` immediately when a stream ends. `Controller` calls `pollTelemetry()`, fetching fresh stats and recent routes to update the Status Bar and Dashboard without waiting for the timer.
+  2. *Single-Flight Poller*: `TelemetryPoller` maintains a cadence (default 60s, configurable to 30s/15s/Off). Its `isExecuting` flag prevents overlapping ticks.
+  3. *Visibility Gating*: When the Dashboard panel is hidden (`!e.webviewPanel.visible`), expensive route fetching (`/v1/routes?limit=10`) is suspended. When the tab gains focus, `onDidChangeViewState` executes an immediate catch-up tick.
+- **Timeframe Isolation Invariant (`windowThoughtSlap`)**:
+  Like Cycle Killer and Fairy Dust, Thought Slap metrics must be timeframe-scoped. In `dashboard.js`, `renderStats(stats)` defines `windowThoughtSlap(w)` to pull `stats.windows[activeTimeWindow]?.thought_slap ?? stats.thought_slap`. When routes refresh, `updateRoutes()` re-invokes `renderStats(currentState.stats)` rather than `renderDefensePanel()` directly, preventing all-time totals from leaking into active discrete timeframes (`today`, `past_1_hour`, etc.).
+- **Bi-Directional Action Dispatch**:
+  - *Sidebar -> Controller*: Engine lifecycle (`startEngine`, `stopEngine`, `restartEngine`), mode toggle (`local` vs `remote`), profile changes (`switchProfile`), and credential updates (`saveOpenRouterKey`).
+  - *Dashboard -> Controller*: Time window switching (`setTimeWindow`), auto-refresh interval (`setRoutesRefreshInterval`), deal adoption (`adoptDeal`), auto-tuner triggers (`runOptimizer`), circuit resets (`resetCircuit`), and config edits (`editConfig`).
+  - *Cross-Pane Synchronization*: Triggering a profile switch in the sidebar restarts the daemon, hot-reloads the active YAML, and cascades updates simultaneously into the Status Bar, the Sidebar status chips, and the Dashboard flight instruments.
+
+**6.1 Extension TypeScript Types (`extension/src/core/types/nacho-types.ts`)**
+- Add `ThoughtSlapMetrics` interface:
+  ```ts
+  export interface ThoughtSlapMetrics {
+      total_slaps: number;
+      recovered: number;
+      exhausted: number;
+      extra_tokens: number;
+      extra_cost: number;
+  }
+  ```
+- Add `thought_slap?: ThoughtSlapMetrics` to `StatsSnapshot`.
+- Add route-level telemetry fields to `TurnRecord`:
+  ```ts
+  thought_slap_attempts?: number;
+  thought_slap_outcome?: string;
+  thought_slap_tier?: string;
+  session_thought_slap_count?: number;
+  thought_slap_extra_tokens?: number;
+  thought_slap_extra_cost?: number;
+  ```
+
+**6.2 Proactive Agent Supervisor Panel (`extension/resources/webview/dashboard.js`, `dashboard.css`)**
+- In `renderStats(stats)`, implement `windowThoughtSlap(stats.windows[activeTimeWindow]?.thought_slap)`.
+- Restructure the `.supervisor-row` into a 3-bracket responsive layout:
+  1. `bracket-kickstart`: ⚡ Kickstart: Read Slap (Idle Loop Defense)
+  2. `bracket-thought-slap`: 👋 Kickstart: Thought Slap (Reasoning Limit Recovery)
+  3. `bracket-fairy-dust`: 🧚 Fairy Dust (Quality Checkpoints)
+- Thought Slap Bracket Card:
+  - Metric: `${recovered} / ${total_slaps}` Recovered Truncations
+  - Label: `👋 Thought Slap Recoveries`
+  - Subtext: `${total_slaps > 0 ? `${recovered} reasoning truncations rescued via tool-call continuation (+${extra_tokens} tks)` : 'Active zero-cost retry & tier rescue watchdog armed'}`
+- Update supervisor footer status pill: Include `${recovered} Thought Slaps Rescued` when `total_slaps > 0`.
+- Add CSS: `.bracket-thought-slap`, `.slap-chip`, and theme-aware highlights.
+
+**6.3 Live Routes Inspector Table (`extension/resources/webview/dashboard.js`, `dashboard.css`)**
+- In `updateRoutes(routesData)`:
+  - Check `route.thought_slap_attempts > 0`.
+  - Extract outcome (`recovered_tool_call`, `recovered_content`, `exhausted`, `upstream_error`).
+  - Render compact badges in `Proactive` column:
+    - `👋 Slap: Tool` (Emerald): Tooltip -> `👋 Thought Slap (attempt 1/1): recovered_tool_call via Tier 2 (Reasoning Rescue)`
+    - `👋 Slap: Text` (Cyan): Tooltip -> `👋 Thought Slap (attempt 1/1): recovered_content`
+    - `⚠️ Slap: Trunc` (Rose): Tooltip -> `⚠️ Thought Slap exhausted after 1 attempt: upstream length`
+  - Ensure graceful stacking with existing badges: `${fairyBadge}${kickstartBadge}${slapBadge}`.
+
+**6.5 Status Bar Item (`extension/src/ui/status-bar/item.ts`)**
+- In `extractMetricsForTimeWindow()`, extract `tsSlaps` and `tsRecovered` across all time windows (`past_1_hour`, `today`, `yesterday`, `this_week`, `this_month`, `all_time`).
+- Update `buildTooltip()` Agent Supervisor markdown row:
+  `| **Agent Supervisor** | ${m.ckHeals} loops healed • ${m.ckKicks} kicks • ${m.tsRecovered}/${m.tsSlaps} slaps rescued • ${m.fdTriggers} fairy dust |`
+- Add `[－](command:nacho-flow.deleteProfile "Delete active profile")` next to `[＋]` and `[✏️]` in the profile management header.
+
+**6.6 Profile Deletion & Management Fix (`deleteProfile`)**
+- **Defect**: The extension provides `addProfile` (`＋`), `renameProfile` (`✏️`), and `resetProfile`, but no `deleteProfile` (`－`), stranding custom user profiles (Profile 4, 5, etc.) with no UI removal path.
+- **Implementation**:
+  - `extension/src/core/controller.ts`: Implement `deleteProfile(profileId?: string)`:
+    - Protect built-in profiles 1–3 (`"Built-in profiles (Profile 1, 2, 3) cannot be deleted; use Reset to restore factory defaults"`).
+    - Modal confirmation dialog with `Delete Profile` and `Cancel`.
+    - If active profile is deleted, automatically switch cleanly to `profile1`.
+    - Remove profile YAML on disk (`vscode.workspace.fs.delete`) and clean up name mapping from `globalState`.
+    - Add `$(trash) Delete Profile (－)` option to the `switchProfile` QuickPick menu.
+    - Register command `nacho-flow.deleteProfile`.
+  - `extension/package.json`: Register `nacho-flow.deleteProfile` ("Nacho Flow: Delete Profile (－)").
+  - `extension/src/ui/sidebar/sidebar-view-provider.ts` & `sidebar.js`: Add `－` button (`#btn-delete-profile`) next to `＋`.
+
+**6.7 Automated Tests**
+- Update `extension/src/ui/webview/dashboard-webview.test.ts` (JSDOM environment):
+  - Verify `windowThoughtSlap` correctly isolates timeframes.
+  - Verify `bracket-thought-slap` renders with 0 and >0 slaps.
+  - Verify route badge generation for `recovered_tool_call` and `exhausted`.
+- Update `extension/src/ui/status-bar/item.test.ts` for tooltip formatting with thought slap metrics and `[－]` profile link.
+- Update `extension/src/core/controller.test.ts` to test `deleteProfile` (prevent deleting profile1..3, confirm deletion of custom profile4, fallback switch to profile1).
+- Ensure all 15 test suites and 330+ tests in `npm test` pass with 0 regressions.
+
+---
+
+### Phase 7 — Documentation, release, validation run
+- **CHANGELOG**: breaking-change section with the full key migration table (§5.4) and M3 dashboard telemetry additions.
+- **Docs**: USER_GUIDE Kickstart section rewritten as "Read slap & thought slap"; TUNING_GUIDE §9.3; EXTENSION_USER_GUIDE §4 & §5; ARCHITECTURE.md; site `docs.html` and `index.html` Kickstart card; ROADMAP; all `SessionKickstarted` references.
 - **`data/reasoning.json`**: update or remove `silent_turn_message` per D1.
 - **Validation run**: restore unpatched Cline (`extension.js.bak`), Plan Mode, Blackjack task, `thought_slap: true` on the architect tier. Expected: the recovery call produces `plan_mode_respond` (or equivalent) instead of a 10-minute stall. Record time-to-first-tool-call, upstream calls, tokens, cost. Repeat with Kilo and Zoo.
 
@@ -509,26 +641,34 @@ emit final terminal:
 
 ## 7. File Change Map
 
-| File | P1 | P2 | P3 | P5 |
-|---|:-:|:-:|:-:|:-:|
-| `pkg/server/stream_normalizer.go` | ✔ finish tracking (1a), held terminal for empty turns + resuscitation removal (1b) | | ✔ deferred terminal, prelude suppression | |
-| `pkg/server/dispatch_stream.go` | ✔ telemetry wiring | | ✔ single hook after streaming loop | ✔ |
-| `pkg/server/thought_slap.go` (new) | | | ✔ recovery loop + upstream helper | ✔ |
-| `pkg/server/dispatch.go` | | | — untouched | |
-| `pkg/server/dispatch_unary.go` | ✔ finish telemetry | | ✔ unary recovery | |
-| `pkg/server/cycle_recovery.go` | | ✔ `resolveThoughtSlap` | | ✔ |
-| `pkg/server/pipeline.go` | | ✔ read slap config paths, legacy fallbacks removed | ✔ gating (Fairy Dust isolated), session counter | |
-| `pkg/server/telemetry.go` | ✔ classification | | ✔ fields | ✔ |
-| `pkg/contract/interfaces.go` | ✔ RequestContext fields | ✔ config types, legacy fields removed, defaults | ✔ outcome fields | |
-| `pkg/router/*` (DSL env) | | ✔ variable rename (D4) | | |
-| `pkg/tuner/*` (AST / conflict engine) | | ✔ AST matchers, conflict detection, tests (D4) | | |
-| `pkg/telemetry/sink.go`, `metrics.go` | ✔ category, record fields | | ✔ stats | |
-| `pkg/config/config.go`, `validation.go`, `template.go` | | ✔ | | |
-| Session tracker | | | ✔ thought slap counter | |
-| `pkg/agentregistry/registry.go`, `data/reasoning.json` | ✔ (D1) | | | |
-| `pkg/server/testdata/truncation/*` | P0 ✔ | | ✔ | ✔ |
-| Profiles (`config.yaml`, `extension/resources/profiles/*`) | | ✔ | | |
-| Docs / site / CHANGELOG | | | | P6 ✔ |
+| File | P1 | P2 | P3 | P5 | P6 | P7 |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| `pkg/server/stream_normalizer.go` | ✔ finish tracking (1a), held terminal for empty turns + resuscitation removal (1b) | | ✔ deferred terminal, prelude suppression | | | |
+| `pkg/server/dispatch_stream.go` | ✔ telemetry wiring | | ✔ single hook after streaming loop | ✔ | | |
+| `pkg/server/thought_slap.go` (new) | | | ✔ recovery loop + upstream helper | ✔ | | |
+| `pkg/server/dispatch.go` | | | — untouched | | | |
+| `pkg/server/dispatch_unary.go` | ✔ finish telemetry | | ✔ unary recovery | | | |
+| `pkg/server/cycle_recovery.go` | | ✔ `resolveThoughtSlap` | | ✔ | | |
+| `pkg/server/pipeline.go` | | ✔ read slap config paths, legacy fallbacks removed | ✔ gating (Fairy Dust isolated), session counter | | | |
+| `pkg/server/telemetry.go` | ✔ classification | | ✔ fields | ✔ | | |
+| `pkg/contract/interfaces.go` | ✔ RequestContext fields | ✔ config types, legacy fields removed, defaults | ✔ outcome fields | | | |
+| `pkg/router/*` (DSL env) | | ✔ variable rename (D4) | | | | |
+| `pkg/tuner/*` (AST / conflict engine) | | ✔ AST matchers, conflict detection, tests (D4) | | | | |
+| `pkg/telemetry/sink.go`, `metrics.go` | ✔ category, record fields | | ✔ stats | | | |
+| `pkg/config/config.go`, `validation.go`, `template.go` | | ✔ | | | | |
+| Session tracker | | | ✔ thought slap counter | | | |
+| `pkg/agentregistry/registry.go`, `data/reasoning.json` | ✔ (D1) | | | | | |
+| `pkg/server/testdata/truncation/*` | P0 ✔ | | ✔ | ✔ | | |
+| Profiles (`config.yaml`, `extension/resources/profiles/*`) | | ✔ | | | | |
+| `extension/src/core/types/nacho-types.ts` | | | | | ✔ | |
+| `extension/src/core/controller.ts` | | | | | ✔ | |
+| `extension/resources/webview/dashboard.js`, `.css` | | | | | ✔ | |
+| `extension/src/ui/sidebar/sidebar-view-provider.ts` | | | | | ✔ | |
+| `extension/resources/sidebar/sidebar.js` | | | | | ✔ | |
+| `extension/src/ui/status-bar/item.ts` | | | | | ✔ | |
+| `extension/package.json` | | | | | ✔ | |
+| Extension test suites (`dashboard-webview.test.ts`, `controller.test.ts`, etc.) | | | | | ✔ | |
+| Docs / site / CHANGELOG | | | | | | P7 ✔ |
 
 ---
 

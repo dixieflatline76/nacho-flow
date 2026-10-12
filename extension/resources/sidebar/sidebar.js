@@ -433,6 +433,12 @@
 		vscode.postMessage({ command: 'addProfile' });
 	};
 
+	window.deleteProfile = function() {
+		const selector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
+		const profileId = (selector && selector.value) || state.activeProfile || 'profile1';
+		vscode.postMessage({ command: 'deleteProfile', profileId });
+	};
+
 	window.renameProfile = function() {
 		const selector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
 		const profileId = (selector && selector.value) || state.activeProfile || 'profile1';
