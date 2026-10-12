@@ -267,6 +267,9 @@ type StreamNormalizer struct {
 	hasEmittedReasoning     bool
 	finishReason            string
 	heldTerminal            *bytes.Buffer
+	deferTerminal           bool
+	suppressPrelude         bool
+	preludeSuppressed       bool
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -334,6 +337,34 @@ func (s *StreamNormalizer) TerminalHeld() bool {
 	return s.heldTerminal != nil && s.heldTerminal.Len() > 0
 }
 
+// SetDeferTerminal configures whether terminal chunks should be deferred when turn is empty and truncated.
+func (s *StreamNormalizer) SetDeferTerminal(deferTerm bool) {
+	s.deferTerminal = deferTerm
+}
+
+// SetSuppressPrelude configures whether the initial role-only chunk should be suppressed.
+func (s *StreamNormalizer) SetSuppressPrelude(suppress bool) {
+	s.suppressPrelude = suppress
+}
+
+// HasEmittedToolCalls reports whether the stream emitted any tool calls.
+func (s *StreamNormalizer) HasEmittedToolCalls() bool {
+	return s.hasEmittedToolCalls
+}
+
+// HasNonWhitespaceContent reports whether the stream emitted non-whitespace prose content.
+func (s *StreamNormalizer) HasNonWhitespaceContent() bool {
+	return s.hasNonWhitespaceContent
+}
+
+// HeldTerminal returns the buffered terminal bytes (if held).
+func (s *StreamNormalizer) HeldTerminal() []byte {
+	if s.heldTerminal != nil {
+		return s.heldTerminal.Bytes()
+	}
+	return nil
+}
+
 func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 	if s.closed {
 		return 0, io.EOF
@@ -376,6 +407,9 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 				}
 				if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
 					if s.IsEmptyTruncatedTurn() {
+						if s.deferTerminal {
+							return 0, nil
+						}
 						s.outBuf.WriteString(honestTruncationNoticeChunk)
 					}
 					s.outBuf.Write(s.heldTerminal.Bytes())
@@ -428,6 +462,14 @@ func (s *StreamNormalizer) processLine(line []byte) {
 	if bytes.Equal(payload, []byte("[DONE]")) {
 		s.handleDone(line)
 		return
+	}
+
+	if s.suppressPrelude && !s.preludeSuppressed {
+		if isRoleOnlyPreludeChunk(payload) {
+			s.preludeSuppressed = true
+			return
+		}
+		s.preludeSuppressed = true
 	}
 
 	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
@@ -858,6 +900,9 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 	// Never resuscitate empty turns with fake codebase verification prose (Decision D1).
 	if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
 		if s.IsEmptyTruncatedTurn() {
+			if s.deferTerminal {
+				return
+			}
 			s.outBuf.WriteString(honestTruncationNoticeChunk)
 		}
 		s.outBuf.Write(s.heldTerminal.Bytes())
@@ -1010,6 +1055,22 @@ func payloadContent(payload []byte) string {
 		return c.Choices[0].Delta.Content
 	}
 	return ""
+}
+
+func isRoleOnlyPreludeChunk(payload []byte) bool {
+	if !bytes.Contains(payload, []byte("\"role\"")) {
+		return false
+	}
+	var c fastStreamChunk
+	if err := json.Unmarshal(payload, &c); err == nil && len(c.Choices) > 0 {
+		delta := c.Choices[0].Delta
+		if delta.Role != "" && delta.Content == "" && delta.ReasoningContent == "" &&
+			delta.Reasoning == "" && delta.Reason == "" && len(delta.ToolCalls) == 0 &&
+			c.Choices[0].FinishReason == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func marshalNoEscapeHTML(v any) ([]byte, error) {

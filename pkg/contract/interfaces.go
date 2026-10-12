@@ -65,7 +65,22 @@ type RequestContext struct {
 	NTSBytesSaved             int      `json:"nts_bytes_saved,omitempty"`
 	UpstreamFinishReason      string   `json:"upstream_finish_reason,omitempty"`
 	EmptyTruncatedTurn        bool     `json:"empty_truncated_turn,omitempty"`
+	ThoughtSlapAttempts       int      `json:"thought_slap_attempts,omitempty"`
+	ThoughtSlapOutcome        string   `json:"thought_slap_outcome,omitempty"`
+	ThoughtSlapTier           string   `json:"thought_slap_tier,omitempty"`
+	SessionThoughtSlapCount   int      `json:"session_thought_slap_count,omitempty"`
+	ThoughtSlapExtraTokens    int      `json:"thought_slap_extra_tokens,omitempty"`
+	ThoughtSlapExtraCost      float64  `json:"thought_slap_extra_cost,omitempty"`
 }
+
+// ThoughtSlap outcomes for telemetry and recovery tracking.
+const (
+	ThoughtSlapOutcomeRecoveredToolCall = "recovered_tool_call"
+	ThoughtSlapOutcomeRecoveredContent  = "recovered_content"
+	ThoughtSlapOutcomeExhausted         = "exhausted"
+	ThoughtSlapOutcomeUpstreamError     = "upstream_error"
+	ThoughtSlapOutcomeClientCancelled   = "client_cancelled"
+)
 
 // IsModelCoolingDown returns true if the specified model is currently cooling down on this session.
 func (rc RequestContext) IsModelCoolingDown(model string) bool {

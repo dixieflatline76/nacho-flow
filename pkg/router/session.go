@@ -26,6 +26,7 @@ type SessionState struct {
 	EscalationCount    int
 	KickstartCount     int // consecutive turns without tool progress
 	KickstartFailures  int // consecutive kickstart attempts that failed to produce tool calls
+	ThoughtSlapCount   int // total thought slap recovery interventions in this session
 	MinRetriesFloor    int // floor to maintain retry escalation across context resets
 	LastTurnTime       time.Time
 	RootPromptHash     uint64 // invariant fingerprint of root task user prompt
@@ -418,6 +419,36 @@ func (st *SessionTracker) GetKickstartCount(sessionKey string) int {
 		return 0
 	}
 	return state.KickstartCount
+}
+
+// RecordThoughtSlap increments the session's thought slap counter and returns the new count.
+func (st *SessionTracker) RecordThoughtSlap(sessionKey string) int {
+	if sessionKey == "" {
+		return 0
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state, exists := st.sessions[sessionKey]
+	if !exists {
+		return 0
+	}
+	state.ThoughtSlapCount++
+	return state.ThoughtSlapCount
+}
+
+// GetThoughtSlapCount returns the current thought slap counter for sessionKey.
+func (st *SessionTracker) GetThoughtSlapCount(sessionKey string) int {
+	if sessionKey == "" {
+		return 0
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+
+	state, exists := st.sessions[sessionKey]
+	if !exists {
+		return 0
+	}
+	return state.ThoughtSlapCount
 }
 
 // RecordCycleKill marks that the specified model was severed by Cycle Killer on this session.

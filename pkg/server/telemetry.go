@@ -109,6 +109,12 @@ func (s *Server) recordTelemetry(
 		ClientID:                  reqCtx.ClientID,
 		UpstreamFinishReason:      reqCtx.UpstreamFinishReason,
 		EmptyTruncatedTurn:        reqCtx.EmptyTruncatedTurn,
+		ThoughtSlapAttempts:       reqCtx.ThoughtSlapAttempts,
+		ThoughtSlapOutcome:        reqCtx.ThoughtSlapOutcome,
+		ThoughtSlapTier:           reqCtx.ThoughtSlapTier,
+		SessionThoughtSlapCount:   reqCtx.SessionThoughtSlapCount,
+		ThoughtSlapExtraTokens:    reqCtx.ThoughtSlapExtraTokens,
+		ThoughtSlapExtraCost:      reqCtx.ThoughtSlapExtraCost,
 	})
 
 	reqLogger.Info("Completed proxy request",
@@ -124,6 +130,10 @@ func (s *Server) recordTelemetry(
 		slog.String("failure_category", string(failureCat)),
 		slog.String("upstream_finish_reason", reqCtx.UpstreamFinishReason),
 		slog.Bool("empty_truncated_turn", reqCtx.EmptyTruncatedTurn),
+		slog.Int("thought_slap_attempts", reqCtx.ThoughtSlapAttempts),
+		slog.String("thought_slap_outcome", reqCtx.ThoughtSlapOutcome),
+		slog.String("thought_slap_tier", reqCtx.ThoughtSlapTier),
+		slog.Int("session_thought_slap_count", reqCtx.SessionThoughtSlapCount),
 		slog.Bool("cycle_breaker_triggered", reqCtx.CycleBreakerTriggered),
 		slog.Int("cycle_content_tokens", reqCtx.CycleContentTokens),
 		slog.Int("cycle_max_ngram_freq", reqCtx.CycleMaxNgramFreq),

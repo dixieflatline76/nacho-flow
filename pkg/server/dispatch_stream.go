@@ -39,6 +39,10 @@ func (s *Server) handleStreaming(
 	bodyReader := s.wrapResponseStream(resp, targetProvider)
 	normalizer := NewStreamNormalizer(bodyReader)
 	normalizer.SetFeatures(reqCtx.Features)
+	tsCfg, tsEnabled := contract.ResolveThoughtSlap(targetTier.ThoughtSlap, s.GetConfig().Kickstart.ThoughtSlap)
+	if tsEnabled && !reqCtx.NoKickstart {
+		normalizer.SetDeferTerminal(true)
+	}
 	if activeFeatures.Has(router.FeatureShieldEnabled) && reqCtx.InteractiveTool != "" {
 		normalizer.SetShield(reqCtx.InteractiveTool, s.shieldMgr)
 	}
@@ -258,8 +262,15 @@ func (s *Server) handleStreaming(
 		reqCtx.CycleToolTokens = cb.ToolTokens()
 		reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
 	}
-	reqCtx.UpstreamFinishReason = normalizer.FinishReason()
-	reqCtx.EmptyTruncatedTurn = normalizer.IsEmptyTruncatedTurn()
+	if normalizer.TerminalHeld() {
+		totalUsage, _, _ := s.executeThoughtSlapRecoveryStream(
+			w, r, &reqCtx, targetTier, targetProvider, normalizer, body, tsCfg, sBuf, reqLogger,
+		)
+		usage = totalUsage
+	} else {
+		reqCtx.UpstreamFinishReason = normalizer.FinishReason()
+		reqCtx.EmptyTruncatedTurn = normalizer.IsEmptyTruncatedTurn()
+	}
 	_ = normalizer.Close()
 
 	s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger, ntsTokensSaved, ntsBytesSaved)

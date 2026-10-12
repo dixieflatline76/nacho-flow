@@ -136,6 +136,45 @@ func (s *Server) handleNonStreaming(
 					if firstChoice.FinishReason == "length" && len(firstChoice.Message.ToolCalls) == 0 && strings.TrimSpace(firstChoice.Message.Content) == "" {
 						reqCtx.EmptyTruncatedTurn = true
 					}
+
+					tsCfg, tsEnabled := contract.ResolveThoughtSlap(targetTier.ThoughtSlap, s.GetConfig().Kickstart.ThoughtSlap)
+					if reqCtx.EmptyTruncatedTurn && tsEnabled && !reqCtx.NoKickstart {
+						totalCalls := 1 + reqCtx.CycleRetries + reqCtx.ThoughtSlapAttempts
+						if reqCtx.ThoughtSlapAttempts < tsCfg.MaxAttempts && totalCalls < maxGlobalTurnCalls && r.Context().Err() == nil {
+							reqCtx.ThoughtSlapAttempts++
+							if s.sessionTracker != nil {
+								sessionKey := extractSessionKey(r)
+								s.sessionTracker.RecordThoughtSlap(sessionKey)
+								reqCtx.SessionThoughtSlapCount = s.sessionTracker.GetThoughtSlapCount(sessionKey)
+							}
+							recTier := targetTier
+							if tsCfg.RescueTier != "" {
+								if found, ok := findRescueTier(tsCfg.RescueTier, s.GetConfig()); ok {
+									recTier = found
+								}
+							}
+							reqCtx.ThoughtSlapTier = recTier.Name
+							prompt := tsCfg.PromptOverride
+							if prompt == "" {
+								prompt = contract.DefaultThoughtSlapPrompt
+							}
+							injectedBody := injectCorrectionPrompt(body, prompt)
+							reqLogger.Warn("Kickstart thought slap: empty truncated unary turn, requesting action",
+								slog.String("tier", recTier.Name),
+								slog.String("model", recTier.Model),
+								slog.Int("attempt", reqCtx.ThoughtSlapAttempts),
+							)
+							s.dispatchTier(w, r, reqCtx, recTier, injectedBody, startTime, reqLogger, false)
+							return
+						}
+						reqCtx.ThoughtSlapOutcome = contract.ThoughtSlapOutcomeExhausted
+					} else if reqCtx.ThoughtSlapAttempts > 0 {
+						if len(firstChoice.Message.ToolCalls) > 0 {
+							reqCtx.ThoughtSlapOutcome = contract.ThoughtSlapOutcomeRecoveredToolCall
+						} else if strings.TrimSpace(firstChoice.Message.Content) != "" {
+							reqCtx.ThoughtSlapOutcome = contract.ThoughtSlapOutcomeRecoveredContent
+						}
+					}
 					modified := false
 
 					if activeFeatures.Has(router.FeatureThinkNormalizer) {

@@ -635,6 +635,15 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 		"../../extension/resources/profiles/profile3.yaml",
 	}
 
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		for _, pf := range []string{"profile1.yaml", "profile2.yaml", "profile3.yaml"} {
+			p := filepath.Join(appData, "Code", "User", "globalStorage", "dixieflatline76.nacho-flow", "profiles", pf)
+			if _, err := os.Stat(p); err == nil {
+				configFiles = append(configFiles, p)
+			}
+		}
+	}
+
 	for _, relPath := range configFiles {
 		t.Run(relPath, func(t *testing.T) {
 			absPath, err := filepath.Abs(relPath)

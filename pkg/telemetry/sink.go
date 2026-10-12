@@ -57,6 +57,12 @@ type TurnRecord struct {
 	NTSBytesSaved             int             `json:"nts_bytes_saved,omitempty"`
 	UpstreamFinishReason      string          `json:"upstream_finish_reason,omitempty"`
 	EmptyTruncatedTurn        bool            `json:"empty_truncated_turn,omitempty"`
+	ThoughtSlapAttempts       int             `json:"thought_slap_attempts,omitempty"`
+	ThoughtSlapOutcome        string          `json:"thought_slap_outcome,omitempty"`
+	ThoughtSlapTier           string          `json:"thought_slap_tier,omitempty"`
+	SessionThoughtSlapCount   int             `json:"session_thought_slap_count,omitempty"`
+	ThoughtSlapExtraTokens    int             `json:"thought_slap_extra_tokens,omitempty"`
+	ThoughtSlapExtraCost      float64         `json:"thought_slap_extra_cost,omitempty"`
 
 	// Session-aware fields for Auto-Tuner v2 session replay optimization
 	RootPromptHash     uint64 `json:"root_prompt_hash,omitempty"`     // Identity of the root task
