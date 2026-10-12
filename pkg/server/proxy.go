@@ -180,25 +180,11 @@ func NewServerWithTelemetryAndRegistry(
 	if classWithSigs, ok := class.(interface{ SetErrorSignatures([]string) }); ok {
 		classWithSigs.SetErrorSignatures(errorSignatures)
 	}
-	// Kickstart write tools: pull canonical zero-allocation write tools from agentregistry
+	// Read slap write tools: pull canonical zero-allocation write tools from agentregistry
 	// and merge any user-configured custom overrides if specified.
 	writeTools := agentregistry.DefaultRegistry().WriteToolsList()
-	var custom []string
-	if len(cfg.Kickstart.CustomWriteTools) > 0 {
-		custom = cfg.Kickstart.CustomWriteTools
-	} else if len(cfg.Kickstart.WriteTools) > 0 {
-		custom = cfg.Kickstart.WriteTools
-	} else if len(cfg.CycleKiller.WriteTools) > 0 {
-		custom = cfg.CycleKiller.WriteTools
-	} else if len(cfg.CycleKiller.KickstartWriteTools) > 0 {
-		custom = cfg.CycleKiller.KickstartWriteTools
-	} else if len(cfg.CycleBreaker.WriteTools) > 0 {
-		custom = cfg.CycleBreaker.WriteTools
-	} else if len(cfg.CycleBreaker.KickstartWriteTools) > 0 {
-		custom = cfg.CycleBreaker.KickstartWriteTools
-	}
-	if len(custom) > 0 {
-		writeTools = mergeUniqueSlices(writeTools, custom)
+	if len(cfg.Kickstart.ReadSlap.CustomWriteTools) > 0 {
+		writeTools = mergeUniqueSlices(writeTools, cfg.Kickstart.ReadSlap.CustomWriteTools)
 	}
 	if classWithWriteTools, ok := class.(interface{ SetKickstartWriteTools([]string) }); ok {
 		classWithWriteTools.SetKickstartWriteTools(writeTools)

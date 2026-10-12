@@ -598,10 +598,15 @@ func TestProxy_SessionGuardrailsAndKickstartAutoSuspend(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Tier 2: Cloud", Model: "cloud-model", Provider: "cloud_p"},
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:             &enabled,
-			KickstartThreshold:  2,
-			KickstartWriteOnly:  writeOnly,
-			KickstartWriteTools: []string{"write_to_file", "replace_in_file"},
+			Enabled: &enabled,
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				Enabled:          &enabled,
+				Threshold:        2,
+				WriteOnly:        writeOnly,
+				CustomWriteTools: []string{"write_to_file", "replace_in_file"},
+			},
 		},
 	}
 

@@ -74,12 +74,13 @@ cycle_killer:
     max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
 
 kickstart:
-  enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
-  threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
-  max_count: 10                     # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
-  max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
-  write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
-  # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
+  read_slap:
+    enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
+    threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
+    max_slaps: 10                     # 🛑 Read Slap Cap: force-escalate to default tier after N read slaps
+    max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+    write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
+    # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
 
 # =============================================================================
 # 🧪 NACHO TOKEN SAVER (NTS) [EXPERIMENTAL / OPT-IN ONLY]
@@ -121,7 +122,7 @@ tiers:
   - name: "Kickstart Escalation (Gemini 3.8 Flash)"
     provider: "openrouter"
     model: "google/gemini-3.8-flash"
-    when: "SessionKickstarted && Retries < 3"
+    when: "SessionReadSlapped && Retries < 3"
 
   # ---------------------------------------------------------------------------
   # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash

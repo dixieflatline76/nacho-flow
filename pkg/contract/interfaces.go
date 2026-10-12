@@ -1,8 +1,12 @@
 package contract
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // RequestContext represents the parsed metrics and metadata of an incoming OpenAI API request turn.
@@ -40,6 +44,8 @@ type RequestContext struct {
 	CycleMaxThinkingNgramFreq int      `json:"cycle_max_thinking_ngram_freq,omitempty"`
 	CycleToolTokens           int      `json:"cycle_tool_tokens,omitempty"`
 	CycleMaxToolNgramFreq     int      `json:"cycle_max_tool_ngram_freq,omitempty"`
+	SessionReadSlapped        bool     `json:"session_read_slapped,omitempty"`
+	SessionReadSlapCount      int      `json:"session_read_slap_count,omitempty"`
 	SessionKickstarted        bool     `json:"session_kickstarted,omitempty"`
 	SessionKickstartCount     int      `json:"session_kickstart_count,omitempty"`
 	SessionKey                string   `json:"session_key,omitempty"`
@@ -91,12 +97,20 @@ type NormalizersConfig struct {
 // CycleBreakerDefaultCorrectionPrompt is the default authoritative system override prompt injected on Stage 1 cycle breaking.
 const CycleBreakerDefaultCorrectionPrompt = "[SYSTEM OVERRIDE] You produced excessive reasoning without calling any tools. Stop planning. Execute immediately. Call the appropriate tool NOW with the correct arguments. Do not explain your reasoning."
 
-// DefaultKickstartPrompt is the default prompt injected when Kickstart
+// DefaultThoughtSlapPrompt is the default prompt injected on Thought Slap recovery turns.
+const DefaultThoughtSlapPrompt = "Your previous attempt reached the output token limit while reasoning and produced no response. Do not restart your analysis. Respond now using the tools available to you."
+
+// ThoughtSlapNoticeText is the client-visible notice emitted before Thought Slap recovery calls.
+const ThoughtSlapNoticeText = "Reasoning limit reached — asking the model to respond."
+
+// DefaultReadSlapPrompt is the default prompt injected when Read Slap
 // detects consecutive turns without tool progress (file writes or terminal commands).
-const DefaultKickstartPrompt = "[SYSTEM OVERRIDE] You have not produced any file writes or terminal commands in multiple consecutive turns. Stop meta-work (TODO updates, file reads, planning). Execute a concrete action: write a file or run a command NOW."
+const DefaultReadSlapPrompt = "[SYSTEM OVERRIDE] You have not produced any file writes or terminal commands in multiple consecutive turns. Stop meta-work (TODO updates, file reads, planning). Execute a concrete action: write a file or run a command NOW."
+
+// DefaultKickstartPrompt is an alias for DefaultReadSlapPrompt.
+const DefaultKickstartPrompt = DefaultReadSlapPrompt
 
 // DefaultFairyDustPrompt is the default prompt injected by a Fairy Dust entry
-// when no custom prompt is configured.
 const DefaultFairyDustPrompt = "[QUALITY CHECKPOINT] You are being consulted as a senior reviewer. Analyze the current context, recent changes, and progression. Identify: (1) logic bugs, (2) architectural drift from requirements, (3) compilation/type errors introduced by prior turns. Fix issues immediately with tool calls. If trajectory is correct, confirm and continue."
 
 // LaneConfig configures a single stream inspection lane (thinking, prose, or tool).
@@ -117,16 +131,103 @@ type ToolLaneConfig struct {
 	WriteTools     []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
 }
 
-// KickstartConfig configures cross-turn idle session resuscitation.
+// KickstartConfig configures cross-turn idle session resuscitation (read slap) and reasoning limit recovery (thought slap).
 type KickstartConfig struct {
+	ReadSlap    ReadSlapConfig    `yaml:"read_slap,omitempty" json:"read_slap,omitempty"`
+	ThoughtSlap ThoughtSlapConfig `yaml:"thought_slap,omitempty" json:"thought_slap,omitempty"`
+}
+
+// ReadSlapConfig configures cross-turn idle loop detection and prompt nudging.
+type ReadSlapConfig struct {
 	Enabled          *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	Threshold        int      `yaml:"threshold,omitempty" json:"threshold,omitempty"`
-	MaxCount         int      `yaml:"max_count,omitempty" json:"max_count,omitempty"`
+	MaxSlaps         int      `yaml:"max_slaps,omitempty" json:"max_slaps,omitempty"`
 	MaxFailures      int      `yaml:"max_failures,omitempty" json:"max_failures,omitempty"`
 	WriteOnly        bool     `yaml:"write_only,omitempty" json:"write_only,omitempty"`
-	WriteTools       []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
 	CustomWriteTools []string `yaml:"custom_write_tools,omitempty" json:"custom_write_tools,omitempty"`
-	Prompt           string   `yaml:"prompt,omitempty" json:"prompt,omitempty"`
+	PromptOverride   string   `yaml:"prompt_override,omitempty" json:"prompt_override,omitempty"`
+}
+
+// ThoughtSlapConfig configures thinking truncation recovery.
+type ThoughtSlapConfig struct {
+	MaxAttempts    int    `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
+	RescueTier     string `yaml:"rescue_tier,omitempty" json:"rescue_tier,omitempty"`
+	PromptOverride string `yaml:"prompt_override,omitempty" json:"prompt_override,omitempty"`
+}
+
+// ThoughtSlapOptIn is the per-tier field for opting into Thought Slap and overriding defaults.
+type ThoughtSlapOptIn struct {
+	Enabled   bool              `yaml:"-" json:"enabled"`
+	Overrides ThoughtSlapConfig `yaml:"-" json:"overrides"`
+}
+
+// UnmarshalYAML handles: bool (true/false), mapping (implies enabled + overrides), and rejects null/empty.
+func (o *ThoughtSlapOptIn) UnmarshalYAML(value *yaml.Node) error {
+	if value == nil || (value.Kind == yaml.ScalarNode && (value.Tag == "!!null" || value.Value == "" || value.Value == "null")) {
+		return fmt.Errorf("thought_slap needs a value: use `thought_slap: true` or a block of overrides")
+	}
+	if value.Kind == yaml.ScalarNode && value.Tag == "!!bool" {
+		var b bool
+		if err := value.Decode(&b); err != nil {
+			return err
+		}
+		o.Enabled = b
+		o.Overrides = ThoughtSlapConfig{}
+		return nil
+	}
+	if value.Kind == yaml.MappingNode {
+		o.Enabled = true
+		return value.Decode(&o.Overrides)
+	}
+	return fmt.Errorf("thought_slap must be a boolean or a mapping of overrides, got YAML kind %d", value.Kind)
+}
+
+// MarshalYAML emits true when no overrides are set, else the mapping.
+func (o ThoughtSlapOptIn) MarshalYAML() (interface{}, error) {
+	if !o.Enabled {
+		return false, nil
+	}
+	if o.Overrides == (ThoughtSlapConfig{}) {
+		return true, nil
+	}
+	return o.Overrides, nil
+}
+
+// MarshalJSON emits true when no overrides are set, else the mapping.
+func (o ThoughtSlapOptIn) MarshalJSON() ([]byte, error) {
+	if !o.Enabled {
+		return []byte("false"), nil
+	}
+	if o.Overrides == (ThoughtSlapConfig{}) {
+		return []byte("true"), nil
+	}
+	return json.Marshal(o.Overrides)
+}
+
+// ResolveThoughtSlap merges a tier's opt-in with global defaults and built-in fallbacks.
+// Resolution order: tier override -> global -> built-in default.
+func ResolveThoughtSlap(optIn *ThoughtSlapOptIn, global ThoughtSlapConfig) (cfg ThoughtSlapConfig, enabled bool) {
+	if optIn == nil || !optIn.Enabled {
+		return ThoughtSlapConfig{}, false
+	}
+	cfg = ThoughtSlapConfig{
+		MaxAttempts:    optIn.Overrides.MaxAttempts,
+		RescueTier:     optIn.Overrides.RescueTier,
+		PromptOverride: optIn.Overrides.PromptOverride,
+	}
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = global.MaxAttempts
+	}
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = 1
+	}
+	if cfg.RescueTier == "" {
+		cfg.RescueTier = global.RescueTier
+	}
+	if cfg.PromptOverride == "" {
+		cfg.PromptOverride = global.PromptOverride
+	}
+	return cfg, true
 }
 
 // CycleBreakerConfig configures active inference stream loop and monologue detection.
@@ -144,22 +245,15 @@ type CycleBreakerConfig struct {
 	RetryFloor           int            `yaml:"retry_floor,omitempty" json:"retry_floor,omitempty"`
 
 	// Flat fields for direct overrides and tests
-	MaxContentTokens                  int      `yaml:"max_content_tokens,omitempty" json:"max_content_tokens,omitempty"`
-	MaxThinkingTokens                 int      `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
-	MaxToolTokens                     int      `yaml:"max_tool_tokens,omitempty" json:"max_tool_tokens,omitempty"`
-	MaxWriteTokens                    int      `yaml:"max_write_tokens,omitempty" json:"max_write_tokens,omitempty"`
-	RepetitionWindow                  int      `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
-	RepetitionThreshold               int      `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
-	ThinkingRepetitionThreshold       int      `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
-	BudgetRepetitionThreshold         int      `yaml:"budget_repetition_threshold,omitempty" json:"budget_repetition_threshold,omitempty"`
-	ThinkingBudgetRepetitionThreshold int      `yaml:"thinking_budget_repetition_threshold,omitempty" json:"thinking_budget_repetition_threshold,omitempty"`
-	KickstartThreshold                int      `yaml:"kickstart_threshold,omitempty" json:"kickstart_threshold,omitempty"`
-	KickstartWriteOnly                bool     `yaml:"kickstart_write_only,omitempty" json:"kickstart_write_only,omitempty"`
-	WriteTools                        []string `yaml:"write_tools,omitempty" json:"write_tools,omitempty"`
-	KickstartWriteTools               []string `yaml:"kickstart_write_tools,omitempty" json:"kickstart_write_tools,omitempty"`
-	KickstartPrompt                   string   `yaml:"kickstart_prompt,omitempty" json:"kickstart_prompt,omitempty"`
-	KickstartMaxCount                 int      `yaml:"kickstart_max_count,omitempty" json:"kickstart_max_count,omitempty"`
-	KickstartMaxFailures              int      `yaml:"kickstart_max_failures,omitempty" json:"kickstart_max_failures,omitempty"`
+	MaxContentTokens                  int  `yaml:"max_content_tokens,omitempty" json:"max_content_tokens,omitempty"`
+	MaxThinkingTokens                 int  `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
+	MaxToolTokens                     int  `yaml:"max_tool_tokens,omitempty" json:"max_tool_tokens,omitempty"`
+	MaxWriteTokens                    int  `yaml:"max_write_tokens,omitempty" json:"max_write_tokens,omitempty"`
+	RepetitionWindow                  int  `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
+	RepetitionThreshold               int  `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
+	ThinkingRepetitionThreshold       int  `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
+	BudgetRepetitionThreshold         int  `yaml:"budget_repetition_threshold,omitempty" json:"budget_repetition_threshold,omitempty"`
+	ThinkingBudgetRepetitionThreshold int  `yaml:"thinking_budget_repetition_threshold,omitempty" json:"thinking_budget_repetition_threshold,omitempty"`
 }
 
 // ResolvePhraseLength returns the resolved phrase length (n-gram size) for a lane, falling back to global defaults.
@@ -415,6 +509,29 @@ type Tier struct {
 	Normalizers       *NormalizersConfig  `yaml:"normalizers,omitempty" json:"normalizers,omitempty"`
 	CycleKiller       *CycleBreakerConfig `yaml:"cycle_killer,omitempty" json:"cycle_killer,omitempty"`
 	CycleBreaker      *CycleBreakerConfig `yaml:"cycle_breaker,omitempty" json:"cycle_breaker,omitempty"`
+	ThoughtSlap       *ThoughtSlapOptIn   `yaml:"thought_slap,omitempty" json:"thought_slap,omitempty"`
+}
+
+// UnmarshalYAML decodes Tier and enforces that thought_slap cannot be a bare null key.
+func (t *Tier) UnmarshalYAML(value *yaml.Node) error {
+	type rawTier Tier
+	var raw rawTier
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*t = Tier(raw)
+
+	if value.Kind == yaml.MappingNode {
+		for i := 0; i < len(value.Content); i += 2 {
+			if value.Content[i].Value == "thought_slap" {
+				valNode := value.Content[i+1]
+				if valNode.Kind == yaml.ScalarNode && (valNode.Tag == "!!null" || valNode.Value == "" || valNode.Value == "null") {
+					return fmt.Errorf("thought_slap needs a value: use `thought_slap: true` or a block of overrides")
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // ProviderType defines the execution classification of an LLM backend.

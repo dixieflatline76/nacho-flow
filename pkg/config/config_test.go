@@ -770,12 +770,12 @@ func TestConfig_YDriveValidation(t *testing.T) {
 		t.Errorf("expected tool max write tokens 32768, got %d", cfg.CycleKiller.ResolveToolMaxWriteTokens())
 	}
 
-	// Verify decoupled kickstart
-	if cfg.Kickstart.Enabled == nil || !*cfg.Kickstart.Enabled {
-		t.Errorf("expected kickstart to be enabled")
+	// Verify decoupled read slap
+	if cfg.Kickstart.ReadSlap.Enabled == nil || !*cfg.Kickstart.ReadSlap.Enabled {
+		t.Errorf("expected read_slap to be enabled")
 	}
-	if cfg.Kickstart.Threshold != 5 {
-		t.Errorf("expected kickstart threshold 5, got %d", cfg.Kickstart.Threshold)
+	if cfg.Kickstart.ReadSlap.Threshold != 5 {
+		t.Errorf("expected read_slap threshold 5, got %d", cfg.Kickstart.ReadSlap.Threshold)
 	}
 
 	// Verify tier preservation

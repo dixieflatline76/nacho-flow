@@ -64,11 +64,12 @@ cycle_killer:
 # read-only loops (e.g. repeated file viewing without progress) and injects action overrides.
 # =============================================================================
 kickstart:
-  enabled: true                     # Master switch for cross-turn idle session resuscitation
-  threshold: 5                      # Number of consecutive idle/read-only turns before injecting a system override
-  max_count: 10                     # Maximum kickstart interventions allowed before force-escalating to default tier
-  max_failures: 3                   # Circuit breaker: temporarily suspend injection after N consecutive model failures
-  write_only: true                  # Treat only state-changing actions (file writes, commands) as progress
+  read_slap:
+    enabled: true                     # Master switch for cross-turn idle session resuscitation
+    threshold: 5                      # Number of consecutive idle/read-only turns before injecting a system override
+    max_slaps: 10                     # Maximum read slaps allowed before force-escalating to default tier
+    max_failures: 3                   # Circuit breaker: temporarily suspend injection after N consecutive model failures
+    write_only: true                  # Treat only state-changing actions (file writes, commands) as progress
 
 # =============================================================================
 # 🗜️ NACHO TOKEN SAVER (NTS)

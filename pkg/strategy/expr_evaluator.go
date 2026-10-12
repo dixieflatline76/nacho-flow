@@ -29,6 +29,12 @@ func NewExprEvaluator(tiers []contract.Tier, defaultTier contract.Tier, provider
 		if t.When == "" {
 			continue
 		}
+		if strings.Contains(t.When, "SessionKickstarted") {
+			return nil, fmt.Errorf("failed to compile expr for tier '%s': uses removed DSL variable 'SessionKickstarted'; rename to 'SessionReadSlapped'. See CHANGELOG v1.5", t.Name)
+		}
+		if strings.Contains(t.When, "SessionKickstartCount") {
+			return nil, fmt.Errorf("failed to compile expr for tier '%s': uses removed DSL variable 'SessionKickstartCount'; rename to 'SessionReadSlapCount'. See CHANGELOG v1.5", t.Name)
+		}
 		// Compile expression against the RequestContext struct schema
 		program, err := expr.Compile(t.When, expr.Env(contract.RequestContext{}))
 		if err != nil {

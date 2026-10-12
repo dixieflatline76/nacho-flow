@@ -84,12 +84,18 @@ cycle_killer:
     max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
 
 kickstart:
-  enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
-  threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
-  max_count: 10                     # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
-  max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
-  write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
-  # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
+  read_slap:
+    enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
+    threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
+    max_slaps: 10                     # 🛑 Read Slap Cap: force-escalate to default tier after N slaps
+    max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+    write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
+    # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
+
+  # thought_slap:                     # Optional global defaults for reasoning limit recovery
+  #   max_attempts: 1                 # 1..3 recovery attempts before failing
+  #   rescue_tier: ""                 # Empty = same tier, or name of a designated fallback tier
+  #   prompt_override: ""             # Optional custom recovery prompt
 
 # =============================================================================
 # 🗜️ NACHO TOKEN SAVER (NTS)
@@ -123,16 +129,16 @@ nts:
 # =============================================================================
 tiers:
   # ---------------------------------------------------------------------------
-  # ⚡ KICKSTART ESCALATION: Idle Loop & Monologue Deadlock Recovery
+  # ⚡ READ SLAP ESCALATION: Idle Loop & Monologue Deadlock Recovery
   # FUNCTION: When an agent gets stuck in a passive, read-only loop (repeated
-  # directory listings or file reads without code modifications), Kickstart
+  # directory listings or file reads without code modifications), Read Slap
   # injects a [SYSTEM OVERRIDE] directive and routes the turn to a distinct,
   # high-instruction-following model to break the cycle and force active progress.
   # ---------------------------------------------------------------------------
-  - name: "Kickstart Escalation (Idle Recovery)"
+  - name: "Read Slap Escalation (Idle Recovery)"
     provider: "openrouter"
     model: "your-kickstart-model" # e.g., google/gemini-3.8-flash, anthropic/claude-haiku-5-5, or z-ai/glm-5.3-flash
-    when: "SessionKickstarted && Retries < 3"
+    when: "SessionReadSlapped && Retries < 3"
 
   # ---------------------------------------------------------------------------
   # 👁️ VISION ESCAPEMENT: Multimodal Payload Routing

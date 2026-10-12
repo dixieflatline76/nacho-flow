@@ -1327,7 +1327,9 @@ func TestProxy_AgentChurnDuringTestFailureEscalates(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Tier Cloud", Model: "claude-cloud", Provider: "cloud_p"},
 		Kickstart: contract.KickstartConfig{
-			WriteOnly: true,
+			ReadSlap: contract.ReadSlapConfig{
+				WriteOnly: true,
+			},
 		},
 	}
 
@@ -2054,7 +2056,9 @@ func TestServer_AgentShield_RegistryIntegration(t *testing.T) {
 			ErrorSignatures:      []string{"CUSTOM_ERROR_CODE", "Missing value for required parameter"},
 		},
 		Kickstart: contract.KickstartConfig{
-			CustomWriteTools: []string{"custom_patcher", "editor"},
+			ReadSlap: contract.ReadSlapConfig{
+				CustomWriteTools: []string{"custom_patcher", "editor"},
+			},
 		},
 		DefaultTier: contract.Tier{
 			Model: "mock-model",
@@ -2134,20 +2138,18 @@ func TestServer_ConstructorNilAndFallbackBranches(t *testing.T) {
 		t.Fatal("expected non-nil server")
 	}
 
-	// 2. Test each fallback alias branch for write tools
-	aliasConfigs := []*contract.Config{
-		{Kickstart: contract.KickstartConfig{WriteTools: []string{"tool_ks_w"}}},
-		{CycleKiller: contract.CycleBreakerConfig{WriteTools: []string{"tool_ck_w"}}},
-		{CycleKiller: contract.CycleBreakerConfig{KickstartWriteTools: []string{"tool_ck_ksw"}}},
-		{CycleBreaker: contract.CycleBreakerConfig{WriteTools: []string{"tool_cb_w"}}},
-		{CycleBreaker: contract.CycleBreakerConfig{KickstartWriteTools: []string{"tool_cb_ksw"}}},
+	// 2. Test write tools configuration from Kickstart.ReadSlap
+	cfgWithTools := &contract.Config{
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				CustomWriteTools: []string{"tool_ks_w"},
+			},
+		},
 	}
-	for i, cfg := range aliasConfigs {
-		clf := router.NewClassifier().(*router.RequestClassifier)
-		s := NewServerWithTelemetryAndRegistry(cfg, nil, clf, nil, nil, nil, nil, nil)
-		if s == nil {
-			t.Fatalf("case %d: expected non-nil server", i)
-		}
+	clf := router.NewClassifier().(*router.RequestClassifier)
+	s := NewServerWithTelemetryAndRegistry(cfgWithTools, nil, clf, nil, nil, nil, nil, nil)
+	if s == nil {
+		t.Fatal("expected non-nil server")
 	}
 }
 

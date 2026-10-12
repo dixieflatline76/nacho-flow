@@ -48,6 +48,7 @@ type TurnRecord struct {
 	CycleMaxToolNgramFreq     int             `json:"cycle_max_tool_ngram_freq,omitempty"`
 	HasShellWrite             bool            `json:"has_shell_write,omitempty"`
 	SessionKickstarted        bool            `json:"session_kickstarted,omitempty"`
+	SessionReadSlapped        bool            `json:"session_read_slapped,omitempty"`
 	CachedTokens              int             `json:"cached_tokens,omitempty"`
 	UpstreamCost              float64         `json:"upstream_cost,omitempty"`
 	FairyDusted               bool            `json:"fairy_dusted,omitempty"`

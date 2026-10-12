@@ -140,10 +140,15 @@ func TestProxy_FailingTestReadOnlyLoop_EscalatesToCloud(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:             &enabled,
-			KickstartThreshold:  3,
-			KickstartWriteOnly:  true,
-			KickstartWriteTools: []string{"write_to_file", "replace_in_file"},
+			Enabled: &enabled,
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				Enabled:          &enabled,
+				Threshold:        3,
+				WriteOnly:        true,
+				CustomWriteTools: []string{"write_to_file", "replace_in_file"},
+			},
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"local_provider": {

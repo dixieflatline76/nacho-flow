@@ -120,6 +120,7 @@ type Observation struct {
 	CycleMaxToolNgramFreq     int
 	HasShellWrite             bool
 	SessionKickstarted        bool
+	SessionReadSlapped        bool
 	CachedTokens              int
 	UpstreamCost              float64
 	FairyDusted               bool

@@ -91,6 +91,7 @@ func (s *Server) recordTelemetry(
 		CycleMaxToolNgramFreq:     reqCtx.CycleMaxToolNgramFreq,
 		HasShellWrite:             reqCtx.HasShellWrite,
 		SessionKickstarted:        reqCtx.SessionKickstarted,
+		SessionReadSlapped:        reqCtx.SessionReadSlapped || reqCtx.SessionKickstarted,
 		CachedTokens:              cachedTokens,
 		UpstreamCost:              upstreamCost,
 		FairyDusted:               reqCtx.FairyDusted,

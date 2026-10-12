@@ -101,12 +101,12 @@ func extractRoutingFromWhenAST(whenStr string) ExtractedRoutingRules {
 	conjuncts := splitASTConjuncts(tree.Node)
 
 	for _, c := range conjuncts {
-		// 1. Kickstart prerequisite
-		if isIdent(c, "SessionKickstarted") {
+		// 1. Kickstart / Read Slap prerequisite
+		if isIdent(c, "SessionKickstarted") || isIdent(c, "SessionReadSlapped") {
 			rules.RequiresKickstart = true
 		} else if b, ok := c.(*ast.BinaryNode); ok && b.Operator == "==" {
-			if (isIdent(b.Left, "SessionKickstarted") && isBoolLit(b.Right, true)) ||
-				(isIdent(b.Right, "SessionKickstarted") && isBoolLit(b.Left, true)) {
+			if ((isIdent(b.Left, "SessionKickstarted") || isIdent(b.Left, "SessionReadSlapped")) && isBoolLit(b.Right, true)) ||
+				((isIdent(b.Right, "SessionKickstarted") || isIdent(b.Right, "SessionReadSlapped")) && isBoolLit(b.Left, true)) {
 				rules.RequiresKickstart = true
 			}
 		}
