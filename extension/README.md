@@ -53,15 +53,20 @@ Routine turns run on your local GPU at full speed, while complex reasoning autom
 
 - **Local / Remote Gateway**: 1-click Start, Stop, Restart, and live streaming logs for the bundled Go engine. Connect across LAN or Tailscale with optional Bearer Auth.
 - **Routing Profiles**: Switch on the fly between pre-tuned config profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with zero-downtime hot-reload:
-  - **Profile 1 (Dynamic Reasoning Pipeline — Default)**: Engineered for **Goal-Based Autonomous Agentic Coding** (unattended long-running tasks and multi-turn project builds where agents must self-steer, plan architecture, and self-heal):
-    - *Kickstart Escalation Tier*: Automatically resuscitates agents trapped in read-only browsing loops by injecting `[SYSTEM OVERRIDE]` and routing to `google/gemini-3.8-flash` to force concrete file edits or test executions, de-latching seamlessly back to GLM once progress is detected.
+  - **Profile 1 (Standard Hybrid Pipeline — Default)**: Universal gateway configuration for autonomous coding agents (Cline, Kilo, Zoo, Cursor, Aider):
+    - *Core Coding Engine*: Fast cloud workhorse (`z-ai/glm-5.3-flash` Low, 2–4s), Turn 0 Low Architecture Kickoff, Tier 2 Debug High, Tier 3 De-escalation Max ($0.65/M).
+    - *Kickstart Escalation Tier*: Automatically resuscitates agents trapped in read-only browsing loops by injecting `[SYSTEM OVERRIDE]` and routing to `google/gemini-3.8-flash` to force concrete file edits or test executions.
     - *Multimodal Vision Escapement Tier*: Routes screenshot turns (`Retries < 6 && HasImages`) to `google/gemini-3.8-flash` for high-speed visual state analysis without bloating the primary code generator context.
-    - *Dynamic Reasoning Ladder*: Turn 0 Max Planning → Low Reasoning Workhorse → High Debug → Max Escalation. Eliminates context drift and delivers high single-turn accuracy.
-  - **Profile 2 (Anthropic Native Benchmark)**: Engineered for **Challenging Scenarios Demanding Peak Execution Velocity & Accuracy**:
-    - Direct Anthropic Messages API pipeline with native prompt caching (`cache_control`) and native multimodal vision.
-    - Claude Sonnet 5.5 Turn 0 Architecture → Claude Haiku 4.5 Workhorse (guarded by real-time test failure inspection) → Claude Sonnet 5.5 Error Escalation → Claude Sonnet 5.5 High Reasoning → Claude Opus 5.5 On-Demand override.
-  - **Profile 3 (Cline Calibrated — Step-by-Step Pair Programming)**: Tuned specifically for step-by-step pair programming workflows:
-    - Tiered local-to-cloud ladder: Local GPU (Ollama) → Qwen3 Coder Plus → Gemini 3.8 Flash → DeepSeek R1 for stubborn failure recovery.
+    - *Stream Defenses*: Cycle Killer, Nacho Token Saver (NTS), and Thought Slap rescue integration.
+  - **Profile 2 (Deep Reasoning & Autonomous Benchmark)**: Tuned for deep chain-of-thought, complex algorithmic benchmarks, and runaway thought prevention:
+    - *Turn 0 Architecture Kickoff*: Engages `z-ai/glm-5.3-flash` at **Max Reasoning** guarded by **`thought_slap: true`**. Rescues token budget truncations in **2.4 seconds** into valid tool calls, completely preventing terminal stalls.
+    - *Tuned Cycle Killer*: 16k thinking token ceiling, 12-word n-gram window, and 20 max repeats to tolerate dense ASCII tables and probability matrices without premature kills.
+    - *Fairy Dusting*: Tactical Code Reviews at turn 15 (high reasoning) and Strategic Architecture Audits at turn 60 (max reasoning).
+    - *Proven Benchmark Record*: 89 turns, 14.6 minutes, 93% test coverage, 0 race conditions, 100% pass rate on full Las Vegas Blackjack Monte Carlo simulation.
+  - **Profile 3 (Anthropic Native Benchmark)**: Direct first-party Anthropic Messages API pipeline (`https://api.anthropic.com`):
+    - Zero intermediary proxy latency with native prompt caching (`cache_control`) and multimodal vision.
+    - Claude Sonnet 5.5 Turn 0 Architecture → Claude Haiku 4.5 Fast Workhorse (guarded by real-time test failure inspection `!HasTestFail`) → Claude Sonnet 5.5 Error Escalation → Claude Sonnet 5.5 High Reasoning → Claude Opus 5.5 On-Demand override.
+    - *Speed Record*: Completed full autonomous project build in **39 turns in 8.3 minutes** with a 100% test pass rate.
 - **Provider Status**: Real-time health chips for local engines (Ollama, vLLM) and cloud APIs (OpenRouter, DeepSeek, Anthropic).
 - **Agent Setup**: 1-click copy for Base URL, API Key, and Model ID.
 

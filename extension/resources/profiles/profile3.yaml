@@ -1,239 +1,157 @@
 # =============================================================================
-# 🌮 NACHO FLOW CONFIGURATION — PROFILE 3: CLINE CALIBRATED
-# Universal gateway configuration tuned for Cline step-by-step pair programming
-# Pipeline: Local GPU -> Qwen3 Coder Plus -> Gemini Flash -> DeepSeek R1
+# 🌮 NACHO FLOW CONFIGURATION — PROFILE 3: ANTHROPIC NATIVE BENCHMARK
+# Turn 0 Plan: Sonnet 5.5 -> Workhorse: Haiku 4.5 -> Escalations: Sonnet 5.5 -> Opus 5.5
 # =============================================================================
 version: "1.1.0"
-port: 8000                          # HTTP proxy listening port for incoming agent requests
-host: "127.0.0.1"                   # Bind address (127.0.0.1 for local isolation, 0.0.0.0 for LAN access)
+port: 8000
+host: "127.0.0.1"
 
 # =============================================================================
-# 🔌 LLM PROVIDERS
-# Configure upstream LLM backends (local inference servers and cloud APIs).
+# 🔌 LLM PROVIDERS (ANTHROPIC DIRECT)
 # =============================================================================
 providers:
-  ollama:
-    base_url: "http://127.0.0.1:11434"      # API base endpoint URL for local Ollama server
-    type: "local"                          # Provider execution classification: "local" (zero cloud egress)
-
-  openrouter:
-    base_url: "https://openrouter.ai/api/v1" # API base endpoint URL for OpenRouter aggregator
-    api_key: "ENV_OPENROUTER_API_KEY"       # Environment variable holding your OpenRouter API key
-    type: "cloud"                          # Provider execution classification: "cloud" (metered upstream)
-    headers:                               # Custom HTTP headers forwarded with every request
-      HTTP-Referer: "https://github.com/dixieflatline76/nacho-flow" # Project URL for OpenRouter analytics
-      X-Title: "nacho-flow"                                         # App name displayed in OpenRouter dashboard
+  anthropic:
+    base_url: "https://api.anthropic.com"
+    api_key: "ENV_ANTHROPIC_API_KEY"
+    type: "anthropic"
 
 # =============================================================================
-# 🔥 HEATSEEKER LIVE MODEL DEALS
-# Opportunistic model routing engine that monitors provider discounts and promotions.
+# 🔥 HEATSEEKER LIVE MODEL DEALS (Disabled for native direct provider)
 # =============================================================================
 deals:
-  enabled: true                     # Master switch for dynamic deal discovery and opportunistic routing
-  alert_threshold_pct: 30.0         # Minimum discount percentage required to consider a promotional model
-  min_coding_index: 40.0            # Minimum coding capability benchmark score required for candidate models
-  require_tools: true               # Enforce that promotional candidate models must support native tool calling
+  enabled: false
 
 # =============================================================================
 # 🛡️ AGENTIC TOOL FALLBACK SHIELD
-# Streaming parser guard that repairs malformed tool calls, catches conversational loops,
-# and enforces strict tool protocol execution across diverse models.
 # =============================================================================
 agent_shield:
-  enabled: true                     # Master switch for agentic tool schema protection and fallback parsing
-  tail_buffer_bytes: 256            # Rolling byte window scanned at the end of streaming chunks for early error/question detection
-  # Canonical question heuristics, mode switch heuristics, and error signatures
-  # are automatically loaded from data/agents/*.json via agentregistry.
-  # Use these lists only to define custom user overrides/extensions:
-  # question_heuristics: []         # Custom phrases triggering conversational question handling
-  # mode_switch_heuristics: []      # Custom phrases triggering agent mode transitions
-  # error_signatures: []            # Custom regex patterns identifying runtime tool execution errors
+  enabled: true
+  tail_buffer_bytes: 256
 
 # =============================================================================
-# 🎸 CYCLE KILLER (In-Flight Stream Defense)
-# Wire-speed streaming defense that detects and terminates infinite repetition loops,
-# monologues, and spinning tool invocations in real time.
+# 🎸 CYCLE KILLER (In-flight stream defense)
 # =============================================================================
 cycle_killer:
-  enabled: true                     # Master switch for real-time in-flight stream repetition defense
-  phrase_length: 6                  # Default sliding n-gram window size (in words) used to detect repeating phrases
-  budget_max_repeats: 5             # Repetition tolerance threshold applied once a lane exceeds its token budget
-  model_cooldown_seconds: 120       # Cooldown duration in seconds to bypass a cycle-killed model on this session
-  retry_floor: 3                    # Minimum retry level assigned to the session upon stream termination to trigger escalation
-  max_retries: 1                    # Maximum local retries with injection override before escalating to a higher tier
-  thinking_lane:
-    max_tokens: 4096                # Maximum reasoning/thinking tokens allowed before budget repetition checks apply
-    max_repeats: 6                  # Immediate repetition threshold (Type 1 fast kill) for duplicate reasoning phrases
-  content_lane:
-    max_tokens: 6144                # Maximum conversational prose tokens allowed before budget repetition checks apply
-    max_repeats: 8                  # Immediate repetition threshold (Type 1 fast kill) for prose content
-  tool_lane:
-    max_tokens: 8192                # Maximum streaming token budget for tool call invocations and arguments
-    max_write_tokens: 32768         # Dedicated token ceiling for high-volume file writing operations (zero-alloc fast path)
-    phrase_length: 4                # Tighter n-gram window to detect repeating short shell commands or arguments
-    max_repeats: 6                  # Immediate repetition threshold (Type 1 fast kill) for duplicate tool invocations
+  enabled: true
+  phrase_length: 6
+  budget_max_repeats: 5
+  model_cooldown_seconds: 120
+  retry_floor: 3
+  max_retries: 1
 
-# =============================================================================
-# ⚡ KICKSTART ESCALATION
-# Cross-turn idle session resuscitation that detects stalled agents trapped in
-# read-only loops (e.g. repeated file viewing without progress) and injects action overrides.
-# =============================================================================
+  thinking_lane:
+    max_tokens: 16384
+    max_repeats: 6
+
+  content_lane:
+    max_tokens: 8192
+    max_repeats: 8
+
+  tool_lane:
+    max_tokens: 16384
+    max_write_tokens: 65536
+    phrase_length: 4
+    max_repeats: 8
+
 kickstart:
   read_slap:
-    enabled: true                     # Master switch for cross-turn idle session resuscitation
-    threshold: 5                      # Number of consecutive idle/read-only turns before injecting a system override
-    max_slaps: 10                     # Maximum read slaps allowed before force-escalating to default tier
-    max_failures: 3                   # Circuit breaker: temporarily suspend injection after N consecutive model failures
-    write_only: true                  # Treat only state-changing actions (file writes, commands) as progress
-    # custom_write_tools: []          # Optional custom tool names to count as productive write progress
+    enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
+    threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
+    max_slaps: 10                     # 🛑 Read Slap Cap: force-escalate to default tier after N slaps
+    max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+    write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
+
+  thought_slap:
+    max_attempts: 1                   # Max recovery attempts per turn (1..3)
+    rescue_tier: "Tier 1: Haiku 4.5 (Workhorse)"
 
 # =============================================================================
 # 🗜️ NACHO TOKEN SAVER (NTS)
-# Wire-speed, zero-allocation in-place tool output compaction engine.
-# Prunes redundant whitespace, ANSI noise, and stale history to preserve context space.
+# Wire-speed, zero-allocation in-place tool output compaction engine
 # =============================================================================
 nts:
-  enabled: false                    # Master switch for tool output compaction (disabled in Profile 3 for step-by-step Cline fidelity)
-  strip_ansi: true                  # Pass 1: Strip ANSI & OSC terminal escape sequences from command outputs
-  resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners and progress bars
-  deduplicate_lines: false          # Pass 3: Collapse repeated consecutive lines exceeding threshold
-  dedup_threshold: 3                # Consecutive duplicate line count required before triggering collapse
-  strip_boilerplate: false          # Pass 4: Strip IDE-generated tool boilerplate notices
-  normalize_whitespace: true        # Pass 5: Collapse multiple empty lines into clean single line breaks
-  preserve_file_reads: true         # Dual-lane immunity: preserve complete fidelity for read_file / view_file outputs
-  preserve_file_writes: true        # Dual-lane immunity: preserve complete fidelity for write_to_file / apply_diff
-  preserve_cache_control: true      # Dual-lane immunity: protect prompt cache breakpoints from compaction
-  compact_stale_file_reads: false   # Evict superseded historical file read contents to reduce context usage
-  stale_read_depth: 3               # Number of recent file reads to keep before eviction
-  strip_historical_reasoning: false # Prune reasoning/thinking blocks from older assistant turns
-  keep_recent_reasoning_turns: 3    # Number of most recent assistant turns to keep reasoning intact
-  deduplicate_reminders: false      # Deduplicate repeated reminder tables injected into environment details
-  reminders_refresh_interval: 10    # Number of turns between full reminder table re-emissions
-  collapse_verbose_tests: false     # Multi-language test collapse for Go, Cargo, Pytest, and Jest test outputs
-  deduplicate_tool_outputs: false   # Deduplicate identical repeating generic tool outputs with back-references
-  min_duplicate_output_bytes: 200   # Minimum tool output size in bytes required for duplicate back-referencing
+  enabled: true                     # Master switch for tool output compaction
+  strip_ansi: true                  # Pass 1: Strip ANSI & OSC escape sequences
+  resolve_cr: true                  # Pass 2: Overwrite carriage returns from progress spinners
+  normalize_whitespace: true        # Pass 3: Collapse multiple empty lines
+  preserve_file_reads: true         # 🛡️ Dual-lane immunity for read_file / view_file
+  preserve_file_writes: true        # 🛡️ Dual-lane immunity for write_to_file / apply_diff
+  preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
+  strip_historical_reasoning: true  # 🧠 Prune older assistant reasoning/thoughts from prior turns
+  keep_recent_reasoning_turns: 3    # 🛡️ Keep the 3 most recent assistant turns intact to prevent amnesia
+  deduplicate_reminders: true       # 📋 Deduplicate repeated reminder tables in <environment_details>
+  reminders_refresh_interval: 10    # 📋 Re-emit full reminders table every 10 turns
+  collapse_verbose_tests: true      # 🧪 Multi-language test collapse (Go, Cargo, Pytest, Jest)
+  deduplicate_tool_outputs: true    # 🔁 Deduplicate identical generic tool outputs (>200 B)
+  min_duplicate_output_bytes: 200   # 🔁 Minimum output length in bytes for duplicate referencing
 
 # =============================================================================
-# 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
-# Evaluated top-to-bottom on every turn; first matching condition handles the request.
+# 🚦 ORDERED DYNAMIC ROUTING TIERS
 # =============================================================================
 tiers:
   # ---------------------------------------------------------------------------
-  # ⚡ KICKSTART ESCALATION: Break read-only idle loops with Gemini Flash
-  # Activated when Kickstart detects the agent is stuck in repetitive read-only turns.
+  # 🎯 TURN 0 ARCHITECT: Kickoff Architecture & Planning with Sonnet 5.5
   # ---------------------------------------------------------------------------
-  - name: "Kickstart Escalation (Gemini 3.8 Flash)"
-    provider: "openrouter"
-    model: "google/gemini-3.8-flash"
-    when: "Retries < 1 && SessionReadSlapped"
+  - name: "Turn 0 Architecture Kickoff (Claude Sonnet 5.5)"
+    provider: "anthropic"
+    model: "claude-sonnet-5-5"
+    reasoning_effort: "medium"
+    when: "MessageCount <= 6"
 
   # ---------------------------------------------------------------------------
-  # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
-  # Activated when requests include images or screenshots requiring visual reasoning.
+  # TIER 1: Claude Haiku 4.5 (Fast & Cheap Workhorse: $1 / $5 MTok)
+  # Clean development turns only (< 2 retries and no failing test suites)
   # ---------------------------------------------------------------------------
-  - name: "Tier: Multimodal Vision (Gemini 3.8 Flash)"
-    provider: "openrouter"
-    model: "google/gemini-3.8-flash"
-    when: "Retries < 6 && HasImages"
+  - name: "Tier 1: Haiku 4.5 (Workhorse)"
+    provider: "anthropic"
+    model: "claude-haiku-4-5"
+    reasoning_effort: "medium"
+    when: "Retries < 2 && !HasTestFail"
 
   # ---------------------------------------------------------------------------
-  # TIER 1: Local GPU Workhorse (Quick Chat / Single Prompts < 4k)
-  # Low-latency local model for concise queries and lightweight edits.
+  # TIER 2: Claude Sonnet 5.5 (Primary Escalation: $2 / $10 MTok)
+  # Escalates when Haiku hits errors or retries (2 <= Retries < 6)
   # ---------------------------------------------------------------------------
-  - name: "Tier 1: Local GPU Workhorse"
-    provider: "ollama"
-    model: "qwen3-coder:30b"
-    when: "Tokens < 4000 && Retries < 2"
-    strip_images: false
-    max_context: 32000
+  - name: "Tier 2: Claude Sonnet 5.5 (Escalation)"
+    provider: "anthropic"
+    model: "claude-sonnet-5-5"
+    reasoning_effort: "medium"
+    when: "Retries < 6"
 
   # ---------------------------------------------------------------------------
-  # TIER 2: Flagship Agent Coder (Qwen3 Coder Plus)
-  # First-party distilled Coder Plus with extensive 1M context window for standard coding.
+  # TIER 3: Claude Sonnet 5.5 High Reasoning (Deep Debugging Escalation)
+  # Escalates to maximum thinking depth on stubborn failure loops (Retries >= 6)
+  # Replaces Opus 5.5 to deliver deep reasoning at 80% lower cost
   # ---------------------------------------------------------------------------
-  - name: "Tier 2: Flagship Agent Coder (Qwen3 Coder Plus)"
-    provider: "openrouter"
-    model: "qwen/qwen3-coder-plus"
-    when: "Tokens < 160000 && Retries < 6"
+  - name: "Tier 3: Claude Sonnet 5.5 (High Reasoning Escalation)"
+    provider: "anthropic"
+    model: "claude-sonnet-5-5"
+    reasoning_effort: "high"
+    when: "Retries >= 6"
 
   # ---------------------------------------------------------------------------
-  # TIER 3: Workhorse & Full-Window Context (Gemini 3.8 Flash)
-  # Handles full-context agent workflows up to 1M tokens and initial retries.
+  # TIER 4: Claude Opus 5.5 (Frontier Powerhouse / Manual Override Only)
+  # Kept dormant (when: "false") to prevent autonomous billing spikes
+  # Available via HotSauce directives: @nacho:tier="Tier 4: Claude Opus 5.5"
   # ---------------------------------------------------------------------------
-  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash)"
-    provider: "openrouter"
-    model: "google/gemini-3.8-flash"
-    when: "Tokens < 1000000 && Retries < 5"
-
-  # ---------------------------------------------------------------------------
-  # TIER 4: Frontier Powerhouse (DeepSeek R1)
-  # High-intensity reasoning tier for stubborn failure escalation (Retries >= 5).
-  # ---------------------------------------------------------------------------
-  - name: "Tier 4: Frontier Powerhouse (DeepSeek R1)"
-    provider: "openrouter"
-    model: "deepseek/deepseek-r1"
-    when: "false"
-
-  # ---------------------------------------------------------------------------
-  # TIER 5: Claude Opus 5.5 — SPICY DIRECTIVE ONLY (unreachable by automatic routing)
-  # Frontier intelligence reserved for explicit developer overrides via HotSauce directives:
-  # @nacho:model="anthropic/claude-opus-5-5" or X-Spicy-Model header.
-  # ---------------------------------------------------------------------------
-  - name: "Tier 5: Opus On-Demand (Spicy Only)"
-    provider: "openrouter"
-    model: "anthropic/claude-opus-5-5"
+  - name: "Tier 4: Claude Opus 5.5 (Nuclear Option)"
+    provider: "anthropic"
+    model: "claude-opus-5-5"
+    reasoning_effort: "medium"
     when: "false"
 
 # =============================================================================
-# 🛡️ DEFAULT TIER: Fallback Catch-All (Gemini 3.8 Flash)
-# Activated if no prior conditional tier matches the request.
+# 🛡️ DEFAULT TIER: Catch-All (Claude Sonnet 5.5)
 # =============================================================================
 default_tier:
-  name: "Default Catch-All (Gemini 3.8 Flash)"
-  provider: "openrouter"
-  model: "google/gemini-3.8-flash"
+  name: "Default: Claude Sonnet 5.5"
+  provider: "anthropic"
+  model: "claude-sonnet-5-5"
+  reasoning_effort: "medium"
   when: "true"
 
 # =============================================================================
-# 🧚 FAIRY DUSTING - Proactive Quality Checkpoints
-# Scheduled mid-flight architectural and tactical code reviews triggered automatically.
+# 🧚 FAIRY DUSTING (Disabled for pure direct pipeline testing)
 # =============================================================================
 fairy_dust:
-  enabled: true                     # Master switch for proactive quality checkpoint audits
-  entries:
-    # Tactical Code Review: Verifies stubs, loop guards, and test assertions mid-flight
-    - name: "Tactical Code Review"
-      model: "google/gemini-3.8-flash" # Reviewer model for tactical inspection
-      provider: "openrouter"         # Provider endpoint for tactical reviewer
-      frequency: 15                  # Trigger inspection every N agent turns
-      max_per_session: 5             # Maximum number of tactical reviews permitted per session
-      priority: 10                   # Evaluation priority when multiple checkpoints trigger
-      prompt: >
-        [QUALITY CHECKPOINT - ACTION REQUIRED]
-        You are an elite code reviewer consulted mid-flight. Your value is DIRECT CODE ACTIONS, NOT ESSAYS.
-        Do NOT write lengthy prose analysis, conversational reviews, or summaries.
-        MANDATORY: You must always emit an active tool call (such as executing `go test ./...` or file edits) or an explicit status message. You must NEVER finish your turn with an empty response or reasoning only.
-        Execute the following checks directly:
-        (1) STUBS & DUMMY IMPLEMENTATIONS: Find any functions that discard parameters, return hardcoded dummy values, or are left unfinished. Implement them now.
-        (2) LOOP & TERMINATION GUARDS: Inspect while/for loops and recursion for missing updates or infinite loops. Fix them immediately.
-        (3) COMPILATION & TESTS: Fix compilation errors, type mismatches, and broken assertions directly with tool calls (write_to_file, replace_file_content, execute_command).
-        If issues exist, emit tool calls immediately to fix them. If everything is verified and correct, output at most 1 sentence confirming status and continue the next task step with tools.
-
-    # Strategic Architecture Review: Audits specification alignment and todo checklists
-    - name: "Strategic Architecture Review"
-      # model: "anthropic/claude-opus-5-5" # swap in Claude Opus 5.5 for high-complexity architecture reviews
-      model: "google/gemini-3.8-flash" # Reviewer model for architectural audit
-      provider: "openrouter"         # Provider endpoint for architectural reviewer
-      frequency: 60                  # Trigger specification audit every N agent turns
-      max_per_session: 1             # Maximum number of architectural reviews permitted per session
-      priority: 100                  # Higher priority overrides tactical review on overlapping turns
-      prompt: >
-        [SPEC TRACEABILITY & DIRECTION AUDIT - ACTION REQUIRED]
-        You are the lead architect performing a requirements and trajectory audit.
-        Do NOT write lengthy analysis essays or commentary. Your value is ALIGNMENT AND EXECUTION.
-        MANDATORY: You must always emit an active tool call (such as executing tests or file edits) or an explicit status message. You must NEVER finish your turn with an empty response or reasoning only.
-        Execute the following checks immediately:
-        (1) SPEC AUDIT: Compare the active todo checklist against the user's original requirements. If any requirement is missing or untested, add it to the checklist. If a checklist does not exist, create one now.
-        (2) DIRECTION DOC: If the plan has drifted or lacks clear execution steps, write or update a concise direction plan.
-        (3) MISSING CODE & TESTS: Directly emit tool calls (write_to_file, replace_file_content, execute_command) to implement missing requirements.
-        If the trajectory is fully on track, output at most 1 sentence confirming direction and proceed with the next task step.
+  enabled: false
