@@ -19,7 +19,7 @@
 
 NTS inspects messages where `role == "assistant"`:
 
-1. **Anthropic / Content Block format** (Zoo Code, Roo Code, Claude 3.7 Sonnet):
+1. **Anthropic / Content Block format** (Zoo Code, Roo Code, Claude Sonnet 5):
    - Content blocks where `type == "reasoning"`, `type == "thinking"`, `type == "redacted_thinking"`, or `type == "thought"`.
    - Pruned in-place using two-pointer slice filtering (`w <= r`).
 2. **OpenAI / DeepSeek / OpenRouter format**:

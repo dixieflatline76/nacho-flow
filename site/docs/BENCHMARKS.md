@@ -214,29 +214,29 @@ Nacho Flow is engineered under strict Test-Driven Development (TDD) discipline. 
 | `pkg/router/shield` | Sliding Tail Buffer, Rule Engine & Tool Schema Adapters | **99.1%** |
 | `pkg/strategy` | `expr` AST Routing Engine & Bytecode Evaluator | **98.0%** |
 | `pkg/router` | Classifier, Diff Sanitizer & Tool Normalizer Strategy Pipeline | **97.5%** |
-| `pkg/nts` | Nacho Token Saver Compactors, Stale Read Eliminators & CR Delimiting | **97.4%** |
+| `pkg/zeroalloc` | Zero-Allocation Byte Manipulators & In-Place Delimiter Sanitizers | **97.2%** |
 | `pkg/config` | Atomic RCU Config Loader & Memento Watchdog | **96.9%** |
-| `pkg/zeroalloc` | Zero-Allocation Byte Manipulators & In-Place Delimiter Sanitizers | **96.9%** |
 | `pkg/store` | Stats Persistence & File Locking Engine | **96.9%** |
 | `cmd/util/gen_catalog` | Catalog Cache Generator | **96.8%** |
+| `pkg/nts` | Nacho Token Saver Compactors, Stale Read Eliminators & CR Delimiting | **96.4%** |
 | `cmd/util/nacho_releaser` | Releaser & WinGet Manifest Generator | **96.1%** |
 | `pkg/telemetry/curation` | Pricing Curation Manager & Model Catalog Cache | **96.0%** |
 | `cmd/util/version_bump` | Version Bump CLI Tool | **95.9%** |
-| `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **95.7%** |
+| `pkg/provider` | Upstream Inference Engine Registry & Endpoints | **95.6%** |
 | `pkg/contract` | Core Architectural Contracts, Request Context & Data Models | **95.2%** |
+| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **95.1%** |
 | `cmd/nacho-flow` | Main CLI Entrypoint, Subcommands & Daemon Init | **95.1%** |
 | `pkg/safeio` | Safe Bounded Directory Root I/O Operations | **95.1%** |
 | `pkg/agentregistry` | Modular Agent Catalog, Reasoning Parser & Tag Marker Compiler | **95.0%** |
 | `pkg/telemetry` | Ring Buffer, Dual Financial Telemetry & Stats Tracker | **94.6%** |
-| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **94.4%** |
-| `pkg/server` | Reverse Proxy Director, SSE Stream Normalizer & Management API | **94.0%** |
+| `pkg/tuner` | Autonomous AST Rule Synthesizer & Empirical Tuner | **94.2%** |
 <!-- COVERAGE:GO_TABLE_END -->
 
 #### VS Code Companion Extension Coverage:
 <!-- COVERAGE:EXTENSION_TABLE_START -->
 | Module | Test Suites | Tests Passed | Coverage (Stmts / Lines / Funcs) |
 | :--- | :--- | :--- | :--- |
-| **Extension Core & Webview Suite** | **15 / 15 Suites** | **333 / 333 (100%)** | **96.78% / 97.58% / 95.31%** |
+| **Extension Core & Webview Suite** | **15 / 15 Suites** | **333 / 333 (100%)** | **96.79% / 97.58% / 95.31%** |
 <!-- COVERAGE:EXTENSION_TABLE_END -->
 
 ---

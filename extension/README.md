@@ -32,7 +32,7 @@ The VS Code companion extension for [Nacho Flow](https://github.com/dixieflatlin
    - *(Optional API Key: `sk-nacho-secret-key`)*
 4. **Paste into Your Agent**: Open **Cline**, **Zoo Code**, or **Cursor** settings, set Provider to **OpenAI Compatible**, paste the copied values.
 
-Routine turns now run on your GPU for **$0.00**, while complex reasoning automatically escalates to Claude or DeepSeek-R1.
+Routine turns run on your local GPU at full speed, while complex reasoning automatically escalates to cloud frontier models.
 
 ---
 
@@ -40,9 +40,9 @@ Routine turns now run on your GPU for **$0.00**, while complex reasoning automat
 
 ### 🛡️ Agent Supervision
 
-- **Cycle Killer**: Kills repetitive N-gram loops in < 3s across thinking/prose/tool streams. Injects a $0.00 local override to force a tool action. File writes are immune.
+- **Cycle Killer**: Kills repetitive N-gram loops in < 3s across thinking/prose/tool streams. Injects an immediate local override prompt to force a tool action. File writes are immune.
 - **Kickstart**: Detects consecutive non-write turns (analysis paralysis) and injects resuscitation prompts or escalates to a smarter model. Auto-suspends in Plan Mode.
-- **Fairy Dust**: Deploys frontier models (Claude, DeepSeek-R1) every N writes for quality checkpoints -- without running expensive models all day.
+- **Fairy Dust**: Deploys frontier models (Claude Sonnet 5.5, DeepSeek R1) every N writes for quality checkpoints -- without running heavy models continuously.
 - **Tool Normalizer**: Converts 8 malformed tool-call format families into standard OpenAI `tool_calls` JSON, eliminating 3-strike harness crashes from small local models.
 
 > **NTS (experimental token compaction)** is disabled by default for prompt cache stability. Enable in `config.yaml` if investigating extreme context limits. See [NTS docs](https://spicebox.dev/nacho-flow/docs.html?doc=user_guide).
@@ -51,11 +51,17 @@ Routine turns now run on your GPU for **$0.00**, while complex reasoning automat
 
 ### 🎛️ Sidebar Control Hub
 
-- **Local / Remote Gateway**: 1-click Start, Stop, Restart and live streaming Logs for the bundled Go engine. Connect across LAN or Tailscale with optional Bearer Auth.
-- **Routing Profiles**: Switch on the fly between three pre-tuned config profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with zero-downtime hot-reload.
-  - **Profile 1 (Standard Hybrid)**: GLM-5.3-Flash Tier 2, balanced Kickstart
-  - **Profile 2 (Zoo Code)**: Tuned for autonomous coding with 12x table repetition tolerance
-  - **Profile 3 (Cline)**: Qwen3 Coder Plus Tier 2, immediate Kickstart on first retry
+- **Local / Remote Gateway**: 1-click Start, Stop, Restart, and live streaming logs for the bundled Go engine. Connect across LAN or Tailscale with optional Bearer Auth.
+- **Routing Profiles**: Switch on the fly between pre-tuned config profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with zero-downtime hot-reload:
+  - **Profile 1 (Dynamic Reasoning Pipeline — Default)**: Engineered for **Goal-Based Autonomous Agentic Coding** (unattended long-running tasks and multi-turn project builds where agents must self-steer, plan architecture, and self-heal):
+    - *Kickstart Escalation Tier*: Automatically resuscitates agents trapped in read-only browsing loops by injecting `[SYSTEM OVERRIDE]` and routing to `google/gemini-3.8-flash` to force concrete file edits or test executions, de-latching seamlessly back to GLM once progress is detected.
+    - *Multimodal Vision Escapement Tier*: Routes screenshot turns (`Retries < 6 && HasImages`) to `google/gemini-3.8-flash` for high-speed visual state analysis without bloating the primary code generator context.
+    - *Dynamic Reasoning Ladder*: Turn 0 Max Planning → Low Reasoning Workhorse → High Debug → Max Escalation. Eliminates context drift and delivers high single-turn accuracy.
+  - **Profile 2 (Anthropic Native Benchmark)**: Engineered for **Challenging Scenarios Demanding Peak Execution Velocity & Accuracy**:
+    - Direct Anthropic Messages API pipeline with native prompt caching (`cache_control`) and native multimodal vision.
+    - Claude Sonnet 5.5 Turn 0 Architecture → Claude Haiku 4.5 Workhorse (guarded by real-time test failure inspection) → Claude Sonnet 5.5 Error Escalation → Claude Sonnet 5.5 High Reasoning → Claude Opus 5.5 On-Demand override.
+  - **Profile 3 (Cline Calibrated — Step-by-Step Pair Programming)**: Tuned specifically for step-by-step pair programming workflows:
+    - Tiered local-to-cloud ladder: Local GPU (Ollama) → Qwen3 Coder Plus → Gemini 3.8 Flash → DeepSeek R1 for stubborn failure recovery.
 - **Provider Status**: Real-time health chips for local engines (Ollama, vLLM) and cloud APIs (OpenRouter, DeepSeek, Anthropic).
 - **Agent Setup**: 1-click copy for Base URL, API Key, and Model ID.
 
@@ -104,9 +110,9 @@ Override routing directly from your prompt in Zoo Code, Cline, or Cursor:
 | `@nacho:shield-off` / `on` | Switch | Suspend / resume tool-call synthesis |
 | `@nacho:raw-on` / `off` | Switch | Enable / disable raw SSE stream |
 | `@nacho:fairydust-off` / `on` | Switch | Suspend / resume frontier checkpoints |
-| `@nacho:local` | Single Turn | Force Local GPU ($0.00) |
+| `@nacho:local` | Single Turn | Force Local GPU tier |
 | `@nacho:cloud` | Single Turn | Force Cloud Fallback tier |
-| `@nacho:reasoning` | Single Turn | Force DeepSeek-R1 / o1 |
+| `@nacho:reasoning` | Single Turn | Force DeepSeek R1 / o3 |
 
 ---
 

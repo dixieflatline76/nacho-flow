@@ -122,7 +122,7 @@ graph TB
     end
 
     subgraph Frontier_Cloud ["Public Cloud Providers"]
-        Anthropic["🧠 Anthropic Direct<br/>Claude 3.5 Sonnet"]
+        Anthropic["🧠 Anthropic Direct<br/>Claude Sonnet 5"]
         OpenRouter["⚡ OpenRouter Gateway<br/>DeepSeek V3 / R1"]
     end
 
@@ -139,7 +139,7 @@ graph TB
 | :--- | :--- | :--- | :--- | :--- |
 | **Tier 1 (Workstation)** | Local Nacho Flow | `Tokens < 16k`, no friction keywords, no images | Local Desktop GPU (RX 9070 XT / RTX 4070) | **$0.00**, $\sim 15\text{–}30\text{ ms}$ TTFT |
 | **Tier 2 (Departmental)** | Departmental Server (`192.168.0.205`) | Context $16\text{k}\text{–}64\text{k}$, local GPU busy, or thin-client request | Lab GPU Cluster (vLLM / Qwen 32B / Llama 70B) | **$0.00** (On-Prem CapEx), LAN $\sim 50\text{–}150\text{ ms}$ |
-| **Tier 3 (Frontier Cloud)** | Departmental Server | Complex architecture keywords, retry exhaustion, high reasoning tasks | Cloud APIs (Claude 3.5 Sonnet, DeepSeek V3) | Commercial API rates, WAN $\sim 400\text{–}900\text{ ms}$ |
+| **Tier 3 (Frontier Cloud)** | Departmental Server | Complex architecture keywords, retry exhaustion, high reasoning tasks | Cloud APIs (Claude Sonnet 5, DeepSeek V3) | Commercial API rates, WAN $\sim 400\text{–}900\text{ ms}$ |
 | **Default Rescue** | Departmental Server | Upstream timeout ($>30\text{s}$) or circuit breaker open | High-availability cloud provider | Commercial API rates, automated recovery |
 
 ---

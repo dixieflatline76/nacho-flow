@@ -65,10 +65,10 @@ flowchart TD
 | `HasTestPass` | `bool` | `true` if tests or compiler output completed with zero errors / passed cleanly | `HasTestPass` |
 | `HasTestFail` | `bool` | `true` if tests failed, panics occurred, or compiler build errors were detected | `HasTestFail` |
 | `HistoryErrors` | `int` | Number of consecutive trailing errors in conversation history | `HistoryErrors >= 2` |
-| `CoolingDownModels` | `[]string` | Models currently under cooldown after Cycle Killer severed streams | `!('gemma4:12b-it-qat' in CoolingDownModels)` |
+| `CoolingDownModels` | `[]string` | Models currently under cooldown after Cycle Killer severed streams | `!('qwen3-coder:30b' in CoolingDownModels)` |
 
 > [!TIP]
-> **Automatic Escalation Safety Cap**: When a turn escalates to the `default_tier` (e.g. Claude Sonnet 5), Nacho Flow automatically limits consecutive frontier execution to `MaxEscalationTurns = 3`. If a problem cannot be fixed after 3 consecutive frontier turns, the gateway automatically de-escalates to Tier 2 (e.g. Gemini 3.7 Flash) to prevent runaway billing.
+> **Automatic Escalation Safety Cap**: When a turn escalates to the `default_tier` (e.g. Claude Sonnet 5), Nacho Flow automatically limits consecutive frontier execution to `MaxEscalationTurns = 3`. If a problem cannot be fixed after 3 consecutive frontier turns, the gateway automatically de-escalates to Tier 2 (e.g. Gemini 2.5 Flash) to prevent runaway billing.
 
 ### Tier Properties:
 - `max_context` (`int`): Optional. Upper bound of the model's context window (e.g. `16384`, `32768`, `65536`). If `Tokens > max_context`, Nacho Flow immediately skips this tier with zero expression overhead.
@@ -99,9 +99,9 @@ To maximize cost savings without degrading agent intelligence, follow the **Hier
 [1. Complex Keywords / Reasoning]  --> Route to DeepSeek-R1 / o1 (Specialized Brain)
 [2. Multimodal Vision (Images)]    --> Route to Gemini Flash / Claude Sonnet 5 (Vision Encoders)
 [3. Active Tool Calls]             --> Route to Cloud Fast Coder (High Tool Adherence)
-[4. Routine Local Coding (< 16k)]  --> Route to Local GPU (Ollama/vLLM) ($0.00 / 100% Free)
+[4. Routine Local Coding (< 16k)]  --> Route to Local GPU (llama.cpp / vLLM / Ollama) ($0.00 / 100% Free)
 [5. Retry Escalation (Retries>=2)] --> Route to Cloud Provider (Breaks Local Failure Loops)
-[6. Large Context Overflow (>= 16k)]-> Route to Cheap Cloud Fast (e.g. Gemini 3.7 Flash)
+[6. Large Context Overflow (>= 16k)]-> Route to Cheap Cloud Fast (e.g. Gemini 2.5 Flash)
 [Default Fallback]                 --> Reliable Cloud Fallback (Capped at 3 turns max)
 ```
 
@@ -111,123 +111,98 @@ Not sure what token limits to set for your local workstation? Use this reference
 
 | Workstation Hardware | VRAM | Recommended Local Model | Suggested `Tokens` Bound |
 | :--- | :--- | :--- | :--- |
-| **8 GB VRAM** (RTX 3060/4060, Apple M1/M2 8GB) | 8 GB | `qwen3.8-coder:7b` | `Tokens < 8000` |
-| **16 GB VRAM** (Radeon RX 6900/9070 XT, RTX 4080) | 16 GB | `gemma4:12b-it-qat` (🏆 **Recommended**) / `qwen-3.8:27b` (`IQ3_S`) | `Tokens < 20000` |
-| **24 GB VRAM** (RTX 3090/4090, Apple M-Max 32GB) | 24 GB | `qwen-3.8:27b` (`Q4_K_M`) / `ornith-1.5:35b` | `Tokens < 32000` |
-| **32 GB+ VRAM / Mac Studio** | 32 GB+ | `qwen-3.8:27b` (`Q8`) / `deepseek-r1:32b` | `Tokens < 48000` |
+| **8 GB VRAM** (RTX 3060/4060, Apple M1/M2 8GB) | 8 GB | `phi4-mini` / `qwen3:8b` | `Tokens < 8000` |
+| **16 GB VRAM** (Radeon RX 6900/7800/7900 GRE, RTX 4080) | 16 GB | `qwen3-coder:30b` (🏆 **Recommended**) | `Tokens < 24000` |
+| **24 GB VRAM** (RTX 3090/4090, Apple M-Max 32GB) | 24 GB | `qwen3-coder:30b` / `devstral-small-2` | `Tokens < 32000` |
+| **32 GB+ VRAM / Mac Studio** | 32 GB+ | `qwen3-coder:30b` / `devstral-small-2` / `deepseek-r1:32b` | `Tokens < 48000` |
 
 ---
 
-### 🏆 The 16GB VRAM Champion: Gemma 4 12B IT QAT & Perfected Ollama Tuning
+### 🏆 Modern Local Workhorse Models (16GB–24GB VRAM)
 
-For developers with **16 GB VRAM GPUs** (RTX 4080, RX 6900 XT / 7800 XT / 7900 GRE / 9070 XT, Apple Silicon 16GB/24GB Unified Memory), **Google Gemma 4 12B Instruction-Tuned QAT** (`gemma4:12b-it-qat`) provides the single best combination of speed, reasoning depth, and AST compliance available today.
+For developers with **16 GB to 24 GB VRAM GPUs** (RTX 4080, RTX 3080 16GB, RTX 4090, RX 6900 XT / 7800 XT / 7900 GRE, Apple Silicon 16GB/24GB/32GB Unified Memory), modern open-weights models offer exceptional performance:
 
-#### Why Gemma 4 12B QAT Dominates the 16GB Class:
-- **100% VRAM GPU Offload (Zero CPU Spillover)**: At ~7.5 GB to 8.5 GB VRAM footprint (Q4_0 Quantization-Aware Training), the model plus dynamic KV cache fits entirely within 16GB with ~7GB of safety headroom for your OS, IDEs, and browser.
-- **Quantization-Aware Training (QAT)**: Unlike standard post-training quantization (PTQ) which often degrades AST syntax precision and tool syntax adherence, official QAT models are trained specifically for 4-bit weights, preserving exceptional instruction-following and code quality.
-- **Blazing Token Generation**: Emits 60–90+ tokens/sec on 16GB consumer desktop GPUs for instant, zero-cost iterative coding turns.
+#### Why `qwen3-coder:30b` is the Workhorse of Choice:
+- **Mixture-of-Experts Efficiency (30B Total / 3.3B Active)**: With only 3.3B active parameters per token, it provides the reasoning depth of a 30B model with the generation speed and memory bandwidth of a compact model.
+- **Superior Code & Tool Adherence**: Delivers exceptional instruction-following, AST syntax precision, and structured JSON tool-call adherence, avoiding the syntax and hallucination pitfalls common to smaller models.
+- **High-Velocity Token Generation**: Emits 50–80+ tokens/sec on 16GB consumer desktop GPUs for rapid, zero-cost iterative coding turns.
 
 ---
 
-#### ⚠️ Critical Pitfall: The "Runaway Monologue" Bug (DO NOT Hardcode `num_ctx` or `num_predict`)
+#### ⚠️ Critical Pitfall: The "Runaway Monologue" Bug (Do NOT Hardcode Context / Generation Limits in Engine Modelfiles)
 
 During real-world agentic stress testing with Cline and Zoo Code, we identified a critical failure pattern with local models:
 
 > [!CAUTION]
-> **NEVER hardcode `PARAMETER num_predict 8192` or `PARAMETER num_ctx 32768` inside your Ollama Modelfile!**
-> - **Why `num_predict` fails**: If baked into the model, Gemma 4 enters runaway reasoning loops inside `<think>...</think>` monologue traps, generating reasoning text for 45–60+ seconds without emitting active tool calls.
-> - **Why hardcoded `num_ctx` fails**: Static 32k context allocation locks up VRAM buffers prematurely and interferes with dynamic windowing.
-> - **The Nacho Flow Architecture**: Leave `num_predict` and `num_ctx` **OUT** of the Modelfile. Nacho Flow dynamically provisions context per request turn via `max_context: 32000` in `config.yaml`, while **Cycle Killer** enforces strict stream termination if repetition exceeds limits.
+> **Avoid hardcoding static context or generation limits inside your local inference engine configuration (e.g. Modelfile `num_predict 8192` or static `num_ctx 32768`)!**
+> - **Why fixed prediction limits fail**: If locked into the model definition, models can enter runaway reasoning loops without emitting active tool calls.
+> - **Why hardcoded context fails**: Static large context allocation locks up VRAM buffers prematurely and interferes with dynamic windowing across turns.
+> - **The Nacho Flow Architecture**: Leave dynamic sizing to the gateway. Nacho Flow provisions context per request turn via `max_context: 32000` in `config.yaml`, while **Cycle Killer** enforces strict stream termination if repetition exceeds limits.
 
 ---
 
-#### 🚀 Crucial Workstation Setup: Configure `OLLAMA_CONTEXT_LENGTH=32768` (Prevents Silent Context Truncation)
+#### 🚀 Crucial Workstation Setup: Configure Sufficient Context Length (e.g. 32,768)
 
-By default on Windows and certain headless installations, Ollama runs with a restricted context ceiling (`OLLAMA_CONTEXT_LENGTH: 16384` or `4096`).
 When an autonomous agent (like Cline or Zoo) reaches long conversation turns (e.g. 18k tokens):
-1. Nacho Flow correctly routes the request to Tier 1 (`Tokens < 20000`).
-2. If Ollama's server context ceiling is only 16,384, **Ollama silently truncates the top of the prompt**.
-3. In Cline and Zoo, the prompt prefix contains the **system prompt, tool schemas, and XML formatting instructions**.
-4. When truncated, the model loses its tool definitions, enters a prolonged thinking loop inside `<think>...</think>` (burning 2,000+ reasoning tokens), and terminates with **0 content and 0 tool calls**, causing the agent to stall.
+1. Nacho Flow routes the request to Tier 1 (`Tokens < 20000`).
+2. If your local engine context ceiling is too low (e.g. default 4,096 or 16,384), **the engine will silently truncate the top of the prompt**.
+3. In agentic frameworks, the prompt prefix contains the **system prompt, tool schemas, and format instructions**.
+4. When truncated, the model loses its tool definitions, enters a prolonged thinking loop, and terminates with **0 content and 0 tool calls**, causing the agent to stall.
 
-> [!IMPORTANT]
-> **Do NOT hardcode `num_ctx` in the Modelfile.** Instead, set `OLLAMA_CONTEXT_LENGTH=32768` at the **Ollama server environment level**. This allows Ollama to allocate a full 32k context buffer dynamically without bloating the model weights or locking VRAM buffers prematurely.
+##### Configuring 32k Context Across Local Engines:
 
-##### 🪟 Windows Setup (PowerShell):
-Set permanently for your user account:
-```powershell
-[System.Environment]::SetEnvironmentVariable('OLLAMA_CONTEXT_LENGTH', '32768', 'User')
-```
-*(Or in Command Prompt: `setx OLLAMA_CONTEXT_LENGTH 32768`)*
-
-Then restart the Ollama tray application (Right-click tray icon → Quit, and relaunch), or run:
-```powershell
-Stop-Process -Name "ollama*", "ollama app" -Force -ErrorAction SilentlyContinue
-Start-Process "C:\Users\<username>\AppData\Local\Programs\Ollama\ollama app.exe"
-```
-
-##### 🐧 Linux Setup (Ubuntu / systemd):
-Configure the systemd service override:
-```bash
-sudo mkdir -p /etc/systemd/system/ollama.service.d
-echo -e '[Service]\nEnvironment="OLLAMA_CONTEXT_LENGTH=32768"' | sudo tee /etc/systemd/system/ollama.service.d/override.conf
-sudo systemctl daemon-reload
-sudo systemctl restart ollama
-```
-
-##### 🍎 macOS Setup:
-```bash
-launchctl setenv OLLAMA_CONTEXT_LENGTH 32768
-```
-*(Or add `export OLLAMA_CONTEXT_LENGTH=32768` to your shell profile if launching via terminal)*.
-
-##### 🔍 How to Verify:
-Inspect Ollama's startup log (on Windows: `%LOCALAPPDATA%\Ollama\server.log`, on Linux: `journalctl -u ollama`):
-You should see:
-```text
-level=INFO source=routes.go:1940 msg="server config" env="... OLLAMA_CONTEXT_LENGTH:32768 ..."
-```
+- **llama.cpp (`llama-server`)**: Launch with `-c 32768`:
+  ```bash
+  ./llama-server -m models/qwen3-coder-30b-instruct-q4_k_m.gguf -c 32768 --port 8001
+  ```
+- **vLLM**: Launch with `--max-model-len 32768`:
+  ```bash
+  vllm serve Qwen/Qwen3-Coder-30B-Instruct --max-model-len 32768 --port 8001
+  ```
+- **Ollama**: Set `OLLAMA_CONTEXT_LENGTH=32768` at the environment level:
+  - **Windows (PowerShell)**: `[System.Environment]::SetEnvironmentVariable('OLLAMA_CONTEXT_LENGTH', '32768', 'User')`
+  - **Linux (systemd)**: Set `Environment="OLLAMA_CONTEXT_LENGTH=32768"` in `/etc/systemd/system/ollama.service.d/override.conf`
+  - **macOS**: `launchctl setenv OLLAMA_CONTEXT_LENGTH 32768`
 
 ---
 
-#### 🛠️ Perfected Ollama Modelfile & Sampling Parameters
+#### 🛠️ Recommended Sampling Parameters
 
-To get flawless tool adherence, zero monologue traps, and clean diff output, create a custom Modelfile with our perfected sampling parameters:
+To get clean tool adherence, low monologue trap risk, and precise code diffs, use these recommended sampling parameters:
 
 ```dockerfile
-# Save as: Modelfile
-FROM gemma4:12b-it-qat
+# Optional Ollama Modelfile (or apply equivalent flags in llama-server / vLLM):
+FROM qwen3-coder:30b
 
-# 🌮 Perfected Nacho Flow Sampling Parameters for Gemma 4
+# 🌮 Recommended Nacho Flow Sampling Parameters for Qwen3 Coder
 PARAMETER temperature 0.6
 PARAMETER top_k 64
-PARAMETER top_p 0.9
+PARAMETER top_p 0.95
 PARAMETER min_p 0.05
-PARAMETER repeat_last_n 64
-PARAMETER repeat_penalty 1.15
+PARAMETER repeat_penalty 1.05
 ```
 
-Build or update it in Ollama with one command:
+Build or update it with one command:
 ```bash
-ollama create gemma4:12b-it-qat -f Modelfile
+ollama create qwen3-coder:30b -f Modelfile
 ```
-*(Or simply pull the vanilla model via `ollama pull gemma4:12b-it-qat` — just ensure no previous custom Modelfile baked in `num_predict 8192` or static `num_ctx`)*.
+*(Or simply pull the official model via `ollama pull qwen3-coder:30b`)*.
 
 ---
 
 #### 🌮 Gateway Routing Configuration (`config.yaml` / Extension Profiles)
 
-In your Nacho Flow configuration (pre-configured in built-in **Profile 1**, **Profile 2**, and **Profile 3**):
+In your Nacho Flow configuration:
 
 ```yaml
 tiers:
-  # TIER 1: Local GPU Workhorse (Gemma 4 12B QAT) - 100% VRAM Offload
+  # TIER 1: Local GPU Workhorse (Qwen3 Coder 30B MoE) - 100% VRAM Offload
   - name: "Tier 1: Local GPU Workhorse"
-    provider: "ollama"
-    model: "gemma4:12b-it-qat"
-    when: "Tokens < 20000 && Retries < 2"
+    provider: "local_gpu"
+    model: "qwen3-coder:30b"
+    when: "Tokens < 24000 && Retries < 2"
     strip_images: false
-    max_context: 32000
+    max_context: 32768
 
 cycle_killer:
   enabled: true
@@ -262,20 +237,20 @@ tiers:
     when: "HasImages"
 
   - name: "Local ROCm / CUDA GPU"
-    model: "qwen3.8-coder:14b"
+    model: "qwen3-coder:30b"
     provider: "local_gpu"
-    max_context: 16384
-    when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
+    max_context: 32768
+    when: "Tokens < 24000 && !HasImages && !HasTools && Retries < 2"
     strip_images: true
 
   - name: "Cloud Agentic Fast"
     model: "qwen/qwen3-coder-30b-a3b-instruct"
     provider: "openrouter"
-    when: "Tokens >= 16000 || HasTools || Retries >= 2"
+    when: "Tokens >= 24000 || HasTools || Retries >= 2"
 
 default_tier:
   name: "Cloud Fallback"
-  model: "deepseek/deepseek-v4-flash-latest"
+  model: "deepseek/deepseek-chat"
   provider: "openrouter"
   when: "true"
 ```
@@ -301,9 +276,9 @@ tiers:
 
   # Everything else < 12k context without prior retries -> Local GPU
   - name: "Local Fast"
-    model: "qwen3.8-coder:14b"
+    model: "qwen3-coder:30b"
     provider: "local_gpu"
-    max_context: 16384
+    max_context: 32768
     when: "Tokens < 12000 && !HasImages && Retries < 2"
 ```
 
@@ -362,14 +337,14 @@ tiers:
 ---
 
 ### Recipe 6: Tailored Tool Parsing for Local Open-Weight Models
-When running specialized local models (such as Qwen 3.8 Coder or Mistral NeMo) that output structured tool calls in Markdown code blocks or bare JSON, but produce code diffs containing words like `Action: ` that could trip ReAct regexes:
+When running specialized local models (such as Qwen3 Coder or Devstral) that output structured tool calls in Markdown code blocks or bare JSON, but produce code diffs containing words like `Action: ` that could trip ReAct regexes:
 
 ```yaml
 tiers:
   - name: "Local Qwen Coder (Selective Parsers)"
-    model: "qwen3.8-coder:14b"
+    model: "qwen3-coder:30b"
     provider: "local_gpu"
-    max_context: 16384
+    max_context: 32768
     when: "Tokens < 12000 && !HasImages && Retries < 2"
     shield: true
     normalizer: true
@@ -382,13 +357,13 @@ tiers:
 ---
 
 ### Recipe 7: 🎸 Cycle Killer & ⚡ Kickstart Defense
-When using local models (e.g. Gemma 4 12B QAT, DeepSeek-R1 14B) or cloud tiers that occasionally suffer from degenerative circular reasoning, 4-minute monologue loops, or multi-turn read/plan stalls:
+When using local models (e.g. Qwen3 Coder 30B, Devstral Small 2) or cloud tiers that occasionally suffer from degenerative circular reasoning, 4-minute monologue loops, or multi-turn read/plan stalls:
 
 ```yaml
 tiers:
   - name: "Local GPU with Cycle Killer & Kickstart"
-    model: "gemma4:12b-it-qat"
-    provider: "ollama"
+    model: "qwen3-coder:30b"
+    provider: "local_gpu"
     when: "Tokens < 16000 && Retries == 0"
     cycle_killer:
       enabled: true
@@ -558,7 +533,7 @@ A candidate configuration is adopted only if it **Pareto-dominates** the baselin
 #### Step 1: Accumulate Natural Traffic
 Run Nacho Flow during your normal coding workflow for a few days (recommended: 50 to 500 complete sessions). Telemetry is recorded asynchronously to `logs/traffic.jsonl`:
 ```json
-{"timestamp":"2026-08-24T14:32:00Z","session_id":"sess-8891","tokens":9450,"has_images":false,"has_tools":true,"keywords":["docker","compose"],"retries":0,"is_retry":false,"is_local":true,"tier":"Tier 2: Local GPU","model":"gemma4:12b-it-qat","latency_ms":1250,"cost_saved_usd":0.0236}
+{"timestamp":"2026-08-24T14:32:00Z","session_id":"sess-8891","tokens":9450,"has_images":false,"has_tools":true,"keywords":["docker","compose"],"retries":0,"is_retry":false,"is_local":true,"tier":"Tier 2: Local GPU","model":"qwen3-coder:30b","latency_ms":1250,"cost_saved_usd":0.0236}
 ```
 
 #### Step 2: Run the Advisory Analysis (Dry-Run)
@@ -592,7 +567,7 @@ nacho-flow tune --format=json
   • Tier 2 (Local ROCm/Ollama):    Optimal context boundary 16,000 -> 24,000 tokens
   • Local Tool Adherence:          Clean (0% tool failures — tools remain enabled locally)
   • High-Friction Domain Keywords: ['deadlock', 'kubernetes', 'migration'] (Spikes local retries)
-  • Recommended Model Upgrade:     gemma4:12b-it-qat (Index: 82.4, Fits 16GB VRAM)
+  • Recommended Model Upgrade:     qwen3-coder:30b (Fits 16GB–24GB VRAM)
 
 📈 PROJECTED MONTHLY IMPACT:
   • Developer Retries Avoided:     ~32 retries eliminated
@@ -689,7 +664,7 @@ Auto-Tune detects these useless tracks during session trajectory replay. If a ti
 
 ### 6.6 Escalation Plateau Gating (Stop Overpaying for Backing Vocals)
 
-When tuning multi-tier cascades, a naive optimizer might notice that escalating a turn to an expensive frontier model (like Claude 3.7 / Sonnet 5 at $3.00/M tokens) reduces the retry rate from 2.1% to 1.9%.
+When tuning multi-tier cascades, a naive optimizer might notice that escalating a turn to an expensive frontier model (like Claude Sonnet 5 at $3.00/M tokens) reduces the retry rate from 2.1% to 1.9%.
 
 Mathematically, that's a "gain." In practice, **you're paying 10× to 20× more per token for a negligible 0.2% improvement.**
 
@@ -724,7 +699,7 @@ Auto-Tune classifies every error into an explicit **Failure Taxonomy** before ca
 
 ### 7.2 Tuning Tool Normalizers & Eliminating Regex False Positives
 Modern open-weight models have vastly different formatting behaviors:
-* **Disable ReAct on Structured Code Models**: Advanced coder models (like `qwen3.8-coder:14b` or `deepseek-chat`) output standard JSON or markdown blocks. If they generate code diffs or commit messages containing phrases like `Action: Added mutex lock`, aggressive ReAct regexes can trigger false-positive tool extractions. Set `normalizers.react: false` on tiers dedicated to structured models.
+* **Disable ReAct on Structured Code Models**: Advanced coder models (like `qwen3-coder:30b` or `deepseek-chat`) output standard JSON or markdown blocks. If they generate code diffs or commit messages containing phrases like `Action: Added mutex lock`, aggressive ReAct regexes can trigger false-positive tool extractions. Set `normalizers.react: false` on tiers dedicated to structured models.
 * **Keep Markdown Fences Active for Ollama/vLLM**: Many open-source models wrap their function calls in ` ```json ... ``` ` blocks. Setting `normalizers.markdown: true` ensures these are converted to standard OpenAI `tool_calls` without breaking client JSON parsers.
 * **Raw Passthrough for Benchmarking**: If you want to benchmark raw upstream token velocity or test custom client parsers without proxy interception, set `raw: true` or use `@nacho:raw` in your prompt.
 
@@ -758,12 +733,12 @@ Different autonomous coding agents interact with LLMs using fundamentally differ
 | **Tool Calling Protocol** | OpenAI JSON `tools` parameter | XML tags embedded in conversational prose (`<write_to_file>`) |
 | **Context Accumulation** | Compact sliding transcript + pruned tools | Full multi-turn conversation transcripts re-sent every turn |
 | **Average Turn 50+ Context** | ~35k–45k tokens | ~80k–110k tokens |
-| **Local Model Compatibility** | Gemma 4 12B, Qwen 2.5/3 (native JSON function calling) | Qwen 3 14B, Devstral (XML agent-trained models) |
+| **Local Model Compatibility** | Qwen3 Coder 30B, Devstral Small 2 (native JSON function calling) | Qwen3 Coder 30B, Devstral Small 2 (XML agent-trained models) |
 | **Cycle Killer Content Threshold** | `max_content_tokens: 4096` | `max_content_tokens: 6144` (relaxed for XML preambles) |
 | **Kickstart Recommendation** | **Enabled** (`kickstart_threshold: 5`) | **Disabled or High** (`kickstart_threshold: 0` / off) |
 
 ### 8.2 Zoo Code Tuning Profile (`config.zoo.yaml`)
-Zoo Code uses native OpenAI tool calling. Local models like Gemma 4 produce JSON tool calls reliably without long conversational preambles:
+Zoo Code uses native OpenAI tool calling. Local models like Qwen3 Coder produce JSON tool calls reliably without long conversational preambles:
 ```yaml
 cycle_killer:
   enabled: true
@@ -830,25 +805,25 @@ fairy_dust:
       frequency: 40       # Fires every 40 file writes
       max_count: 2        # Hard cap: max 2 deep audits per session
       provider: "openrouter"
-      # model: "anthropic/claude-opus-5"
-      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
+      # model: "anthropic/claude-opus-5-5"
+      model: "anthropic/claude-sonnet-5" # swap in opus for tough jobs
       prompt: >
         [SYSTEM CHECKPOINT: STRATEGIC ARCHITECTURE REVIEW]
         Audit implementation against initial requirements and resolve systemic structural drift.
 ```
 
 ### 9.2 The Cost-Safe Default Tier Shield
-In runaway error cascades or edge cases, routing must **never default to ultra-expensive models** ($15/$75 per 1M Opus 5):
+In runaway error cascades or edge cases, routing must **never default to ultra-expensive models** ($15/$75 per 1M Claude Opus 5.5):
 1. **Set `default_tier` to Claude Sonnet 5**: Sonnet 5 ($3/$15) is 5× cheaper than Opus. A 30-turn runaway costs ~$2.50 instead of $12.65+.
 2. **Isolate Opus with `when: "false"`**:
    ```yaml
    - name: "Tier 5: Opus On-Demand (Spicy Only)"
      provider: "openrouter"
-     model: "anthropic/claude-opus-5"
+     model: "anthropic/claude-opus-5-5"
      when: "false"
    ```
    This guarantees that automated routing never accidentally lands on Opus.
-3. **Fairy Dust Cost Safety (Sonnet 5 Default)**: Even within Fairy Dusting periodic quality reviews, Opus 5 is commented out by default (`# model: "anthropic/claude-opus-5"`) and replaced with Claude Sonnet 5 (`model: "anthropic/claude-sonnet-5"`). For heavy codebases or difficult multi-file architectural refactors, developers can easily swap in Opus 5 by uncommenting the line. Outside Fairy Dust, Opus remains accessible solely via manual in-prompt `@nacho:model` / `X-Spicy-Model` overrides.
+3. **Fairy Dust Cost Safety (Sonnet 5 Default)**: Even within Fairy Dusting periodic quality reviews, Opus is commented out by default (`# model: "anthropic/claude-opus-5-5"`) and replaced with Claude Sonnet 5 (`model: "anthropic/claude-sonnet-5"`). For heavy codebases or difficult multi-file architectural refactors, developers can easily swap in Opus by uncommenting the line. Outside Fairy Dust, Opus remains accessible solely via manual in-prompt `@nacho:model` / `X-Spicy-Model` overrides.
 
 ### 9.3 HotSauce Kickstart & Plan-Mode Tuning
 
@@ -887,10 +862,10 @@ If you want to manually disable or re-enable Kickstart or Cycle Killer mid-sessi
 - **In-Prompt Directive**: Type `@nacho:status` directly into your chat prompt to see total tokens routed locally vs to cloud and dollars saved.
 - **CLI Log Output**: When running interactively, the daemon prints green routing log entries:
   ```text
-  INFO Routing request tier="Local ROCm GPU" model=qwen3.8-coder:14b tokens=4,120 is_fallback=false
+  INFO Routing request tier="Local ROCm GPU" model=qwen3-coder:30b tokens=4,120 is_fallback=false
   ```
 
-### Q: What happens if Ollama or my local GPU runs out of VRAM or crashes?
+### Q: What happens if my local engine (llama.cpp, vLLM, Ollama) or GPU runs out of VRAM or crashes?
 - **Zero Broken Loops**: Nacho Flow's built-in **Circuit Breaker** detects the connection failure or defective empty response and immediately re-routes the prompt to your configured `default_tier` (Cloud Fallback) with **instant in-memory failover**.
 - **Exception**: If you explicitly forced `@nacho:local` via a HotSauce directive, Nacho Flow respects your strict override and returns a zero-cost chat alert instead of billing your credit card.
 
