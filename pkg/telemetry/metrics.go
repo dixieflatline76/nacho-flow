@@ -825,21 +825,38 @@ func (s *StatsTracker) RecalculateFromRecordsAt(records []TurnRecord, oracle *Pr
 			s.stats.TotalNTSCompactedTurns++
 		}
 
+		// ThoughtSlap recalculation from historical records
+		if rec.ThoughtSlapAttempts > 0 {
+			s.stats.ThoughtSlap.TotalSlaps += int64(rec.ThoughtSlapAttempts)
+			if rec.ThoughtSlapOutcome == "recovered_tool_call" || rec.ThoughtSlapOutcome == "recovered_content" {
+				s.stats.ThoughtSlap.Recovered++
+			} else if rec.ThoughtSlapOutcome == "exhausted" {
+				s.stats.ThoughtSlap.Exhausted++
+			}
+			s.stats.ThoughtSlap.ExtraTokens += int64(rec.ThoughtSlapExtraTokens)
+			s.stats.ThoughtSlap.ExtraCost += rec.ThoughtSlapExtraCost
+		}
+
 		obs := Observation{
-			TierName:              rec.SelectedTier,
-			Model:                 rec.TargetModel,
-			Provider:              rec.Provider,
-			Tokens:                rec.Tokens,
-			CostSpent:             costSpent,
-			CostSaved:             costSaved,
-			IsLocal:               rec.IsLocal,
-			IsFallback:            rec.IsFallback,
-			CycleBreakerTriggered: rec.CycleBreakerTriggered,
-			SessionKickstarted:    rec.SessionKickstarted,
-			FairyDusted:           rec.FairyDusted,
-			FairyDustEntry:        rec.FairyDustEntry,
-			NTSTokensSaved:        rec.NTSTokensSaved,
-			NTSBytesSaved:         rec.NTSBytesSaved,
+			TierName:               rec.SelectedTier,
+			Model:                  rec.TargetModel,
+			Provider:               rec.Provider,
+			Tokens:                 rec.Tokens,
+			CostSpent:              costSpent,
+			CostSaved:              costSaved,
+			IsLocal:                rec.IsLocal,
+			IsFallback:             rec.IsFallback,
+			CycleBreakerTriggered:  rec.CycleBreakerTriggered,
+			SessionKickstarted:     rec.SessionKickstarted,
+			FairyDusted:            rec.FairyDusted,
+			FairyDustEntry:         rec.FairyDustEntry,
+			NTSTokensSaved:         rec.NTSTokensSaved,
+			NTSBytesSaved:          rec.NTSBytesSaved,
+			ThoughtSlapAttempts:    rec.ThoughtSlapAttempts,
+			ThoughtSlapOutcome:     rec.ThoughtSlapOutcome,
+			ThoughtSlapTier:        rec.ThoughtSlapTier,
+			ThoughtSlapExtraTokens: rec.ThoughtSlapExtraTokens,
+			ThoughtSlapExtraCost:   rec.ThoughtSlapExtraCost,
 		}
 		s.updateWindowsLocked(obs, observedAt)
 	}

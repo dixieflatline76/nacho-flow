@@ -103,13 +103,17 @@ func TestStatsTracker_RecalculateFromRecords(t *testing.T) {
 			StatusCode:   200,
 		},
 		{
-			Timestamp:    time.Now().UTC().Add(-1 * time.Minute),
-			Tokens:       1500,
-			SelectedTier: "Tier 4: Vision Specialist",
-			TargetModel:  "google/gemini-flash-vision",
-			Provider:     "openrouter",
-			IsLocal:      false,
-			StatusCode:   200,
+			Timestamp:              time.Now().UTC().Add(-1 * time.Minute),
+			Tokens:                 1500,
+			SelectedTier:           "Tier 4: Vision Specialist",
+			TargetModel:            "google/gemini-flash-vision",
+			Provider:               "openrouter",
+			IsLocal:                false,
+			StatusCode:             200,
+			ThoughtSlapAttempts:    1,
+			ThoughtSlapOutcome:     "recovered_tool_call",
+			ThoughtSlapExtraTokens: 250,
+			ThoughtSlapExtraCost:   0.001,
 		},
 	}
 
@@ -136,6 +140,9 @@ func TestStatsTracker_RecalculateFromRecords(t *testing.T) {
 	}
 	if snap.TierBreakdown.Fallbacks != 1 {
 		t.Errorf("expected 1 Fallback request, got %d", snap.TierBreakdown.Fallbacks)
+	}
+	if snap.ThoughtSlap.TotalSlaps != 1 || snap.ThoughtSlap.Recovered != 1 || snap.ThoughtSlap.ExtraTokens != 250 {
+		t.Errorf("unexpected ThoughtSlap snapshot after recalculate: %+v", snap.ThoughtSlap)
 	}
 
 	// Verify helpers
