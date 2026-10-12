@@ -96,6 +96,41 @@ func TestClassifyTurnFailure(t *testing.T) {
 			targetTier: contract.Tier{Name: "Tier 2"},
 			expected:   telemetry.FailureExecution,
 		},
+		{
+			name:       "Reasoning Truncated - Empty Truncated Turn flag",
+			statusCode: 200,
+			reqCtx: contract.RequestContext{
+				Tokens:               3000,
+				UpstreamFinishReason: "length",
+				EmptyTruncatedTurn:   true,
+			},
+			targetTier: contract.Tier{Name: "Tier 1: Architect"},
+			expected:   telemetry.FailureReasoningTruncated,
+		},
+		{
+			name:       "Reasoning Truncated - length finish without tool or write progress",
+			statusCode: 200,
+			reqCtx: contract.RequestContext{
+				Tokens:               32000,
+				UpstreamFinishReason: "length",
+				HasToolProgress:      false,
+				HasWriteProgress:     false,
+			},
+			targetTier: contract.Tier{Name: "Tier 1: Architect"},
+			expected:   telemetry.FailureReasoningTruncated,
+		},
+		{
+			name:       "Cycle Breaker takes precedence over Truncation when both trigger",
+			statusCode: 200,
+			reqCtx: contract.RequestContext{
+				Tokens:                15000,
+				CycleBreakerTriggered: true,
+				UpstreamFinishReason:  "length",
+				EmptyTruncatedTurn:    true,
+			},
+			targetTier: contract.Tier{Name: "Tier 1"},
+			expected:   telemetry.FailureReasoningLoop,
+		},
 	}
 
 	for _, tc := range tests {

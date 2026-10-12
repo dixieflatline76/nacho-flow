@@ -130,6 +130,12 @@ func (s *Server) handleNonStreaming(
 				}
 				if len(completionResp.Choices) > 0 {
 					firstChoice := &completionResp.Choices[0]
+					if firstChoice.FinishReason != "" {
+						reqCtx.UpstreamFinishReason = firstChoice.FinishReason
+					}
+					if firstChoice.FinishReason == "length" && len(firstChoice.Message.ToolCalls) == 0 && strings.TrimSpace(firstChoice.Message.Content) == "" {
+						reqCtx.EmptyTruncatedTurn = true
+					}
 					modified := false
 
 					if activeFeatures.Has(router.FeatureThinkNormalizer) {

@@ -1,0 +1,8 @@
+data: {"id":"gen-f5","choices":[{"index":0,"delta":{"reasoning":"Analyzing request..."}}]}
+
+data: {"id":"gen-f5","choices":[{"index":0,"delta":{"content":"Based on my analysis, the issue is that the peek buffer is not"}}]}
+
+data: {"id":"gen-f5","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+
+data: [DONE]
+

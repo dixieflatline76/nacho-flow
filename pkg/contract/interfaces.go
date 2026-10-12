@@ -57,6 +57,8 @@ type RequestContext struct {
 	RawTokens                 int      `json:"raw_tokens,omitempty"`
 	NTSTokensSaved            int      `json:"nts_tokens_saved,omitempty"`
 	NTSBytesSaved             int      `json:"nts_bytes_saved,omitempty"`
+	UpstreamFinishReason      string   `json:"upstream_finish_reason,omitempty"`
+	EmptyTruncatedTurn        bool     `json:"empty_truncated_turn,omitempty"`
 }
 
 // IsModelCoolingDown returns true if the specified model is currently cooling down on this session.

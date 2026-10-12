@@ -32,7 +32,11 @@ var (
 	reasoningByteMarkers = agentregistry.DefaultRegistry().ReasoningByteMarkers()
 	writeTagByteMarkers  = agentregistry.DefaultRegistry().WriteTagByteMarkers()
 	writeToolsList       = agentregistry.DefaultRegistry().WriteToolsList()
+	finishReasonMarker   = []byte("\"finish_reason\":")
 )
+
+const honestTruncationNoticeChunk = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\\n\\n> ⚠️ **Nacho Flow • Reasoning Limit Reached**\\n> Model reached its output token limit without producing a response.\\n\"}}]}\n\n"
+
 
 func hasAnyReasoningMarker(payload []byte) bool {
 	for _, marker := range reasoningByteMarkers {
@@ -257,9 +261,12 @@ type StreamNormalizer struct {
 	hasActiveToolCall      bool
 	inWriteTool            bool
 	pendingWriteTagBuf     string
-	hasEmittedContent      bool
-	hasEmittedToolCalls    bool
-	hasEmittedReasoning    bool
+	hasEmittedContent       bool
+	hasNonWhitespaceContent bool
+	hasEmittedToolCalls     bool
+	hasEmittedReasoning     bool
+	finishReason            string
+	heldTerminal            *bytes.Buffer
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -311,6 +318,22 @@ func (s *StreamNormalizer) HasActiveToolCall() bool {
 	return s.hasActiveToolCall
 }
 
+// FinishReason returns the finish_reason extracted from upstream SSE chunks, or "" if not finished.
+func (s *StreamNormalizer) FinishReason() string {
+	return s.finishReason
+}
+
+// IsEmptyTruncatedTurn reports whether the stream terminated due to token length
+// without emitting any tool calls and without emitting non-whitespace content.
+func (s *StreamNormalizer) IsEmptyTruncatedTurn() bool {
+	return s.finishReason == "length" && !s.hasEmittedToolCalls && !s.hasNonWhitespaceContent
+}
+
+// TerminalHeld reports whether terminal chunks (finish_reason, usage) are currently buffered.
+func (s *StreamNormalizer) TerminalHeld() bool {
+	return s.heldTerminal != nil && s.heldTerminal.Len() > 0
+}
+
 func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 	if s.closed {
 		return 0, io.EOF
@@ -351,6 +374,13 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 						s.emitChunk(chunk)
 					}
 				}
+				if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
+					if s.IsEmptyTruncatedTurn() {
+						s.outBuf.WriteString(honestTruncationNoticeChunk)
+					}
+					s.outBuf.Write(s.heldTerminal.Bytes())
+					s.heldTerminal.Reset()
+				}
 			} else {
 				return 0, readErr
 			}
@@ -388,6 +418,10 @@ func (s *StreamNormalizer) processLine(line []byte) {
 	case bytes.HasPrefix(trimmed, []byte("data:")):
 		payload = trimmed[5:] // len("data:") == 5
 	default:
+		if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
+			s.heldTerminal.Write(line)
+			return
+		}
 		s.outBuf.Write(line)
 		return
 	}
@@ -402,6 +436,12 @@ func (s *StreamNormalizer) processLine(line []byte) {
 
 	if bytes.Contains(payload, []byte("\"usage\"")) {
 		s.captureUsage(payload)
+	}
+
+	// If terminal chunks are already held, any subsequent non-[DONE] chunk (e.g. usage-only chunk) is held too.
+	if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
+		s.heldTerminal.Write(line)
+		return
 	}
 
 	// Fast path: if outside reasoning, outside write tools, no pending delimiter buffer, and no markers detected, pass line through directly
@@ -421,7 +461,7 @@ func (s *StreamNormalizer) processLine(line []byte) {
 
 // fastPassProse handles prose chunks that require no JSON transformations.
 func (s *StreamNormalizer) fastPassProse(line, payload []byte) {
-	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
+	if bytes.Contains(payload, []byte("\"tool_calls\"")) || bytes.Contains(payload, finishReasonMarker) {
 		s.processChunkLine(line, payload)
 		return
 	}
@@ -448,7 +488,7 @@ func (s *StreamNormalizer) fastPassProse(line, payload []byte) {
 
 // fastPassWrite handles file write tool chunks with zero JSON overhead.
 func (s *StreamNormalizer) fastPassWrite(line, payload []byte) {
-	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
+	if bytes.Contains(payload, []byte("\"tool_calls\"")) || bytes.Contains(payload, finishReasonMarker) {
 		s.processChunkLine(line, payload)
 		return
 	}
@@ -497,6 +537,7 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 
 	choice := &chunk.Choices[0]
 	if choice.FinishReason != nil && *choice.FinishReason != "" {
+		s.finishReason = *choice.FinishReason
 		s.hasActiveToolCall = false
 		s.inWriteTool = false
 		if s.pendingWriteTagBuf != "" {
@@ -551,6 +592,15 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 	if choice.Delta.Content != "" {
 		s.normalizeContentDelta(choice)
 		s.emitChunk(chunk)
+		return
+	}
+
+	if choice.FinishReason != nil && *choice.FinishReason != "" && !s.hasEmittedContent && !s.hasEmittedToolCalls {
+		if s.heldTerminal == nil {
+			s.heldTerminal = bufPool.Get().(*bytes.Buffer)
+			s.heldTerminal.Reset()
+		}
+		s.heldTerminal.Write(line)
 		return
 	}
 
@@ -804,13 +854,14 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 		}
 	}
 
-	// Silent turn resuscitation: if model emitted reasoning but 0 content and 0 tool calls,
-	// synthesize keepalive status chunk to prevent autonomous agent freeze.
-	if !s.hasEmittedContent && !s.hasEmittedToolCalls && s.hasEmittedReasoning {
-		if resuscitationChunk := agentregistry.DefaultRegistry().SilentTurnResuscitationChunk(); len(resuscitationChunk) > 0 {
-			s.outBuf.Write(resuscitationChunk)
-			s.hasEmittedContent = true
+	// Emit truthful terminal chunks: if turn truncated on reasoning limit, emit honest notice.
+	// Never resuscitate empty turns with fake codebase verification prose (Decision D1).
+	if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
+		if s.IsEmptyTruncatedTurn() {
+			s.outBuf.WriteString(honestTruncationNoticeChunk)
 		}
+		s.outBuf.Write(s.heldTerminal.Bytes())
+		s.heldTerminal.Reset()
 	}
 
 	s.outBuf.Write(doneLine)
@@ -889,6 +940,9 @@ func (s *StreamNormalizer) recordProse(text string) {
 		return
 	}
 	s.hasEmittedContent = true
+	if strings.TrimSpace(text) != "" {
+		s.hasNonWhitespaceContent = true
+	}
 	s.emittedCompletionChars += len(text)
 	if s.tailBuffer != nil {
 		s.tailBuffer.Append([]byte(text))
@@ -985,6 +1039,11 @@ func (s *StreamNormalizer) Close() error {
 		s.outBuf.Reset()
 		bufPool.Put(s.outBuf)
 		s.outBuf = nil
+	}
+	if s.heldTerminal != nil {
+		s.heldTerminal.Reset()
+		bufPool.Put(s.heldTerminal)
+		s.heldTerminal = nil
 	}
 	if s.reader != nil {
 		s.reader.Reset(nil)

@@ -258,6 +258,8 @@ func (s *Server) handleStreaming(
 		reqCtx.CycleToolTokens = cb.ToolTokens()
 		reqCtx.CycleMaxToolNgramFreq = cb.MaxToolNgramFreq()
 	}
+	reqCtx.UpstreamFinishReason = normalizer.FinishReason()
+	reqCtx.EmptyTruncatedTurn = normalizer.IsEmptyTruncatedTurn()
 	_ = normalizer.Close()
 
 	s.recordTelemetry(targetTier, targetProvider, reqCtx, usage, resp.StatusCode, startTime, isFallback, reqLogger, ntsTokensSaved, ntsBytesSaved)

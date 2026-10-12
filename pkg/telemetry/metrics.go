@@ -138,6 +138,8 @@ type Observation struct {
 	HasTestFail        bool
 	FailureCategory    FailureCategory
 	ClientID           string
+	UpstreamFinishReason string
+	EmptyTruncatedTurn   bool
 }
 
 type minuteBucket struct {
@@ -629,6 +631,8 @@ func (s *StatsTracker) worker() {
 				HasTestFail:               obs.HasTestFail,
 				FailureCategory:           obs.FailureCategory,
 				ClientID:                  obs.ClientID,
+				UpstreamFinishReason:      obs.UpstreamFinishReason,
+				EmptyTruncatedTurn:        obs.EmptyTruncatedTurn,
 			}
 			for _, sink := range *sinksPtr {
 				sink.Emit(record)

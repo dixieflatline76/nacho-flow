@@ -1944,7 +1944,8 @@ func TestStreamNormalizer_ParameterSanitization_InsertLineNone(t *testing.T) {
 }
 
 func TestStreamNormalizer_SilentTurnResuscitation_ThinkingOnly(t *testing.T) {
-	// A turn where the model outputs thinking but 0 content and 0 tool calls (like Turn 158)
+	// A turn where the model outputs thinking but 0 content and 0 tool calls.
+	// Under truthful termination (Decision D1), fake resuscitation prose is never injected.
 	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"I am thinking deeply about N-Queens constraints...\"}}]}\n\ndata: [DONE]\n\n"
 	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
 	defer norm.Close()
@@ -1958,11 +1959,8 @@ func TestStreamNormalizer_SilentTurnResuscitation_ThinkingOnly(t *testing.T) {
 	if !strings.Contains(result, "I am thinking deeply about N-Queens constraints...") {
 		t.Errorf("expected original reasoning content to be preserved, got:\n%s", result)
 	}
-	if !strings.Contains(result, "Review and codebase verification completed") {
-		t.Errorf("expected synthesized resuscitation content chunk in output, got:\n%s", result)
-	}
-	if !strings.Contains(result, `"finish_reason":"stop"`) {
-		t.Errorf("expected finish_reason stop in output, got:\n%s", result)
+	if strings.Contains(result, "Review and codebase verification completed") {
+		t.Errorf("expected NO synthesized resuscitation content chunk in output, got:\n%s", result)
 	}
 	if !strings.HasSuffix(strings.TrimSpace(result), "data: [DONE]") {
 		t.Errorf("expected stream to conclude with [DONE], got:\n%s", result)

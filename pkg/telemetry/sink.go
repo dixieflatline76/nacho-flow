@@ -11,7 +11,8 @@ const (
 	FailureContextLimit  FailureCategory = "context_limit"      // Exceeded model or tier token context window
 	FailureToolSchema    FailureCategory = "tool_schema"        // Malformed tool calls, missing parameters, parameter schema mismatch
 	FailureExecution     FailureCategory = "execution"          // Command failures, test suite failures, non-zero exit codes
-	FailureReasoningLoop FailureCategory = "reasoning_loop"     // CycleBreaker tripped, semantic repetition loops, agent stall
+	FailureReasoningLoop      FailureCategory = "reasoning_loop"     // CycleBreaker tripped, semantic repetition loops, agent stall
+	FailureReasoningTruncated FailureCategory = "reasoning_truncated" // Model reasoning budget exhausted (finish_reason: length) without content or tool calls
 )
 
 // TurnRecord captures telemetry metadata for an individual prompt turn.
@@ -53,6 +54,8 @@ type TurnRecord struct {
 	FairyDustEntry            string          `json:"fairy_dust_entry,omitempty"`
 	NTSTokensSaved            int             `json:"nts_tokens_saved,omitempty"`
 	NTSBytesSaved             int             `json:"nts_bytes_saved,omitempty"`
+	UpstreamFinishReason      string          `json:"upstream_finish_reason,omitempty"`
+	EmptyTruncatedTurn        bool            `json:"empty_truncated_turn,omitempty"`
 
 	// Session-aware fields for Auto-Tuner v2 session replay optimization
 	RootPromptHash     uint64 `json:"root_prompt_hash,omitempty"`     // Identity of the root task

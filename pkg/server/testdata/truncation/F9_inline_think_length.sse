@@ -1,0 +1,8 @@
+data: {"id":"gen-f9","choices":[{"index":0,"delta":{"content":"<think>\nEvaluating problem constraints and possible algorithms..."}}]}
+
+data: {"id":"gen-f9","choices":[{"index":0,"delta":{"content":"\nNeed to consider memory limit and time complexity..."}}]}
+
+data: {"id":"gen-f9","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+
+data: [DONE]
+
