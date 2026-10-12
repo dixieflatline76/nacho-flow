@@ -319,12 +319,16 @@ cycle_killer:
     max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
 
 kickstart:
-  enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
-  threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
-  max_count: 10                     # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
-  max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
-  write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
-  # custom_write_tools: []          # Standard write tools are auto-discovered from agentregistry catalog
+  enabled: true                     # ⚡ Master switch for dual-action resuscitation
+  read_slap:
+    threshold: 5                    # Jolt with [SYSTEM OVERRIDE] after N consecutive idle read/inspect turns (0 = off)
+    max_slaps: 10                   # 🛑 Cap: max read slaps before force-escalating to default tier
+    max_failures: 3                 # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+    write_only: true                # Only count file writes / commands as progress (ignores read-only tools)
+    # custom_write_tools: []        # Standard write tools are auto-discovered from agentregistry catalog
+  thought_slap:
+    max_attempts: 1                 # Global default recovery attempts (0 disables, max 4)
+    # prompt: "..."                 # Optional custom steering prompt for reasoning resuscitation
 
 # 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
 # Routes every N write-progress turns to frontier models with injected quality review prompts
@@ -602,17 +606,109 @@ flowchart LR
 
 ---
 
-### 2.5 ⚡ Kickstart: Idle Loop Recovery & Write-Only Filtering
+### 2.5 ⚡ Kickstart: Read Slap & Thought Slap (Stall & Reasoning Truncation Resuscitation)
 
-When autonomous agents get stuck in repetitive read-only planning loops (e.g. repeatedly calling `read_file` or updating task metadata without writing code), **Kickstart** intervenes to jolt the session forward:
+Autonomous coding agents (Cline, Zoo Code, Kilo, OpenCode) suffer from two distinct failure modes when operating on budget or local reasoning models:
+1. **Cross-Turn Inspection Stalls**: Getting stuck in endless passive read/exploration loops without writing code or advancing state.
+2. **Intra-Turn Reasoning Truncations**: Exhausting thinking token budgets on empty turns (e.g. 31,000+ reasoning tokens), terminating with `finish_reason: length` with zero content or tool calls, causing agent harnesses to hang or crash.
 
-1. **Semantic Stall Detection**: If `kickstart_threshold: 5` is set, Nacho Flow monitors consecutive turns without state progress.
-2. **Write-Only Precision (`kickstart_write_only: true`)**: Ignores read-only churn (`read_file`, `list_files`, `update_todo`). Only actual file writes or command executions reset the stall counter.
-3. **Cline XML Support**: Automatically detects Cline's XML-style tool calls (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`) in text streams alongside OpenAI and Anthropic JSON formats.
-4. **Jolt & Escalation**:
-   - Injects an intervention directive prompting the model to transition to action.
-   - Sets `SessionKickstarted = true`, enabling rules like `when: "SessionKickstarted && Retries < 3"` to escalate to smarter models (e.g. Gemini 2.5 Flash).
-   - If stalled past `kickstart_max_count: 10`, automatically force-escalates to cloud default tier to break stubborn loops.
+Nacho Flow's **Kickstart** engine provides dual-action resuscitation to eliminate both classes of failure:
+
+```mermaid
+flowchart TD
+    subgraph "Turn Execution & Resuscitation Pipeline"
+        In["Inbound Client Request"] --> Stream["SSE Stream Normalizer"]
+        
+        Stream --> CheckTrunc{"Finish Reason:<br/>length / max_tokens<br/>AND Turn Empty?"}
+        CheckTrunc -- Yes --> TS_Opt{"Tier Opted-In<br/>to Thought Slap?"}
+        TS_Opt -- Yes --> TS["👋 <b>Thought Slap Interception</b><br/>• Hold Terminal [DONE]<br/>• Inject Truncated Reasoning Chain<br/>• Dispatch Recovery Turn (&lt;3s)<br/>• Splice Tool Call into Stream"]
+        TS --> Client["Client Agent Stream"]
+        TS_Opt -- No --> Client
+        CheckTrunc -- No --> NormalFinish["Forward Upstream Finish"] --> Client
+        
+        Client --> PostTurn["Post-Turn Session Evaluation"]
+        PostTurn --> CheckWrite{"Productive State<br/>Progress Made?"}
+        CheckWrite -- Yes --> ResetIdle["Reset Idle Count = 0"]
+        CheckWrite -- No --> IncIdle["Increment Idle Read Count"]
+        IncIdle --> CheckThresh{"Idle Count &ge;<br/>read_slap.threshold?"}
+        CheckThresh -- Yes --> RS["⚡ <b>Read Slap Interception</b><br/>• Inject [SYSTEM OVERRIDE]<br/>• Set SessionReadSlapped = true<br/>• Steer to Execution Action"]
+        CheckThresh -- No --> NextTurn["Wait for Next Turn"]
+    end
+```
+
+---
+
+#### 1. ⚡ Read Slap (Cross-Turn Idle Stall Interception)
+
+When an agent churns in repetitive read-only planning loops (repeatedly calling `read_file`, `list_dir`, or updating task metadata without writing code):
+
+1. **Semantic Stall Tracking**: If `threshold: 5` is configured, Nacho Flow monitors consecutive turns without state progress.
+2. **Write-Only Precision (`write_only: true`)**: Ignores read-only churn (`read_file`, `list_files`, `grep_search`, `update_todo`). Only actual file writes (`write_to_file`, `replace_in_file`, `multi_replace_file_content`), patch applications, or command executions reset the stall counter.
+3. **Cline XML & Tool Tag Support**: Automatically inspects Cline's XML-style tags (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`) in raw text streams alongside standard OpenAI and Anthropic JSON tool calls.
+4. **Plan Mode Auto-Suspension**: When an agent operates in pure plan or exploration mode (`HasTools && !HasWriteCapability`), tool progress is preserved without accumulating false stall counts.
+5. **Jolt & Escalation**:
+   - Injects a steering directive prompting the model to transition from planning to action.
+   - Sets `SessionReadSlapped = true` and increments `SessionReadSlapCount`, enabling rules like `when: "SessionReadSlapped && Retries < 3"` to escalate to smarter models.
+   - If stalled past `max_slaps: 10`, automatically force-escalates to cloud default tier to break stubborn loops.
+
+---
+
+#### 2. 👋 Thought Slap (Intra-Turn Reasoning Truncation Resuscitation)
+
+Modern reasoning models (such as `z-ai/glm-5.3-flash`, `deepseek/deepseek-r1`, or local `qwq:32b`) can consume tens of thousands of tokens in deep chain-of-thought analysis during architecture design turns. If the model exhausts its reasoning token budget (e.g. 31,815 tokens over 230 seconds) before emitting tool calls, OpenRouter or the inference provider sends `finish_reason: length` with an empty completion (`content: null`, `tool_calls: []`).
+
+In standard proxies, this produces an empty turn that causes Cline and Kilo to stall indefinitely or abort the session. **Thought Slap** resuscitates these turns in-flight:
+
+1. **Held Terminal Processing**: The `StreamNormalizer` holds back the final `[DONE]` terminal SSE chunk and checks if the turn ended in `length` with an empty payload.
+2. **Per-Tier Opt-In**: Thought Slap is enabled on specific tiers that use reasoning models (`thought_slap: true`). Non-reasoning tiers are untouched.
+3. **Rescue Dispatch**: Nacho Flow intercepts the truncation, appends the truncated thinking block, injects an actionable steering prompt, and dispatches a lightweight recovery call (either to the same tier or a designated `rescue_tier`).
+4. **In-Flight Stream Splicing**: In under 3 seconds, the model emits the intended tool call (e.g., `execute_command` or `plan_mode_respond`), which is spliced directly into the agent's SSE stream. The agent never sees the stall.
+5. **DSL Rule Exposure**: Sets `SessionThoughtSlapCount` on the request context, allowing routing rules like `when: "SessionThoughtSlapCount >= 2"` to escalate repeatedly truncating sessions.
+
+---
+
+#### ⚙️ Configuration Reference (`config.yaml`)
+
+```yaml
+kickstart:
+  enabled: true                     # Master switch for all resuscitation
+  read_slap:
+    threshold: 5                    # Jolt after N consecutive idle turns (0 disables)
+    max_slaps: 10                   # Force-escalate to default tier after N read slaps
+    max_failures: 3                 # Suppress override after N consecutive failures
+    write_only: true                # Only state-altering writes/commands reset counter
+  thought_slap:
+    max_attempts: 1                 # Recovery attempts per truncated turn (1-4)
+    # prompt: "..."                 # Optional custom steering prompt override
+
+tiers:
+  # Opt-in to Thought Slap on reasoning workhorses
+  - name: "Fast Coding Workhorse"
+    model: "z-ai/glm-5.3-flash"
+    provider: "openrouter"
+    thought_slap: true              # Enables intra-turn reasoning truncation rescue
+    when: "Tokens < 30000"
+
+  # Advanced: rescue using a designated fallback tier
+  - name: "Deep Reasoning Architect"
+    model: "deepseek/deepseek-r1"
+    provider: "openrouter"
+    thought_slap:
+      max_attempts: 2
+      rescue_tier: "Fast Coding Workhorse"
+    when: "Retries < 2"
+
+  # Escalation tier triggered after read slaps
+  - name: "Read Slap Escalation Tier"
+    model: "anthropic/claude-sonnet-5"
+    provider: "anthropic"
+    when: "SessionReadSlapped && Retries < 3"
+```
+
+#### In-Chat Session Directives:
+- `@nacho:kickstart-off` / `@nacho:kickstart-on`: Suspends or resumes Read Slap idle tracking.
+- `@nacho:toggles`: Inspects active states of all session supervisors (Read Slap, Thought Slap, Cycle Killer, Fairy Dust).
+- `@nacho:reset`: Resets all session counters and restores defaults.
 
 ---
 

@@ -825,30 +825,68 @@ In runaway error cascades or edge cases, routing must **never default to ultra-e
    This guarantees that automated routing never accidentally lands on Opus.
 3. **Fairy Dust Cost Safety (Sonnet 5 Default)**: Even within Fairy Dusting periodic quality reviews, Opus is commented out by default (`# model: "anthropic/claude-opus-5-5"`) and replaced with Claude Sonnet 5 (`model: "anthropic/claude-sonnet-5"`). For heavy codebases or difficult multi-file architectural refactors, developers can easily swap in Opus by uncommenting the line. Outside Fairy Dust, Opus remains accessible solely via manual in-prompt `@nacho:model` / `X-Spicy-Model` overrides.
 
-### 9.3 HotSauce Kickstart & Plan-Mode Tuning
+### 9.3 HotSauce Kickstart: Read Slap & Thought Slap Tuning
 
-**Kickstart** detects semantic idle churn where an agent gets trapped in reading/planning loops without writing code:
+In v1.5+, **Kickstart** is a top-level dual-action supervisor providing **Read Slap** (cross-turn idle stall recovery) and **Thought Slap** (in-flight reasoning truncation recovery).
+
+> [!WARNING]
+> **Breaking Config Migration in v1.5**:
+> The legacy keys `cycle_killer.kickstart_*` have been deprecated and removed. Nacho Flow will fail to start if legacy keys are present. Migrate your configuration to top-level `kickstart.read_slap` and `kickstart.thought_slap`.
+
+#### 1. Read Slap Tuning (Idle Read/Plan Loop Recovery)
+
+**Read Slap** monitors consecutive non-write turns where an agent is caught in passive inspection churn (e.g. repeatedly calling `read_file`, `list_dir`, or `grep_search`):
 
 ```yaml
-cycle_killer:
-  kickstart_threshold: 5        # Jolt after N idle turns without write tool progress
-  kickstart_max_count: 10       # Max kickstart escalations before default cloud failover
-  kickstart_max_failures: 3     # Suppress override after N consecutive failures
-  kickstart_write_only: true    # Only file writes/terminal executions reset the idle counter
-  kickstart_write_tools:        # Tools defining write capability
-    - write_to_file
-    - replace_in_file
-    - replace_file_content
-    - multi_replace_file_content
-    - execute_command
+kickstart:
+  enabled: true
+  read_slap:
+    threshold: 5                # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns
+    max_slaps: 10               # Force-escalate to default tier after N read slaps
+    max_failures: 3             # Suppress override after N consecutive model failures
+    write_only: true            # Only file writes/terminal executions reset the idle counter
+    # custom_write_tools: []    # Optional extra tools defining write capability
 ```
 
-#### Automatic Plan-Mode Auto-Suspension:
-In pure investigation or planning phases (such as Cline/Zoo Code Plan Mode), the client only declares read/inspection tools (`view_file`, `list_dir`, `grep_search`). Nacho Flow automatically evaluates `HasWriteCapability == false` and **suspends Kickstart idle stall escalation**. The agent can read files and explore codebases across 50+ turns without premature `[SYSTEM OVERRIDE]` prompts.
+- **Threshold Recipe**: Set `threshold: 5` for interactive coding tasks. For deep exploratory tasks or complex refactors, increase to `7-10`.
+- **Automatic Plan-Mode Auto-Suspension**: In pure investigation or planning phases (such as Cline/Zoo Code Plan Mode), the client only declares read/inspection tools (`view_file`, `list_dir`, `grep_search`). Nacho Flow automatically evaluates `HasWriteCapability == false` and **suspends Read Slap idle stall escalation**. The agent can read files and explore codebases across 50+ turns without premature `[SYSTEM OVERRIDE]` prompts.
+
+#### 2. Thought Slap Tuning (Reasoning Token Budget Burnout Rescue)
+
+When using reasoning models (such as `z-ai/glm-5.3-flash`, `deepseek/deepseek-r1`, or local `qwq:32b`), models can exhaust their reasoning budget (e.g. 31,000+ tokens) and terminate with `finish_reason: length` on an empty turn with no tool calls.
+
+Thought Slap intercepts this in-flight, holds the terminal `[DONE]` chunk, and dispatches a lightweight recovery call in <3s that forces the model to emit its intended tool call:
+
+```yaml
+kickstart:
+  enabled: true
+  thought_slap:
+    max_attempts: 1             # Global default recovery attempts (0 disables, max 4)
+
+tiers:
+  # Opt-in per tier where reasoning models are deployed
+  - name: "Fast Coding Workhorse"
+    model: "z-ai/glm-5.3-flash"
+    provider: "openrouter"
+    thought_slap: true          # Enables intra-turn reasoning resuscitation
+
+  # Designated rescue tier override
+  - name: "Heavy Reasoning Architect"
+    model: "deepseek/deepseek-r1"
+    provider: "openrouter"
+    thought_slap:
+      max_attempts: 2
+      rescue_tier: "Fast Coding Workhorse"
+```
+
+#### DSL Context Variables:
+You can write routing rules targeting slapped sessions:
+- `when: "SessionReadSlapped && Retries < 3"` (escalate to smarter model after Read Slap)
+- `when: "SessionThoughtSlapCount >= 2"` (escalate to non-reasoning frontier model if reasoning models repeatedly truncate)
 
 #### Dynamic Session Control Directives:
-If you want to manually disable or re-enable Kickstart or Cycle Killer mid-session without restarting the gateway:
-- `@nacho:kickstart-off` / `@nacho:kickstart-on`: Suspends or resumes Kickstart idle tracking for the active session.
+If you want to manually disable or re-enable supervisors mid-session without restarting the gateway:
+- `@nacho:kickstart-off` / `@nacho:kickstart-on`: Suspends or resumes Read Slap idle tracking.
 - `@nacho:cyclekiller-off` / `@nacho:cyclekiller-on`: Suspends or resumes Cycle Killer in-flight stream loop interruption.
 - `@nacho:toggles`: Inspects the active state of all session guardrails.
 - `@nacho:reset`: Resets session turns and restores all switches to configuration defaults.

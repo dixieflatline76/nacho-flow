@@ -84,6 +84,13 @@ Bring the power of Nacho Flow directly inside the developer's primary workspace 
   - Granular selective checkboxes and **"Apply Selected Recommendations"** action updating `config.yaml` with automated timestamped backup creation.
 - [x] **Agentic Tool Fallback Shield**:
   - Real-time zero-allocation sliding tail-buffer prose-to-tool auto-wrapping intercepting conversational plan/question turns from local models and synthesizing schema-compliant `ask_followup_question` tool payloads to eliminate 3-strike agent harness crashes in Zoo Code and Cline.
+- [x] **Autonomous Agent Runtime Supervisors (v1.5.0)**:
+  - **Cycle Killer**: 3-lane SSE stream monitor intercepting circular reasoning / tool hallucination loops in <3s with zero-cost local steering prompts.
+  - **Kickstart (Read Slap & Thought Slap)**:
+    - *Read Slap*: Inspection loop supervisor detecting passive read-only streaks and boosting execution via frontier model escalation (with automatic Plan Mode suspension).
+    - *Thought Slap*: Intra-turn reasoning truncation rescue intercepting `finish_reason: length` / runaway thinking budgets on empty turns, dispatching in-flight resuscitation (<3s) into valid tool calls.
+  - **Fairy Dust**: Periodic frontier audit checkpoints every *N* file writes.
+  - **Nacho Token Saver (NTS)**: In-flight streaming history compaction stripping repetitive thinking chains.
 - [x] **In-Chat Directive Controls & Plan-Mode Protection**:
   - Automatic tool schema classification (`HasWriteCapability == false`) auto-suspending Kickstart idle stall escalation during Plan Mode and pure exploration.
   - In-chat directive control plane (`@nacho:`) supporting session guardrails (`kickstart-off/on`, `cyclekiller-off/on`, `shield-off/on`, `raw-on/off`, `fairydust-off/on`), dedicated `@nacho:toggles` inspection, and session reset (`@nacho:reset`).

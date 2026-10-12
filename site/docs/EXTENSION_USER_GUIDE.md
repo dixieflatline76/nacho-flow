@@ -542,10 +542,24 @@ At the top of the dashboard, live instrumentation cards display your financial a
 
 ---
 
-### 4.2 Cycle Killer Defense & Local Recovery
+### 4.2 🛡️ Agent Supervisors: Dual Resuscitation & Loop Defense
 
-The **Cycle Killer** panel visualizes real-time protection against runaway agent failure loops:
+The **Agent Supervisor** panel monitors real-time interventions protecting against runaway thinking, idle planning churn, and endless deliberation loops:
 
+#### ⚡ Kickstart: Read Slap
+- **Stalls Broken**: Count of idle read/planning loops jolted into active execution.
+- **Max Slaps Enforced**: Turns force-escalated to default cloud tier after exceeding `max_slaps` consecutive interventions.
+
+#### 👋 Kickstart: Thought Slap
+- **Rescued Truncations**: Total count of turns where runaway reasoning exhausted the output token budget and was resuscitated into a valid completion.
+- **Outcome Distribution**:
+  - `recovered_tool_call`: Truncated reasoning successfully recovered into an executable tool call (e.g. `execute_command`, `write_to_file`).
+  - `recovered_text`: Truncated reasoning recovered into an actionable text response.
+  - `truncated`: Second attempt also exceeded token limit.
+  - `error`: Network or provider failure during recovery attempt.
+- **Interception Latency**: Typical recovery latency in under 3.0s with zero client socket disconnects.
+
+#### 🔄 Loop Defense: Cycle Killer & Fairy Dust
 - **Murdied Loops**: Real-time counter of circular deliberation sequences terminated in $< 3\text{ seconds}$.
 - **Avoided Runaway GPU Minutes**: Estimated GPU compute minutes saved from endless prose generation.
 - **Local Recovery Rate ($0.00)**: Percentage of severed streams successfully recovered locally via `[SYSTEM OVERRIDE]` prompts without paying for cloud failover.
@@ -573,10 +587,16 @@ Inspect the last 500 LLM requests processed by the gateway in real time:
 TIME      TIER              MODEL                       TOKENS   LATENCY   REASON
 14:23:05  Local GPU         qwen3-coder:30b             4,210    1.2s      Tokens < 16k && !HasTools
 14:22:48  Cloud Frontier    anthropic/claude-sonnet-5   18,400   3.4s      Retries >= 2 (Auto-Escalate)
-14:21:12  Local GPU         qwen3-coder:30b             2,890    0.8s      @nacho:local
+14:21:12  Fast Coding       z-ai/glm-5.3-flash          32,100   2.4s      Tokens < 64k  [👋 Slap: Tool]
 ```
 
 - Click any turn to expand full prompt metadata, token breakdowns, input/output costs, cache hit counts, and execution trace.
+- **Supervision Badges**:
+  - `👋 Slap: Tool` (Emerald): Thought Slap intercepted a runaway reasoning truncation and recovered a valid tool call.
+  - `👋 Slap: Text` (Cyan): Thought Slap recovered an actionable text response.
+  - `⚠️ Slap: Trunc` (Rose): Recovery turn hit the output limit again.
+  - `⚠️ Slap: Err` (Amber): Error occurred during thought slap recovery.
+  - `⚡ Read Slap` (Orange): Turn received an injected [SYSTEM OVERRIDE] stall-breaking prompt.
 - Inspect why each turn routed to local vs. cloud (token boundaries, active tools, code keywords, or in-prompt directives).
 
 ---
@@ -675,7 +695,7 @@ Hovering over the status bar item displays a rich, interactive Markdown HUD feat
 | **Cloud API Spend** | `$1.85` |
 | **Local GPU ($0.00)** | `78%` *(39/50 turns)* |
 | **Nacho Token Saver** | `42,850 tokens` *(168.2 KB saved • 18 turns)* |
-| **Agent Supervisor** | `2 loops healed • 1 kicks • 3 fairy dust` |
+| **Agent Supervisor** | `2 loops healed • 1 kicks • 4 slaps rescued • 3 fairy dust` |
 | **Total Prompt Turns** | `50` *(214,000 tokens)* |
 
 Timeframe: [1h] | **✓ [Today]** | [This Week] | [This Month] | [All Time]
@@ -686,12 +706,12 @@ Timeframe: [1h] | **✓ [Today]** | [This Week] | [This Month] | [All Time]
 
 - **Interactive Timeframe Links**: Click **`[1h]`**, **`[Today]`**, **`[This Week]`**, **`[This Month]`**, or **`[All Time]`** directly inside the tooltip to recalculate and display savings metrics across that specific horizon.
 - **Nacho Token Saver Telemetry**: Tracks cumulative tokens and bytes stripped from historical turns without opening the full dashboard.
-- **Agent Supervisor Statistics**: Real-time counter of Cycle Killer stream severances, Kickstart idle recoveries, and Fairy Dusting proactive checkpoints.
+- **Agent Supervisor Statistics**: Real-time counter of Cycle Killer stream severances, Kickstart Read Slap idle recoveries, Thought Slap reasoning truncation rescues (`${m.tsRecovered}/${m.tsSlaps} slaps rescued`), and Fairy Dusting proactive checkpoints.
 
 ### Interactive QuickPick Menu:
 Clicking the status bar item opens a quick-action menu:
 - **Open Dashboard**: Opens the full telemetry webview (`Ctrl+Shift+P` → `Nacho Flow: Open Dashboard`).
-- **Switch Routing Preset**: Quick-switch between Standard (`config.yaml`), Zoo Code (`config.yaml`), and Cline (`config.cline.yaml`).
+- **Switch Routing Profile**: Quick-switch between Profile 1, Profile 2, Profile 3, or any custom profile.
 - **Start / Stop / Restart Engine**: Instant lifecycle controls.
 - **Open config.yaml**: Opens the active configuration document in your editor.
 - **Reset Circuit Breaker**: Restores tripped providers to `CLOSED` state.
@@ -746,6 +766,8 @@ All extension features can be accessed via `Ctrl+Shift+P` / `Cmd+Shift+P`:
 | **Show Dashboard** | `nacho-flow.showDashboard` | Opens the full visual telemetry and route history dashboard. |
 | **Open Controls in Sidebar** | `nacho-flow.openSettings` | Focuses the Nacho Flow control panel in the Activity Bar. |
 | **Open Config Editor** | `nacho-flow.openConfig` | Opens the active preset YAML file in the editor. |
+| **Switch Active Profile** | `nacho-flow.switchProfile` | Displays QuickPick selector to switch between active engine profiles. |
+| **Delete Custom Profile** | `nacho-flow.deleteProfile` | Permanently deletes a user-created custom routing profile YAML file. |
 | **Run Auto-Tuner & Optimize** | `nacho-flow.runOptimizer` | Analyzes historical logs and recommends optimized context thresholds. |
 | **Refresh Heatseeker Deals** | `nacho-flow.refreshDeals` | Scans upstream pricing oracles for model discounts and subsidized endpoints. |
 | **Reset Circuit Breaker** | `nacho-flow.resetCircuit` | Clears tripped provider circuit breakers and restores traffic. |
