@@ -51,23 +51,10 @@ The result was an immediate, catastrophic economic failure for the cloud router:
   <em>Figure 1: Left — Zoo Code configured directly with <code>openrouter/pareto-code</code> (note <code>Does not support prompt caching</code>). Right — OpenRouter Activity Dashboard showing 97.8% of spend routed into Claude Fable 5.1.</em>
 </p>
 
-### Evidence Item A: Zoo Code Harness Configuration
-Zoo Code was configured with zero intermediaries, pointing directly to OpenRouter's official `openrouter/pareto-code` endpoint. Note that because dynamic routers can switch providers between requests, the endpoint advertises **`✕ Does not support prompt caching`**, forcing every turn to pay 100% un-cached input token rates:
+The visual telemetry above captures the two compounding mechanics behind the economic collapse:
 
-<p align="center">
-  <img src="benchmarks/openrouter_pareto_zoo_settings.png" alt="Zoo Code Provider Configuration: OpenRouter Pareto Code" width="410" />
-  <br/>
-  <em>Figure 1a: Zoo Code provider settings configuring the official <code>openrouter/pareto-code</code> router with direct API key credentials and prompt caching disabled.</em>
-</p>
-
-### Evidence Item B: OpenRouter Live Activity Dashboard
-Immediately after the run abruptly crashed on Turn 23, the OpenRouter Activity Dashboard revealed what the router actually did under the hood:
-
-<p align="center">
-  <img src="benchmarks/openrouter_activity_dashboard_fable.png" alt="OpenRouter Activity Dashboard: 97.8% Spend on Claude Fable 5.1" style="width: 100%; max-width: 950px; height: auto;" />
-  <br/>
-  <em>Figure 1b: OpenRouter usage breakdown across models in the 3-hour test window. <strong>97.8% of the dollar volume ($13.10 on this workspace slice, $26.24 across the run) was routed into Claude Fable 5.1</strong>, while GLM 5.3 Flash accounted for only 2.2% ($0.294).</em>
-</p>
+1. **Client Configuration (Left Panel)**: Zoo Code was pointed directly to OpenRouter's official `openrouter/pareto-code` endpoint with zero intermediaries. Because dynamic request-level routers can switch providers between turns, the endpoint advertises **`✕ Does not support prompt caching`**, forcing every turn to pay 100% un-cached input token rates ($20.00/1M on frontier models).
+2. **Live Activity Telemetry (Right Panel)**: Immediately after execution crashed on Turn 23, the OpenRouter Activity Dashboard confirmed what happened under the hood: **97.8% of the dollar volume ($13.10 on this workspace slice, $26.24 across the run) was routed into Claude Fable 5.1**, while GLM 5.3 Flash accounted for only 2.2% ($0.294).
 
 > [!CAUTION]
 > **The Pareto Illusion**: OpenRouter's router is marketed as balancing price and performance along the Pareto frontier. In an autonomous multi-turn agent loop, it did the exact opposite: it disabled prompt caching and greedily routed almost **98% of the session into Anthropic's flagship `Claude Fable 5.1`**, incinerating developer balances on routine command executions (`go version`) and trivial single-line diffs.
