@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-13
+
 ### Added
 - **Kickstart Thought Slap (Reasoning Truncation Recovery)**: Automated in-flight detection and recovery for turns truncated by reasoning token budget limits (`finish_reason: "length"`). The engine automatically injects an assistant turn containing the truncated thought chain followed by a targeted user steering instruction, rescuing stalled coding sessions into actionable tool executions or responses.
 - **Flight Instruments & Telemetry Badges**:
