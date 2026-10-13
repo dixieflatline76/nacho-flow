@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
 // TierMetrics breaks down request counts across the multi-tiered model architecture.
@@ -486,9 +488,10 @@ func addToWindow(w *TimeWindowMetrics, obs Observation, tokens, localTokens int6
 	}
 	if obs.ThoughtSlapAttempts > 0 {
 		w.ThoughtSlap.TotalSlaps += int64(obs.ThoughtSlapAttempts)
-		if obs.ThoughtSlapOutcome == "recovered_tool_call" || obs.ThoughtSlapOutcome == "recovered_content" {
+		switch obs.ThoughtSlapOutcome {
+		case contract.ThoughtSlapOutcomeRecoveredToolCall, contract.ThoughtSlapOutcomeRecoveredContent:
 			w.ThoughtSlap.Recovered++
-		} else if obs.ThoughtSlapOutcome == "exhausted" {
+		case contract.ThoughtSlapOutcomeExhausted:
 			w.ThoughtSlap.Exhausted++
 		}
 		w.ThoughtSlap.ExtraTokens += int64(obs.ThoughtSlapExtraTokens)
@@ -612,9 +615,10 @@ func (s *StatsTracker) worker() {
 		// Thought Slap telemetry accumulation
 		if obs.ThoughtSlapAttempts > 0 {
 			s.stats.ThoughtSlap.TotalSlaps += int64(obs.ThoughtSlapAttempts)
-			if obs.ThoughtSlapOutcome == "recovered_tool_call" || obs.ThoughtSlapOutcome == "recovered_content" {
+			switch obs.ThoughtSlapOutcome {
+			case contract.ThoughtSlapOutcomeRecoveredToolCall, contract.ThoughtSlapOutcomeRecoveredContent:
 				s.stats.ThoughtSlap.Recovered++
-			} else if obs.ThoughtSlapOutcome == "exhausted" {
+			case contract.ThoughtSlapOutcomeExhausted:
 				s.stats.ThoughtSlap.Exhausted++
 			}
 			s.stats.ThoughtSlap.ExtraTokens += int64(obs.ThoughtSlapExtraTokens)
@@ -828,9 +832,10 @@ func (s *StatsTracker) RecalculateFromRecordsAt(records []TurnRecord, oracle *Pr
 		// ThoughtSlap recalculation from historical records
 		if rec.ThoughtSlapAttempts > 0 {
 			s.stats.ThoughtSlap.TotalSlaps += int64(rec.ThoughtSlapAttempts)
-			if rec.ThoughtSlapOutcome == "recovered_tool_call" || rec.ThoughtSlapOutcome == "recovered_content" {
+			switch rec.ThoughtSlapOutcome {
+			case contract.ThoughtSlapOutcomeRecoveredToolCall, contract.ThoughtSlapOutcomeRecoveredContent:
 				s.stats.ThoughtSlap.Recovered++
-			} else if rec.ThoughtSlapOutcome == "exhausted" {
+			case contract.ThoughtSlapOutcomeExhausted:
 				s.stats.ThoughtSlap.Exhausted++
 			}
 			s.stats.ThoughtSlap.ExtraTokens += int64(rec.ThoughtSlapExtraTokens)

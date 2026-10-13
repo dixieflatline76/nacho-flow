@@ -22,7 +22,7 @@ const maxGlobalTurnCalls = 4
 
 var thoughtSlapNoticeChunkBytes = func() []byte {
 	escaped, _ := json.Marshal("\n\n> " + contract.ThoughtSlapNoticeText + "\n\n")
-	return []byte(fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":%s}}]}\n\n", string(escaped)))
+	return fmt.Appendf(nil, "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":%s}}]}\n\n", string(escaped))
 }()
 
 // thoughtSlapNoticeChunk returns the client-visible reasoning notice emitted before Thought Slap recovery calls.
@@ -173,7 +173,6 @@ func (s *Server) executeThoughtSlapRecoveryStream(
 	r *http.Request,
 	reqCtx *contract.RequestContext,
 	targetTier contract.Tier,
-	targetProvider provider.LLMProvider,
 	initialNormalizer *StreamNormalizer,
 	body []byte,
 	tsCfg contract.ThoughtSlapConfig,
@@ -323,7 +322,8 @@ func (s *Server) executeThoughtSlapRecoveryStream(
 	reqCtx.ThoughtSlapExtraTokens = extraTokens
 	reqCtx.ThoughtSlapExtraCost = extraCost
 
-	if outcome == contract.ThoughtSlapOutcomeRecoveredToolCall {
+	switch outcome {
+	case contract.ThoughtSlapOutcomeRecoveredToolCall:
 		reqLogger.Info("Thought slap recovery succeeded",
 			slog.String("outcome", outcome),
 			slog.Int("attempts", attempts),
@@ -331,7 +331,7 @@ func (s *Server) executeThoughtSlapRecoveryStream(
 		)
 		reqCtx.EmptyTruncatedTurn = false
 		reqCtx.UpstreamFinishReason = "tool_calls"
-	} else if outcome == contract.ThoughtSlapOutcomeRecoveredContent {
+	case contract.ThoughtSlapOutcomeRecoveredContent:
 		reqLogger.Info("Thought slap recovery succeeded",
 			slog.String("outcome", outcome),
 			slog.Int("attempts", attempts),
@@ -339,7 +339,7 @@ func (s *Server) executeThoughtSlapRecoveryStream(
 		)
 		reqCtx.EmptyTruncatedTurn = false
 		reqCtx.UpstreamFinishReason = "stop"
-	} else {
+	default:
 		reqLogger.Info("Thought slap recovery exhausted or failed",
 			slog.String("outcome", outcome),
 			slog.Int("attempts", attempts),

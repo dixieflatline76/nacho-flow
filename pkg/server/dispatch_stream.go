@@ -264,7 +264,7 @@ func (s *Server) handleStreaming(
 	}
 	if normalizer.TerminalHeld() {
 		totalUsage, _, _ := s.executeThoughtSlapRecoveryStream(
-			w, r, &reqCtx, targetTier, targetProvider, normalizer, body, tsCfg, sBuf, reqLogger,
+			w, r, &reqCtx, targetTier, normalizer, body, tsCfg, sBuf, reqLogger,
 		)
 		usage = totalUsage
 	} else {
