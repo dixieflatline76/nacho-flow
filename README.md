@@ -42,6 +42,12 @@
 - **Engineered for reliability:** Strictly ≥ 95.0% statement test coverage across core packages (95.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`)
 <!-- COVERAGE:SUMMARY_END -->
 
+<p align="center">
+  <img src="site/images/thought-slap.webp" alt="Nacho Flow Thought Slap &amp; Read Slap Demo" width="720" style="max-width: 100%; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+  <br>
+  <em>👋 <strong>Thought Slap &amp; Read Slap in Action</strong>: Nacho Flow rescues local models (DeepSeek &amp; Qwen) from runaway reasoning debt and read-only stalls in &lt; 3s—delivering <strong>BUILD SUCCESS for $0.00</strong>.</em>
+</p>
+
 > [!TIP]
 > **Production-Ready NTS (Compact First, Then Route):** In v1.6.0, NTS runs the moment a prompt hits the proxy—*before* model routing rules are evaluated. Cleaning prompts first stops router panic and keeps tasks on cheap or local models. See the [NTS User Guide](docs/USER_GUIDE.md#27-️-nacho-token-saver-nts--production-ready-in-flight-context-compactor) or [Web Docs](https://spicebox.dev/nacho-flow/docs.html?doc=user_guide).
 
