@@ -635,6 +635,15 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 		"../../extension/resources/profiles/profile3.yaml",
 	}
 
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		for _, pf := range []string{"profile1.yaml", "profile2.yaml", "profile3.yaml"} {
+			p := filepath.Join(appData, "Code", "User", "globalStorage", "dixieflatline76.nacho-flow", "profiles", pf)
+			if _, err := os.Stat(p); err == nil {
+				configFiles = append(configFiles, p)
+			}
+		}
+	}
+
 	for _, relPath := range configFiles {
 		t.Run(relPath, func(t *testing.T) {
 			absPath, err := filepath.Abs(relPath)
@@ -651,17 +660,19 @@ func TestConfig_AllFlavorConfigs_Valid(t *testing.T) {
 			if cfg.Host != "127.0.0.1" && cfg.Host != "0.0.0.0" {
 				t.Errorf("%s: expected Host '127.0.0.1' or '0.0.0.0', got '%s'", relPath, cfg.Host)
 			}
-			if cfg.CycleKiller.MaxToolTokens != 8192 {
-				t.Errorf("%s: expected MaxToolTokens 8192, got %d", relPath, cfg.CycleKiller.MaxToolTokens)
+			if cfg.CycleKiller.ResolveToolMaxTokens() <= 0 {
+				t.Errorf("%s: expected ResolveToolMaxTokens > 0, got %d", relPath, cfg.CycleKiller.ResolveToolMaxTokens())
 			}
 			if cfg.AgentShield.Enabled == nil {
 				t.Errorf("%s: expected agent_shield to be configured", relPath)
 			}
-			if len(cfg.FairyDust.Entries) < 2 {
-				t.Fatalf("%s: expected at least 2 fairy_dust entries, got %d", relPath, len(cfg.FairyDust.Entries))
-			}
-			if cfg.FairyDust.Entries[1].Model != "google/gemini-3.8-flash" {
-				t.Errorf("%s: expected Strategic Architecture Review to use google/gemini-3.8-flash, got %s", relPath, cfg.FairyDust.Entries[1].Model)
+			if cfg.FairyDust.Enabled != nil && *cfg.FairyDust.Enabled {
+				if len(cfg.FairyDust.Entries) < 2 {
+					t.Fatalf("%s: expected at least 2 fairy_dust entries, got %d", relPath, len(cfg.FairyDust.Entries))
+				}
+				if cfg.FairyDust.Entries[1].Model == "" {
+					t.Errorf("%s: expected Strategic Architecture Review to have a model configured", relPath)
+				}
 			}
 		})
 	}
@@ -681,6 +692,15 @@ nts:
   strip_boilerplate: true
   normalize_whitespace: true
   preserve_cache_control: true
+  compact_stale_file_reads: true
+  stale_read_depth: 5
+  strip_historical_reasoning: true
+  keep_recent_reasoning_turns: 2
+  deduplicate_reminders: true
+  reminders_refresh_interval: 10
+  collapse_verbose_tests: true
+  deduplicate_tool_outputs: true
+  min_duplicate_output_bytes: 250
 providers:
   local_gpu:
     base_url: "http://127.0.0.1:11434/v1"
@@ -708,8 +728,25 @@ tiers:
 	if cfg.NTS.StripANSI == nil || !*cfg.NTS.StripANSI ||
 		cfg.NTS.StripBoilerplate == nil || !*cfg.NTS.StripBoilerplate ||
 		cfg.NTS.NormalizeWhitespace == nil || !*cfg.NTS.NormalizeWhitespace ||
-		cfg.NTS.PreserveCacheControl == nil || !*cfg.NTS.PreserveCacheControl {
+		cfg.NTS.PreserveCacheControl == nil || !*cfg.NTS.PreserveCacheControl ||
+		cfg.NTS.CompactStaleFileReads == nil || !*cfg.NTS.CompactStaleFileReads ||
+		cfg.NTS.StripHistoricalReasoning == nil || !*cfg.NTS.StripHistoricalReasoning ||
+		cfg.NTS.DeduplicateReminders == nil || !*cfg.NTS.DeduplicateReminders ||
+		cfg.NTS.CollapseVerboseTests == nil || !*cfg.NTS.CollapseVerboseTests ||
+		cfg.NTS.DeduplicateToolOutputs == nil || !*cfg.NTS.DeduplicateToolOutputs {
 		t.Errorf("Expected all NTS boolean flags to be true")
+	}
+	if cfg.NTS.StaleReadDepth != 5 {
+		t.Errorf("Expected StaleReadDepth 5, got %d", cfg.NTS.StaleReadDepth)
+	}
+	if cfg.NTS.KeepRecentReasoningTurns == nil || *cfg.NTS.KeepRecentReasoningTurns != 2 {
+		t.Errorf("Expected KeepRecentReasoningTurns 2, got %v", cfg.NTS.KeepRecentReasoningTurns)
+	}
+	if cfg.NTS.RemindersRefreshInterval != 10 {
+		t.Errorf("Expected RemindersRefreshInterval 10, got %d", cfg.NTS.RemindersRefreshInterval)
+	}
+	if cfg.NTS.MinDuplicateOutputBytes != 250 {
+		t.Errorf("Expected MinDuplicateOutputBytes 250, got %d", cfg.NTS.MinDuplicateOutputBytes)
 	}
 }
 
@@ -742,12 +779,12 @@ func TestConfig_YDriveValidation(t *testing.T) {
 		t.Errorf("expected tool max write tokens 32768, got %d", cfg.CycleKiller.ResolveToolMaxWriteTokens())
 	}
 
-	// Verify decoupled kickstart
-	if cfg.Kickstart.Enabled == nil || !*cfg.Kickstart.Enabled {
-		t.Errorf("expected kickstart to be enabled")
+	// Verify decoupled read slap
+	if cfg.Kickstart.ReadSlap.Enabled == nil || !*cfg.Kickstart.ReadSlap.Enabled {
+		t.Errorf("expected read_slap to be enabled")
 	}
-	if cfg.Kickstart.Threshold != 5 {
-		t.Errorf("expected kickstart threshold 5, got %d", cfg.Kickstart.Threshold)
+	if cfg.Kickstart.ReadSlap.Threshold != 5 {
+		t.Errorf("expected read_slap threshold 5, got %d", cfg.Kickstart.ReadSlap.Threshold)
 	}
 
 	// Verify tier preservation

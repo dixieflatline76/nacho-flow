@@ -30,16 +30,16 @@ Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@d
 
 - **Hybrid routing**: Local GPU -> budget cloud -> frontier, evaluated per-turn via [deterministic AST bytecode rules](docs/TUNING_GUIDE.md) (`Tokens`, `Retries`, `Keywords`, `HasTools`, `HasImages`)
 - **Cycle Killer**: Monitors live SSE streams across thinking/prose/tool lanes. Kills repetition loops in < 3s, injects a local $0.00 override to force tool action, never interrupts file writes
-- **Kickstart**: Detects consecutive non-write turns (analysis paralysis) and injects resuscitation prompts or escalates to a smarter model
+- **Kickstart**: Detects consecutive non-write turns (analysis paralysis) and injects intervention prompts to resume action or escalates to a smarter model
 - **Tool Normalizer**: Converts 8 raw tool-call format families (Hermes, Mistral, Llama 3, ReAct, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON -- no harness crashes
 - **Fairy Dust**: Programmable frontier checkpoints every N file writes for quality audits (without running expensive models all day)
 - **Cost engine**: Prompt-cache-aware billing tracking input, output, and cache tokens at exact provider rates
 - **Auto-Tune**: Replays your `logs/traffic.jsonl` to find optimal tier thresholds (`nacho-flow tune`)
 - **VS Code extension**: Bundles the Go binary, live financial telemetry, route inspector, one-click preset switching. Zero CLI setup. [Install from Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow)
-- **Wire-speed core**: < 0.19ms routing overhead, <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END -->, lock-free atomic RCU state, zero heap churn during proxying
+- **Wire-speed core**: < 0.19ms routing overhead, <!-- BENCHMARK:README_CORE_START -->31,000+ req/s (peak 31,657 req/s)<!-- BENCHMARK:README_CORE_END -->, lock-free atomic RCU state, zero heap churn during proxying
 - **Zero runtime dependencies**: Single static binary, CGO_ENABLED=0, no Node or Python required
 <!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.4% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 
 > **NTS (experimental token compaction)** is available but disabled by default to preserve prompt cache stability and prevent diff drift. See [NTS docs](docs/USER_GUIDE.md) if you need it for extreme context limits.
@@ -50,22 +50,30 @@ Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@d
 
 ```mermaid
 flowchart LR
-    Step1["**Step 1: Local GPU ($0.00)**<br/><code>ollama run gemma4:12b-it-qat</code>"]
-    Step2["**Step 2: Cloud Gateway**<br/>OpenRouter Key (1 Unified Key)"]
+    Step1["**Step 1: Local Inference (Optional, $0.00)**<br/>llama.cpp, vLLM, LM Studio, or Ollama"]
+    Step2["**Step 2: Cloud Gateway**<br/>OpenRouter or Anthropic Key"]
     Step3["**Step 3: Point Your Agent**<br/><code>http://127.0.0.1:8000/v1</code>"]
 
     Step1 --> Step2 --> Step3
 ```
 
-1. **Local GPU ($0.00)** -- Install [Ollama](https://ollama.com/download) and pull a coding model:
+1. **Local Inference (Optional, $0.00)** -- Start any OpenAI-compatible local engine. For example, using [llama.cpp](https://github.com/ggerganov/llama.cpp), [vLLM](https://github.com/vllm-project/vllm), or [Ollama](https://ollama.com):
    ```bash
-   ollama run gemma4:12b-it-qat
-   ```
-   > Set `OLLAMA_CONTEXT_LENGTH=32768` to prevent prompt truncation (`setx OLLAMA_CONTEXT_LENGTH 32768` on Windows). See [User Guide](docs/USER_GUIDE.md#crucial-workstation-setup-configure-ollama_context_length32768).
+   # Option A: llama.cpp server (e.g. Qwen3 Coder 30B or Devstral Small 2)
+   llama-server -m qwen3-coder-30b-instruct-q4_k_m.gguf -c 32768 --port 8001
 
-2. **Cloud Gateway via OpenRouter** -- One key for all frontier tiers (Qwen 3 Coder Plus, Gemini 3.8 Flash, Claude Sonnet 5):
+   # Option B: vLLM
+   vllm serve Qwen/Qwen3-Coder-30B-Instruct --port 8001
+
+   # Option C: Ollama (or use devstral-small-2 / phi4-mini for 8GB VRAM)
+   ollama run qwen3-coder:30b
+   ```
+   *(If running purely in the cloud with zero local GPU, you can skip straight to Step 2.)*
+
+2. **Cloud Gateway** -- Set your cloud API key (OpenRouter or direct Anthropic):
    ```bash
    export OPENROUTER_API_KEY="sk-or-v1-..."
+   # or export ANTHROPIC_API_KEY="sk-ant-..."
    ```
 
 3. **Start Nacho Flow & Connect Your Agent**
@@ -146,25 +154,25 @@ tiers:
     when: "any(Keywords, { # in ['deadlock', 'mutex', 'race', 'concurrency', 'atomic'] })"
 
   - name: "Cloud Vision"
-    model: "google/gemini-2.5-flash-lite"
+    model: "google/gemini-3.8-flash"
     provider: "openrouter"
     when: "HasImages"
 
   - name: "Local GPU"
-    model: "qwen3.8-coder:14b"
+    model: "qwen3-coder:30b"
     provider: "ollama"
-    max_context: 16384
-    when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
+    max_context: 32768
+    when: "Tokens < 24000 && !HasImages && !HasTools && Retries < 2"
     strip_images: true
 
   - name: "Cloud Agentic Fast"
-    model: "qwen/qwen3-coder-30b-a3b-instruct"
+    model: "qwen/qwen3-coder-plus"
     provider: "openrouter"
-    when: "Tokens >= 16000 || HasTools || Retries >= 2"
+    when: "Tokens >= 24000 || HasTools || Retries >= 2"
 
 default_tier:
   name: "Cloud Fallback"
-  model: "deepseek/deepseek-v4-flash-latest"
+  model: "deepseek/deepseek-v4.1-flash"
   provider: "openrouter"
   when: "true"
 
@@ -205,7 +213,7 @@ Control routing and guardrails directly from your editor chat without restarting
 | | `@nacho:reset` | Hard reset turn counter & restore default switches |
 | **Single-Turn Overrides** | `@nacho:local` | Force current turn to Local GPU ($0.00) |
 | | `@nacho:cloud` | Force current turn to Cloud Fallback tier |
-| | `@nacho:reasoning` | Force current turn to DeepSeek-R1 / o1 |
+| | `@nacho:reasoning` | Force current turn to DeepSeek-R1 / o3 |
 
 > **Plan Mode Auto-Detection**: When your agent switches into Plan Mode (zero write tools declared), Nacho Flow automatically detects `HasWriteCapability == false` and suspends Kickstart -- no manual toggles required.
 
@@ -293,7 +301,7 @@ Visit **[spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)** for the fu
 - **[VS Code Extension Guide](docs/EXTENSION_USER_GUIDE.md)**: Sidebar control hub, status bar, route inspector, agent setup
 - **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Pipeline internals, RCU concurrency model, lock-free pricing oracle
-- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->30,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware
+- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->31,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware
 - **[Frontier Tax Control Study](docs/FRONTIER_CONTROL_STUDY_2026.md)**: 1:1 Claude Sonnet 5 empirical benchmark
 - **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: TDD workflow, plugin extension guide, benchmarking
 - **[Product Roadmap](ROADMAP.md)**: Phase milestones for open-source, extension, fleet, and SaaS

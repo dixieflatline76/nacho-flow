@@ -121,6 +121,10 @@
         "title": "Nacho Flow: Add New Profile (+)"
       },
       {
+        "command": "nacho-flow.deleteProfile",
+        "title": "Nacho Flow: Delete Profile (－)"
+      },
+      {
         "command": "nacho-flow.renameProfile",
         "title": "Nacho Flow: Rename Active Profile"
       }

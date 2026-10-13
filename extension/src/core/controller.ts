@@ -263,6 +263,10 @@ export class ExtensionController {
 				await this.addProfile();
 			}),
 
+			vscode.commands.registerCommand('nacho-flow.deleteProfile', async (profileId?: string) => {
+				await this.deleteProfile(profileId);
+			}),
+
 			vscode.commands.registerCommand('nacho-flow.renameProfile', async (profileId?: string) => {
 				await this.renameProfile(profileId);
 			})
@@ -452,6 +456,9 @@ export class ExtensionController {
 					}
 					case 'addProfile':
 						await this.addProfile();
+						break;
+					case 'deleteProfile':
+						await this.deleteProfile(message.profileId);
 						break;
 					case 'renameProfile':
 						await this.renameProfile(message.profileId);
@@ -1692,6 +1699,89 @@ export class ExtensionController {
 		}
 	}
 
+	public async deleteProfile(profileId?: string): Promise<boolean> {
+		if (this.isRemoteHost()) {
+			vscode.window.showInformationMessage('Nacho Flow: Profile deletion is disabled in remote server mode.');
+			return false;
+		}
+
+		let targetId = profileId;
+		if (!targetId || typeof targetId !== 'string') {
+			const profiles = await this.getAvailableProfiles();
+			const deletable = profiles.filter(p => p.number > 3);
+			if (deletable.length === 0) {
+				vscode.window.showWarningMessage('Nacho Flow: Built-in profiles (Profile 1, 2, 3) cannot be deleted; use Reset to restore factory defaults.');
+				return false;
+			}
+			const items = deletable.map(p => ({
+				label: `$(trash) ${p.label}`,
+				description: p.id === this.activeProfile ? '(Active)' : (p.isWorkspace ? '(Workspace Override)' : ''),
+				detail: `Config file: ${p.id}.yaml`,
+				profileId: p.id
+			}));
+			const selected = await vscode.window.showQuickPick(items, {
+				placeHolder: 'Select a custom profile to delete'
+			});
+			if (!selected || !selected.profileId) return false;
+			targetId = selected.profileId;
+		}
+
+		if (targetId === 'profile1' || targetId === 'profile2' || targetId === 'profile3') {
+			vscode.window.showWarningMessage('Nacho Flow: Built-in profiles (Profile 1, 2, 3) cannot be deleted; use Reset to restore factory defaults.');
+			return false;
+		}
+
+		const profileLabel = this.getProfileLabel(targetId);
+		const confirm = await vscode.window.showWarningMessage(
+			`Are you sure you want to delete profile "${profileLabel}" (${targetId}.yaml)? This cannot be undone.`,
+			{ modal: true },
+			'Delete Profile'
+		);
+		if (confirm !== 'Delete Profile') {
+			return false;
+		}
+
+		// If active profile is deleted, automatically switch cleanly to profile1 first
+		if (targetId === this.activeProfile) {
+			await this.switchProfile('profile1');
+		}
+
+		// Remove profile file on disk (global storage)
+		if (this.context.globalStorageUri) {
+			const globalUri = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles', `${targetId}.yaml`);
+			try {
+				await vscode.workspace.fs.delete(globalUri, { useTrash: false });
+			} catch (_) {}
+		}
+
+		// Also remove any workspace overrides for this profile
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (workspaceFolders && workspaceFolders.length > 0) {
+			for (const folder of workspaceFolders) {
+				const hiddenUri = vscode.Uri.joinPath(folder.uri, '.nacho', `${targetId}.yaml`);
+				try {
+					await vscode.workspace.fs.delete(hiddenUri, { useTrash: false });
+				} catch (_) {}
+				const wsUri = vscode.Uri.joinPath(folder.uri, `${targetId}.yaml`);
+				try {
+					await vscode.workspace.fs.delete(wsUri, { useTrash: false });
+				} catch (_) {}
+			}
+		}
+
+		// Clean up name mapping from globalState
+		const names = { ...this.getProfileNames() };
+		delete names[targetId];
+		this.profileNames = names;
+		await this.context.globalState?.update('nachoFlow_profileNames', names);
+
+		// Synchronize status bar and sidebar
+		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
+		await this.syncSidebarState();
+		this.showTransientToast(`🗑️ Deleted profile "${profileLabel}" (${targetId})`);
+		return true;
+	}
+
 	public async switchProfile(profileId?: string): Promise<void> {
 		if (this.isRemoteHost()) {
 			vscode.window.showInformationMessage('Nacho Flow: Profile switching is disabled in remote server mode.');
@@ -1715,6 +1805,11 @@ export class ExtensionController {
 				action: 'add'
 			});
 			items.push({
+				label: '$(trash) Delete Profile (－)',
+				description: 'Delete a custom profile',
+				action: 'delete'
+			});
+			items.push({
 				label: '$(edit) Rename Active Profile',
 				description: `Rename "${this.getProfileLabel(this.activeProfile)}"`,
 				action: 'rename'
@@ -1728,6 +1823,10 @@ export class ExtensionController {
 
 			if (selected.action === 'add') {
 				await this.addProfile();
+				return;
+			}
+			if (selected.action === 'delete') {
+				await this.deleteProfile();
 				return;
 			}
 			if (selected.action === 'rename') {

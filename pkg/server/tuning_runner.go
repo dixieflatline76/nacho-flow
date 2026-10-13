@@ -185,7 +185,7 @@ func (r *InProcessTuningRunner) RunTuning(ctx context.Context, configPath string
 		policy.LocalVRAMGB = r.LocalVRAMGB
 	}
 	if cfg != nil {
-		if cfg.Kickstart.WriteOnly || cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+		if cfg.Kickstart.ReadSlap.WriteOnly {
 			policy.WriteOnly = true
 		}
 		if r.server.oracle != nil {

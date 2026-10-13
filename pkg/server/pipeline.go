@@ -102,11 +102,32 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	}
 	_ = r.Body.Close()
 
+	// 0. Wire-speed ingress context compaction (NTS)
+	var ntsTokensSaved, ntsBytesSaved int
+	if ntsTr := s.GetNTSTransformer(); ntsTr != nil {
+		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
+			if transformed, res, err := ntsTr.TransformAnthropic(body); err == nil && !res.Bypassed {
+				body = transformed
+				ntsTokensSaved = res.TokensSaved
+				ntsBytesSaved = res.BytesSaved
+			}
+		} else {
+			if transformed, res, err := ntsTr.TransformOpenAI(body); err == nil && !res.Bypassed {
+				body = transformed
+				ntsTokensSaved = res.TokensSaved
+				ntsBytesSaved = res.BytesSaved
+			}
+		}
+	}
+
 	// 1. Classify request metadata
 	reqCtx, err := s.classifier.Classify(body)
 	if err != nil {
 		reqLogger.Warn("Failed to classify payload", slog.Any("error", err))
 	}
+	reqCtx.NTSTokensSaved = ntsTokensSaved
+	reqCtx.NTSBytesSaved = ntsBytesSaved
+	reqCtx.RawTokens = reqCtx.Tokens + ntsTokensSaved
 	reqCtx.ClientID = agentregistry.DefaultRegistry().DetectClient(r.Header, body)
 
 	// Honor config toggle to disable in-prompt directives
@@ -202,7 +223,7 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	// or workspace actions conducted in an error-free state.
 	// An unverified write during active test failure is an attempted fix, NOT verified progress.
 	turnProgress := reqCtx.HasToolProgress && !reqCtx.HasTestFail
-	writeOnly := cfg.Kickstart.WriteOnly || cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly
+	writeOnly := cfg.Kickstart.ReadSlap.WriteOnly
 	if writeOnly {
 		turnProgress = reqCtx.HasTestProgress || ((reqCtx.HasWriteProgress || reqCtx.HasShellWrite) && !reqCtx.HasTestFail)
 		if reqCtx.HasTools && !reqCtx.HasWriteCapability && !reqCtx.HasTestFail {
@@ -221,15 +242,13 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	)
 	reqCtx.CoolingDownModels = s.sessionTracker.GetCoolingDownModels(sessionKey)
 
-	// Kickstart: detect semantic stall/idle loop across consecutive turns
-	kickstartThreshold := cfg.Kickstart.Threshold
-	if kickstartThreshold == 0 {
-		kickstartThreshold = cfg.CycleKiller.KickstartThreshold
+	// Read Slap: detect semantic stall/idle loop across consecutive turns
+	readSlapEnabled := cfg.Kickstart.ReadSlap.Enabled == nil || *cfg.Kickstart.ReadSlap.Enabled
+	readSlapThreshold := cfg.Kickstart.ReadSlap.Threshold
+	if readSlapThreshold <= 0 && readSlapEnabled {
+		readSlapThreshold = 5
 	}
-	if kickstartThreshold == 0 && cfg.CycleBreaker.KickstartThreshold > 0 {
-		kickstartThreshold = cfg.CycleBreaker.KickstartThreshold
-	}
-	if kickstartThreshold > 0 && !reqCtx.NoKickstart {
+	if readSlapEnabled && readSlapThreshold > 0 && !reqCtx.NoKickstart {
 		kickstartProgress := reqCtx.HasToolProgress
 		if writeOnly {
 			// Legitimate progress requires concrete write activity OR a clean passing test suite.
@@ -240,17 +259,19 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		if writeOnly && reqCtx.HasTools && !reqCtx.HasWriteCapability {
 			kickstartProgress = true
 		}
-		maxFailures := cfg.Kickstart.MaxFailures
-		if maxFailures == 0 {
-			maxFailures = cfg.CycleKiller.KickstartMaxFailures + cfg.CycleBreaker.KickstartMaxFailures
+		maxFailures := cfg.Kickstart.ReadSlap.MaxFailures
+		if maxFailures <= 0 {
+			maxFailures = 3
 		}
-		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, kickstartThreshold, maxFailures)
+		kickstartCount, isKickstarted := s.sessionTracker.RecordKickstartState(sessionKey, kickstartProgress, readSlapThreshold, maxFailures)
 		if isKickstarted {
+			reqCtx.SessionReadSlapped = true
+			reqCtx.SessionReadSlapCount = kickstartCount
 			reqCtx.SessionKickstarted = true
 			reqCtx.SessionKickstartCount = kickstartCount
-			reqLogger.Warn("Kickstart: agent idling without tool progress",
-				slog.Int("kickstart_count", kickstartCount),
-				slog.Int("kickstart_threshold", kickstartThreshold),
+			reqLogger.Warn("Read Slap: agent idling without tool progress",
+				slog.Int("read_slap_count", kickstartCount),
+				slog.Int("read_slap_threshold", readSlapThreshold),
 				slog.Bool("write_only", writeOnly),
 				slog.Bool("has_test_pass", reqCtx.HasTestPass),
 				slog.Bool("has_test_fail", reqCtx.HasTestFail),
@@ -258,18 +279,15 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 			)
 		}
 
-		// Kickstart max cap: force-escalate to default tier when kickstart count exceeds limit
-		maxKS := cfg.Kickstart.MaxCount
-		if maxKS == 0 {
-			maxKS = cfg.CycleKiller.KickstartMaxCount
+		// Read Slap max slaps cap: force-escalate to default tier when count exceeds limit
+		maxSlaps := cfg.Kickstart.ReadSlap.MaxSlaps
+		if maxSlaps <= 0 {
+			maxSlaps = 10
 		}
-		if maxKS == 0 {
-			maxKS = cfg.CycleBreaker.KickstartMaxCount
-		}
-		if maxKS > 0 && isKickstarted && kickstartCount >= maxKS {
-			reqLogger.Warn("Kickstart: max count exceeded, force-escalating to default tier",
-				slog.Int("kickstart_count", kickstartCount),
-				slog.Int("kickstart_max_count", maxKS),
+		if maxSlaps > 0 && isKickstarted && kickstartCount >= maxSlaps {
+			reqLogger.Warn("Read Slap: max slaps exceeded, force-escalating to default tier",
+				slog.Int("read_slap_count", kickstartCount),
+				slog.Int("max_slaps", maxSlaps),
 			)
 			reqCtx.ForcedTier = "cloud"
 		}
@@ -343,7 +361,11 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		targetTier = s.GetConfig().DefaultTier
 	}
 
-	// 4.5: Escalation budget — prevent runaway frontier costs
+	// 4.5: Escalation budget — Anti-Latching Circuit Breaker (Do NOT remove)
+	// Workhorse tiers require Retries < N. Once errors accumulate (Retries >= N), workhorses are
+	// locked out and requests fall through to DefaultTier. Without this block, high retries permanently
+	// latch the session onto DefaultTier for 15+ turns (+115% cost spike). After MaxEscalationTurns (3),
+	// this breaker forcibly de-escalates back to a workhorse tier, letting tool progress reset Retries=0.
 	defaultTierName := s.GetConfig().DefaultTier.Name
 	if targetTier.Name == defaultTierName {
 		budgetExhausted := s.sessionTracker.RecordEscalation(sessionKey)
@@ -410,6 +432,9 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		slog.String("model", targetTier.Model),
 		slog.String("provider", targetTier.Provider),
 		slog.Int("tokens", reqCtx.Tokens),
+		slog.Int("raw_tokens", reqCtx.RawTokens),
+		slog.Int("nts_tokens_saved", reqCtx.NTSTokensSaved),
+		slog.Int("nts_bytes_saved", reqCtx.NTSBytesSaved),
 		slog.Bool("has_images", reqCtx.HasImages),
 		slog.Bool("has_tools", reqCtx.HasTools),
 		slog.Int("retries", reqCtx.Retries),
@@ -424,19 +449,15 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		slog.String("user_agent", r.Header.Get("User-Agent")),
 	)
 
-	// Kickstart: inject prompt when idle loop detected
-	if reqCtx.SessionKickstarted && !reqCtx.NoKickstart {
-		kickstartPrompt := contract.DefaultKickstartPrompt
-		if cfg.Kickstart.Prompt != "" {
-			kickstartPrompt = cfg.Kickstart.Prompt
-		} else if cfg.CycleKiller.KickstartPrompt != "" {
-			kickstartPrompt = cfg.CycleKiller.KickstartPrompt
-		} else if cfg.CycleBreaker.KickstartPrompt != "" {
-			kickstartPrompt = cfg.CycleBreaker.KickstartPrompt
+	// Read Slap: inject prompt when idle loop detected
+	if (reqCtx.SessionReadSlapped || reqCtx.SessionKickstarted) && !reqCtx.NoKickstart {
+		prompt := contract.DefaultReadSlapPrompt
+		if cfg.Kickstart.ReadSlap.PromptOverride != "" {
+			prompt = cfg.Kickstart.ReadSlap.PromptOverride
 		}
-		body = injectCorrectionPrompt(body, kickstartPrompt)
-		reqLogger.Info("Kickstart: injected prompt",
-			slog.Int("kickstart_count", reqCtx.SessionKickstartCount),
+		body = injectCorrectionPrompt(body, prompt)
+		reqLogger.Info("Read Slap: injected prompt",
+			slog.Int("read_slap_count", reqCtx.SessionReadSlapCount),
 		)
 		// Record this injection as a potential failure. If the model produces no tool
 		// calls this turn, the next request will have HistoryErrors > 0, and

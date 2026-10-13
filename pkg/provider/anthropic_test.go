@@ -1175,3 +1175,79 @@ func TestAnthropicProvider_CoverageExtensions(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildRequest_NoHTMLEscaping(t *testing.T) {
+	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
+		BaseURL: "https://api.anthropic.com",
+		APIKey:  "sk-ant-test",
+		Type:    contract.ProviderTypeAnthropic,
+	})
+
+	openAIJSON := `{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": "a < b && c > d"}
+		]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-3-5-sonnet", []byte(openAIJSON))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	body, err := io.ReadAll(outReq.Body)
+	if err != nil {
+		t.Fatalf("failed reading body: %v", err)
+	}
+
+	if strings.Contains(string(body), `\u003c`) || strings.Contains(string(body), `\u003e`) || strings.Contains(string(body), `\u0026`) {
+		t.Errorf("BuildUpstreamRequest introduced HTML escape sequences: %s", string(body))
+	}
+	if !strings.Contains(string(body), "a < b && c > d") {
+		t.Errorf("BuildUpstreamRequest did not preserve literal HTML characters: %s", string(body))
+	}
+}
+
+func TestBuildRequest_ToolSchemaNoHTMLEscaping(t *testing.T) {
+	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
+		BaseURL: "https://api.anthropic.com",
+		APIKey:  "sk-ant-test",
+		Type:    contract.ProviderTypeAnthropic,
+	})
+
+	openAIJSON := `{
+		"model": "claude-3-5-sonnet",
+		"messages": [
+			{"role": "user", "content": "hello"}
+		],
+		"tools": [
+			{
+				"type": "function",
+				"function": {
+					"name": "calc",
+					"description": "Calculate if x < y & y > z",
+					"parameters": {"type": "object", "properties": {"val": {"description": "<foo>"}}}
+				}
+			}
+		]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-3-5-sonnet", []byte(openAIJSON))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	body, err := io.ReadAll(outReq.Body)
+	if err != nil {
+		t.Fatalf("failed reading body: %v", err)
+	}
+
+	if strings.Contains(string(body), `\u003c`) || strings.Contains(string(body), `\u003e`) || strings.Contains(string(body), `\u0026`) {
+		t.Errorf("BuildUpstreamRequest escaped tool schema: %s", string(body))
+	}
+	if !strings.Contains(string(body), "Calculate if x < y & y > z") || !strings.Contains(string(body), "<foo>") {
+		t.Errorf("BuildUpstreamRequest did not preserve literal characters in tool schema: %s", string(body))
+	}
+}

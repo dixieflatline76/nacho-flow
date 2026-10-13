@@ -24,28 +24,42 @@ type Config struct {
 	NormalizeWhitespace bool `json:"normalize_whitespace" yaml:"normalize_whitespace"`
 
 	// Dual-lane immunity options (always recommended true)
-	PreserveFileReads     bool `json:"preserve_file_reads" yaml:"preserve_file_reads"`
-	PreserveFileWrites    bool `json:"preserve_file_writes" yaml:"preserve_file_writes"`
-	PreserveCacheControl  bool `json:"preserve_cache_control" yaml:"preserve_cache_control"`
-	CompactStaleFileReads bool `json:"compact_stale_file_reads" yaml:"compact_stale_file_reads"`
-	StaleReadDepth        int  `json:"stale_read_depth" yaml:"stale_read_depth"` // Number of recent reads to preserve per file (default: 3)
+	PreserveFileReads        bool `json:"preserve_file_reads" yaml:"preserve_file_reads"`
+	PreserveFileWrites       bool `json:"preserve_file_writes" yaml:"preserve_file_writes"`
+	PreserveCacheControl     bool `json:"preserve_cache_control" yaml:"preserve_cache_control"`
+	CompactStaleFileReads    bool `json:"compact_stale_file_reads" yaml:"compact_stale_file_reads"`
+	StaleReadDepth           int  `json:"stale_read_depth" yaml:"stale_read_depth"` // Number of recent reads to preserve per file (default: 3)
+	StripHistoricalReasoning bool `json:"strip_historical_reasoning" yaml:"strip_historical_reasoning"`
+	KeepRecentReasoningTurns int  `json:"keep_recent_reasoning_turns" yaml:"keep_recent_reasoning_turns"` // Number of recent assistant turns to preserve reasoning (default: 3)
+	DeduplicateReminders     bool `json:"deduplicate_reminders" yaml:"deduplicate_reminders"`
+	RemindersRefreshInterval int  `json:"reminders_refresh_interval" yaml:"reminders_refresh_interval"` // Re-emit full reminders table every K turns (default: 10)
+	CollapseVerboseTests     bool `json:"collapse_verbose_tests" yaml:"collapse_verbose_tests"`
+	DeduplicateToolOutputs   bool `json:"deduplicate_tool_outputs" yaml:"deduplicate_tool_outputs"`
+	MinDuplicateOutputBytes  int  `json:"min_duplicate_output_bytes" yaml:"min_duplicate_output_bytes"` // Minimum bytes for duplicate tool output referencing (default: 200)
 }
 
 // DefaultConfig returns the production default configuration for NTS.
 func DefaultConfig() Config {
 	return Config{
-		Enabled:               true,
-		StripANSI:             true,
-		ResolveCR:             true,
-		DeduplicateLines:      true,
-		DedupThreshold:        3,
-		StripBoilerplate:      true,
-		NormalizeWhitespace:   true,
-		PreserveFileReads:     true,
-		PreserveFileWrites:    true,
-		PreserveCacheControl:  true,
-		CompactStaleFileReads: true,
-		StaleReadDepth:        3,
+		Enabled:                  true,
+		StripANSI:                true,
+		ResolveCR:                true,
+		DeduplicateLines:         true,
+		DedupThreshold:           3,
+		StripBoilerplate:         true,
+		NormalizeWhitespace:      true,
+		PreserveFileReads:        true,
+		PreserveFileWrites:       true,
+		PreserveCacheControl:     true,
+		CompactStaleFileReads:    true,
+		StaleReadDepth:           3,
+		StripHistoricalReasoning: true,
+		KeepRecentReasoningTurns: 3,
+		DeduplicateReminders:     false,
+		RemindersRefreshInterval: 10,
+		CollapseVerboseTests:     false,
+		DeduplicateToolOutputs:   false,
+		MinDuplicateOutputBytes:  200,
 	}
 }
 

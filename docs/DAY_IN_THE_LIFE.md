@@ -8,8 +8,8 @@ This guide illustrates a realistic, end-to-end workday using **Nacho Flow** alon
 
 - **Developer**: Alex, Senior Systems Engineer.
 - **Project**: High-throughput distributed event pipeline in Go.
-- **Hardware**: Workstation with an RTX 4080 (16GB VRAM) running [Ollama](https://ollama.com) (`gemma4:12b-it-qat` or `qwen3.8-coder:14b`).
-- **Cloud Gateway**: Single [OpenRouter](https://openrouter.ai) API key covering frontier models (Claude 3.7 Sonnet, DeepSeek-R1, Gemini 2.5 Flash).
+- **Hardware**: Workstation with an RTX 4080 (16GB VRAM) running local inference via [llama.cpp](https://github.com/ggerganov/llama.cpp), [vLLM](https://github.com/vllm-project/vllm), or [Ollama](https://ollama.com) (`qwen3-coder:30b`).
+- **Cloud Gateway**: Single [OpenRouter](https://openrouter.ai) API key covering frontier models (Claude Sonnet 5, DeepSeek-R1, Gemini 2.5 Flash).
 - **Agent Config**: Base URL set to `http://127.0.0.1:8000/v1`, Model ID: `nacho-hybrid`.
 - **VS Code Extension**: Nacho Flow Companion installed, live telemetry visible in the Status Bar.
 
@@ -17,7 +17,7 @@ This guide illustrates a realistic, end-to-end workday using **Nacho Flow** alon
 flowchart TD
     subgraph Workday["A Day with Nacho Flow"]
         M1["<b>09:00 AM: Scaffolding & Exploration</b><br/>Read 25 files, grep schemas<br/><i>Plan-Mode Protection: Local GPU ($0.00)</i>"]
-        M2["<b>10:30 AM: Architecture Decision</b><br/><code>@nacho:frontier</code><br/><i>Single Turn: Claude 3.7 Sonnet</i>"]
+        M2["<b>10:30 AM: Architecture Decision</b><br/><code>@nacho:frontier</code><br/><i>Single Turn: Claude Sonnet 5</i>"]
         M3["<b>11:45 AM: Autonomous TDD Loop</b><br/>Test fails twice &rarr; Root-Task Escalation<br/><i>Auto-Escalates to Frontier & Fixes Deadlock</i>"]
         M4["<b>01:15 PM: Midday Telemetry Check</b><br/><code>@nacho:status</code> & <code>@nacho:deals</code><br/><i>$15.48 Saved (97.8% Reduction)</i>"]
         M5["<b>02:00 PM: Invisible Senior Review</b><br/>15th Write &rarr; 🧚 Fairy Dusting<br/><i>Proactive Frontier Quality Checkpoint</i>"]
@@ -41,7 +41,7 @@ Alex opens VS Code to tackle a new feature: refactoring the event pipeline's rin
 
 ### What Happens Automatically
 1. **Plan-Mode Auto-Detection**: Cline switches to Architect/Plan mode and issues 25 consecutive tool calls (`read_file`, `list_directory`, `grep_search`).
-2. **Local GPU Workhorse ($0.00)**: Because these turns declare read-only tools and involve routine inspection, Nacho Flow routes **100% of these turns to the local GPU** (`gemma4:12b-it-qat`).
+2. **Local GPU Workhorse ($0.00)**: Because these turns declare read-only tools and involve routine inspection, Nacho Flow routes **100% of these turns to the local GPU** (`qwen3-coder:30b`).
 3. **No False Interruptions**: Nacho Flow detects that the client declared read-only tools (`HasWriteCapability == false`) and **automatically suppresses Kickstart idle escalation**. The agent explores uninterrupted for 25 turns with zero false `[SYSTEM OVERRIDE]` prompts.
 
 > **Alex's Cost**: **$0.00** across 25 turns (saving ~$1.80 on cloud context resends).
@@ -66,7 +66,7 @@ Alex simply types into chat:
 ### What Happens Under the Hood
 1. **Microsecond Directive Extraction**: In $< 70\text{ ns}$, Nacho Flow's zero-alloc directive parser detects `@nacho:frontier`.
 2. **Clean Prompt Sanitization**: The `@nacho:frontier` tag is stripped from the prompt before dispatching to upstream providers. The LLM receives a clean prompt and is completely unaware of proxy mechanics.
-3. **Targeted Elevation**: Nacho Flow routes this single turn directly to **Tier 4 / Claude 3.7 Sonnet**.
+3. **Targeted Elevation**: Nacho Flow routes this single turn directly to **Tier 4 / Claude Sonnet 5**.
 4. **90% Prompt Cache Multiplier**: Because Nacho Flow operates with 100% pristine context preservation, the 25 preceding turns stored in conversation history hit OpenRouter's prompt cache at a 90% discount.
 5. **Result**: Alex receives an elite, production-grade memory layout design with cache line padding (`cpu.CacheLinePad`).
 
@@ -80,7 +80,7 @@ Alex simply types into chat:
 Alex approves the plan: *"Proceed with implementing the padded lock-free buffer and write full unit and benchmark tests."*
 
 The agent enters the autonomous coding loop:
-- **Turn 1**: Writes `pkg/ringbuffer/buffer.go` using Tier 2 (Qwen 3 Coder Plus).
+- **Turn 1**: Writes `pkg/ringbuffer/buffer.go` using Tier 2 (Qwen 2.5 Coder 32B).
 - **Turn 2**: Writes `pkg/ringbuffer/buffer_test.go` and executes `go test -race ./...`.
 - **The Failure**: The test fails with a data race on line 84 (`DATA RACE: Write at 0x00c000...`).
 - **Turn 3**: The agent tries to patch line 84, but runs tests again and encounters a deadlock (`fatal error: all goroutines are asleep - deadlock!`).
@@ -92,7 +92,7 @@ In previous routers, because each test failure produced different error output, 
 1. Nacho Flow checks `RootPromptHash` (the fingerprint of the initial task prompt). It recognizes this is the **same ongoing task**.
 2. Because `hasToolProgress` was false across consecutive turns, `RetriesCount` increments: `1` $\rightarrow$ `2`.
 3. Reaching `retries >= 2`, Nacho Flow **automatically escalates to Tier 3 (Frontier)** without any human intervention!
-4. Claude 3.7 Sonnet analyzes the race trace, spots the lock ordering inversion across the CAS cycle, and writes the correct memory barrier fix.
+4. Claude Sonnet 5 analyzes the race trace, spots the lock ordering inversion across the CAS cycle, and writes the correct memory barrier fix.
 5. On **Turn 4**, `go test -race ./...` passes! With forward progress established (`hasToolProgress == true`), Nacho Flow cleanly resets the retry counter back to `0`, returning subsequent routine tasks to Tier 2.
 
 ```text
@@ -192,7 +192,7 @@ Under an unmanaged proxy, an autonomous model trapped in a repetitive tool loop 
 
 ### The In-Flight Defense
 1. **RFC-002 In-Flight Detection**: Nacho Flow's **Cycle Killer** analyzes streaming token n-grams in real time.
-2. **Instant Interception (< 3 Seconds)**: In under 3 seconds, Cycle Killer detects the repeating 3-gram threshold, terminates the HTTP connection to Ollama, and injects a clean recovery notification banner into the IDE:
+2. **Instant Interception (< 3 Seconds)**: In under 3 seconds, Cycle Killer detects the repeating 3-gram threshold, terminates the HTTP connection to the local engine, and injects a clean recovery notification banner into the IDE:
    ```text
    ⚠️ [CYCLE KILLER] Runaway loop intercepted. Monologue terminated to preserve compute.
    ```
@@ -228,8 +228,8 @@ Alex finishes the core feature and starts writing custom streaming integration t
    *\"🌮 Unrecognized directive `@nacho:statuss`. Did you mean `@nacho:status`?\"*
 
 4. **Strict Circuit Alert (Fallback Bypass)**:
-   Alex tests what happens if the local GPU is offline by stopping Ollama and typing `@nacho:local Run sanity check`. Instead of silently falling back to Claude and charging Alex's credit card, Nacho Flow respects the strict directive and returns an immediate zero-cost alert:
-   *\"⚠️ Local provider circuit is OPEN (Ollama unreachable at 127.0.0.1:11434). Fallback bypassed per strict directive.\"*
+   Alex tests what happens if the local GPU is offline by stopping the local engine and typing `@nacho:local Run sanity check`. Instead of silently falling back to Claude and charging Alex's credit card, Nacho Flow respects the strict directive and returns an immediate zero-cost alert:
+   *\"⚠️ Local provider circuit is OPEN (Local server unreachable at 127.0.0.1:11434). Fallback bypassed per strict directive.\"*
 
 ---
 
@@ -259,7 +259,7 @@ The ring buffer is fully implemented, reviewed by Fairy Dusting, and benchmarked
 | **Solve a deep logic, math, or concurrency proof** | `@nacho:reasoning <your prompt>` | Single-turn reasoning cost |
 | **Force local execution (strict $0.00)** | `@nacho:local <your prompt>` | **$0.00** |
 | **Force cloud workhorse execution** | `@nacho:cloud <your prompt>` | Standard cloud cost |
-| **Route to a specific model ID** | `@nacho:model="anthropic/claude-3-7-sonnet" <prompt>` | Provider spot rate |
+| **Route to a specific model ID** | `@nacho:model="anthropic/claude-sonnet-5" <prompt>` | Provider spot rate |
 | **Check how much money you've saved** | `@nacho:status` *(in chat)* | **$0.00** (Local, $< 1\text{ ms}$) |
 | **Inspect active guardrail switches** | `@nacho:toggles` *(in chat)* | **$0.00** (Local, $< 1\text{ ms}$) |
 | **Hard reset session retries & switches** | `@nacho:reset` *(in chat)* | **$0.00** (Local, $< 1\text{ ms}$) |

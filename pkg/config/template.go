@@ -6,9 +6,12 @@ package config
 // DefaultStarterConfigTemplate is the canonical starter configuration
 // auto-initialized when nacho-flow boots on a clean environment without an existing config.yaml.
 const DefaultStarterConfigTemplate = `# =============================================================================
-# 🌮 NACHO FLOW CONFIGURATION — STANDARD HYBRID PIPELINE (DEFAULT)
-# Universal gateway configuration for autonomous coding agents (Cline, Zoo, Cursor, Aider)
-# Pipeline: Local GPU ($0) -> Fast Cloud ($0.65/M) -> Reasoning ($0.75/M) -> Frontier ($2/M)
+# 🌮 NACHO FLOW CONFIGURATION — STANDARD MULTI-TIER PIPELINE (STARTER TEMPLATE)
+# Universal gateway configuration for autonomous coding agents (Cline, Roo, Cursor, Aider)
+# Architecture: Fast Edge / Local Execution -> Cloud Workhorse -> Deep Reasoning -> Frontier Escalation
+#
+# NOTE: Replace placeholder model identifiers ("your-...") with the specific models
+# hosted on your local engine (Ollama, vLLM, llama.cpp) or your cloud providers.
 # =============================================================================
 version: "1.1.0"
 port: 8000
@@ -81,12 +84,18 @@ cycle_killer:
     max_repeats: 6                  # Fast-kill repetition loop threshold (Type 1)
 
 kickstart:
-  enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
-  threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
-  max_count: 10                     # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
-  max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
-  write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
-  # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
+  read_slap:
+    enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
+    threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
+    max_slaps: 10                     # 🛑 Read Slap Cap: force-escalate to default tier after N slaps
+    max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+    write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
+    # custom_write_tools: []          # Optional extension (agentregistry automatically provides standard write tools)
+
+  # thought_slap:                     # Optional global defaults for reasoning limit recovery
+  #   max_attempts: 1                 # 1..3 recovery attempts before failing
+  #   rescue_tier: ""                 # Empty = same tier, or name of a designated fallback tier
+  #   prompt_override: ""             # Optional custom recovery prompt
 
 # =============================================================================
 # 🗜️ NACHO TOKEN SAVER (NTS)
@@ -105,91 +114,122 @@ nts:
   preserve_cache_control: true      # 🛡️ Dual-lane immunity for prompt cache breakpoints
   compact_stale_file_reads: false    # 📦 Evict superseded historical file reads
   stale_read_depth: 3              # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
+  strip_historical_reasoning: false # 🧠 Strip reasoning from historical assistant turns
+  keep_recent_reasoning_turns: 3    # 🧠 Keep reasoning for the most recent N assistant turns
+  deduplicate_reminders: false      # 📋 Deduplicate repeated reminder tables in <environment_details>
+  reminders_refresh_interval: 10    # 📋 Re-emit full reminders table every K turns
+  collapse_verbose_tests: false     # 🧪 Collapse verbose test passing lines across Go, Cargo, Pytest, Jest
+  deduplicate_tool_outputs: false   # 🔁 Deduplicate identical generic tool execution outputs
+  min_duplicate_output_bytes: 200   # 🔁 Minimum output length in bytes for duplicate referencing
 
 # =============================================================================
 # 🚦 ORDERED DYNAMIC ROUTING TIERS (FIRST MATCH WINS)
+# Each tier defines an operational function in the agent runtime.
+# Configure 'provider' and 'model' with your preferred engine and model tags.
 # =============================================================================
 tiers:
   # ---------------------------------------------------------------------------
-  # ⚡ KICKSTART ESCALATION: Break read-only idle loops with Gemini Flash
+  # ⚡ READ SLAP ESCALATION: Idle Loop & Monologue Deadlock Recovery
+  # FUNCTION: When an agent gets stuck in a passive, read-only loop (repeated
+  # directory listings or file reads without code modifications), Read Slap
+  # injects a [SYSTEM OVERRIDE] directive and routes the turn to a distinct,
+  # high-instruction-following model to break the cycle and force active progress.
   # ---------------------------------------------------------------------------
-  - name: "Kickstart Escalation (Gemini 3.8 Flash)"
+  - name: "Read Slap Escalation (Idle Recovery)"
     provider: "openrouter"
-    model: "google/gemini-3.8-flash"
-    when: "SessionKickstarted && Retries < 3"
+    model: "your-kickstart-model" # e.g., google/gemini-3.8-flash, anthropic/claude-haiku-5-5, or z-ai/glm-5.3-flash
+    when: "SessionReadSlapped && Retries < 3"
 
   # ---------------------------------------------------------------------------
-  # 👁️ VISION ESCAPEMENT: Multimodal screenshot turns route to Gemini Flash
+  # 👁️ VISION ESCAPEMENT: Multimodal Payload Routing
+  # FUNCTION: Intercepts requests containing screenshots, images, or UI diffs
+  # (HasImages) and routes them to a vision-capable multimodal model.
+  # Keeps vision payloads from causing failures on text-only local models.
   # ---------------------------------------------------------------------------
-  - name: "Tier: Multimodal Vision (Gemini 3.8 Flash)"
+  - name: "Tier: Multimodal Vision"
     provider: "openrouter"
-    model: "google/gemini-3.8-flash"
+    model: "your-vision-model" # e.g., google/gemini-3.8-flash, deepseek/deepseek-v4.1-flash, or anthropic/claude-sonnet-5-5
     when: "Retries < 6 && HasImages"
 
   # ---------------------------------------------------------------------------
   # TIER 1: Local GPU Workhorse (Quick Chat / Single Prompts < 4k)
+  # FUNCTION: Zero-cost, low-latency execution for compact context tasks.
+  # Handles initial single-turn queries, simple tool calls, and short edits
+  # (Tokens < 4000 && Retries < 2) on your local engine (Ollama / llama.cpp / vLLM).
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
-    model: "gemma4:12b-it-qat"
+    model: "your-local-model" # e.g., qwen3-coder:30b, devstral-small-2, or phi4-mini
     when: "Tokens < 4000 && Retries < 2"
     strip_images: false
     max_context: 32000
 
   # ---------------------------------------------------------------------------
-  # TIER 2: Flagship Agent Coder (GLM-5.3-Flash)
-  # Dense flagship coder: AST diff precision, routine editing < 160k tokens
+  # TIER 2: Primary Cloud Coder (Autonomous Agent Workhorse)
+  # FUNCTION: The primary engine for multi-turn agentic coding.
+  # Handles routine file edits, AST diffs, test generation, and tool execution
+  # across medium-to-large contexts (Tokens < 160000 && Retries < 6).
   # ---------------------------------------------------------------------------
-  - name: "Tier 2: Flagship Agent Coder (GLM-5.3-Flash)"
+  - name: "Tier 2: Primary Cloud Coder"
     provider: "openrouter"
-    model: "z-ai/glm-5.3-flash"
+    model: "your-fast-cloud-model" # e.g., z-ai/glm-5.3-flash, qwen/qwen3-coder-plus, deepseek/deepseek-v4.1-flash, or anthropic/claude-sonnet-5-5
     when: "Tokens < 160000 && Retries < 6"
 
   # ---------------------------------------------------------------------------
-  # TIER 3: Workhorse & Full-Window Context (Gemini 3.8 Flash — $0.75 / $3.75 per 1M)
-  # Handles all normal agent work up to 1M tokens, plus initial retries (2-4)
+  # TIER 3: Debug & Reasoning Workhorse (Full-Window Context & Early Retries)
+  # FUNCTION: High-context synthesis and early failure investigation.
+  # Engaged when tasks require navigating large repositories or when initial
+  # retries (2-4) fail, providing deeper reasoning to correct trajectory.
   # ---------------------------------------------------------------------------
-  - name: "Tier 3: Debug & Reasoning Workhorse (Gemini 3.8 Flash)"
+  - name: "Tier 3: Debug & Reasoning Workhorse"
     provider: "openrouter"
-    model: "google/gemini-3.8-flash"
+    model: "your-reasoning-model" # e.g., google/gemini-3.8-flash, anthropic/claude-sonnet-5-5, or deepseek/deepseek-v4-pro
     when: "Tokens < 1000000 && Retries < 5"
 
   # ---------------------------------------------------------------------------
-  # TIER 4: Frontier Powerhouse (DeepSeek V4 Pro — $0.96 / $1.91 per 1M)
-  # Strictly for heavy failure escalation (Retries 5-7), NEVER context size
+  # TIER 4: Frontier Powerhouse (Heavy Failure Escalation)
+  # FUNCTION: Top-tier reasoning reserved for stubborn, multi-turn failures.
+  # Strictly triggered when earlier tiers repeatedly fail (Retries >= 5),
+  # never triggered solely by context size growth.
   # ---------------------------------------------------------------------------
-  - name: "Tier 4: Frontier Powerhouse (DeepSeek V4 Pro)"
+  - name: "Tier 4: Frontier Powerhouse"
     provider: "openrouter"
-    model: "deepseek/deepseek-v4-pro"
+    model: "your-frontier-model" # e.g., anthropic/claude-opus-5-5, anthropic/claude-fable-5-1, or deepseek/deepseek-r1
     when: "false"
 
   # ---------------------------------------------------------------------------
-  # TIER 5: Claude Opus 5 — SPICY DIRECTIVE ONLY (unreachable by routing)
-  # Access via: @nacho:model="anthropic/claude-opus-5" or X-Spicy-Model
+  # TIER 5: Frontier On-Demand (Directives Only — Unreachable by Auto-Routing)
+  # FUNCTION: Manual directive escapement (inactive during normal routing: when: "false").
+  # Explicitly callable mid-chat via hot sauce directives:
+  # e.g., @nacho:model="your-model" or @nacho:tier="Tier 5: Opus On-Demand (Spicy Only)"
   # ---------------------------------------------------------------------------
   - name: "Tier 5: Opus On-Demand (Spicy Only)"
     provider: "openrouter"
-    model: "anthropic/claude-opus-5"
+    model: "your-on-demand-model" # e.g., anthropic/claude-opus-5-5, anthropic/claude-fable-5-1, or openai/o3
     when: "false"
 
 # =============================================================================
-# 🛡️ DEFAULT TIER: Cost-Safe Catch-All (Gemini 3.8 Flash — $0.75 / $3.75)
+# 🛡️ DEFAULT TIER: Cost-Safe Catch-All Fallback
+# FUNCTION: Safety net fallback. Ensures any request that does not match
+# preceding tier conditions is reliably processed.
 # =============================================================================
 default_tier:
-  name: "Default Catch-All (Gemini 3.8 Flash)"
+  name: "Default Catch-All"
   provider: "openrouter"
-  model: "google/gemini-3.8-flash"
+  model: "your-default-model" # e.g., google/gemini-3.8-flash, anthropic/claude-haiku-5-5, or deepseek/deepseek-v4.1-flash
   when: "true"
 
 # =============================================================================
-# FAIRY DUSTING - Proactive Frontier Quality Checkpoints
+# FAIRY DUSTING - Proactive Quality Checkpoints
+# FUNCTION: Mid-session proactive inspections to prevent agent drift, stub
+# implementations, and missing tests during long autonomous runs.
 # =============================================================================
 fairy_dust:
   enabled: true
   entries:
-    # Tactical Code Review (Gemini 3.8 Flash)
+    # Tactical Code Review: Verifies implementation completeness and fixes errors
     - name: "Tactical Code Review"
-      model: "google/gemini-3.8-flash"
+      model: "your-reviewer-model" # e.g., google/gemini-3.8-flash, anthropic/claude-haiku-5-5, or anthropic/claude-sonnet-5-5
       provider: "openrouter"
       frequency: 15
       max_per_session: 5
@@ -205,10 +245,9 @@ fairy_dust:
         (3) COMPILATION & TESTS: Fix compilation errors, type mismatches, and broken assertions directly with tool calls (write_to_file, replace_file_content, execute_command).
         If issues exist, emit tool calls immediately to fix them. If everything is verified and correct, output at most 1 sentence confirming status and continue the next task step with tools.
 
-    # Strategic Architecture Review — SPEC TRACEABILITY AUDIT
+    # Strategic Architecture Review: SPEC TRACEABILITY AUDIT
     - name: "Strategic Architecture Review"
-      # model: "anthropic/claude-opus-5"
-      model: "google/gemini-3.8-flash" # swap in opus 5 for tough jobs
+      model: "your-architect-model" # e.g., anthropic/claude-opus-5-5, anthropic/claude-sonnet-5-5, or google/gemini-3.8-flash
       provider: "openrouter"
       frequency: 60
       max_per_session: 1

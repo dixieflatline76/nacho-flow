@@ -42,7 +42,7 @@ flowchart TD
 
     LocalGPU["🖥️ L2: Local Workstation GPU<br/>(Ollama / vLLM)<br/><b>$0.00 / Iterative Turns</b>"]:::backend
     BudgetCloud["⚡ L2: Dense High-Capability Cloud<br/>(GLM-5.3-Flash / Qwen3-Coder)<br/><b>$0.65 / 1M Tokens</b>"]:::backend
-    FrontierCloud["☁️ L1: Flagship Frontier Reasoning<br/>(Claude Sonnet 5 / Opus 5 / DeepSeek-V4.1-Flash)<br/><b>Targeted Reasoning Escalation</b>"]:::frontier
+    FrontierCloud["☁️ L1: Flagship Frontier Reasoning<br/>(Claude Sonnet 5 / Claude Opus 5.5 / DeepSeek-R1)<br/><b>Targeted Reasoning Escalation</b>"]:::frontier
 
     Client -->|Raw Tool Calls & History| NachoRuntime
     Tuner -->|Routine Turns & Scaffolding| LocalGPU
@@ -53,7 +53,7 @@ flowchart TD
 ### The AI Coding Stack Taxonomy (L1–L4)
 To diagnose why autonomous coding breaks down, we formalize the four distinct layers of the modern agentic stack:
 
-* **Layer 1 (L1) — Foundation Weights & Models:** The underlying neural network parameters (e.g., Claude Sonnet 5, Opus 5, GLM-5.3-Flash, Qwen 3 Coder, DeepSeek-V4.1-Flash).
+* **Layer 1 (L1) — Foundation Weights & Models:** The underlying neural network parameters (e.g., Claude Sonnet 5, Claude Opus 5.5, GLM-5.3-Flash, Qwen3 Coder, DeepSeek-R1).
 * **Layer 2 (L2) — Inference & Serving Infrastructure:** Hosting runtimes exposing wire endpoints (e.g., vLLM, Ollama, OpenRouter, llama.cpp).
 * **Layer 3 (L3) — Agent Orchestrators & Harnesses:** Client-side IDE extensions, CLI agents, and task planners managing conversation state, prompt templates, and tool dispatch (e.g., Zoo Code v3.84, OpenCode, Cursor Agent).
 * **Layer 4 (L4) — Execution Runtime & Agent Supervisor (Nacho Flow):** The deterministic, wire-speed mediation fabric operating between L3 and L2. It inspects payloads in real-time, heals malformed streams in flight, breaks repetition cycles, compacts accumulating history, and enforces hardware-aware routing.
@@ -107,7 +107,7 @@ Industry research on AI coding patterns (such as GitClear’s multi-million comm
 
 ## 3. The Economic Imperative: Why Frontier Tax Kills Autonomous Workflows
 
-The current industry default is to brute-force agentic reliability by routing every turn to premium frontier APIs (Claude Sonnet 5, Opus 5) costing **$3.00 to $15.00 per million tokens**.
+The current industry default is to brute-force agentic reliability by routing every turn to premium frontier APIs (Claude Sonnet 5, Claude Opus 5.5) costing **$3.00 to $15.00 per million tokens**.
 
 | Metric | Direct Frontier Cloud (Claude Sonnet 5 Direct) | Raw Budget Cloud (GLM-5.3 Direct) | Nacho Flow + Budget Cloud (L4 Runtime) |
 | :--- | :--- | :--- | :--- |
@@ -141,7 +141,7 @@ sequenceDiagram
     participant Nacho as Nacho Flow (L4 Runtime)
     participant Local as Local GPU ($0.00)
     participant Budget as GLM-5.3-Flash ($0.65)
-    participant Frontier as Sonnet 5 / Opus 5
+    participant Frontier as Claude Sonnet 5 / Claude Opus 5.5
 
     Dev->>Agent: "Implement full Blackjack engine in Go 1.26"
     Agent->>Nacho: POST /v1/chat/completions (Turn 1: Architectural Plan)

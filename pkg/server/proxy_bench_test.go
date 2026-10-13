@@ -81,3 +81,58 @@ func BenchmarkProxy_ChatCompletions_EndToEnd(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkPipeline_Ingress_Disabled_ZeroAlloc(b *testing.B) {
+	bFalse := false
+	cfg := &contract.Config{
+		Port: 8000,
+		NTS:  contract.NTSConfig{Enabled: &bFalse},
+	}
+	srv := NewServer(cfg, nil, nil, nil)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		tr := srv.GetNTSTransformer()
+		if tr != nil {
+			b.Fatal("expected nil transformer when disabled")
+		}
+	}
+}
+
+func BenchmarkPipeline_Ingress_AtomicLoad_ZeroAlloc(b *testing.B) {
+	cfg := &contract.Config{Port: 8000}
+	srv := NewServer(cfg, nil, nil, nil)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		tr := srv.GetNTSTransformer()
+		if tr == nil {
+			b.Fatal("expected non-nil transformer when default")
+		}
+	}
+}
+
+func BenchmarkPipeline_Ingress_Bypass_ZeroAlloc(b *testing.B) {
+	cfg := &contract.Config{Port: 8000}
+	srv := NewServer(cfg, nil, nil, nil)
+	tr := srv.GetNTSTransformer()
+	if tr == nil {
+		b.Fatal("expected non-nil transformer")
+	}
+
+	cleanPayload := []byte(`{"model": "gpt-4o", "messages": [{"role": "user", "content": "How do I optimize mutex contention in high concurrency Go?"}]}`)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		out, res, err := tr.TransformOpenAI(cleanPayload)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !res.Bypassed {
+			b.Fatal("expected bypassed")
+		}
+		if len(out) != len(cleanPayload) {
+			b.Fatal("expected identical slice")
+		}
+	}
+}

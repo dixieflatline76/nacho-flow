@@ -13,7 +13,7 @@ var (
 	oldExtractRetryFloorRegex   = regexp.MustCompile(`(?i)retries\s*>=\s*(\d+)`)
 	oldExtractRetryFloorGtRegex = regexp.MustCompile(`(?i)retries\s*>\s*(\d+)`)
 	oldExtractKwRegex           = regexp.MustCompile(`'([^']+)'|"([^"]+)"`)
-	oldKickstartClauseRegex     = regexp.MustCompile(`(?i)\bSessionKickstarted\b(?:\s*==\s*true)?`)
+	oldKickstartClauseRegex     = regexp.MustCompile(`(?i)\b(?:SessionKickstarted|SessionReadSlapped)\b(?:\s*==\s*true)?`)
 	oldRestrictImagesRegex      = regexp.MustCompile(`(?i)(?:!\s*HasImages|\bHasImages\s*==\s*false\b)`)
 	oldRequireImagesRegex       = regexp.MustCompile(`(?i)(?:^|[^!])\bHasImages\b(?:\s*==\s*true)?`)
 	oldRestrictToolsRegex       = regexp.MustCompile(`(?i)(?:!\s*HasTools|\bHasTools\s*==\s*false\b)`)

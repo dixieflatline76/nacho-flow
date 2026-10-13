@@ -31,6 +31,9 @@
   "interactive_tools": [
     "ask_followup_question"
   ],
+  "cycle_killer_exempt_tools": [
+    "attempt_completion"
+  ],
   "mode_tool": "switch_mode",
   "mode_heuristics": [
     "switch to code mode",
@@ -49,5 +52,11 @@
     "offset must be a 1-indexed line number",
     "anchor_line must be a 1-indexed line number",
     "The file path is invalid"
+  ],
+  "repetitive_environment_sections": [
+    {
+      "wrapper_tag": "environment_details",
+      "header_marker": "REMINDERS"
+    }
   ]
 }

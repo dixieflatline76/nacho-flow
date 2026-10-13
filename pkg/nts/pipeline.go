@@ -73,6 +73,11 @@ func (p *Pipeline) Process(b []byte, category ToolCategory) ReductionResult {
 		b = StripToolBoilerplateInPlace(b)
 	}
 
+	// Pass 3.5: Multi-language verbose test output collapse (Go, Rust, Python, Node)
+	if len(b) > 0 && p.config.CollapseVerboseTests && category == CategoryGeneric {
+		b = CollapseVerboseTestsInPlace(b)
+	}
+
 	// Pass 4: Whitespace cascade & trailing empty line normalization
 	if len(b) > 0 && p.config.NormalizeWhitespace {
 		b = NormalizeWhitespaceInPlace(b)

@@ -63,6 +63,10 @@ func LoadConfig(customPath string) (*contract.Config, error) {
 		}
 	}
 
+	if err := ValidateRawYAML(data); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML config at %s: %w", loadedPath, err)
+	}
+
 	var cfg contract.Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML config at %s: %w", loadedPath, err)

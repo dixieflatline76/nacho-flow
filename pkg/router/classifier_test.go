@@ -1343,3 +1343,18 @@ func TestClassify_RootPromptHash_MultiPartContent(t *testing.T) {
 		t.Errorf("Expected non-zero PromptHash for multi-part content")
 	}
 }
+
+func TestIsBuiltinCycleKillerExempt(t *testing.T) {
+	if !IsBuiltinCycleKillerExempt("attempt_completion") {
+		t.Errorf("expected attempt_completion to be cycle killer exempt")
+	}
+	if !IsBuiltinCycleKillerExempt("finish") {
+		t.Errorf("expected finish to be cycle killer exempt")
+	}
+	if IsBuiltinCycleKillerExempt("execute_command") {
+		t.Errorf("expected execute_command NOT to be cycle killer exempt")
+	}
+	if IsBuiltinCycleKillerExempt("bash") {
+		t.Errorf("expected bash NOT to be cycle killer exempt")
+	}
+}

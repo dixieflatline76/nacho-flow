@@ -867,6 +867,11 @@ func IsBuiltinWriteTool(name string) bool {
 	return agentregistry.DefaultRegistry().IsWriteTool(name)
 }
 
+// IsBuiltinCycleKillerExempt checks if the tool is registered as exempt from Cycle Killer repetition detection.
+func IsBuiltinCycleKillerExempt(name string) bool {
+	return agentregistry.DefaultRegistry().IsCycleKillerExempt(name)
+}
+
 // extractCommandFromRaw pulls the shell command string from tool call argument payloads.
 func extractCommandFromRaw(raw json.RawMessage) string {
 	if len(raw) == 0 {

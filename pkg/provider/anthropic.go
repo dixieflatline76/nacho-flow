@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/wirejson"
 )
 
 const (
@@ -296,7 +297,7 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		anthropicReq.TopP = openAIReq.TopP
 	}
 
-	payloadBytes, err := json.Marshal(&anthropicReq)
+	payloadBytes, err := wirejson.Marshal(&anthropicReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed marshaling anthropic payload: %w", err)
 	}
@@ -337,7 +338,7 @@ func (p *AnthropicProvider) TranslateResponseBody(statusCode int, body []byte) (
 			errOut.Error.Message = aErr.Error.Message
 			errOut.Error.Type = aErr.Error.Type
 			errOut.Error.Code = statusCode
-			return json.Marshal(errOut)
+			return wirejson.Marshal(errOut)
 		}
 		return body, nil
 	}
@@ -405,7 +406,7 @@ func (p *AnthropicProvider) TranslateResponseBody(statusCode int, body []byte) (
 		},
 	}
 
-	return json.Marshal(openAIResp)
+	return wirejson.Marshal(openAIResp)
 }
 
 // ----------------- Typed Fast Request Structs (0 Dynamic Maps) -----------------

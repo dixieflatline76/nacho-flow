@@ -353,6 +353,13 @@
 			return stats.fairy_dust ?? null;
 		}
 
+		function windowThoughtSlap(windowTS) {
+			if (windowTS != null && typeof windowTS.total_slaps !== 'undefined') {
+				return windowTS;
+			}
+			return stats.thought_slap ?? null;
+		}
+
 		function windowNTS(w) {
 			return {
 				tokens_saved: w?.nts_tokens_saved || 0,
@@ -364,30 +371,37 @@
 
 		let currentCycleKiller = null;
 		let currentFairyDust = null;
+		let currentThoughtSlap = null;
 		let currentNTS = null;
 		if (activeTimeWindow === 'past_1_hour') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.past_1_hour?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.past_1_hour?.fairy_dust);
+			currentThoughtSlap = windowThoughtSlap(stats.windows?.past_1_hour?.thought_slap);
 			currentNTS = windowNTS(stats.windows?.past_1_hour);
 		} else if (activeTimeWindow === 'today') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.today?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.today?.fairy_dust);
+			currentThoughtSlap = windowThoughtSlap(stats.windows?.today?.thought_slap);
 			currentNTS = windowNTS(stats.windows?.today);
 		} else if (activeTimeWindow === 'yesterday') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.yesterday?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.yesterday?.fairy_dust);
+			currentThoughtSlap = windowThoughtSlap(stats.windows?.yesterday?.thought_slap);
 			currentNTS = windowNTS(stats.windows?.yesterday);
 		} else if (activeTimeWindow === 'this_week') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.this_week?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.this_week?.fairy_dust);
+			currentThoughtSlap = windowThoughtSlap(stats.windows?.this_week?.thought_slap);
 			currentNTS = windowNTS(stats.windows?.this_week);
 		} else if (activeTimeWindow === 'this_month') {
 			currentCycleKiller = windowCycleKiller(stats.windows?.this_month?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.this_month?.fairy_dust);
+			currentThoughtSlap = windowThoughtSlap(stats.windows?.this_month?.thought_slap);
 			currentNTS = windowNTS(stats.windows?.this_month);
 		} else {
 			currentCycleKiller = windowCycleKiller(stats.windows?.all_time?.cycle_killer);
 			currentFairyDust = windowFairyDust(stats.windows?.all_time?.fairy_dust);
+			currentThoughtSlap = windowThoughtSlap(stats.windows?.all_time?.thought_slap);
 			currentNTS = {
 				tokens_saved: stats.windows?.all_time?.nts_tokens_saved || stats.total_nts_tokens_saved || 0,
 				bytes_saved: stats.windows?.all_time?.nts_bytes_saved || stats.total_nts_bytes_saved || 0,
@@ -396,28 +410,35 @@
 			};
 		}
 
-		renderDefensePanel(currentCycleKiller, currentFairyDust);
+		renderDefensePanel(currentCycleKiller, currentFairyDust, currentThoughtSlap);
 		renderNTSPanel(currentNTS);
 	}
 
-	function renderDefensePanel(ck, fd) {
+	function renderDefensePanel(ck, fd, ts) {
 		const ckContent = document.getElementById('cycle-killer-content');
 		if (!ckContent) return;
-		if (!ck) {
+		if (!ck && !fd && !ts) {
 			ckContent.innerHTML = '<div class="loading">No defense telemetry recorded yet.</div>';
 			return;
 		}
 
-		const totalInterventions = ck.total_interventions || 0;
-		const avoidedTokens = ck.avoided_runaway_tokens || 0;
-		const avoidedGPUSeconds = ck.avoided_gpu_seconds || 0;
-		const stage1Heals = ck.stage1_local_heals || 0;
-		const stage2Escalations = ck.stage2_cloud_escalations || 0;
-		const kickstarts = ck.session_kickstarts || 0;
-		const healRate = ck.local_heal_success_rate_pct !== undefined
+		const totalInterventions = ck ? (ck.total_interventions || 0) : 0;
+		const avoidedTokens = ck ? (ck.avoided_runaway_tokens || 0) : 0;
+		const avoidedGPUSeconds = ck ? (ck.avoided_gpu_seconds || 0) : 0;
+		const stage1Heals = ck ? (ck.stage1_local_heals || 0) : 0;
+		const stage2Escalations = ck ? (ck.stage2_cloud_escalations || 0) : 0;
+		const kickstarts = ck ? (ck.session_kickstarts || 0) : 0;
+		const healRate = (ck && ck.local_heal_success_rate_pct !== undefined)
 			? ck.local_heal_success_rate_pct
 			: (totalInterventions > 0 ? (stage1Heals / totalInterventions) * 100 : 0);
 		const fairyTriggers = fd ? (fd.total_triggers || 0) : 0;
+
+		const tsTotal = ts ? (ts.total_slaps || 0) : 0;
+		const tsRecovered = ts ? ((ts.recovered !== undefined ? ts.recovered : ((ts.recovered_tool_calls || 0) + (ts.recovered_text_content || 0)))) : 0;
+		const tsExtraTokens = ts ? (ts.total_extra_tokens || ts.extra_tokens || 0) : 0;
+		const tsExtraCost = ts ? (ts.total_extra_cost_usd || ts.extra_cost || 0) : 0;
+		const tsRate = tsTotal > 0 ? Math.round((tsRecovered / tsTotal) * 100) : 0;
+		const tsExtraTokensStr = tsExtraTokens >= 1000 ? (tsExtraTokens / 1000).toFixed(1) + 'k' : tsExtraTokens.toString();
 
 		const gpuMinutes = (avoidedGPUSeconds / 60).toFixed(1);
 		const avoidedTokensStr = avoidedTokens >= 1000000
@@ -436,11 +457,19 @@
 			}
 		});
 
-		const statusPillText = totalInterventions > 0
-			? `${totalInterventions} Loops Intercepted &bull; Stage 1 Heals: ${stage1Heals} &bull; Stage 2 Escalations: ${stage2Escalations}`
-			: (verifiedCleanCount > 0
-				? `Active Defense: ${verifiedCleanCount} Streams Verified Clean &bull; Peak N-Gram: ${peakObservedNgram}x &bull; 0 False Positives`
-				: 'Watchdog Active &bull; 0 Degeneracies Detected');
+		let statusPillText = '';
+		if (totalInterventions > 0 || kickstarts > 0 || tsRecovered > 0) {
+			const parts = [];
+			if (totalInterventions > 0) parts.push(`${totalInterventions} Loops Intercepted`);
+			if (stage1Heals > 0) parts.push(`Stage 1 Heals: ${stage1Heals}`);
+			if (kickstarts > 0) parts.push(`${kickstarts} Read Slaps`);
+			if (tsRecovered > 0) parts.push(`${tsRecovered} Thought Slaps Rescued`);
+			statusPillText = parts.join(' &bull; ');
+		} else if (verifiedCleanCount > 0) {
+			statusPillText = `Active Defense: ${verifiedCleanCount} Streams Verified Clean &bull; Peak N-Gram: ${peakObservedNgram}x &bull; 0 False Positives`;
+		} else {
+			statusPillText = 'Watchdog Active &bull; 0 Degeneracies Detected';
+		}
 
 		const loopsLabel = totalInterventions > 0
 			? `${totalInterventions} <span class="ck-unit">Loops</span>`
@@ -474,25 +503,38 @@
 				<div class="supervisor-row">
 					<div class="supervisor-bracket bracket-kickstart">
 						<div class="bracket-header">
-							<span class="bracket-title">⚡ Kickstart: Stall Resuscitation Engine</span>
+							<span class="bracket-title">⚡ Kickstart: Read Slap</span>
 						</div>
 						<div class="bracket-cards">
 							<div class="ck-item kickstart-chip">
 								<div class="ck-value">${kickstarts} <span class="ck-unit">Sessions</span></div>
-								<div class="ck-label">⚡ Kickstart Resuscitations</div>
-								<div class="ck-sub">Stalled sessions rescued out of passive read/plan procrastination</div>
+								<div class="ck-label">⚡ Read Slap Interventions</div>
+								<div class="ck-sub">Stalled sessions prompted to resume active tool & code execution</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="supervisor-bracket bracket-thought-slap">
+						<div class="bracket-header">
+							<span class="bracket-title">👋 Kickstart: Thought Slap</span>
+						</div>
+						<div class="bracket-cards">
+							<div class="ck-item slap-chip">
+								<div class="ck-value">${tsRecovered} <span class="ck-unit">/ ${tsTotal}${tsTotal > 0 ? ` (${tsRate}%)` : ''}</span></div>
+								<div class="ck-label">👋 Thought Slap Recoveries</div>
+								<div class="ck-sub">${tsTotal > 0 ? `${tsRecovered} reasoning truncations rescued (+${tsExtraTokensStr} tks, +$${tsExtraCost.toFixed(3)})` : 'Active zero-cost retry & tier rescue watchdog armed'}</div>
 							</div>
 						</div>
 					</div>
 
 					<div class="supervisor-bracket bracket-fairy-dust">
 						<div class="bracket-header">
-							<span class="bracket-title">🧚 Fairy Dust: Programmable Quality Checkpoints</span>
+							<span class="bracket-title">🧚 Fairy Dust Checkpoints</span>
 						</div>
 						<div class="bracket-cards">
 							<div class="ck-item fairy-chip">
 								<div class="ck-value">${fairyTriggers} <span class="ck-unit">Checkpoints</span></div>
-								<div class="ck-label">🧚 Fairy Dust Checkpoints</div>
+								<div class="ck-label">🧚 Quality Checkpoints</div>
 								<div class="ck-sub">Cadenced milestone checkpoints on productive file writes</div>
 							</div>
 						</div>
@@ -500,7 +542,7 @@
 				</div>
 			</div>
 			<div class="ck-footer-row">
-				<div class="ck-status-pill ${totalInterventions > 0 ? 'active' : 'idle'}">
+				<div class="ck-status-pill ${totalInterventions > 0 || tsRecovered > 0 ? 'active' : 'idle'}">
 					<span class="status-dot"></span>
 					${statusPillText}
 				</div>
@@ -1117,8 +1159,29 @@
 			const kickstartBadge = route.session_kickstarted
 				? `<span class="badge badge-kickstart" title="🚀 Kickstart: Tool-less session escalated to frontier reasoning model">🚀 Kick</span>`
 				: '';
-			const proactiveBadge = (fairyBadge || kickstartBadge)
-				? `${fairyBadge}${kickstartBadge}`
+
+			let slapBadge = '';
+			const slapAttempts = route.thought_slap_attempts || (route.thought_slap_action ? 1 : 0);
+			if (slapAttempts > 0) {
+				const outcome = route.thought_slap_outcome || route.thought_slap_action || '';
+				const tierInfo = route.thought_slap_tier ? ` via ${route.thought_slap_tier}` : '';
+				if (outcome === 'recovered_tool_call') {
+					slapBadge = `<span class="badge badge-slap-tool" title="👋 Thought Slap (attempt ${slapAttempts}): Recovered tool call${tierInfo}">👋 Slap: Tool</span>`;
+				} else if (outcome === 'recovered_content' || outcome === 'recovered_text_content') {
+					slapBadge = `<span class="badge badge-slap-content" title="👋 Thought Slap (attempt ${slapAttempts}): Recovered prose content${tierInfo}">👋 Slap: Text</span>`;
+				} else if (outcome === 'exhausted' || outcome === 'truncated_exhausted') {
+					slapBadge = `<span class="badge badge-slap-exhausted" title="⚠️ Thought Slap exhausted after ${slapAttempts} attempts: reasoning length limit reached">⚠️ Slap: Trunc</span>`;
+				} else if (outcome === 'upstream_error') {
+					slapBadge = `<span class="badge badge-slap-exhausted" title="⚠️ Thought Slap upstream error on recovery attempt">⚠️ Slap: Err</span>`;
+				} else if (outcome === 'client_cancelled') {
+					slapBadge = `<span class="badge badge-slap-exhausted" title="⚠️ Thought Slap cancelled by client">⚠️ Slap: Cancel</span>`;
+				} else {
+					slapBadge = `<span class="badge badge-slap-tool" title="👋 Thought Slap (${slapAttempts} attempts): ${outcome}">👋 Slap</span>`;
+				}
+			}
+
+			const proactiveBadge = (fairyBadge || kickstartBadge || slapBadge)
+				? `${fairyBadge}${kickstartBadge}${slapBadge}`
 				: `<span class="badge-cycle-none">--</span>`;
 
 			let ntsBadge = '';

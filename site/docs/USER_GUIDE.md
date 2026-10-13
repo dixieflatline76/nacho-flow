@@ -7,10 +7,10 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
 ## Table of Contents
 1. [Installation & Setup](#1-installation--setup)
 2. [Configuration Reference (`config.yaml`)](#2-configuration-reference-configyaml)
-   - [2.3 🏆 Recommended Local Model for 16GB Cards: Gemma 4 12B IT QAT & Perfected Ollama Tuning](#23--recommended-local-model-for-16gb-cards-gemma-4-12b-it-qat--perfected-ollama-tuning)
+   - [2.3 🏆 Recommended Local Models & Server Tuning (16GB–24GB VRAM)](#23--recommended-local-models--server-tuning-16gb24gb-vram)
    - [2.4 Tier Feature Flags & Transformation Policies: Granular Proxy Control](#24-tier-feature-flags--transformation-policies-granular-proxy-control)
    - [2.5 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints](#25--fairy-dusting-periodic-proactive-frontier-quality-checkpoints)
-   - [2.6 ⚡ Kickstart Resuscitation & Write-Only Filtering](#26--kickstart-resuscitation--write-only-filtering)
+   - [2.6 ⚡ Kickstart: Idle Loop Recovery & Write-Only Filtering](#26--kickstart-idle-loop-recovery--write-only-filtering)
    - [2.7 🛡️ Cost-Safe Default Tier & 🌶️ Spicy-Only Tiers](#27-️-cost-safe-default-tier--️-spicy-only-tiers-when-false)
    - [2.8 🗜️ Nacho Token Saver (NTS): Wire-Speed Tool Output Compaction](#28-️-nacho-token-saver-nts-wire-speed-tool-output-compaction)
 3. [Writing Custom Routing Tiers (`expr` Rules)](#3-writing-custom-routing-tiers-expr-rules)
@@ -31,7 +31,7 @@ If you just want to stop wasting cloud money and start saving in under 2 minutes
 
 ```mermaid
 flowchart LR
-    Step1["<b>1. Start Ollama Locally</b><br/><code>ollama run gemma4:12b-it-qat</code>"]
+    Step1["<b>1. Start Local Engine (Optional)</b><br/><code>llama-server</code>, <code>vLLM</code>, or <code>ollama</code>"]
     Step2["<b>2. Run Nacho Flow Gateway</b><br/><code>nacho-flow</code>"]
     Step3["<b>3. Point Zoo / Cline / Aider</b><br/><code>http://127.0.0.1:8000/v1</code>"]
 
@@ -41,13 +41,16 @@ flowchart LR
     class Step1,Step2,Step3 step;
 ```
 
-1. **Pull a local coding model** (if you haven't already):
+1. **Start a local coding model** (optional — skip if using pure cloud routing):
    ```bash
-   # 🏆 Recommended champion for 16GB VRAM GPUs (RTX 4080, RX 6900/9070 XT, Apple Silicon):
-   ollama pull gemma4:12b-it-qat
+   # Option A: llama.cpp server (e.g. Qwen3 Coder 30B MoE or Devstral Small 2)
+   llama-server -m qwen3-coder-30b-instruct-q4_k_m.gguf -c 32768 --port 8001
 
-   # Or for 8GB VRAM workstations:
-   ollama pull qwen3.8-coder:7b
+   # Option B: vLLM
+   vllm serve Qwen/Qwen3-Coder-30B-Instruct --port 8001
+
+   # Option C: Ollama (16GB–24GB VRAM: qwen3-coder:30b; 8GB VRAM / CPU: phi4-mini)
+   ollama run qwen3-coder:30b
    ```
 2. **Install Nacho Flow & Create `config.yaml`**:
    ```bash
@@ -156,12 +159,12 @@ providers:
     api_key: "ENV_OPENROUTER_API_KEY"
 
 tiers:
-  # Routine turns < 20k context stay on your GPU for $0.00 (100% VRAM offload on 16GB cards)
+  # Routine turns < 24k context stay on your GPU for $0.00
   - name: "Local GPU Workhorse"
-    model: "gemma4:12b-it-qat"
+    model: "qwen3-coder:30b"
     provider: "ollama"
-    max_context: 32000
-    when: "Tokens < 20000 && Retries < 2"
+    max_context: 32768
+    when: "Tokens < 24000 && Retries < 2"
 
 # Flagship cloud model for deep reasoning or heavy context
 default_tier:
@@ -236,12 +239,12 @@ tiers:
     provider: "openrouter"
     when: "HasImages"
 
-  # Tier 3: Local GPU (100% Free, Routine tasks < 16k context, auto-escalates after 2 retries)
+  # Tier 3: Local GPU (100% Free, Routine tasks < 24k context, auto-escalates after 2 retries)
   - name: "Local GPU"
-    model: "qwen3.8-coder:14b"
+    model: "qwen3-coder:30b"
     provider: "ollama"
-    max_context: 16384
-    when: "Tokens < 16000 && !HasImages && !HasTools && Retries < 2"
+    max_context: 32768
+    when: "Tokens < 24000 && !HasImages && !HasTools && Retries < 2"
     strip_images: true
 
   # Tier 4: Frontier Powerhouse (Complex refactoring, higher retry counts)
@@ -253,11 +256,11 @@ tiers:
   # Tier 5: On-Demand Opus (Unreachable by automatic routing)
   # Accessible strictly via @nacho:model or X-Spicy-Model, or by swapping into Fairy Dusting
   - name: "Opus On-Demand (Spicy Only)"
-    model: "anthropic/claude-opus-5"
+    model: "anthropic/claude-opus-5-5"
     provider: "openrouter"
     when: "false"
 
-# 🛡️ Cost-Safe Default Tier: Safety net catch-all (Sonnet 5 prevents runaway Opus costs)
+# 🛡️ Cost-Safe Default Tier: Safety net catch-all
 default_tier:
   name: "Default: Cost-Safe Catch-All (Claude Sonnet 5)"
   model: "anthropic/claude-sonnet-5"
@@ -316,12 +319,16 @@ cycle_killer:
     max_repeats: 8                  # Fast-kill repetition loop threshold (Type 1)
 
 kickstart:
-  enabled: true                     # ⚡ Master switch for cross-turn idle session resuscitation
-  threshold: 5                      # Jolt with [SYSTEM OVERRIDE] after N consecutive idle turns (0 = off)
-  max_count: 10                     # 🛑 Kickstart Cap: force-escalate to default tier after N kickstarts
-  max_failures: 3                   # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
-  write_only: true                  # Only count file writes / commands as progress (ignores read-only tools)
-  # custom_write_tools: []          # Standard write tools are auto-discovered from agentregistry catalog
+  enabled: true                     # ⚡ Master switch for dual-action resuscitation
+  read_slap:
+    threshold: 5                    # Jolt with [SYSTEM OVERRIDE] after N consecutive idle read/inspect turns (0 = off)
+    max_slaps: 10                   # 🛑 Cap: max read slaps before force-escalating to default tier
+    max_failures: 3                 # 🔌 Circuit Breaker: suppress injection after N consecutive model failures
+    write_only: true                # Only count file writes / commands as progress (ignores read-only tools)
+    # custom_write_tools: []        # Standard write tools are auto-discovered from agentregistry catalog
+  thought_slap:
+    max_attempts: 1                 # Global default recovery attempts (0 disables, max 4)
+    # prompt: "..."                 # Optional custom steering prompt for reasoning resuscitation
 
 # 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
 # Routes every N write-progress turns to frontier models with injected quality review prompts
@@ -340,13 +347,12 @@ fairy_dust:
         (2) subtle edge case bugs, (3) test coverage gaps. If you spot issues,
         fix them immediately. If correct, confirm and continue.
 
-    # Strategic Review: Catch architectural drift every 40 file writes (cost-safe default: Sonnet 5)
+    # Strategic Review: Catch architectural drift every 40 file writes
     - name: "Strategic Architecture Review"
       frequency: 40
       max_count: 2
       provider: "openrouter"
-      # model: "anthropic/claude-opus-5"
-      model: "anthropic/claude-sonnet-5" # swap in opus 5 for tough jobs
+      model: "anthropic/claude-sonnet-5"
       prompt: >
         [SYSTEM CHECKPOINT: STRATEGIC ARCHITECTURE REVIEW]
         Perform a high-level architectural audit: (1) Does implementation match
@@ -375,6 +381,13 @@ nts:
   preserve_cache_control: true      # 🛡️ Dual-lane protection for prompt cache breakpoints
   compact_stale_file_reads: false   # 📦 Evict superseded historical file reads (disabled by default)
   stale_read_depth: 3               # 📚 Keep the 3 most recent reads of each file/range to prevent amnesia
+  strip_historical_reasoning: false # 🧠 Strip reasoning from historical assistant turns
+  keep_recent_reasoning_turns: 3    # 🧠 Keep reasoning for the most recent N assistant turns
+  deduplicate_reminders: false      # 📋 Deduplicate repeated reminder tables in <environment_details>
+  reminders_refresh_interval: 10    # 📋 Re-emit full reminders table every K turns
+  collapse_verbose_tests: false     # 🧪 Collapse verbose test passing lines across Go, Cargo, Pytest, Jest
+  deduplicate_tool_outputs: false   # 🔁 Deduplicate identical generic tool execution outputs
+  min_duplicate_output_bytes: 200   # 🔁 Minimum output length in bytes for duplicate referencing
 ```
 
 > [!TIP]
@@ -382,14 +395,38 @@ nts:
 
 ---
 
-### 2.3 🏆 Recommended Local Model for 16GB Cards: Gemma 4 12B IT QAT & Perfected Ollama Tuning
+### 2.3 🏆 Recommended Local Models & Server Tuning (16GB–24GB VRAM)
 
-For workstations equipped with **16 GB VRAM GPUs** (e.g. NVIDIA RTX 4080 / RTX 3080 16GB / RTX 4070 Ti Super, AMD Radeon RX 6900 XT / 7800 XT / 7900 GRE / 9070 XT, or Apple Silicon 16GB/24GB Unified Memory), the undisputed champion for Tier 1 local execution is **Google Gemma 4 12B Instruction-Tuned QAT** (`gemma4:12b-it-qat`).
+Nacho Flow is **engine-agnostic**: it communicates over standard OpenAI-compatible HTTP. You can run any local inference server — including [llama.cpp](https://github.com/ggerganov/llama.cpp), [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), or [Ollama](https://ollama.com).
 
-#### Why `gemma4:12b-it-qat` is the Workhorse of Choice:
-- **100% VRAM GPU Offload (Zero CPU Spillover)**: At ~7.5 GB to 8.5 GB base memory footprint (Q4_0 Quantization-Aware Training), the model plus dynamic KV cache fits entirely within 16GB with ~7GB of safety headroom for your operating system, IDE, and browser.
-- **Quantization-Aware Training (QAT)**: Unlike standard post-training quantization (PTQ) which often degrades AST syntax precision and tool syntax adherence, official QAT models are trained specifically for 4-bit weights, preserving exceptional instruction-following and code quality.
-- **Blazing Generation Speed**: Emits 60–90+ tokens/sec on 16GB consumer desktop GPUs for instant, zero-cost iterative coding turns.
+> [!NOTE]
+> **No Local GPU? No Problem.**  
+> Nacho Flow is not tied to local execution. If you work on a lightweight laptop or cloud instance without local GPUs, you can route your base tier to ultra-low-cost cloud workhorses (e.g. `z-ai/glm-5.3-flash` at $0.65/M or `google/gemini-2.5-flash-lite` at $0.10/M) and escalate complex turns to `anthropic/claude-sonnet-5`. This still delivers 80%+ savings over standard single-model coding setups.
+
+#### Verified Local Models for Coding:
+1. **`qwen3-coder:30b` (🏆 Premier 16GB–24GB Workhorse)**:  
+   Mixture-of-Experts architecture (30B total, 3.3B active parameters). Downloads at ~19GB in 4-bit quantization, fits comfortably in 16GB–24GB VRAM (or Apple Silicon Unified Memory), and emits 50–80+ tokens/sec with native tool-calling adherence.
+2. **`devstral-small-2` (24B Multi-File Specialist)**:  
+   Dense 24B parameter model developed by Mistral and All Hands AI. Specifically fine-tuned for SWE-bench agentic coding, multi-file AST inspection, and git patch application.
+3. **`phi4-mini` (Lightweight 8GB Workstations / CPU)**:  
+   Microsoft's 3.8B parameter model featuring native function calling, strong logic reasoning, and a compact memory footprint (< 4GB).
+
+---
+
+#### Starting Your Local Engine:
+
+- **Option A: llama.cpp (`llama-server`)**:
+  ```bash
+  llama-server -m qwen3-coder-30b-instruct-q4_k_m.gguf -c 32768 --port 8001
+  ```
+- **Option B: vLLM**:
+  ```bash
+  vllm serve Qwen/Qwen3-Coder-30B-Instruct --port 8001
+  ```
+- **Option C: Ollama**:
+  ```bash
+  ollama run qwen3-coder:30b
+  ```
 
 ---
 
@@ -398,100 +435,64 @@ For workstations equipped with **16 GB VRAM GPUs** (e.g. NVIDIA RTX 4080 / RTX 3
 During real-world agentic stress testing with Cline and Zoo Code, we identified a critical failure pattern with local models:
 
 > [!CAUTION]
-> **NEVER hardcode `PARAMETER num_predict 8192` or `PARAMETER num_ctx 32768` inside your Ollama Modelfile!**
-> - **Why `num_predict` fails**: If baked into the model, Gemma 4 enters runaway reasoning loops inside `<think>...</think>` monologue traps, generating reasoning text for 45–60+ seconds without emitting active tool calls.
-> - **Why hardcoded `num_ctx` fails**: Static 32k context allocation locks up VRAM buffers prematurely and interferes with dynamic windowing.
-> - **The Nacho Flow Architecture**: Leave `num_predict` and `num_ctx` **OUT** of the Modelfile. Nacho Flow dynamically provisions context per request turn via `max_context: 32000` in `config.yaml`, while **Cycle Killer** enforces strict stream termination if repetition exceeds limits.
+> **Avoid hardcoding static `PARAMETER num_predict` or `PARAMETER num_ctx` inside engine Modelfiles!**
+> - **Why `num_predict` fails**: If baked into the model, local models can enter runaway reasoning loops inside `<think>...</think>` monologue traps, generating prose for 45–60+ seconds without emitting active tool calls.
+> - **Why hardcoded `num_ctx` fails**: Static large context allocation locks up VRAM buffers prematurely and interferes with dynamic windowing across turns.
+> - **The Nacho Flow Architecture**: Leave dynamic sizing to the gateway. Nacho Flow dynamically provisions context per request turn via `max_context: 32768` in `config.yaml`, while **Cycle Killer** enforces strict stream termination if repetition exceeds limits.
 
 ---
 
-#### 🚀 Crucial Workstation Setup: Configure `OLLAMA_CONTEXT_LENGTH=32768` (Prevents Silent Context Truncation)
+#### 🚀 Crucial Workstation Setup: Configure Server Context Ceiling (`32768`)
 
-By default on Windows and certain headless installations, Ollama runs with a restricted context ceiling (`OLLAMA_CONTEXT_LENGTH: 16384` or `4096`).
-When an autonomous agent (like Cline or Zoo) reaches long conversation turns (e.g. 18k tokens):
-1. Nacho Flow correctly routes the request to Tier 1 (`Tokens < 20000`).
-2. If Ollama's server context ceiling is only 16,384, **Ollama silently truncates the top of the prompt**.
-3. In Cline and Zoo, the prompt prefix contains the **system prompt, tool schemas, and XML formatting instructions**.
-4. When truncated, the model loses its tool definitions, enters a prolonged thinking loop inside `<think>...</think>` (burning 2,000+ reasoning tokens), and terminates with **0 content and 0 tool calls**, causing the agent to stall.
+By default on Windows and certain headless installations, local engines like Ollama run with a restricted context ceiling (`16384` or `4096`).
+When an autonomous agent reaches long conversation turns (e.g. 18k tokens):
+1. Nacho Flow correctly routes the request to Tier 1 (`Tokens < 24000`).
+2. If the local engine context ceiling is too low, **the engine silently truncates the top of the prompt**.
+3. In Cline and Zoo, the prompt prefix contains the **system prompt, tool schemas, and formatting instructions**.
+4. When truncated, the model loses its tool definitions, enters a prolonged thinking loop, and terminates with **0 content and 0 tool calls**, causing the agent to stall.
 
 > [!IMPORTANT]
-> **Do NOT hardcode `num_ctx` in the Modelfile.** Instead, set `OLLAMA_CONTEXT_LENGTH=32768` at the **Ollama server environment level**. This allows Ollama to allocate a full 32k context buffer dynamically without bloating the model weights or locking VRAM buffers prematurely.
-
-##### 🪟 Windows Setup (PowerShell):
-Set permanently for your user account:
-```powershell
-[System.Environment]::SetEnvironmentVariable('OLLAMA_CONTEXT_LENGTH', '32768', 'User')
-```
-*(Or in Command Prompt: `setx OLLAMA_CONTEXT_LENGTH 32768`)*
-
-Then restart the Ollama tray application (Right-click tray icon → Quit, and relaunch), or run:
-```powershell
-Stop-Process -Name "ollama*", "ollama app" -Force -ErrorAction SilentlyContinue
-Start-Process "C:\Users\<username>\AppData\Local\Programs\Ollama\ollama app.exe"
-```
-
-##### 🐧 Linux Setup (Ubuntu / systemd):
-Configure the systemd service override:
-```bash
-sudo mkdir -p /etc/systemd/system/ollama.service.d
-echo -e '[Service]\nEnvironment="OLLAMA_CONTEXT_LENGTH=32768"' | sudo tee /etc/systemd/system/ollama.service.d/override.conf
-sudo systemctl daemon-reload
-sudo systemctl restart ollama
-```
-
-##### 🍎 macOS Setup:
-```bash
-launchctl setenv OLLAMA_CONTEXT_LENGTH 32768
-```
-*(Or add `export OLLAMA_CONTEXT_LENGTH=32768` to your shell profile if launching via terminal)*.
-
-##### 🔍 How to Verify:
-Inspect Ollama's startup log (on Windows: `%LOCALAPPDATA%\Ollama\server.log`, on Linux: `journalctl -u ollama`):
-You should see:
-```text
-level=INFO source=routes.go:1940 msg="server config" env="... OLLAMA_CONTEXT_LENGTH:32768 ..."
-```
+> For Ollama users: Set `OLLAMA_CONTEXT_LENGTH=32768` at the **server environment level** rather than in a Modelfile:
+> - **Windows (PowerShell)**: `[System.Environment]::SetEnvironmentVariable('OLLAMA_CONTEXT_LENGTH', '32768', 'User')`
+> - **Linux (systemd)**: Set `Environment="OLLAMA_CONTEXT_LENGTH=32768"` in `/etc/systemd/system/ollama.service.d/override.conf`
+> - **macOS**: `launchctl setenv OLLAMA_CONTEXT_LENGTH 32768`
 
 ---
 
-#### 🛠️ Perfected Ollama Modelfile & Sampling Parameters
+#### 🛠️ Recommended Sampling Parameters
 
-To get flawless tool adherence, zero monologue traps, and clean diff output, create a custom Modelfile with our perfected sampling parameters:
+To get clean tool adherence, low monologue trap risk, and precise code diffs, use these recommended parameters:
 
 ```dockerfile
-# Save as: Modelfile
-FROM gemma4:12b-it-qat
+# Optional Ollama Modelfile (or equivalent flags in llama-server / vLLM):
+FROM qwen3-coder:30b
 
-# 🌮 Perfected Nacho Flow Sampling Parameters for Gemma 4
 PARAMETER temperature 0.6
 PARAMETER top_k 64
-PARAMETER top_p 0.9
+PARAMETER top_p 0.95
 PARAMETER min_p 0.05
-PARAMETER repeat_last_n 64
-PARAMETER repeat_penalty 1.15
+PARAMETER repeat_penalty 1.05
 ```
 
 Build or update it in Ollama with one command:
 ```bash
-ollama create gemma4:12b-it-qat -f Modelfile
+ollama create qwen3-coder:30b -f Modelfile
 ```
-*(Or simply pull the vanilla model via `ollama pull gemma4:12b-it-qat` — just ensure no previous custom Modelfile baked in `num_predict 8192` or static `num_ctx`)*.
+*(Or simply pull the official model via `ollama pull qwen3-coder:30b`)*.
 
 ---
 
-#### 🌮 Gateway Routing Configuration (`config.yaml` / Extension Profiles)
-
-In your Nacho Flow configuration (pre-configured in built-in **Profile 1**, **Profile 2**, and **Profile 3**):
+#### 🌮 Gateway Routing Configuration (`config.yaml`)
 
 ```yaml
 tiers:
-  # TIER 1: Local GPU Workhorse (Gemma 4 12B QAT) - 100% VRAM Offload
+  # TIER 1: Local GPU Workhorse (Qwen3 Coder 30B MoE) - 100% VRAM Offload
   - name: "Tier 1: Local GPU Workhorse"
     provider: "ollama"
-    model: "gemma4:12b-it-qat"
-    when: "Tokens < 20000 && Retries < 2"
+    model: "qwen3-coder:30b"
+    when: "Tokens < 24000 && Retries < 2"
     strip_images: false
-    max_context: 32000
+    max_context: 32768
 
 cycle_killer:
   enabled: true
@@ -548,7 +549,7 @@ tiers:
 
   # Scenario 3: Specialized Local Model with Tailored Parser Pipeline
   - name: "Local Qwen Coder (Selective Normalizers)"
-    model: "qwen3.8-coder:14b"
+    model: "qwen3-coder:30b"
     provider: "ollama"
     when: "Tokens < 8000"
     shield: true
@@ -581,9 +582,9 @@ $$\mathbf{\text{Per-Turn In-Prompt Directive}} \quad \succ \quad \mathbf{\text{R
 
 ### 2.4 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
 
-Autonomous agents writing code with low-cost or local models (e.g. Gemini 3.7 Flash, Devstral, Qwen) produce high throughput at minimal cost, but can accumulate subtle syntax errors, missing module extensions (e.g. Node 22 ESM `.js` imports), or architectural drift over long 40+ turn sessions.
+Autonomous agents writing code with low-cost or local models (e.g. Gemini 2.5 Flash, Devstral, Qwen) produce high throughput at minimal cost, but can accumulate subtle syntax errors, missing module extensions (e.g. Node 22 ESM `.js` imports), or architectural drift over long 40+ turn sessions.
 
-**Fairy Dusting** solves this by periodically and transparently hijacking prompt turns and routing them to frontier models (e.g., Claude Sonnet 5 or Claude Opus 5) with an injected quality review prompt.
+**Fairy Dusting** solves this by periodically and transparently hijacking prompt turns and routing them to frontier models (e.g., Claude Sonnet 5 or Claude Opus 5.5) with an injected quality review prompt.
 
 ```mermaid
 flowchart LR
@@ -599,23 +600,115 @@ flowchart LR
 1. **Write-Progress Driven**: Fairy Dust only counts turns where the agent actually modifies files or executes state-altering commands (`write_to_file`, `replace_in_file`, `execute_command`, etc.). Read-only inspection turns (`read_file`, `list_dir`) do not increment the counter.
 2. **Layered Checkpoints**:
    - **Tactical Code Review** (e.g., every 15 writes): Routes to Claude Sonnet 5 to inspect syntax, types, and imports.
-   - **Strategic Architecture Review** (e.g., every 40 writes): Routes to Claude Opus 5 to inspect high-level requirement alignment and design structure.
+   - **Strategic Architecture Review** (e.g., every 40 writes): Routes to Claude Opus 5.5 to inspect high-level requirement alignment and design structure.
 3. **Candidate Priority**: If both a 15-turn tactical and a 40-turn strategic review trigger on turn 120, the highest-priority candidate (topmost in `entries` or highest configured priority) wins.
 4. **Max Count Enforcement**: Each entry respects a strict `max_count` cap per session, guaranteeing that frontier reviews never exceed your budget.
 
 ---
 
-### 2.5 ⚡ Kickstart Resuscitation & Write-Only Filtering
+### 2.5 ⚡ Kickstart: Read Slap & Thought Slap (Stall & Reasoning Truncation Resuscitation)
 
-When autonomous agents get stuck in repetitive read-only planning loops (e.g. repeatedly calling `read_file` or updating task metadata without writing code), **Kickstart** intervenes to jolt the session forward:
+Autonomous coding agents (Cline, Zoo Code, Kilo, OpenCode) suffer from two distinct failure modes when operating on budget or local reasoning models:
+1. **Cross-Turn Inspection Stalls**: Getting stuck in endless passive read/exploration loops without writing code or advancing state.
+2. **Intra-Turn Reasoning Truncations**: Exhausting thinking token budgets on empty turns (e.g. 31,000+ reasoning tokens), terminating with `finish_reason: length` with zero content or tool calls, causing agent harnesses to hang or crash.
 
-1. **Semantic Stall Detection**: If `kickstart_threshold: 5` is set, Nacho Flow monitors consecutive turns without state progress.
-2. **Write-Only Precision (`kickstart_write_only: true`)**: Ignores read-only churn (`read_file`, `list_files`, `update_todo`). Only actual file writes or command executions reset the stall counter.
-3. **Cline XML Support**: Automatically detects Cline's XML-style tool calls (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`) in text streams alongside OpenAI and Anthropic JSON formats.
-4. **Jolt & Escalation**:
-   - Injects a resuscitation directive prompting the model to transition to action.
-   - Sets `SessionKickstarted = true`, enabling rules like `when: "SessionKickstarted && Retries < 3"` to escalate to smarter models (e.g. Gemini 3.7 Flash).
-   - If stalled past `kickstart_max_count: 10`, automatically force-escalates to cloud default tier to break stubborn loops.
+Nacho Flow's **Kickstart** engine provides dual-action resuscitation to eliminate both classes of failure:
+
+```mermaid
+flowchart TD
+    subgraph "Turn Execution & Resuscitation Pipeline"
+        In["Inbound Client Request"] --> Stream["SSE Stream Normalizer"]
+        
+        Stream --> CheckTrunc{"Finish Reason:<br/>length / max_tokens<br/>AND Turn Empty?"}
+        CheckTrunc -- Yes --> TS_Opt{"Tier Opted-In<br/>to Thought Slap?"}
+        TS_Opt -- Yes --> TS["👋 <b>Thought Slap Interception</b><br/>• Hold Terminal [DONE]<br/>• Inject Truncated Reasoning Chain<br/>• Dispatch Recovery Turn (&lt;3s)<br/>• Splice Tool Call into Stream"]
+        TS --> Client["Client Agent Stream"]
+        TS_Opt -- No --> Client
+        CheckTrunc -- No --> NormalFinish["Forward Upstream Finish"] --> Client
+        
+        Client --> PostTurn["Post-Turn Session Evaluation"]
+        PostTurn --> CheckWrite{"Productive State<br/>Progress Made?"}
+        CheckWrite -- Yes --> ResetIdle["Reset Idle Count = 0"]
+        CheckWrite -- No --> IncIdle["Increment Idle Read Count"]
+        IncIdle --> CheckThresh{"Idle Count &ge;<br/>read_slap.threshold?"}
+        CheckThresh -- Yes --> RS["⚡ <b>Read Slap Interception</b><br/>• Inject [SYSTEM OVERRIDE]<br/>• Set SessionReadSlapped = true<br/>• Steer to Execution Action"]
+        CheckThresh -- No --> NextTurn["Wait for Next Turn"]
+    end
+```
+
+---
+
+#### 1. ⚡ Read Slap (Cross-Turn Idle Stall Interception)
+
+When an agent churns in repetitive read-only planning loops (repeatedly calling `read_file`, `list_dir`, or updating task metadata without writing code):
+
+1. **Semantic Stall Tracking**: If `threshold: 5` is configured, Nacho Flow monitors consecutive turns without state progress.
+2. **Write-Only Precision (`write_only: true`)**: Ignores read-only churn (`read_file`, `list_files`, `grep_search`, `update_todo`). Only actual file writes (`write_to_file`, `replace_in_file`, `multi_replace_file_content`), patch applications, or command executions reset the stall counter.
+3. **Cline XML & Tool Tag Support**: Automatically inspects Cline's XML-style tags (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`) in raw text streams alongside standard OpenAI and Anthropic JSON tool calls.
+4. **Plan Mode Auto-Suspension**: When an agent operates in pure plan or exploration mode (`HasTools && !HasWriteCapability`), tool progress is preserved without accumulating false stall counts.
+5. **Jolt & Escalation**:
+   - Injects a steering directive prompting the model to transition from planning to action.
+   - Sets `SessionReadSlapped = true` and increments `SessionReadSlapCount`, enabling rules like `when: "SessionReadSlapped && Retries < 3"` to escalate to smarter models.
+   - If stalled past `max_slaps: 10`, automatically force-escalates to cloud default tier to break stubborn loops.
+
+---
+
+#### 2. 👋 Thought Slap (Intra-Turn Reasoning Truncation Resuscitation)
+
+Modern reasoning models (such as `z-ai/glm-5.3-flash`, `deepseek/deepseek-r1`, or local `qwq:32b`) can consume tens of thousands of tokens in deep chain-of-thought analysis during architecture design turns. If the model exhausts its reasoning token budget (e.g. 31,815 tokens over 230 seconds) before emitting tool calls, OpenRouter or the inference provider sends `finish_reason: length` with an empty completion (`content: null`, `tool_calls: []`).
+
+In standard proxies, this produces an empty turn that causes Cline and Kilo to stall indefinitely or abort the session. **Thought Slap** resuscitates these turns in-flight:
+
+1. **Held Terminal Processing**: The `StreamNormalizer` holds back the final `[DONE]` terminal SSE chunk and checks if the turn ended in `length` with an empty payload.
+2. **Per-Tier Opt-In**: Thought Slap is enabled on specific tiers that use reasoning models (`thought_slap: true`). Non-reasoning tiers are untouched.
+3. **Rescue Dispatch**: Nacho Flow intercepts the truncation, appends the truncated thinking block, injects an actionable steering prompt, and dispatches a lightweight recovery call (either to the same tier or a designated `rescue_tier`).
+4. **In-Flight Stream Splicing**: In under 3 seconds, the model emits the intended tool call (e.g., `execute_command` or `plan_mode_respond`), which is spliced directly into the agent's SSE stream. The agent never sees the stall.
+5. **DSL Rule Exposure**: Sets `SessionThoughtSlapCount` on the request context, allowing routing rules like `when: "SessionThoughtSlapCount >= 2"` to escalate repeatedly truncating sessions.
+
+---
+
+#### ⚙️ Configuration Reference (`config.yaml`)
+
+```yaml
+kickstart:
+  enabled: true                     # Master switch for all resuscitation
+  read_slap:
+    threshold: 5                    # Jolt after N consecutive idle turns (0 disables)
+    max_slaps: 10                   # Force-escalate to default tier after N read slaps
+    max_failures: 3                 # Suppress override after N consecutive failures
+    write_only: true                # Only state-altering writes/commands reset counter
+  thought_slap:
+    max_attempts: 1                 # Recovery attempts per truncated turn (1-4)
+    # prompt: "..."                 # Optional custom steering prompt override
+
+tiers:
+  # Opt-in to Thought Slap on reasoning workhorses
+  - name: "Fast Coding Workhorse"
+    model: "z-ai/glm-5.3-flash"
+    provider: "openrouter"
+    thought_slap: true              # Enables intra-turn reasoning truncation rescue
+    when: "Tokens < 30000"
+
+  # Advanced: rescue using a designated fallback tier
+  - name: "Deep Reasoning Architect"
+    model: "deepseek/deepseek-r1"
+    provider: "openrouter"
+    thought_slap:
+      max_attempts: 2
+      rescue_tier: "Fast Coding Workhorse"
+    when: "Retries < 2"
+
+  # Escalation tier triggered after read slaps
+  - name: "Read Slap Escalation Tier"
+    model: "anthropic/claude-sonnet-5"
+    provider: "anthropic"
+    when: "SessionReadSlapped && Retries < 3"
+```
+
+#### In-Chat Session Directives:
+- `@nacho:kickstart-off` / `@nacho:kickstart-on`: Suspends or resumes Read Slap idle tracking.
+- `@nacho:toggles`: Inspects active states of all session supervisors (Read Slap, Thought Slap, Cycle Killer, Fairy Dust).
+- `@nacho:reset`: Resets all session counters and restores defaults.
 
 ---
 
@@ -623,17 +716,17 @@ When autonomous agents get stuck in repetitive read-only planning loops (e.g. re
 
 To protect your wallet from runaway loops while preserving on-demand access to flagship frontier models:
 
-* **Sonnet as Cost-Safe Default**: Configure `anthropic/claude-sonnet-5` ($3/$15 per 1M) as your `default_tier`. If a 30-turn loop occurs, the cost is capped at ~$2.50 rather than $12.65+ on Opus.
+* **Sonnet as Cost-Safe Default**: Configure `anthropic/claude-sonnet-5` ($3/$15 per 1M) as your `default_tier`. If a 30-turn loop occurs, the cost is capped rather than running on Opus.
 * **Unrouted Spicy-Only Tiers (`when: "false"`)**:
   ```yaml
   - name: "Opus On-Demand (Spicy Only)"
-    model: "anthropic/claude-opus-5"
+    model: "anthropic/claude-opus-5-5"
     provider: "openrouter"
     when: "false"
   ```
   Setting `when: "false"` guarantees that automatic tier routing **never** selects this model. It is reachable strictly through:
   1. **Fairy Dusting**: Strategic architecture reviews (e.g. max 2 per session).
-  2. **HotSauce In-Prompt Directives**: `@nacho:model="anthropic/claude-opus-5"` or HTTP header `X-Spicy-Model`.
+  2. **HotSauce In-Prompt Directives**: `@nacho:model="anthropic/claude-opus-5-5"` or HTTP header `X-Spicy-Model`.
 
 ---
 
@@ -641,7 +734,7 @@ To protect your wallet from runaway loops while preserving on-demand access to f
 
 > [!IMPORTANT]
 > **Production Default: Disabled (`enabled: false`) for Pristine Context Stability**
-> Modern frontier models (Claude 3.7 / Sonnet 5, Qwen 3 Coder Plus, Gemini 3.8 Flash) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context in-flight invalidates prompt cache keys and induces diff-matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted).
+> Modern frontier models (Claude Sonnet 5, Qwen 3 Coder Plus, Gemini 2.5 Flash) and cloud provider KV prompt caching (OpenRouter, Anthropic) rely on byte-perfect prefix stability. Our extensive 7-run bake-offs proved that mutating historical context in-flight invalidates prompt cache keys and induces diff-matching drifts (taking 100–148 turns vs. 64–69 turns uncompacted).
 > Nacho Flow defaults to **100% pristine context preservation** for optimal speed, cache hits, and accuracy.
 > NTS is maintained as an experimental opt-in research pipeline (`pkg/nts`) for developers investigating extreme context limits or custom compaction heuristics.
 
@@ -692,6 +785,13 @@ When an agent inspects a file multiple times across a long session (e.g., readin
 | `preserve_cache_control`| `bool` | `true` | Preserves Anthropic/OpenRouter prompt cache annotations. |
 | `compact_stale_file_reads`| `bool` | `false` | Reclaims tokens by pruning superseded historical reads of the same file (experimental). |
 | `stale_read_depth` | `int` | `3` | Number of recent reads to keep per file before historical eviction. |
+| `strip_historical_reasoning` | `bool` | `false` | Prunes historical reasoning blocks and thinking tags from older assistant turns (experimental). |
+| `keep_recent_reasoning_turns` | `int` | `3` | Number of most recent assistant turns to preserve reasoning verbatim. |
+| `deduplicate_reminders` | `bool` | `false` | Deduplicates identical repeated reminder tables in `<environment_details>` blocks (experimental). |
+| `reminders_refresh_interval` | `int` | `10` | Frequency in turns to re-emit the full reminders table. |
+| `collapse_verbose_tests` | `bool` | `false` | In-place zero-allocation collapse of passing tests across Go, Rust, Python, and Node (experimental). |
+| `deduplicate_tool_outputs` | `bool` | `false` | Replaces large identical command execution outputs with contextual references (experimental). |
+| `min_duplicate_output_bytes` | `int` | `200` | Minimum output length in bytes for command execution deduplication. |
 
 ---
 
@@ -702,7 +802,7 @@ Nacho Flow includes a native, high-performance direct provider adapter for Anthr
 #### Key Capabilities:
 - **Wire-Speed Zero-SDK Protocol Translation**: Automatically translates client OpenAI-formatted requests into Anthropic Messages API payloads, and normalizes Anthropic SSE event streams (`message_start`, `content_block_delta`, `message_delta`) back to standard OpenAI chunk streams with zero heap allocations.
 - **Native Ephemeral Prompt Caching**: Billed input tokens are dynamically tracked across Base Input Tokens, Cache Creation Tokens ($3.75/M), and Cache Read Tokens ($0.30/M, a 90% discount). Telemetry and dashboard analytics accurately record counterfactual savings.
-- **Zero-Allocation Dated Alias Resolution**: Agent clients often request dated snapshot names (e.g. `claude-3-7-sonnet-20250219`, `claude-3-5-sonnet-20241022`, or `claude-3-7-sonnet-latest`). Nacho Flow resolves these instantly at zero-alloc overhead to the canonical model IDs while preserving exact pricing telemetry.
+- **Zero-Allocation Dated Alias Resolution**: Agent clients often request dated snapshot names (e.g. `claude-sonnet-5`, `claude-3-5-sonnet-20241022`, or `claude-sonnet-5`). Nacho Flow resolves these instantly at zero-alloc overhead to the canonical model IDs while preserving exact pricing telemetry.
 
 #### Configuration Example (`config.yaml`):
 
@@ -714,24 +814,24 @@ providers:
     api_key: "ENV_ANTHROPIC_API_KEY"
 
 tiers:
-  # Tier 1: Sonnet 5 Workhorse (Direct Anthropic)
+  # Tier 1: Claude Sonnet Workhorse (Direct Anthropic)
   - name: "Tier 1: Claude Sonnet (Medium)"
     provider: "anthropic"
-    model: "claude-sonnet-5"
+    model: "claude-3-5-sonnet-20241022"
     reasoning_effort: "medium"
     when: "Retries < 4"
 
-  # Tier 2: Opus 5 Escalation
+  # Tier 2: Claude Opus Escalation
   - name: "Tier 2: Claude Opus (Medium)"
     provider: "anthropic"
-    model: "claude-opus-5"
+    model: "claude-opus-5-5"
     reasoning_effort: "medium"
     when: "Retries >= 4"
 
 default_tier:
   name: "Default: Claude Sonnet"
   provider: "anthropic"
-  model: "claude-sonnet-5"
+  model: "claude-3-5-sonnet-20241022"
   when: "true"
 ```
 
@@ -756,7 +856,7 @@ For a complete guide with recipes on tuning token thresholds, keyword extraction
 | `HasToolProgress` | `bool` | `true` if the previous turn contained successful tool execution | `HasToolProgress` |
 | `HasWriteProgress` | `bool` | `true` if the previous turn contained write/execute tool execution | `HasWriteProgress` |
 | `HistoryErrors` | `int` | Number of consecutive trailing tool execution errors in conversation history | `HistoryErrors >= 2` |
-| `CoolingDownModels` | `[]string` | List of model IDs currently on temporary cooldown from Cycle Killer severances | `!('gemma4:12b-it-qat' in CoolingDownModels)` |
+| `CoolingDownModels` | `[]string` | List of model IDs currently on temporary cooldown from Cycle Killer severances | `!('qwen3-coder:30b' in CoolingDownModels)` |
 
 ### Tier Configuration Options:
 | Property | Type | Description |
@@ -1023,7 +1123,7 @@ Once you have pointed Zoo Code, Cline, or Cursor to Nacho Flow, test your setup 
 1. **Check Live Terminal Logs (or VS Code Output Channel `🌮 Nacho Flow Engine`)**:
    You will see an instant routing log line:
    ```text
-   INFO Routing request tier="Local GPU" model=qwen3.8-coder:14b provider=ollama tokens=4,120 is_fallback=false
+   INFO Routing request tier="Local GPU" model=qwen3-coder:30b provider=ollama tokens=4,120 is_fallback=false
    ```
 2. **Type `@nacho:status` Directly in Agent Chat**:
    Ask your agent: `@nacho:status`. Nacho Flow intercepts the query in $< 7\text{ ns}$ ($0.00 cost, 0 upstream tokens) and replies instantly with live stats:
@@ -1186,7 +1286,7 @@ nacho-flow tune --format=json
   • Tier 2 (Local ROCm/Ollama):    Optimal context boundary 12,000 -> 24,000 tokens
   • Local Tool Adherence:          Clean (0% tool failures — tools remain enabled locally)
   • High-Friction Domain Keywords: ['deadlock', 'kubernetes', 'migration'] (Spikes local retries)
-  • Recommended Model Upgrade:     gemma4:12b-it-qat (Index: 82.4, Fits 16GB VRAM)
+  • Recommended Model Upgrade:     qwen3-coder:30b (Fits 16GB–24GB VRAM)
 
 📈 PROJECTED MONTHLY IMPACT:
   • Developer Retries Avoided:     ~32 retries eliminated
@@ -1245,7 +1345,7 @@ nacho-flow deals -host 127.0.0.1 -port 8000 -auth my-secret-token
 **Example Output**:
 ```text
 🔥  HEAT SEEKER
-Benchmark: anthropic/claude-sonnet-5 ($2.00/1M tokens)
+Benchmark: anthropic/claude-sonnet-5 ($3.00/1M tokens)
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 MODEL                            ROLE             CONTEXT    PROMPT/1M    COMP/1M      CODING   DISCOUNT  
 google/gemini-2.5-flash-lite     vision_workhorse 1.0M       $0.10        $0.40        68.1     96.7% 🔥  

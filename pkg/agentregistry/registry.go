@@ -21,37 +21,39 @@ import (
 
 // Registry maintains an in-memory index of agent profiles, tool categories, and shell commands.
 type Registry struct {
-	mu                     sync.RWMutex
-	writeTools             map[string]struct{}
-	writeToolsList         []string
-	fileReadTools          map[string]struct{}
-	fileReadToolsList      []string
-	allKnownTools          map[string]struct{}
-	shellWriteCommands     map[string]struct{}
-	shellWritePipes        []string
-	contextualCommands     map[string][]string
-	redirections           []string
-	writeTagByteMarkers    [][]byte
-	interactiveToolsLookup map[string]struct{}
-	interactiveToolsList   []string
-	modeHeuristicsList     []string
-	questionHeuristicsList []string
-	errorSignaturesList    []string
-	errorSignaturesLower   []string
-	manifest               Manifest
-	reasoningCatalog       ReasoningCatalog
-	tagReplacer            *strings.Replacer
-	reasoningByteMarkers   [][]byte
-	controlTokensBytes     [][]byte
-	delimiterPrefixes      [][]byte
-	sanitizerTargets       [][]byte
-	sanitizerReplacements  [][]byte
-	sanitizerMarkers       [][]byte
-	silentTurnChunkBytes   []byte
-	clientMatchers         []clientMatcher
-	headerSignatures       []headerSignature
-	uniqueToolMatchers     []uniqueToolMatcher
-	registeredAgentsList   []string
+	mu                         sync.RWMutex
+	writeTools                 map[string]struct{}
+	writeToolsList             []string
+	fileReadTools              map[string]struct{}
+	fileReadToolsList          []string
+	cycleKillerExemptTools     map[string]struct{}
+	cycleKillerExemptToolsList []string
+	allKnownTools              map[string]struct{}
+	shellWriteCommands         map[string]struct{}
+	shellWritePipes            []string
+	contextualCommands         map[string][]string
+	redirections               []string
+	writeTagByteMarkers        [][]byte
+	interactiveToolsLookup     map[string]struct{}
+	interactiveToolsList       []string
+	modeHeuristicsList         []string
+	questionHeuristicsList     []string
+	errorSignaturesList        []string
+	errorSignaturesLower       []string
+	manifest                   Manifest
+	reasoningCatalog           ReasoningCatalog
+	tagReplacer                *strings.Replacer
+	reasoningByteMarkers       [][]byte
+	controlTokensBytes         [][]byte
+	delimiterPrefixes          [][]byte
+	sanitizerTargets           [][]byte
+	sanitizerReplacements      [][]byte
+	sanitizerMarkers           [][]byte
+	silentTurnChunkBytes       []byte
+	clientMatchers             []clientMatcher
+	headerSignatures           []headerSignature
+	uniqueToolMatchers         []uniqueToolMatcher
+	registeredAgentsList       []string
 }
 
 type clientMatcher struct {
@@ -90,11 +92,12 @@ func DefaultRegistry() *Registry {
 // NewRegistryFromFS loads agent profiles, shell catalog, and reasoning catalog from a filesystem.
 func NewRegistryFromFS(sysFS fs.FS) (*Registry, error) {
 	reg := &Registry{
-		writeTools:         make(map[string]struct{}),
-		fileReadTools:      make(map[string]struct{}),
-		allKnownTools:      make(map[string]struct{}),
-		shellWriteCommands: make(map[string]struct{}),
-		contextualCommands: make(map[string][]string),
+		writeTools:             make(map[string]struct{}),
+		fileReadTools:          make(map[string]struct{}),
+		cycleKillerExemptTools: make(map[string]struct{}),
+		allKnownTools:          make(map[string]struct{}),
+		shellWriteCommands:     make(map[string]struct{}),
+		contextualCommands:     make(map[string][]string),
 	}
 
 	if err := reg.loadAgents(sysFS); err != nil {
@@ -114,6 +117,14 @@ func NewRegistryFromFS(sysFS fs.FS) (*Registry, error) {
 	}
 	sort.Strings(tools)
 	reg.writeToolsList = tools
+
+	// Pre-sort and freeze immutable cycle killer exempt tools slice at startup for lock-free zero-alloc reads
+	exempt := make([]string, 0, len(reg.cycleKillerExemptTools))
+	for tool := range reg.cycleKillerExemptTools {
+		exempt = append(exempt, tool)
+	}
+	sort.Strings(exempt)
+	reg.cycleKillerExemptToolsList = exempt
 
 	reg.writeTagByteMarkers = compileWriteByteMarkers(reg.writeToolsList)
 
@@ -180,6 +191,8 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 		addNormalized(r.allKnownTools, profile.FileReadTools...)
 		addNormalized(r.allKnownTools, profile.ReadTools...)
 		addNormalized(r.allKnownTools, profile.CommandTools...)
+		addNormalized(r.cycleKillerExemptTools, profile.CycleKillerExemptTools...)
+		addNormalized(r.allKnownTools, profile.CycleKillerExemptTools...)
 		addNormalized(interactiveToolsMap, profile.InteractiveTools...)
 		addNormalized(r.allKnownTools, profile.InteractiveTools...)
 		if profile.ModeTool != "" {
@@ -346,6 +359,8 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 	r.writeToolsList = newReg.writeToolsList
 	r.fileReadTools = newReg.fileReadTools
 	r.fileReadToolsList = newReg.fileReadToolsList
+	r.cycleKillerExemptTools = newReg.cycleKillerExemptTools
+	r.cycleKillerExemptToolsList = newReg.cycleKillerExemptToolsList
 	r.allKnownTools = newReg.allKnownTools
 	r.shellWriteCommands = newReg.shellWriteCommands
 	r.shellWritePipes = newReg.shellWritePipes
@@ -433,6 +448,32 @@ func (r *Registry) IsInteractiveTool(toolName string) bool {
 	}
 	_, exists := r.interactiveToolsLookup[lower]
 	return exists
+}
+
+// IsCycleKillerExempt checks if the tool name represents a tool exempt from Cycle Killer N-gram repetition kills.
+// Lock-free, zero heap allocation (0 B/op).
+func (r *Registry) IsCycleKillerExempt(toolName string) bool {
+	if r == nil || toolName == "" {
+		return false
+	}
+	if _, exists := r.cycleKillerExemptTools[toolName]; exists {
+		return true
+	}
+	for _, exempt := range r.cycleKillerExemptToolsList {
+		if strings.EqualFold(toolName, exempt) {
+			return true
+		}
+	}
+	return false
+}
+
+// CycleKillerExemptToolsList returns an immutable, pre-sorted slice of all registered cycle killer exempt tool names.
+// Lock-free, zero heap allocation.
+func (r *Registry) CycleKillerExemptToolsList() []string {
+	if r == nil {
+		return nil
+	}
+	return r.cycleKillerExemptToolsList
 }
 
 // IsKnownTool checks if a tool is recognized in any category across registered agent profiles.

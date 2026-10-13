@@ -74,7 +74,6 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 			MaxToolTokens:        8192,
 			ModelCooldownSeconds: 120,
 			RetryFloor:           3,
-			KickstartWriteOnly:   true,
 		},
 		FairyDust: contract.FairyDustConfig{
 			Enabled: &enableDirectives,

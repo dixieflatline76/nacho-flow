@@ -207,8 +207,13 @@ func TestProxy_FairyDust_Immunity_KickstartAndShieldBypassed(t *testing.T) {
 			QuestionHeuristics: []string{"would you like"},
 		},
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:            &enabled,
-			KickstartThreshold: 1, // Aggressive kickstart
+			Enabled: &enabled,
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				Enabled:   &enabled,
+				Threshold: 1, // Aggressive kickstart
+			},
 		},
 		FairyDust: contract.FairyDustConfig{
 			Enabled: &enabled,

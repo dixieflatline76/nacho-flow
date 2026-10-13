@@ -1,0 +1,6 @@
+data: {"id":"msg_f8","choices":[{"index":0,"delta":{"reasoning_content":"Thinking deeply in Anthropic extended thinking mode..."}}]}
+
+data: {"id":"msg_f8","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+
+data: [DONE]
+

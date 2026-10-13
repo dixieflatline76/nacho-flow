@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -305,7 +306,7 @@ func TestExprEvaluator_KickstartEscalationTier(t *testing.T) {
 			Name:     "Kickstart Escalation",
 			Model:    "deepseek/deepseek-v4-flash",
 			Provider: "openrouter",
-			When:     "SessionKickstarted && Retries < 3",
+			When:     "SessionReadSlapped && Retries < 3",
 		},
 		{
 			Name:     "Local GPU",
@@ -322,15 +323,49 @@ func TestExprEvaluator_KickstartEscalationTier(t *testing.T) {
 	}
 
 	// Normal turn: not kickstarted -> routes to Local GPU
-	res1, _ := eval.SelectTier(contract.RequestContext{Tokens: 5000, SessionKickstarted: false, Retries: 0})
+	res1, _ := eval.SelectTier(contract.RequestContext{Tokens: 5000, SessionReadSlapped: false, Retries: 0})
 	if res1.Name != "Local GPU" {
 		t.Errorf("expected 'Local GPU', got %q", res1.Name)
 	}
 
 	// Kickstarted turn -> routes to Kickstart Escalation
-	res2, _ := eval.SelectTier(contract.RequestContext{Tokens: 5000, SessionKickstarted: true, Retries: 0})
+	res2, _ := eval.SelectTier(contract.RequestContext{Tokens: 5000, SessionReadSlapped: true, Retries: 0})
 	if res2.Name != "Kickstart Escalation" {
 		t.Errorf("expected 'Kickstart Escalation', got %q", res2.Name)
+	}
+}
+
+func TestExprEvaluator_RejectsLegacyDSLVariables(t *testing.T) {
+	tests := []struct {
+		name    string
+		when    string
+		wantErr string
+	}{
+		{
+			name:    "SessionKickstarted rejected",
+			when:    "SessionKickstarted && Retries < 3",
+			wantErr: "SessionKickstarted",
+		},
+		{
+			name:    "SessionKickstartCount rejected",
+			when:    "SessionKickstartCount > 0",
+			wantErr: "SessionKickstartCount",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tiers := []contract.Tier{
+				{Name: "Test Tier", Model: "test-model", When: tc.when},
+			}
+			_, err := NewExprEvaluator(tiers, contract.Tier{Name: "Default"})
+			if err == nil {
+				t.Fatalf("expected error for %q, got nil", tc.when)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
 

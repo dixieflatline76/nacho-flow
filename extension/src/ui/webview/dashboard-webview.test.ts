@@ -362,8 +362,9 @@ describe('windowCycleKiller — timeframe selection (v0.8.4 daemon, all windows 
   it('renders supervisor sub-brackets with Qu\'est-ce que c\'est?, Kickstart, and Fairy Dust', () => {
     setWindow('all_time');
     expect(ckContent()).toContain("Cycle Killer (Qu'est-ce que c'est?): In-Flight Stream Breaker");
-    expect(ckContent()).toContain('Kickstart: Stall Resuscitation Engine');
-    expect(ckContent()).toContain('Fairy Dust: Programmable Quality Checkpoints');
+    expect(ckContent()).toContain('Kickstart: Read Slap');
+    expect(ckContent()).toContain('Kickstart: Thought Slap');
+    expect(ckContent()).toContain('Fairy Dust Checkpoints');
   });
 });
 
@@ -1047,6 +1048,95 @@ describe('syncSnapshot SSOT render pipeline in webview', () => {
         command: 'runOptimizer',
         data: { vramGB: 16 }
       });
+    });
+  });
+
+  describe('Thought Slap Supervision & Telemetry Visualization', () => {
+    it('renders 3-bracket supervisor structure with Thought Slap recovery card', () => {
+      const stats = makeStats({
+        thought_slap: {
+          total_slaps: 10,
+          recovered_tool_calls: 7,
+          recovered_text_content: 2,
+          truncated_exhausted: 1,
+          recovery_rate_pct: 90,
+          total_extra_tokens: 3500,
+          total_extra_cost_usd: 0.015
+        },
+        windows: {
+          past_1_hour: {
+            thought_slap: {
+              total_slaps: 2,
+              recovered_tool_calls: 2,
+              recovered_text_content: 0,
+              truncated_exhausted: 0,
+              recovery_rate_pct: 100,
+              total_extra_tokens: 800,
+              total_extra_cost_usd: 0.003
+            }
+          },
+          today: {
+            thought_slap: {
+              total_slaps: 0,
+              recovered_tool_calls: 0,
+              recovered_text_content: 0,
+              truncated_exhausted: 0,
+              recovery_rate_pct: 0,
+              total_extra_tokens: 0,
+              total_extra_cost_usd: 0
+            }
+          }
+        }
+      });
+
+      postMessage('updateStats', stats);
+
+      // In past_1_hour window:
+      setWindow('past_1_hour');
+      expect(ckContent()).toContain('bracket-thought-slap');
+      expect(ckContent()).toContain('2 <span class="ck-unit">/ 2 (100%)</span>');
+      expect(ckContent()).toContain('Thought Slap Recoveries');
+
+      // In today window (0 slaps):
+      setWindow('today');
+      expect(ckContent()).toContain('0 <span class="ck-unit">/ 0</span>');
+      expect(ckContent()).toContain('watchdog armed');
+    });
+
+    it('renders route inspector badges for recovered_tool_call, recovered_text_content, and truncated_exhausted', () => {
+      postMessage('updateRoutes', {
+        routes: [
+          {
+            id: 'req-ts-tool',
+            status_code: 200,
+            selected_tier: 'Tier 1',
+            thought_slap_action: 'recovered_tool_call',
+            thought_slap_recovered: true
+          },
+          {
+            id: 'req-ts-text',
+            status_code: 200,
+            selected_tier: 'Tier 1',
+            thought_slap_action: 'recovered_text_content',
+            thought_slap_recovered: true
+          },
+          {
+            id: 'req-ts-exhausted',
+            status_code: 500,
+            selected_tier: 'Tier 2',
+            thought_slap_action: 'truncated_exhausted',
+            thought_slap_recovered: false
+          }
+        ]
+      });
+
+      const routesHtml = document.getElementById('routes-content')?.innerHTML ?? '';
+      expect(routesHtml).toContain('badge-slap-tool');
+      expect(routesHtml).toContain('👋 Slap: Tool');
+      expect(routesHtml).toContain('badge-slap-content');
+      expect(routesHtml).toContain('👋 Slap: Text');
+      expect(routesHtml).toContain('badge-slap-exhausted');
+      expect(routesHtml).toContain('⚠️ Slap: Trunc');
     });
   });
 });

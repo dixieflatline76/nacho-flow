@@ -470,7 +470,7 @@ func runTune(args []string) error {
 		if *vramGB > 0 {
 			policy.LocalVRAMGB = *vramGB
 		}
-		if *writeOnlyFlag || cfg.Kickstart.WriteOnly || cfg.CycleKiller.KickstartWriteOnly || cfg.CycleBreaker.KickstartWriteOnly {
+		if *writeOnlyFlag || cfg.Kickstart.ReadSlap.WriteOnly {
 			policy.WriteOnly = true
 		}
 		optimizer = tuner.NewMinConflictsOptimizer(policy)

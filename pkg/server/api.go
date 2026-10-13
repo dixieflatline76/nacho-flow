@@ -396,22 +396,8 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 		classWithSigs.SetErrorSignatures(sigs)
 	}
 	writeTools := agentregistry.DefaultRegistry().WriteToolsList()
-	var custom []string
-	if len(merged.Kickstart.CustomWriteTools) > 0 {
-		custom = merged.Kickstart.CustomWriteTools
-	} else if len(merged.Kickstart.WriteTools) > 0 {
-		custom = merged.Kickstart.WriteTools
-	} else if len(merged.CycleKiller.WriteTools) > 0 {
-		custom = merged.CycleKiller.WriteTools
-	} else if len(merged.CycleKiller.KickstartWriteTools) > 0 {
-		custom = merged.CycleKiller.KickstartWriteTools
-	} else if len(merged.CycleBreaker.WriteTools) > 0 {
-		custom = merged.CycleBreaker.WriteTools
-	} else if len(merged.CycleBreaker.KickstartWriteTools) > 0 {
-		custom = merged.CycleBreaker.KickstartWriteTools
-	}
-	if len(custom) > 0 {
-		writeTools = mergeUniqueSlices(writeTools, custom)
+	if len(merged.Kickstart.ReadSlap.CustomWriteTools) > 0 {
+		writeTools = mergeUniqueSlices(writeTools, merged.Kickstart.ReadSlap.CustomWriteTools)
 	}
 	if classWithWriteTools, ok := s.classifier.(interface{ SetKickstartWriteTools([]string) }); ok {
 		classWithWriteTools.SetKickstartWriteTools(writeTools)

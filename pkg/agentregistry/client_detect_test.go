@@ -60,6 +60,7 @@ func TestDetectClient_UserAgent(t *testing.T) {
 		{"Cursor", "Cursor/0.40.0 (darwin-arm64)", "cursor"},
 		{"Aider", "aider/0.50.0 python-requests", "aider"},
 		{"Anthropic CLI", "claude-cli/1.2.0", "anthropic"},
+		{"Kilo Code standard", "Kilo-Code/7.8.8 ai-sdk/provider-utils/4.0.27 runtime/bun/1.4.2", "kilo"},
 		{"Unknown client", "curl/7.68.0", "unknown"},
 		{"Empty user agent", "", "unknown"},
 	}
@@ -92,6 +93,7 @@ func TestDetectClient_ToolPayloadFallback(t *testing.T) {
 		{"Apply patch uniquely cline", `{"tools":[{"name":"apply_patch","description":"..."}]}`, "cline"},
 		{"Multi replace uniquely zoo", `{"tools":[{"name":"multi_replace_file_content","description":"..."}]}`, "zoo"},
 		{"Modify file uniquely cursor", `{"tools":[{"name":"modify_file","description":"..."}]}`, "cursor"},
+		{"Todowrite uniquely kilo", `{"tools":[{"name":"todowrite","description":"..."}]}`, "kilo"},
 		{"Non-unique read_file tool", `{"tools":[{"name":"read_file","description":"..."}]}`, "unknown"},
 		{"Empty body", "", "unknown"},
 	}
@@ -119,7 +121,7 @@ func TestRegisteredAgents(t *testing.T) {
 		t.Fatal("expected non-empty registered agents list")
 	}
 
-	expectedAgents := []string{"aider", "anthropic", "cline", "cursor", "standard", "zoo"}
+	expectedAgents := []string{"aider", "anthropic", "cline", "cursor", "kilo", "standard", "zoo"}
 	for _, ea := range expectedAgents {
 		found := false
 		for _, a := range agents {

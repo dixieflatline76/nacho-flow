@@ -574,8 +574,13 @@ func TestProxy_Kickstart_PromptInjection(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:            &enabled,
-			KickstartThreshold: 3,
+			Enabled: &enabled,
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				Enabled:   &enabled,
+				Threshold: 3,
+			},
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
@@ -692,10 +697,15 @@ func TestProxy_Kickstart_WriteOnly_PromptInjection(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:             &enabled,
-			KickstartThreshold:  2,
-			KickstartWriteOnly:  true,
-			KickstartWriteTools: []string{"write_to_file", "replace_in_file", "execute_command"},
+			Enabled: &enabled,
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				Enabled:          &enabled,
+				Threshold:        2,
+				WriteOnly:        true,
+				CustomWriteTools: []string{"write_to_file", "replace_in_file", "execute_command"},
+			},
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
@@ -803,10 +813,15 @@ func TestProxy_Kickstart_FailingTestDoesNotResetKickstart(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:             &enabled,
-			KickstartThreshold:  2,
-			KickstartWriteOnly:  true,
-			KickstartWriteTools: []string{"write_to_file", "replace_in_file"},
+			Enabled: &enabled,
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				Enabled:          &enabled,
+				Threshold:        2,
+				WriteOnly:        true,
+				CustomWriteTools: []string{"write_to_file", "replace_in_file"},
+			},
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
@@ -892,10 +907,15 @@ func TestProxy_Kickstart_PassingTestResetsKickstart(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:             &enabled,
-			KickstartThreshold:  2,
-			KickstartWriteOnly:  true,
-			KickstartWriteTools: []string{"write_to_file"},
+			Enabled: &enabled,
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				Enabled:          &enabled,
+				Threshold:        2,
+				WriteOnly:        true,
+				CustomWriteTools: []string{"write_to_file"},
+			},
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
@@ -998,10 +1018,15 @@ func TestProxy_Kickstart_ReadingTestFileDoesNotResetKickstart(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		CycleKiller: contract.CycleBreakerConfig{
-			Enabled:             &enabled,
-			KickstartThreshold:  2,
-			KickstartWriteOnly:  true,
-			KickstartWriteTools: []string{"write_to_file"},
+			Enabled: &enabled,
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				Enabled:          &enabled,
+				Threshold:        2,
+				WriteOnly:        true,
+				CustomWriteTools: []string{"write_to_file"},
+			},
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {

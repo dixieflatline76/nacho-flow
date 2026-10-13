@@ -1,0 +1,10 @@
+data: {"id":"gen-f1","choices":[{"index":0,"delta":{"reasoning":"I need to analyze this problem carefully..."}}]}
+
+data: {"id":"gen-f1","choices":[{"index":0,"delta":{"reasoning":" Let me think more about edge cases..."}}]}
+
+data: {"id":"gen-f1","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+
+data: {"id":"gen-f1","choices":[],"usage":{"prompt_tokens":120,"completion_tokens":500,"total_tokens":620}}
+
+data: [DONE]
+

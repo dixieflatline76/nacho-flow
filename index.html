@@ -180,8 +180,8 @@
                     <h3 class="step-title">Start Local Ollama</h3>
                     <p class="step-desc">Pull the recommended 16GB VRAM coding champion to absorb routine file scans and linter turns for $0.00:</p>
                     <div class="step-code-box">
-                        <code>ollama run gemma4:12b-it-qat</code>
-                        <button class="step-copy-btn" onclick="navigator.clipboard.writeText('ollama run gemma4:12b-it-qat'); this.innerText='Copied!'; setTimeout(()=>this.innerText='Copy', 1500)">Copy</button>
+                        <code>ollama run qwen3-coder:30b</code>
+                        <button class="step-copy-btn" onclick="navigator.clipboard.writeText('ollama run qwen3-coder:30b'); this.innerText='Copied!'; setTimeout(()=>this.innerText='Copy', 1500)">Copy</button>
                     </div>
                     <div class="step-protip">
                         💡 <strong>Pro-Tip</strong>: Set <code>OLLAMA_CONTEXT_LENGTH=32768</code> in your OS environment to prevent prompt truncation. <a href="docs.html?doc=user_guide#crucial-workstation-setup-configure-ollama_context_length32768">See Guide →</a>
@@ -344,13 +344,13 @@
 
                 <div class="fix-card glass">
                     <div class="fix-card-header">
-                        <span class="fix-badge badge-kickstart">⚡ STALL RESUSCITATION ENGINE</span>
+                        <span class="fix-badge badge-kickstart">⚡ DUAL RESUSCITATION ENGINE</span>
                         <span class="fix-card-icon">⚡</span>
                     </div>
-                    <h3>Kickstart</h3>
-                    <p class="fix-superpower">Unsticks agents stuck in read-only planning loops.</p>
+                    <h3>Kickstart: Read Slap &amp; Thought Slap</h3>
+                    <p class="fix-superpower">Unsticks passive inspection stalls &amp; resuscitates reasoning truncations.</p>
                     <p class="fix-solution">
-                        Monitors consecutive non-write turns. When an agent stalls, Kickstart bursts a single turn to a frontier model to unstick execution, then immediately hands control back to your local model. Auto-suspends during Plan Mode.
+                        Dual-action intervention: <strong>Read Slap</strong> monitors consecutive non-write turns and bursts a single steer turn to break passive planning stalls (auto-suspends during Plan Mode). <strong>Thought Slap</strong> intercepts runaway reasoning budget burnouts on empty turns, splicing in a &lt;3s recovery turn that forces a valid tool call before the agent stalls.
                     </p>
                 </div>
 
@@ -509,13 +509,13 @@
                     <span class="dot-green"></span>
                 </div>
                 <div class="terminal-title">nacho-flow proxy daemon (localhost:8000)</div>
-                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● PEAK <!-- BENCHMARK:TERMINAL_PEAK_START -->30,284<!-- BENCHMARK:TERMINAL_PEAK_END --> req/s</div>
+                <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● PEAK <!-- BENCHMARK:TERMINAL_PEAK_START -->31,657<!-- BENCHMARK:TERMINAL_PEAK_END --> req/s</div>
             </div>
             <div class="terminal-body">
                 <div class="term-line">
                     <span class="term-time">19:41:12</span>
                     <span class="term-tag tag-local">LOCAL GPU</span>
-                    <span class="term-msg">Turn 1 (Tokens: 450, Tools: false) ➔ <span class="term-highlight">ollama/qwen3.8-coder:14b</span> (570ms | <strong style="color:#10b981;">$0.0000</strong>)</span>
+                    <span class="term-msg">Turn 1 (Tokens: 450, Tools: false) ➔ <span class="term-highlight">ollama/qwen3-coder:30b</span> (570ms | <strong style="color:#10b981;">$0.0000</strong>)</span>
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:41:27</span>
@@ -525,7 +525,7 @@
                 <div class="term-line">
                     <span class="term-time">19:42:14</span>
                     <span class="term-tag tag-coder">CLOUD WORKHORSE</span>
-                    <span class="term-msg">Turn 3 (Tokens: 24,100, Tools: ['edit_file']) ➔ <span class="term-highlight">openrouter/qwen3-coder-480b</span> <span class="tag-cache">89.4% KV CACHE HIT</span></span>
+                    <span class="term-msg">Turn 3 (Tokens: 24,100, Tools: ['edit_file']) ➔ <span class="term-highlight">openrouter/qwen3-coder-plus</span> <span class="tag-cache">89.4% KV CACHE HIT</span></span>
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:42:33</span>

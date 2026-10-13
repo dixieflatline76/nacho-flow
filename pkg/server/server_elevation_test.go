@@ -537,8 +537,10 @@ func TestServer_ServeHTTP_FairyDust_Kickstart_And_Directives(t *testing.T) {
 			},
 		},
 	}
-	cfgFD.CycleKiller = contract.CycleBreakerConfig{
-		KickstartWriteTools: []string{"write_to_file", "replace_file_content"},
+	cfgFD.Kickstart = contract.KickstartConfig{
+		ReadSlap: contract.ReadSlapConfig{
+			CustomWriteTools: []string{"write_to_file", "replace_file_content"},
+		},
 	}
 	clfFD := router.NewClassifier()
 	if c, ok := clfFD.(*router.RequestClassifier); ok {
@@ -571,9 +573,11 @@ func TestServer_ServeHTTP_FairyDust_Kickstart_And_Directives(t *testing.T) {
 	// 5. Kickstart max count cap escalation
 	cfgKS := *srv.GetConfig()
 	cfgKS.Providers = cfg.Providers
-	cfgKS.CycleKiller = contract.CycleBreakerConfig{
-		KickstartThreshold: 1,
-		KickstartMaxCount:  1,
+	cfgKS.Kickstart = contract.KickstartConfig{
+		ReadSlap: contract.ReadSlapConfig{
+			Threshold: 1,
+			MaxSlaps:  1,
+		},
 	}
 	srvKS := NewServerWithTelemetryAndRegistry(&cfgKS, srv.GetEvaluator(), router.NewClassifier(), srv.sanitizer, srv.oracle, srv.tracker, reg, nil)
 	noToolBody := `{"messages":[{"role":"user","content":"read something without tools"}]}`
@@ -1097,7 +1101,9 @@ func TestServer_AgentUserCorrection_EscalatesToFrontier(t *testing.T) {
 			Model:    "claude-sonnet",
 		},
 		Kickstart: contract.KickstartConfig{
-			WriteOnly: true,
+			ReadSlap: contract.ReadSlapConfig{
+				WriteOnly: true,
+			},
 		},
 	}
 

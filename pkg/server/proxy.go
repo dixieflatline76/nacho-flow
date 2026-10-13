@@ -180,25 +180,11 @@ func NewServerWithTelemetryAndRegistry(
 	if classWithSigs, ok := class.(interface{ SetErrorSignatures([]string) }); ok {
 		classWithSigs.SetErrorSignatures(errorSignatures)
 	}
-	// Kickstart write tools: pull canonical zero-allocation write tools from agentregistry
+	// Read slap write tools: pull canonical zero-allocation write tools from agentregistry
 	// and merge any user-configured custom overrides if specified.
 	writeTools := agentregistry.DefaultRegistry().WriteToolsList()
-	var custom []string
-	if len(cfg.Kickstart.CustomWriteTools) > 0 {
-		custom = cfg.Kickstart.CustomWriteTools
-	} else if len(cfg.Kickstart.WriteTools) > 0 {
-		custom = cfg.Kickstart.WriteTools
-	} else if len(cfg.CycleKiller.WriteTools) > 0 {
-		custom = cfg.CycleKiller.WriteTools
-	} else if len(cfg.CycleKiller.KickstartWriteTools) > 0 {
-		custom = cfg.CycleKiller.KickstartWriteTools
-	} else if len(cfg.CycleBreaker.WriteTools) > 0 {
-		custom = cfg.CycleBreaker.WriteTools
-	} else if len(cfg.CycleBreaker.KickstartWriteTools) > 0 {
-		custom = cfg.CycleBreaker.KickstartWriteTools
-	}
-	if len(custom) > 0 {
-		writeTools = mergeUniqueSlices(writeTools, custom)
+	if len(cfg.Kickstart.ReadSlap.CustomWriteTools) > 0 {
+		writeTools = mergeUniqueSlices(writeTools, cfg.Kickstart.ReadSlap.CustomWriteTools)
 	}
 	if classWithWriteTools, ok := class.(interface{ SetKickstartWriteTools([]string) }); ok {
 		classWithWriteTools.SetKickstartWriteTools(writeTools)
@@ -276,47 +262,44 @@ func NewServerWithTelemetryAndRegistry(
 	return srv
 }
 
+func setIf[T any](dst *T, src *T) {
+	if src != nil {
+		*dst = *src
+	}
+}
+
+func setIfPositive[T ~int](dst *T, src T) {
+	if src > 0 {
+		*dst = src
+	}
+}
+
 func BuildNTSTransformer(cfg contract.NTSConfig) *nts.Transformer {
 	ntsCfg := nts.DefaultConfig()
-	if cfg.Enabled != nil {
-		ntsCfg.Enabled = *cfg.Enabled
-	}
+	setIf(&ntsCfg.Enabled, cfg.Enabled)
 	if !ntsCfg.Enabled {
 		return nil
 	}
-	if cfg.StripANSI != nil {
-		ntsCfg.StripANSI = *cfg.StripANSI
-	}
-	if cfg.ResolveCR != nil {
-		ntsCfg.ResolveCR = *cfg.ResolveCR
-	}
-	if cfg.DeduplicateLines != nil {
-		ntsCfg.DeduplicateLines = *cfg.DeduplicateLines
-	}
-	if cfg.DedupThreshold > 0 {
-		ntsCfg.DedupThreshold = cfg.DedupThreshold
-	}
-	if cfg.StripBoilerplate != nil {
-		ntsCfg.StripBoilerplate = *cfg.StripBoilerplate
-	}
-	if cfg.NormalizeWhitespace != nil {
-		ntsCfg.NormalizeWhitespace = *cfg.NormalizeWhitespace
-	}
-	if cfg.PreserveFileReads != nil {
-		ntsCfg.PreserveFileReads = *cfg.PreserveFileReads
-	}
-	if cfg.PreserveFileWrites != nil {
-		ntsCfg.PreserveFileWrites = *cfg.PreserveFileWrites
-	}
-	if cfg.PreserveCacheControl != nil {
-		ntsCfg.PreserveCacheControl = *cfg.PreserveCacheControl
-	}
-	if cfg.CompactStaleFileReads != nil {
-		ntsCfg.CompactStaleFileReads = *cfg.CompactStaleFileReads
-	}
-	if cfg.StaleReadDepth > 0 {
-		ntsCfg.StaleReadDepth = cfg.StaleReadDepth
-	}
+
+	setIf(&ntsCfg.StripANSI, cfg.StripANSI)
+	setIf(&ntsCfg.ResolveCR, cfg.ResolveCR)
+	setIf(&ntsCfg.DeduplicateLines, cfg.DeduplicateLines)
+	setIfPositive(&ntsCfg.DedupThreshold, cfg.DedupThreshold)
+	setIf(&ntsCfg.StripBoilerplate, cfg.StripBoilerplate)
+	setIf(&ntsCfg.NormalizeWhitespace, cfg.NormalizeWhitespace)
+	setIf(&ntsCfg.PreserveFileReads, cfg.PreserveFileReads)
+	setIf(&ntsCfg.PreserveFileWrites, cfg.PreserveFileWrites)
+	setIf(&ntsCfg.PreserveCacheControl, cfg.PreserveCacheControl)
+	setIf(&ntsCfg.CompactStaleFileReads, cfg.CompactStaleFileReads)
+	setIfPositive(&ntsCfg.StaleReadDepth, cfg.StaleReadDepth)
+	setIf(&ntsCfg.StripHistoricalReasoning, cfg.StripHistoricalReasoning)
+	setIf(&ntsCfg.KeepRecentReasoningTurns, cfg.KeepRecentReasoningTurns)
+	setIf(&ntsCfg.DeduplicateReminders, cfg.DeduplicateReminders)
+	setIfPositive(&ntsCfg.RemindersRefreshInterval, cfg.RemindersRefreshInterval)
+	setIf(&ntsCfg.CollapseVerboseTests, cfg.CollapseVerboseTests)
+	setIf(&ntsCfg.DeduplicateToolOutputs, cfg.DeduplicateToolOutputs)
+	setIfPositive(&ntsCfg.MinDuplicateOutputBytes, cfg.MinDuplicateOutputBytes)
+
 	return nts.NewTransformer(ntsCfg)
 }
 

@@ -188,7 +188,7 @@ func replayMultiTierSessionInternal(
 			}
 
 			// Positive prerequisite guards
-			if candidate.RequiresKickstart && !turn.SessionKickstarted {
+			if candidate.RequiresKickstart && !(turn.SessionKickstarted || turn.SessionReadSlapped) {
 				continue
 			}
 			if candidate.RequiresImages && !turn.HasImages {

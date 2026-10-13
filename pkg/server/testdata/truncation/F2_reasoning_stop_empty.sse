@@ -1,0 +1,6 @@
+data: {"id":"gen-f2","choices":[{"index":0,"delta":{"reasoning":"I have finished analyzing the structure."}}]}
+
+data: {"id":"gen-f2","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+

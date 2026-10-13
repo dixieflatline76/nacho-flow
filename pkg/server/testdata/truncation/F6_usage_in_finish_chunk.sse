@@ -1,0 +1,6 @@
+data: {"id":"gen-f6","choices":[{"index":0,"delta":{"reasoning":"Analyzing carefully..."}}]}
+
+data: {"id":"gen-f6","choices":[{"index":0,"delta":{},"finish_reason":"length"}],"usage":{"prompt_tokens":150,"completion_tokens":400,"total_tokens":550}}
+
+data: [DONE]
+

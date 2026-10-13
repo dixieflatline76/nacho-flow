@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
 // TierMetrics breaks down request counts across the multi-tiered model architecture.
@@ -25,6 +27,15 @@ type FairyDustMetrics struct {
 	TotalTriggers int64 `json:"total_triggers"`
 }
 
+// ThoughtSlapMetrics captures recovery telemetry for reasoning limit truncations.
+type ThoughtSlapMetrics struct {
+	TotalSlaps  int64   `json:"total_slaps"`
+	Recovered   int64   `json:"recovered"`
+	Exhausted   int64   `json:"exhausted"`
+	ExtraTokens int64   `json:"extra_tokens"`
+	ExtraCost   float64 `json:"extra_cost"`
+}
+
 // TimeWindowMetrics captures aggregated volume, financial, and defense telemetry for a discrete timeframe.
 type TimeWindowMetrics struct {
 	Requests          int64              `json:"requests"`
@@ -35,6 +46,7 @@ type TimeWindowMetrics struct {
 	CostReductionPct  float64            `json:"cost_reduction_pct"`
 	CycleKiller       CycleKillerMetrics `json:"cycle_killer"`
 	FairyDust         FairyDustMetrics   `json:"fairy_dust"`
+	ThoughtSlap       ThoughtSlapMetrics `json:"thought_slap"`
 	NTSTokensSaved    int64              `json:"nts_tokens_saved"`
 	NTSBytesSaved     int64              `json:"nts_bytes_saved"`
 	NTSCompactedTurns int64              `json:"nts_compacted_turns"`
@@ -82,6 +94,7 @@ type StatsSnapshot struct {
 	CostReductionPct         float64                      `json:"cost_reduction_pct"`
 	CycleKiller              CycleKillerMetrics           `json:"cycle_killer"`
 	FairyDust                FairyDustMetrics             `json:"fairy_dust"`
+	ThoughtSlap              ThoughtSlapMetrics           `json:"thought_slap"`
 	TotalNTSTokensSaved      int64                        `json:"total_nts_tokens_saved"`
 	TotalNTSBytesSaved       int64                        `json:"total_nts_bytes_saved"`
 	TotalNTSCompactedTurns   int64                        `json:"total_nts_compacted_turns"`
@@ -120,6 +133,7 @@ type Observation struct {
 	CycleMaxToolNgramFreq     int
 	HasShellWrite             bool
 	SessionKickstarted        bool
+	SessionReadSlapped        bool
 	CachedTokens              int
 	UpstreamCost              float64
 	FairyDusted               bool
@@ -129,15 +143,23 @@ type Observation struct {
 	ObservedAt                time.Time
 
 	// Session-aware fields for Auto-Tuner v2
-	SessionKey         string
-	RootPromptHash     uint64
-	Retries            int
-	HasWriteCapability bool
-	HasWriteProgress   bool
-	HasTestPass        bool
-	HasTestFail        bool
-	FailureCategory    FailureCategory
-	ClientID           string
+	SessionKey              string
+	RootPromptHash          uint64
+	Retries                 int
+	HasWriteCapability      bool
+	HasWriteProgress        bool
+	HasTestPass             bool
+	HasTestFail             bool
+	FailureCategory         FailureCategory
+	ClientID                string
+	UpstreamFinishReason    string
+	EmptyTruncatedTurn      bool
+	ThoughtSlapAttempts     int
+	ThoughtSlapOutcome      string
+	ThoughtSlapTier         string
+	SessionThoughtSlapCount int
+	ThoughtSlapExtraTokens  int
+	ThoughtSlapExtraCost    float64
 }
 
 type minuteBucket struct {
@@ -209,6 +231,7 @@ func NewStatsTrackerWithInitialSnapshot(bufferSize int, initial StatsSnapshot) *
 			CostReductionPct:  allPct,
 			CycleKiller:       tracker.stats.CycleKiller,
 			FairyDust:         tracker.stats.FairyDust,
+			ThoughtSlap:       tracker.stats.ThoughtSlap,
 			NTSTokensSaved:    tracker.stats.TotalNTSTokensSaved,
 			NTSBytesSaved:     tracker.stats.TotalNTSBytesSaved,
 			NTSCompactedTurns: tracker.stats.TotalNTSCompactedTurns,
@@ -336,6 +359,7 @@ func (s *StatsTracker) restoreWindowsFromBuckets(now time.Time) {
 		CostReductionPct:  allPct,
 		CycleKiller:       s.stats.CycleKiller,
 		FairyDust:         s.stats.FairyDust,
+		ThoughtSlap:       s.stats.ThoughtSlap,
 		NTSTokensSaved:    s.stats.TotalNTSTokensSaved,
 		NTSBytesSaved:     s.stats.TotalNTSBytesSaved,
 		NTSCompactedTurns: s.stats.TotalNTSCompactedTurns,
@@ -462,6 +486,17 @@ func addToWindow(w *TimeWindowMetrics, obs Observation, tokens, localTokens int6
 	if obs.FairyDusted {
 		w.FairyDust.TotalTriggers++
 	}
+	if obs.ThoughtSlapAttempts > 0 {
+		w.ThoughtSlap.TotalSlaps += int64(obs.ThoughtSlapAttempts)
+		switch obs.ThoughtSlapOutcome {
+		case contract.ThoughtSlapOutcomeRecoveredToolCall, contract.ThoughtSlapOutcomeRecoveredContent:
+			w.ThoughtSlap.Recovered++
+		case contract.ThoughtSlapOutcomeExhausted:
+			w.ThoughtSlap.Exhausted++
+		}
+		w.ThoughtSlap.ExtraTokens += int64(obs.ThoughtSlapExtraTokens)
+		w.ThoughtSlap.ExtraCost += obs.ThoughtSlapExtraCost
+	}
 	if obs.NTSTokensSaved > 0 || obs.NTSBytesSaved > 0 {
 		w.NTSTokensSaved += int64(obs.NTSTokensSaved)
 		w.NTSBytesSaved += int64(obs.NTSBytesSaved)
@@ -484,6 +519,11 @@ func addBucketToWindow(w *TimeWindowMetrics, b TimeWindowMetrics) {
 	w.CycleKiller.Stage2CloudEscalations += b.CycleKiller.Stage2CloudEscalations
 	w.CycleKiller.SessionKickstarts += b.CycleKiller.SessionKickstarts
 	w.FairyDust.TotalTriggers += b.FairyDust.TotalTriggers
+	w.ThoughtSlap.TotalSlaps += b.ThoughtSlap.TotalSlaps
+	w.ThoughtSlap.Recovered += b.ThoughtSlap.Recovered
+	w.ThoughtSlap.Exhausted += b.ThoughtSlap.Exhausted
+	w.ThoughtSlap.ExtraTokens += b.ThoughtSlap.ExtraTokens
+	w.ThoughtSlap.ExtraCost += b.ThoughtSlap.ExtraCost
 	w.NTSTokensSaved += b.NTSTokensSaved
 	w.NTSBytesSaved += b.NTSBytesSaved
 	w.NTSCompactedTurns += b.NTSCompactedTurns
@@ -572,6 +612,19 @@ func (s *StatsTracker) worker() {
 			s.stats.FairyDust.TotalTriggers++
 		}
 
+		// Thought Slap telemetry accumulation
+		if obs.ThoughtSlapAttempts > 0 {
+			s.stats.ThoughtSlap.TotalSlaps += int64(obs.ThoughtSlapAttempts)
+			switch obs.ThoughtSlapOutcome {
+			case contract.ThoughtSlapOutcomeRecoveredToolCall, contract.ThoughtSlapOutcomeRecoveredContent:
+				s.stats.ThoughtSlap.Recovered++
+			case contract.ThoughtSlapOutcomeExhausted:
+				s.stats.ThoughtSlap.Exhausted++
+			}
+			s.stats.ThoughtSlap.ExtraTokens += int64(obs.ThoughtSlapExtraTokens)
+			s.stats.ThoughtSlap.ExtraCost += obs.ThoughtSlapExtraCost
+		}
+
 		// NTS telemetry accumulation
 		if obs.NTSTokensSaved > 0 || obs.NTSBytesSaved > 0 {
 			s.stats.TotalNTSTokensSaved += int64(obs.NTSTokensSaved)
@@ -629,6 +682,14 @@ func (s *StatsTracker) worker() {
 				HasTestFail:               obs.HasTestFail,
 				FailureCategory:           obs.FailureCategory,
 				ClientID:                  obs.ClientID,
+				UpstreamFinishReason:      obs.UpstreamFinishReason,
+				EmptyTruncatedTurn:        obs.EmptyTruncatedTurn,
+				ThoughtSlapAttempts:       obs.ThoughtSlapAttempts,
+				ThoughtSlapOutcome:        obs.ThoughtSlapOutcome,
+				ThoughtSlapTier:           obs.ThoughtSlapTier,
+				SessionThoughtSlapCount:   obs.SessionThoughtSlapCount,
+				ThoughtSlapExtraTokens:    obs.ThoughtSlapExtraTokens,
+				ThoughtSlapExtraCost:      obs.ThoughtSlapExtraCost,
 			}
 			for _, sink := range *sinksPtr {
 				sink.Emit(record)
@@ -768,21 +829,39 @@ func (s *StatsTracker) RecalculateFromRecordsAt(records []TurnRecord, oracle *Pr
 			s.stats.TotalNTSCompactedTurns++
 		}
 
+		// ThoughtSlap recalculation from historical records
+		if rec.ThoughtSlapAttempts > 0 {
+			s.stats.ThoughtSlap.TotalSlaps += int64(rec.ThoughtSlapAttempts)
+			switch rec.ThoughtSlapOutcome {
+			case contract.ThoughtSlapOutcomeRecoveredToolCall, contract.ThoughtSlapOutcomeRecoveredContent:
+				s.stats.ThoughtSlap.Recovered++
+			case contract.ThoughtSlapOutcomeExhausted:
+				s.stats.ThoughtSlap.Exhausted++
+			}
+			s.stats.ThoughtSlap.ExtraTokens += int64(rec.ThoughtSlapExtraTokens)
+			s.stats.ThoughtSlap.ExtraCost += rec.ThoughtSlapExtraCost
+		}
+
 		obs := Observation{
-			TierName:              rec.SelectedTier,
-			Model:                 rec.TargetModel,
-			Provider:              rec.Provider,
-			Tokens:                rec.Tokens,
-			CostSpent:             costSpent,
-			CostSaved:             costSaved,
-			IsLocal:               rec.IsLocal,
-			IsFallback:            rec.IsFallback,
-			CycleBreakerTriggered: rec.CycleBreakerTriggered,
-			SessionKickstarted:    rec.SessionKickstarted,
-			FairyDusted:           rec.FairyDusted,
-			FairyDustEntry:        rec.FairyDustEntry,
-			NTSTokensSaved:        rec.NTSTokensSaved,
-			NTSBytesSaved:         rec.NTSBytesSaved,
+			TierName:               rec.SelectedTier,
+			Model:                  rec.TargetModel,
+			Provider:               rec.Provider,
+			Tokens:                 rec.Tokens,
+			CostSpent:              costSpent,
+			CostSaved:              costSaved,
+			IsLocal:                rec.IsLocal,
+			IsFallback:             rec.IsFallback,
+			CycleBreakerTriggered:  rec.CycleBreakerTriggered,
+			SessionKickstarted:     rec.SessionKickstarted,
+			FairyDusted:            rec.FairyDusted,
+			FairyDustEntry:         rec.FairyDustEntry,
+			NTSTokensSaved:         rec.NTSTokensSaved,
+			NTSBytesSaved:          rec.NTSBytesSaved,
+			ThoughtSlapAttempts:    rec.ThoughtSlapAttempts,
+			ThoughtSlapOutcome:     rec.ThoughtSlapOutcome,
+			ThoughtSlapTier:        rec.ThoughtSlapTier,
+			ThoughtSlapExtraTokens: rec.ThoughtSlapExtraTokens,
+			ThoughtSlapExtraCost:   rec.ThoughtSlapExtraCost,
 		}
 		s.updateWindowsLocked(obs, observedAt)
 	}

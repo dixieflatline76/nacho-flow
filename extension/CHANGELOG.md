@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Kickstart Thought Slap (Reasoning Truncation Recovery)**: Automated in-flight detection and recovery for turns truncated by reasoning token budget limits (`finish_reason: "length"`). The engine automatically injects an assistant turn containing the truncated thought chain followed by a targeted user steering instruction, rescuing stalled coding sessions into actionable tool executions or responses.
+- **Flight Instruments & Telemetry Badges**:
+  - **Dashboard 3-Bracket Supervisor Panel**: Real-time display for *Read Slap* (Cycle Killer), *Thought Slap* (Recovery), and *Fairy Dust* (Quality Checkpoints) with timeframe isolation (`today`, `past_1_hour`, `yesterday`, `this_week`, `this_month`, `all_time`).
+  - **Route Inspector Badges**: Detailed per-turn status tags: `👋 Slap: Tool` (recovered tool invocation), `👋 Slap: Text` (recovered prose), and `⚠️ Slap: Trunc` (exhausted reasoning budget).
+  - **Status Bar Tooltip**: Real-time supervisor counters reflecting recovered slap counts (`X/Y slaps rescued`).
+- **Profile Deletion (`nacho-flow.deleteProfile`)**: Added profile deletion button (`－`) in the VS Code sidebar and status bar tooltip. Includes protection for factory-default profiles (`profile1`, `profile2`, `profile3`), confirmation modals, and automatic fallback switching to `profile1` when deleting the active custom profile.
+
+### Breaking Changes (Configuration Restructure)
+Legacy `kickstart` configuration keys have been cleanly split into `read_slap` and `thought_slap`:
+
+| Old Key | New Key / Fate |
+|---|---|
+| `kickstart.enabled` | `kickstart.read_slap.enabled` |
+| `kickstart.threshold` | `kickstart.read_slap.threshold` |
+| `kickstart.max_count` | `kickstart.read_slap.max_slaps` |
+| `kickstart.max_failures` | `kickstart.read_slap.max_failures` |
+| `kickstart.write_only` | `kickstart.read_slap.write_only` |
+| `kickstart.write_tools`, `kickstart.custom_write_tools` | `kickstart.read_slap.custom_write_tools` |
+| `kickstart.prompt` | `kickstart.read_slap.prompt_override` |
+| `cycle_killer.kickstart_*`, `cycle_breaker.kickstart_*` | **Removed** (migrated to `kickstart.read_slap.*`) |
+| DSL variables `SessionKickstarted`, `SessionKickstartCount` | `SessionReadSlapped`, `SessionReadSlapCount` |
+
+Startup validation immediately fails with actionable migration instructions if deprecated keys are encountered.
+
 ## [1.5.0] - 2026-10-01
 
 ### Fixed

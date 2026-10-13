@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -31,8 +32,14 @@ func NewRegistryFromConfig(cfg *contract.Config) *Registry {
 		switch pCfg.Type {
 		case contract.ProviderTypeAnthropic:
 			p = NewAnthropicProvider(id, pCfg)
+		case contract.ProviderTypeOpenRouter:
+			p = NewOpenRouterProvider(id, pCfg)
 		default:
-			p = NewGenericLLMProvider(id, pCfg)
+			if strings.Contains(strings.ToLower(id), "openrouter") || strings.Contains(strings.ToLower(pCfg.BaseURL), "openrouter.ai") {
+				p = NewOpenRouterProvider(id, pCfg)
+			} else {
+				p = NewGenericLLMProvider(id, pCfg)
+			}
 		}
 		r.Register(p)
 	}

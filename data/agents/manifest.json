@@ -6,6 +6,7 @@
     "cursor": "1.0.0",
     "aider": "1.0.0",
     "anthropic": "1.0.0",
+    "kilo": "1.0.0",
     "standard": "1.0.0"
   },
   "shell": "1.0.0",

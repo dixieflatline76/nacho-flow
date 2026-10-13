@@ -91,6 +91,7 @@ func (s *Server) recordTelemetry(
 		CycleMaxToolNgramFreq:     reqCtx.CycleMaxToolNgramFreq,
 		HasShellWrite:             reqCtx.HasShellWrite,
 		SessionKickstarted:        reqCtx.SessionKickstarted,
+		SessionReadSlapped:        reqCtx.SessionReadSlapped || reqCtx.SessionKickstarted,
 		CachedTokens:              cachedTokens,
 		UpstreamCost:              upstreamCost,
 		FairyDusted:               reqCtx.FairyDusted,
@@ -106,6 +107,14 @@ func (s *Server) recordTelemetry(
 		HasTestFail:               reqCtx.HasTestFail,
 		FailureCategory:           failureCat,
 		ClientID:                  reqCtx.ClientID,
+		UpstreamFinishReason:      reqCtx.UpstreamFinishReason,
+		EmptyTruncatedTurn:        reqCtx.EmptyTruncatedTurn,
+		ThoughtSlapAttempts:       reqCtx.ThoughtSlapAttempts,
+		ThoughtSlapOutcome:        reqCtx.ThoughtSlapOutcome,
+		ThoughtSlapTier:           reqCtx.ThoughtSlapTier,
+		SessionThoughtSlapCount:   reqCtx.SessionThoughtSlapCount,
+		ThoughtSlapExtraTokens:    reqCtx.ThoughtSlapExtraTokens,
+		ThoughtSlapExtraCost:      reqCtx.ThoughtSlapExtraCost,
 	})
 
 	reqLogger.Info("Completed proxy request",
@@ -119,6 +128,12 @@ func (s *Server) recordTelemetry(
 		slog.Bool("is_fallback", isFallback),
 		slog.Bool("is_retry", reqCtx.IsRetry),
 		slog.String("failure_category", string(failureCat)),
+		slog.String("upstream_finish_reason", reqCtx.UpstreamFinishReason),
+		slog.Bool("empty_truncated_turn", reqCtx.EmptyTruncatedTurn),
+		slog.Int("thought_slap_attempts", reqCtx.ThoughtSlapAttempts),
+		slog.String("thought_slap_outcome", reqCtx.ThoughtSlapOutcome),
+		slog.String("thought_slap_tier", reqCtx.ThoughtSlapTier),
+		slog.Int("session_thought_slap_count", reqCtx.SessionThoughtSlapCount),
 		slog.Bool("cycle_breaker_triggered", reqCtx.CycleBreakerTriggered),
 		slog.Int("cycle_content_tokens", reqCtx.CycleContentTokens),
 		slog.Int("cycle_max_ngram_freq", reqCtx.CycleMaxNgramFreq),
@@ -149,6 +164,11 @@ func ClassifyTurnFailure(statusCode int, reqCtx contract.RequestContext, targetT
 	// 3. Semantic reasoning loop / agent repetition stall
 	if reqCtx.CycleBreakerTriggered {
 		return telemetry.FailureReasoningLoop
+	}
+
+	// 3.5. Reasoning budget truncated without content or tool progress
+	if reqCtx.EmptyTruncatedTurn || (reqCtx.UpstreamFinishReason == "length" && !reqCtx.HasToolProgress && !reqCtx.HasWriteProgress) {
+		return telemetry.FailureReasoningTruncated
 	}
 
 	// 4. Concrete execution failure (e.g. failing unit tests)

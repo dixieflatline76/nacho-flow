@@ -1080,6 +1080,55 @@ func TestStreamNormalizer_ClineXML_WriteToFile_Immunity(t *testing.T) {
 	}
 }
 
+func TestStreamNormalizer_AttemptCompletion_DeliverableLinksImmune(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:             &enabled,
+		RepetitionWindow:    6,
+		RepetitionThreshold: 3,
+	})
+
+	// The exact 4-gram repetition from Turn 56 of nts revert run 1 zoo glm:
+	// Repeating markdown links: internal/deck/deck.go producing 4-gram: internal deck deck go
+	linkPhrase := "Created file [internal/deck/deck.go](internal/deck/deck.go) successfully. "
+	rawSSE := fmt.Sprintf(
+		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"attempt_completion\",\"arguments\":\"{\\\"result\\\":\\\"\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n"+
+			"data: [DONE]\n\n",
+		linkPhrase, linkPhrase, linkPhrase, linkPhrase,
+	)
+
+	r := io.NopCloser(strings.NewReader(rawSSE))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	var reason string
+	for {
+		_, err := norm.Read(buf)
+		if v, res := norm.CheckCycleViolation(); v {
+			violated = true
+			reason = res
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if violated {
+		t.Fatalf("expected attempt_completion deliverable links to be immune from cycle violation, but was severed: %s", reason)
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
+	}
+}
+
 func TestStreamNormalizer_ClineXML_Editor_Immunity(t *testing.T) {
 	enabled := true
 	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
@@ -1895,7 +1944,8 @@ func TestStreamNormalizer_ParameterSanitization_InsertLineNone(t *testing.T) {
 }
 
 func TestStreamNormalizer_SilentTurnResuscitation_ThinkingOnly(t *testing.T) {
-	// A turn where the model outputs thinking but 0 content and 0 tool calls (like Turn 158)
+	// A turn where the model outputs thinking but 0 content and 0 tool calls.
+	// Under truthful termination (Decision D1), fake resuscitation prose is never injected.
 	rawSSE := "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"I am thinking deeply about N-Queens constraints...\"}}]}\n\ndata: [DONE]\n\n"
 	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(rawSSE)))
 	defer norm.Close()
@@ -1909,11 +1959,8 @@ func TestStreamNormalizer_SilentTurnResuscitation_ThinkingOnly(t *testing.T) {
 	if !strings.Contains(result, "I am thinking deeply about N-Queens constraints...") {
 		t.Errorf("expected original reasoning content to be preserved, got:\n%s", result)
 	}
-	if !strings.Contains(result, "Review and codebase verification completed") {
-		t.Errorf("expected synthesized resuscitation content chunk in output, got:\n%s", result)
-	}
-	if !strings.Contains(result, `"finish_reason":"stop"`) {
-		t.Errorf("expected finish_reason stop in output, got:\n%s", result)
+	if strings.Contains(result, "Review and codebase verification completed") {
+		t.Errorf("expected NO synthesized resuscitation content chunk in output, got:\n%s", result)
 	}
 	if !strings.HasSuffix(strings.TrimSpace(result), "data: [DONE]") {
 		t.Errorf("expected stream to conclude with [DONE], got:\n%s", result)

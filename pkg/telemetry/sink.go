@@ -6,12 +6,13 @@ import "time"
 type FailureCategory string
 
 const (
-	FailureNone          FailureCategory = ""
-	FailureUpstream      FailureCategory = "upstream_transient" // HTTP 429 RateLimit, 500/502/503/504 Server Error, Timeouts
-	FailureContextLimit  FailureCategory = "context_limit"      // Exceeded model or tier token context window
-	FailureToolSchema    FailureCategory = "tool_schema"        // Malformed tool calls, missing parameters, parameter schema mismatch
-	FailureExecution     FailureCategory = "execution"          // Command failures, test suite failures, non-zero exit codes
-	FailureReasoningLoop FailureCategory = "reasoning_loop"     // CycleBreaker tripped, semantic repetition loops, agent stall
+	FailureNone               FailureCategory = ""
+	FailureUpstream           FailureCategory = "upstream_transient"  // HTTP 429 RateLimit, 500/502/503/504 Server Error, Timeouts
+	FailureContextLimit       FailureCategory = "context_limit"       // Exceeded model or tier token context window
+	FailureToolSchema         FailureCategory = "tool_schema"         // Malformed tool calls, missing parameters, parameter schema mismatch
+	FailureExecution          FailureCategory = "execution"           // Command failures, test suite failures, non-zero exit codes
+	FailureReasoningLoop      FailureCategory = "reasoning_loop"      // CycleBreaker tripped, semantic repetition loops, agent stall
+	FailureReasoningTruncated FailureCategory = "reasoning_truncated" // Model reasoning budget exhausted (finish_reason: length) without content or tool calls
 )
 
 // TurnRecord captures telemetry metadata for an individual prompt turn.
@@ -47,12 +48,21 @@ type TurnRecord struct {
 	CycleMaxToolNgramFreq     int             `json:"cycle_max_tool_ngram_freq,omitempty"`
 	HasShellWrite             bool            `json:"has_shell_write,omitempty"`
 	SessionKickstarted        bool            `json:"session_kickstarted,omitempty"`
+	SessionReadSlapped        bool            `json:"session_read_slapped,omitempty"`
 	CachedTokens              int             `json:"cached_tokens,omitempty"`
 	UpstreamCost              float64         `json:"upstream_cost,omitempty"`
 	FairyDusted               bool            `json:"fairy_dusted,omitempty"`
 	FairyDustEntry            string          `json:"fairy_dust_entry,omitempty"`
 	NTSTokensSaved            int             `json:"nts_tokens_saved,omitempty"`
 	NTSBytesSaved             int             `json:"nts_bytes_saved,omitempty"`
+	UpstreamFinishReason      string          `json:"upstream_finish_reason,omitempty"`
+	EmptyTruncatedTurn        bool            `json:"empty_truncated_turn,omitempty"`
+	ThoughtSlapAttempts       int             `json:"thought_slap_attempts,omitempty"`
+	ThoughtSlapOutcome        string          `json:"thought_slap_outcome,omitempty"`
+	ThoughtSlapTier           string          `json:"thought_slap_tier,omitempty"`
+	SessionThoughtSlapCount   int             `json:"session_thought_slap_count,omitempty"`
+	ThoughtSlapExtraTokens    int             `json:"thought_slap_extra_tokens,omitempty"`
+	ThoughtSlapExtraCost      float64         `json:"thought_slap_extra_cost,omitempty"`
 
 	// Session-aware fields for Auto-Tuner v2 session replay optimization
 	RootPromptHash     uint64 `json:"root_prompt_hash,omitempty"`     // Identity of the root task

@@ -18,6 +18,20 @@ export interface TurnRecord {
 	cost_spent_usd?: number;
 	nts_tokens_saved?: number;
 	nts_bytes_saved?: number;
+	thought_slap_attempts?: number;
+	thought_slap_outcome?: string;
+	thought_slap_tier?: string;
+	session_thought_slap_count?: number;
+	thought_slap_extra_tokens?: number;
+	thought_slap_extra_cost?: number;
+	session_kickstarted?: boolean;
+	fairy_dusted?: boolean;
+	fairy_dust_entry?: string;
+	cycle_breaker_triggered?: boolean;
+	cycle_breaker_reason?: string;
+	cycle_max_ngram_freq?: number;
+	cycle_content_tokens?: number;
+	cycle_prose_tokens?: number;
 }
 
 // Circuit Information
@@ -67,6 +81,14 @@ export interface TierMetrics {
 	fallbacks: number;
 }
 
+export interface ThoughtSlapMetrics {
+	total_slaps: number;
+	recovered: number;
+	exhausted: number;
+	extra_tokens: number;
+	extra_cost: number;
+}
+
 export interface StatsSnapshot {
 	started_at: string;
 	total_requests: number;
@@ -75,6 +97,9 @@ export interface StatsSnapshot {
 	estimated_cost_saved_usd: number;
 	total_cost_spent_usd?: number;
 	cost_reduction_pct?: number;
+	cycle_killer?: any;
+	fairy_dust?: any;
+	thought_slap?: ThoughtSlapMetrics;
 	total_nts_tokens_saved?: number;
 	total_nts_bytes_saved?: number;
 	total_nts_compacted_turns?: number;
