@@ -217,4 +217,3 @@ func TestStreamNormalizer_TruthfulTermination(t *testing.T) {
 		}
 	})
 }
-

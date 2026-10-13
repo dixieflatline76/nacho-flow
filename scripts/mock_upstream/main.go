@@ -50,7 +50,11 @@ func main() {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", *port)
 	log.Printf("Mock upstream listening on http://%s (fixtures: %s)", addr, *fixtureDir)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	server := &http.Server{
+		Addr:              addr,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
@@ -147,7 +151,8 @@ data: [DONE]
 }
 
 func loadFixture(dir, filename string) string {
-	path := filepath.Join(dir, filename)
+	path := filepath.Clean(filepath.Join(dir, filename))
+	// #nosec G304 - mock test server loads static test fixtures
 	data, err := os.ReadFile(path)
 	if err != nil {
 		log.Printf("ERROR loading fixture %s: %v", path, err)

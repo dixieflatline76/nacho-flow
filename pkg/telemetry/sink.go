@@ -6,12 +6,12 @@ import "time"
 type FailureCategory string
 
 const (
-	FailureNone          FailureCategory = ""
-	FailureUpstream      FailureCategory = "upstream_transient" // HTTP 429 RateLimit, 500/502/503/504 Server Error, Timeouts
-	FailureContextLimit  FailureCategory = "context_limit"      // Exceeded model or tier token context window
-	FailureToolSchema    FailureCategory = "tool_schema"        // Malformed tool calls, missing parameters, parameter schema mismatch
-	FailureExecution     FailureCategory = "execution"          // Command failures, test suite failures, non-zero exit codes
-	FailureReasoningLoop      FailureCategory = "reasoning_loop"     // CycleBreaker tripped, semantic repetition loops, agent stall
+	FailureNone               FailureCategory = ""
+	FailureUpstream           FailureCategory = "upstream_transient"  // HTTP 429 RateLimit, 500/502/503/504 Server Error, Timeouts
+	FailureContextLimit       FailureCategory = "context_limit"       // Exceeded model or tier token context window
+	FailureToolSchema         FailureCategory = "tool_schema"         // Malformed tool calls, missing parameters, parameter schema mismatch
+	FailureExecution          FailureCategory = "execution"           // Command failures, test suite failures, non-zero exit codes
+	FailureReasoningLoop      FailureCategory = "reasoning_loop"      // CycleBreaker tripped, semantic repetition loops, agent stall
 	FailureReasoningTruncated FailureCategory = "reasoning_truncated" // Model reasoning budget exhausted (finish_reason: length) without content or tool calls
 )
 

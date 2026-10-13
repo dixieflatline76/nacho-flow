@@ -260,15 +260,15 @@ type CycleBreakerConfig struct {
 	RetryFloor           int            `yaml:"retry_floor,omitempty" json:"retry_floor,omitempty"`
 
 	// Flat fields for direct overrides and tests
-	MaxContentTokens                  int  `yaml:"max_content_tokens,omitempty" json:"max_content_tokens,omitempty"`
-	MaxThinkingTokens                 int  `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
-	MaxToolTokens                     int  `yaml:"max_tool_tokens,omitempty" json:"max_tool_tokens,omitempty"`
-	MaxWriteTokens                    int  `yaml:"max_write_tokens,omitempty" json:"max_write_tokens,omitempty"`
-	RepetitionWindow                  int  `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
-	RepetitionThreshold               int  `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
-	ThinkingRepetitionThreshold       int  `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
-	BudgetRepetitionThreshold         int  `yaml:"budget_repetition_threshold,omitempty" json:"budget_repetition_threshold,omitempty"`
-	ThinkingBudgetRepetitionThreshold int  `yaml:"thinking_budget_repetition_threshold,omitempty" json:"thinking_budget_repetition_threshold,omitempty"`
+	MaxContentTokens                  int `yaml:"max_content_tokens,omitempty" json:"max_content_tokens,omitempty"`
+	MaxThinkingTokens                 int `yaml:"max_thinking_tokens,omitempty" json:"max_thinking_tokens,omitempty"`
+	MaxToolTokens                     int `yaml:"max_tool_tokens,omitempty" json:"max_tool_tokens,omitempty"`
+	MaxWriteTokens                    int `yaml:"max_write_tokens,omitempty" json:"max_write_tokens,omitempty"`
+	RepetitionWindow                  int `yaml:"repetition_window,omitempty" json:"repetition_window,omitempty"`
+	RepetitionThreshold               int `yaml:"repetition_threshold,omitempty" json:"repetition_threshold,omitempty"`
+	ThinkingRepetitionThreshold       int `yaml:"thinking_repetition_threshold,omitempty" json:"thinking_repetition_threshold,omitempty"`
+	BudgetRepetitionThreshold         int `yaml:"budget_repetition_threshold,omitempty" json:"budget_repetition_threshold,omitempty"`
+	ThinkingBudgetRepetitionThreshold int `yaml:"thinking_budget_repetition_threshold,omitempty" json:"thinking_budget_repetition_threshold,omitempty"`
 }
 
 // ResolvePhraseLength returns the resolved phrase length (n-gram size) for a lane, falling back to global defaults.

@@ -691,5 +691,23 @@ By transitioning Fairy Dust from congratulatory architectural summaries to adver
 3. **Local GPU Offload is Essential**: Offloading 28.9% of routine turns to local workstation GPUs (Gemma 4 / Devstral) eliminates cloud queue latency on trivial inspections and saves thousands of dollars per developer annually.
 4. **Adversarial Oversight is Required**: Automated coding agents left unmonitored will generate circular tests to pass CI gates. Deterministic gateway controls—combining in-flight Cycle Killers with adversarial Fairy Dust checkpoints—are required to enforce genuine software engineering excellence.
 
+---
 
+## 12. Empirical Addendum: The OpenRouter Pareto Router Benchmark (October 2026)
+
+In October 2026, we benchmarked OpenRouter's native cloud routing endpoint—openrouter/pareto-code—as a direct control against Nacho Flow on the standard multi-package Go Blackjack Benchmark:
+
+| Dimension | openrouter/pareto-code (Direct Cloud) | Nacho Flow Supervised Runtime (Run 14) | Impact |
+| :--- | :---: | :---: | :---: |
+| **Completion Status** | **ABORTED (Out of Credits at Turn 23)** | **100% COMPLETE (60 Turns)** | **Nacho Flow finished** |
+| **Total Billed Spend** | **$26.2420 USD** (in 23 turns) | **~$0.1500 USD** (full 60 turns) | **164× cheaper (99.4% savings)** |
+| **Cost to Run go test** | **$1.5511 USD** (Turn 20) | **~$0.0015 USD** (Tier 1 Fast) | **1,000× cheaper** |
+| **Cost of 1-line Code Fix**| **$1.6658 USD** (Turn 22) | **~$0.0018 USD** (Tier 1 Fast) | **925× cheaper** |
+| **Context at Milestone** | **83,356 uncompressed tokens** | **~48,000 normalized tokens** | **-35,000 tok/turn via NTS** |
+
+### The Core Finding: Request-Level Routers vs. Lifecycle Gateways
+OpenRouter's openrouter/pareto-code evaluates requests statelessly. It assigned frontier-tier models to routine terminal checks and 1-line syntax cleanups, charging frontier prompt rates on an 83,000-token context snowball. Without an agentic gateway to normalize context and dynamically modulate reasoning tiers, pure cloud routing is economically unsustainable for multi-turn agent harnesses.
+
+For the complete turn-by-turn auditable telemetry log, token metrics, and architectural autopsy, see:  
+**[OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.md](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.md)**.
 

@@ -37,7 +37,6 @@ var (
 
 const honestTruncationNoticeChunk = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\\n\\n> ⚠️ **Nacho Flow • Reasoning Limit Reached**\\n> Model reached its output token limit without producing a response.\\n\"}}]}\n\n"
 
-
 func hasAnyReasoningMarker(payload []byte) bool {
 	for _, marker := range reasoningByteMarkers {
 		if bytes.Contains(payload, marker) {
@@ -235,32 +234,32 @@ type StreamUsage struct {
 // StreamNormalizer wraps an upstream SSE response stream, canonicalizes reasoning tokens
 // into standard delta.reasoning_content, intercepts token usage, and enforces the Agentic Tool Fallback Shield.
 type StreamNormalizer struct {
-	upstream               io.ReadCloser
-	reader                 *bufio.Reader
-	outBuf                 *bytes.Buffer
-	inThinking             bool
-	inStructuredReasoning  bool
-	alreadyTagged          bool // Preserved for backward test compatibility
-	closed                 bool
-	eofReached             bool
-	capturedUsage          StreamUsage
-	hasUsage               bool
-	emittedCompletionChars int
-	interactiveTool        string
-	shieldMgr              *shield.ShieldManager
-	tailBuffer             *shield.TailBuffer
-	hasNativeTools         bool
-	proseAccumulator       strings.Builder
-	cycleBreaker           *shield.CycleBreaker
-	cycleViolated          bool
-	cycleViolationReason   string
-	features               uint16
-	pendingDelimiterBuf    string
-	toolChunksScratch      []fastToolCallChunk
-	currentToolCategory    shield.ToolActivityCategory
-	hasActiveToolCall      bool
-	inWriteTool            bool
-	pendingWriteTagBuf     string
+	upstream                io.ReadCloser
+	reader                  *bufio.Reader
+	outBuf                  *bytes.Buffer
+	inThinking              bool
+	inStructuredReasoning   bool
+	alreadyTagged           bool // Preserved for backward test compatibility
+	closed                  bool
+	eofReached              bool
+	capturedUsage           StreamUsage
+	hasUsage                bool
+	emittedCompletionChars  int
+	interactiveTool         string
+	shieldMgr               *shield.ShieldManager
+	tailBuffer              *shield.TailBuffer
+	hasNativeTools          bool
+	proseAccumulator        strings.Builder
+	cycleBreaker            *shield.CycleBreaker
+	cycleViolated           bool
+	cycleViolationReason    string
+	features                uint16
+	pendingDelimiterBuf     string
+	toolChunksScratch       []fastToolCallChunk
+	currentToolCategory     shield.ToolActivityCategory
+	hasActiveToolCall       bool
+	inWriteTool             bool
+	pendingWriteTagBuf      string
 	hasEmittedContent       bool
 	hasNonWhitespaceContent bool
 	hasEmittedToolCalls     bool
