@@ -8,7 +8,7 @@
 **Date:** October 2026  
 **Document Classification:** Technical Whitepaper & Empirical Benchmark Report  
 **Target Architecture:** [Zoo Code](https://zoocode.dev) v3.88.0 on Windows 11 Pro / Go 1.26+ Toolchain  
-**Dataset:** Auditable Zoo Code Task Log (`01a1345d-33fe-7288-a563-8dbd9ab670cc`) and Benchmark Directory (`bitch slap control run openrouter`)
+**Dataset:** Auditable Zoo Code Task Log (`01a1345d-33fe-7288-a563-8dbd9ab670cc`) and OpenRouter Pareto Code Control Run
 
 ---
 
@@ -137,13 +137,13 @@ An autonomous coding workflow consists of sharply distinct computational phases:
 - **Phase C (Linter & Execution Feedback)**: Executing shell commands (`go test`, `go vet`, `git status`) and parsing return codes. Requires almost zero reasoning.
 - **Phase D (Micro-Refinement)**: Modifying 1 to 5 lines of code based on compiler feedback.
 
-Because OpenRouter's Pareto router has no awareness of these phases, it assigned **Claude Fable 5.1** to Phase C and Phase D tasks. Paying frontier token rates ($3.00+/1M in, $15.00+/1M out) on an 80,000-token prompt just to read a 3-line terminal string is an economic disaster.
+Because OpenRouter's Pareto router has no awareness of these phases, it assigned **Claude Fable 5.1** to Phase C and Phase D tasks. Paying un-cached frontier token rates ($20.00/1M in, $100.00/1M out on Claude Fable 5.1) on an 80,000-token prompt just to read a 3-line terminal string is an economic disaster.
 
 ### 2. The Unchecked Context Snowball
 In an unmediated agent session:
 - Every file read, directory listing, compiler error, and tool definition remains in the context window forever.
 - By Turn 20, Zoo Code was uploading **80+ Kilobytes of raw text on every single turn**.
-- **Nacho Flow's Non-Terminating Streaming (NTS)** actively inspects, compresses, and normalizes conversational history before it ever touches an API socket. By stripping duplicate tool responses and redundant terminal output, NTS saved over **35,000 tokens per turn** in the later stages of the benchmark.
+- **Nacho Token Saver (NTS)** actively inspects, compresses, and normalizes conversational history before it ever touches an API socket. By stripping duplicate tool responses and redundant terminal output, NTS saved over **35,000 tokens per turn** in the later stages of the benchmark.
 
 Without NTS, the Pareto router bills the developer for an exponential context curve:
 
@@ -169,15 +169,16 @@ When the credit balance exhausted on Turn 24:
 
 ## Practical Implications for Engineering Teams
 
-1. **"Smart" Cloud Routers Are Not Agent Superiors**: A cloud router that simply selects a model per request based on Artificial Analysis leaderboards is fundamentally inadequate for multi-turn agent harnesses. It optimizes for single-turn prompt fidelity, not multi-turn agentic economics.
+1. **"Smart" Cloud Routers Are Not Agent Supervisors**: A cloud router that simply selects a model per request based on Artificial Analysis leaderboards is fundamentally inadequate for multi-turn agent harnesses. It optimizes for single-turn prompt fidelity, not multi-turn agentic economics.
 2. **The True Cost of Agentic Coding is the Context Tail**: The bulk of an agent bill is never the initial prompt; it is turns 20 through 80, where 90% of the token payload is repetitive conversational debt.
 3. **Local Gateways Are Essential Infrastructure**: Running an intelligent edge proxy like **Nacho Flow** is not merely a cost-saving measure—it is the difference between an agent completing its work autonomously or burning through developer credit balances and halting mid-build.
 
 ---
 
 ### Reference Artifacts
-- **Auditable Evidence JSON**: [`pareto_evidence.json`](file:///C:/Users/karlk/.gemini/antigravity-ide/brain/a17c1e31-8c29-404a-8ffc-9b290c40ac9f/scratch/pareto_evidence.json)
-- **Zoo Code Harness Config Screenshot**: [`openrouter_pareto_zoo_settings.png`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/benchmarks/openrouter_pareto_zoo_settings.png)
-- **OpenRouter Activity Dashboard Screenshot**: [`openrouter_activity_dashboard_fable.png`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/benchmarks/openrouter_activity_dashboard_fable.png)
-- **Nacho Flow Run 14 Benchmark**: [`bitch slap run 14 zoo glm`](file:///C:/Users/karlk/development/Benchmark/bitch%20slap%20run%2014%20zoo%20glm)
-- **Aborted Control Benchmark**: [`bitch slap control run openrouter`](file:///C:/Users/karlk/development/Benchmark/bitch%20slap%20control%20run%20openrouter)
+- **Auditable Evidence JSON**: [`benchmarks/pareto_evidence.json`](benchmarks/pareto_evidence.json)
+- **Zoo Code Harness Config Screenshot**: [`benchmarks/openrouter_pareto_zoo_settings.png`](benchmarks/openrouter_pareto_zoo_settings.png)
+- **OpenRouter Activity Dashboard Screenshot**: [`benchmarks/openrouter_activity_dashboard_fable.png`](benchmarks/openrouter_activity_dashboard_fable.png)
+- **Head-to-Head Architecture Diagram**: [`benchmarks/pareto_vs_nacho_flowchart.png`](benchmarks/pareto_vs_nacho_flowchart.png)
+- **Supervised Benchmark Reference**: Nacho Flow Run 14 (Zoo Code v3.88.0 + GLM-5 Supervised Pipeline)
+- **Control Benchmark Reference**: OpenRouter Pareto Code Control Run (`openrouter/pareto-code` Direct)

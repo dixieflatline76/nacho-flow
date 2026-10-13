@@ -709,5 +709,5 @@ In October 2026, we benchmarked OpenRouter's native cloud routing endpoint—ope
 OpenRouter's openrouter/pareto-code evaluates requests statelessly. It assigned frontier-tier models to routine terminal checks and 1-line syntax cleanups, charging frontier prompt rates on an 83,000-token context snowball. Without an agentic gateway to normalize context and dynamically modulate reasoning tiers, pure cloud routing is economically unsustainable for multi-turn agent harnesses.
 
 For the complete turn-by-turn auditable telemetry log, token metrics, and architectural autopsy, see:  
-**[OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.md](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.md)**.
+**[OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.md](OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.md)**.
 

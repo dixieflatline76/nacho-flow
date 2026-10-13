@@ -26,7 +26,7 @@ The challenge was not a toy 10-line LeetCode puzzle. We gave an autonomous agent
 
 We ran this exact challenge under strictly controlled conditions:
 
-1. **Nacho Flow (Agent Supervisor & Model Dispatcher)**: Intelligent edge routing across a local workstation GPU (`qwen3-coder:30b` on Ollama / llama.cpp at **$0.00**), a dense cloud workhorse (`qwen3-coder-plus` at **$0.65/M**), and targeted reasoning escalation (`gemini-2.5-flash` at **$0.10/M**).
+1. **Nacho Flow (Agent Supervisor & Model Dispatcher)**: Intelligent edge routing across a local workstation GPU (`gemma4:12b-it-qat` on Ollama at **$0.00**), a dense cloud workhorse (`qwen3-coder-plus` at **$0.65/M**), and targeted reasoning escalation (`gemini-3.8-flash` at **$0.75/M**).
 2. **The Raw Frontier Control**: Bypassing Nacho Flow completely, pointing the agent **100% raw and direct to Anthropic Claude Sonnet 5** via OpenRouter.
 
 Both runs used the **identical prompt**, the **identical IDE agent harness** ([Zoo Code](https://zoocode.dev) v3.82), the **identical operating system**, and the **identical acceptance criteria** (`go test -race` passing and Monte Carlo simulation operational).
@@ -39,7 +39,7 @@ flowchart LR
     classDef tier fill:#0e2233,stroke:#38bdf8,stroke-width:1.5px,color:#fff;
 
     subgraph RawControl["🔴 Raw Frontier Control: Sonnet 5 Direct"]
-        Z1["Zoo Code Agent"] -->|100% Direct| S5["Claude Sonnet 5<br/>$3.00 / $15.00 per 1M"]
+        Z1["Zoo Code Agent"] -->|100% Direct| S5["Claude Sonnet 5<br/>$2.00 / $10.00 per 1M"]
         S5 -->|84 Turns · 12.6M Tokens<br/>97.4% Prompt Cache Hit| Bill1["$4.87 USD<br/>31.5 min clock time<br/>9 max-token stalls"]
     end
 
@@ -166,7 +166,7 @@ flowchart TD
 ```
 
 1. **Local Workstation Absorption (~3.85M tokens)**:
-   In Nacho Flow, the first 35 turns (directory scans, scaffolding, basic type declarations, initial test runs) executed entirely on the local RTX GPU running `qwen3-coder:30b` at **$0.00**. Those 35 turns averaged ~110,000 tokens of context each. That accounts for nearly **4 million prompt tokens that never touched a cloud API**.
+   In Nacho Flow, the first 35 turns (directory scans, scaffolding, basic type declarations, initial test runs) executed entirely on the local RTX GPU running `gemma4:12b-it-qat` at **$0.00**. Those 35 turns averaged ~110,000 tokens of context each. That accounts for nearly **4 million prompt tokens that never touched a cloud API**.
 2. **Turn Inflation Prevention (~4.84M tokens)**:
    Because Sonnet suffered 9 max-token buffer stalls, it had to repeat file writes across 22 extra turns (84 total turns vs. 62 on Nacho Flow). In an autonomous agent, turns 60+ carry between 150,000 and 286,000 tokens of accumulated context *on every single request*. Eliminating 22 redundant deep-context turns ($22 \times \sim 220\text{k}$) avoided sending **4.84 million tokens**.
 3. **Completion Monologue Compounding (~1.20M tokens)**:
@@ -226,8 +226,8 @@ module blackjack
 go 1.26
 ```
 
-* **On Raw Sonnet**: Each turn re-sends the agent's system prompt, tool definitions, and environment state at frontier rates ($2.00/M input). **Zoo Code billed $0.60 USD in the first 6 turns before writing a single function of Go logic.** You paid 60 cents for the model to confirm that Go was installed on your machine.
-* **On Nacho Flow**: The classifier recognized these early turns as read-only system inspection and routed **100% of the first 10 scaffolding turns to the local GPU (`qwen3-coder:30b`) for exactly $0.00**.
+* **On Raw Sonnet 5**: Each turn re-sends the agent's system prompt, tool definitions, and environment state at frontier rates ($2.00/M input). **Zoo Code billed $0.60 USD in the first 6 turns before writing a single function of Go logic.** You paid 60 cents for the model to confirm that Go was installed on your machine.
+* **On Nacho Flow**: The classifier recognized these early turns as read-only system inspection and routed **100% of the first 10 scaffolding turns to the local GPU (`gemma4:12b-it-qat`) for exactly $0.00**.
 
 ### Act II: The Upstream Meltdown & The "White Screen of Death" (Turn 7)
 
@@ -459,19 +459,19 @@ The strongest evidence in this document isn't the head-to-head — it's the **44
 🌮 NACHO FLOW AUTONOMOUS RECOVERY REPORT (444 Historical Turns)
 ========================================================================================
 🩺 MODEL AUTONOMOUS SELF-RECOVERY RATES:
-  • deepseek/deepseek-r1:      Self-Recovery: 45.0% (Recovered within 1.0 turns)
-  • qwen3-coder:30b (Local):  Self-Recovery: 38.4% (Recovered within 1.0 turns)
-  • google/gemini-2.5-flash:  Self-Recovery: 25.0% (Recovered within 1.1 turns)
-  • qwen/qwen3-coder-plus:    Self-Recovery: 56.8% (Recovered within 1.0 turns)
+  • deepseek/deepseek-v4-pro: Self-Recovery:  0.0% (Failed tool calls never recovered)
+  • gemma4:12b-it-qat (Local): Self-Recovery: 29.4% (Recovered within 1.0 turns)
+  • google/gemini-3.8-flash:   Self-Recovery: 20.0% (Recovered within 1.1 turns)
+  • qwen/qwen3-coder-plus:     Self-Recovery: 56.8% (Recovered within 1.0 turns)
 
 🔍 EMPIRICAL OPTIMIZATION PARAMETERS:
-  • Optimal Local Context Threshold:  8,000 tokens
+  • Optimal Local Context Threshold:  4,000 tokens
   • Optimal Local Retry Ceiling:      1 retry before cloud escalation
   • Developer Retries Eliminated:    ~17 wasted loops per session
 ========================================================================================
 ```
 
-1. **The 8,000-Token Local Cliff**: Local MoE and 24B models on consumer GPUs are excellent at directory scans, file reads, and scaffolding below 8,000 tokens. Beyond 8k, complex cross-file tool calling benefits from cloud escalation.
+1. **The 4,000-Token Local Cliff**: Local 12B/14B models on consumer GPUs are excellent at directory scans, file reads, and scaffolding below 4,000 tokens. Beyond 4k, tool-calling accuracy degrades rapidly.
 2. **`qwen3-coder-plus` is the workhorse**: At **$0.65/M**, it posts a **56.8% autonomous self-recovery rate**, fixing compile and test errors without human nudges.
 3. **The `Retries < 1` Rule**: After a local model fails a tool call, a second attempt is almost always wasted compute. Escalating after 1 failure eliminates ~17 wasted loops per session.
 
@@ -496,7 +496,7 @@ Consider a team of **10 software engineers**, each running **5 autonomous coding
 A decision-maker evaluating Nacho Flow cares about operational reality:
 
 * **"What if my developers don't have an RTX 4090?"**  
-  Nacho Flow does not require flagship workstation silicon. Laptops with 8GB-16GB VRAM (or Apple Silicon unified memory) run quantized models (e.g. `phi4-mini` or `qwen3-coder:30b` MoE) smoothly for early scaffolding. Furthermore, on developer machines with **zero local GPU**, Tier 1 can be pointed to an ultra-low-cost cloud endpoint (such as DeepSeek V3 at $0.20/M), retaining **over 75% of total savings**.
+  Nacho Flow does not require flagship workstation silicon. Laptops with 8GB-16GB VRAM (or Apple Silicon unified memory) run quantized 7B/8B models (e.g. `qwen3.8-coder:7b-instruct-q4_K_M` or `gemma4:12b-it-qat`) smoothly for early scaffolding. Furthermore, on developer machines with **zero local GPU**, Tier 1 can be pointed to an ultra-low-cost cloud endpoint (such as DeepSeek V3 at $0.20/M), retaining **over 75% of total savings**.
 * **"What if run-to-run variance means the real multiplier is 'only' 3× instead of 5.7×?"**  
   Even under conservative assumptions where Sonnet has an unusually clean run, saving 65% of agent spend pays for adopting Nacho Flow within **10 to 12 sessions**.
 * **Zero Integration Friction**: Zero agent code changes. Point Zoo Code, Cline, Aider, or Cursor to `http://127.0.0.1:8000/v1` with a single unified OpenRouter API key.
