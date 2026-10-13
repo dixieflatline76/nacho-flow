@@ -20,29 +20,30 @@
 
 **Nacho Flow** is a hybrid model dispatcher and agent supervisor written in pure Go. Point [Cline](https://github.com/cline/cline), [Zoo Code](https://www.zoocode.dev), [OpenCode](https://github.com/anomalyco/opencode), [Aider](https://github.com/paul-gauthier/aider), [Cursor](https://cursor.com), or [Continue](https://continue.dev) at `http://localhost:8000/v1` and it handles the rest.
 
-🌐 **Website & Documentation**: [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)
-💸 **Latest Research**: [The Frontier Tax: 1:1 Claude Sonnet 5 vs. Nacho Flow](docs/FRONTIER_CONTROL_STUDY_2026.md) *(5.7x cheaper, 12 minutes faster)*
-Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76).
+🌐 **Website & Docs:** [spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow) · Part of the **[spicebox.dev](https://spicebox.dev)** developer tool suite by [@dixieflatline76](https://github.com/dixieflatline76)  
+💸 **Latest Benchmarks:** [The $26 Pareto Router Evaporation ($26.24 vs. $0.15)](https://spicebox.dev/nacho-flow/docs.html?doc=pareto_benchmark) · [The Frontier Tax: 1:1 Claude Sonnet 5 vs. Nacho Flow (5.7x cheaper)](https://spicebox.dev/nacho-flow/docs.html?doc=frontier_study)
 
 ---
 
 ## What It Does
 
-- **Hybrid routing**: Local GPU -> budget cloud -> frontier, evaluated per-turn via [deterministic AST bytecode rules](docs/TUNING_GUIDE.md) (`Tokens`, `Retries`, `Keywords`, `HasTools`, `HasImages`)
-- **Cycle Killer**: Monitors live SSE streams across thinking/prose/tool lanes. Kills repetition loops in < 3s, injects a local $0.00 override to force tool action, never interrupts file writes
-- **Kickstart**: Detects consecutive non-write turns (analysis paralysis) and injects intervention prompts to resume action or escalates to a smarter model
-- **Tool Normalizer**: Converts 8 raw tool-call format families (Hermes, Mistral, Llama 3, ReAct, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON -- no harness crashes
-- **Fairy Dust**: Programmable frontier checkpoints every N file writes for quality audits (without running expensive models all day)
-- **Cost engine**: Prompt-cache-aware billing tracking input, output, and cache tokens at exact provider rates
-- **Auto-Tune**: Replays your `logs/traffic.jsonl` to find optimal tier thresholds (`nacho-flow tune`)
-- **VS Code extension**: Bundles the Go binary, live financial telemetry, route inspector, one-click preset switching. Zero CLI setup. [Install from Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow)
-- **Wire-speed core**: < 0.19ms routing overhead, <!-- BENCHMARK:README_CORE_START -->31,000+ req/s (peak 31,657 req/s)<!-- BENCHMARK:README_CORE_END -->, lock-free atomic RCU state, zero heap churn during proxying
-- **Zero runtime dependencies**: Single static binary, CGO_ENABLED=0, no Node or Python required
+- **Hybrid routing:** Local GPU → budget cloud → frontier, evaluated per-turn via [deterministic AST bytecode rules](docs/TUNING_GUIDE.md) (`Tokens`, `Retries`, `Keywords`, `HasTools`, `HasImages`)
+- **Nacho Token Saver (NTS):** In-flight context compactor running at ingress. Prunes passing test noise (< 10 µs), strips historical `<think>` chains, and cleans terminal ANSI spam—slashing 50%–70% of bloat tokens with zero loss of failures or errors
+- **Cycle Killer:** Monitors live SSE streams across thinking/prose/tool lanes. Kills repetition loops in < 3s, injects a local $0.00 override to force tool action, never interrupts file writes
+- **Kickstart (Read Slap & Thought Slap):** Breaks read-only paralysis (**Read Slap**) or empty turns from `max_tokens` monologue exhaustion (**Thought Slap**), injecting steer prompts or escalating with 3-turn anti-latching protection
+- **Tool Normalizer:** Converts 8 raw tool-call format families (Hermes, Mistral, Llama 3, ReAct, Markdown fences, bare JSON) into standard OpenAI `tool_calls` JSON—eliminating 3-strike harness crashes
+- **Fairy Dust:** Programmable frontier checkpoints every N file writes for quality audits (without running expensive models all day)
+- **Auto-Tune:** Replays your `logs/traffic.jsonl` via a 9-way min-conflict replay tuner to find optimal tier thresholds (`nacho-flow tune`)
+- **Cost engine:** Prompt-cache-aware billing tracking input, output, and cache tokens at exact provider rates
+- **VS Code extension:** Bundles the Go binary, live financial telemetry, route inspector, one-click preset switching. Zero CLI setup. [Install from Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow)
+- **Wire-speed core:** < 0.19ms routing overhead, <!-- BENCHMARK:README_CORE_START -->31,000+ req/s (peak 31,657 req/s)<!-- BENCHMARK:README_CORE_END -->, lock-free atomic RCU state, zero heap churn during proxying
+- **Zero runtime dependencies:** Single static binary, `CGO_ENABLED=0`, no Node or Python required
 <!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+- **Engineered for reliability:** Strictly ≥ 95.0% statement test coverage across core packages (95.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`)
 <!-- COVERAGE:SUMMARY_END -->
 
-> **NTS (experimental token compaction)** is available but disabled by default to preserve prompt cache stability and prevent diff drift. See [NTS docs](docs/USER_GUIDE.md) if you need it for extreme context limits.
+> [!TIP]
+> **Production-Ready NTS (Compact First, Then Route):** In v1.6.0, NTS runs the moment a prompt hits the proxy—*before* model routing rules are evaluated. Cleaning prompts first stops router panic and keeps tasks on cheap or local models. See the [NTS User Guide](docs/USER_GUIDE.md#27-️-nacho-token-saver-nts--production-ready-in-flight-context-compactor) or [Web Docs](https://spicebox.dev/nacho-flow/docs.html?doc=user_guide).
 
 ---
 

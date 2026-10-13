@@ -27,11 +27,12 @@ This guide teaches you how to write, optimize, test, and tune dynamic routing ru
 
 ## 1. How the Evaluation Pipeline Works
 
-When an agent (Zoo Code, Cline, Aider, Cursor) sends a prompt turn, Nacho Flow evaluates your configured tiers sequentially from **top to bottom** (*First Match Wins*):
+When an agent (Zoo Code, Cline, Aider, Cursor) sends a prompt turn, Nacho Flow runs in-flight context compaction (NTS) at ingress, then evaluates your configured tiers sequentially from **top to bottom** (*First Match Wins*):
 
 ```mermaid
 flowchart TD
-    Req["Incoming Prompt Turn"] --> Context["Classifier Extracts: Tokens, HasImages, HasTools, Keywords"]
+    Req["Incoming Prompt Turn"] --> NTS["🗜️ NTS Ingress Compactor<br/>(Prunes Passing Tests &amp; Old Reasoning)"]
+    NTS --> Context["Classifier Extracts: Tokens, HasImages, HasTools, Keywords"]
     Context --> Tier1{"Tier 1 Expression Match?"}
     Tier1 -->|True| Route1["Route to Tier 1 Target"]
     Tier1 -->|False| Tier2{"Tier 2 Expression Match?"}
@@ -40,6 +41,9 @@ flowchart TD
     TierN -->|True| RouteN["Route to Tier N Target"]
     TierN -->|False| Default["Route to Default Tier"]
 ```
+
+> [!NOTE]
+> **Compact First, Then Route (v1.6.0+)**: NTS executes at ingress *before* the Classifier extracts `Tokens`. When your rules evaluate `Tokens < 16000`, they test the **real post-compaction footprint** rather than bloated raw test outputs, keeping tasks on fast local and budget tiers instead of triggering false cloud escalations.
 
 ---
 

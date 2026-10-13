@@ -40,12 +40,18 @@ Routine turns run on your local GPU at full speed, while complex reasoning autom
 
 ### 🛡️ Agent Supervision
 
-- **Cycle Killer**: Kills repetitive N-gram loops in < 3s across thinking/prose/tool streams. Injects an immediate local override prompt to force a tool action. File writes are immune.
-- **Kickstart**: Detects consecutive non-write turns (analysis paralysis) and injects resuscitation prompts or escalates to a smarter model. Auto-suspends in Plan Mode.
-- **Fairy Dust**: Deploys frontier models (Claude Sonnet 5.5, DeepSeek R1) every N writes for quality checkpoints -- without running heavy models continuously.
+- **Cycle Killer**: Kills repetitive N-gram loops in < 3s across reasoning, content, and tool lanes. Injects an immediate local override prompt to force a tool action. File writes are immune.
+- **Kickstart (Read Slap & Thought Slap)**: Breaks analysis paralysis when agents get stuck in read-only loops (**Read Slap**) or hit `max_tokens` mid-monologue without emitting a tool call (**Thought Slap**). Injects a local steer prompt or escalates to a smarter tier (capped at 3 turns via anti-latching). Auto-suspends in Plan Mode.
+- **Fairy Dust**: Deploys frontier models (Claude Sonnet 5.5, DeepSeek R1) every N writes for quality checkpoints—without running heavy models continuously.
 - **Tool Normalizer**: Converts 8 malformed tool-call format families into standard OpenAI `tool_calls` JSON, eliminating 3-strike harness crashes from small local models.
 
-> **NTS (experimental token compaction)** is disabled by default for prompt cache stability. Enable in `config.yaml` if investigating extreme context limits. See [NTS docs](https://spicebox.dev/nacho-flow/docs.html?doc=user_guide).
+### 🗜️ Nacho Token Saver (NTS)
+
+- **Test Compaction**: Strips passing test noise in-place across Go, Cargo, Pytest, and Jest at wire speed (0 allocs, < 10 µs). Preserves all failures, diffs, panics, and summaries.
+- **Reasoning Pruning**: Drops historical `<think>` blocks from older turns while keeping recent context fresh. Automatically migrates Anthropic cache breakpoints.
+- **Pre-Routing Ingress**: Compacts prompts *before* tier selection so inflated test outputs don't trigger premature cloud escalations.
+- **Terminal Sanitizer**: Resolves `\r` progress spinner spam in-place, purges ANSI escape codes, and deduplicates repeated tool/reminder loops.
+
 
 ---
 

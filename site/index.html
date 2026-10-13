@@ -383,9 +383,94 @@
         </div>
     </section>
 
+    <!-- Section 2: Nacho Token Saver (NTS) - Production-Ready Ingress Context Compactor -->
+    <section class="nts-section" id="token-saver">
+        <div class="runtime-badge" style="color: #34d399; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.12);">IN-FLIGHT CONTEXT COMPACTION</div>
+        <h2 class="section-title">🗜️ Nacho Token Saver (NTS)</h2>
+        <p class="section-subtitle">Autonomous coding agents drown in test outputs and reasoning debt. NTS compacts prompts <em>before</em> tier classification—slashing 50%–70% of context tokens with zero heap allocations.</p>
 
+        <!-- Metric Proof Row for NTS -->
+        <div class="proof-metric-row">
+            <div class="proof-metric-box" style="border-color: rgba(16, 185, 129, 0.35);">
+                <div class="proof-metric-val" style="color: #34d399;">50%–70%</div>
+                <div class="proof-metric-lbl">BLOAT TOKEN REDUCTION</div>
+            </div>
+            <div class="proof-metric-box" style="border-color: rgba(56, 189, 248, 0.35);">
+                <div class="proof-metric-val" style="color: #38bdf8;">0 B / op</div>
+                <div class="proof-metric-lbl">ZERO-ALLOC IN-PLACE HOT PATH</div>
+            </div>
+            <div class="proof-metric-box" style="border-color: rgba(192, 132, 252, 0.35);">
+                <div class="proof-metric-val" style="color: #c084fc;">100%</div>
+                <div class="proof-metric-lbl">FAILURES &amp; STACK TRACES PRESERVED</div>
+            </div>
+        </div>
 
-    <!-- Section 2: Cost Tracking & Multi-Provider Routing -->
+        <!-- Nacho Token Saver Master Container Box -->
+        <div class="nts-feature-box glass">
+            <div class="nts-box-header" style="margin-bottom: 1.5rem; padding-bottom: 0;">
+                <div class="nts-box-header-top" style="margin-bottom: 0;">
+                    <div class="nts-master-badge">
+                        <span class="nts-badge-dot"></span>
+                        <span>PRODUCTION READY · INGRESS STREAM COMPACTOR</span>
+                    </div>
+                    <div class="nts-meta-chip">PRE-ROUTING OPTIMIZATION</div>
+                </div>
+            </div>
+
+            <!-- The Four NTS Feature Cards (2x2 Grid) -->
+            <div class="nts-grid">
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-nts-test">🧪 WIRE-SPEED TEST PRUNING</span>
+                        <span class="fix-card-icon">🧪</span>
+                    </div>
+                    <h3>Test Output Compaction</h3>
+                    <p class="fix-superpower">Strips passing test noise across Go, Cargo, Pytest, and Jest.</p>
+                    <p class="fix-solution">
+                        Prunes passing assertions in-place (<strong>2.7 µs</strong> for 50 Cargo tests, <strong>9.9 µs</strong> for 50 Go tests) while <strong>strictly preserving</strong> all failures, stack traces, diffs, panics, and summaries.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-nts-reasoning">🧠 REASONING DEBT PRUNING</span>
+                        <span class="fix-card-icon">🧠</span>
+                    </div>
+                    <h3>Historical Reasoning Pruning</h3>
+                    <p class="fix-superpower">Purges megabytes of stale &lt;think&gt; monologues from prior turns.</p>
+                    <p class="fix-solution">
+                        Drops historical reasoning baggage from older assistant turns while keeping recent turns intact. Automatically migrates Anthropic <code>cache_control</code> breakpoints with empty-content fallbacks.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-nts-ingress">🔀 PRE-ROUTING COMPACTION</span>
+                        <span class="fix-card-icon">🔀</span>
+                    </div>
+                    <h3>Compact First, Then Route</h3>
+                    <p class="fix-superpower">Evaluates routing rules against real post-compaction token counts.</p>
+                    <p class="fix-solution">
+                        Prevents bloated 50k-token histories from triggering false cloud escalations. Prompts are stripped at ingress first so the router scores the true active footprint.
+                    </p>
+                </div>
+
+                <div class="fix-card glass">
+                    <div class="fix-card-header">
+                        <span class="fix-badge badge-nts-ansi">🧹 TERMINAL &amp; LOOP SANITIZER</span>
+                        <span class="fix-card-icon">🧹</span>
+                    </div>
+                    <h3>Terminal &amp; Tool Deduplication</h3>
+                    <p class="fix-superpower">Purges CLI spinner spam, ANSI codes, and repetitive tool outputs.</p>
+                    <p class="fix-solution">
+                        Resolves <code>\r</code> carriage-return overwrites (<code>vite</code>, <code>pip</code>, <code>docker pull</code>) in-place, strips raw ANSI escape sequences, and collapses duplicate terminal loops and system reminders.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 3: Cost Tracking & Multi-Provider Routing -->
     <section class="cost-engine-section" id="cost-engine">
         <h2 class="section-title">Cost Tracking &amp; Multi-Provider Routing</h2>
         <p class="section-subtitle">Cut agent API spend by 70%–92% with cache-aware accounting, local GPU offloading, and spot pricing.</p>
@@ -543,8 +628,8 @@
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:42:33</span>
-                    <span class="term-tag tag-normalizer" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">NORMALIZER</span>
-                    <span class="term-msg">Turn 8 (3-Lane Demux: Thinking/Tools/Prose) ➔ <span class="term-highlight">pkg/server</span> <span class="tag-cache">96.4% KV CACHE HIT (PRISTINE CONTEXT)</span></span>
+                    <span class="term-tag tag-nts">TOKEN SAVER</span>
+                    <span class="term-msg">Turn 8 (Passing Tests: 50 stripped, Historical Reasoning pruned) ➔ <span class="term-highlight">pkg/nts</span> <span class="tag-nts-compaction">58.4% COMPACTED (18,400 TOKENS SAVED @ 0 ALLOCS)</span></span>
                 </div>
                 <div class="term-line">
                     <span class="term-time">19:42:50</span>

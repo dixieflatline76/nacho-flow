@@ -18,13 +18,13 @@ flowchart TD
 
     subgraph NachoGateway ["🌮 Nacho Flow Edge Gateway (Pure Go Core)"]
         direction TB
-        Auth["Stage 0 & 1: Inbound Auth & Session Tracker (5m Sliding TTL)"]:::core
-        Classifier["Stage 1: Scoped Classifier & Adaptive Token EMA Estimator"]:::core
-        Evaluator["Stage 2: AST Bytecode Rule Engine & Context Window Guards"]:::core
-        NTSCompactor["Stage 3 & 3.5: Payload Sanitization & NTS Token Compactor"]:::tool
+        Auth["Stage 0: Inbound Auth & Session Tracker (5m Sliding TTL)"]:::core
+        NTSCompactor["Stage 1: Ingress NTS Token Compactor (Test & Reasoning Pruning)"]:::tool
+        Classifier["Stage 2: Scoped Classifier & Adaptive Token EMA Estimator"]:::core
+        Evaluator["Stage 3: AST Bytecode Rule Engine & Context Window Guards"]:::core
         CircuitBreaker["Stage 4: Circuit Breaker & Sub-Millisecond Failover Dispatcher"]:::core
         
-        Auth --> Classifier --> Evaluator --> NTSCompactor --> CircuitBreaker
+        Auth --> NTSCompactor --> Classifier --> Evaluator --> CircuitBreaker
     end
 
     subgraph Endpoints ["Execution Backends"]
@@ -67,7 +67,15 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - Requests with invalid or missing credentials receive an OpenAI-standard `401 Unauthorized` JSON payload (`invalid_api_key`).
 - Public health probes (`/health`, `/v1/health`) automatically bypass auth and return service status and version information.
 
-### Stage 1: Session Tracking, Directive Interception & Context Classification (`pkg/router/session.go`, `pkg/router/classifier.go`, `pkg/router/directive.go`)
+### Stage 1: Ingress NTS Token Compactor (`pkg/nts`, `pkg/zeroalloc`)
+- **Compact First, Then Route**: NTS runs the moment a prompt hits the proxy—*before* routing rules are evaluated. Cleaning prompts at ingress ensures the router scores the real compacted token count instead of panicking over 50k tokens of raw test noise.
+- **Test Output Compaction**: Strips passing test lines across Go (`--- PASS:`), Cargo (`... ok`), Pytest (`PASSED`), and Jest (`✓`) in microseconds (`2.7 µs` for 50 Cargo tests, `9.9 µs` for 50 Go tests) with zero heap allocations. Strictly preserves all failures, diffs, panics, compiler errors, and summaries.
+- **Historical Reasoning Pruning**: Purges stale `<think>` monologues from older assistant turns while keeping recent turns intact. Automatically shifts Anthropic `cache_control` breakpoints so your prompt cache stays warm without triggering empty-message API errors.
+- **Terminal & Spinner Cleanup**: Resolves `\r` carriage-return progress bars (`npm`, `pip`, `docker pull`, `vite`) in-place so only the final line remains, and strips raw ANSI color/cursor escape codes.
+- **Loop & Reminder Deduplication**: Collapses repetitive system reminder blocks and identical command output loops before they bloat the context window.
+- **Never Touches Active Code**: Strictly leaves code-editing tools (`write_to_file`, `replace_in_file`, `apply_diff`, `editor`) and active file reads untouched so the agent never loses real source code.
+
+### Stage 2: Session Tracking, Directive Interception & Context Classification (`pkg/router/session.go`, `pkg/router/classifier.go`, `pkg/router/directive.go`)
 - **In-Prompt Directive Fast Bailout**: Scans user prompts using Go SIMD byte search (`router.HasDirective`) in **< 7 nanoseconds** with **0 heap allocations**. If `@nacho:` is absent, classification proceeds with zero latency overhead.
 - **HotSauce In-Prompt Directive Engine (`pkg/router/directive.go`)**:
   - Evaluates directives using regex grammar:
@@ -93,52 +101,37 @@ Every incoming request passes through an optimized multi-stage processing pipeli
   - **Tool Progress Gate & Test-Failure Tracking (`hasToolProgress`)**: In multi-step autonomous agent loops (where the latest user prompt string remains identical across dozens of file reads/writes), the session tracker detects intermediate successful tool executions (`role: tool` / `tool_result`) and resets `RetriesCount = 0` to prevent false retry escalation. However, if unit tests are actively failing (`HasTestFail == true`), file modifications without passing tests are recognized as ongoing troubleshooting rather than real progress—preserving the consecutive retry count so loop-break escalation can fire.
 - **In-History Trailing Error Scanner & Tool Capability Classifier (`pkg/router/classifier.go`)**:
   - Scans the trailing messages in conversation history for known client error signatures (`[ERROR] You did not use a tool`, `Missing value for required parameter`, `<error_details>`, `No sufficiently similar match found`, etc.).
-  - Extracts consecutive error counts (`HistoryErrors`) and overrides `reqCtx.Retries`, triggering automatic rule-based tier escalation to DeepSeek R1 (Tier 3) or Claude Sonnet 5 (Tier 4) to recover from failures without requiring custom client HTTP headers.
+  - Extracts consecutive error counts (`HistoryErrors`) and overrides `reqCtx.Retries`, triggering automatic rule-based tier escalation to recover from failures without requiring custom client HTTP headers.
   - **Tool Capability Detection (`HasWriteCapability`)**: Scans declared client tools in `reqCtx.Tools`. If tools are declared (`HasTools == true`) but none match configured `kickstart_write_tools`, `HasWriteCapability` is set to `false`. This accurately detects Plan Mode, Architect Mode, and pure investigation tasks.
   - **Cline XML Tool Call Detection Engine**: Scans raw assistant text content for embedded XML write tools (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`, etc.) from `kickstart_write_tools`, and maps subsequent user tool results to `HasToolProgress` and `HasWriteProgress` across OpenAI JSON, Anthropic JSON, and Cline XML formats.
-- **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities without underestimating payloads.
+- **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities across the **compacted prompt payload**.
 - **Multimodal Detection**: Scans message blocks for `image_url` payloads and base64 strings (`HasImages`).
 - **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`), extracting declared interactive tools (`ask_followup_question`, `ask_question`).
 - **Scoped Keyword Extraction**: Extracts programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) **strictly from the clean prompt**, preventing historical multi-turn token pollution.
 
-### Stage 1.5: Proactive Quality Checkpointing ("Fairy Dust") & Kickstart Resuscitation (`pkg/router/session.go`, `pkg/server/proxy.go`)
+### Stage 2.5: Proactive Checkpointing ("Fairy Dust") & Kickstart Resuscitation (`pkg/router/session.go`, `pkg/server/proxy.go`)
 - **Fairy Dust Periodic Elevation**: Proactively triggers quality checkpoint reviews on frontier models (e.g., DeepSeek-R1, Claude Sonnet 5) after every $N$ write tool actions, verifying complex edits before local execution resumes. Dynamically bypassed if `guardrails.FairyDustDisabled` is set.
-- **HotSauce Kickstart Resuscitation**:
-  - Detects semantic idle/planning loops where the agent stops issuing write/tool commands and injects explicit system nudges or escalates to default cloud tiers.
+- **HotSauce Kickstart Resuscitation (Read Slap & Thought Slap)**:
+  - **Read Slap (Analysis Paralysis)**: Detects semantic idle loops where the agent stops issuing write/tool commands and injects explicit steer prompts or escalates to default cloud tiers.
+  - **Thought Slap (Reasoning Truncation Resuscitation)**: When models emit internal reasoning blocks and hit output token limits without producing a tool call, Thought Slap intercepts the empty turn and triggers an immediate recovery turn (< 3s) that forces an executable tool action.
+  - **Anti-Latching Protection**: Caps consecutive frontier escalations at 3 turns to prevent unfixable errors from draining cloud spend.
   - **Plan Mode Protection**: If `reqCtx.HasTools && !reqCtx.HasWriteCapability` (e.g., Cline/Zoo in Plan Mode with only `view_file` or `grep_search`), Kickstart idle stall escalation is automatically suspended. Agents explore and plan freely across unlimited turns with $0.00 cost and zero interruptions.
   - **Session Toggle**: Kickstart can be manually toggled off for the entire session via `@nacho:kickstart-off` (or `@nacho:kickstart=off`).
 
-### Stage 2: AST-Compiled Rule Evaluation & Directive Dispatch (`pkg/strategy/expr_evaluator.go`)
+### Stage 3: AST-Compiled Rule Evaluation & Directive Dispatch (`pkg/strategy/expr_evaluator.go`)
 - **Directive Override Fast-Path**: If `ForcedTier` or `ForcedModel` is present, `SelectTier` directly resolves the target tier or transient model tier without evaluating AST expressions.
 - **$\mathcal{O}(1)$ Context Boundary Guard**: If a tier defines `max_context` and `Tokens > max_context`, the tier is skipped immediately without expression evaluation overhead.
 - **Bytecode Expression Engine**: Uses `github.com/expr-lang/expr` compiled bytecode expressions to evaluate 1..N tiers sequentially (*Top-to-Bottom: First Match Wins* in $< 0.6 \mu\text{s}$).
 - Supported context variables: `Tokens`, `HasImages`, `HasTools`, `HasWriteCapability`, `Keywords`, `Retries`, `IsRetry`, `Model`, `SessionKickstarted`, `SessionKickstartCount`, `HasToolProgress`, `HasWriteProgress`, `HistoryErrors`, `CoolingDownModels`.
 - **Spicy Directive Model Isolation (`when: "false"`)**: Tiers configured with `when: "false"` are skipped during AST tier selection, guaranteeing zero accidental routing to expensive models (e.g. Claude Opus 5), while keeping them accessible on-demand via `@nacho:model` / `X-Spicy-Model` and Fairy Dusting.
 
-### Stage 3: Payload Sanitization & Model Rewriting (`pkg/router/sanitizer.go`)
+### Stage 4: Payload Sanitization & Model Rewriting (`pkg/router/sanitizer.go`)
 - **Directive Tag Stripping**: Strips all `@nacho:...` occurrences from string and multipart message arrays, collapsing duplicate whitespace.
 - If the selected tier model is text-only (or `strip_images: true`), all historical images in past conversation turns are sanitized into `[Image Attached]` text placeholders.
 - This prevents `400 Bad Request` crashes on cheaper cloud models or local models that lack vision encoders.
 - The top-level `"model"` field in the JSON payload is rewritten to the target tier's upstream model ID.
 
-### Stage 3.5: [Experimental / Opt-In] Nacho Token Saver (NTS) In-Flight Compaction (`pkg/nts`, `pkg/zeroalloc`)
-> [!NOTE]
-> **Production Default: Disabled (`enabled: false`) for Pristine Context Stability**
-> Nacho Flow defaults to 100% pristine context preservation. Empirical bake-offs demonstrated that modern frontier models and provider prompt caches (OpenRouter, Anthropic) achieve maximum cost and speed benefits (96%+ prompt cache hit rates) when the prompt prefix remains bit-for-bit unchanged. Mutating historical tool outputs in-flight causes prompt cache invalidation and can induce subtle diff-matching drifts in agent harnesses (Cline/Zoo Code taking 100–148 turns vs. 64–69 turns uncompacted).
-> 
-> NTS is maintained as an experimental, opt-in research pipeline (`pkg/nts`) for developers investigating extreme token limits or custom compaction heuristics. When enabled via `nts.enabled: true`:
-
-- **Multi-Pass Request Compaction**: Before transmitting payloads upstream, `ntsTransformer.TransformOpenAI` or `TransformAnthropic` evaluates historical tool outputs and command execution logs in-place.
-- **Pass 1 (ANSI / OSC Escapes)**: Strips terminal color codes and window title sequences.
-- **Pass 2 (Carriage Returns)**: Overwrites `\r` progress spinners from build tools (`npm`, `pip`, `docker`) in-place, keeping only final progress lines.
-- **Pass 3 (Duplicate Deduplication - Experimental)**: Collapses consecutive identical log lines exceeding `dedup_threshold` (default: 3).
-- **Pass 4 (IDE Boilerplate - Experimental)**: Strips repetitive parameter notices and agent tool wrapper banners.
-- **Pass 5 (Whitespace - Experimental)**: Normalizes excessive empty lines.
-- **Dual-Lane Protection**: Strictly preserves code modification tools (`write_to_file`, `replace_in_file`, `apply_diff`, `editor`), active file reads, and upstream prompt caching breakpoints (`cache_control: {"type": "ephemeral"}`).
-- **Stale Read Eviction (`stale_read_depth: 3` - Experimental)**: Provides configurable depth-based compaction of older historical file reads into structural notices.
-- **Zero-Allocation Byte Pipeline (`pkg/zeroalloc`)**: Operates strictly in-place with single-pass read/write cursors ($w \le r$), delivering wire-speed performance with zero heap churn.
-
-### Stage 4: Circuit-Breaker-Aware Dispatch & Strict Fallback Bypass (`pkg/server/proxy.go`, `pkg/provider/circuit_breaker.go`)
+### Stage 5: Circuit-Breaker-Aware Dispatch & Strict Fallback Bypass (`pkg/server/proxy.go`, `pkg/provider/circuit_breaker.go`)
 - Resolves the target provider from the `provider.Registry`.
 - **Escalation Budget & Anti-Runaway Protection**: When requests route to the `DefaultTier` (Claude Sonnet 5), `RecordEscalation` enforces a hard ceiling of `MaxEscalationTurns = 3`. If an error proves unfixable after 3 consecutive frontier turns, the proxy automatically de-escalates to Tier 2 (Gemini Flash), capping worst-case failure costs at ~**$0.21**.
 - **Forced Directive Fallback Bypass**: If a user explicitly requested a tier or model via directive and its provider circuit breaker is OPEN, the proxy does **not** silently fall through to cloud; it immediately returns an OpenAI-wire-compliant zero-cost chat alert (`RenderCircuitBlocked`).

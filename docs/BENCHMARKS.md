@@ -293,7 +293,7 @@ We benchmarked leading coding harnesses ([Cline](https://github.com/cline/cline)
 2. **Turn Efficiency & Diff Stability**:
    - Pristine context preservation finished tasks in **64–69 turns**, while in-flight compaction required **100–148 turns**.
    - Agent diff engines (e.g. Cline's line-anchored replacer) rely on exact match blocks against prior turns. Zero in-flight mutation eliminates patch drift and false search failures.
-3. **Engineering Decision**:
-   - Nacho Flow defaults to **100% pristine context preservation (`nts.enabled: false`)** across all default profiles, ensuring maximum cache hits, lowest net invoice cost, and highest completion speed out of the box.
-   - The zero-alloc NTS engine is maintained in `pkg/nts` as an **Experimental / Opt-In Labs Engine** for developers researching custom compaction heuristics or running under strict hardware context limits.
+3. **Engineering Decision & v1.6.0 Production Graduation**:
+   - Nacho Flow defaults to **100% pristine context preservation (`nts.enabled: false`)** across standard default profiles to guarantee maximum KV cache hit rates (96%+) and diff anchor stability out of the box.
+   - In **v1.6.0**, NTS graduated to a **Production-Ready Ingress Compactor** (`nts.enabled: true`) with zero-alloc test compaction (`collapse_verbose_tests`) and historical reasoning pruning (`strip_historical_reasoning`) that automatically preserves Anthropic `cache_control` breakpoints and compacts *before* tier routing to eliminate false cloud escalations.
 
