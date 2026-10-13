@@ -65,6 +65,13 @@
                                 <span class="dropdown-desc">Internal pipeline, DTOs & agentic shield</span>
                             </div>
                         </a>
+                        <a href="docs.html?doc=pareto_benchmark" class="dropdown-item">
+                            <span class="dropdown-icon">💥</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">OpenRouter Pareto Benchmark</span>
+                                <span class="dropdown-desc">The $26 evaporation: why Pareto Code blew up on Turn 23</span>
+                            </div>
+                        </a>
                         <a href="docs.html?doc=frontier_study" class="dropdown-item">
                             <span class="dropdown-icon">💸</span>
                             <div class="dropdown-text">
@@ -79,11 +86,18 @@
                                 <span class="dropdown-desc">The $0.44 autonomous run &amp; L4 runtime whitepaper</span>
                             </div>
                         </a>
-                        <a href="docs.html?doc=benchmarks" class="dropdown-item">
-                            <span class="dropdown-icon">📊</span>
+                        <a href="docs.html?doc=case_study" class="dropdown-item">
+                            <span class="dropdown-icon">🔬</span>
                             <div class="dropdown-text">
-                                <span class="dropdown-title">Benchmarks & Case Study</span>
-                                <span class="dropdown-desc">30k req/s stress test & empirical findings</span>
+                                <span class="dropdown-title">A/B Case Study Whitepaper</span>
+                                <span class="dropdown-desc">Multi-tier agentic routing &amp; 78M token findings</span>
+                            </div>
+                        </a>
+                        <a href="docs.html?doc=benchmarks" class="dropdown-item">
+                            <span class="dropdown-icon">⚡</span>
+                            <div class="dropdown-text">
+                                <span class="dropdown-title">Benchmarks & Stress Tests</span>
+                                <span class="dropdown-desc">30k req/s stress test & gateway telemetry</span>
                             </div>
                         </a>
                         <a href="docs.html?doc=tuning_guide" class="dropdown-item">
@@ -131,6 +145,9 @@
                 </div>
                 <div class="doc-nav-item" id="nav-extension_guide" onclick="loadDoc('extension_guide', true)">
                     <span>🧩</span> VS Code Companion Extension
+                </div>
+                <div class="doc-nav-item" id="nav-pareto_benchmark" onclick="loadDoc('pareto_benchmark', true)">
+                    <span>💥</span> OpenRouter Pareto Benchmark
                 </div>
                 <div class="doc-nav-item" id="nav-frontier_study" onclick="loadDoc('frontier_study', true)">
                     <span>💸</span> The Frontier Tax Whitepaper
@@ -200,6 +217,7 @@
         const docsMap = {
             'user_guide': { path: 'docs/USER_GUIDE.md', fallback: '../docs/USER_GUIDE.md', title: 'User Guide - Nacho Flow' },
             'extension_guide': { path: 'docs/EXTENSION_USER_GUIDE.md', fallback: '../docs/EXTENSION_USER_GUIDE.md', title: 'VS Code Extension Guide - Nacho Flow' },
+            'pareto_benchmark': { path: 'docs/OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.md', fallback: '../docs/OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.md', title: 'OpenRouter Pareto Code Benchmark - Nacho Flow' },
             'frontier_study': { path: 'docs/FRONTIER_CONTROL_STUDY_2026.md', fallback: '../docs/FRONTIER_CONTROL_STUDY_2026.md', title: 'The Frontier Tax Study - Nacho Flow' },
             'architecture': { path: 'docs/ARCHITECTURE.md', fallback: '../docs/ARCHITECTURE.md', title: 'Architecture - Nacho Flow' },
             'benchmarks': { path: 'docs/BENCHMARKS.md', fallback: '../docs/BENCHMARKS.md', title: 'Benchmarks - Nacho Flow' },
@@ -218,6 +236,10 @@
             'EXTENSION_USER_GUIDE.MD': 'extension_guide',
             'EXTENSION_USER_GUIDE': 'extension_guide',
             'VSCODE_EXTENSION_SPEC.MD': 'extension_guide',
+            'OPENROUTER_PARETO_ROUTER_BENCHMARK_2026.MD': 'pareto_benchmark',
+            'OPENROUTER_PARETO_ROUTER_BENCHMARK_2026': 'pareto_benchmark',
+            'PARETO_BENCHMARK': 'pareto_benchmark',
+            'PARETO_BENCHMARK.MD': 'pareto_benchmark',
             'FRONTIER_CONTROL_STUDY_2026.MD': 'frontier_study',
             'FRONTIER_CONTROL_STUDY_2026': 'frontier_study',
             'ARCHITECTURE.MD': 'architecture',

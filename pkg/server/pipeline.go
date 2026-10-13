@@ -103,6 +103,51 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	_ = r.Body.Close()
 
 	// 0. Wire-speed ingress context compaction (NTS)
+	body, ntsTokensSaved, ntsBytesSaved := s.compactIngress(r, body)
+
+	// 1. Classify request metadata & client detection
+	reqCtx := s.classifyRequest(r, body, ntsTokensSaved, ntsBytesSaved, reqLogger)
+	sessionKey := extractSessionKey(r)
+	if s.sessionTracker == nil {
+		s.sessionTracker = router.NewSessionTracker(5 * time.Minute)
+	}
+
+	// 2. Intercept local meta directives (@nacho:help, @nacho:tiers, etc.)
+	if s.handleMetaDirectives(w, r, reqCtx, sessionKey, body) {
+		return
+	}
+
+	// 3. Apply session guardrail directives (raw-on, shield-off, kickstart-off)
+	s.applySessionGuardrails(sessionKey, reqCtx)
+
+	cfg := s.GetConfig()
+
+	// 4. Track session turns & detect Read Slap semantic stalls
+	s.evaluateTurnAndReadSlap(sessionKey, reqCtx, cfg, reqLogger)
+
+	// 5. Evaluate proactive Fairy Dust checkpoints
+	s.evaluateFairyDust(sessionKey, reqCtx, cfg, reqLogger)
+
+	// 6. Select execution tier with Anti-Latching Breaker & Fairy Dust overrides
+	targetTier := s.resolveTargetTier(sessionKey, reqCtx, cfg, reqLogger)
+
+	// 7. Check circuit breaker for forced provider directives
+	if s.isForcedProviderBlocked(w, reqCtx, targetTier, body, reqLogger) {
+		return
+	}
+
+	s.logRoutingDecision(sessionKey, targetTier, reqCtx, r, reqLogger)
+
+	// 8. Apply prompt corrections (Read Slap & Fairy Dust injection)
+	body = s.applyPromptInjections(sessionKey, reqCtx, cfg, body, reqLogger)
+
+	// 9. Upstream proxy dispatch with automated tier fallback
+	s.forwardWithFallback(w, r, *reqCtx, targetTier, body, startTime, reqLogger)
+}
+
+// compactIngress applies wire-speed NTS context compaction at ingress before classification.
+// Returns the potentially transformed body slice along with saved token and byte metrics.
+func (s *Server) compactIngress(r *http.Request, body []byte) ([]byte, int, int) {
 	var ntsTokensSaved, ntsBytesSaved int
 	if ntsTr := s.GetNTSTransformer(); ntsTr != nil {
 		if strings.Contains(r.URL.Path, "messages") || r.Header.Get("anthropic-version") != "" {
@@ -119,8 +164,11 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 			}
 		}
 	}
+	return body, ntsTokensSaved, ntsBytesSaved
+}
 
-	// 1. Classify request metadata
+// classifyRequest parses the request body AST, attaches NTS metrics, and detects the client agent harness.
+func (s *Server) classifyRequest(r *http.Request, body []byte, ntsTokensSaved, ntsBytesSaved int, reqLogger *slog.Logger) *contract.RequestContext {
 	reqCtx, err := s.classifier.Classify(body)
 	if err != nil {
 		reqLogger.Warn("Failed to classify payload", slog.Any("error", err))
@@ -139,33 +187,36 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		reqCtx.MetaDirectiveRaw = ""
 		reqCtx.CleanPrompt = reqCtx.Prompt
 	}
+	return &reqCtx
+}
 
-	sessionKey := extractSessionKey(r)
-	if s.sessionTracker == nil {
-		s.sessionTracker = router.NewSessionTracker(5 * time.Minute)
+// handleMetaDirectives intercepts local administrative commands (@nacho:help, @nacho:tiers, etc.).
+// Returns true if the request was handled and the caller should return immediately.
+func (s *Server) handleMetaDirectives(w http.ResponseWriter, r *http.Request, reqCtx *contract.RequestContext, sessionKey string, body []byte) bool {
+	if !reqCtx.IsMetaDirective {
+		return false
 	}
-
-	// 2. Intercept local meta directives (@nacho:help, @nacho:tiers, @nacho:status, @nacho:deals, @nacho:toggles, @nacho:reset, @nacho:<standalone_toggle>, @nacho:<typo>)
-	if reqCtx.IsMetaDirective {
-		isStream := strings.Contains(string(body), `"stream":true`) || strings.Contains(string(body), `"stream": true`)
-		env := MetaEnv{
-			Config:         s.GetConfig(),
-			Stats:          s.tracker,
-			Oracle:         s.oracle,
-			Providers:      s.GetRegistry(),
-			StartTime:      s.startTime,
-			DaemonVersion:  contract.Version,
-			SessionTracker: s.sessionTracker,
-			SessionKey:     sessionKey,
-		}
-		if s.metaRegistry == nil {
-			s.metaRegistry = NewMetaRegistry()
-		}
-		s.metaRegistry.Dispatch(w, r, reqCtx, env, s.sessionTracker, isStream)
-		return
+	isStream := strings.Contains(string(body), `"stream":true`) || strings.Contains(string(body), `"stream": true`)
+	env := MetaEnv{
+		Config:         s.GetConfig(),
+		Stats:          s.tracker,
+		Oracle:         s.oracle,
+		Providers:      s.GetRegistry(),
+		StartTime:      s.startTime,
+		DaemonVersion:  contract.Version,
+		SessionTracker: s.sessionTracker,
+		SessionKey:     sessionKey,
 	}
+	if s.metaRegistry == nil {
+		s.metaRegistry = NewMetaRegistry()
+	}
+	s.metaRegistry.Dispatch(w, r, *reqCtx, env, s.sessionTracker, isStream)
+	return true
+}
 
-	// 2.5 Handle embedded session guardrail toggles
+// applySessionGuardrails processes in-prompt guardrail toggles (e.g., kickstart-off, raw-on)
+// and updates reqCtx feature flags and guardrail overrides accordingly.
+func (s *Server) applySessionGuardrails(sessionKey string, reqCtx *contract.RequestContext) {
 	if reqCtx.CleanPrompt != reqCtx.Prompt {
 		info, _ := router.ExtractDirective(reqCtx.Prompt)
 		switch info.Directive {
@@ -192,7 +243,6 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		}
 	}
 
-	// 2.6 Apply persisted session guardrails to request context
 	guardrails := s.sessionTracker.GetGuardrails(sessionKey)
 	reqCtx.NoKickstart = guardrails.KickstartDisabled
 	reqCtx.NoCycleKiller = guardrails.CycleKillerDisabled
@@ -204,8 +254,16 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	} else if guardrails.ShieldDisabled {
 		reqCtx.Features = uint16(router.FeatureFlag(reqCtx.Features).MaskOut(router.FeatureShieldEnabled | router.FeatureShieldFollowup | router.FeatureShieldModeSwitch))
 	}
+}
 
-	// 3. Track session retries for auto-escalation
+// evaluateTurnAndReadSlap tracks session retries, calculates genuine forward progress
+// (distinguishing writes/tests from errors), and flags Read Slap when agents idle in loops.
+func (s *Server) evaluateTurnAndReadSlap(
+	sessionKey string,
+	reqCtx *contract.RequestContext,
+	cfg *contract.Config,
+	reqLogger *slog.Logger,
+) {
 	reqCtx.SessionKey = sessionKey
 	promptHash := reqCtx.PromptHash
 	if promptHash == 0 && reqCtx.Prompt != "" {
@@ -215,8 +273,6 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 	if rootPromptHash == 0 {
 		rootPromptHash = promptHash
 	}
-
-	cfg := s.GetConfig()
 
 	// Pass tool progress signal from classifier to session tracker.
 	// In agent loop mode, genuine forward progress requires verified test passes,
@@ -241,6 +297,14 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		reqCtx.MessageCount,
 	)
 	reqCtx.CoolingDownModels = s.sessionTracker.GetCoolingDownModels(sessionKey)
+
+	// In-history errors OVERRIDE session tracker when they detect real failures
+	if reqCtx.HistoryErrors > retries {
+		retries = reqCtx.HistoryErrors
+		isRetry = true
+	}
+	reqCtx.Retries = retries
+	reqCtx.IsRetry = isRetry
 
 	// Read Slap: detect semantic stall/idle loop across consecutive turns
 	readSlapEnabled := cfg.Kickstart.ReadSlap.Enabled == nil || *cfg.Kickstart.ReadSlap.Enabled
@@ -292,86 +356,115 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 			reqCtx.ForcedTier = "cloud"
 		}
 	}
+}
 
-	// Fairy Dust: periodic proactive frontier model quality checkpoints
+// evaluateFairyDust checks write milestones against configured Fairy Dust entries,
+// picking the highest-priority qualifying frontier model review checkpoint.
+func (s *Server) evaluateFairyDust(
+	sessionKey string,
+	reqCtx *contract.RequestContext,
+	cfg *contract.Config,
+	reqLogger *slog.Logger,
+) {
 	fdCfg := cfg.FairyDust
-	if fdCfg.Enabled != nil && *fdCfg.Enabled && len(fdCfg.Entries) > 0 && !guardrails.FairyDustDisabled {
-		// 1. Record write progress (single global counter, increments only on write turns)
-		writeCount := s.sessionTracker.RecordWriteProgress(sessionKey, reqCtx.HasWriteProgress || reqCtx.HasShellWrite)
+	guardrails := s.sessionTracker.GetGuardrails(sessionKey)
+	if fdCfg.Enabled == nil || !*fdCfg.Enabled || len(fdCfg.Entries) == 0 || guardrails.FairyDustDisabled {
+		return
+	}
 
-		// 2. Check each entry; collect the highest-priority candidate that triggers
-		type fdCandidate struct {
-			entry contract.FairyDustEntry
-			count int
-		}
-		var winner *fdCandidate
-		if reqCtx.HasWriteProgress && writeCount > 0 {
-			for _, entry := range fdCfg.Entries {
-				if entry.Frequency <= 0 || entry.Model == "" {
-					continue
-				}
-				maxFD := entry.MaxPerSession
-				if maxFD <= 0 {
-					maxFD = 5
-				}
-				entryCount, shouldTrigger := s.sessionTracker.CheckFairyDust(
-					sessionKey, entry.Name, entry.Frequency, maxFD,
-				)
-				if shouldTrigger {
-					if winner == nil || entry.Priority > winner.entry.Priority {
-						entryCopy := entry
-						winner = &fdCandidate{entry: entryCopy, count: entryCount}
-					}
+	// 1. Record write progress (single global counter, increments only on write turns)
+	writeCount := s.sessionTracker.RecordWriteProgress(sessionKey, reqCtx.HasWriteProgress || reqCtx.HasShellWrite)
+
+	// 2. Check each entry; collect the highest-priority candidate that triggers
+	type fdCandidate struct {
+		entry contract.FairyDustEntry
+		count int
+	}
+	var winner *fdCandidate
+	if reqCtx.HasWriteProgress && writeCount > 0 {
+		for _, entry := range fdCfg.Entries {
+			if entry.Frequency <= 0 || entry.Model == "" {
+				continue
+			}
+			maxFD := entry.MaxPerSession
+			if maxFD <= 0 {
+				maxFD = 5
+			}
+			entryCount, shouldTrigger := s.sessionTracker.CheckFairyDust(
+				sessionKey, entry.Name, entry.Frequency, maxFD,
+			)
+			if shouldTrigger {
+				if winner == nil || entry.Priority > winner.entry.Priority {
+					entryCopy := entry
+					winner = &fdCandidate{entry: entryCopy, count: entryCount}
 				}
 			}
 		}
-
-		// 3. Apply winning entry
-		if winner != nil {
-			reqCtx.FairyDusted = true
-			reqCtx.FairyDustEntry = winner.entry.Name
-			reqCtx.FairyDustCount = winner.count
-			reqCtx.NoCycleKiller = true
-			reqCtx.NoKickstart = true
-			reqCtx.NoShield = true
-			reqLogger.Info("Fairy Dust: quality checkpoint triggered",
-				slog.String("fairy_dust_entry", winner.entry.Name),
-				slog.Int("fairy_dust_count", winner.count),
-				slog.Int("write_progress_count", writeCount),
-				slog.String("fairy_dust_model", winner.entry.Model),
-				slog.Int("fairy_dust_priority", winner.entry.Priority),
-				slog.String("session_key", sessionKey),
-			)
-		}
 	}
 
-	// In-history errors OVERRIDE session tracker when they detect real failures
-	if reqCtx.HistoryErrors > retries {
-		retries = reqCtx.HistoryErrors
-		isRetry = true
+	// 3. Apply winning entry
+	if winner != nil {
+		reqCtx.FairyDusted = true
+		reqCtx.FairyDustEntry = winner.entry.Name
+		reqCtx.FairyDustCount = winner.count
+		reqCtx.NoCycleKiller = true
+		reqCtx.NoKickstart = true
+		reqCtx.NoShield = true
+		reqLogger.Info("Fairy Dust: quality checkpoint triggered",
+			slog.String("fairy_dust_entry", winner.entry.Name),
+			slog.Int("fairy_dust_count", winner.count),
+			slog.Int("write_progress_count", writeCount),
+			slog.String("fairy_dust_model", winner.entry.Model),
+			slog.Int("fairy_dust_priority", winner.entry.Priority),
+			slog.String("session_key", sessionKey),
+		)
 	}
+}
 
-	reqCtx.Retries = retries
-	reqCtx.IsRetry = isRetry
-
-	// 4. Evaluate 1..N tiers using expr engine
-	targetTier, err := s.GetEvaluator().SelectTier(reqCtx)
+// resolveTargetTier orchestrates tier evaluation via expression matching, enforces the
+// anti-latching de-escalation circuit breaker, and applies Fairy Dust quality tier overrides.
+func (s *Server) resolveTargetTier(
+	sessionKey string,
+	reqCtx *contract.RequestContext,
+	cfg *contract.Config,
+	reqLogger *slog.Logger,
+) contract.Tier {
+	targetTier, err := s.GetEvaluator().SelectTier(*reqCtx)
 	if err != nil {
 		reqLogger.Error("Error evaluating tier, falling back to default", slog.Any("error", err))
-		targetTier = s.GetConfig().DefaultTier
+		targetTier = cfg.DefaultTier
 	}
 
-	// 4.5: Escalation budget — Anti-Latching Circuit Breaker (Do NOT remove)
-	// Workhorse tiers require Retries < N. Once errors accumulate (Retries >= N), workhorses are
-	// locked out and requests fall through to DefaultTier. Without this block, high retries permanently
-	// latch the session onto DefaultTier for 15+ turns (+115% cost spike). After MaxEscalationTurns (3),
-	// this breaker forcibly de-escalates back to a workhorse tier, letting tool progress reset Retries=0.
-	defaultTierName := s.GetConfig().DefaultTier.Name
+	targetTier = s.enforceAntiLatchingBreaker(sessionKey, targetTier, cfg, reqLogger)
+	targetTier = s.applyFairyDustTierOverride(reqCtx, targetTier, cfg)
+	return targetTier
+}
+
+// enforceAntiLatchingBreaker prevents sessions from permanently latching onto the expensive
+// default tier when accumulated retries lock out economical workhorse tiers.
+//
+// Pre-conditions:
+//   - targetTier has been evaluated via expr engine or default fallback.
+//   - reqCtx.Retries and reqCtx.HistoryErrors have been updated.
+//   - cfg contains DefaultTier and configured Tiers slice.
+//
+// Post-conditions:
+//   - If targetTier == DefaultTier and escalation turns >= MaxEscalationTurns (default: 3),
+//     targetTier is forcibly overridden to an economical non-default cloud tier to allow
+//     forward progress to reset retries to 0.
+//   - If targetTier != DefaultTier, the escalation budget counter is reset to 0.
+func (s *Server) enforceAntiLatchingBreaker(
+	sessionKey string,
+	targetTier contract.Tier,
+	cfg *contract.Config,
+	reqLogger *slog.Logger,
+) contract.Tier {
+	defaultTierName := cfg.DefaultTier.Name
 	if targetTier.Name == defaultTierName {
 		budgetExhausted := s.sessionTracker.RecordEscalation(sessionKey)
 		if budgetExhausted {
 			// Force de-escalation: pick the first cloud tier that isn't the default
-			for _, tier := range s.GetConfig().Tiers {
+			for _, tier := range cfg.Tiers {
 				if tier.Name != defaultTierName {
 					targetTier = tier
 					break
@@ -379,53 +472,84 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 			}
 			reqLogger.Warn("Escalation budget exhausted, de-escalating",
 				slog.String("fallback_tier", targetTier.Name),
-				slog.String("fallback_model", targetTier.Model))
+				slog.String("fallback_model", targetTier.Model),
+			)
 		}
 	} else {
 		s.sessionTracker.ResetEscalation(sessionKey)
 	}
+	return targetTier
+}
 
-	// 4.6: Fairy Dust — override tier with winning entry's frontier model
-	if reqCtx.FairyDusted {
-		reqCtx.NoCycleKiller = true
-		reqCtx.NoKickstart = true
-		reqCtx.NoShield = true
-		for _, entry := range cfg.FairyDust.Entries {
-			if entry.Name == reqCtx.FairyDustEntry {
-				provider := entry.Provider
-				if provider == "" {
-					provider = s.GetConfig().DefaultTier.Provider
-				}
-				targetTier = contract.Tier{
-					Name:     fmt.Sprintf("Fairy Dust: %s #%d (%s)", entry.Name, reqCtx.FairyDustCount, entry.Model),
-					Model:    entry.Model,
-					Provider: provider,
-				}
-				break
+// applyFairyDustTierOverride replaces targetTier with the winning Fairy Dust frontier model
+// when a checkpoint turn triggers.
+func (s *Server) applyFairyDustTierOverride(
+	reqCtx *contract.RequestContext,
+	targetTier contract.Tier,
+	cfg *contract.Config,
+) contract.Tier {
+	if !reqCtx.FairyDusted {
+		return targetTier
+	}
+	reqCtx.NoCycleKiller = true
+	reqCtx.NoKickstart = true
+	reqCtx.NoShield = true
+	for _, entry := range cfg.FairyDust.Entries {
+		if entry.Name == reqCtx.FairyDustEntry {
+			provider := entry.Provider
+			if provider == "" {
+				provider = cfg.DefaultTier.Provider
+			}
+			return contract.Tier{
+				Name:     fmt.Sprintf("Fairy Dust: %s #%d (%s)", entry.Name, reqCtx.FairyDustCount, entry.Model),
+				Model:    entry.Model,
+				Provider: provider,
 			}
 		}
 	}
+	return targetTier
+}
 
-	// 5. If forced directive is used, check provider circuit breaker (Strict Fallback Bypass)
-	if reqCtx.ForcedTier != "" || reqCtx.ForcedModel != "" {
-		targetProvider, found := s.GetRegistry().Get(targetTier.Provider)
-		if found && !s.allowProvider(targetProvider) {
-			reqLogger.Warn("Forced tier provider circuit is OPEN, blocking request without fallback",
-				slog.String("tier", targetTier.Name),
-				slog.String("provider", targetTier.Provider))
-			alertMsg := RenderCircuitBlocked(targetTier.Name, targetTier.Provider)
-			isStream := strings.Contains(string(body), `"stream":true`) || strings.Contains(string(body), `"stream": true`)
-			if isStream {
-				sse := &SSEMetaPresenter{}
-				_ = sse.WriteResponse(w, alertMsg, fmt.Sprintf("circuit-blocked-%d", time.Now().UnixNano()))
-			} else {
-				jsonP := &JSONMetaPresenter{}
-				_ = jsonP.WriteResponse(w, alertMsg, fmt.Sprintf("circuit-blocked-%d", time.Now().UnixNano()))
-			}
-			return
-		}
+// isForcedProviderBlocked enforces circuit breaker blocks when a forced provider directive is used.
+// Returns true if the circuit is OPEN and an error was written to w, indicating the caller must return.
+func (s *Server) isForcedProviderBlocked(
+	w http.ResponseWriter,
+	reqCtx *contract.RequestContext,
+	targetTier contract.Tier,
+	body []byte,
+	reqLogger *slog.Logger,
+) bool {
+	if reqCtx.ForcedTier == "" && reqCtx.ForcedModel == "" {
+		return false
 	}
+	targetProvider, found := s.GetRegistry().Get(targetTier.Provider)
+	if found && !s.allowProvider(targetProvider) {
+		reqLogger.Warn("Forced tier provider circuit is OPEN, blocking request without fallback",
+			slog.String("tier", targetTier.Name),
+			slog.String("provider", targetTier.Provider),
+		)
+		alertMsg := RenderCircuitBlocked(targetTier.Name, targetTier.Provider)
+		isStream := strings.Contains(string(body), `"stream":true`) || strings.Contains(string(body), `"stream": true`)
+		if isStream {
+			sse := &SSEMetaPresenter{}
+			_ = sse.WriteResponse(w, alertMsg, fmt.Sprintf("circuit-blocked-%d", time.Now().UnixNano()))
+		} else {
+			jsonP := &JSONMetaPresenter{}
+			_ = jsonP.WriteResponse(w, alertMsg, fmt.Sprintf("circuit-blocked-%d", time.Now().UnixNano()))
+		}
+		return true
+	}
+	return false
+}
 
+// logRoutingDecision emits standard structured slog telemetry for the selected tier and context.
+func (s *Server) logRoutingDecision(
+	sessionKey string,
+	targetTier contract.Tier,
+	reqCtx *contract.RequestContext,
+	r *http.Request,
+	reqLogger *slog.Logger,
+) {
 	reqLogger.Info("Routing request",
 		slog.String("session_key", sessionKey),
 		slog.String("tier", targetTier.Name),
@@ -448,7 +572,17 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 		slog.Any("cooling_down_models", reqCtx.CoolingDownModels),
 		slog.String("user_agent", r.Header.Get("User-Agent")),
 	)
+}
 
+// applyPromptInjections injects Read Slap idle-loop warnings and Fairy Dust quality checkpoint
+// prompts into the request payload. Returns the updated body slice.
+func (s *Server) applyPromptInjections(
+	sessionKey string,
+	reqCtx *contract.RequestContext,
+	cfg *contract.Config,
+	body []byte,
+	reqLogger *slog.Logger,
+) []byte {
 	// Read Slap: inject prompt when idle loop detected
 	if (reqCtx.SessionReadSlapped || reqCtx.SessionKickstarted) && !reqCtx.NoKickstart {
 		prompt := contract.DefaultReadSlapPrompt
@@ -481,6 +615,5 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request, start
 			slog.Int("fairy_dust_count", reqCtx.FairyDustCount),
 		)
 	}
-
-	s.forwardWithFallback(w, r, reqCtx, targetTier, body, startTime, reqLogger)
+	return body
 }

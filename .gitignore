@@ -35,6 +35,8 @@ config.yaml.bak.*
 # Private Business Strategy & Local Docs
 docs/business/
 docs/local/
+site/docs/business/
+site/docs/local/
 
 # IDEs & OS
 .DS_Store

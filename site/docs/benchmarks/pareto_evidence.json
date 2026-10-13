@@ -1,0 +1,748 @@
+{
+  "model": "openrouter/pareto-code",
+  "provider": "OpenRouter",
+  "harness": "Zoo Code v3.88.0",
+  "task_id": "01a1345d-33fe-7288-a563-8dbd9ab670cc",
+  "benchmark_dir": "C:\\Users\\karlk\\development\\Benchmark\\bitch slap control run openrouter",
+  "total_turns": 24,
+  "total_spend_usd": 26.24198,
+  "total_tokens_in": 1079329,
+  "total_tokens_out": 46554,
+  "turns": [
+    {
+      "turn": 1,
+      "ts": 1791879885877,
+      "tokens_in": 11899,
+      "tokens_out": 6022,
+      "cost": 0.84018,
+      "cumulative_cost": 0.84018,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "plans/blackjack-plan.md",
+          "content": "===================================================================\n--- /dev/null\n+++ plans/blackjack-plan.md\n@@ -0,0 +1,235 @@\n+# Blackjack Simulator, Strategy Trainer & Monte Carlo CLI \u2014 Implementation Plan\n+\n+Go 1.26+, standard library only. Module name: `blackjack`.\n+\n+## 1. Package Layout\n+\n+```\n+go.mod\n+main.go                     # thin CLI entrypoint: flag parsing, dispatch\n+main_test.go                # tests for flag parsing / dispatch helpers\n+internal/\n+  deck/\n+    card.go                 # Suit, Rank, Card, Value(), String()\n+    shoe.go                 # Shoe (1\u20138 decks), Fisher-Yates, cut card\n+    deck_test.go\n+  game/\n+    hand.go                 # Hand, Total() with dynamic aces, IsBust/IsBlackjack/IsPair\n+    rules.go                # Rules struct (S17, 3:2, split/double rules), Action, Outcome\n+    round.go                # Round: deal, player actions, dealer play, settlement\n+    game_test.go\n+  strategy/\n+    tables.go               # hard / soft / pair matrices (S17, multi-deck, DAS)\n+    strategy.go             # Recommend(hand, dealerUp, canDouble, canSplit) Action\n+    strategy_test.go\n+  ui/\n+    render.go               # ANSI card rendering, hand rendering, table status, money fmt\n+    render_test.go\n+  sim/\n+    sim.go                  # Monte Carlo runner using strategy.Recommend; Stats + Summary()\n+    sim_test.go\n+  play/\n+    play.go                 # interactive loop over io.Reader / io.Writer (testable)\n+    play_test.go\n+```\n+\n+Rationale: `main.go` stays minimal so the testable logic lives in packages, keeping\n+`go test -cover ./...` \u2265 80 % overall.\n+\n+## 2. Package Design\n+\n+### 2.1 `internal/deck`\n+\n+```go\n+type Suit int   // Spades, Hearts, Diamonds, Clubs\n+type Rank int   // Ace=1, Two..Ten=2..10, Jack=11, Queen=12, King=13\n+\n+type Card struct { Suit Suit; Rank Rank }\n+func (c Card) Value() int        // Ace\u219211, J/Q/K\u219210, others face value\n+func (c Card) IsAce() bool\n+func (c Card) String() string    // \"A\u2665\", \"10\u2660\", \"K\u2666\"\n+func (s Suit) String() string    // \"\u2660\" \"\u2665\" \"\u2666\" \"\u2663\"\n+func (r Rank) String() string    // \"A\",\"2\"..\"10\",\"J\",\"Q\",\"K\"\n+\n+type Shoe struct {\n+    cards    []Card\n+    pos      int\n+    numDecks int\n+    cutIndex int\n+    rng      *rand.Rand\n+}\n+func NewShoe(numDecks int, penetration float64, rng *rand.Rand) (*Shoe, error)\n+    // numDecks must be 1..8; penetration in (0,1], default 0.75 if 0\n+    // builds 52*numDecks cards, shuffles, sets cutIndex = int(len*penetration)\n+func (s *Shoe) Shuffle()            // Fisher-Yates in place, pos = 0\n+func (s *Shoe) Draw() (Card, error) // ErrShoeEmpty if exhausted\n+func (s *Shoe) NeedsShuffle() bool  // pos >= cutIndex\n+func (s *Shoe) Remaining() int\n+func (s *Shoe) NumDecks() int\n+```\n+\n+Fisher-Yates: `for i := n-1; i > 0; i-- { j := rng.IntN(i+1); swap(i,j) }`.\n+`math/rand/v2` with injectable `*rand.Rand` for determinism in tests.\n+\n+Tests: card values (all 52 unique per deck), shoe size for 1\u20138 decks, error on 0/9,\n+shuffle is a permutation (multiset preserved), deterministic with seed, NeedsShuffle\n+flips at cut card, Draw past end returns error.\n+\n+### 2.2 `internal/game`\n+\n+```go\n+type Action int   // Hit, Stand, Double, Split\n+func (a Action) String() string\n+\n+type Outcome int  // Win, Loss, Push, Blackjack (natural win)\n+\n+type Rules struct {\n+    DealerHitsSoft17  bool    // false \u2192 S17 (default)\n+    BlackjackPayout   float64 // 1.5 (3:2)\n+    MaxSplitHands     int     // 2 (spec: split into 2 active hands)\n+    DoubleAfterSplit  bool    // true\n+    MinBet, MaxBet    int     // 10, 500\n+}\n+func DefaultRules() Rules\n+\n+type Hand struct {\n+    Cards     []deck.Card\n+    Bet       int\n+    Doubled   bool\n+    FromSplit bool\n+    Done      bool   // stood / busted / doubled / 21\n+}\n+func (h *Hand) Add(c deck.Card)\n+func (h Hand) Total() (total int, soft bool)  // aces 11 \u2192 1 while total > 21\n+func (h Hand) IsBust() bool\n+func (h Hand) IsBlackjack() bool  // 2 cards, 21, !FromSplit\n+func (h Hand) IsPair() bool       // 2 cards, same Rank (10/J/Q/K treated as same value? -> same Value())\n+func (h Hand) CanDouble(r Rules) bool\n+func (h Hand) CanSplit(r Rules, numHands int) bool\n+func (h Hand) Describe() string   // \"Soft 21\", \"Hard 16\", \"Bust\", \"Blackjack\"\n+\n+type Round struct {\n+    Rules   Rules\n+    Shoe    *deck.Shoe\n+    Dealer  Hand\n+    Hands   []*Hand\n+    Active  int        // index into Hands, -1 when player phase over\n+}\n+func NewRound(shoe *deck.Shoe, rules Rules, bet int) (*Round, error)\n+    // deals P, D, P, D; validates bet range; marks player done if natural\n+func (r *Round) CurrentHand() *Hand\n+func (r *Round) PlayerTurnOver() bool\n+func (r *Round) Apply(a Action) error  // Hit/Stand/Double/Split; advances Active\n+func (r *Round) PlayDealer()           // skip if all player hands bust; hit <17 or soft17 if H17\n+func (r *Round) Settle() []Result      // per-hand Outcome + Payout (net int)\n+\n+type Result struct { Hand *Hand; Outcome Outcome; Net int }\n+```\n+\n+Payout: Blackjack \u2192 +bet*1.5 (int math: bet*3/2), win \u2192 +bet (doubled = 2\u00d7bet),\n+loss \u2192 \u2212bet, push \u2192 0. Dealer natural vs player natural \u2192 push.\n+Split aces: one card each, auto-stand (standard rule). Split hands cannot be blackjack.\n+\n+Tests: soft/hard totals (A+6=soft 17, A+6+10=hard 17, A+A=soft 12), bust detection,\n+blackjack detection, pair detection, double/split eligibility, full round via a\n+scripted shoe (a `deck.Shoe` built from a fixed card order \u2014 add\n+`deck.NewShoeFromCards([]Card)` helper for tests), dealer S17 stands, settlement for\n+each outcome incl. 3:2 payout and doubled bets, split flow to two hands.\n+\n+### 2.3 `internal/strategy`\n+\n+Basic Strategy for multi-deck, S17, DAS. Encode as rune matrices indexed by\n+[total][dealerUp 2..11]:\n+\n+- `H` hit, `S` stand, `D` double else hit, `d` double else stand, `P` split.\n+\n+Hard 5\u20138: H. Hard 9: D vs 3\u20136 else H. Hard 10: D vs 2\u20139. Hard 11: D vs 2\u201310, H vs A.\n+Hard 12: S vs 4\u20136. Hard 13\u201316: S vs 2\u20136. Hard 17+: S.\n+Soft 13\u201314: D vs 5\u20136. Soft 15\u201316: D vs 4\u20136. Soft 17: D vs 3\u20136. Soft 18: d vs 2\u20136,\n+S vs 7\u20138, H vs 9\u2013A. Soft 19+: S.\n+Pairs: A,A & 8,8: P always. 10,10: S. 9,9: P except 7,10,A. 7,7: P vs 2\u20137.\n+6,6: P vs 2\u20136. 5,5: treat as hard 10. 4,4: P vs 5\u20136. 2,2/3,3: P vs 2\u20137.\n+\n+```go\n+func Recommend(h game.Hand, dealerUp deck.Card, canDouble, canSplit bool) game.Action\n+```\n+Falls back: Double disallowed \u2192 Hit (D) or Stand (d); Split disallowed \u2192 hard/soft table.\n+\n+Tests: table-driven cases for each region; fallback behaviour; full matrix sanity\n+(every cell yields a valid action); dealer upcard A maps to column 11.\n+\n+### 2.4 `internal/ui`\n+\n+```go\n+func RenderCard(c deck.Card) string            // \"[ 10\u2660 ]\" / \"[  A\u2665 ]\" (red for \u2665\u2666 when color on)\n+func RenderHidden() string                     // \"[ ?? ]\"\n+func RenderHand(h game.Hand, hideHole bool) string // cards + \" (Soft 21)\"\n+func FormatMoney(n int) string                 // \"$1,000\", \"-$250\"\n+func RenderTable(w io.Writer, bankroll, bet int, r *game.Round, hideHole bool)\n+func SetColor(enabled bool)                    // disable ANSI in tests / sim\n+```\n+\n+Tests: card padding, soft/hard suffix, money formatting, hidden hole card, table\n+output contains bankroll/bet/upcard.\n+\n+### 2.5 `internal/sim`\n+\n+```go\n+type Config struct { Rounds, Decks, Bet int; Seed uint64; Rules game.Rules }\n+type Stats struct {\n+    Rounds, Hands, Wins, Losses, Pushes, Blackjacks int\n+    TotalWagered, Net int\n+    Duration time.Duration\n+}\n+func Run(cfg Config) (Stats, error)   // reshuffles at cut card; plays all hands via strategy.Recommend\n+func (s Stats) WinPct()/LossPct()/PushPct()/EVPct() float64   // EV% = Net/TotalWagered*100\n+func (s Stats) Summary() string       // formatted table\n+```\n+\n+Tests: run 1,000 rounds with seed \u2192 counts sum correctly, percentages sum \u2248100,\n+EV within plausible range (\u22125 % \u2026 +3 %), Summary contains headers, deterministic\n+across identical seeds.\n+\n+### 2.6 `internal/play`\n+\n+```go\n+type Options struct { Hint bool; Decks int; Bankroll int; Seed uint64; Rules game.Rules }\n+func Run(in io.Reader, out io.Writer, opts Options) error\n+```\n+Loop: prompt bet (10\u2013500, \u2264 bankroll, `q` to quit) \u2192 deal \u2192 for each active hand show\n+table, (hint if enabled), prompt `[h]it [s]tand [d]ouble [p]split` honoring\n+eligibility \u2192 dealer plays \u2192 settle, update bankroll \u2192 repeat until quit or broke.\n+\n+Tests: scripted stdin (`strings.NewReader`) covering bet validation, each action,\n+hint output, quit, bust bankroll end.\n+\n+### 2.7 `main.go`\n+\n+Flags: `-sim`, `-n` (default 10000), `-hint`, `-decks` (default 6), `-seed`,\n+`-bet` (sim bet, default 10), `-no-color`.\n+`run(args []string, in io.Reader, out io.Writer) int` is tested in `main_test.go`;\n+`main()` just calls `os.Exit(run(...))`.\n+\n+## 3. Flow\n+\n+```mermaid\n+flowchart TD\n+    A[main.go parse flags] -->|sim| B[sim.Run]\n+    A -->|play| C[play.Run]\n+    B --> D[deck.Shoe]\n+    C --> D\n+    B --> E[game.Round]\n+    C --> E\n+    B --> F[strategy.Recommend]\n+    C -->|hint| F\n+    C --> G[ui.RenderTable]\n+    E --> D\n+```\n+\n+## 4. Verification Gate\n+\n+1. `go build ./...` and `go vet ./...` clean.\n+2. `go test -v -cover ./...` all pass, every package \u2265 80 %, overall \u2265 80 %.\n+3. `go test -race ./...` passes.\n+4. `go run main.go -sim -n 10000` prints summary with W/L/P %, EV %, duration.\n+5. `go run main.go --hint` starts interactive mode (smoke-check via piped stdin).\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 235,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 2,
+      "ts": 1791879960229,
+      "tokens_in": 18196,
+      "tokens_out": 837,
+      "cost": 0.44762,
+      "cumulative_cost": 1.2878,
+      "actions": [
+        {
+          "tool": "updateTodoList",
+          "todos": [
+            {
+              "id": "1477cdaba26dc32a334e3f998ff87df5",
+              "content": "Initialize module: go.mod (module blackjack, go 1.26)",
+              "status": "pending"
+            },
+            {
+              "id": "54acf42d8e4d81f9b56e38569d6b06e0",
+              "content": "internal/deck: Card (Suit/Rank/Value/String), Shoe 1\u20138 decks, Fisher-Yates Shuffle, cut-card NeedsShuffle, NewShoeFromCards test helper",
+              "status": "pending"
+            },
+            {
+              "id": "6a8fe4ba68c5cf2e03c713ef39ae6667",
+              "content": "internal/deck: unit tests (values, deck composition, permutation, seed determinism, cut card, empty shoe error)",
+              "status": "pending"
+            },
+            {
+              "id": "4dd3f0b1d4a043cf22bbe8d0d02dfd7c",
+              "content": "internal/game: Hand with dynamic-ace Total (soft/hard), IsBust/IsBlackjack/IsPair/CanDouble/CanSplit/Describe; Action & Outcome enums; Rules (S17, 3:2, max 2 split hands, DAS, bet 10\u2013500)",
+              "status": "pending"
+            },
+            {
+              "id": "c6613025a94197f24af3e038994e89f6",
+              "content": "internal/game: Round (deal, Apply Hit/Stand/Double/Split, PlayDealer S17, Settle with 3:2 payout)",
+              "status": "pending"
+            },
+            {
+              "id": "1a00e5178ef1793793d0e4bf19e1040c",
+              "content": "internal/game: unit tests via scripted shoe (totals, naturals, dealer S17, every outcome, double, split into 2 hands)",
+              "status": "pending"
+            },
+            {
+              "id": "f6acdb7606e69a06df2978cfde44791e",
+              "content": "internal/strategy: hard/soft/pair matrices + Recommend with double/split fallbacks",
+              "status": "pending"
+            },
+            {
+              "id": "9d8dabbd0db632fd30268efcdbaaab38",
+              "content": "internal/strategy: table-driven unit tests covering each matrix region and fallbacks",
+              "status": "pending"
+            },
+            {
+              "id": "87a1477d21d7777064a0f88703df31ef",
+              "content": "internal/ui: RenderCard/RenderHand/RenderTable/FormatMoney with ANSI color toggle",
+              "status": "pending"
+            },
+            {
+              "id": "0cfdbf1fd608bc35817d05c1f4c903e8",
+              "content": "internal/ui: unit tests for rendering and money formatting",
+              "status": "pending"
+            },
+            {
+              "id": "deb2f5697cb288f326ae08c902118bdb",
+              "content": "internal/sim: Monte Carlo runner using Basic Strategy, Stats (W/L/P %, EV %, duration), Summary table; tests",
+              "status": "pending"
+            },
+            {
+              "id": "f7c01bddf5693b6b86dda1b8e324024b",
+              "content": "internal/play: interactive loop over io.Reader/io.Writer with bet prompt, actions, --hint advice; tests with scripted stdin",
+              "status": "pending"
+            },
+            {
+              "id": "f86d557d02e499359e2d65f38277ec4c",
+              "content": "main.go: flags (-sim, -n, -hint, -decks, -seed, -bet, -no-color), run() dispatcher; main_test.go",
+              "status": "pending"
+            },
+            {
+              "id": "bef4fcebaf1f89e5504de9a57968e0ee",
+              "content": "Verify: go build ./... && go vet ./...",
+              "status": "pending"
+            },
+            {
+              "id": "36c82d397b989eff1995d50e9f818e32",
+              "content": "Verify: go test -v -cover ./... passes, every package and overall \u2265 80%",
+              "status": "pending"
+            },
+            {
+              "id": "656e1000ee71f5c9398da1c90d4e531b",
+              "content": "Verify: go test -race ./... passes",
+              "status": "pending"
+            },
+            {
+              "id": "b258486f7446eaaf58a0ec87d90ae01f",
+              "content": "Verify: go run main.go -sim -n 10000 prints summary table end-to-end",
+              "status": "pending"
+            },
+            {
+              "id": "db52d1cb7b43929832a192ba445cca37",
+              "content": "Verify: play mode smoke test with piped stdin and --hint",
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 3,
+      "ts": 1791879973377,
+      "tokens_in": 20199,
+      "tokens_out": 466,
+      "cost": 0.45058,
+      "cumulative_cost": 1.73838,
+      "actions": [
+        {
+          "tool": "switchMode",
+          "mode": "code",
+          "reason": "The implementation plan and todo list are complete; the task requires executing the plan by writing Go source files, tests, and running the verification gate (build, test -cover, test -race, end-to-end sim run), which requires Code mode."
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 4,
+      "ts": 1791879984027,
+      "tokens_in": 23734,
+      "tokens_out": 125,
+      "cost": 0.48718,
+      "cumulative_cost": 2.22556,
+      "actions": [
+        {
+          "tool": "execute_command",
+          "command": "go version"
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 5,
+      "ts": 1791879989253,
+      "tokens_in": 25084,
+      "tokens_out": 114,
+      "cost": 0.51308,
+      "cumulative_cost": 2.73864,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "go.mod",
+          "content": "===================================================================\n--- /dev/null\n+++ go.mod\n@@ -0,0 +1,3 @@\n+module blackjack\n+\n+go 1.26\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 3,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 6,
+      "ts": 1791879994899,
+      "tokens_in": 26408,
+      "tokens_out": 1032,
+      "cost": 0.63136,
+      "cumulative_cost": 3.37,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/deck/card.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/deck/card.go\n@@ -0,0 +1,109 @@\n+// Package deck provides playing cards and a multi-deck blackjack shoe.\n+package deck\n+\n+import \"fmt\"\n+\n+// Suit is one of the four French suits.\n+type Suit int\n+\n+// Suit constants.\n+const (\n+\tSpades Suit = iota\n+\tHearts\n+\tDiamonds\n+\tClubs\n+)\n+\n+// Suits lists all suits in canonical order.\n+var Suits = [...]Suit{Spades, Hearts, Diamonds, Clubs}\n+\n+// String returns the Unicode symbol for the suit.\n+func (s Suit) String() string {\n+\tswitch s {\n+\tcase Spades:\n+\t\treturn \"\u2660\"\n+\tcase Hearts:\n+\t\treturn \"\u2665\"\n+\tcase Diamonds:\n+\t\treturn \"\u2666\"\n+\tcase Clubs:\n+\t\treturn \"\u2663\"\n+\tdefault:\n+\t\treturn \"?\"\n+\t}\n+}\n+\n+// IsRed reports whether the suit is traditionally printed in red.\n+func (s Suit) IsRed() bool {\n+\treturn s == Hearts || s == Diamonds\n+}\n+\n+// Rank is the face rank of a card: Ace=1, Two..Ten=2..10, Jack=11, Queen=12, King=13.\n+type Rank int\n+\n+// Rank constants.\n+const (\n+\tAce Rank = iota + 1\n+\tTwo\n+\tThree\n+\tFour\n+\tFive\n+\tSix\n+\tSeven\n+\tEight\n+\tNine\n+\tTen\n+\tJack\n+\tQueen\n+\tKing\n+)\n+\n+// Ranks lists all ranks in ascending order.\n+var Ranks = [...]Rank{Ace, Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King}\n+\n+// String returns the short label for the rank (\"A\", \"2\"..\"10\", \"J\", \"Q\", \"K\").\n+func (r Rank) String() string {\n+\tswitch {\n+\tcase r == Ace:\n+\t\treturn \"A\"\n+\tcase r >= Two && r <= Ten:\n+\t\treturn fmt.Sprintf(\"%d\", int(r))\n+\tcase r == Jack:\n+\t\treturn \"J\"\n+\tcase r == Queen:\n+\t\treturn \"Q\"\n+\tcase r == King:\n+\t\treturn \"K\"\n+\tdefault:\n+\t\treturn \"?\"\n+\t}\n+}\n+\n+// Card is a single playing card.\n+type Card struct {\n+\tSuit Suit\n+\tRank Rank\n+}\n+\n+// Value returns the blackjack value of the card. Aces count as 11 here;\n+// hand evaluation is responsible for demoting aces to 1 when needed.\n+func (c Card) Value() int {\n+\tswitch {\n+\tcase c.Rank == Ace:\n+\t\treturn 11\n+\tcase c.Rank >= Ten:\n+\t\treturn 10\n+\tdefault:\n+\t\treturn int(c.Rank)\n+\t}\n+}\n+\n+// IsAce reports whether the card is an ace.\n+func (c Card) IsAce() bool {\n+\treturn c.Rank == Ace\n+}\n+\n+// String renders the card compactly, e.g. \"A\u2665\" or \"10\u2660\".\n+func (c Card) String() string {\n+\treturn c.Rank.String() + c.Suit.String()\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 109,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 7,
+      "ts": 1791880008611,
+      "tokens_in": 28655,
+      "tokens_out": 1691,
+      "cost": 0.7422,
+      "cumulative_cost": 4.1122,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/deck/shoe.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/deck/shoe.go\n@@ -0,0 +1,129 @@\n+package deck\n+\n+import (\n+\t\"errors\"\n+\t\"fmt\"\n+\t\"math/rand/v2\"\n+)\n+\n+// Shoe limits.\n+const (\n+\tMinDecks           = 1\n+\tMaxDecks           = 8\n+\tCardsPerDeck       = 52\n+\tDefaultPenetration = 0.75\n+)\n+\n+// Errors returned by the shoe.\n+var (\n+\tErrShoeEmpty    = errors.New(\"deck: shoe is empty\")\n+\tErrInvalidDecks = fmt.Errorf(\"deck: number of decks must be between %d and %d\", MinDecks, MaxDecks)\n+\tErrInvalidPen   = errors.New(\"deck: penetration must be in (0, 1]\")\n+)\n+\n+// Shoe is a dealing shoe containing one or more shuffled 52-card decks with a\n+// cut card placed at a configurable penetration depth.\n+type Shoe struct {\n+\tcards    []Card\n+\tpos      int\n+\tnumDecks int\n+\tcutIndex int\n+\trng      *rand.Rand\n+}\n+\n+// NewShoe builds a shoe of numDecks standard decks (1\u20138), shuffles it, and\n+// places the cut card at len(cards)*penetration. A penetration of 0 selects\n+// DefaultPenetration. If rng is nil a randomly seeded generator is used.\n+func NewShoe(numDecks int, penetration float64, rng *rand.Rand) (*Shoe, error) {\n+\tif numDecks < MinDecks || numDecks > MaxDecks {\n+\t\treturn nil, ErrInvalidDecks\n+\t}\n+\tif penetration == 0 {\n+\t\tpenetration = DefaultPenetration\n+\t}\n+\tif penetration < 0 || penetration > 1 {\n+\t\treturn nil, ErrInvalidPen\n+\t}\n+\tif rng == nil {\n+\t\trng = rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))\n+\t}\n+\tcards := make([]Card, 0, numDecks*CardsPerDeck)\n+\tfor d := 0; d < numDecks; d++ {\n+\t\tfor _, s := range Suits {\n+\t\t\tfor _, r := range Ranks {\n+\t\t\t\tcards = append(cards, Card{Suit: s, Rank: r})\n+\t\t\t}\n+\t\t}\n+\t}\n+\ts := &Shoe{\n+\t\tcards:    cards,\n+\t\tnumDecks: numDecks,\n+\t\tcutIndex: int(float64(len(cards)) * penetration),\n+\t\trng:      rng,\n+\t}\n+\tif s.cutIndex < 1 {\n+\t\ts.cutIndex = 1\n+\t}\n+\ts.Shuffle()\n+\treturn s, nil\n+}\n+\n+// NewShoeFromCards builds an unshuffled shoe that deals the given cards in\n+// order. It is intended for deterministic tests and scripted scenarios. The cut\n+// card is placed at the very end so NeedsShuffle only becomes true when the\n+// cards are exhausted.\n+func NewShoeFromCards(cards []Card) *Shoe {\n+\tcp := make([]Card, len(cards))\n+\tcopy(cp, cards)\n+\treturn &Shoe{\n+\t\tcards:    cp,\n+\t\tnumDecks: (len(cp) + CardsPerDeck - 1) / CardsPerDeck,\n+\t\tcutIndex: len(cp),\n+\t\trng:      rand.New(rand.NewPCG(0, 0)),\n+\t}\n+}\n+\n+// Shuffle performs an in-place Fisher-Yates shuffle over the entire shoe and\n+// resets the dealing position to the top.\n+func (s *Shoe) Shuffle() {\n+\tfor i := len(s.cards) - 1; i > 0; i-- {\n+\t\tj := s.rng.IntN(i + 1)\n+\t\ts.cards[i], s.cards[j] = s.cards[j], s.cards[i]\n+\t}\n+\ts.pos = 0\n+}\n+\n+// Draw deals the next card. It returns ErrShoeEmpty when no cards remain.\n+func (s *Shoe) Draw() (Card, error) {\n+\tif s.pos >= len(s.cards) {\n+\t\treturn Card{}, ErrShoeEmpty\n+\t}\n+\tc := s.cards[s.pos]\n+\ts.pos++\n+\treturn c, nil\n+}\n+\n+// NeedsShuffle reports whether the cut card has been reached.\n+func (s *Shoe) NeedsShuffle() bool {\n+\treturn s.pos >= s.cutIndex\n+}\n+\n+// Remaining returns the number of undealt cards.\n+func (s *Shoe) Remaining() int {\n+\treturn len(s.cards) - s.pos\n+}\n+\n+// Size returns the total number of cards in the shoe.\n+func (s *Shoe) Size() int {\n+\treturn len(s.cards)\n+}\n+\n+// NumDecks returns the number of decks in the shoe.\n+func (s *Shoe) NumDecks() int {\n+\treturn s.numDecks\n+}\n+\n+// CutIndex returns the position of the cut card.\n+func (s *Shoe) CutIndex() int {\n+\treturn s.cutIndex\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 129,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 8,
+      "ts": 1791880027903,
+      "tokens_in": 31563,
+      "tokens_out": 3372,
+      "cost": 0.96846,
+      "cumulative_cost": 5.08066,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/deck/deck_test.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/deck/deck_test.go\n@@ -0,0 +1,230 @@\n+package deck\n+\n+import (\n+\t\"errors\"\n+\t\"math/rand/v2\"\n+\t\"testing\"\n+)\n+\n+func TestCardValue(t *testing.T) {\n+\ttests := []struct {\n+\t\trank Rank\n+\t\twant int\n+\t}{\n+\t\t{Ace, 11}, {Two, 2}, {Three, 3}, {Four, 4}, {Five, 5}, {Six, 6},\n+\t\t{Seven, 7}, {Eight, 8}, {Nine, 9}, {Ten, 10}, {Jack, 10}, {Queen, 10}, {King, 10},\n+\t}\n+\tfor _, tt := range tests {\n+\t\tc := Card{Suit: Spades, Rank: tt.rank}\n+\t\tif got := c.Value(); got != tt.want {\n+\t\t\tt.Errorf(\"Card{%v}.Value() = %d, want %d\", tt.rank, got, tt.want)\n+\t\t}\n+\t}\n+\tif !(Card{Rank: Ace}).IsAce() {\n+\t\tt.Error(\"Ace should report IsAce\")\n+\t}\n+\tif (Card{Rank: King}).IsAce() {\n+\t\tt.Error(\"King should not report IsAce\")\n+\t}\n+}\n+\n+func TestStrings(t *testing.T) {\n+\ttests := []struct {\n+\t\tcard Card\n+\t\twant string\n+\t}{\n+\t\t{Card{Hearts, Ace}, \"A\u2665\"},\n+\t\t{Card{Spades, Ten}, \"10\u2660\"},\n+\t\t{Card{Diamonds, King}, \"K\u2666\"},\n+\t\t{Card{Clubs, Queen}, \"Q\u2663\"},\n+\t\t{Card{Clubs, Jack}, \"J\u2663\"},\n+\t\t{Card{Spades, Two}, \"2\u2660\"},\n+\t}\n+\tfor _, tt := range tests {\n+\t\tif got := tt.card.String(); got != tt.want {\n+\t\t\tt.Errorf(\"%+v.String() = %q, want %q\", tt.card, got, tt.want)\n+\t\t}\n+\t}\n+\tif Suit(99).String() != \"?\" || Rank(99).String() != \"?\" {\n+\t\tt.Error(\"unknown suit/rank should render as ?\")\n+\t}\n+\tif !Hearts.IsRed() || !Diamonds.IsRed() || Spades.IsRed() || Clubs.IsRed() {\n+\t\tt.Error(\"IsRed mismatch\")\n+\t}\n+}\n+\n+func TestNewShoeSizes(t *testing.T) {\n+\tfor n := MinDecks; n <= MaxDecks; n++ {\n+\t\ts, err := NewShoe(n, 0, rand.New(rand.NewPCG(1, 2)))\n+\t\tif err != nil {\n+\t\t\tt.Fatalf(\"NewShoe(%d) error: %v\", n, err)\n+\t\t}\n+\t\tif s.Size() != n*CardsPerDeck {\n+\t\t\tt.Errorf(\"NewShoe(%d).Size() = %d, want %d\", n, s.Size(), n*CardsPerDeck)\n+\t\t}\n+\t\tif s.NumDecks() != n {\n+\t\t\tt.Errorf(\"NumDecks = %d, want %d\", s.NumDecks(), n)\n+\t\t}\n+\t\tif s.Remaining() != s.Size() {\n+\t\t\tt.Errorf(\"fresh shoe Remaining = %d, want %d\", s.Remaining(), s.Size())\n+\t\t}\n+\t\twantCut := int(float64(s.Size()) * DefaultPenetration)\n+\t\tif s.CutIndex() != wantCut {\n+\t\t\tt.Errorf(\"CutIndex = %d, want %d\", s.CutIndex(), wantCut)\n+\t\t}\n+\t}\n+}\n+\n+func TestNewShoeInvalid(t *testing.T) {\n+\tif _, err := NewShoe(0, 0, nil); !errors.Is(err, ErrInvalidDecks) {\n+\t\tt.Errorf(\"NewShoe(0) err = %v, want ErrInvalidDecks\", err)\n+\t}\n+\tif _, err := NewShoe(9, 0, nil); !errors.Is(err, ErrInvalidDecks) {\n+\t\tt.Errorf(\"NewShoe(9) err = %v, want ErrInvalidDecks\", err)\n+\t}\n+\tif _, err := NewShoe(1, 1.5, nil); !errors.Is(err, ErrInvalidPen) {\n+\t\tt.Errorf(\"NewShoe pen 1.5 err = %v, want ErrInvalidPen\", err)\n+\t}\n+\tif _, err := NewShoe(1, -0.1, nil); !errors.Is(err, ErrInvalidPen) {\n+\t\tt.Errorf(\"NewShoe pen -0.1 err = %v, want ErrInvalidPen\", err)\n+\t}\n+}\n+\n+func TestNewShoeNilRNG(t *testing.T) {\n+\ts, err := NewShoe(1, 0.5, nil)\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif s.Size() != 52 {\n+\t\tt.Errorf(\"size = %d\", s.Size())\n+\t}\n+}\n+\n+func TestShoeCompositionPreserved(t *testing.T) {\n+\tconst decks = 6\n+\ts, err := NewShoe(decks, 0, rand.New(rand.NewPCG(7, 7)))\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tcounts := map[Card]int{}\n+\tfor {\n+\t\tc, err := s.Draw()\n+\t\tif err != nil {\n+\t\t\tbreak\n+\t\t}\n+\t\tcounts[c]++\n+\t}\n+\tif len(counts) != 52 {\n+\t\tt.Fatalf(\"distinct cards = %d, want 52\", len(counts))\n+\t}\n+\tfor c, n := range counts {\n+\t\tif n != decks {\n+\t\t\tt.Errorf(\"card %v appears %d times, want %d\", c, n, decks)\n+\t\t}\n+\t}\n+}\n+\n+func TestShuffleDeterministicWithSeed(t *testing.T) {\n+\ta, _ := NewShoe(2, 0, rand.New(rand.NewPCG(42, 42)))\n+\tb, _ := NewShoe(2, 0, rand.New(rand.NewPCG(42, 42)))\n+\tfor i := 0; i < a.Size(); i++ {\n+\t\tca, _ := a.Draw()\n+\t\tcb, _ := b.Draw()\n+\t\tif ca != cb {\n+\t\t\tt.Fatalf(\"seeded shoes diverge at index %d: %v vs %v\", i, ca, cb)\n+\t\t}\n+\t}\n+}\n+\n+func TestShuffleChangesOrder(t *testing.T) {\n+\ts, _ := NewShoe(1, 0, rand.New(rand.NewPCG(1, 1)))\n+\tfirst := make([]Card, s.Size())\n+\tfor i := range first {\n+\t\tfirst[i], _ = s.Draw()\n+\t}\n+\ts.Shuffle()\n+\tif s.Remaining() != s.Size() {\n+\t\tt.Fatalf(\"Shuffle should reset position; remaining = %d\", s.Remaining())\n+\t}\n+\tsame := 0\n+\tfor i := range first {\n+\t\tc, _ := s.Draw()\n+\t\tif c == first[i] {\n+\t\t\tsame++\n+\t\t}\n+\t}\n+\tif same == len(first) {\n+\t\tt.Error(\"shuffle produced identical ordering\")\n+\t}\n+}\n+\n+func TestDrawEmpty(t *testing.T) {\n+\ts := NewShoeFromCards([]Card{{Spades, Ace}})\n+\tc, err := s.Draw()\n+\tif err != nil || c != (Card{Spades, Ace}) {\n+\t\tt.Fatalf(\"Draw = %v, %v\", c, err)\n+\t}\n+\tif _, err := s.Draw(); !errors.Is(err, ErrShoeEmpty) {\n+\t\tt.Errorf(\"Draw on empty shoe err = %v, want ErrShoeEmpty\", err)\n+\t}\n+\tif s.Remaining() != 0 {\n+\t\tt.Errorf(\"Remaining = %d, want 0\", s.Remaining())\n+\t}\n+}\n+\n+func TestCutCardPenetration(t *testing.T) {\n+\ts, err := NewShoe(1, 0.5, rand.New(rand.NewPCG(3, 3)))\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif s.NeedsShuffle() {\n+\t\tt.Fatal(\"fresh shoe should not need shuffle\")\n+\t}\n+\tfor i := 0; i < 25; i++ {\n+\t\ts.Draw()\n+\t}\n+\tif s.NeedsShuffle() {\n+\t\tt.Error(\"should not need shuffle before cut card (25 of 26)\")\n+\t}\n+\ts.Draw()\n+\tif !s.NeedsShuffle() {\n+\t\tt.Error(\"should need shuffle at cut card (26 of 52)\")\n+\t}\n+\ts.Shuffle()\n+\tif s.NeedsShuffle() {\n+\t\tt.Error(\"after reshuffle should not need shuffle\")\n+\t}\n+}\n+\n+func TestCutIndexMinimumOne(t *testing.T) {\n+\ts, err := NewShoe(1, 0.001, rand.New(rand.NewPCG(3, 3)))\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif s.CutIndex() != 1 {\n+\t\tt.Errorf(\"CutIndex = %d, want 1\", s.CutIndex())\n+\t}\n+}\n+\n+func TestNewShoeFromCardsOrder(t *testing.T) {\n+\tcards := []Card{{Hearts, Ace}, {Spades, King}, {Clubs, Five}}\n+\ts := NewShoeFromCards(cards)\n+\t// mutate original to ensure the shoe copied it\n+\tcards[0] = Card{Clubs, Two}\n+\tif s.NumDecks() != 1 {\n+\t\tt.Errorf(\"NumDecks = %d, want 1\", s.NumDecks())\n+\t}\n+\twant := []Card{{Hearts, Ace}, {Spades, King}, {Clubs, Five}}\n+\tfor i, w := range want {\n+\t\tc, err := s.Draw()\n+\t\tif err != nil {\n+\t\t\tt.Fatal(err)\n+\t\t}\n+\t\tif c != w {\n+\t\t\tt.Errorf(\"card %d = %v, want %v\", i, c, w)\n+\t\t}\n+\t}\n+\tif !s.NeedsShuffle() {\n+\t\tt.Error(\"scripted shoe should need shuffle when exhausted\")\n+\t}\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 230,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 9,
+      "ts": 1791880061212,
+      "tokens_in": 36153,
+      "tokens_out": 106,
+      "cost": 0.73366,
+      "cumulative_cost": 5.81432,
+      "actions": [
+        {
+          "tool": "execute_command",
+          "command": "go test -cover ./internal/deck/"
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 10,
+      "ts": 1791880068481,
+      "tokens_in": 37501,
+      "tokens_out": 856,
+      "cost": 0.83562,
+      "cumulative_cost": 6.649940000000001,
+      "actions": [
+        {
+          "tool": "updateTodoList",
+          "todos": [
+            {
+              "id": "3cdcc2b5443ed6443e6e9e8fd0e964e0",
+              "content": "Initialize module: go.mod (module blackjack, go 1.26)",
+              "status": "completed"
+            },
+            {
+              "id": "10b65d3746a45439ad32714fc816e382",
+              "content": "internal/deck: Card (Suit/Rank/Value/String), Shoe 1\u20138 decks, Fisher-Yates Shuffle, cut-card NeedsShuffle, NewShoeFromCards test helper",
+              "status": "completed"
+            },
+            {
+              "id": "0df39d5b4f327981bd7417a56da3af4d",
+              "content": "internal/deck: unit tests (values, deck composition, permutation, seed determinism, cut card, empty shoe error)",
+              "status": "completed"
+            },
+            {
+              "id": "c9a56fb912dcd2d6ed217cbdce3233ed",
+              "content": "internal/game: Hand with dynamic-ace Total (soft/hard), IsBust/IsBlackjack/IsPair/CanDouble/CanSplit/Describe; Action & Outcome enums; Rules (S17, 3:2, max 2 split hands, DAS, bet 10\u2013500)",
+              "status": "in_progress"
+            },
+            {
+              "id": "c6613025a94197f24af3e038994e89f6",
+              "content": "internal/game: Round (deal, Apply Hit/Stand/Double/Split, PlayDealer S17, Settle with 3:2 payout)",
+              "status": "pending"
+            },
+            {
+              "id": "1a00e5178ef1793793d0e4bf19e1040c",
+              "content": "internal/game: unit tests via scripted shoe (totals, naturals, dealer S17, every outcome, double, split into 2 hands)",
+              "status": "pending"
+            },
+            {
+              "id": "f6acdb7606e69a06df2978cfde44791e",
+              "content": "internal/strategy: hard/soft/pair matrices + Recommend with double/split fallbacks",
+              "status": "pending"
+            },
+            {
+              "id": "9d8dabbd0db632fd30268efcdbaaab38",
+              "content": "internal/strategy: table-driven unit tests covering each matrix region and fallbacks",
+              "status": "pending"
+            },
+            {
+              "id": "87a1477d21d7777064a0f88703df31ef",
+              "content": "internal/ui: RenderCard/RenderHand/RenderTable/FormatMoney with ANSI color toggle",
+              "status": "pending"
+            },
+            {
+              "id": "0cfdbf1fd608bc35817d05c1f4c903e8",
+              "content": "internal/ui: unit tests for rendering and money formatting",
+              "status": "pending"
+            },
+            {
+              "id": "deb2f5697cb288f326ae08c902118bdb",
+              "content": "internal/sim: Monte Carlo runner using Basic Strategy, Stats (W/L/P %, EV %, duration), Summary table; tests",
+              "status": "pending"
+            },
+            {
+              "id": "f7c01bddf5693b6b86dda1b8e324024b",
+              "content": "internal/play: interactive loop over io.Reader/io.Writer with bet prompt, actions, --hint advice; tests with scripted stdin",
+              "status": "pending"
+            },
+            {
+              "id": "f86d557d02e499359e2d65f38277ec4c",
+              "content": "main.go: flags (-sim, -n, -hint, -decks, -seed, -bet, -no-color), run() dispatcher; main_test.go",
+              "status": "pending"
+            },
+            {
+              "id": "bef4fcebaf1f89e5504de9a57968e0ee",
+              "content": "Verify: go build ./... && go vet ./...",
+              "status": "pending"
+            },
+            {
+              "id": "36c82d397b989eff1995d50e9f818e32",
+              "content": "Verify: go test -v -cover ./... passes, every package and overall \u2265 80%",
+              "status": "pending"
+            },
+            {
+              "id": "656e1000ee71f5c9398da1c90d4e531b",
+              "content": "Verify: go test -race ./... passes",
+              "status": "pending"
+            },
+            {
+              "id": "b258486f7446eaaf58a0ec87d90ae01f",
+              "content": "Verify: go run main.go -sim -n 10000 prints summary table end-to-end",
+              "status": "pending"
+            },
+            {
+              "id": "db52d1cb7b43929832a192ba445cca37",
+              "content": "Verify: play mode smoke test with piped stdin and --hint",
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 11,
+      "ts": 1791880079805,
+      "tokens_in": 39520,
+      "tokens_out": 949,
+      "cost": 0.8853,
+      "cumulative_cost": 7.535240000000001,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/game/rules.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/game/rules.go\n@@ -0,0 +1,90 @@\n+// Package game implements blackjack hand evaluation, standard casino rules and\n+// the round state machine (deal \u2192 player actions \u2192 dealer play \u2192 settlement).\n+package game\n+\n+// Action is a player decision.\n+type Action int\n+\n+// Player actions.\n+const (\n+\tHit Action = iota\n+\tStand\n+\tDouble\n+\tSplit\n+)\n+\n+// String returns the human readable action name.\n+func (a Action) String() string {\n+\tswitch a {\n+\tcase Hit:\n+\t\treturn \"Hit\"\n+\tcase Stand:\n+\t\treturn \"Stand\"\n+\tcase Double:\n+\t\treturn \"Double\"\n+\tcase Split:\n+\t\treturn \"Split\"\n+\tdefault:\n+\t\treturn \"Unknown\"\n+\t}\n+}\n+\n+// Outcome is the result of a single player hand against the dealer.\n+type Outcome int\n+\n+// Hand outcomes.\n+const (\n+\tLoss Outcome = iota\n+\tPush\n+\tWin\n+\tBlackjack // natural 21 paid at Rules.BlackjackPayout\n+)\n+\n+// String returns the human readable outcome name.\n+func (o Outcome) String() string {\n+\tswitch o {\n+\tcase Loss:\n+\t\treturn \"Loss\"\n+\tcase Push:\n+\t\treturn \"Push\"\n+\tcase Win:\n+\t\treturn \"Win\"\n+\tcase Blackjack:\n+\t\treturn \"Blackjack\"\n+\tdefault:\n+\t\treturn \"Unknown\"\n+\t}\n+}\n+\n+// Rules configures table rules.\n+type Rules struct {\n+\t// DealerHitsSoft17 selects H17 when true. Default (false) is S17.\n+\tDealerHitsSoft17 bool\n+\t// BlackjackPayout is the multiplier paid on a natural (1.5 == 3:2).\n+\tBlackjackPayout float64\n+\t// MaxSplitHands is the maximum number of hands a player may hold after splitting.\n+\tMaxSplitHands int\n+\t// DoubleAfterSplit allows doubling on hands produced by a split.\n+\tDoubleAfterSplit bool\n+\t// MinBet and MaxBet bound the wager for a round.\n+\tMinBet int\n+\tMaxBet int\n+}\n+\n+// DefaultRules returns standard rules: S17, 3:2 naturals, split into two\n+// hands, double after split allowed, bets $10\u2013$500.\n+func DefaultRules() Rules {\n+\treturn Rules{\n+\t\tDealerHitsSoft17: false,\n+\t\tBlackjackPayout:  1.5,\n+\t\tMaxSplitHands:    2,\n+\t\tDoubleAfterSplit: true,\n+\t\tMinBet:           10,\n+\t\tMaxBet:           500,\n+\t}\n+}\n+\n+// BlackjackWinnings returns the net amount won on a natural for the given bet.\n+func (r Rules) BlackjackWinnings(bet int) int {\n+\treturn int(float64(bet) * r.BlackjackPayout)\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 90,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 12,
+      "ts": 1791880093820,
+      "tokens_in": 41685,
+      "tokens_out": 1433,
+      "cost": 0.977,
+      "cumulative_cost": 8.51224,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/game/hand.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/game/hand.go\n@@ -0,0 +1,128 @@\n+package game\n+\n+import (\n+\t\"fmt\"\n+\n+\t\"blackjack/internal/deck\"\n+)\n+\n+// Hand is a set of cards held by the player or dealer together with the\n+// wager riding on it and its lifecycle flags.\n+type Hand struct {\n+\tCards     []deck.Card\n+\tBet       int\n+\tDoubled   bool\n+\tFromSplit bool\n+\t// Done is set once the hand can take no further action (stood, busted,\n+\t// doubled, or reached 21).\n+\tDone bool\n+}\n+\n+// NewHand creates a hand with the given wager and starting cards.\n+func NewHand(bet int, cards ...deck.Card) *Hand {\n+\th := &Hand{Bet: bet}\n+\tfor _, c := range cards {\n+\t\th.Add(c)\n+\t}\n+\treturn h\n+}\n+\n+// Add appends a card to the hand.\n+func (h *Hand) Add(c deck.Card) {\n+\th.Cards = append(h.Cards, c)\n+}\n+\n+// Total evaluates the hand with dynamic aces. Every ace starts at 11 and is\n+// demoted to 1 while the total exceeds 21. soft reports whether an ace is\n+// still being counted as 11.\n+func (h Hand) Total() (total int, soft bool) {\n+\taces := 0\n+\tfor _, c := range h.Cards {\n+\t\ttotal += c.Value()\n+\t\tif c.IsAce() {\n+\t\t\taces++\n+\t\t}\n+\t}\n+\tfor total > 21 && aces > 0 {\n+\t\ttotal -= 10\n+\t\taces--\n+\t}\n+\treturn total, aces > 0\n+}\n+\n+// Value returns only the numeric total.\n+func (h Hand) Value() int {\n+\tt, _ := h.Total()\n+\treturn t\n+}\n+\n+// IsSoft reports whether the hand contains an ace counted as 11.\n+func (h Hand) IsSoft() bool {\n+\t_, soft := h.Total()\n+\treturn soft\n+}\n+\n+// IsBust reports whether the total exceeds 21.\n+func (h Hand) IsBust() bool {\n+\treturn h.Value() > 21\n+}\n+\n+// IsBlackjack reports a natural: exactly two cards totalling 21 on a hand\n+// that was not produced by a split.\n+func (h Hand) IsBlackjack() bool {\n+\treturn len(h.Cards) == 2 && !h.FromSplit && h.Value() == 21\n+}\n+\n+// IsPair reports whether the hand is exactly two cards of equal blackjack\n+// value (so 10/J/Q/K pair with each other).\n+func (h Hand) IsPair() bool {\n+\treturn len(h.Cards) == 2 && h.Cards[0].Value() == h.Cards[1].Value()\n+}\n+\n+// CanDouble reports whether doubling is permitted under the rules.\n+func (h Hand) CanDouble(r Rules) bool {\n+\tif len(h.Cards) != 2 || h.Done || h.Doubled {\n+\t\treturn false\n+\t}\n+\tif h.FromSplit && !r.DoubleAfterSplit {\n+\t\treturn false\n+\t}\n+\treturn true\n+}\n+\n+// CanSplit reports whether this hand may be split given the number of hands\n+// the player currently holds.\n+func (h Hand) CanSplit(r Rules, numHands int) bool {\n+\treturn h.IsPair() && !h.Done && numHands < r.MaxSplitHands\n+}\n+\n+// Describe returns a short textual description, e.g. \"Soft 17\", \"Hard 20\",\n+// \"Blackjack\" or \"Bust\".\n+func (h Hand) Describe() string {\n+\tif len(h.Cards) == 0 {\n+\t\treturn \"Empty\"\n+\t}\n+\tif h.IsBlackjack() {\n+\t\treturn \"Blackjack\"\n+\t}\n+\ttotal, soft := h.Total()\n+\tif total > 21 {\n+\t\treturn fmt.Sprintf(\"Bust (%d)\", total)\n+\t}\n+\tif soft {\n+\t\treturn fmt.Sprintf(\"Soft %d\", total)\n+\t}\n+\treturn fmt.Sprintf(\"Hard %d\", total)\n+}\n+\n+// String lists the cards, e.g. \"10\u2660 A\u2665\".\n+func (h Hand) String() string {\n+\ts := \"\"\n+\tfor i, c := range h.Cards {\n+\t\tif i > 0 {\n+\t\t\ts += \" \"\n+\t\t}\n+\t\ts += c.String()\n+\t}\n+\treturn s\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 128,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 13,
+      "ts": 1791880111893,
+      "tokens_in": 44334,
+      "tokens_out": 4337,
+      "cost": 1.32038,
+      "cumulative_cost": 9.83262,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/game/round.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/game/round.go\n@@ -0,0 +1,276 @@\n+package game\n+\n+import (\n+\t\"errors\"\n+\t\"fmt\"\n+\n+\t\"blackjack/internal/deck\"\n+)\n+\n+// Errors returned by the round state machine.\n+var (\n+\tErrNoActiveHand  = errors.New(\"game: no active player hand\")\n+\tErrInvalidAction = errors.New(\"game: action not permitted for this hand\")\n+\tErrDealerPlayed  = errors.New(\"game: dealer has already played\")\n+\tErrDealerPending = errors.New(\"game: dealer has not played yet\")\n+)\n+\n+// Result is the settled outcome of one player hand.\n+type Result struct {\n+\tHand    *Hand\n+\tOutcome Outcome\n+\t// Net is the player's profit (positive) or loss (negative) on the hand.\n+\tNet int\n+}\n+\n+// Round is a single blackjack round for one player seat against the dealer.\n+type Round struct {\n+\tRules  Rules\n+\tShoe   *deck.Shoe\n+\tDealer *Hand\n+\tHands  []*Hand\n+\t// Active indexes the hand awaiting a decision, or -1 once the player\n+\t// phase is complete.\n+\tActive int\n+\n+\tdealerPlayed bool\n+}\n+\n+// NewRound validates the bet, deals the opening cards (player, dealer,\n+// player, dealer) and resolves naturals. If the shoe runs out mid-deal it is\n+// reshuffled transparently.\n+func NewRound(shoe *deck.Shoe, rules Rules, bet int) (*Round, error) {\n+\tif shoe == nil {\n+\t\treturn nil, errors.New(\"game: shoe is nil\")\n+\t}\n+\tif bet < rules.MinBet || bet > rules.MaxBet {\n+\t\treturn nil, fmt.Errorf(\"game: bet $%d outside allowed range $%d\u2013$%d\", bet, rules.MinBet, rules.MaxBet)\n+\t}\n+\tr := &Round{\n+\t\tRules:  rules,\n+\t\tShoe:   shoe,\n+\t\tDealer: &Hand{},\n+\t\tActive: 0,\n+\t}\n+\tplayer := &Hand{Bet: bet}\n+\tr.Hands = []*Hand{player}\n+\n+\tplayer.Add(r.draw())\n+\tr.Dealer.Add(r.draw())\n+\tplayer.Add(r.draw())\n+\tr.Dealer.Add(r.draw())\n+\n+\t// Player natural ends the player's turn immediately; dealer peek for a\n+\t// natural also ends the round before any further wagering.\n+\tif player.IsBlackjack() || r.Dealer.IsBlackjack() {\n+\t\tplayer.Done = true\n+\t}\n+\tr.advance()\n+\treturn r, nil\n+}\n+\n+// draw takes the next card, reshuffling if the shoe is exhausted.\n+func (r *Round) draw() deck.Card {\n+\tc, err := r.Shoe.Draw()\n+\tif err != nil {\n+\t\tr.Shoe.Shuffle()\n+\t\tc, _ = r.Shoe.Draw()\n+\t}\n+\treturn c\n+}\n+\n+// advance moves Active to the next hand that still needs a decision.\n+func (r *Round) advance() {\n+\tif r.Active < 0 {\n+\t\treturn\n+\t}\n+\tfor r.Active < len(r.Hands) && r.Hands[r.Active].Done {\n+\t\tr.Active++\n+\t}\n+\tif r.Active >= len(r.Hands) {\n+\t\tr.Active = -1\n+\t}\n+}\n+\n+// CurrentHand returns the hand awaiting a decision, or nil if none.\n+func (r *Round) CurrentHand() *Hand {\n+\tif r.Active < 0 || r.Active >= len(r.Hands) {\n+\t\treturn nil\n+\t}\n+\treturn r.Hands[r.Active]\n+}\n+\n+// PlayerTurnOver reports whether every player hand is finished.\n+func (r *Round) PlayerTurnOver() bool {\n+\treturn r.Active < 0\n+}\n+\n+// DealerUpcard returns the dealer's visible card.\n+func (r *Round) DealerUpcard() deck.Card {\n+\treturn r.Dealer.Cards[0]\n+}\n+\n+// DealerPlayed reports whether the dealer has completed their draw.\n+func (r *Round) DealerPlayed() bool {\n+\treturn r.dealerPlayed\n+}\n+\n+// AvailableActions lists the legal actions for the current hand.\n+func (r *Round) AvailableActions() []Action {\n+\th := r.CurrentHand()\n+\tif h == nil {\n+\t\treturn nil\n+\t}\n+\tacts := []Action{Hit, Stand}\n+\tif h.CanDouble(r.Rules) {\n+\t\tacts = append(acts, Double)\n+\t}\n+\tif h.CanSplit(r.Rules, len(r.Hands)) {\n+\t\tacts = append(acts, Split)\n+\t}\n+\treturn acts\n+}\n+\n+// Apply performs the given action on the current hand and advances the turn.\n+func (r *Round) Apply(a Action) error {\n+\th := r.CurrentHand()\n+\tif h == nil {\n+\t\treturn ErrNoActiveHand\n+\t}\n+\tswitch a {\n+\tcase Hit:\n+\t\th.Add(r.draw())\n+\t\tif h.Value() >= 21 {\n+\t\t\th.Done = true\n+\t\t}\n+\tcase Stand:\n+\t\th.Done = true\n+\tcase Double:\n+\t\tif !h.CanDouble(r.Rules) {\n+\t\t\treturn ErrInvalidAction\n+\t\t}\n+\t\th.Bet *= 2\n+\t\th.Doubled = true\n+\t\th.Add(r.draw())\n+\t\th.Done = true\n+\tcase Split:\n+\t\tif !h.CanSplit(r.Rules, len(r.Hands)) {\n+\t\t\treturn ErrInvalidAction\n+\t\t}\n+\t\tsecond := &Hand{Bet: h.Bet, FromSplit: true}\n+\t\tsecond.Add(h.Cards[1])\n+\t\th.Cards = h.Cards[:1]\n+\t\th.FromSplit = true\n+\n+\t\th.Add(r.draw())\n+\t\tsecond.Add(r.draw())\n+\n+\t\t// Insert the new hand immediately after the current one.\n+\t\tidx := r.Active + 1\n+\t\tr.Hands = append(r.Hands, nil)\n+\t\tcopy(r.Hands[idx+1:], r.Hands[idx:])\n+\t\tr.Hands[idx] = second\n+\n+\t\t// Split aces receive one card each and stand automatically.\n+\t\tif h.Cards[0].IsAce() {\n+\t\t\th.Done = true\n+\t\t\tsecond.Done = true\n+\t\t} else {\n+\t\t\tif h.Value() >= 21 {\n+\t\t\t\th.Done = true\n+\t\t\t}\n+\t\t\tif second.Value() >= 21 {\n+\t\t\t\tsecond.Done = true\n+\t\t\t}\n+\t\t}\n+\tdefault:\n+\t\treturn ErrInvalidAction\n+\t}\n+\tr.advance()\n+\treturn nil\n+}\n+\n+// PlayDealer completes the dealer's hand. The dealer only draws when at least\n+// one player hand is still live (not bust and not a natural). Under S17 the\n+// dealer stands on all 17s; under H17 the dealer hits soft 17.\n+func (r *Round) PlayDealer() error {\n+\tif !r.PlayerTurnOver() {\n+\t\treturn ErrNoActiveHand\n+\t}\n+\tif r.dealerPlayed {\n+\t\treturn ErrDealerPlayed\n+\t}\n+\tr.dealerPlayed = true\n+\tif !r.anyLiveHand() || r.Dealer.IsBlackjack() {\n+\t\treturn nil\n+\t}\n+\tfor {\n+\t\ttotal, soft := r.Dealer.Total()\n+\t\tif total < 17 {\n+\t\t\tr.Dealer.Add(r.draw())\n+\t\t\tcontinue\n+\t\t}\n+\t\tif total == 17 && soft && r.Rules.DealerHitsSoft17 {\n+\t\t\tr.Dealer.Add(r.draw())\n+\t\t\tcontinue\n+\t\t}\n+\t\treturn nil\n+\t}\n+}\n+\n+// anyLiveHand reports whether any player hand still needs to be compared\n+// against the dealer's final total.\n+func (r *Round) anyLiveHand() bool {\n+\tfor _, h := range r.Hands {\n+\t\tif !h.IsBust() && !h.IsBlackjack() {\n+\t\t\treturn true\n+\t\t}\n+\t}\n+\treturn false\n+}\n+\n+// Settle computes the outcome and net payout for every player hand. It must\n+// be called after PlayDealer.\n+func (r *Round) Settle() ([]Result, error) {\n+\tif !r.dealerPlayed {\n+\t\treturn nil, ErrDealerPending\n+\t}\n+\tresults := make([]Result, 0, len(r.Hands))\n+\tdealerBJ := r.Dealer.IsBlackjack()\n+\tdealerTotal := r.Dealer.Value()\n+\tdealerBust := dealerTotal > 21\n+\n+\tfor _, h := range r.Hands {\n+\t\tres := Result{Hand: h}\n+\t\tplayerTotal := h.Value()\n+\t\tswitch {\n+\t\tcase h.IsBlackjack() && dealerBJ:\n+\t\t\tres.Outcome, res.Net = Push, 0\n+\t\tcase h.IsBlackjack():\n+\t\t\tres.Outcome, res.Net = Blackjack, r.Rules.BlackjackWinnings(h.Bet)\n+\t\tcase h.IsBust():\n+\t\t\tres.Outcome, res.Net = Loss, -h.Bet\n+\t\tcase dealerBJ:\n+\t\t\tres.Outcome, res.Net = Loss, -h.Bet\n+\t\tcase dealerBust:\n+\t\t\tres.Outcome, res.Net = Win, h.Bet\n+\t\tcase playerTotal > dealerTotal:\n+\t\t\tres.Outcome, res.Net = Win, h.Bet\n+\t\tcase playerTotal < dealerTotal:\n+\t\t\tres.Outcome, res.Net = Loss, -h.Bet\n+\t\tdefault:\n+\t\t\tres.Outcome, res.Net = Push, 0\n+\t\t}\n+\t\tresults = append(results, res)\n+\t}\n+\treturn results, nil\n+}\n+\n+// TotalWagered returns the sum of all bets on the table (after doubles/splits).\n+func (r *Round) TotalWagered() int {\n+\tsum := 0\n+\tfor _, h := range r.Hands {\n+\t\tsum += h.Bet\n+\t}\n+\treturn sum\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 276,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 14,
+      "ts": 1791880159581,
+      "tokens_in": 49886,
+      "tokens_out": 9729,
+      "cost": 1.97062,
+      "cumulative_cost": 11.80324,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/game/game_test.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/game/game_test.go\n@@ -0,0 +1,599 @@\n+package game\n+\n+import (\n+\t\"errors\"\n+\t\"testing\"\n+\n+\t\"blackjack/internal/deck\"\n+)\n+\n+func c(r deck.Rank) deck.Card { return deck.Card{Suit: deck.Spades, Rank: r} }\n+\n+func hand(ranks ...deck.Rank) Hand {\n+\th := Hand{}\n+\tfor _, r := range ranks {\n+\t\th.Add(c(r))\n+\t}\n+\treturn h\n+}\n+\n+// scripted builds a round from an explicit dealing order:\n+// player1, dealer1, player2, dealer2, then subsequent draws.\n+func scripted(t *testing.T, bet int, ranks ...deck.Rank) *Round {\n+\tt.Helper()\n+\tcards := make([]deck.Card, len(ranks))\n+\tfor i, r := range ranks {\n+\t\tcards[i] = c(r)\n+\t}\n+\tr, err := NewRound(deck.NewShoeFromCards(cards), DefaultRules(), bet)\n+\tif err != nil {\n+\t\tt.Fatalf(\"NewRound: %v\", err)\n+\t}\n+\treturn r\n+}\n+\n+func TestEnumStrings(t *testing.T) {\n+\tif Hit.String() != \"Hit\" || Stand.String() != \"Stand\" || Double.String() != \"Double\" || Split.String() != \"Split\" {\n+\t\tt.Error(\"Action.String mismatch\")\n+\t}\n+\tif Action(99).String() != \"Unknown\" {\n+\t\tt.Error(\"unknown action\")\n+\t}\n+\tif Loss.String() != \"Loss\" || Push.String() != \"Push\" || Win.String() != \"Win\" || Blackjack.String() != \"Blackjack\" {\n+\t\tt.Error(\"Outcome.String mismatch\")\n+\t}\n+\tif Outcome(99).String() != \"Unknown\" {\n+\t\tt.Error(\"unknown outcome\")\n+\t}\n+}\n+\n+func TestDefaultRules(t *testing.T) {\n+\tr := DefaultRules()\n+\tif r.DealerHitsSoft17 {\n+\t\tt.Error(\"default should be S17\")\n+\t}\n+\tif r.BlackjackPayout != 1.5 {\n+\t\tt.Error(\"default payout should be 3:2\")\n+\t}\n+\tif r.BlackjackWinnings(10) != 15 || r.BlackjackWinnings(100) != 150 {\n+\t\tt.Error(\"BlackjackWinnings mismatch\")\n+\t}\n+\tif r.MinBet != 10 || r.MaxBet != 500 || r.MaxSplitHands != 2 || !r.DoubleAfterSplit {\n+\t\tt.Error(\"default rules mismatch\")\n+\t}\n+}\n+\n+func TestHandTotals(t *testing.T) {\n+\ttests := []struct {\n+\t\tname  string\n+\t\tranks []deck.Rank\n+\t\ttotal int\n+\t\tsoft  bool\n+\t}{\n+\t\t{\"hard 20\", []deck.Rank{deck.King, deck.Queen}, 20, false},\n+\t\t{\"soft 17\", []deck.Rank{deck.Ace, deck.Six}, 17, true},\n+\t\t{\"hard 17 after demotion\", []deck.Rank{deck.Ace, deck.Six, deck.Ten}, 17, false},\n+\t\t{\"soft 12 two aces\", []deck.Rank{deck.Ace, deck.Ace}, 12, true},\n+\t\t{\"three aces soft 13\", []deck.Rank{deck.Ace, deck.Ace, deck.Ace}, 13, true},\n+\t\t{\"blackjack soft 21\", []deck.Rank{deck.Ace, deck.King}, 21, true},\n+\t\t{\"hard 21\", []deck.Rank{deck.Seven, deck.Seven, deck.Seven}, 21, false},\n+\t\t{\"bust\", []deck.Rank{deck.King, deck.Queen, deck.Five}, 25, false},\n+\t\t{\"soft 20 with multiple aces\", []deck.Rank{deck.Ace, deck.Ace, deck.Eight}, 20, true},\n+\t\t{\"empty\", nil, 0, false},\n+\t}\n+\tfor _, tt := range tests {\n+\t\th := hand(tt.ranks...)\n+\t\tgot, soft := h.Total()\n+\t\tif got != tt.total || soft != tt.soft {\n+\t\t\tt.Errorf(\"%s: Total() = (%d, %v), want (%d, %v)\", tt.name, got, soft, tt.total, tt.soft)\n+\t\t}\n+\t\tif h.Value() != tt.total {\n+\t\t\tt.Errorf(\"%s: Value() = %d\", tt.name, h.Value())\n+\t\t}\n+\t\tif h.IsSoft() != tt.soft {\n+\t\t\tt.Errorf(\"%s: IsSoft() = %v\", tt.name, h.IsSoft())\n+\t\t}\n+\t}\n+}\n+\n+func TestHandPredicates(t *testing.T) {\n+\tbj := hand(deck.Ace, deck.King)\n+\tif !bj.IsBlackjack() {\n+\t\tt.Error(\"A-K should be blackjack\")\n+\t}\n+\tsplitBJ := hand(deck.Ace, deck.King)\n+\tsplitBJ.FromSplit = true\n+\tif splitBJ.IsBlackjack() {\n+\t\tt.Error(\"split 21 should not be blackjack\")\n+\t}\n+\tif hand(deck.Seven, deck.Seven, deck.Seven).IsBlackjack() {\n+\t\tt.Error(\"three-card 21 is not blackjack\")\n+\t}\n+\tif !hand(deck.King, deck.Queen, deck.Five).IsBust() {\n+\t\tt.Error(\"25 should be bust\")\n+\t}\n+\tif hand(deck.King, deck.Ace).IsBust() {\n+\t\tt.Error(\"21 is not bust\")\n+\t}\n+\tif !hand(deck.Eight, deck.Eight).IsPair() {\n+\t\tt.Error(\"8-8 is a pair\")\n+\t}\n+\tif !hand(deck.King, deck.Ten).IsPair() {\n+\t\tt.Error(\"K-10 is a value pair\")\n+\t}\n+\tif hand(deck.Eight, deck.Nine).IsPair() {\n+\t\tt.Error(\"8-9 is not a pair\")\n+\t}\n+\tif hand(deck.Eight, deck.Eight, deck.Eight).IsPair() {\n+\t\tt.Error(\"three cards never a pair\")\n+\t}\n+}\n+\n+func TestCanDoubleCanSplit(t *testing.T) {\n+\trules := DefaultRules()\n+\th := hand(deck.Five, deck.Six)\n+\tif !h.CanDouble(rules) {\n+\t\tt.Error(\"two-card hand should be able to double\")\n+\t}\n+\th3 := hand(deck.Five, deck.Six, deck.Two)\n+\tif h3.CanDouble(rules) {\n+\t\tt.Error(\"three-card hand cannot double\")\n+\t}\n+\tdone := hand(deck.Five, deck.Six)\n+\tdone.Done = true\n+\tif done.CanDouble(rules) {\n+\t\tt.Error(\"done hand cannot double\")\n+\t}\n+\tdbl := hand(deck.Five, deck.Six)\n+\tdbl.Doubled = true\n+\tif dbl.CanDouble(rules) {\n+\t\tt.Error(\"already doubled hand cannot double\")\n+\t}\n+\tfs := hand(deck.Five, deck.Six)\n+\tfs.FromSplit = true\n+\tif !fs.CanDouble(rules) {\n+\t\tt.Error(\"DAS allowed by default\")\n+\t}\n+\tnoDAS := rules\n+\tnoDAS.DoubleAfterSplit = false\n+\tif fs.CanDouble(noDAS) {\n+\t\tt.Error(\"DAS disabled should block double\")\n+\t}\n+\n+\tpair := hand(deck.Eight, deck.Eight)\n+\tif !pair.CanSplit(rules, 1) {\n+\t\tt.Error(\"pair with one hand should split\")\n+\t}\n+\tif pair.CanSplit(rules, 2) {\n+\t\tt.Error(\"max hands reached should block split\")\n+\t}\n+\tpairDone := pair\n+\tpairDone.Done = true\n+\tif pairDone.CanSplit(rules, 1) {\n+\t\tt.Error(\"done hand cannot split\")\n+\t}\n+\tif hand(deck.Eight, deck.Nine).CanSplit(rules, 1) {\n+\t\tt.Error(\"non-pair cannot split\")\n+\t}\n+}\n+\n+func TestDescribeAndString(t *testing.T) {\n+\ttests := []struct {\n+\t\th    Hand\n+\t\twant string\n+\t}{\n+\t\t{hand(), \"Empty\"},\n+\t\t{hand(deck.Ace, deck.King), \"Blackjack\"},\n+\t\t{hand(deck.Ace, deck.Six), \"Soft 17\"},\n+\t\t{hand(deck.Ten, deck.Six), \"Hard 16\"},\n+\t\t{hand(deck.Ten, deck.Six, deck.Nine), \"Bust (25)\"},\n+\t}\n+\tfor _, tt := range tests {\n+\t\tif got := tt.h.Describe(); got != tt.want {\n+\t\t\tt.Errorf(\"Describe() = %q, want %q\", got, tt.want)\n+\t\t}\n+\t}\n+\tif s := hand(deck.Ten, deck.Ace).String(); s != \"10\u2660 A\u2660\" {\n+\t\tt.Errorf(\"String() = %q\", s)\n+\t}\n+\tnh := NewHand(25, c(deck.Two), c(deck.Three))\n+\tif nh.Bet != 25 || len(nh.Cards) != 2 {\n+\t\tt.Error(\"NewHand mismatch\")\n+\t}\n+}\n+\n+func TestNewRoundValidation(t *testing.T) {\n+\trules := DefaultRules()\n+\tshoe := deck.NewShoeFromCards([]deck.Card{c(deck.Two), c(deck.Three), c(deck.Four), c(deck.Five)})\n+\tif _, err := NewRound(shoe, rules, 5); err == nil {\n+\t\tt.Error(\"bet below min should fail\")\n+\t}\n+\tif _, err := NewRound(shoe, rules, 501); err == nil {\n+\t\tt.Error(\"bet above max should fail\")\n+\t}\n+\tif _, err := NewRound(nil, rules, 10); err == nil {\n+\t\tt.Error(\"nil shoe should fail\")\n+\t}\n+}\n+\n+func TestDealOrderAndUpcard(t *testing.T) {\n+\tr := scripted(t, 10, deck.Two, deck.Nine, deck.Three, deck.King)\n+\tp := r.Hands[0]\n+\tif p.Cards[0] != c(deck.Two) || p.Cards[1] != c(deck.Three) {\n+\t\tt.Errorf(\"player cards = %v\", p.Cards)\n+\t}\n+\tif r.Dealer.Cards[0] != c(deck.Nine) || r.Dealer.Cards[1] != c(deck.King) {\n+\t\tt.Errorf(\"dealer cards = %v\", r.Dealer.Cards)\n+\t}\n+\tif r.DealerUpcard() != c(deck.Nine) {\n+\t\tt.Error(\"upcard mismatch\")\n+\t}\n+\tif r.PlayerTurnOver() {\n+\t\tt.Error(\"player should still be active\")\n+\t}\n+\tif r.CurrentHand() != p {\n+\t\tt.Error(\"current hand should be player's first hand\")\n+\t}\n+\tif r.TotalWagered() != 10 {\n+\t\tt.Error(\"TotalWagered mismatch\")\n+\t}\n+}\n+\n+func TestPlayerBlackjackPays3to2(t *testing.T) {\n+\tr := scripted(t, 100, deck.Ace, deck.Nine, deck.King, deck.Seven)\n+\tif !r.PlayerTurnOver() {\n+\t\tt.Fatal(\"natural should end player turn\")\n+\t}\n+\tif err := r.PlayDealer(); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif len(r.Dealer.Cards) != 2 {\n+\t\tt.Error(\"dealer should not draw against a lone natural\")\n+\t}\n+\tres, err := r.Settle()\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif res[0].Outcome != Blackjack || res[0].Net != 150 {\n+\t\tt.Errorf(\"result = %+v, want Blackjack +150\", res[0])\n+\t}\n+}\n+\n+func TestBlackjackPushesBlackjack(t *testing.T) {\n+\tr := scripted(t, 10, deck.Ace, deck.King, deck.King, deck.Ace)\n+\tif !r.PlayerTurnOver() {\n+\t\tt.Fatal(\"round should be over\")\n+\t}\n+\t_ = r.PlayDealer()\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Push || res[0].Net != 0 {\n+\t\tt.Errorf(\"result = %+v, want Push\", res[0])\n+\t}\n+}\n+\n+func TestDealerBlackjackBeatsPlayer(t *testing.T) {\n+\tr := scripted(t, 10, deck.Ten, deck.Ace, deck.Nine, deck.King)\n+\tif !r.PlayerTurnOver() {\n+\t\tt.Fatal(\"dealer natural should end the round\")\n+\t}\n+\t_ = r.PlayDealer()\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Loss || res[0].Net != -10 {\n+\t\tt.Errorf(\"result = %+v, want Loss -10\", res[0])\n+\t}\n+}\n+\n+func TestHitStandWin(t *testing.T) {\n+\t// Player 5+6, dealer 10+7 (17). Player hits 9 -> 20, stands, wins.\n+\tr := scripted(t, 10, deck.Five, deck.Ten, deck.Six, deck.Seven, deck.Nine)\n+\tif err := r.Apply(Hit); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif r.Hands[0].Value() != 20 || r.Hands[0].Done {\n+\t\tt.Fatalf(\"after hit: value %d done %v\", r.Hands[0].Value(), r.Hands[0].Done)\n+\t}\n+\tif err := r.Apply(Stand); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif !r.PlayerTurnOver() {\n+\t\tt.Fatal(\"turn should be over\")\n+\t}\n+\tif err := r.PlayDealer(); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tres, err := r.Settle()\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif res[0].Outcome != Win || res[0].Net != 10 {\n+\t\tt.Errorf(\"result = %+v, want Win +10\", res[0])\n+\t}\n+}\n+\n+func TestHitToBustLoses(t *testing.T) {\n+\tr := scripted(t, 10, deck.Ten, deck.Six, deck.Six, deck.Ten, deck.Nine)\n+\tif err := r.Apply(Hit); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif !r.Hands[0].IsBust() || !r.PlayerTurnOver() {\n+\t\tt.Fatal(\"hand should be bust and turn over\")\n+\t}\n+\t_ = r.PlayDealer()\n+\tif len(r.Dealer.Cards) != 2 {\n+\t\tt.Error(\"dealer should not draw when player bust\")\n+\t}\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Loss || res[0].Net != -10 {\n+\t\tt.Errorf(\"result = %+v\", res[0])\n+\t}\n+}\n+\n+func TestHitTo21AutoStands(t *testing.T) {\n+\tr := scripted(t, 10, deck.Ten, deck.Six, deck.Five, deck.Ten, deck.Six)\n+\t_ = r.Apply(Hit)\n+\tif r.Hands[0].Value() != 21 || !r.PlayerTurnOver() {\n+\t\tt.Error(\"21 should auto-complete the hand\")\n+\t}\n+}\n+\n+func TestPush(t *testing.T) {\n+\tr := scripted(t, 10, deck.Ten, deck.Ten, deck.Eight, deck.Eight)\n+\t_ = r.Apply(Stand)\n+\t_ = r.PlayDealer()\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Push || res[0].Net != 0 {\n+\t\tt.Errorf(\"result = %+v, want Push\", res[0])\n+\t}\n+}\n+\n+func TestLossToHigherDealer(t *testing.T) {\n+\tr := scripted(t, 10, deck.Ten, deck.Ten, deck.Seven, deck.Nine)\n+\t_ = r.Apply(Stand)\n+\t_ = r.PlayDealer()\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Loss || res[0].Net != -10 {\n+\t\tt.Errorf(\"result = %+v, want Loss\", res[0])\n+\t}\n+}\n+\n+func TestDealerBustWins(t *testing.T) {\n+\t// Player 10+8, dealer 10+6 draws 10 -> bust.\n+\tr := scripted(t, 10, deck.Ten, deck.Ten, deck.Eight, deck.Six, deck.Ten)\n+\t_ = r.Apply(Stand)\n+\t_ = r.PlayDealer()\n+\tif !r.Dealer.IsBust() {\n+\t\tt.Fatal(\"dealer should bust\")\n+\t}\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Win || res[0].Net != 10 {\n+\t\tt.Errorf(\"result = %+v, want Win\", res[0])\n+\t}\n+}\n+\n+func TestDealerStandsSoft17(t *testing.T) {\n+\t// Player 10+8, dealer A+6 (soft 17) must stand under S17.\n+\tr := scripted(t, 10, deck.Ten, deck.Ace, deck.Eight, deck.Six, deck.Ten)\n+\t_ = r.Apply(Stand)\n+\t_ = r.PlayDealer()\n+\tif len(r.Dealer.Cards) != 2 || r.Dealer.Value() != 17 {\n+\t\tt.Errorf(\"S17 dealer should stand on soft 17, got %v\", r.Dealer.Cards)\n+\t}\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Win {\n+\t\tt.Errorf(\"18 vs 17 should win, got %v\", res[0].Outcome)\n+\t}\n+}\n+\n+func TestDealerHitsSoft17WhenH17(t *testing.T) {\n+\tcards := []deck.Card{c(deck.Ten), c(deck.Ace), c(deck.Eight), c(deck.Six), c(deck.Four)}\n+\trules := DefaultRules()\n+\trules.DealerHitsSoft17 = true\n+\tr, err := NewRound(deck.NewShoeFromCards(cards), rules, 10)\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\t_ = r.Apply(Stand)\n+\t_ = r.PlayDealer()\n+\tif len(r.Dealer.Cards) != 3 || r.Dealer.Value() != 21 {\n+\t\tt.Errorf(\"H17 dealer should hit soft 17, got %v\", r.Dealer.Cards)\n+\t}\n+}\n+\n+func TestDealerHitsBelow17(t *testing.T) {\n+\t// Dealer 2+3 draws 5, 4, 3 -> 17.\n+\tr := scripted(t, 10, deck.Ten, deck.Two, deck.Nine, deck.Three, deck.Five, deck.Four, deck.Three)\n+\t_ = r.Apply(Stand)\n+\t_ = r.PlayDealer()\n+\tif r.Dealer.Value() != 17 || len(r.Dealer.Cards) != 5 {\n+\t\tt.Errorf(\"dealer = %v (%d)\", r.Dealer.Cards, r.Dealer.Value())\n+\t}\n+}\n+\n+func TestDoubleDown(t *testing.T) {\n+\t// Player 5+6 doubles, receives 10 -> 21; dealer 10+8 = 18.\n+\tr := scripted(t, 50, deck.Five, deck.Ten, deck.Six, deck.Eight, deck.Ten)\n+\tacts := r.AvailableActions()\n+\tif len(acts) != 3 || acts[2] != Double {\n+\t\tt.Errorf(\"AvailableActions = %v\", acts)\n+\t}\n+\tif err := r.Apply(Double); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\th := r.Hands[0]\n+\tif !h.Doubled || h.Bet != 100 || len(h.Cards) != 3 || !h.Done {\n+\t\tt.Errorf(\"after double: %+v\", h)\n+\t}\n+\tif !r.PlayerTurnOver() {\n+\t\tt.Error(\"double should end the turn\")\n+\t}\n+\tif r.TotalWagered() != 100 {\n+\t\tt.Error(\"TotalWagered should reflect doubled bet\")\n+\t}\n+\t_ = r.PlayDealer()\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Win || res[0].Net != 100 {\n+\t\tt.Errorf(\"result = %+v, want Win +100\", res[0])\n+\t}\n+}\n+\n+func TestDoubleBustLosesDouble(t *testing.T) {\n+\tr := scripted(t, 10, deck.Ten, deck.Ten, deck.Six, deck.Eight, deck.Ten)\n+\t_ = r.Apply(Double)\n+\t_ = r.PlayDealer()\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Loss || res[0].Net != -20 {\n+\t\tt.Errorf(\"result = %+v, want Loss -20\", res[0])\n+\t}\n+}\n+\n+func TestDoubleNotAllowedAfterHit(t *testing.T) {\n+\tr := scripted(t, 10, deck.Two, deck.Ten, deck.Three, deck.Eight, deck.Two, deck.Five)\n+\t_ = r.Apply(Hit)\n+\tif err := r.Apply(Double); !errors.Is(err, ErrInvalidAction) {\n+\t\tt.Errorf(\"err = %v, want ErrInvalidAction\", err)\n+\t}\n+}\n+\n+func TestSplitPair(t *testing.T) {\n+\t// Player 8+8, dealer 10+7. Split: hand1 gets 10 (18), hand2 gets 3 (11).\n+\t// Hand1 stands; hand2 hits 9 -> 20, stands. Dealer 17.\n+\tr := scripted(t, 10, deck.Eight, deck.Ten, deck.Eight, deck.Seven, deck.Ten, deck.Three, deck.Nine)\n+\tacts := r.AvailableActions()\n+\tif len(acts) != 4 || acts[3] != Split {\n+\t\tt.Errorf(\"AvailableActions = %v\", acts)\n+\t}\n+\tif err := r.Apply(Split); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif len(r.Hands) != 2 {\n+\t\tt.Fatalf(\"hands = %d, want 2\", len(r.Hands))\n+\t}\n+\th1, h2 := r.Hands[0], r.Hands[1]\n+\tif !h1.FromSplit || !h2.FromSplit {\n+\t\tt.Error(\"both hands should be marked FromSplit\")\n+\t}\n+\tif h1.Value() != 18 || h2.Value() != 11 {\n+\t\tt.Errorf(\"values = %d, %d\", h1.Value(), h2.Value())\n+\t}\n+\tif h1.Bet != 10 || h2.Bet != 10 || r.TotalWagered() != 20 {\n+\t\tt.Error(\"split bets mismatch\")\n+\t}\n+\tif r.CurrentHand() != h1 {\n+\t\tt.Error(\"first hand should be active\")\n+\t}\n+\t// Cannot split again (max 2 hands).\n+\tif h1.CanSplit(r.Rules, len(r.Hands)) {\n+\t\tt.Error(\"should not allow a third hand\")\n+\t}\n+\t_ = r.Apply(Stand)\n+\tif r.CurrentHand() != h2 {\n+\t\tt.Error(\"second hand should now be active\")\n+\t}\n+\t_ = r.Apply(Hit)\n+\tif h2.Value() != 20 {\n+\t\tt.Errorf(\"h2 = %d\", h2.Value())\n+\t}\n+\t_ = r.Apply(Stand)\n+\tif !r.PlayerTurnOver() {\n+\t\tt.Error(\"turn should be over\")\n+\t}\n+\t_ = r.PlayDealer()\n+\tres, _ := r.Settle()\n+\tif len(res) != 2 {\n+\t\tt.Fatalf(\"results = %d\", len(res))\n+\t}\n+\tif res[0].Outcome != Win || res[1].Outcome != Win {\n+\t\tt.Errorf(\"results = %+v\", res)\n+\t}\n+}\n+\n+func TestSplitAcesOneCardEach(t *testing.T) {\n+\t// A+A vs dealer 10+7. Split -> each ace gets one card and stands.\n+\tr := scripted(t, 10, deck.Ace, deck.Ten, deck.Ace, deck.Seven, deck.King, deck.Five)\n+\tif err := r.Apply(Split); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif !r.PlayerTurnOver() {\n+\t\tt.Fatal(\"split aces should auto-stand\")\n+\t}\n+\tif r.Hands[0].IsBlackjack() || r.Hands[1].IsBlackjack() {\n+\t\tt.Error(\"split 21 is not a natural\")\n+\t}\n+\t_ = r.PlayDealer()\n+\tres, _ := r.Settle()\n+\tif res[0].Outcome != Win || res[0].Net != 10 {\n+\t\tt.Errorf(\"hand1 = %+v, want plain Win +10\", res[0])\n+\t}\n+\tif res[1].Outcome != Loss {\n+\t\tt.Errorf(\"hand2 = %+v, want Loss (16 vs 17)\", res[1])\n+\t}\n+}\n+\n+func TestSplitThenSecondHandHits21(t *testing.T) {\n+\t// 9+9 split: hand1 gets 2 (11), hand2 gets Q (19); hand1 hits K -> 21 auto-done.\n+\tr := scripted(t, 10, deck.Nine, deck.Five, deck.Nine, deck.Ten, deck.Two, deck.Queen, deck.King, deck.Two)\n+\t_ = r.Apply(Split)\n+\t_ = r.Apply(Hit)\n+\tif r.Hands[0].Value() != 21 || !r.Hands[0].Done {\n+\t\tt.Error(\"hand1 should be 21 and done\")\n+\t}\n+\tif r.CurrentHand() != r.Hands[1] {\n+\t\tt.Error(\"hand2 should be active\")\n+\t}\n+}\n+\n+func TestSplitAutoDoneOn21AfterSplit(t *testing.T) {\n+\t// 10+10 split: hand1 gets A (21 done), hand2 gets A (21 done).\n+\tr := scripted(t, 10, deck.Ten, deck.Five, deck.King, deck.Ten, deck.Ace, deck.Ace, deck.Two)\n+\t_ = r.Apply(Split)\n+\tif !r.PlayerTurnOver() {\n+\t\tt.Error(\"both split hands at 21 should finish the turn\")\n+\t}\n+}\n+\n+func TestSplitNotAllowedOnNonPair(t *testing.T) {\n+\tr := scripted(t, 10, deck.Eight, deck.Ten, deck.Nine, deck.Seven)\n+\tif err := r.Apply(Split); !errors.Is(err, ErrInvalidAction) {\n+\t\tt.Errorf(\"err = %v\", err)\n+\t}\n+}\n+\n+func TestErrorsAndOrdering(t *testing.T) {\n+\tr := scripted(t, 10, deck.Ten, deck.Ten, deck.Eight, deck.Eight)\n+\tif err := r.Apply(Action(42)); !errors.Is(err, ErrInvalidAction) {\n+\t\tt.Errorf(\"unknown action err = %v\", err)\n+\t}\n+\tif err := r.PlayDealer(); !errors.Is(err, ErrNoActiveHand) {\n+\t\tt.Errorf(\"PlayDealer before turn over err = %v\", err)\n+\t}\n+\tif _, err := r.Settle(); !errors.Is(err, ErrDealerPending) {\n+\t\tt.Errorf(\"Settle before dealer err = %v\", err)\n+\t}\n+\t_ = r.Apply(Stand)\n+\tif err := r.Apply(Hit); !errors.Is(err, ErrNoActiveHand) {\n+\t\tt.Errorf(\"Apply after turn over err = %v\", err)\n+\t}\n+\tif r.AvailableActions() != nil {\n+\t\tt.Error(\"no actions when no active hand\")\n+\t}\n+\tif err := r.PlayDealer(); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif !r.DealerPlayed() {\n+\t\tt.Error(\"DealerPlayed should be true\")\n+\t}\n+\tif err := r.PlayDealer(); !errors.Is(err, ErrDealerPlayed) {\n+\t\tt.Errorf(\"second PlayDealer err = %v\", err)\n+\t}\n+}\n+\n+func TestDrawReshufflesWhenShoeExhausted(t *testing.T) {\n+\t// Only 4 cards; player hits forcing a reshuffle of the scripted shoe.\n+\tr := scripted(t, 10, deck.Two, deck.Ten, deck.Three, deck.Seven)\n+\tif err := r.Apply(Hit); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif len(r.Hands[0].Cards) != 3 {\n+\t\tt.Error(\"hit should still deliver a card after reshuffle\")\n+\t}\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 599,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 15,
+      "ts": 1791880250004,
+      "tokens_in": 60832,
+      "tokens_out": 105,
+      "cost": 1.22714,
+      "cumulative_cost": 13.030380000000001,
+      "actions": [
+        {
+          "tool": "execute_command",
+          "command": "go test -cover ./internal/game/"
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 16,
+      "ts": 1791880259249,
+      "tokens_in": 62179,
+      "tokens_out": 851,
+      "cost": 1.32868,
+      "cumulative_cost": 14.359060000000001,
+      "actions": [
+        {
+          "tool": "updateTodoList",
+          "todos": [
+            {
+              "id": "3cdcc2b5443ed6443e6e9e8fd0e964e0",
+              "content": "Initialize module: go.mod (module blackjack, go 1.26)",
+              "status": "completed"
+            },
+            {
+              "id": "10b65d3746a45439ad32714fc816e382",
+              "content": "internal/deck: Card (Suit/Rank/Value/String), Shoe 1\u20138 decks, Fisher-Yates Shuffle, cut-card NeedsShuffle, NewShoeFromCards test helper",
+              "status": "completed"
+            },
+            {
+              "id": "0df39d5b4f327981bd7417a56da3af4d",
+              "content": "internal/deck: unit tests (values, deck composition, permutation, seed determinism, cut card, empty shoe error)",
+              "status": "completed"
+            },
+            {
+              "id": "54c7ce0053833268ee3ff5544d841b18",
+              "content": "internal/game: Hand with dynamic-ace Total (soft/hard), IsBust/IsBlackjack/IsPair/CanDouble/CanSplit/Describe; Action & Outcome enums; Rules (S17, 3:2, max 2 split hands, DAS, bet 10\u2013500)",
+              "status": "completed"
+            },
+            {
+              "id": "66ae41f2b9d97898d456ea735257bbf6",
+              "content": "internal/game: Round (deal, Apply Hit/Stand/Double/Split, PlayDealer S17, Settle with 3:2 payout)",
+              "status": "completed"
+            },
+            {
+              "id": "30bb256827bd5eefcfe165ba448b79e0",
+              "content": "internal/game: unit tests via scripted shoe (totals, naturals, dealer S17, every outcome, double, split into 2 hands)",
+              "status": "completed"
+            },
+            {
+              "id": "d6231ae11466bd578456214881be64d3",
+              "content": "internal/strategy: hard/soft/pair matrices + Recommend with double/split fallbacks",
+              "status": "in_progress"
+            },
+            {
+              "id": "9d8dabbd0db632fd30268efcdbaaab38",
+              "content": "internal/strategy: table-driven unit tests covering each matrix region and fallbacks",
+              "status": "pending"
+            },
+            {
+              "id": "87a1477d21d7777064a0f88703df31ef",
+              "content": "internal/ui: RenderCard/RenderHand/RenderTable/FormatMoney with ANSI color toggle",
+              "status": "pending"
+            },
+            {
+              "id": "0cfdbf1fd608bc35817d05c1f4c903e8",
+              "content": "internal/ui: unit tests for rendering and money formatting",
+              "status": "pending"
+            },
+            {
+              "id": "deb2f5697cb288f326ae08c902118bdb",
+              "content": "internal/sim: Monte Carlo runner using Basic Strategy, Stats (W/L/P %, EV %, duration), Summary table; tests",
+              "status": "pending"
+            },
+            {
+              "id": "f7c01bddf5693b6b86dda1b8e324024b",
+              "content": "internal/play: interactive loop over io.Reader/io.Writer with bet prompt, actions, --hint advice; tests with scripted stdin",
+              "status": "pending"
+            },
+            {
+              "id": "f86d557d02e499359e2d65f38277ec4c",
+              "content": "main.go: flags (-sim, -n, -hint, -decks, -seed, -bet, -no-color), run() dispatcher; main_test.go",
+              "status": "pending"
+            },
+            {
+              "id": "bef4fcebaf1f89e5504de9a57968e0ee",
+              "content": "Verify: go build ./... && go vet ./...",
+              "status": "pending"
+            },
+            {
+              "id": "36c82d397b989eff1995d50e9f818e32",
+              "content": "Verify: go test -v -cover ./... passes, every package and overall \u2265 80%",
+              "status": "pending"
+            },
+            {
+              "id": "656e1000ee71f5c9398da1c90d4e531b",
+              "content": "Verify: go test -race ./... passes",
+              "status": "pending"
+            },
+            {
+              "id": "b258486f7446eaaf58a0ec87d90ae01f",
+              "content": "Verify: go run main.go -sim -n 10000 prints summary table end-to-end",
+              "status": "pending"
+            },
+            {
+              "id": "db52d1cb7b43929832a192ba445cca37",
+              "content": "Verify: play mode smoke test with piped stdin and --hint",
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 17,
+      "ts": 1791880271224,
+      "tokens_in": 64193,
+      "tokens_out": 1742,
+      "cost": 1.45806,
+      "cumulative_cost": 15.817120000000001,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/strategy/tables.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/strategy/tables.go\n@@ -0,0 +1,73 @@\n+package strategy\n+\n+// Table cells. Each row is indexed by dealer upcard value 2..11 (A = 11),\n+// i.e. column 0 is dealer 2 and column 9 is dealer Ace.\n+//\n+//\tH  hit\n+//\tS  stand\n+//\tD  double if allowed, otherwise hit\n+//\td  double if allowed, otherwise stand\n+//\tP  split\n+const (\n+\tcHit         = 'H'\n+\tcStand       = 'S'\n+\tcDoubleHit   = 'D'\n+\tcDoubleStand = 'd'\n+\tcSplit       = 'P'\n+)\n+\n+// numCols is the number of dealer upcard columns (2 through Ace).\n+const numCols = 10\n+\n+// hardTable is indexed by hard total 5..21 (rows 0..16).\n+// Basic strategy for 4\u20138 decks, dealer stands on soft 17, double after split.\n+var hardTable = map[int]string{\n+\t//     2 3 4 5 6 7 8 9 T A\n+\t5:  \"HHHHHHHHHH\",\n+\t6:  \"HHHHHHHHHH\",\n+\t7:  \"HHHHHHHHHH\",\n+\t8:  \"HHHHHHHHHH\",\n+\t9:  \"HDDDDHHHHH\",\n+\t10: \"DDDDDDDDHH\",\n+\t11: \"DDDDDDDDDH\",\n+\t12: \"HHSSSHHHHH\",\n+\t13: \"SSSSSHHHHH\",\n+\t14: \"SSSSSHHHHH\",\n+\t15: \"SSSSSHHHHH\",\n+\t16: \"SSSSSHHHHH\",\n+\t17: \"SSSSSSSSSS\",\n+\t18: \"SSSSSSSSSS\",\n+\t19: \"SSSSSSSSSS\",\n+\t20: \"SSSSSSSSSS\",\n+\t21: \"SSSSSSSSSS\",\n+}\n+\n+// softTable is indexed by soft total 13..21 (A+2 .. A+10).\n+var softTable = map[int]string{\n+\t//     2 3 4 5 6 7 8 9 T A\n+\t13: \"HHHDDHHHHH\",\n+\t14: \"HHHDDHHHHH\",\n+\t15: \"HHDDDHHHHH\",\n+\t16: \"HHDDDHHHHH\",\n+\t17: \"HDDDDHHHHH\",\n+\t18: \"dddddSSHHH\",\n+\t19: \"SSSSSSSSSS\",\n+\t20: \"SSSSSSSSSS\",\n+\t21: \"SSSSSSSSSS\",\n+}\n+\n+// pairTable is indexed by the blackjack value of one card of the pair\n+// (Ace = 11, ten-value cards = 10).\n+var pairTable = map[int]string{\n+\t//     2 3 4 5 6 7 8 9 T A\n+\t11: \"PPPPPPPPPP\",\n+\t10: \"SSSSSSSSSS\",\n+\t9:  \"PPPPPSPPSS\",\n+\t8:  \"PPPPPPPPPP\",\n+\t7:  \"PPPPPPHHHH\",\n+\t6:  \"PPPPPHHHHH\",\n+\t5:  \"DDDDDDDDHH\",\n+\t4:  \"HHHPPHHHHH\",\n+\t3:  \"PPPPPPHHHH\",\n+\t2:  \"PPPPPPHHHH\",\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 73,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 18,
+      "ts": 1791880296164,
+      "tokens_in": 67153,
+      "tokens_out": 1260,
+      "cost": 1.46906,
+      "cumulative_cost": 17.28618,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/strategy/strategy.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/strategy/strategy.go\n@@ -0,0 +1,107 @@\n+// Package strategy implements table-driven Basic Strategy for multi-deck\n+// blackjack with the dealer standing on soft 17 and double after split.\n+package strategy\n+\n+import (\n+\t\"fmt\"\n+\n+\t\"blackjack/internal/deck\"\n+\t\"blackjack/internal/game\"\n+)\n+\n+// Options tells Recommend which actions are currently legal so it can fall\n+// back correctly (e.g. a 3-card hard 11 cannot double, so it hits).\n+type Options struct {\n+\tCanDouble bool\n+\tCanSplit  bool\n+}\n+\n+// Recommend returns the Basic Strategy action for the hand against the\n+// dealer's upcard, honoring the legality constraints in opts.\n+func Recommend(h game.Hand, dealerUp deck.Card, opts Options) game.Action {\n+\tcol := column(dealerUp)\n+\ttotal, soft := h.Total()\n+\n+\tif total >= 21 {\n+\t\treturn game.Stand\n+\t}\n+\n+\tif opts.CanSplit && h.IsPair() {\n+\t\tcell := lookup(pairTable, h.Cards[0].Value(), col)\n+\t\tif cell == cSplit {\n+\t\t\treturn game.Split\n+\t\t}\n+\t\treturn resolve(cell, opts.CanDouble)\n+\t}\n+\n+\tif soft {\n+\t\treturn resolve(lookup(softTable, total, col), opts.CanDouble)\n+\t}\n+\tif total < 5 {\n+\t\treturn game.Hit\n+\t}\n+\treturn resolve(lookup(hardTable, total, col), opts.CanDouble)\n+}\n+\n+// Explain returns a human readable justification alongside the recommendation,\n+// e.g. \"Pair of 8s vs dealer 10 \u2192 Split\".\n+func Explain(h game.Hand, dealerUp deck.Card, opts Options) string {\n+\tact := Recommend(h, dealerUp, opts)\n+\ttotal, soft := h.Total()\n+\tvar desc string\n+\tswitch {\n+\tcase opts.CanSplit && h.IsPair() && act == game.Split:\n+\t\tdesc = fmt.Sprintf(\"Pair of %ss\", h.Cards[0].Rank)\n+\tcase soft:\n+\t\tdesc = fmt.Sprintf(\"Soft %d\", total)\n+\tdefault:\n+\t\tdesc = fmt.Sprintf(\"Hard %d\", total)\n+\t}\n+\treturn fmt.Sprintf(\"%s vs dealer %s \u2192 %s\", desc, dealerUp.Rank, act)\n+}\n+\n+// column maps a dealer upcard to its table column (2..9 \u2192 0..7, ten-value \u2192 8, Ace \u2192 9).\n+func column(c deck.Card) int {\n+\treturn c.Value() - 2\n+}\n+\n+// lookup returns the cell for the given row key and column, defaulting to\n+// Stand for totals above the table range and Hit below it.\n+func lookup(table map[int]string, key, col int) rune {\n+\trow, ok := table[key]\n+\tif !ok {\n+\t\tif key > 21 {\n+\t\t\treturn cStand\n+\t\t}\n+\t\treturn cHit\n+\t}\n+\tif col < 0 || col >= numCols {\n+\t\treturn cStand\n+\t}\n+\treturn rune(row[col])\n+}\n+\n+// resolve converts a table cell to an action, applying fallbacks when\n+// doubling is not permitted.\n+func resolve(cell rune, canDouble bool) game.Action {\n+\tswitch cell {\n+\tcase cHit:\n+\t\treturn game.Hit\n+\tcase cStand:\n+\t\treturn game.Stand\n+\tcase cDoubleHit:\n+\t\tif canDouble {\n+\t\t\treturn game.Double\n+\t\t}\n+\t\treturn game.Hit\n+\tcase cDoubleStand:\n+\t\tif canDouble {\n+\t\t\treturn game.Double\n+\t\t}\n+\t\treturn game.Stand\n+\tcase cSplit:\n+\t\treturn game.Split\n+\tdefault:\n+\t\treturn game.Stand\n+\t}\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 107,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 19,
+      "ts": 1791880315175,
+      "tokens_in": 69632,
+      "tokens_out": 6169,
+      "cost": 2.00954,
+      "cumulative_cost": 19.295720000000003,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/strategy/strategy_test.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/strategy/strategy_test.go\n@@ -0,0 +1,281 @@\n+package strategy\n+\n+import (\n+\t\"strings\"\n+\t\"testing\"\n+\n+\t\"blackjack/internal/deck\"\n+\t\"blackjack/internal/game\"\n+)\n+\n+func card(r deck.Rank) deck.Card { return deck.Card{Suit: deck.Clubs, Rank: r} }\n+\n+func hand(ranks ...deck.Rank) game.Hand {\n+\th := game.Hand{}\n+\tfor _, r := range ranks {\n+\t\th.Add(card(r))\n+\t}\n+\treturn h\n+}\n+\n+var all = Options{CanDouble: true, CanSplit: true}\n+\n+// dealerRanks covers every table column: 2..9, a ten-value, and Ace.\n+var dealerRanks = []deck.Rank{deck.Two, deck.Three, deck.Four, deck.Five, deck.Six, deck.Seven, deck.Eight, deck.Nine, deck.Ten, deck.Ace}\n+\n+func TestColumnMapping(t *testing.T) {\n+\tfor i, r := range dealerRanks {\n+\t\tif got := column(card(r)); got != i {\n+\t\t\tt.Errorf(\"column(%v) = %d, want %d\", r, got, i)\n+\t\t}\n+\t}\n+\tfor _, r := range []deck.Rank{deck.Jack, deck.Queen, deck.King} {\n+\t\tif got := column(card(r)); got != 8 {\n+\t\t\tt.Errorf(\"column(%v) = %d, want 8\", r, got)\n+\t\t}\n+\t}\n+}\n+\n+func TestTablesWellFormed(t *testing.T) {\n+\tcheck := func(name string, tbl map[int]string, keys []int) {\n+\t\tfor _, k := range keys {\n+\t\t\trow, ok := tbl[k]\n+\t\t\tif !ok {\n+\t\t\t\tt.Errorf(\"%s missing row %d\", name, k)\n+\t\t\t\tcontinue\n+\t\t\t}\n+\t\t\tif len(row) != numCols {\n+\t\t\t\tt.Errorf(\"%s row %d has %d cols\", name, k, len(row))\n+\t\t\t}\n+\t\t\tfor _, ch := range row {\n+\t\t\t\tswitch ch {\n+\t\t\t\tcase cHit, cStand, cDoubleHit, cDoubleStand, cSplit:\n+\t\t\t\tdefault:\n+\t\t\t\t\tt.Errorf(\"%s row %d has invalid cell %q\", name, k, ch)\n+\t\t\t\t}\n+\t\t\t}\n+\t\t}\n+\t}\n+\thard := make([]int, 0)\n+\tfor i := 5; i <= 21; i++ {\n+\t\thard = append(hard, i)\n+\t}\n+\tsoft := make([]int, 0)\n+\tfor i := 13; i <= 21; i++ {\n+\t\tsoft = append(soft, i)\n+\t}\n+\tcheck(\"hard\", hardTable, hard)\n+\tcheck(\"soft\", softTable, soft)\n+\tcheck(\"pair\", pairTable, []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11})\n+}\n+\n+func TestHardTotals(t *testing.T) {\n+\ttests := []struct {\n+\t\tname   string\n+\t\thand   game.Hand\n+\t\tdealer deck.Rank\n+\t\twant   game.Action\n+\t}{\n+\t\t{\"hard 8 vs 6 hit\", hand(deck.Five, deck.Three), deck.Six, game.Hit},\n+\t\t{\"hard 9 vs 2 hit\", hand(deck.Five, deck.Four), deck.Two, game.Hit},\n+\t\t{\"hard 9 vs 3 double\", hand(deck.Five, deck.Four), deck.Three, game.Double},\n+\t\t{\"hard 9 vs 6 double\", hand(deck.Five, deck.Four), deck.Six, game.Double},\n+\t\t{\"hard 9 vs 7 hit\", hand(deck.Five, deck.Four), deck.Seven, game.Hit},\n+\t\t{\"hard 10 vs 9 double\", hand(deck.Six, deck.Four), deck.Nine, game.Double},\n+\t\t{\"hard 10 vs 10 hit\", hand(deck.Six, deck.Four), deck.King, game.Hit},\n+\t\t{\"hard 10 vs A hit\", hand(deck.Six, deck.Four), deck.Ace, game.Hit},\n+\t\t{\"hard 11 vs 10 double\", hand(deck.Seven, deck.Four), deck.Ten, game.Double},\n+\t\t{\"hard 11 vs A hit (S17)\", hand(deck.Seven, deck.Four), deck.Ace, game.Hit},\n+\t\t{\"hard 12 vs 2 hit\", hand(deck.Eight, deck.Four), deck.Two, game.Hit},\n+\t\t{\"hard 12 vs 3 hit\", hand(deck.Eight, deck.Four), deck.Three, game.Hit},\n+\t\t{\"hard 12 vs 4 stand\", hand(deck.Eight, deck.Four), deck.Four, game.Stand},\n+\t\t{\"hard 12 vs 6 stand\", hand(deck.Eight, deck.Four), deck.Six, game.Stand},\n+\t\t{\"hard 12 vs 7 hit\", hand(deck.Eight, deck.Four), deck.Seven, game.Hit},\n+\t\t{\"hard 13 vs 2 stand\", hand(deck.Nine, deck.Four), deck.Two, game.Stand},\n+\t\t{\"hard 16 vs 6 stand\", hand(deck.Ten, deck.Six), deck.Six, game.Stand},\n+\t\t{\"hard 16 vs 7 hit\", hand(deck.Ten, deck.Six), deck.Seven, game.Hit},\n+\t\t{\"hard 16 vs A hit\", hand(deck.Ten, deck.Six), deck.Ace, game.Hit},\n+\t\t{\"hard 17 vs A stand\", hand(deck.Ten, deck.Seven), deck.Ace, game.Stand},\n+\t\t{\"hard 20 vs 6 stand\", hand(deck.Queen, deck.Jack), deck.Six, game.Stand},\n+\t\t{\"3-card hard 7 hit\", hand(deck.Two, deck.Two, deck.Three), deck.Ten, game.Hit},\n+\t}\n+\tfor _, tt := range tests {\n+\t\topts := Options{CanDouble: len(tt.hand.Cards) == 2, CanSplit: false}\n+\t\tif got := Recommend(tt.hand, card(tt.dealer), opts); got != tt.want {\n+\t\t\tt.Errorf(\"%s: got %v, want %v\", tt.name, got, tt.want)\n+\t\t}\n+\t}\n+}\n+\n+func TestSoftTotals(t *testing.T) {\n+\ttests := []struct {\n+\t\tname   string\n+\t\thand   game.Hand\n+\t\tdealer deck.Rank\n+\t\twant   game.Action\n+\t}{\n+\t\t{\"soft 13 vs 4 hit\", hand(deck.Ace, deck.Two), deck.Four, game.Hit},\n+\t\t{\"soft 13 vs 5 double\", hand(deck.Ace, deck.Two), deck.Five, game.Double},\n+\t\t{\"soft 14 vs 6 double\", hand(deck.Ace, deck.Three), deck.Six, game.Double},\n+\t\t{\"soft 15 vs 3 hit\", hand(deck.Ace, deck.Four), deck.Three, game.Hit},\n+\t\t{\"soft 15 vs 4 double\", hand(deck.Ace, deck.Four), deck.Four, game.Double},\n+\t\t{\"soft 16 vs 6 double\", hand(deck.Ace, deck.Five), deck.Six, game.Double},\n+\t\t{\"soft 17 vs 2 hit\", hand(deck.Ace, deck.Six), deck.Two, game.Hit},\n+\t\t{\"soft 17 vs 3 double\", hand(deck.Ace, deck.Six), deck.Three, game.Double},\n+\t\t{\"soft 17 vs 7 hit\", hand(deck.Ace, deck.Six), deck.Seven, game.Hit},\n+\t\t{\"soft 18 vs 2 double\", hand(deck.Ace, deck.Seven), deck.Two, game.Double},\n+\t\t{\"soft 18 vs 6 double\", hand(deck.Ace, deck.Seven), deck.Six, game.Double},\n+\t\t{\"soft 18 vs 7 stand\", hand(deck.Ace, deck.Seven), deck.Seven, game.Stand},\n+\t\t{\"soft 18 vs 8 stand\", hand(deck.Ace, deck.Seven), deck.Eight, game.Stand},\n+\t\t{\"soft 18 vs 9 hit\", hand(deck.Ace, deck.Seven), deck.Nine, game.Hit},\n+\t\t{\"soft 18 vs A hit\", hand(deck.Ace, deck.Seven), deck.Ace, game.Hit},\n+\t\t{\"soft 19 vs 6 stand (S17)\", hand(deck.Ace, deck.Eight), deck.Six, game.Stand},\n+\t\t{\"soft 20 vs 6 stand\", hand(deck.Ace, deck.Nine), deck.Six, game.Stand},\n+\t}\n+\tfor _, tt := range tests {\n+\t\topts := Options{CanDouble: true}\n+\t\tif got := Recommend(tt.hand, card(tt.dealer), opts); got != tt.want {\n+\t\t\tt.Errorf(\"%s: got %v, want %v\", tt.name, got, tt.want)\n+\t\t}\n+\t}\n+}\n+\n+func TestPairs(t *testing.T) {\n+\ttests := []struct {\n+\t\tname   string\n+\t\thand   game.Hand\n+\t\tdealer deck.Rank\n+\t\twant   game.Action\n+\t}{\n+\t\t{\"A,A vs 10 split\", hand(deck.Ace, deck.Ace), deck.Ten, game.Split},\n+\t\t{\"A,A vs A split\", hand(deck.Ace, deck.Ace), deck.Ace, game.Split},\n+\t\t{\"8,8 vs 10 split\", hand(deck.Eight, deck.Eight), deck.Ten, game.Split},\n+\t\t{\"8,8 vs A split\", hand(deck.Eight, deck.Eight), deck.Ace, game.Split},\n+\t\t{\"10,10 vs 6 stand\", hand(deck.Ten, deck.Ten), deck.Six, game.Stand},\n+\t\t{\"K,Q vs 5 stand\", hand(deck.King, deck.Queen), deck.Five, game.Stand},\n+\t\t{\"9,9 vs 6 split\", hand(deck.Nine, deck.Nine), deck.Six, game.Split},\n+\t\t{\"9,9 vs 7 stand\", hand(deck.Nine, deck.Nine), deck.Seven, game.Stand},\n+\t\t{\"9,9 vs 8 split\", hand(deck.Nine, deck.Nine), deck.Eight, game.Split},\n+\t\t{\"9,9 vs 10 stand\", hand(deck.Nine, deck.Nine), deck.Ten, game.Stand},\n+\t\t{\"9,9 vs A stand\", hand(deck.Nine, deck.Nine), deck.Ace, game.Stand},\n+\t\t{\"7,7 vs 7 split\", hand(deck.Seven, deck.Seven), deck.Seven, game.Split},\n+\t\t{\"7,7 vs 8 hit\", hand(deck.Seven, deck.Seven), deck.Eight, game.Hit},\n+\t\t{\"6,6 vs 2 split\", hand(deck.Six, deck.Six), deck.Two, game.Split},\n+\t\t{\"6,6 vs 7 hit\", hand(deck.Six, deck.Six), deck.Seven, game.Hit},\n+\t\t{\"5,5 vs 9 double\", hand(deck.Five, deck.Five), deck.Nine, game.Double},\n+\t\t{\"5,5 vs 10 hit\", hand(deck.Five, deck.Five), deck.Ten, game.Hit},\n+\t\t{\"4,4 vs 4 hit\", hand(deck.Four, deck.Four), deck.Four, game.Hit},\n+\t\t{\"4,4 vs 5 split\", hand(deck.Four, deck.Four), deck.Five, game.Split},\n+\t\t{\"4,4 vs 6 split\", hand(deck.Four, deck.Four), deck.Six, game.Split},\n+\t\t{\"3,3 vs 7 split\", hand(deck.Three, deck.Three), deck.Seven, game.Split},\n+\t\t{\"3,3 vs 8 hit\", hand(deck.Three, deck.Three), deck.Eight, game.Hit},\n+\t\t{\"2,2 vs 2 split\", hand(deck.Two, deck.Two), deck.Two, game.Split},\n+\t\t{\"2,2 vs 8 hit\", hand(deck.Two, deck.Two), deck.Eight, game.Hit},\n+\t}\n+\tfor _, tt := range tests {\n+\t\tif got := Recommend(tt.hand, card(tt.dealer), all); got != tt.want {\n+\t\t\tt.Errorf(\"%s: got %v, want %v\", tt.name, got, tt.want)\n+\t\t}\n+\t}\n+}\n+\n+func TestFallbacks(t *testing.T) {\n+\t// Double disallowed: D -> Hit.\n+\tif got := Recommend(hand(deck.Six, deck.Five), card(deck.Six), Options{}); got != game.Hit {\n+\t\tt.Errorf(\"hard 11 no double: got %v, want Hit\", got)\n+\t}\n+\t// Double disallowed: d -> Stand.\n+\tif got := Recommend(hand(deck.Ace, deck.Seven), card(deck.Six), Options{}); got != game.Stand {\n+\t\tt.Errorf(\"soft 18 no double: got %v, want Stand\", got)\n+\t}\n+\t// Split disallowed: pair treated by its total. 8,8 = hard 16 vs 10 -> Hit.\n+\tif got := Recommend(hand(deck.Eight, deck.Eight), card(deck.Ten), Options{CanDouble: true}); got != game.Hit {\n+\t\tt.Errorf(\"8,8 no split vs 10: got %v, want Hit\", got)\n+\t}\n+\t// 9,9 no split vs 6 -> hard 18 -> Stand.\n+\tif got := Recommend(hand(deck.Nine, deck.Nine), card(deck.Six), Options{CanDouble: true}); got != game.Stand {\n+\t\tt.Errorf(\"9,9 no split vs 6: got %v, want Stand\", got)\n+\t}\n+\t// A,A no split -> soft 12 vs 6 -> Hit.\n+\tif got := Recommend(hand(deck.Ace, deck.Ace), card(deck.Six), Options{CanDouble: true}); got != game.Hit {\n+\t\tt.Errorf(\"A,A no split vs 6: got %v, want Hit\", got)\n+\t}\n+\t// 5,5 with split allowed but no double -> Hit.\n+\tif got := Recommend(hand(deck.Five, deck.Five), card(deck.Six), Options{CanSplit: true}); got != game.Hit {\n+\t\tt.Errorf(\"5,5 no double: got %v, want Hit\", got)\n+\t}\n+}\n+\n+func TestEdgeTotals(t *testing.T) {\n+\tif got := Recommend(hand(deck.Ace, deck.King), card(deck.Six), all); got != game.Stand {\n+\t\tt.Errorf(\"blackjack: got %v, want Stand\", got)\n+\t}\n+\tif got := Recommend(hand(deck.Ten, deck.Ten, deck.Five), card(deck.Six), Options{}); got != game.Stand {\n+\t\tt.Errorf(\"bust: got %v, want Stand\", got)\n+\t}\n+\tif got := Recommend(hand(deck.Two, deck.Two), card(deck.Ten), Options{}); got != game.Hit {\n+\t\tt.Errorf(\"hard 4 (no split): got %v, want Hit\", got)\n+\t}\n+\tif got := Recommend(hand(deck.Two), card(deck.Ten), Options{}); got != game.Hit {\n+\t\tt.Errorf(\"single card: got %v, want Hit\", got)\n+\t}\n+}\n+\n+func TestLookupAndResolveDefaults(t *testing.T) {\n+\tif lookup(hardTable, 30, 0) != cStand {\n+\t\tt.Error(\"lookup above range should stand\")\n+\t}\n+\tif lookup(hardTable, 3, 0) != cHit {\n+\t\tt.Error(\"lookup below range should hit\")\n+\t}\n+\tif lookup(hardTable, 16, -1) != cStand || lookup(hardTable, 16, numCols) != cStand {\n+\t\tt.Error(\"lookup out-of-range column should stand\")\n+\t}\n+\tif resolve('X', true) != game.Stand {\n+\t\tt.Error(\"unknown cell should resolve to Stand\")\n+\t}\n+\tif resolve(cSplit, false) != game.Split {\n+\t\tt.Error(\"split cell should resolve to Split\")\n+\t}\n+}\n+\n+func TestEveryCellProducesValidAction(t *testing.T) {\n+\tfor _, d := range dealerRanks {\n+\t\tfor _, a := range deck.Ranks {\n+\t\t\tfor _, b := range deck.Ranks {\n+\t\t\t\th := hand(a, b)\n+\t\t\t\tfor _, opts := range []Options{{}, {CanDouble: true}, {CanSplit: true}, all} {\n+\t\t\t\t\tact := Recommend(h, card(d), opts)\n+\t\t\t\t\tswitch act {\n+\t\t\t\t\tcase game.Hit, game.Stand:\n+\t\t\t\t\tcase game.Double:\n+\t\t\t\t\t\tif !opts.CanDouble {\n+\t\t\t\t\t\t\tt.Errorf(\"%v vs %v: Double returned without CanDouble\", h, d)\n+\t\t\t\t\t\t}\n+\t\t\t\t\tcase game.Split:\n+\t\t\t\t\t\tif !opts.CanSplit || !h.IsPair() {\n+\t\t\t\t\t\t\tt.Errorf(\"%v vs %v: Split returned illegally\", h, d)\n+\t\t\t\t\t\t}\n+\t\t\t\t\tdefault:\n+\t\t\t\t\t\tt.Errorf(\"%v vs %v: invalid action %v\", h, d, act)\n+\t\t\t\t\t}\n+\t\t\t\t}\n+\t\t\t}\n+\t\t}\n+\t}\n+}\n+\n+func TestExplain(t *testing.T) {\n+\ts := Explain(hand(deck.Eight, deck.Eight), card(deck.Ten), all)\n+\tif !strings.Contains(s, \"Pair of 8s\") || !strings.Contains(s, \"Split\") {\n+\t\tt.Errorf(\"Explain pair = %q\", s)\n+\t}\n+\ts = Explain(hand(deck.Ace, deck.Seven), card(deck.Nine), all)\n+\tif !strings.Contains(s, \"Soft 18\") || !strings.Contains(s, \"Hit\") {\n+\t\tt.Errorf(\"Explain soft = %q\", s)\n+\t}\n+\ts = Explain(hand(deck.Ten, deck.Six), card(deck.Ace), all)\n+\tif !strings.Contains(s, \"Hard 16\") || !strings.Contains(s, \"dealer A\") || !strings.Contains(s, \"Hit\") {\n+\t\tt.Errorf(\"Explain hard = %q\", s)\n+\t}\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 281,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 20,
+      "ts": 1791880374146,
+      "tokens_in": 77022,
+      "tokens_out": 107,
+      "cost": 1.55114,
+      "cumulative_cost": 20.846860000000003,
+      "actions": [
+        {
+          "tool": "execute_command",
+          "command": "go test -cover ./internal/strategy/"
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 21,
+      "ts": 1791880388892,
+      "tokens_in": 78373,
+      "tokens_out": 2183,
+      "cost": 1.78576,
+      "cumulative_cost": 22.632620000000003,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/ui/render.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/ui/render.go\n@@ -0,0 +1,161 @@\n+// Package ui renders cards, hands and table status for the terminal using\n+// compact ANSI-styled output.\n+package ui\n+\n+import (\n+\t\"fmt\"\n+\t\"io\"\n+\t\"strings\"\n+\n+\t\"blackjack/internal/deck\"\n+\t\"blackjack/internal/game\"\n+)\n+\n+// ANSI escape sequences.\n+const (\n+\tansiReset = \"\\x1b[0m\"\n+\tansiRed   = \"\\x1b[31m\"\n+\tansiBold  = \"\\x1b[1m\"\n+\tansiDim   = \"\\x1b[2m\"\n+\tansiGreen = \"\\x1b[32m\"\n+\tansiCyan  = \"\\x1b[36m\"\n+)\n+\n+// Renderer renders game state. Color controls whether ANSI escapes are\n+// emitted; disable it for plain-text output or tests.\n+type Renderer struct {\n+\tColor bool\n+}\n+\n+// New returns a Renderer with color enabled or disabled.\n+func New(color bool) *Renderer {\n+\treturn &Renderer{Color: color}\n+}\n+\n+func (r *Renderer) wrap(code, s string) string {\n+\tif !r.Color {\n+\t\treturn s\n+\t}\n+\treturn code + s + ansiReset\n+}\n+\n+// Card renders a single card as a fixed-width token such as \"[ 10\u2660 ]\" or\n+// \"[  A\u2665 ]\". Hearts and diamonds are colored red when Color is enabled.\n+func (r *Renderer) Card(c deck.Card) string {\n+\tlabel := fmt.Sprintf(\"%3s\", c.String()) // pad to width 3 (rune-aware via Sprintf on runes)\n+\t// Sprintf pads by bytes, not runes; the suit symbol is multi-byte so pad manually.\n+\tlabel = padLeft(c.String(), 3)\n+\tif c.Suit.IsRed() {\n+\t\tlabel = r.wrap(ansiRed, label)\n+\t}\n+\treturn \"[ \" + label + \" ]\"\n+}\n+\n+// Hidden renders a face-down card.\n+func (r *Renderer) Hidden() string {\n+\treturn \"[ \" + r.wrap(ansiDim, \"??\") + \" ]\"\n+}\n+\n+// Hand renders every card in the hand followed by its description, e.g.\n+// \"[ 10\u2660 ] [  A\u2665 ] (Soft 21)\". When hideHole is set the second card is\n+// rendered face-down and no total is shown.\n+func (r *Renderer) Hand(h game.Hand, hideHole bool) string {\n+\tvar sb strings.Builder\n+\tfor i, c := range h.Cards {\n+\t\tif i > 0 {\n+\t\t\tsb.WriteByte(' ')\n+\t\t}\n+\t\tif hideHole && i == 1 {\n+\t\t\tsb.WriteString(r.Hidden())\n+\t\t\tcontinue\n+\t\t}\n+\t\tsb.WriteString(r.Card(c))\n+\t}\n+\tif hideHole {\n+\t\treturn sb.String()\n+\t}\n+\tsb.WriteString(\" (\")\n+\tsb.WriteString(h.Describe())\n+\tsb.WriteByte(')')\n+\treturn sb.String()\n+}\n+\n+// Money formats a dollar amount with thousands separators, e.g. \"$1,000\" or \"-$250\".\n+func Money(n int) string {\n+\tneg := n < 0\n+\tif neg {\n+\t\tn = -n\n+\t}\n+\tdigits := fmt.Sprintf(\"%d\", n)\n+\tvar sb strings.Builder\n+\tfor i, d := range digits {\n+\t\tif i > 0 && (len(digits)-i)%3 == 0 {\n+\t\t\tsb.WriteByte(',')\n+\t\t}\n+\t\tsb.WriteRune(d)\n+\t}\n+\tif neg {\n+\t\treturn \"-$\" + sb.String()\n+\t}\n+\treturn \"$\" + sb.String()\n+}\n+\n+// SignedMoney formats a profit/loss with an explicit sign, e.g. \"+$15\" or \"-$10\".\n+func SignedMoney(n int) string {\n+\tif n > 0 {\n+\t\treturn \"+\" + Money(n)\n+\t}\n+\treturn Money(n)\n+}\n+\n+// Table writes the current table status: bankroll, bet, dealer hand (with hole\n+// card hidden until the dealer has played) and every player hand, marking the\n+// active one.\n+func (r *Renderer) Table(w io.Writer, bankroll int, rd *game.Round) {\n+\thideHole := !rd.DealerPlayed()\n+\tfmt.Fprintln(w, r.wrap(ansiBold, \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\"))\n+\tfmt.Fprintf(w, \"Bankroll: %s   Bet: %s   Dealer upcard: %s\\n\",\n+\t\tr.wrap(ansiGreen, Money(bankroll)),\n+\t\tr.wrap(ansiCyan, Money(rd.TotalWagered())),\n+\t\trd.DealerUpcard())\n+\tfmt.Fprintf(w, \"Dealer: %s\\n\", r.Hand(*rd.Dealer, hideHole))\n+\tfor i, h := range rd.Hands {\n+\t\tmarker := \"  \"\n+\t\tif i == rd.Active {\n+\t\t\tmarker = r.wrap(ansiBold, \"\u25ba \")\n+\t\t}\n+\t\tlabel := \"Player\"\n+\t\tif len(rd.Hands) > 1 {\n+\t\t\tlabel = fmt.Sprintf(\"Hand %d\", i+1)\n+\t\t}\n+\t\tfmt.Fprintf(w, \"%s%s: %s  [%s]\\n\", marker, label, r.Hand(*h, false), Money(h.Bet))\n+\t}\n+\tfmt.Fprintln(w, r.wrap(ansiBold, \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\"))\n+}\n+\n+// Results writes the settled outcome of each hand.\n+func (r *Renderer) Results(w io.Writer, results []game.Result) {\n+\tfor i, res := range results {\n+\t\tlabel := \"Result\"\n+\t\tif len(results) > 1 {\n+\t\t\tlabel = fmt.Sprintf(\"Hand %d\", i+1)\n+\t\t}\n+\t\tcolor := ansiDim\n+\t\tswitch res.Outcome {\n+\t\tcase game.Win, game.Blackjack:\n+\t\t\tcolor = ansiGreen\n+\t\tcase game.Loss:\n+\t\t\tcolor = ansiRed\n+\t\t}\n+\t\tfmt.Fprintf(w, \"%s: %s (%s)\\n\", label, r.wrap(color, res.Outcome.String()), SignedMoney(res.Net))\n+\t}\n+}\n+\n+// padLeft pads s with spaces on the left to the given rune width.\n+func padLeft(s string, width int) string {\n+\tn := len([]rune(s))\n+\tif n >= width {\n+\t\treturn s\n+\t}\n+\treturn strings.Repeat(\" \", width-n) + s\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 161,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 22,
+      "ts": 1791880415884,
+      "tokens_in": 81772,
+      "tokens_out": 304,
+      "cost": 1.66584,
+      "cumulative_cost": 24.298460000000002,
+      "actions": [
+        {
+          "tool": "appliedDiff",
+          "path": "internal/ui/render.go",
+          "diff": "<<<<<<< SEARCH\n:start_line:44\n-------\n\tlabel := fmt.Sprintf(\"%3s\", c.String()) // pad to width 3 (rune-aware via Sprintf on runes)\n\t// Sprintf pads by bytes, not runes; the suit symbol is multi-byte so pad manually.\n\tlabel = padLeft(c.String(), 3)\n=======\n\t// Sprintf pads by bytes, not runes; the suit symbol is multi-byte so pad manually.\n\tlabel := padLeft(c.String(), 3)\n>>>>>>> REPLACE",
+          "content": "@@ -42,9 +42,8 @@\n // Card renders a single card as a fixed-width token such as \"[ 10\u2660 ]\" or\n // \"[  A\u2665 ]\". Hearts and diamonds are colored red when Color is enabled.\n func (r *Renderer) Card(c deck.Card) string {\n-\tlabel := fmt.Sprintf(\"%3s\", c.String()) // pad to width 3 (rune-aware via Sprintf on runes)\n \t// Sprintf pads by bytes, not runes; the suit symbol is multi-byte so pad manually.\n-\tlabel = padLeft(c.String(), 3)\n+\tlabel := padLeft(c.String(), 3)\n \tif c.Suit.IsRed() {\n \t\tlabel = r.wrap(ansiRed, label)\n \t}\n",
+          "originalContent": "// Package ui renders cards, hands and table status for the terminal using\n// compact ANSI-styled output.\npackage ui\n\nimport (\n\t\"fmt\"\n\t\"io\"\n\t\"strings\"\n\n\t\"blackjack/internal/deck\"\n\t\"blackjack/internal/game\"\n)\n\n// ANSI escape sequences.\nconst (\n\tansiReset = \"\\x1b[0m\"\n\tansiRed   = \"\\x1b[31m\"\n\tansiBold  = \"\\x1b[1m\"\n\tansiDim   = \"\\x1b[2m\"\n\tansiGreen = \"\\x1b[32m\"\n\tansiCyan  = \"\\x1b[36m\"\n)\n\n// Renderer renders game state. Color controls whether ANSI escapes are\n// emitted; disable it for plain-text output or tests.\ntype Renderer struct {\n\tColor bool\n}\n\n// New returns a Renderer with color enabled or disabled.\nfunc New(color bool) *Renderer {\n\treturn &Renderer{Color: color}\n}\n\nfunc (r *Renderer) wrap(code, s string) string {\n\tif !r.Color {\n\t\treturn s\n\t}\n\treturn code + s + ansiReset\n}\n\n// Card renders a single card as a fixed-width token such as \"[ 10\u2660 ]\" or\n// \"[  A\u2665 ]\". Hearts and diamonds are colored red when Color is enabled.\nfunc (r *Renderer) Card(c deck.Card) string {\n\tlabel := fmt.Sprintf(\"%3s\", c.String()) // pad to width 3 (rune-aware via Sprintf on runes)\n\t// Sprintf pads by bytes, not runes; the suit symbol is multi-byte so pad manually.\n\tlabel = padLeft(c.String(), 3)\n\tif c.Suit.IsRed() {\n\t\tlabel = r.wrap(ansiRed, label)\n\t}\n\treturn \"[ \" + label + \" ]\"\n}\n\n// Hidden renders a face-down card.\nfunc (r *Renderer) Hidden() string {\n\treturn \"[ \" + r.wrap(ansiDim, \"??\") + \" ]\"\n}\n\n// Hand renders every card in the hand followed by its description, e.g.\n// \"[ 10\u2660 ] [  A\u2665 ] (Soft 21)\". When hideHole is set the second card is\n// rendered face-down and no total is shown.\nfunc (r *Renderer) Hand(h game.Hand, hideHole bool) string {\n\tvar sb strings.Builder\n\tfor i, c := range h.Cards {\n\t\tif i > 0 {\n\t\t\tsb.WriteByte(' ')\n\t\t}\n\t\tif hideHole && i == 1 {\n\t\t\tsb.WriteString(r.Hidden())\n\t\t\tcontinue\n\t\t}\n\t\tsb.WriteString(r.Card(c))\n\t}\n\tif hideHole {\n\t\treturn sb.String()\n\t}\n\tsb.WriteString(\" (\")\n\tsb.WriteString(h.Describe())\n\tsb.WriteByte(')')\n\treturn sb.String()\n}\n\n// Money formats a dollar amount with thousands separators, e.g. \"$1,000\" or \"-$250\".\nfunc Money(n int) string {\n\tneg := n < 0\n\tif neg {\n\t\tn = -n\n\t}\n\tdigits := fmt.Sprintf(\"%d\", n)\n\tvar sb strings.Builder\n\tfor i, d := range digits {\n\t\tif i > 0 && (len(digits)-i)%3 == 0 {\n\t\t\tsb.WriteByte(',')\n\t\t}\n\t\tsb.WriteRune(d)\n\t}\n\tif neg {\n\t\treturn \"-$\" + sb.String()\n\t}\n\treturn \"$\" + sb.String()\n}\n\n// SignedMoney formats a profit/loss with an explicit sign, e.g. \"+$15\" or \"-$10\".\nfunc SignedMoney(n int) string {\n\tif n > 0 {\n\t\treturn \"+\" + Money(n)\n\t}\n\treturn Money(n)\n}\n\n// Table writes the current table status: bankroll, bet, dealer hand (with hole\n// card hidden until the dealer has played) and every player hand, marking the\n// active one.\nfunc (r *Renderer) Table(w io.Writer, bankroll int, rd *game.Round) {\n\thideHole := !rd.DealerPlayed()\n\tfmt.Fprintln(w, r.wrap(ansiBold, \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\"))\n\tfmt.Fprintf(w, \"Bankroll: %s   Bet: %s   Dealer upcard: %s\\n\",\n\t\tr.wrap(ansiGreen, Money(bankroll)),\n\t\tr.wrap(ansiCyan, Money(rd.TotalWagered())),\n\t\trd.DealerUpcard())\n\tfmt.Fprintf(w, \"Dealer: %s\\n\", r.Hand(*rd.Dealer, hideHole))\n\tfor i, h := range rd.Hands {\n\t\tmarker := \"  \"\n\t\tif i == rd.Active {\n\t\t\tmarker = r.wrap(ansiBold, \"\u25ba \")\n\t\t}\n\t\tlabel := \"Player\"\n\t\tif len(rd.Hands) > 1 {\n\t\t\tlabel = fmt.Sprintf(\"Hand %d\", i+1)\n\t\t}\n\t\tfmt.Fprintf(w, \"%s%s: %s  [%s]\\n\", marker, label, r.Hand(*h, false), Money(h.Bet))\n\t}\n\tfmt.Fprintln(w, r.wrap(ansiBold, \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\"))\n}\n\n// Results writes the settled outcome of each hand.\nfunc (r *Renderer) Results(w io.Writer, results []game.Result) {\n\tfor i, res := range results {\n\t\tlabel := \"Result\"\n\t\tif len(results) > 1 {\n\t\t\tlabel = fmt.Sprintf(\"Hand %d\", i+1)\n\t\t}\n\t\tcolor := ansiDim\n\t\tswitch res.Outcome {\n\t\tcase game.Win, game.Blackjack:\n\t\t\tcolor = ansiGreen\n\t\tcase game.Loss:\n\t\t\tcolor = ansiRed\n\t\t}\n\t\tfmt.Fprintf(w, \"%s: %s (%s)\\n\", label, r.wrap(color, res.Outcome.String()), SignedMoney(res.Net))\n\t}\n}\n\n// padLeft pads s with spaces on the left to the given rune width.\nfunc padLeft(s string, width int) string {\n\tn := len([]rune(s))\n\tif n >= width {\n\t\treturn s\n\t}\n\treturn strings.Repeat(\" \", width-n) + s\n}\n",
+          "diffStats": {
+            "added": 1,
+            "removed": 2
+          },
+          "isProtected": false
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 23,
+      "ts": 1791880428980,
+      "tokens_in": 83356,
+      "tokens_out": 2764,
+      "cost": 1.94352,
+      "cumulative_cost": 26.24198,
+      "actions": [
+        {
+          "tool": "newFileCreated",
+          "path": "internal/ui/render_test.go",
+          "content": "===================================================================\n--- /dev/null\n+++ internal/ui/render_test.go\n@@ -0,0 +1,174 @@\n+package ui\n+\n+import (\n+\t\"bytes\"\n+\t\"strings\"\n+\t\"testing\"\n+\n+\t\"blackjack/internal/deck\"\n+\t\"blackjack/internal/game\"\n+)\n+\n+func card(s deck.Suit, r deck.Rank) deck.Card { return deck.Card{Suit: s, Rank: r} }\n+\n+func TestCardRendering(t *testing.T) {\n+\tr := New(false)\n+\ttests := []struct {\n+\t\tc    deck.Card\n+\t\twant string\n+\t}{\n+\t\t{card(deck.Spades, deck.Ten), \"[ 10\u2660 ]\"},\n+\t\t{card(deck.Hearts, deck.Ace), \"[  A\u2665 ]\"},\n+\t\t{card(deck.Diamonds, deck.King), \"[  K\u2666 ]\"},\n+\t\t{card(deck.Clubs, deck.Two), \"[  2\u2663 ]\"},\n+\t}\n+\tfor _, tt := range tests {\n+\t\tif got := r.Card(tt.c); got != tt.want {\n+\t\t\tt.Errorf(\"Card(%v) = %q, want %q\", tt.c, got, tt.want)\n+\t\t}\n+\t}\n+}\n+\n+func TestCardColor(t *testing.T) {\n+\tr := New(true)\n+\tred := r.Card(card(deck.Hearts, deck.Ace))\n+\tif !strings.Contains(red, ansiRed) || !strings.Contains(red, ansiReset) {\n+\t\tt.Errorf(\"red suit should be colored: %q\", red)\n+\t}\n+\tblack := r.Card(card(deck.Spades, deck.Ace))\n+\tif strings.Contains(black, ansiRed) {\n+\t\tt.Errorf(\"black suit should not be red: %q\", black)\n+\t}\n+\tif !strings.Contains(r.Hidden(), ansiDim) {\n+\t\tt.Error(\"hidden card should be dim when colored\")\n+\t}\n+\tif New(false).Hidden() != \"[ ?? ]\" {\n+\t\tt.Errorf(\"Hidden() = %q\", New(false).Hidden())\n+\t}\n+}\n+\n+func TestHandRendering(t *testing.T) {\n+\tr := New(false)\n+\th := game.Hand{}\n+\th.Add(card(deck.Spades, deck.Ten))\n+\th.Add(card(deck.Hearts, deck.Ace))\n+\tif got := r.Hand(h, false); got != \"[ 10\u2660 ] [  A\u2665 ] (Blackjack)\" {\n+\t\tt.Errorf(\"Hand = %q\", got)\n+\t}\n+\tsoft := game.Hand{}\n+\tsoft.Add(card(deck.Spades, deck.Ace))\n+\tsoft.Add(card(deck.Hearts, deck.Six))\n+\tif got := r.Hand(soft, false); got != \"[  A\u2660 ] [  6\u2665 ] (Soft 17)\" {\n+\t\tt.Errorf(\"Hand soft = %q\", got)\n+\t}\n+\tif got := r.Hand(h, true); got != \"[ 10\u2660 ] [ ?? ]\" {\n+\t\tt.Errorf(\"Hand hidden = %q\", got)\n+\t}\n+}\n+\n+func TestMoney(t *testing.T) {\n+\ttests := []struct {\n+\t\tn    int\n+\t\twant string\n+\t}{\n+\t\t{0, \"$0\"}, {5, \"$5\"}, {999, \"$999\"}, {1000, \"$1,000\"}, {12345, \"$12,345\"},\n+\t\t{1234567, \"$1,234,567\"}, {-250, \"-$250\"}, {-1000, \"-$1,000\"},\n+\t}\n+\tfor _, tt := range tests {\n+\t\tif got := Money(tt.n); got != tt.want {\n+\t\t\tt.Errorf(\"Money(%d) = %q, want %q\", tt.n, got, tt.want)\n+\t\t}\n+\t}\n+\tif SignedMoney(15) != \"+$15\" || SignedMoney(-10) != \"-$10\" || SignedMoney(0) != \"$0\" {\n+\t\tt.Error(\"SignedMoney mismatch\")\n+\t}\n+}\n+\n+func scriptedRound(t *testing.T, bet int, ranks ...deck.Rank) *game.Round {\n+\tt.Helper()\n+\tcards := make([]deck.Card, len(ranks))\n+\tfor i, rk := range ranks {\n+\t\tcards[i] = card(deck.Spades, rk)\n+\t}\n+\trd, err := game.NewRound(deck.NewShoeFromCards(cards), game.DefaultRules(), bet)\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\treturn rd\n+}\n+\n+func TestTable(t *testing.T) {\n+\tr := New(false)\n+\trd := scriptedRound(t, 25, deck.Ten, deck.Nine, deck.Seven, deck.King)\n+\tvar buf bytes.Buffer\n+\tr.Table(&buf, 1000, rd)\n+\tout := buf.String()\n+\tfor _, want := range []string{\"Bankroll: $1,000\", \"Bet: $25\", \"Dealer upcard: 9\u2660\", \"[ ?? ]\", \"\u25ba Player:\", \"(Hard 17)\", \"[$25]\"} {\n+\t\tif !strings.Contains(out, want) {\n+\t\t\tt.Errorf(\"table output missing %q:\\n%s\", want, out)\n+\t\t}\n+\t}\n+\tif strings.Contains(out, \"K\u2660\") {\n+\t\tt.Error(\"hole card should be hidden before dealer plays\")\n+\t}\n+\n+\t// After dealer plays the hole card is revealed.\n+\t_ = rd.Apply(game.Stand)\n+\t_ = rd.PlayDealer()\n+\tbuf.Reset()\n+\tr.Table(&buf, 1000, rd)\n+\tif !strings.Contains(buf.String(), \"K\u2660\") || !strings.Contains(buf.String(), \"(Hard 19)\") {\n+\t\tt.Errorf(\"hole card should be shown after dealer plays:\\n%s\", buf.String())\n+\t}\n+}\n+\n+func TestTableSplitHandsAndColor(t *testing.T) {\n+\tr := New(true)\n+\trd := scriptedRound(t, 10, deck.Eight, deck.Six, deck.Eight, deck.Ten, deck.Two, deck.Three)\n+\t_ = rd.Apply(game.Split)\n+\tvar buf bytes.Buffer\n+\tr.Table(&buf, 980, rd)\n+\tout := buf.String()\n+\tif !strings.Contains(out, \"Hand 1\") || !strings.Contains(out, \"Hand 2\") {\n+\t\tt.Errorf(\"split hands should be labelled:\\n%s\", out)\n+\t}\n+\tif !strings.Contains(out, ansiBold) {\n+\t\tt.Error(\"color mode should emit bold\")\n+\t}\n+\tif !strings.Contains(out, \"Bet: $20\") {\n+\t\tt.Error(\"total wagered should reflect both hands\")\n+\t}\n+}\n+\n+func TestResults(t *testing.T) {\n+\tr := New(true)\n+\th := &game.Hand{Bet: 10}\n+\tresults := []game.Result{\n+\t\t{Hand: h, Outcome: game.Win, Net: 10},\n+\t\t{Hand: h, Outcome: game.Loss, Net: -10},\n+\t\t{Hand: h, Outcome: game.Push, Net: 0},\n+\t\t{Hand: h, Outcome: game.Blackjack, Net: 15},\n+\t}\n+\tvar buf bytes.Buffer\n+\tr.Results(&buf, results)\n+\tout := buf.String()\n+\tfor _, want := range []string{\"Hand 1\", \"Hand 4\", \"Win\", \"+$10\", \"Loss\", \"-$10\", \"Push\", \"$0\", \"Blackjack\", \"+$15\", ansiGreen, ansiRed} {\n+\t\tif !strings.Contains(out, want) {\n+\t\t\tt.Errorf(\"results missing %q:\\n%s\", want, out)\n+\t\t}\n+\t}\n+\tbuf.Reset()\n+\tNew(false).Results(&buf, results[:1])\n+\tif !strings.HasPrefix(buf.String(), \"Result: Win\") {\n+\t\tt.Errorf(\"single result label = %q\", buf.String())\n+\t}\n+}\n+\n+func TestPadLeft(t *testing.T) {\n+\tif padLeft(\"A\u2665\", 3) != \" A\u2665\" {\n+\t\tt.Errorf(\"padLeft = %q\", padLeft(\"A\u2665\", 3))\n+\t}\n+\tif padLeft(\"10\u2665\", 3) != \"10\u2665\" {\n+\t\tt.Error(\"padLeft should not pad when already wide enough\")\n+\t}\n+}\n",
+          "isOutsideWorkspace": false,
+          "isProtected": false,
+          "diffStats": {
+            "added": 174,
+            "removed": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "turn": 24,
+      "ts": 1791880457282,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "cost": 0,
+      "cumulative_cost": 26.24198,
+      "actions": [],
+      "error": "402\nOpenRouter completion error: 402 This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.\n<retry_timer>14</retry_timer>"
+    }
+  ]
+}

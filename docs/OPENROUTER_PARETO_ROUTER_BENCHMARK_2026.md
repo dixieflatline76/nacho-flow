@@ -8,7 +8,7 @@
 **Date:** October 2026  
 **Document Classification:** Technical Whitepaper & Empirical Benchmark Report  
 **Target Architecture:** [Zoo Code](https://zoocode.dev) v3.88.0 on Windows 11 Pro / Go 1.26+ Toolchain  
-**Dataset:** Auditable Zoo Code Task Log (`01a1345d-33fe-7288-a563-8dbd9ab670cc`) and Benchmark Directory (`bitch slap control run openrouter`)
+**Dataset:** Auditable Zoo Code Task Log (`01a1345d-33fe-7288-a563-8dbd9ab670cc`) and OpenRouter Pareto Code Control Run
 
 ---
 
@@ -27,7 +27,7 @@ The result was an immediate, catastrophic economic failure for the cloud router:
    HTTP 402: This request would exceed your available credits given your current in-flight requests.
    Retry after in-flight requests settle, or add credits.
    ```
-2. **The Micro-Action Cost Trap**: Because `openrouter/pareto-code` is a stateless, request-level router, it routed routine agentic actions to top-tier frontier models (secretly dumping 97.8% of requests into `Claude Fable 5.1`) without context pruning:
+2. **The Micro-Action Cost Trap**: Because `openrouter/pareto-code` is a stateless, request-level router that disables prompt caching (`Does not support prompt caching`), it routed routine agentic actions to top-tier frontier models (silently dumping 97.8% of requests into `Claude Fable 5.1` at $20/1M input and $100/1M output tokens) without context pruning:
    - **Turn 4**: Executing `go version` cost **$0.4872 USD** (~49¢ for a toolcheck).
    - **Turn 9**: Running `go test -cover ./internal/deck` cost **$0.7337 USD** (~73¢ for a 0.2s test).
    - **Turn 15**: Running `go test -cover ./internal/game` cost **$1.2271 USD**.
@@ -45,26 +45,19 @@ The result was an immediate, catastrophic economic failure for the cloud router:
 
 ## Visual Telemetry Evidence
 
-### Evidence Item A: Zoo Code Harness Configuration
-Zoo Code was configured with zero intermediaries, pointing directly to OpenRouter's official `openrouter/pareto-code` endpoint:
-
 <p align="center">
-  <img src="benchmarks/openrouter_pareto_zoo_settings.png" alt="Zoo Code Provider Configuration: OpenRouter Pareto Code" width="410" />
+  <img src="benchmarks/pareto_annotated_evidence.png" alt="Annotated Benchmark Evidence: Zoo Code Configuration and OpenRouter Activity" style="width: 100%; max-width: 1040px; height: auto;" />
   <br/>
-  <em>Figure 1: Zoo Code provider settings configuring the official <code>openrouter/pareto-code</code> router with direct API key credentials.</em>
+  <em>Figure 1: Left — Zoo Code configured directly with <code>openrouter/pareto-code</code> (note <code>Does not support prompt caching</code>). Right — OpenRouter Activity Dashboard showing 97.8% of spend routed into Claude Fable 5.1.</em>
 </p>
 
-### Evidence Item B: OpenRouter Live Activity Dashboard
-Immediately after the run abruptly crashed on Turn 23, the OpenRouter Activity Dashboard revealed what the router actually did under the hood:
+The visual telemetry above captures the two compounding mechanics behind the economic collapse:
 
-<p align="center">
-  <img src="benchmarks/openrouter_activity_dashboard_fable.png" alt="OpenRouter Activity Dashboard: 97.8% Spend on Claude Fable 5.1" style="width: 100%; max-width: 950px; height: auto;" />
-  <br/>
-  <em>Figure 2: OpenRouter usage breakdown across models in the 3-hour test window. <strong>97.8% of the dollar volume ($13.10 on this workspace slice, $26.24 across the run) was routed into Claude Fable 5.1</strong>, while GLM 5.3 Flash accounted for only 2.2% ($0.294).</em>
-</p>
+1. **Client Configuration (Left Panel)**: Zoo Code was pointed directly to OpenRouter's official `openrouter/pareto-code` endpoint with zero intermediaries. Because dynamic request-level routers can switch providers between turns, the endpoint advertises **`✕ Does not support prompt caching`**, forcing every turn to pay 100% un-cached input token rates ($20.00/1M on frontier models).
+2. **Live Activity Telemetry (Right Panel)**: Immediately after execution crashed on Turn 23, the OpenRouter Activity Dashboard confirmed what happened under the hood: **97.8% of the dollar volume ($13.10 on this workspace slice, $26.24 across the run) was routed into Claude Fable 5.1**, while GLM 5.3 Flash accounted for only 2.2% ($0.294).
 
 > [!CAUTION]
-> **The Pareto Illusion**: OpenRouter's router is marketed as balancing price and performance along the Pareto frontier. In an autonomous multi-turn agent loop, it did the exact opposite: it greedily routed almost **98% of the session into Anthropic's flagship `Claude Fable 5.1`**, incinerating developer balances on routine command executions (`go version`) and trivial single-line diffs.
+> **The Pareto Illusion**: OpenRouter's router is marketed as balancing price and performance along the Pareto frontier. In an autonomous multi-turn agent loop, it did the exact opposite: it disabled prompt caching and greedily routed almost **98% of the session into Anthropic's flagship `Claude Fable 5.1`**, incinerating developer balances on routine command executions (`go version`) and trivial single-line diffs.
 
 ---
 
@@ -137,13 +130,13 @@ An autonomous coding workflow consists of sharply distinct computational phases:
 - **Phase C (Linter & Execution Feedback)**: Executing shell commands (`go test`, `go vet`, `git status`) and parsing return codes. Requires almost zero reasoning.
 - **Phase D (Micro-Refinement)**: Modifying 1 to 5 lines of code based on compiler feedback.
 
-Because OpenRouter's Pareto router has no awareness of these phases, it assigned **Claude Fable 5.1** to Phase C and Phase D tasks. Paying frontier token rates ($3.00+/1M in, $15.00+/1M out) on an 80,000-token prompt just to read a 3-line terminal string is an economic disaster.
+Because OpenRouter's Pareto router has no awareness of these phases, it assigned **Claude Fable 5.1** to Phase C and Phase D tasks. Paying un-cached frontier token rates ($20.00/1M in, $100.00/1M out on Claude Fable 5.1) on an 80,000-token prompt just to read a 3-line terminal string is an economic disaster.
 
 ### 2. The Unchecked Context Snowball
 In an unmediated agent session:
 - Every file read, directory listing, compiler error, and tool definition remains in the context window forever.
-- By Turn 20, Zoo Code was uploading **80+ Kilobytes of raw text on every single turn**.
-- **Nacho Flow's Non-Terminating Streaming (NTS)** actively inspects, compresses, and normalizes conversational history before it ever touches an API socket. By stripping duplicate tool responses and redundant terminal output, NTS saved over **35,000 tokens per turn** in the later stages of the benchmark.
+- By Turn 20, Zoo Code was uploading **80+ Kilobytes of raw text on every single turn** with prompt caching disabled by the router endpoint.
+- **Nacho Token Saver (NTS)** actively inspects, compresses, and normalizes conversational history before it ever touches an API socket. By stripping duplicate tool responses and redundant terminal output, NTS saved over **35,000 tokens per turn** in the later stages of the benchmark.
 
 Without NTS, the Pareto router bills the developer for an exponential context curve:
 
@@ -163,21 +156,23 @@ Without NTS, the Pareto router bills the developer for an exponential context cu
 When the credit balance exhausted on Turn 24:
 - OpenRouter returned a raw HTTP 402.
 - Zoo Code entered an automated retry backoff loop (`10s` $\rightarrow$ `20s` $\rightarrow$ `halt`), completely stalling the developer workstation.
-- In Nacho Flow, the proxy's **Thought Slap**, **Read Slap**, and **Circuit Breaker** mechanisms hold the client connection, splice recovery guidance, and throttle consumption to preserve developer autonomy.
+- In Nacho Flow, the proxy's **Thought Slap**, **Read Slap**, **Cycle Killer**, and **Circuit Breaker** mechanisms hold the client connection, splice recovery guidance, and throttle consumption to preserve developer autonomy.
 
 ---
 
 ## Practical Implications for Engineering Teams
 
-1. **"Smart" Cloud Routers Are Not Agent Superiors**: A cloud router that simply selects a model per request based on Artificial Analysis leaderboards is fundamentally inadequate for multi-turn agent harnesses. It optimizes for single-turn prompt fidelity, not multi-turn agentic economics.
+1. **"Smart" Cloud Routers Are Not Agent Supervisors**: A cloud router that simply selects a model per request based on Artificial Analysis leaderboards is fundamentally inadequate for multi-turn agent harnesses. It optimizes for single-turn prompt fidelity, not multi-turn agentic economics.
 2. **The True Cost of Agentic Coding is the Context Tail**: The bulk of an agent bill is never the initial prompt; it is turns 20 through 80, where 90% of the token payload is repetitive conversational debt.
 3. **Local Gateways Are Essential Infrastructure**: Running an intelligent edge proxy like **Nacho Flow** is not merely a cost-saving measure—it is the difference between an agent completing its work autonomously or burning through developer credit balances and halting mid-build.
 
 ---
 
 ### Reference Artifacts
-- **Auditable Evidence JSON**: [`pareto_evidence.json`](file:///C:/Users/karlk/.gemini/antigravity-ide/brain/a17c1e31-8c29-404a-8ffc-9b290c40ac9f/scratch/pareto_evidence.json)
-- **Zoo Code Harness Config Screenshot**: [`openrouter_pareto_zoo_settings.png`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/benchmarks/openrouter_pareto_zoo_settings.png)
-- **OpenRouter Activity Dashboard Screenshot**: [`openrouter_activity_dashboard_fable.png`](file:///c:/Users/karlk/development/Go/src/github.com/dixieflatline76/nacho-flow/docs/benchmarks/openrouter_activity_dashboard_fable.png)
-- **Nacho Flow Run 14 Benchmark**: [`bitch slap run 14 zoo glm`](file:///C:/Users/karlk/development/Benchmark/bitch%20slap%20run%2014%20zoo%20glm)
-- **Aborted Control Benchmark**: [`bitch slap control run openrouter`](file:///C:/Users/karlk/development/Benchmark/bitch%20slap%20control%20run%20openrouter)
+- **Auditable Evidence JSON**: [`benchmarks/pareto_evidence.json`](benchmarks/pareto_evidence.json)
+- **Zoo Code Harness Config Screenshot**: [`benchmarks/openrouter_pareto_zoo_settings.png`](benchmarks/openrouter_pareto_zoo_settings.png)
+- **OpenRouter Activity Dashboard Screenshot**: [`benchmarks/openrouter_activity_dashboard_fable.png`](benchmarks/openrouter_activity_dashboard_fable.png)
+- **Combined Annotated Evidence Graphic**: [`benchmarks/pareto_annotated_evidence.png`](benchmarks/pareto_annotated_evidence.png)
+- **Head-to-Head Architecture Diagram**: [`benchmarks/pareto_vs_nacho_flowchart.png`](benchmarks/pareto_vs_nacho_flowchart.png)
+- **Supervised Benchmark Reference**: Nacho Flow Run 14 (Zoo Code v3.88.0 + GLM-5 Supervised Pipeline)
+- **Control Benchmark Reference**: OpenRouter Pareto Code Control Run (`openrouter/pareto-code` Direct)
