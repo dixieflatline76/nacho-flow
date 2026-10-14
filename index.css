@@ -582,7 +582,7 @@ body.menu-locked {
     position: relative;
     display: block;
     margin: 0 auto 2.2rem auto;
-    max-width: 720px;
+    max-width: 1136px;
     width: 100%;
     cursor: pointer;
 }
@@ -1997,7 +1997,7 @@ footer {
 }
 
 .cycle-killer-video-container {
-    max-width: 900px;
+    max-width: 100%;
     margin: 2.5rem auto 2.5rem auto;
     border-radius: 20px;
     overflow: hidden;
@@ -2030,7 +2030,7 @@ footer {
 
 /* NTS Ingress Context Compactor Video Showcase */
 .nts-video-container {
-    max-width: 900px;
+    max-width: 100%;
     margin: 2.5rem auto 2.5rem auto;
     border-radius: 20px;
     overflow: hidden;
@@ -2066,7 +2066,7 @@ footer {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 1.25rem;
-    max-width: 900px;
+    max-width: 100%;
     margin: 0 auto 2.5rem auto;
 }
 
