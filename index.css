@@ -603,6 +603,7 @@ body.menu-locked {
 
 .hero-video {
     display: none;
+    pointer-events: none;
 }
 
 .hero-play-pill {
@@ -2024,63 +2025,25 @@ footer {
     height: 100%;
     object-fit: cover;
     display: block;
+    pointer-events: none;
 }
 
 /* NTS Ingress Context Compactor Video Showcase */
 .nts-video-container {
-    max-width: 960px;
+    max-width: 900px;
     margin: 2.5rem auto 2.5rem auto;
     border-radius: 20px;
     overflow: hidden;
-    box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.85), 0 0 50px rgba(16, 185, 129, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 45px rgba(16, 185, 129, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(16, 185, 129, 0.35);
-    background: #090d16;
+    background: #000;
     transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
 .nts-video-container:hover {
     transform: translateY(-2px);
-    box-shadow: 0 30px 70px -15px rgba(0, 0, 0, 0.9), 0 0 60px rgba(16, 185, 129, 0.3);
-    border-color: rgba(16, 185, 129, 0.55);
-}
-
-.nts-video-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1.25rem;
-    background: rgba(15, 23, 42, 0.85);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    font-size: 0.78rem;
-    letter-spacing: 0.05em;
-    font-weight: 700;
-}
-
-.nts-video-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: #34d399;
-    text-transform: uppercase;
-}
-
-.nts-video-badge .pulse-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #10b981;
-    box-shadow: 0 0 10px #10b981;
-    animation: pulseGlow 2s infinite ease-in-out;
-}
-
-.nts-video-tag {
-    color: #38bdf8;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 0.75rem;
-    background: rgba(56, 189, 248, 0.12);
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    padding: 2px 8px;
-    border-radius: 6px;
+    box-shadow: 0 30px 70px -15px rgba(0, 0, 0, 0.85), 0 0 55px rgba(16, 185, 129, 0.22);
+    border-color: rgba(16, 185, 129, 0.5);
 }
 
 .nts-video-container .video-wrapper {
@@ -2095,29 +2058,7 @@ footer {
     height: 100%;
     object-fit: cover;
     display: block;
-}
-
-.nts-video-caption {
-    margin: 0;
-    padding: 0.85rem 1.25rem;
-    background: rgba(10, 15, 29, 0.85);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    font-size: 0.88rem;
-    line-height: 1.5;
-    color: #94a3b8;
-    text-align: center;
-}
-
-.nts-video-caption strong {
-    color: #34d399;
-}
-
-.nts-video-caption code {
-    background: rgba(255, 255, 255, 0.08);
-    padding: 2px 6px;
-    border-radius: 4px;
-    color: #f1f5f9;
-    font-size: 0.82rem;
+    pointer-events: none;
 }
 
 /* Symmetrical 3-Metric Proof Bar */

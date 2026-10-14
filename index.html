@@ -143,7 +143,7 @@
                 <span class="play-icon">▶</span>
                 <span>Watch Story (9s)</span>
             </div>
-            <video id="hero-video" class="hero-banner hero-video" playsinline preload="auto">
+            <video id="hero-video" class="hero-banner hero-video" muted playsinline preload="auto" oncontextmenu="return false;">
                 <source src="images/hero-animated.mp4?v=1.1.0" type="video/mp4">
             </video>
         </div>
@@ -293,7 +293,7 @@
         <!-- Centered 16:9 Widescreen Video Showcase -->
         <div class="cycle-killer-video-container">
             <div class="video-wrapper">
-                <video id="cycle-killer-video" autoplay muted loop playsinline preload="auto">
+                <video id="cycle-killer-video" autoplay muted loop playsinline preload="auto" oncontextmenu="return false;">
                     <source src="images/cycle-killer-demo.mp4" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
@@ -390,23 +390,13 @@
         <p class="section-subtitle">Autonomous coding agents drown in test outputs and reasoning debt. NTS compacts prompts <em>before</em> tier classification—slashing 50%–70% of context tokens with zero heap allocations.</p>
 
         <!-- Centered 16:9 Widescreen Video Showcase for NTS -->
-        <div class="nts-video-container glass">
-            <div class="nts-video-header">
-                <div class="nts-video-badge">
-                    <span class="pulse-dot"></span>
-                    <span>⚡ INGRESS CONTEXT COMPACTION · NTS IN ACTION</span>
-                </div>
-                <span class="nts-video-tag">50%–70% BLOAT STRIPPED · $0.00 BUILD</span>
-            </div>
+        <div class="nts-video-container">
             <div class="video-wrapper">
-                <video id="nts-video" autoplay muted loop playsinline preload="auto">
+                <video id="nts-video" autoplay muted loop playsinline preload="auto" oncontextmenu="return false;">
                     <source src="images/thought-slap.mp4" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
             </div>
-            <p class="nts-video-caption">
-                Watch Nacho Token Saver (NTS) rescue local workhorse models: stripping runaway <code>&lt;think&gt;</code> reasoning debt and test noise in microseconds so agents stay on local GPUs and ship code for <strong>$0.00</strong>.
-            </p>
         </div>
 
         <!-- Metric Proof Row for NTS -->
@@ -874,14 +864,29 @@ Model ID: nacho-hybrid</code></pre>
             } else {
                 container.classList.add('playing');
                 video.currentTime = 0;
+                video.muted = true;
+                video.volume = 0;
                 video.play().catch(() => {
                     video.muted = true;
+                    video.volume = 0;
                     video.play();
                 });
             }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            // Permanently mute all videos & prevent manual unmuting
+            document.querySelectorAll('video').forEach(video => {
+                video.muted = true;
+                video.volume = 0;
+                video.addEventListener('volumechange', () => {
+                    if (!video.muted || video.volume > 0) {
+                        video.muted = true;
+                        video.volume = 0;
+                    }
+                });
+            });
+
             const video = document.getElementById('hero-video');
             const container = document.querySelector('.hero-mascot-container');
             if (video && container) {
