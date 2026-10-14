@@ -21,12 +21,14 @@ func (m *testOpenRouterProvider) ID() string      { return "openrouter" }
 func (m *testOpenRouterProvider) Name() string    { return "OpenRouter" }
 func (m *testOpenRouterProvider) BaseURL() string { return "https://openrouter.ai/api/v1" }
 func (m *testOpenRouterProvider) IsLocal() bool   { return false }
+var staticTestOpenRouterDeclarator = &provider.WireDeclarator{
+	Dialect:           provider.ReasoningDialectNested,
+	ForbidsEffortNone: true,
+	StripFlatOnNested: true,
+}
+
 func (m *testOpenRouterProvider) WireDeclarator() *provider.WireDeclarator {
-	return &provider.WireDeclarator{
-		Dialect:           provider.ReasoningDialectNested,
-		ForbidsEffortNone: true,
-		StripFlatOnNested: true,
-	}
+	return staticTestOpenRouterDeclarator
 }
 
 type testCloudProvider struct{}
