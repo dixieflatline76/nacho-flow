@@ -501,9 +501,10 @@ func (s *Server) applyFairyDustTierOverride(
 				provider = cfg.DefaultTier.Provider
 			}
 			return contract.Tier{
-				Name:     fmt.Sprintf("Fairy Dust: %s #%d (%s)", entry.Name, reqCtx.FairyDustCount, entry.Model),
-				Model:    entry.Model,
-				Provider: provider,
+				Name:            fmt.Sprintf("Fairy Dust: %s #%d (%s)", entry.Name, reqCtx.FairyDustCount, entry.Model),
+				Model:           entry.Model,
+				Provider:        provider,
+				ReasoningEffort: entry.ReasoningEffort,
 			}
 		}
 	}

@@ -33,11 +33,22 @@ func TestOpenRouterProvider_Basics(t *testing.T) {
 	if p.GetAPIKey() != "sk-or-test-key" {
 		t.Errorf("expected APIKey 'sk-or-test-key', got %s", p.GetAPIKey())
 	}
-	if !p.IsOpenRouter() {
-		t.Errorf("expected IsOpenRouter() to be true")
+	wdp, ok := interface{}(p).(WireDeclaratorProvider)
+	if !ok {
+		t.Fatalf("expected OpenRouterProvider to implement WireDeclaratorProvider")
 	}
-	if !IsOpenRouter(p) {
-		t.Errorf("expected IsOpenRouter(p) helper to return true")
+	decl := wdp.WireDeclarator()
+	if decl == nil {
+		t.Fatalf("expected non-nil WireDeclarator")
+	}
+	if decl.Dialect != ReasoningDialectNested {
+		t.Errorf("expected ReasoningDialectNested, got %v", decl.Dialect)
+	}
+	if !decl.ForbidsEffortNone {
+		t.Errorf("expected ForbidsEffortNone to be true")
+	}
+	if !decl.StripFlatOnNested {
+		t.Errorf("expected StripFlatOnNested to be true")
 	}
 }
 
@@ -112,24 +123,27 @@ func TestRegistry_OpenRouterInstantiation(t *testing.T) {
 	if !ok1 {
 		t.Fatalf("expected openrouter_explicit to be found")
 	}
-	if !IsOpenRouter(p1) {
-		t.Errorf("expected openrouter_explicit to identify as OpenRouter")
+	wdp1, ok1 := p1.(WireDeclaratorProvider)
+	if !ok1 || wdp1.WireDeclarator().Dialect != ReasoningDialectNested {
+		t.Errorf("expected openrouter_explicit to declare ReasoningDialectNested")
 	}
 
 	p2, ok2 := reg.Get("openrouter_legacy_cloud")
 	if !ok2 {
 		t.Fatalf("expected openrouter_legacy_cloud to be found")
 	}
-	if !IsOpenRouter(p2) {
-		t.Errorf("expected openrouter_legacy_cloud to identify as OpenRouter")
+	wdp2, ok2 := p2.(WireDeclaratorProvider)
+	if !ok2 || wdp2.WireDeclarator().Dialect != ReasoningDialectNested {
+		t.Errorf("expected openrouter_legacy_cloud to declare ReasoningDialectNested")
 	}
 
 	p3, ok3 := reg.Get("generic_cloud")
 	if !ok3 {
 		t.Fatalf("expected generic_cloud to be found")
 	}
-	if IsOpenRouter(p3) {
-		t.Errorf("expected generic_cloud NOT to identify as OpenRouter")
+	wdp3, ok3 := p3.(WireDeclaratorProvider)
+	if !ok3 || wdp3.WireDeclarator().Dialect != ReasoningDialectFlat {
+		t.Errorf("expected generic_cloud to declare ReasoningDialectFlat")
 	}
 }
 
@@ -152,16 +166,14 @@ func TestOpenRouterProvider_CircuitBreakerAndPing(t *testing.T) {
 	if err := p.Ping(ctx); err != nil {
 		t.Errorf("expected Ping() to succeed, got: %v", err)
 	}
-
-	if IsOpenRouter(nil) {
-		t.Errorf("expected IsOpenRouter(nil) to be false")
-	}
 }
 
-func BenchmarkIsOpenRouter(b *testing.B) {
+func BenchmarkWireDeclarator(b *testing.B) {
 	p := NewOpenRouterProvider("openrouter", contract.ProviderConfig{})
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = IsOpenRouter(p)
+		if wdp, ok := interface{}(p).(WireDeclaratorProvider); ok {
+			_ = wdp.WireDeclarator()
+		}
 	}
 }

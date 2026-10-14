@@ -646,8 +646,9 @@ type FairyDustEntry struct {
 	Provider      string `yaml:"provider,omitempty" json:"provider,omitempty"`
 	Frequency     int    `yaml:"frequency" json:"frequency"`
 	MaxPerSession int    `yaml:"max_per_session" json:"max_per_session"`
-	Priority      int    `yaml:"priority,omitempty" json:"priority,omitempty"`
-	Prompt        string `yaml:"prompt,omitempty" json:"prompt,omitempty"`
+	Priority        int    `yaml:"priority,omitempty" json:"priority,omitempty"`
+	Prompt          string `yaml:"prompt,omitempty" json:"prompt,omitempty"`
+	ReasoningEffort string `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
 }
 
 // FairyDustConfig configures the multi-entry fairy dust quality checkpoint system.

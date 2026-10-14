@@ -55,19 +55,35 @@ type ProtocolProvider interface {
 	TranslateResponseBody(statusCode int, body []byte) ([]byte, error)
 }
 
-// OpenRouterProviderMarker is an optional capability interface identifying OpenRouter endpoints.
-type OpenRouterProviderMarker interface {
-	IsOpenRouter() bool
+// ReasoningDialect specifies how an upstream LLM endpoint expects reasoning effort to be structured on the wire.
+type ReasoningDialect uint8
+
+const (
+	// ReasoningDialectFlat formats reasoning effort as a top-level string: "reasoning_effort": "<val>".
+	// Used by standard OpenAI, vLLM, DeepSeek, and Ollama.
+	ReasoningDialectFlat ReasoningDialect = iota
+
+	// ReasoningDialectNested formats reasoning effort as an object: "reasoning": {"effort": "<val>"}.
+	// Used by OpenRouter.
+	ReasoningDialectNested
+)
+
+// WireDeclarator specifies wire formatting and sanitization rules for an LLM provider.
+type WireDeclarator struct {
+	Dialect           ReasoningDialect
+	ForbidsEffortNone bool
+	StripFlatOnNested bool
 }
 
-// IsOpenRouter returns true if the provider is an OpenRouter endpoint.
-// Lock-free, zero heap allocation.
-func IsOpenRouter(p LLMProvider) bool {
-	if p == nil {
-		return false
-	}
-	if orm, ok := p.(OpenRouterProviderMarker); ok {
-		return orm.IsOpenRouter()
-	}
-	return false
+// DefaultWireDeclarator is the safe fallback declarator for standard OpenAI-compatible endpoints.
+var DefaultWireDeclarator = &WireDeclarator{
+	Dialect:           ReasoningDialectFlat,
+	ForbidsEffortNone: false,
+	StripFlatOnNested: false,
+}
+
+// WireDeclaratorProvider is an optional capability interface allowing providers to declaratively
+// specify their wire dialect and sanitization behavior on the zero-allocation hot path.
+type WireDeclaratorProvider interface {
+	WireDeclarator() *WireDeclarator
 }

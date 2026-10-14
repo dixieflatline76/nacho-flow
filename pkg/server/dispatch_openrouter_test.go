@@ -9,18 +9,25 @@ import (
 )
 
 var (
-	_ provider.LLMProvider              = (*testOpenRouterProvider)(nil)
-	_ provider.OpenRouterProviderMarker = (*testOpenRouterProvider)(nil)
-	_ provider.LLMProvider              = (*testCloudProvider)(nil)
+	_ provider.LLMProvider            = (*testOpenRouterProvider)(nil)
+	_ provider.WireDeclaratorProvider = (*testOpenRouterProvider)(nil)
+	_ provider.LLMProvider            = (*testCloudProvider)(nil)
+	_ provider.WireDeclaratorProvider = (*testCloudProvider)(nil)
 )
 
 type testOpenRouterProvider struct{}
 
-func (m *testOpenRouterProvider) ID() string         { return "openrouter" }
-func (m *testOpenRouterProvider) Name() string       { return "OpenRouter" }
-func (m *testOpenRouterProvider) BaseURL() string    { return "https://openrouter.ai/api/v1" }
-func (m *testOpenRouterProvider) IsLocal() bool      { return false }
-func (m *testOpenRouterProvider) IsOpenRouter() bool { return true }
+func (m *testOpenRouterProvider) ID() string      { return "openrouter" }
+func (m *testOpenRouterProvider) Name() string    { return "OpenRouter" }
+func (m *testOpenRouterProvider) BaseURL() string { return "https://openrouter.ai/api/v1" }
+func (m *testOpenRouterProvider) IsLocal() bool   { return false }
+func (m *testOpenRouterProvider) WireDeclarator() *provider.WireDeclarator {
+	return &provider.WireDeclarator{
+		Dialect:           provider.ReasoningDialectNested,
+		ForbidsEffortNone: true,
+		StripFlatOnNested: true,
+	}
+}
 
 type testCloudProvider struct{}
 
@@ -28,6 +35,9 @@ func (m *testCloudProvider) ID() string      { return "openai" }
 func (m *testCloudProvider) Name() string    { return "OpenAI" }
 func (m *testCloudProvider) BaseURL() string { return "https://api.openai.com/v1" }
 func (m *testCloudProvider) IsLocal() bool   { return false }
+func (m *testCloudProvider) WireDeclarator() *provider.WireDeclarator {
+	return provider.DefaultWireDeclarator
+}
 
 func TestModifyTopLevelPayload_OpenRouter_InjectsNestedReasoning(t *testing.T) {
 	body := []byte(`{"model":"old-model","messages":[{"role":"user","content":"hi"}]}`)
@@ -343,3 +353,170 @@ func TestModifyTopLevelPayload_EdgeCases(t *testing.T) {
 		t.Errorf("Expected all duplicate flat reasoning_effort to be removed")
 	}
 }
+
+func TestModifyTopLevelPayload_OpenRouter_StripsClientNone_WhenTierUnset(t *testing.T) {
+	body := []byte(`{"model":"glm-5.3-flash","reasoning_effort":"none","messages":[{"role":"user","content":"hi"}]}`)
+	tier := &contract.Tier{Model: "glm-5.3-flash", ReasoningEffort: ""}
+	p := &testOpenRouterProvider{}
+
+	out := modifyTopLevelPayload(body, tier, p)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("Failed to parse: %v", err)
+	}
+	if _, exists := parsed["reasoning_effort"]; exists {
+		t.Errorf("Expected reasoning_effort: none to be stripped")
+	}
+	if _, exists := parsed["reasoning"]; exists {
+		t.Errorf("Expected reasoning to not exist")
+	}
+}
+
+func TestModifyTopLevelPayload_OpenRouter_StripsNestedNone_WhenTierUnset(t *testing.T) {
+	body := []byte(`{"model":"glm-5.3-flash","reasoning":{"effort":"none"},"messages":[{"role":"user","content":"hi"}]}`)
+	tier := &contract.Tier{Model: "glm-5.3-flash", ReasoningEffort: ""}
+	p := &testOpenRouterProvider{}
+
+	out := modifyTopLevelPayload(body, tier, p)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("Failed to parse: %v", err)
+	}
+	if _, exists := parsed["reasoning"]; exists {
+		t.Errorf("Expected reasoning: {effort: none} to be stripped")
+	}
+}
+
+func TestModifyTopLevelPayload_AdjacentTailDeletion_BothNone(t *testing.T) {
+	// Tests both "reasoning": {"effort": "none"} and "reasoning_effort": "none" at the end of the JSON object
+	body := []byte(`{"model":"glm-5.3-flash","messages":[{"role":"user","content":"hi"}],"reasoning":{"effort":"none"},"reasoning_effort":"none"}`)
+	tier := &contract.Tier{Model: "glm-5.3-flash", ReasoningEffort: ""}
+	p := &testOpenRouterProvider{}
+
+	out := modifyTopLevelPayload(body, tier, p)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("Failed to parse output JSON: %v, raw: %s", err, string(out))
+	}
+	if _, exists := parsed["reasoning_effort"]; exists {
+		t.Errorf("Expected tail reasoning_effort to be stripped")
+	}
+	if _, exists := parsed["reasoning"]; exists {
+		t.Errorf("Expected tail reasoning to be stripped")
+	}
+	if parsed["model"] != "glm-5.3-flash" {
+		t.Errorf("Expected model preserved")
+	}
+}
+
+func TestModifyTopLevelPayload_AdjacentHeadDeletion_BothNone(t *testing.T) {
+	// Tests both reasoning fields at the beginning of the object
+	body := []byte(`{"reasoning":{"effort":"none"},"reasoning_effort":"none","model":"glm-5.3-flash","messages":[{"role":"user","content":"hi"}]}`)
+	tier := &contract.Tier{Model: "glm-5.3-flash", ReasoningEffort: ""}
+	p := &testOpenRouterProvider{}
+
+	out := modifyTopLevelPayload(body, tier, p)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("Failed to parse output JSON: %v, raw: %s", err, string(out))
+	}
+	if _, exists := parsed["reasoning_effort"]; exists {
+		t.Errorf("Expected head reasoning_effort to be stripped")
+	}
+	if _, exists := parsed["reasoning"]; exists {
+		t.Errorf("Expected head reasoning to be stripped")
+	}
+	if parsed["model"] != "glm-5.3-flash" {
+		t.Errorf("Expected model preserved")
+	}
+}
+
+func TestModifyTopLevelPayload_SoleMembers_BothNone(t *testing.T) {
+	// Tests object containing only reasoning fields: {"reasoning":{"effort":"none"},"reasoning_effort":"none"}
+	body := []byte(`{"reasoning":{"effort":"none"},"reasoning_effort":"none"}`)
+	tier := &contract.Tier{Model: "glm-5.3-flash", ReasoningEffort: ""}
+	p := &testOpenRouterProvider{}
+
+	out := modifyTopLevelPayload(body, tier, p)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("Failed to parse output JSON: %v, raw: %s", err, string(out))
+	}
+	if _, exists := parsed["reasoning_effort"]; exists {
+		t.Errorf("Expected reasoning_effort stripped")
+	}
+	if _, exists := parsed["reasoning"]; exists {
+		t.Errorf("Expected reasoning stripped")
+	}
+}
+
+func TestModifyTopLevelPayload_PartialReasoning_PreservesValidFields(t *testing.T) {
+	// When reasoning has other fields (e.g. max_tokens: 1000) and effort: none,
+	// only effort: none is stripped from the nested object, leaving max_tokens.
+	body := []byte(`{"model":"glm-5.3-flash","reasoning":{"effort":"none","max_tokens":1000},"reasoning_effort":"none"}`)
+	tier := &contract.Tier{Model: "glm-5.3-flash", ReasoningEffort: ""}
+	p := &testOpenRouterProvider{}
+
+	out := modifyTopLevelPayload(body, tier, p)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("Failed to parse output JSON: %v, raw: %s", err, string(out))
+	}
+	if _, exists := parsed["reasoning_effort"]; exists {
+		t.Errorf("Expected flat reasoning_effort: none to be stripped")
+	}
+	reasoning, ok := parsed["reasoning"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected reasoning object preserved, got %T: %v", parsed["reasoning"], parsed["reasoning"])
+	}
+	if _, exists := reasoning["effort"]; exists {
+		t.Errorf("Expected nested effort: none to be stripped from reasoning object")
+	}
+	if reasoning["max_tokens"] != float64(1000) {
+		t.Errorf("Expected max_tokens 1000 preserved, got %v", reasoning["max_tokens"])
+	}
+}
+
+func TestModifyTopLevelPayload_Standard_PreservesClientNone(t *testing.T) {
+	// Standard Cloud / Local does NOT forbid effort "none".
+	// When tier.ReasoningEffort == "", it must leave client payload untouched.
+	body := []byte(`{"model":"gpt-4o","reasoning_effort":"none"}`)
+	tier := &contract.Tier{Model: "gpt-4o", ReasoningEffort: ""}
+	p := &testCloudProvider{}
+
+	out := modifyTopLevelPayload(body, tier, p)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("Failed to parse: %v", err)
+	}
+	if parsed["reasoning_effort"] != "none" {
+		t.Errorf("Expected reasoning_effort 'none' preserved for standard cloud provider")
+	}
+}
+
+func TestModifyTopLevelPayload_NilTargetProvider_DefaultsSafely(t *testing.T) {
+	// When targetProvider is nil, DefaultWireDeclarator is used safely without panic.
+	body := []byte(`{"model":"gpt-4o","reasoning_effort":"none"}`)
+	tier := &contract.Tier{Model: "gpt-4o", ReasoningEffort: ""}
+
+	out := modifyTopLevelPayload(body, tier, nil)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("Failed to parse: %v", err)
+	}
+	if parsed["reasoning_effort"] != "none" {
+		t.Errorf("Expected reasoning_effort preserved when targetProvider is nil")
+	}
+}
+
+func BenchmarkModifyTopLevelPayload_OpenRouter_StripNone(b *testing.B) {
+	body := []byte(`{"model":"glm-5.3-flash","reasoning_effort":"none","messages":[{"role":"user","content":"hi"}]}`)
+	tier := &contract.Tier{Model: "glm-5.3-flash", ReasoningEffort: ""}
+	p := &testOpenRouterProvider{}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = modifyTopLevelPayload(body, tier, p)
+	}
+}
+

@@ -72,6 +72,17 @@ func (p *GenericLLMProvider) GetAPIKey() string {
 	return p.config.APIKey
 }
 
+var genericWireDeclarator = &WireDeclarator{
+	Dialect:           ReasoningDialectFlat,
+	ForbidsEffortNone: false,
+	StripFlatOnNested: false,
+}
+
+// WireDeclarator returns standard OpenAI-compatible declarative wire formatting rules.
+func (p *GenericLLMProvider) WireDeclarator() *WireDeclarator {
+	return genericWireDeclarator
+}
+
 // GetHeaders returns custom headers configured for this provider.
 func (p *GenericLLMProvider) GetHeaders() map[string]string {
 	if p.config.Headers == nil {
