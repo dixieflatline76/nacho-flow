@@ -293,7 +293,7 @@
         <!-- Centered 16:9 Widescreen Video Showcase -->
         <div class="cycle-killer-video-container">
             <div class="video-wrapper">
-                <video id="cycle-killer-video" autoplay muted loop playsinline preload="auto" oncontextmenu="return false;">
+                <video id="cycle-killer-video" autoplay muted loop playsinline preload="auto" oncontextmenu="return false;" onplay="this.playbackRate = 0.85;" onloadedmetadata="this.playbackRate = 0.85;">
                     <source src="images/cycle-killer-demo.mp4" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
@@ -886,6 +886,16 @@ Model ID: nacho-hybrid</code></pre>
                     }
                 });
             });
+
+            // Set Cycle Killer video playback rate to 85% speed
+            const cycleKiller = document.getElementById('cycle-killer-video');
+            if (cycleKiller) {
+                cycleKiller.defaultPlaybackRate = 0.85;
+                cycleKiller.playbackRate = 0.85;
+                cycleKiller.addEventListener('play', () => {
+                    cycleKiller.playbackRate = 0.85;
+                });
+            }
 
             const video = document.getElementById('hero-video');
             const container = document.querySelector('.hero-mascot-container');
