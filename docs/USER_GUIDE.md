@@ -10,14 +10,14 @@ Welcome to the **Nacho Flow** user guide. This document explains how to configur
    - [2.3 🏆 Recommended Local Models & Server Tuning (16GB–24GB VRAM)](#23--recommended-local-models--server-tuning-16gb24gb-vram)
    - [2.4 Tier Feature Flags & Transformation Policies: Granular Proxy Control](#24-tier-feature-flags--transformation-policies-granular-proxy-control)
    - [2.5 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints](#25--fairy-dusting-periodic-proactive-frontier-quality-checkpoints)
-   - [2.6 ⚡ Kickstart: Idle Loop Recovery & Write-Only Filtering](#26--kickstart-idle-loop-recovery--write-only-filtering)
+   - [2.6 ⚡ Kickstart: Read Slap & Thought Slap (Stall & Max-Tokens Recovery)](#26--kickstart-read-slap--thought-slap-stall--max-tokens-recovery)
    - [2.7 🛡️ Cost-Safe Default Tier & 🌶️ Spicy-Only Tiers](#27-️-cost-safe-default-tier--️-spicy-only-tiers-when-false)
    - [2.8 🗜️ Nacho Token Saver (NTS): Wire-Speed Tool Output Compaction](#28-️-nacho-token-saver-nts-wire-speed-tool-output-compaction)
 3. [Writing Custom Routing Tiers (`expr` Rules)](#3-writing-custom-routing-tiers-expr-rules)
 4. [Running Modes & OS Background Service Installation](#4-running-modes--os-background-service-installation)
 5. [IDE & Agent Integrations (Local & Multi-Device LAN)](#5-ide--agent-integrations-local--multi-device-lan)
 6. [Monitoring, Telemetry & Stats API](#6-monitoring-telemetry--stats-api)
-7. [🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)](#7--auto-tune-pitch-correct-your-tiers-nacho-flow-tune)
+7. [🎛️ Auto-Tune: Calibrate Your Routing Rules (`nacho-flow tune`)](#7--auto-tune-calibrate-your-routing-rules-nacho-flow-tune)
 8. [🔥 Heat Seeker: Live Model Deals & Discount Scout (`nacho-flow deals` / `nacho-flow heat-seek`)](#8-heat-seeker-live-model-deals--discount-scout-nacho-flow-deals--nacho-flow-heat-seek)
 9. [🌶️ HotSauce Directives (In-Prompt Routing & Meta Commands)](#9-hotsauce-directives-in-prompt-routing--meta-commands)
    - [🧑‍💻 A Day in the Life: Practical Developer Walkthrough](DAY_IN_THE_LIFE.md)
@@ -295,7 +295,7 @@ agent_shield:
     - "Parameter 'old_text' is required"
     - "Missing parameter 'old_text'"
 
-# 🎸 Cycle Killer & ⚡ Kickstart: In-Flight Stream Defense & Session Resuscitation
+# 🎸 Cycle Killer & ⚡ Kickstart: In-Flight Stream Defense & Session Recovery
 cycle_killer:
   enabled: true                     # Master switch for all in-flight stream defense
   phrase_length: 6                  # Default sliding n-gram window size (words) across lanes
@@ -328,7 +328,7 @@ kickstart:
     # custom_write_tools: []        # Standard write tools are auto-discovered from agentregistry catalog
   thought_slap:
     max_attempts: 1                 # Global default recovery attempts (0 disables, max 4)
-    # prompt: "..."                 # Optional custom steering prompt for reasoning resuscitation
+    # prompt: "..."                 # Optional custom steering prompt for reasoning recovery
 
 # 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
 # Routes every N write-progress turns to frontier models with injected quality review prompts
@@ -579,7 +579,7 @@ $$\mathbf{\text{Per-Turn In-Prompt Directive}} \quad \succ \quad \mathbf{\text{R
 
 ---
 
-### 2.4 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
+### 2.5 🧚 Fairy Dusting: Periodic Proactive Frontier Quality Checkpoints
 
 Autonomous agents writing code with low-cost or local models (e.g. Gemini 2.5 Flash, Devstral, Qwen) produce high throughput at minimal cost, but can accumulate subtle syntax errors, missing module extensions (e.g. Node 22 ESM `.js` imports), or architectural drift over long 40+ turn sessions.
 
@@ -605,17 +605,17 @@ flowchart LR
 
 ---
 
-### 2.5 ⚡ Kickstart: Read Slap & Thought Slap (Stall & Reasoning Truncation Resuscitation)
+### 2.6 ⚡ Kickstart: Read Slap & Thought Slap (Stall & Max-Tokens Recovery)
 
 Autonomous coding agents (Cline, Zoo Code, Kilo, OpenCode) suffer from two distinct failure modes when operating on budget or local reasoning models:
 1. **Cross-Turn Inspection Stalls**: Getting stuck in endless passive read/exploration loops without writing code or advancing state.
 2. **Intra-Turn Reasoning Truncations**: Exhausting thinking token budgets on empty turns (e.g. 31,000+ reasoning tokens), terminating with `finish_reason: length` with zero content or tool calls, causing agent harnesses to hang or crash.
 
-Nacho Flow's **Kickstart** engine provides dual-action resuscitation to eliminate both classes of failure:
+Nacho Flow's **Kickstart** engine provides dual-action recovery to eliminate both classes of failure:
 
 ```mermaid
 flowchart TD
-    subgraph "Turn Execution & Resuscitation Pipeline"
+    subgraph "Turn Execution & Recovery Pipeline"
         In["Inbound Client Request"] --> Stream["SSE Stream Normalizer"]
         
         Stream --> CheckTrunc{"Finish Reason:<br/>length / max_tokens<br/>AND Turn Empty?"}
@@ -652,11 +652,11 @@ When an agent churns in repetitive read-only planning loops (repeatedly calling 
 
 ---
 
-#### 2. 👋 Thought Slap (Intra-Turn Reasoning Truncation Resuscitation)
+#### 2. 👋 Thought Slap (Intra-Turn Reasoning Truncation Recovery)
 
 Modern reasoning models (such as `z-ai/glm-5.3-flash`, `deepseek/deepseek-r1`, or local `qwq:32b`) can consume tens of thousands of tokens in deep chain-of-thought analysis during architecture design turns. If the model exhausts its reasoning token budget (e.g. 31,815 tokens over 230 seconds) before emitting tool calls, OpenRouter or the inference provider sends `finish_reason: length` with an empty completion (`content: null`, `tool_calls: []`).
 
-In standard proxies, this produces an empty turn that causes Cline and Kilo to stall indefinitely or abort the session. **Thought Slap** resuscitates these turns in-flight:
+In standard proxies, this produces an empty turn that causes Cline and Kilo to stall indefinitely or abort the session. **Thought Slap** recovers these turns in-flight:
 
 1. **Held Terminal Processing**: The `StreamNormalizer` holds back the final `[DONE]` terminal SSE chunk and checks if the turn ended in `length` with an empty payload.
 2. **Per-Tier Opt-In**: Thought Slap is enabled on specific tiers that use reasoning models (`thought_slap: true`). Non-reasoning tiers are untouched.
@@ -670,7 +670,7 @@ In standard proxies, this produces an empty turn that causes Cline and Kilo to s
 
 ```yaml
 kickstart:
-  enabled: true                     # Master switch for all resuscitation
+  enabled: true                     # Master switch for all recovery
   read_slap:
     threshold: 5                    # Jolt after N consecutive idle turns (0 disables)
     max_slaps: 10                   # Force-escalate to default tier after N read slaps
@@ -711,7 +711,7 @@ tiers:
 
 ---
 
-### 2.6 🛡️ Cost-Safe Default Tier & 🌶️ Spicy-Only Tiers (`when: "false"`)
+### 2.7 🛡️ Cost-Safe Default Tier & 🌶️ Spicy-Only Tiers (`when: "false"`)
 
 To protect your wallet from runaway loops while preserving on-demand access to flagship frontier models:
 
@@ -729,7 +729,7 @@ To protect your wallet from runaway loops while preserving on-demand access to f
 
 ---
 
-### 2.7 🗜️ Nacho Token Saver (NTS) — Production-Ready In-Flight Context Compactor
+### 2.8 🗜️ Nacho Token Saver (NTS) — Production-Ready In-Flight Context Compactor
 
 > [!TIP]
 > **Production-Ready in v1.6.0: Compact First, Then Route**
@@ -859,7 +859,7 @@ For a complete guide with recipes on tuning token thresholds, keyword extraction
 | `HasToolProgress` | `bool` | `true` if the previous turn contained successful tool execution | `HasToolProgress` |
 | `HasWriteProgress` | `bool` | `true` if the previous turn contained write/execute tool execution | `HasWriteProgress` |
 | `HistoryErrors` | `int` | Number of consecutive trailing tool execution errors in conversation history | `HistoryErrors >= 2` |
-| `CoolingDownModels` | `[]string` | List of model IDs currently on temporary cooldown from Cycle Killer severances | `!('qwen3-coder:30b' in CoolingDownModels)` |
+| `CoolingDownModels` | `[]string` | List of model IDs currently on temporary cooldown from Cycle Killer loop cutoffs | `!('qwen3-coder:30b' in CoolingDownModels)` |
 
 ### Tier Configuration Options:
 | Property | Type | Description |
@@ -1245,18 +1245,18 @@ curl http://127.0.0.1:8000/v1/stats
 
 ---
 
-## 7. 🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)
+## 7. 🎛️ Auto-Tune: Calibrate Your Routing Rules (`nacho-flow tune`)
 
-Local models sound great until they try to hit high notes they can't reach—cracking on 20k-token prompts, butchering tool calls, or dragging your agent through painful retry loops. But if you get paranoid and escalate too early, you're paying stadium-tour prices to Claude for what should have been an acoustic coffee shop gig for $0.00.
+Local models run routine coding turns for $0.00, but fail if pushed past their context or reasoning limits—triggering retries, syntax errors, or loop stalls. But if you escalate too aggressively, you end up paying premium cloud rates for simple file inspections.
 
-Auto-Tune replays your actual recorded coding sessions (`logs/traffic.jsonl`) through candidate multi-tier cascade configurations in memory (at 81 ns/session, 37M turns/sec) to find your models' exact failure boundaries, mute dead tiers, and pitch-correct your routing rules without manual guesswork.
+Auto-Tune replays your actual recorded coding sessions (`logs/traffic.jsonl`) through candidate multi-tier cascade configurations in memory (at 81 ns/session, 37M turns/sec) to find your models' exact failure boundaries, prune redundant tiers, and calibrate your routing rules without manual guesswork.
 
 ### 7.1 How Auto-Tuning Works
 1. **Traffic Accumulation**: As you code, Nacho Flow automatically records multi-turn session metrics (tokens, retries, domain keywords, latency) to `logs/traffic.jsonl`.
 2. **Trajectory Replay (81 ns / 37M turns/sec)**: Replays whole multi-turn developer sessions in sequence with zero heap allocations, evaluating true cascading escalation states instead of isolated single-turn guesses.
-3. **Mutes Dead Tracks (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Automatically flags and bypasses middle tiers that never catch traffic or immediately fail and escalate, eliminating dead rule baggage and routing latency.
+3. **Prunes Redundant Tiers (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Automatically flags and bypasses middle tiers that never catch traffic or immediately fail and escalate, eliminating dead rule baggage and routing latency.
 4. **5% Escalation Plateau Filter**: Rejects expensive tier escalations when a cheaper or local model delivers within 5% of the same success rate.
-5. **Filters Out Mic Feedback (Failure Taxonomy)**: Distinguishes client aborts, network drops, and provider 429 rate limits from genuine model capability flaws—so temporary API outages never corrupt your routing thresholds.
+5. **Filters Out Infrastructure Noise (Failure Taxonomy)**: Distinguishes client aborts, network drops, and provider 429 rate limits from genuine model capability flaws—so temporary API outages never corrupt your routing thresholds.
 6. **Pareto Fleet Dominance**: Enforces multi-objective optimality across cost, latency, and retry rate with zero regressions.
 
 ### 7.2 Run Advisory Analysis (Dry-Run):

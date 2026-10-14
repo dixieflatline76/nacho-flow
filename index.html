@@ -152,7 +152,7 @@
 
         <div class="hero-punchline glass">
             <p class="punchline-text">
-                Point Cline, Zoo Code, or Cursor at <code>localhost:8000</code>. Nacho Flow handles routing, loop detection, tool normalization, and cost tracking. Written in Go, ships as a single binary. 🌮 🐱
+                Point Cline, Zoo Code, or Cursor at <code>http://localhost:8000/v1</code>. Nacho Flow handles routing, loop detection, tool normalization, and cost tracking. Written in Go, ships as a single binary. 🌮 🐱
             </p>
         </div>
 
@@ -215,7 +215,7 @@
                         <button class="step-copy-btn" onclick="navigator.clipboard.writeText('export OPENROUTER_API_KEY=&quot;sk-or-...&quot;'); this.innerText='Copied!'; setTimeout(()=>this.innerText='Copy', 1500)">Copy</button>
                     </div>
                     <div class="step-protip">
-                        ⚡ <strong>90% Cache Savings</strong>: Up to 90% prompt cache discount guaranteed by Nacho Flow's pristine context mode. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">Get Key →</a>
+                        ⚡ <strong>90% Cache Savings</strong>: Up to 90% prompt cache discount preserved—NTS keeps cached prefixes intact and automatically shifts <code>cache_control</code> breakpoints. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">Get Key →</a>
                     </div>
                 </div>
 
@@ -257,10 +257,10 @@
                 <div class="comparison-price" style="color:#f87171;">$14.80</div>
                 <p style="color:var(--text-secondary); font-size:0.9rem;">65 turns sent directly to cloud API</p>
                 <ul class="comparison-stats-list">
-                    <li>❌ <span class="stat-num">2,180,000</span> total tokens billed at frontier rates</li>
-                    <li>❌ <span class="stat-num">$0.00</span> workstation GPU utilization ($0 ROI)</li>
-                    <li>❌ <span class="stat-num">65</span> cloud round-trips for routine inspections</li>
-                    <li>❌ <span class="stat-num">No</span> automated failover protection if API drops or throttles</li>
+                    <li>❌ <span><span class="stat-num">2,180,000</span> total tokens billed at frontier rates</span></li>
+                    <li>❌ <span><span class="stat-num">$0.00</span> workstation GPU utilization ($0 ROI)</span></li>
+                    <li>❌ <span><span class="stat-num">65</span> cloud round-trips for routine inspections</span></li>
+                    <li>❌ <span><span class="stat-num">No</span> automated failover protection if API drops or throttles</span></li>
                 </ul>
             </div>
 
@@ -272,16 +272,16 @@
                 <div class="comparison-price" style="color:#34d399;">$0.78</div>
                 <p style="color:var(--text-secondary); font-size:0.9rem;">48 local GPU turns + 17 cloud escalation turns</p>
                 <ul class="comparison-stats-list">
-                    <li>✅ <span class="stat-num">48 turns</span> executed locally on Ollama/vLLM (<strong style="color:#10b981;">$0.00</strong>)</li>
-                    <li>✅ <span class="stat-num">17 turns</span> escalated to DeepSeek-R1 / Claude</li>
-                    <li>✅ <span class="stat-num">100%</span> test pass rate with full reasoning fidelity on escalated turns</li>
-                    <li>✅ <span class="stat-num">Instant</span> circuit-breaker failover if local GPU runs out of VRAM</li>
+                    <li>✅ <span><span class="stat-num">48 turns</span> executed locally on Ollama/vLLM (<strong style="color:#10b981;">$0.00</strong>)</span></li>
+                    <li>✅ <span><span class="stat-num">17 turns</span> escalated to DeepSeek-R1 / Claude</span></li>
+                    <li>✅ <span><span class="stat-num">100%</span> test pass rate with full reasoning fidelity on escalated turns</span></li>
+                    <li>✅ <span><span class="stat-num">Instant</span> circuit-breaker failover if local GPU runs out of VRAM</span></li>
                 </ul>
             </div>
         </div>
 
         <div class="savings-banner">
-            ⚡ Empirically verified: 94.7% cost reduction on standard 65-turn engineering benchmarks.
+            ⚡ Empirically verified: 94.7% cost reduction on standard 65-turn engineering tasks (<a href="docs.html?doc=frontier_study" style="color:var(--accent-color); font-weight:600; text-decoration:underline;">Read the 65-Turn Control Study →</a>). See also: <a href="docs.html?doc=pareto_benchmark" style="color:var(--accent-color); font-weight:600; text-decoration:underline;">How unmanaged cloud agents burn $26 in 23 turns →</a>
         </div>
     </section>
 
@@ -304,7 +304,7 @@
         <div class="proof-metric-row">
             <div class="proof-metric-box" style="border-color: rgba(245, 158, 11, 0.3);">
                 <div class="proof-metric-val" style="color: #fbbf24;">&lt; 3s</div>
-                <div class="proof-metric-lbl">Loop Interception &amp; Severance</div>
+                <div class="proof-metric-lbl">Runaway Loop Detection &amp; Cutoff</div>
             </div>
             <div class="proof-metric-box" style="border-color: rgba(59, 130, 246, 0.3);">
                 <div class="proof-metric-val" style="color: #60a5fa;">100%</div>
@@ -318,16 +318,14 @@
 
         <!-- Four Active Runtime Supervisors Master Container Box -->
         <div class="supervisors-feature-box glass">
-            <div class="nts-box-header">
-                <div class="nts-box-header-top">
+            <div class="nts-box-header" style="margin-bottom: 1.5rem; padding-bottom: 0;">
+                <div class="nts-box-header-top" style="margin-bottom: 0;">
                     <div class="supervisors-master-badge">
                         <span class="supervisors-badge-dot"></span>
                         <span>ACTIVE EXECUTION RUNTIME</span>
                     </div>
                     <div class="supervisors-meta-chip">SUB-3S IN-FLIGHT RESCUE</div>
                 </div>
-                <h3 class="nts-box-title">🛡️ Active Runtime Supervisors</h3>
-                <p class="nts-box-subtitle">Four real-time stream interceptors that stabilize local GPUs and budget cloud models—killing runaway loops, normalizing malformed tool tags, unsticking stalled plans, and checkpointing logic.</p>
             </div>
 
             <!-- The Four Supervisors Grid (2x2) -->
@@ -358,13 +356,13 @@
 
                 <div class="fix-card glass">
                     <div class="fix-card-header">
-                        <span class="fix-badge badge-kickstart">⚡ DUAL RESUSCITATION ENGINE</span>
+                        <span class="fix-badge badge-kickstart">⚡ STALL &amp; MAX-TOKENS RECOVERY</span>
                         <span class="fix-card-icon">⚡</span>
                     </div>
                     <h3>Kickstart: Read Slap &amp; Thought Slap</h3>
-                    <p class="fix-superpower">Unsticks passive inspection stalls &amp; resuscitates reasoning truncations.</p>
+                    <p class="fix-superpower">Breaks read-only inspection loops and recovers turns cut off by <code>max_tokens</code>.</p>
                     <p class="fix-solution">
-                        Dual-action intervention: <strong>Read Slap</strong> monitors consecutive non-write turns and bursts a single steer turn to break passive planning stalls (auto-suspends during Plan Mode). <strong>Thought Slap</strong> intercepts runaway reasoning budget burnouts on empty turns, splicing in a &lt;3s recovery turn that forces a valid tool call before the agent stalls.
+                        Read Slap monitors consecutive read turns without code edits and injects a steering prompt to force execution (auto-suspends in Plan Mode). Thought Slap intercepts reasoning models that burn their entire <code>max_tokens</code> budget inside <code>&lt;think&gt;</code> without a tool call, triggering an immediate recovery turn.
                     </p>
                 </div>
 
@@ -447,9 +445,9 @@
                         <span class="fix-card-icon">🧠</span>
                     </div>
                     <h3>Historical Reasoning Pruning</h3>
-                    <p class="fix-superpower">Purges megabytes of stale &lt;think&gt; monologues from prior turns.</p>
+                    <p class="fix-superpower">Purges megabytes of stale <code>&lt;think&gt;</code> monologues from prior turns.</p>
                     <p class="fix-solution">
-                        Drops historical reasoning baggage from older assistant turns while keeping recent turns intact. Automatically migrates Anthropic <code>cache_control</code> breakpoints with empty-content fallbacks.
+                        Drops historical reasoning baggage from older assistant turns while keeping recent turns intact. Automatically migrates Anthropic <code>cache_control</code> breakpoints without triggering empty-message 400 errors.
                     </p>
                 </div>
 
@@ -483,14 +481,14 @@
     <!-- Section 3: Cost Tracking & Multi-Provider Routing -->
     <section class="cost-engine-section" id="cost-engine">
         <h2 class="section-title">Cost Tracking &amp; Multi-Provider Routing</h2>
-        <p class="section-subtitle">Cut agent API spend by 70%–92% with cache-aware accounting, local GPU offloading, and spot pricing.</p>
+        <p class="section-subtitle">Cut agent API spend by 70%–95% with cache-aware accounting, local GPU offloading, and spot pricing.</p>
 
         <div class="cost-engine-grid">
             <div class="cost-card glass">
                 <div class="cost-icon">🖥️☁️</div>
                 <div class="cost-header-tag">HYBRID ROUTING</div>
                 <h3>Local GPU &amp; Cloud Provider Routing</h3>
-                <p>Route requests dynamically between local inference (Ollama, vLLM), direct provider keys (Anthropic), and cloud aggregators (OpenRouter) behind a single OpenAI-compatible <code>localhost:8000</code> proxy.</p>
+                <p>Route requests dynamically between local inference (Ollama, vLLM), direct provider keys (Anthropic), and cloud aggregators (OpenRouter) behind a single OpenAI-compatible <code>http://localhost:8000/v1</code> endpoint.</p>
             </div>
 
             <div class="cost-card glass">
@@ -508,10 +506,10 @@
             </div>
 
             <div class="cost-card glass">
-                <div class="cost-icon">🎤</div>
+                <div class="cost-icon">🎛️</div>
                 <div class="cost-header-tag">AUTO-TUNE ENGINE</div>
-                <h3>Pitch-Correct Your Routing Rules</h3>
-                <p>Replays your actual coding history in milliseconds to find where local models crack—pitch-correcting token limits, muting redundant tiers, and gating costly cloud escalations.</p>
+                <h3>Auto-Tune Your Routing Rules</h3>
+                <p>Replays your actual <code>traffic.jsonl</code> session history in milliseconds to find the sweet spot between local GPU execution and cloud escalation—calibrating token thresholds and model tiers against your real workload.</p>
             </div>
         </div>
     </section>
@@ -539,7 +537,7 @@
             <div class="extension-card glass">
                 <div class="extension-badge">ALL-IN-ONE VS CODE EXTENSION</div>
                 <h3>Carries the Engine Inside (Zero Go Setup)</h3>
-                <p>The companion extension bundles and supervises the native Go routing binary directly. 1-click start/stop, live daemon logs, and instant preset hot-swap (Standard / Zoo Code / Cline) with zero-downtime synchronization.</p>
+                <p>The companion extension bundles and supervises the native Go routing binary directly. 1-click start/stop, live daemon logs, and instant preset hot-swap (Standard / Zoo Code / Cline) without restarting the proxy or dropping active streams.</p>
                 <div class="extension-tags">
                     <span class="ext-tag">🚀 Bundled Native Binary</span>
                     <span class="ext-tag">⚡ Zero-Polling SSE HUD</span>
@@ -565,7 +563,7 @@
                 <div class="extension-tags">
                     <span class="ext-tag">📋 1-Click Agent Pairing</span>
                     <span class="ext-tag">🌐 Remote GPU Server Hub</span>
-                    <span class="ext-tag">🔒 Local Security Isolation</span>
+                    <span class="ext-tag">🔒 Localhost &amp; Bearer Auth</span>
                 </div>
             </div>
 
@@ -590,7 +588,7 @@
                     <span class="dot-green"></span>
                 </div>
                 <div class="extension-preview-title">Visual Studio Code — 1-Click Auto-Tune &amp; Rule Diff Review</div>
-                <div class="extension-preview-badge" style="color: #c084fc;">● PITCH-PERFECT TIERS</div>
+                <div class="extension-preview-badge" style="color: #c084fc;">● LOG REPLAY OPTIMIZER</div>
             </div>
             <img src="images/vscode-autotuner-showcase.png" alt="Nacho Flow VS Code 1-Click Auto-Tune - Replaying Sessions, Pruning Tiers, and 1-Click Diff Apply" class="extension-preview-img" loading="lazy">
         </div>

@@ -10,14 +10,14 @@ This guide teaches you how to write, optimize, test, and tune dynamic routing ru
    - [3.2 🏆 The 16GB VRAM Champion: Gemma 4 12B IT QAT & Perfected Ollama Tuning](#-the-16gb-vram-champion-gemma-4-12b-it-qat--perfected-ollama-tuning)
 4. [Real-World Rule Recipes](#4-real-world-rule-recipes)
 5. [Testing & Validating Your Rules](#5-testing--validating-your-rules)
-6. [🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)](#6--auto-tune-pitch-correct-your-tiers-nacho-flow-tune)
+6. [🎛️ Auto-Tune: Calibrate Your Routing Rules (`nacho-flow tune`)](#6--auto-tune-calibrate-your-routing-rules-nacho-flow-tune)
    - [6.1 6D Constraint Satisfaction Formulation & Min-Conflicts Heuristic](#61-6d-constraint-satisfaction-formulation--min-conflicts-heuristic)
    - [6.2 Fractional Conflict Attribution & Fleet Dominance](#62-fractional-conflict-attribution--fleet-dominance)
    - [6.3 Step-by-Step Tuning Workflow & CLI Options](#63-step-by-step-tuning-workflow--cli-options)
    - [6.4 High-Throughput 1M-Statement Stress Testing (`nacho_stress`)](#64-high-throughput-1m-statement-stress-testing-nacho_stress)
-   - [6.5 Muting Dead Tracks (Autonomous Tier Pruning)](#65-muting-dead-tracks-autonomous-tier-pruning)
-   - [6.6 Escalation Plateau Gating (Stop Overpaying for Backing Vocals)](#66-escalation-plateau-gating-stop-overpaying-for-backing-vocals)
-   - [6.7 Filtering Out Mic Feedback (Telemetry Failure Taxonomy)](#67-filtering-out-mic-feedback-telemetry-failure-taxonomy)
+   - [6.5 Autonomous Tier Pruning (Bypassing Redundant Tiers)](#65-autonomous-tier-pruning-bypassing-redundant-tiers)
+   - [6.6 Escalation Plateau Gating (Stop Overpaying for Marginal Gains)](#66-escalation-plateau-gating-stop-overpaying-for-marginal-gains)
+   - [6.7 Infrastructure Noise Filtering (Telemetry Failure Taxonomy)](#67-infrastructure-noise-filtering-telemetry-failure-taxonomy)
 7. [Manual Heuristic Tuning Tips](#7-manual-heuristic-tuning-tips-for-custom-power-rules)
 8. [Agent-Specific Harness Tuning: Zoo Code vs. Cline](#8-agent-specific-harness-tuning-zoo-code-vs-cline)
 9. [🧚 Fairy Dusting & Cost Shield Architecture](#9-fairy-dusting--cost-shield-architecture)
@@ -457,11 +457,11 @@ If you use the [VS Code Companion Extension](EXTENSION_USER_GUIDE.md), open the 
 
 ---
 
-## 6. 🎤 Auto-Tune: Pitch-Correct Your Tiers (`nacho-flow tune`)
+## 6. 🎛️ Auto-Tune: Calibrate Your Routing Rules (`nacho-flow tune`)
 
-Local models sound great until they try to hit high notes they can't reach—cracking on 20k-token prompts, butchering tool calls, or dragging your agent through painful retry loops. But if you get paranoid and escalate too early, you're paying stadium-tour prices to Claude for what should have been an acoustic coffee shop gig for $0.00.
+Local models run routine coding turns for $0.00, but fail if pushed past their context or reasoning limits—triggering retries, syntax errors, or loop stalls. But if you escalate too aggressively, you end up paying premium cloud rates for simple file inspections.
 
-Auto-Tune replays your actual recorded coding sessions (`logs/traffic.jsonl`) through candidate multi-tier cascade configurations in memory (at 81 ns/session, 37M turns/sec) to find your models' exact failure boundaries, mute dead tiers, and pitch-correct your routing rules without manual guesswork.
+Auto-Tune replays your actual recorded coding sessions (`logs/traffic.jsonl`) through candidate multi-tier cascade configurations in memory (at 81 ns/session, 37M turns/sec) to find your models' exact failure boundaries, prune redundant tiers, and calibrate your routing rules without manual guesswork.
 
 ---
 
@@ -651,9 +651,9 @@ go run ./cmd/util/nacho_stress -turns 1000000 -runs 3
 
 ---
 
-### 6.5 Muting Dead Tracks (Autonomous Tier Pruning)
+### 6.5 Autonomous Tier Pruning (Bypassing Redundant Tiers)
 
-Every audio engineer knows you mute empty channels. When you configure multi-tier routing (e.g., Kickstart $\rightarrow$ Local 8B $\rightarrow$ Cloud 30B $\rightarrow$ Claude), it's common for middle tiers to become **dead weight**:
+When you configure multi-tier routing (e.g., Kickstart $\rightarrow$ Local 8B $\rightarrow$ Cloud 30B $\rightarrow$ Claude), it is common for middle tiers to become **redundant baggage**:
 - **Unreachable / Shadowed**: An earlier tier rule intercepts all matching traffic before this tier ever sees a turn (`turnsHandled == 0`).
 - **Immediate Escalation Churn**: The tier accepts a turn, but 100% of the time it immediately fails, triggers a retry, and escalates to the next tier anyway.
 
@@ -662,11 +662,11 @@ Every audio engineer knows you mute empty channels. When you configure multi-tie
    Removing it eliminates 1 routing evaluation step without quality degradation.
 ```
 
-Auto-Tune detects these useless tracks during session trajectory replay. If a tier handles zero productive turns across your evaluated sessions, Auto-Tune flags it for removal and prunes it from the synthesized rule recommendation—eliminating routing latency and keeping your `config.yaml` lean.
+Auto-Tune detects these redundant tiers during session trajectory replay. If a tier handles zero productive turns across your evaluated sessions, Auto-Tune flags it for removal and prunes it from the synthesized rule recommendation—eliminating routing latency and keeping your `config.yaml` lean.
 
 ---
 
-### 6.6 Escalation Plateau Gating (Stop Overpaying for Backing Vocals)
+### 6.6 Escalation Plateau Gating (Stop Overpaying for Marginal Gains)
 
 When tuning multi-tier cascades, a naive optimizer might notice that escalating a turn to an expensive frontier model (like Claude Sonnet 5 at $3.00/M tokens) reduces the retry rate from 2.1% to 1.9%.
 
@@ -679,7 +679,7 @@ If escalating to the more expensive tier does not deliver at least a **5% relati
 
 ---
 
-### 6.7 Filtering Out Mic Feedback (Telemetry Failure Taxonomy)
+### 6.7 Infrastructure Noise Filtering (Telemetry Failure Taxonomy)
 
 When an agent turn fails, naive log analyzers count it as a "model failure" and punish that tier's rating. But in the real world, turns fail for reasons that have nothing to do with whether the model is smart enough:
 - You hit `Ctrl+C` or canceled the prompt (`TimeoutOrCancel`).
@@ -687,7 +687,7 @@ When an agent turn fails, naive log analyzers count it as a "model failure" and 
 - OpenRouter or Anthropic returned an HTTP 429 rate limit or 503 gateway outage (`RateLimitOrQuota`).
 - A prompt accidentally exceeded the provider's hard context limit (`ModelContextExceeded`).
 
-Auto-Tune classifies every error into an explicit **Failure Taxonomy** before calculating conflict attribution. **Upstream provider outages and client cancellations are fully exempted** from the solver's conflict penalty. We never blame the singer when the soundboard cuts the mic.
+Auto-Tune classifies every error into an explicit **Failure Taxonomy** before calculating conflict attribution. **Upstream provider outages and client cancellations are fully exempted** from the solver's conflict penalty, ensuring network blips never skew routing boundaries.
 
 ---
 
