@@ -6,6 +6,7 @@ import (
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
 )
 
 func TestRewriteRuleAST_PreservesCustomGuardrails(t *testing.T) {
@@ -405,5 +406,40 @@ func TestRewriteRuleAST_PreservesPositiveTools(t *testing.T) {
 	outTools, err := expr.Run(program, contract.RequestContext{HasTools: true, Retries: 1})
 	if err != nil || outTools != true {
 		t.Errorf("Expected true for HasTools=true, got out=%v, err=%v", outTools, err)
+	}
+}
+
+func TestASTHelpers_DirectUnit(t *testing.T) {
+	// isBoolLit
+	if isBoolLit(nil, true) {
+		t.Error("expected false for nil node")
+	}
+	if isBoolLit(&ast.IntegerNode{Value: 1}, true) {
+		t.Error("expected false for integer node")
+	}
+	if !isBoolLit(&ast.BoolNode{Value: true}, true) {
+		t.Error("expected true for true bool node")
+	}
+	if isBoolLit(&ast.BoolNode{Value: false}, true) {
+		t.Error("expected false for false bool node when val is true")
+	}
+
+	// getIntLit
+	val, ok := getIntLit(nil)
+	if ok || val != 0 {
+		t.Error("expected false, 0 for nil node")
+	}
+	val, ok = getIntLit(&ast.BoolNode{Value: true})
+	if ok || val != 0 {
+		t.Error("expected false, 0 for bool node")
+	}
+	val, ok = getIntLit(&ast.IntegerNode{Value: 42})
+	if !ok || val != 42 {
+		t.Errorf("expected true, 42 for integer node, got %v, %d", ok, val)
+	}
+
+	// splitASTConjuncts
+	if splitASTConjuncts(nil) != nil {
+		t.Error("expected nil for nil node")
 	}
 }

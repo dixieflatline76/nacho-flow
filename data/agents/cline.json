@@ -63,5 +63,7 @@
         "\"insert_line\":null"
       ]
     }
-  ]
+  ],
+  "recommended_retention_turns": 6
 }
+

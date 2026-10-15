@@ -509,3 +509,66 @@ func TestPipeline_ForcedProviderCircuitBlocked(t *testing.T) {
 		t.Errorf("expected SSE circuit breaker alert, got: %s", sseBody)
 	}
 }
+
+func TestPipeline_FairyDust_ReasoningEffort_DirectAssignment(t *testing.T) {
+	s := &Server{}
+	cfg := &contract.Config{
+		FairyDust: contract.FairyDustConfig{
+			Entries: []contract.FairyDustEntry{
+				{
+					Name:            "audit-high",
+					Model:           "glm-5.3-flash",
+					Provider:        "openrouter",
+					ReasoningEffort: "high",
+				},
+				{
+					Name:            "audit-native-default",
+					Model:           "glm-5.3-flash",
+					Provider:        "openrouter",
+					ReasoningEffort: "",
+				},
+			},
+		},
+	}
+
+	routineTier := contract.Tier{
+		Name:            "Routine Tier",
+		Model:           "cheap-model",
+		Provider:        "local",
+		ReasoningEffort: "low",
+	}
+
+	// 1. Explicit effort in FairyDustEntry overrides routine tier
+	reqCtx1 := &contract.RequestContext{
+		FairyDusted:    true,
+		FairyDustEntry: "audit-high",
+		FairyDustCount: 1,
+	}
+	out1 := s.applyFairyDustTierOverride(reqCtx1, routineTier, cfg)
+	if out1.ReasoningEffort != "high" {
+		t.Errorf("expected ReasoningEffort 'high', got %q", out1.ReasoningEffort)
+	}
+	if out1.Model != "glm-5.3-flash" {
+		t.Errorf("expected model 'glm-5.3-flash', got %q", out1.Model)
+	}
+
+	// 2. Omitted effort in FairyDustEntry does NOT inherit routine tier's "low"
+	reqCtx2 := &contract.RequestContext{
+		FairyDusted:    true,
+		FairyDustEntry: "audit-native-default",
+		FairyDustCount: 1,
+	}
+	out2 := s.applyFairyDustTierOverride(reqCtx2, routineTier, cfg)
+	if out2.ReasoningEffort != "" {
+		t.Errorf("expected ReasoningEffort to be empty (native default), got %q", out2.ReasoningEffort)
+	}
+
+	// 3. When not FairyDusted, routine tier is untouched
+	reqCtx3 := &contract.RequestContext{
+		FairyDusted: false,
+	}
+	out3 := s.applyFairyDustTierOverride(reqCtx3, routineTier, cfg)
+	if out3.ReasoningEffort != "low" {
+		t.Errorf("expected routine tier ReasoningEffort 'low' to be retained when not fairy dusted, got %q", out3.ReasoningEffort)
+	}
+}

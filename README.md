@@ -36,10 +36,10 @@
 - **Auto-Tune:** Replays your `logs/traffic.jsonl` via a 9-way min-conflict replay tuner to find optimal tier thresholds (`nacho-flow tune`)
 - **Cost engine:** Prompt-cache-aware billing tracking input, output, and cache tokens at exact provider rates
 - **VS Code extension:** Bundles the Go binary, live financial telemetry, route inspector, one-click preset switching. Zero CLI setup. [Install from Marketplace](https://marketplace.visualstudio.com/items?itemName=dixieflatline76.nacho-flow)
-- **Wire-speed core:** < 0.19ms routing overhead, <!-- BENCHMARK:README_CORE_START -->31,000+ req/s (peak 31,657 req/s)<!-- BENCHMARK:README_CORE_END -->, lock-free atomic RCU state, zero heap churn during proxying
+- **Wire-speed core:** < 0.19ms routing overhead, <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END -->, lock-free atomic RCU state, zero heap churn during proxying
 - **Zero runtime dependencies:** Single static binary, `CGO_ENABLED=0`, no Node or Python required
 <!-- COVERAGE:SUMMARY_START -->
-- **Engineered for reliability:** Strictly ≥ 95.0% statement test coverage across core packages (95.6% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`)
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.8% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 
 > [!TIP]
@@ -308,7 +308,7 @@ Visit **[spicebox.dev/nacho-flow](https://spicebox.dev/nacho-flow/)** for the fu
 - **[VS Code Extension Guide](docs/EXTENSION_USER_GUIDE.md)**: Sidebar control hub, status bar, route inspector, agent setup
 - **[Rule & Tier Tuning Guide](docs/TUNING_GUIDE.md)**: Practical recipes for writing and optimizing `expr` routing rules
 - **[Architecture & System Design](docs/ARCHITECTURE.md)**: Pipeline internals, RCU concurrency model, lock-free pricing oracle
-- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->31,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware
+- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: High-concurrency stress test results (**<!-- BENCHMARK:README_BENCHLINK_START -->30,000+ req/s, 350k requests up to 1,000 workers<!-- BENCHMARK:README_BENCHLINK_END -->**) on AMD Ryzen hardware
 - **[Frontier Tax Control Study](docs/FRONTIER_CONTROL_STUDY_2026.md)**: 1:1 Claude Sonnet 5 empirical benchmark
 - **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: TDD workflow, plugin extension guide, benchmarking
 - **[Product Roadmap](ROADMAP.md)**: Phase milestones for open-source, extension, fleet, and SaaS

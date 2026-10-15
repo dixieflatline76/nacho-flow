@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 )
 
 func TestEstimateTokensEmptyAndNull(t *testing.T) {
@@ -1356,5 +1358,38 @@ func TestIsBuiltinCycleKillerExempt(t *testing.T) {
 	}
 	if IsBuiltinCycleKillerExempt("bash") {
 		t.Errorf("expected bash NOT to be cycle killer exempt")
+	}
+}
+
+func TestIsBuiltinReadTool(t *testing.T) {
+	if !IsBuiltinReadTool("read_files") {
+		t.Errorf("expected read_files to be recognized as builtin read tool")
+	}
+	if !IsBuiltinReadTool("read_file") {
+		t.Errorf("expected read_file to be recognized as builtin read tool")
+	}
+	if !IsBuiltinReadTool("view_file") {
+		t.Errorf("expected view_file to be recognized as builtin read tool")
+	}
+	if IsBuiltinReadTool("execute_command") {
+		t.Errorf("expected execute_command NOT to be recognized as builtin read tool")
+	}
+	if IsBuiltinReadTool("write_to_file") {
+		t.Errorf("expected write_to_file NOT to be recognized as builtin read tool")
+	}
+}
+
+func TestClassifyToolCategory(t *testing.T) {
+	if cat := ClassifyToolCategory("write_to_file"); cat != shield.ToolCategoryFileWrite {
+		t.Errorf("expected write_to_file -> ToolCategoryFileWrite, got %v", cat)
+	}
+	if cat := ClassifyToolCategory("finish"); cat != shield.ToolCategoryFileWrite {
+		t.Errorf("expected finish (exempt) -> ToolCategoryFileWrite, got %v", cat)
+	}
+	if cat := ClassifyToolCategory("read_files"); cat != shield.ToolCategoryFileRead {
+		t.Errorf("expected read_files -> ToolCategoryFileRead, got %v", cat)
+	}
+	if cat := ClassifyToolCategory("execute_command"); cat != shield.ToolCategoryCommand {
+		t.Errorf("expected execute_command -> ToolCategoryCommand, got %v", cat)
 	}
 }

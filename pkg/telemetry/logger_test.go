@@ -252,3 +252,20 @@ func TestLogger_MultiHandler_CompleteCoverage(t *testing.T) {
 		t.Errorf("expected nil error from nopCloser.Close, got %v", err)
 	}
 }
+
+type errorSlogHandler struct{}
+
+func (e *errorSlogHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (e *errorSlogHandler) Handle(context.Context, slog.Record) error {
+	return fmt.Errorf("simulated slog error")
+}
+func (e *errorSlogHandler) WithAttrs([]slog.Attr) slog.Handler { return e }
+func (e *errorSlogHandler) WithGroup(string) slog.Handler      { return e }
+
+func TestMultiHandler_HandleError(t *testing.T) {
+	multi := &multiHandler{handlers: []slog.Handler{&errorSlogHandler{}}}
+	r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+	if err := multi.Handle(context.Background(), r); err == nil || !strings.Contains(err.Error(), "simulated slog error") {
+		t.Errorf("expected simulated slog error, got %v", err)
+	}
+}

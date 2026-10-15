@@ -54,6 +54,7 @@ type Registry struct {
 	headerSignatures           []headerSignature
 	uniqueToolMatchers         []uniqueToolMatcher
 	registeredAgentsList       []string
+	profiles                   map[string]*AgentProfile
 }
 
 type clientMatcher struct {
@@ -98,6 +99,7 @@ func NewRegistryFromFS(sysFS fs.FS) (*Registry, error) {
 		allKnownTools:          make(map[string]struct{}),
 		shellWriteCommands:     make(map[string]struct{}),
 		contextualCommands:     make(map[string][]string),
+		profiles:               make(map[string]*AgentProfile),
 	}
 
 	if err := reg.loadAgents(sysFS); err != nil {
@@ -209,6 +211,8 @@ func (r *Registry) loadAgents(sysFS fs.FS) error {
 
 		if profile.ID != "" {
 			registeredAgentsMap[profile.ID] = struct{}{}
+			profCopy := profile
+			r.profiles[strings.ToLower(profile.ID)] = &profCopy
 		}
 		for _, pat := range profile.UserAgentPatterns {
 			if trimmed := strings.ToLower(strings.TrimSpace(pat)); trimmed != "" {
@@ -383,6 +387,7 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 	r.sanitizerReplacements = newReg.sanitizerReplacements
 	r.sanitizerMarkers = newReg.sanitizerMarkers
 	r.silentTurnChunkBytes = newReg.silentTurnChunkBytes
+	r.profiles = newReg.profiles
 	return nil
 }
 
@@ -630,6 +635,20 @@ func (r *Registry) ErrorSignaturesList() []string {
 	return r.errorSignaturesList
 }
 
+// MatchesErrorSignature reports whether s contains any cataloged agent error signature.
+// Lock-free, zero heap allocation.
+func (r *Registry) MatchesErrorSignature(s string) bool {
+	if r == nil || len(s) == 0 {
+		return false
+	}
+	for _, sig := range r.errorSignaturesList {
+		if containsFold(s, sig) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsToolError checks whether a tool output represents an execution error or failure.
 // It inspects boolean flags, cataloged agent error signatures, and common failure prefixes.
 // Lock-free, zero heap allocation.
@@ -713,6 +732,16 @@ func (r *Registry) DetectShellWrite(cmd string) bool {
 		return false
 	}
 
+	// 0. If wrapped in JSON object/array (e.g. tool call arguments payload), strip outer envelope with zero allocations
+	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		if colonIdx := strings.Index(trimmed, ":"); colonIdx != -1 {
+			trimmed = strings.TrimSpace(trimmed[colonIdx+1:])
+			trimmed = strings.TrimPrefix(trimmed, "[")
+			trimmed = strings.TrimSpace(trimmed)
+			trimmed = strings.TrimPrefix(trimmed, "\"")
+		}
+	}
+
 	// 1. Redirection checks: > and >> (ignoring comparisons/scripts inside quotes)
 	if strings.Contains(trimmed, ">") {
 		var inSingleQuote, inDoubleQuote bool
@@ -762,34 +791,32 @@ func (r *Registry) DetectShellWrite(cmd string) bool {
 		}
 	}
 
-	lower := strings.ToLower(trimmed)
-
 	// 2. Check shell write pipes
 	for _, pipe := range r.shellWritePipes {
-		if strings.Contains(lower, strings.ToLower(pipe)) {
+		if containsFold(trimmed, pipe) {
 			return true
 		}
 	}
 
 	// 3. Heredocs combined with file writing
 	if strings.Contains(trimmed, "<<") {
-		if strings.Contains(trimmed, ">") || strings.Contains(lower, "| tee") {
+		if strings.Contains(trimmed, ">") || containsFold(trimmed, "| tee") {
 			return true
 		}
 	}
 
 	// 4. File-modifying commands
 	for cmdWord := range r.shellWriteCommands {
-		if containsCommandWord(lower, cmdWord) {
+		if containsCommandWord(trimmed, cmdWord) {
 			return true
 		}
 	}
 
 	// 5. Contextual commands
 	for baseCmd, subFlags := range r.contextualCommands {
-		if containsCommandWord(lower, baseCmd) {
+		if containsCommandWord(trimmed, baseCmd) {
 			for _, flag := range subFlags {
-				if strings.Contains(lower, flag) {
+				if containsFold(trimmed, flag) {
 					return true
 				}
 			}
@@ -800,9 +827,12 @@ func (r *Registry) DetectShellWrite(cmd string) bool {
 }
 
 func isNullTarget(target string) bool {
-	lower := strings.ToLower(target)
-	switch lower {
-	case "/dev/null", "/dev/zero", "nul", "$null", "&1", "&2":
+	switch {
+	case strings.EqualFold(target, "/dev/null"),
+		strings.EqualFold(target, "/dev/zero"),
+		strings.EqualFold(target, "nul"),
+		strings.EqualFold(target, "$null"),
+		target == "&1", target == "&2":
 		return true
 	default:
 		return false
@@ -811,7 +841,7 @@ func isNullTarget(target string) bool {
 
 func isCmdPrefixBoundary(b byte) bool {
 	switch b {
-	case ' ', '\t', '\n', '\r', ';', '|', '&', '`', '(':
+	case ' ', '\t', '\n', '\r', ';', '|', '&', '`', '(', '"', '\'', '[', '{', '=', '\\', '/':
 		return true
 	default:
 		return false
@@ -820,7 +850,7 @@ func isCmdPrefixBoundary(b byte) bool {
 
 func isCmdSuffixBoundary(b byte) bool {
 	switch b {
-	case ' ', '\t', '\n', '\r', ';', '|', '&', '`', ')':
+	case ' ', '\t', '\n', '\r', ';', '|', '&', '`', ')', '"', '\'', ']', '}', ',', ':', '\\', '/':
 		return true
 	default:
 		return false
@@ -828,23 +858,34 @@ func isCmdSuffixBoundary(b byte) bool {
 }
 
 func containsCommandWord(s, word string) bool {
-	idx := 0
-	for {
-		pos := strings.Index(s[idx:], word)
-		if pos == -1 {
-			return false
-		}
-		actualPos := idx + pos
-		prefixOK := actualPos == 0 || isCmdPrefixBoundary(s[actualPos-1])
-
-		afterPos := actualPos + len(word)
-		suffixOK := afterPos >= len(s) || isCmdSuffixBoundary(s[afterPos])
-
-		if prefixOK && suffixOK {
-			return true
-		}
-		idx = actualPos + 1
+	if len(word) == 0 || len(s) < len(word) {
+		return false
 	}
+	w0 := word[0]
+	var w0Alt byte
+	if w0 >= 'a' && w0 <= 'z' {
+		w0Alt = w0 - ('a' - 'A')
+	} else if w0 >= 'A' && w0 <= 'Z' {
+		w0Alt = w0 + ('a' - 'A')
+	} else {
+		w0Alt = w0
+	}
+
+	limit := len(s) - len(word)
+	for i := 0; i <= limit; i++ {
+		c := s[i]
+		if c == w0 || c == w0Alt {
+			if strings.EqualFold(s[i:i+len(word)], word) {
+				prefixOK := i == 0 || isCmdPrefixBoundary(s[i-1])
+				afterPos := i + len(word)
+				suffixOK := afterPos >= len(s) || isCmdSuffixBoundary(s[afterPos])
+				if prefixOK && suffixOK {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func compileWriteByteMarkers(tools []string) [][]byte {
@@ -1193,4 +1234,24 @@ func (r *Registry) RegisteredAgents() []string {
 	res := make([]string, len(r.registeredAgentsList))
 	copy(res, r.registeredAgentsList)
 	return res
+}
+
+// GetReasoningCompactionConfig returns the compaction parameters configured in the reasoning catalog.
+func (r *Registry) GetReasoningCompactionConfig() ReasoningCompactionCatalog {
+	if r == nil {
+		return ReasoningCompactionCatalog{}
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.reasoningCatalog.Compaction
+}
+
+// GetProfile returns the AgentProfile for the specified agent ID, or nil if not registered.
+func (r *Registry) GetProfile(id string) *AgentProfile {
+	if r == nil || id == "" {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.profiles[strings.ToLower(strings.TrimSpace(id))]
 }

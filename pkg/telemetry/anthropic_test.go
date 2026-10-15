@@ -97,3 +97,18 @@ func TestAnthropicPricingFactory_Registration(t *testing.T) {
 		t.Errorf("expected interval 12h, got %v", interval)
 	}
 }
+
+func TestAnthropicPricingProvider_NilManager(t *testing.T) {
+	prov := NewAnthropicPricingProviderWithManager(nil)
+	if prov == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	factory, ok := LookupPricingFactory(string(contract.ProviderTypeAnthropic))
+	if !ok {
+		t.Fatal("expected factory")
+	}
+	_, interval := factory("test", contract.ProviderConfig{}, 0)
+	if interval != 24*time.Hour {
+		t.Errorf("expected 24h default interval, got %v", interval)
+	}
+}

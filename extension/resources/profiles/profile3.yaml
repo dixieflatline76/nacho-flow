@@ -100,13 +100,13 @@ tiers:
 
   # ---------------------------------------------------------------------------
   # TIER 1: Claude Haiku 4.5 (Fast & Cheap Workhorse: $1 / $5 MTok)
-  # Clean development turns only (< 2 retries and no failing test suites)
+  # Clean development turns only (< 3 retries and no failing test suites)
   # ---------------------------------------------------------------------------
   - name: "Tier 1: Haiku 4.5 (Workhorse)"
     provider: "anthropic"
     model: "claude-haiku-4-5"
     reasoning_effort: "medium"
-    when: "Retries < 2 && !HasTestFail"
+    when: "Retries < 3 && !HasTestFail"
 
   # ---------------------------------------------------------------------------
   # TIER 2: Claude Sonnet 5.5 (Primary Escalation: $2 / $10 MTok)

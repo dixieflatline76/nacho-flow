@@ -74,8 +74,15 @@ func (p *OpenRouterProvider) GetAPIKey() string {
 	return p.config.APIKey
 }
 
-func (p *OpenRouterProvider) IsOpenRouter() bool {
-	return true
+var openRouterWireDeclarator = &WireDeclarator{
+	Dialect:           ReasoningDialectNested,
+	ForbidsEffortNone: true,
+	StripFlatOnNested: true,
+}
+
+// WireDeclarator returns OpenRouter's declarative wire formatting and sanitization rules.
+func (p *OpenRouterProvider) WireDeclarator() *WireDeclarator {
+	return openRouterWireDeclarator
 }
 
 func (p *OpenRouterProvider) CircuitBreaker() *CircuitBreaker {

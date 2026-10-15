@@ -748,6 +748,76 @@ func TestCycleBreaker_ProcessToolDelta_FileWrite_ZeroAllocs(t *testing.T) {
 	}
 }
 
+func TestCycleBreaker_FileReadBypassesNgramAndEnforcesStandardCap(t *testing.T) {
+	enabled := true
+	cfg := &contract.CycleBreakerConfig{
+		Enabled:       &enabled,
+		MaxToolTokens: 8192,
+		ToolLane: contract.ToolLaneConfig{
+			LaneConfig: contract.LaneConfig{
+				MaxTokens:    8192,
+				PhraseLength: 4,
+				MaxRepeats:   6,
+			},
+		},
+	}
+
+	// 1. Replay the exact Turn 2 batch read payload with 6 shared-prefix paths
+	replayPayload := `{"files": [` +
+		`{"path": "C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\cover"}, ` +
+		`{"path": "C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\cover.out"}, ` +
+		`{"path": "C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\go.mod"}, ` +
+		`{"path": "C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\helpers_test.go"}, ` +
+		`{"path": "C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\main.go"}, ` +
+		`{"path": "C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\main_test.go"}` +
+		`]}`
+
+	// Baseline: under ToolCategoryCommand, this payload triggers tool_repetition_loop_detected
+	cbCmd := NewCycleBreaker(cfg)
+	trigCmd, reasonCmd := cbCmd.ProcessToolDelta(replayPayload, ToolCategoryCommand)
+	if !trigCmd || reasonCmd != "tool_repetition_loop_detected" {
+		t.Fatalf("expected baseline ToolCategoryCommand to catch 6-path loop, got trig=%v, reason=%s", trigCmd, reasonCmd)
+	}
+
+	// Under ToolCategoryFileRead: N-gram loop check is completely bypassed
+	cbRead := NewCycleBreaker(cfg)
+	trigRead, reasonRead := cbRead.ProcessToolDelta(replayPayload, ToolCategoryFileRead)
+	if trigRead {
+		t.Fatalf("expected ToolCategoryFileRead to bypass N-gram repetition check, but triggered: %s", reasonRead)
+	}
+
+	// Under ToolCategoryFileRead: token budget is strictly capped at MaxToolTokens (8192), NOT MaxWriteTokens (32768)
+	var largeRead strings.Builder
+	// ~35,000 bytes = ~8,750 tokens (> 8192)
+	for i := 0; i < 500; i++ {
+		largeRead.WriteString(`{"path": "C:\\Users\\karlk\\development\\repo\\internal\\pkg\\very_long_file_name_spec.go"}, `)
+	}
+	trigCap, reasonCap := cbRead.ProcessToolDelta(largeRead.String(), ToolCategoryFileRead)
+	if !trigCap {
+		t.Fatalf("expected ToolCategoryFileRead to enforce standard 8k tool cap")
+	}
+	if reasonCap != "tool_budget_exceeded" {
+		t.Fatalf("expected reason 'tool_budget_exceeded', got: %s", reasonCap)
+	}
+}
+
+func TestCycleBreaker_ProcessToolDelta_FileRead_ZeroAllocs(t *testing.T) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:       &enabled,
+		MaxToolTokens: 8192,
+	})
+
+	chunk := `{"path": "C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\main.go"}`
+	allocs := testing.AllocsPerRun(1000, func() {
+		cb.ProcessToolDelta(chunk, ToolCategoryFileRead)
+	})
+
+	if allocs > 0 {
+		t.Fatalf("expected 0 allocs on ToolCategoryFileRead fast path, got %f", allocs)
+	}
+}
+
 func BenchmarkCycleBreaker_ProcessToolDelta_FileWrite(b *testing.B) {
 	enabled := true
 	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
@@ -760,6 +830,20 @@ func BenchmarkCycleBreaker_ProcessToolDelta_FileWrite(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		cb.ProcessToolDelta(chunk, ToolCategoryFileWrite)
+	}
+}
+
+func BenchmarkCycleBreaker_ProcessToolDelta_FileRead(b *testing.B) {
+	enabled := true
+	cb := NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled:       &enabled,
+		MaxToolTokens: 8192,
+	})
+
+	chunk := `{"path": "C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\main.go"}`
+	b.ReportAllocs()
+	for b.Loop() {
+		cb.ProcessToolDelta(chunk, ToolCategoryFileRead)
 	}
 }
 

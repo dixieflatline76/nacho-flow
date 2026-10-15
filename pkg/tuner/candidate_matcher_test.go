@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
 func TestLocalTierImmunityFilter(t *testing.T) {
@@ -326,5 +327,109 @@ func BenchmarkCandidateFilterPipeline_Evaluate(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_, _ = pipeline.Evaluate(ctx)
+	}
+}
+
+func TestCandidateFilters_NamesAndNilContext(t *testing.T) {
+	filters := []struct {
+		filter CandidateFilter
+		name   string
+	}{
+		{&LocalTierImmunityFilter{}, "local_tier_immunity"},
+		{&ContextParityFilter{}, "context_parity"},
+		{&ModalityFilter{}, "modality_preservation"},
+		{&CognitiveParityFilter{}, "cognitive_parity"},
+		{&CostReductionFilter{}, "cost_reduction"},
+		{&DominanceOrderFilter{}, "dominance_order"},
+	}
+	for _, f := range filters {
+		if f.filter.Name() != f.name {
+			t.Errorf("expected filter name %q, got %q", f.name, f.filter.Name())
+		}
+		// Test nil context
+		passed, reason := f.filter.Passes(&FilterContext{})
+		if passed || reason != "nil_context" {
+			t.Errorf("expected nil_context rejection for %s, got passed=%v, reason=%s", f.name, passed, reason)
+		}
+	}
+
+	// Test ConvertTierToCandidate with nil
+	nilCand := ConvertTierToCandidate(nil)
+	if nilCand.ModelID != "" {
+		t.Errorf("expected empty CandidateModel for nil tier, got %+v", nilCand)
+	}
+
+	// Test ConvertTierToCandidate with populated tier
+	tier := &TierReplayConfig{
+		Model:                    "test-model",
+		CodingIndex:              85.0,
+		ToolReliability:          0.95,
+		PromptCostPerMillion:     1.0,
+		CompletionCostPerMillion: 2.0,
+		ComprehensiveRate:        1.5,
+		SupportsVision:           true,
+		SupportsTools:            true,
+		IsLocal:                  true,
+	}
+	c := ConvertTierToCandidate(tier)
+	if c.ModelID != "test-model" || !c.IsOpenWeights {
+		t.Errorf("unexpected candidate from tier: %+v", c)
+	}
+}
+
+func TestCandidatePipeline_EdgeCases(t *testing.T) {
+	var nilPipeline *CandidateFilterPipeline
+	passed, reason := nilPipeline.Evaluate(&FilterContext{})
+	if !passed || reason != "" {
+		t.Errorf("expected nil pipeline to pass, got passed=%v, reason=%s", passed, reason)
+	}
+
+	emptyPipeline := &CandidateFilterPipeline{}
+	passed, reason = emptyPipeline.Evaluate(&FilterContext{})
+	if !passed || reason != "" {
+		t.Errorf("expected empty pipeline to pass, got passed=%v, reason=%s", passed, reason)
+	}
+}
+
+func TestCompositeValueScorer_NilCases(t *testing.T) {
+	scorer := &CompositeValueScorer{}
+	if score := scorer.Score(nil, nil); score != 0.0 {
+		t.Errorf("expected 0.0 for nil target and cand, got %f", score)
+	}
+	tier := &TierReplayConfig{Model: "m1", ComprehensiveRate: 1.0}
+	if score := scorer.Score(tier, nil); score != 0.0 {
+		t.Errorf("expected 0.0 for nil cand, got %f", score)
+	}
+	cand := &CandidateModel{ModelID: "c1", CodingIndex: 80.0}
+	if score := scorer.Score(nil, cand); score != 0.0 {
+		t.Errorf("expected 0.0 for nil target, got %f", score)
+	}
+}
+
+func TestCandidateModel_IsFrontier(t *testing.T) {
+	candRole := CandidateModel{TierRole: string(curation.RoleDeepReasoner)}
+	if !candRole.IsFrontier() {
+		t.Error("expected RoleDeepReasoner to be frontier")
+	}
+
+	candRec := CandidateModel{
+		RecommendedTiers: []string{contract.TierIDFrontier},
+		CodingIndex:      75.0,
+	}
+	if !candRec.IsFrontier() {
+		t.Error("expected TierIDFrontier with coding index >= 70 to be frontier")
+	}
+
+	candLowIndex := CandidateModel{
+		RecommendedTiers: []string{contract.TierIDFrontier},
+		CodingIndex:      60.0,
+	}
+	if candLowIndex.IsFrontier() {
+		t.Error("expected low coding index not to be frontier")
+	}
+
+	candStandard := CandidateModel{TierRole: "workhorse"}
+	if candStandard.IsFrontier() {
+		t.Error("expected standard workhorse not to be frontier")
 	}
 }

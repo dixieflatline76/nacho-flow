@@ -383,3 +383,41 @@ func TestValidateConfig_Phase2Rules(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateRawYAML_AllEdgeCases(t *testing.T) {
+	// 1. Invalid YAML syntax
+	if err := config.ValidateRawYAML([]byte("foo: [unclosed")); err == nil {
+		t.Error("expected syntax error for invalid yaml")
+	}
+	// 2. Empty YAML
+	if err := config.ValidateRawYAML([]byte("")); err != nil {
+		t.Errorf("expected nil for empty yaml, got %v", err)
+	}
+	// 3. Non-mapping YAML
+	if err := config.ValidateRawYAML([]byte("hello world")); err != nil {
+		t.Errorf("expected nil for scalar yaml, got %v", err)
+	}
+	// 4. Deprecated kickstart keys
+	cases := []struct {
+		yaml   string
+		errSub string
+	}{
+		{"kickstart:\n  enabled: true", "kickstart.enabled"},
+		{"kickstart:\n  threshold: 5", "kickstart.threshold"},
+		{"kickstart:\n  max_count: 5", "kickstart.max_count"},
+		{"kickstart:\n  max_failures: 2", "kickstart.max_failures"},
+		{"kickstart:\n  write_only: true", "kickstart.write_only"},
+		{"kickstart:\n  write_tools: ['w']", "kickstart.write_tools"},
+		{"kickstart:\n  prompt: 'hello'", "kickstart.prompt"},
+		{"cycle_killer:\n  kickstart_threshold: 5", "cycle_killer.kickstart_threshold"},
+		{"cycle_breaker:\n  write_tools: ['w']", "cycle_breaker.write_tools"},
+		{"tiers:\n  - name: t1\n    when: SessionKickstarted", "SessionKickstarted"},
+		{"tiers:\n  - name: t1\n    when: SessionKickstartCount > 0", "SessionKickstartCount"},
+	}
+	for _, c := range cases {
+		err := config.ValidateRawYAML([]byte(c.yaml))
+		if err == nil || !strings.Contains(err.Error(), c.errSub) {
+			t.Errorf("expected error containing %q for yaml:\n%s\ngot: %v", c.errSub, c.yaml, err)
+		}
+	}
+}

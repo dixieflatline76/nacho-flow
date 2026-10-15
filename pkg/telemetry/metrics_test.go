@@ -1197,3 +1197,27 @@ func TestStatsTracker_Past1Hour_And_NTS(t *testing.T) {
 		t.Errorf("expected 3000 TotalNTSTokensSaved after recalc, got %d", recalcStats.TotalNTSTokensSaved)
 	}
 }
+
+func TestStatsTracker_InitialSnapshot_EdgeCases(t *testing.T) {
+	snap := StatsSnapshot{
+		StartedAt:                "",
+		DailyBuckets:             nil,
+		TotalRequests:            10,
+		TotalTokensRoutedLocally: 5000,
+		TotalCostSpentUSD:        0.10,
+		EstimatedCostSavedUSD:    0.40,
+	}
+	tr := NewStatsTrackerWithInitialSnapshot(0, snap)
+	defer tr.Close()
+
+	stats := tr.GetStats()
+	if stats.StartedAt == "" {
+		t.Error("expected non-empty StartedAt")
+	}
+	if stats.Windows.AllTime.Requests != 10 {
+		t.Errorf("expected 10 all time requests, got %d", stats.Windows.AllTime.Requests)
+	}
+	if stats.Windows.AllTime.TokensTotal != 5000 {
+		t.Errorf("expected 5000 all time tokens, got %d", stats.Windows.AllTime.TokensTotal)
+	}
+}

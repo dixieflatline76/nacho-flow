@@ -594,3 +594,57 @@ func TestThoughtSlap_ClientCancelled(t *testing.T) {
 		t.Errorf("expected honest truncation notice on cancelled turn, got:\n%s", res)
 	}
 }
+
+func TestThoughtSlap_HelpersCoverage(t *testing.T) {
+	// findRescueTier
+	if _, ok := findRescueTier("", nil); ok {
+		t.Error("expected false for empty tierName")
+	}
+	cfg := &contract.Config{
+		DefaultTier: contract.Tier{Name: "default_fallback"},
+		Tiers: []contract.Tier{
+			{Name: "tier_custom"},
+		},
+	}
+	if tier, ok := findRescueTier("default_fallback", cfg); !ok || tier.Name != "default_fallback" {
+		t.Error("expected to find default_fallback")
+	}
+	if tier, ok := findRescueTier("tier_custom", cfg); !ok || tier.Name != "tier_custom" {
+		t.Error("expected to find tier_custom")
+	}
+	if _, ok := findRescueTier("non_existent", cfg); ok {
+		t.Error("expected false for non_existent")
+	}
+
+	// accumulateUsage
+	total := &StreamUsage{}
+	attempt1 := StreamUsage{
+		PromptTokens:        10,
+		CompletionTokens:    20,
+		TotalTokens:         30,
+		Cost:                0.05,
+		PromptTokensDetails: &PromptTokensDetails{CachedTokens: 5},
+	}
+	accumulateUsage(total, attempt1)
+	if total.PromptTokens != 10 || total.PromptTokensDetails.CachedTokens != 5 {
+		t.Errorf("unexpected first accumulateUsage result: %+v", total)
+	}
+	// Second attempt tests branch where total.PromptTokensDetails != nil
+	attempt2 := StreamUsage{
+		PromptTokens:        5,
+		CompletionTokens:    5,
+		TotalTokens:         10,
+		Cost:                0.01,
+		PromptTokensDetails: &PromptTokensDetails{CachedTokens: 2},
+	}
+	accumulateUsage(total, attempt2)
+	if total.PromptTokens != 15 || total.PromptTokensDetails.CachedTokens != 7 {
+		t.Errorf("unexpected second accumulateUsage result: %+v", total)
+	}
+
+	// StreamNormalizer.HeldTerminal()
+	sn := &StreamNormalizer{}
+	if sn.HeldTerminal() != nil {
+		t.Error("expected nil for HeldTerminal when heldTerminal is nil")
+	}
+}

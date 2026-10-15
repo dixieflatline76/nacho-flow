@@ -590,3 +590,60 @@ func BenchmarkPricingOracle_GetModelMetadata_ZeroAlloc(b *testing.B) {
 		_, _ = oracle.GetModelMetadata("anthropic", "claude-sonnet-5")
 	}
 }
+
+func TestPricingOracle_NilAndEmptyEdgeCases(t *testing.T) {
+	var nilOracle *PricingOracle
+	if _, ok := nilOracle.GetModelMetadata("anthropic", "m"); ok {
+		t.Error("expected false for nil oracle")
+	}
+	oracle := NewPricingOracle()
+	if !oracle.LastSynced().IsZero() {
+		t.Error("expected zero time for un-synced oracle")
+	}
+}
+
+func TestPricingOracle_GetDeals_EdgeCases(t *testing.T) {
+	// Raw oracle with nil metadataMap
+	raw := &PricingOracle{}
+	if deals := raw.GetDeals(contract.DealsConfig{}, 0, 0); deals != nil {
+		t.Errorf("expected nil deals for nil metadata, got %+v", deals)
+	}
+
+	oracle := NewPricingOracle()
+	prov := &mockPricingProvider{
+		name: "deals_prov",
+		prices: map[string]ModelMetadata{
+			"neg_model": {
+				ModelID:      "neg_model",
+				ModelPricing: ModelPricing{PromptCostPerMillion: -1, CompletionCostPerMillion: 1},
+			},
+			"batch_model:batch": {
+				ModelID:      "batch_model:batch",
+				Name:         "Batch Model (batch)",
+				ModelPricing: ModelPricing{PromptCostPerMillion: 0.1, CompletionCostPerMillion: 0.2},
+			},
+			"free_model:free": {
+				ModelID:      "free_model:free",
+				ModelPricing: ModelPricing{PromptCostPerMillion: 0, CompletionCostPerMillion: 0},
+			},
+			"deals_prov" + contract.PricingNamespaceSeparator + "dup": {
+				ModelID: "dup",
+			},
+		},
+	}
+	oracle.RegisterProvider(prov, 0)
+	_ = oracle.Sync(context.Background())
+
+	excludeTrue := true
+	cfg := contract.DealsConfig{
+		ExcludeBatch: &excludeTrue,
+		ExcludeFree:  &excludeTrue,
+	}
+	deals := oracle.GetDeals(cfg, -1, -1)
+	// Should filter out negative, batch, free, and namespaced duplicate
+	for _, d := range deals {
+		if d.ModelID == "neg_model" || d.ModelID == "batch_model:batch" || d.ModelID == "free_model:free" {
+			t.Errorf("expected deal %q to be filtered out", d.ModelID)
+		}
+	}
+}

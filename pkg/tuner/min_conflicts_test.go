@@ -1921,3 +1921,22 @@ func TestMinConflicts_LoosensRetryForReadBursts(t *testing.T) {
 		t.Errorf("Expected read burst escalations > 0, got %d", res.ReadBurstEscalations)
 	}
 }
+
+func TestCandidateConfigBuilder_WithModelCandidate(t *testing.T) {
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{Model: "old-model", CodingIndex: 50},
+		},
+	}
+	builder := NewCandidateBuilder(&cfg)
+	cand := curation.ModelCuratedProfile{
+		ModelID:                  "new-curated-model",
+		CodingIndex:              88,
+		PromptCostPerMillion:     1.0,
+		CompletionCostPerMillion: 3.0,
+	}
+	built := builder.WithModelCandidate(0, cand).Build()
+	if built.Tiers[0].Model != "new-curated-model" {
+		t.Errorf("expected model %q, got %q", "new-curated-model", built.Tiers[0].Model)
+	}
+}

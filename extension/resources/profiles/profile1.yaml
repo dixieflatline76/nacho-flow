@@ -69,9 +69,9 @@ cycle_killer:
 
   thinking_lane:
     max_tokens: 16384               # Raised from 4096: allows deep CoT reasoning (GLM, DeepSeek R1, QwQ)
-    phrase_length: 8                # 8-word window prevents short table rows (e.g. H H H H H H) from tripping
-    max_repeats: 12                 # Raised from 6: tolerates matrix / table iterations and case evaluations
-    budget_max_repeats: 12          # Raised from 5: prevents natural prose recurrence from triggering false kills
+    phrase_length: 12                # 8-word window prevents short table rows (e.g. H H H H H H) from tripping
+    max_repeats: 20                 # Raised from 6: tolerates matrix / table iterations and case evaluations
+    budget_max_repeats: 24          # Raised from 5: prevents natural prose recurrence from triggering false kills
 
   content_lane:
     max_tokens: 12288               # Raised from 6144: headroom for comprehensive markdown plans

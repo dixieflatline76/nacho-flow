@@ -297,6 +297,118 @@ func deleteMemberSpan(body []byte, kStart, vEnd, startObj, closeObj int) (int, i
 	return kStart, vEnd
 }
 
+type memberSpan struct {
+	kStart int
+	kEnd   int
+	vStart int
+	vEnd   int
+}
+
+var (
+	jsonNone                     = []byte(`"none"`)
+	jsonEmptyStr                 = []byte(`""`)
+	jsonNull                     = []byte(`null`)
+	jsonEffortKey                = []byte("effort")
+	jsonTrue                     = []byte("true")
+	jsonIncludeUsageObj          = []byte(`{"include_usage":true}`)
+	jsonIncludeUsageKey          = []byte(`"include_usage":true`)
+	jsonIncludeUsageKeyWithComma = []byte(`,"include_usage":true`)
+)
+
+// isEffortNone returns true if the raw JSON value represents an empty or "none" reasoning effort.
+func isEffortNone(val []byte) bool {
+	val = bytes.TrimSpace(val)
+	return bytes.Equal(val, jsonNone) || bytes.Equal(val, jsonEmptyStr) || bytes.Equal(val, jsonNull)
+}
+
+// isNestedReasoningSoleEffort checks if [objStart, objEnd) contains "effort": "none" and whether it is the sole key.
+func isNestedReasoningSoleEffort(body []byte, objStart, objEnd int) (soleEffort bool, hasEffortNone bool, effortKStart, effortVEnd int) {
+	kStart, valStart, valEnd, ok := zeroalloc.ObjectField(body, objStart, objEnd, "effort")
+	if !ok || !isEffortNone(body[valStart:valEnd]) {
+		return false, false, 0, 0
+	}
+	hasEffortNone = true
+	effortKStart = kStart
+	effortVEnd = valEnd
+
+	soleEffort = true
+	i := objStart + 1
+	for i < objEnd-1 {
+		for i < objEnd-1 && (body[i] == ' ' || body[i] == '\t' || body[i] == '\n' || body[i] == '\r' || body[i] == ',') {
+			i++
+		}
+		if i >= objEnd-1 || body[i] == '}' {
+			break
+		}
+		if body[i] != '"' {
+			break
+		}
+		ks := i
+		ke, okStr := zeroalloc.SkipValue(body, i)
+		if !okStr {
+			break
+		}
+		if !bytes.Equal(body[ks+1:ke-1], jsonEffortKey) {
+			soleEffort = false
+			break
+		}
+		for ke < objEnd-1 && (body[ke] == ' ' || body[ke] == '\t' || body[ke] == '\n' || body[ke] == '\r') {
+			ke++
+		}
+		if ke < objEnd-1 && body[ke] == ':' {
+			ke++
+		}
+		ve, okVal := zeroalloc.SkipValue(body, ke)
+		if !okVal {
+			break
+		}
+		i = ve
+	}
+	return soleEffort, hasEffortNone, effortKStart, effortVEnd
+}
+
+// coalesceDeleteSpans merges contiguous or overlapping deleted member spans in sorted order.
+// Returns the number of unique spans remaining in spans[:count] without allocating.
+func coalesceDeleteSpans(body []byte, spans []memberSpan) int {
+	if len(spans) <= 1 {
+		return len(spans)
+	}
+	for a := 1; a < len(spans); a++ {
+		for b := a; b > 0 && spans[b].kStart < spans[b-1].kStart; b-- {
+			spans[b], spans[b-1] = spans[b-1], spans[b]
+		}
+	}
+	w := 0
+	for i := 1; i < len(spans); i++ {
+		prevEnd := spans[w].vEnd
+		nextStart := spans[i].kStart
+		isContiguous := true
+		for k := prevEnd; k < nextStart; k++ {
+			c := body[k]
+			if c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != ',' {
+				isContiguous = false
+				break
+			}
+		}
+		if isContiguous {
+			if spans[i].vEnd > spans[w].vEnd {
+				spans[w].vEnd = spans[i].vEnd
+			}
+		} else {
+			w++
+			spans[w] = spans[i]
+		}
+	}
+	return w + 1
+}
+
+var scratchPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 256)
+		return &b
+	},
+}
+
 func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvider provider.LLMProvider) []byte {
 	// Find top-level object bounds
 	startObj := 0
@@ -315,24 +427,29 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 		return body
 	}
 
-	isOpenRouter := provider.IsOpenRouter(targetProvider)
+	decl := provider.DefaultWireDeclarator
+	if wdp, ok := targetProvider.(provider.WireDeclaratorProvider); ok {
+		if d := wdp.WireDeclarator(); d != nil {
+			decl = d
+		}
+	}
 
 	var editsBuf [8]zeroalloc.Edit
 	edits := editsBuf[:0]
 
+	var scratchPtr *[]byte
+	var scratch []byte
 	var modelRepl []byte
 	var reRepl []byte
 	if targetTier.ReasoningEffort != "" {
-		reRepl = zeroalloc.AppendEscapedJSONString(nil, targetTier.ReasoningEffort)
+		scratchPtr = scratchPool.Get().(*[]byte)
+		scratch = (*scratchPtr)[:0]
+		sStart := len(scratch)
+		scratch = zeroalloc.AppendEscapedJSONString(scratch, targetTier.ReasoningEffort)
+		reRepl = scratch[sStart:]
 	}
 
 	foundModel := false
-	type memberSpan struct {
-		kStart int
-		kEnd   int
-		vStart int
-		vEnd   int
-	}
 	var reSpansBuf [4]memberSpan
 	reSpans := reSpansBuf[:0]
 	var reasoningSpansBuf [4]memberSpan
@@ -341,6 +458,8 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 	type span struct{ start, end int }
 	var streamOptionsSpansBuf [4]span
 	streamOptionsSpans := streamOptionsSpansBuf[:0]
+
+	totalMembers := 0
 
 	// Scan top-level members to locate existing keys (handling duplicate keys by recording all occurrences)
 	i := startObj + 1
@@ -365,6 +484,7 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 			return body
 		}
 		i = kEnd
+		totalMembers++
 
 		for i < closeObj && (body[i] == ' ' || body[i] == '\t' || body[i] == '\n' || body[i] == '\r') {
 			i++
@@ -395,21 +515,23 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 				// Model already matches target tier; zero edits, zero allocations
 			} else {
 				if modelRepl == nil {
-					modelRepl = zeroalloc.AppendEscapedJSONString(nil, targetTier.Model)
+					if scratchPtr == nil {
+						scratchPtr = scratchPool.Get().(*[]byte)
+						scratch = (*scratchPtr)[:0]
+					}
+					sStart := len(scratch)
+					scratch = zeroalloc.AppendEscapedJSONString(scratch, targetTier.Model)
+					modelRepl = scratch[sStart:]
 				}
 				edits = append(edits, zeroalloc.Edit{Start: vStart, End: vEnd, Repl: modelRepl})
 			}
 		case "reasoning_effort":
-			if targetTier.ReasoningEffort != "" {
-				reSpans = append(reSpans, memberSpan{kStart: kStart, kEnd: kEnd, vStart: vStart, vEnd: vEnd})
-			}
+			reSpans = append(reSpans, memberSpan{kStart: kStart, kEnd: kEnd, vStart: vStart, vEnd: vEnd})
 		case "reasoning":
-			if targetTier.ReasoningEffort != "" && isOpenRouter {
-				reasoningSpans = append(reasoningSpans, memberSpan{kStart: kStart, kEnd: kEnd, vStart: vStart, vEnd: vEnd})
-			}
+			reasoningSpans = append(reasoningSpans, memberSpan{kStart: kStart, kEnd: kEnd, vStart: vStart, vEnd: vEnd})
 		case "stream":
 			valBytes := bytes.TrimSpace(body[vStart:vEnd])
-			if bytes.Equal(valBytes, []byte("true")) {
+			if bytes.Equal(valBytes, jsonTrue) {
 				isStream = true
 			}
 		case "stream_options":
@@ -434,7 +556,7 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 					// Check if include_usage exists inside stream_options object
 					_, iuVStart, iuVEnd, okIU := zeroalloc.ObjectField(body, s, sp.end, "include_usage")
 					if okIU {
-						edits = append(edits, zeroalloc.Edit{Start: iuVStart, End: iuVEnd, Repl: []byte("true")})
+						edits = append(edits, zeroalloc.Edit{Start: iuVStart, End: iuVEnd, Repl: jsonTrue})
 					} else {
 						// Insert before '}'
 						hasElems := false
@@ -444,52 +566,31 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 								break
 							}
 						}
-						var ins []byte
+						repl := jsonIncludeUsageKey
 						if hasElems {
-							ins = append(ins, ',')
+							repl = jsonIncludeUsageKeyWithComma
 						}
-						ins = append(ins, `"include_usage":true`...)
-						edits = append(edits, zeroalloc.Edit{Start: e, End: e, Repl: ins})
+						edits = append(edits, zeroalloc.Edit{Start: e, End: e, Repl: repl})
 					}
 				} else {
 					// Not an object (e.g. null) -> replace with {"include_usage":true}
-					edits = append(edits, zeroalloc.Edit{Start: sp.start, End: sp.end, Repl: []byte(`{"include_usage":true}`)})
+					edits = append(edits, zeroalloc.Edit{Start: sp.start, End: sp.end, Repl: jsonIncludeUsageObj})
 				}
 			}
 		}
 	}
 
-	// Check if top-level has any existing members
-	hasTopLevelElements := false
-	for k := startObj + 1; k < closeObj; k++ {
-		if body[k] != ' ' && body[k] != '\t' && body[k] != '\n' && body[k] != '\r' {
-			hasTopLevelElements = true
-			break
-		}
-	}
+	// 1. Evaluate reasoning normalization first so any deleted top-level members are accounted for.
+	numDeletedTopMembers := 0
+	var missingReasoningIns []byte
 
-	// Insert missing top-level keys before closeObj
-	var topIns []byte
-	if !foundModel {
-		if hasTopLevelElements || len(topIns) > 0 {
-			topIns = append(topIns, ',')
-		}
-		if modelRepl == nil {
-			modelRepl = zeroalloc.AppendEscapedJSONString(nil, targetTier.Model)
-		}
-		topIns = append(topIns, `"model":`...)
-		topIns = append(topIns, modelRepl...)
-	}
-
-	// Reasoning Normalization: Config YAML is the single source of truth.
-	// If targetTier.ReasoningEffort is unset, we inject nothing and leave payload untouched.
-	// If configured, we mechanically translate to target provider dialect (nested for OpenRouter, flat for Cloud/Local).
 	if targetTier.ReasoningEffort != "" {
-		if isOpenRouter {
-			var orVal []byte
-			orVal = append(orVal, `{"effort":`...)
-			orVal = append(orVal, reRepl...)
-			orVal = append(orVal, '}')
+		if decl.Dialect == provider.ReasoningDialectNested {
+			orValStart := len(scratch)
+			scratch = append(scratch, `{"effort":`...)
+			scratch = append(scratch, reRepl...)
+			scratch = append(scratch, '}')
+			orVal := scratch[orValStart:]
 
 			if len(reasoningSpans) > 0 {
 				// Replace the value of the first "reasoning" key
@@ -498,39 +599,53 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 					End:   reasoningSpans[0].vEnd,
 					Repl:  orVal,
 				})
-				// If duplicate "reasoning" keys exist, delete them
+				// Collect spans to delete: duplicate reasoning keys + flat reasoning_effort keys
+				var delBuf [8]memberSpan
+				delSpans := delBuf[:0]
 				for _, sp := range reasoningSpans[1:] {
-					dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
-					edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
+					delSpans = append(delSpans, sp)
 				}
-				// Any flat "reasoning_effort" fields MUST be stripped to prevent upstream OpenRouter 400 collisions
-				for _, sp := range reSpans {
-					dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
-					edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
+				if decl.StripFlatOnNested {
+					for _, sp := range reSpans {
+						delSpans = append(delSpans, sp)
+					}
+				}
+				if len(delSpans) > 0 {
+					numDeletedTopMembers += len(delSpans)
+					n := coalesceDeleteSpans(body, delSpans)
+					for _, sp := range delSpans[:n] {
+						dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
+						edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
+					}
 				}
 			} else if len(reSpans) > 0 {
 				// Inbound request had flat "reasoning_effort" but no "reasoning".
 				// Mutate the first "reasoning_effort" key-value directly into "reasoning": {"effort": ...}
-				var orMember []byte
-				orMember = append(orMember, `"reasoning":`...)
-				orMember = append(orMember, orVal...)
+				orMemberStart := len(scratch)
+				scratch = append(scratch, `"reasoning":`...)
+				scratch = append(scratch, orVal...)
+				orMember := scratch[orMemberStart:]
+
 				edits = append(edits, zeroalloc.Edit{
 					Start: reSpans[0].kStart,
 					End:   reSpans[0].vEnd,
 					Repl:  orMember,
 				})
 				// Delete any duplicate "reasoning_effort" fields
-				for _, sp := range reSpans[1:] {
-					dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
-					edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
+				if len(reSpans) > 1 {
+					numDeletedTopMembers += len(reSpans) - 1
+					n := coalesceDeleteSpans(body, reSpans[1:])
+					for _, sp := range reSpans[1 : 1+n] {
+						dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
+						edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
+					}
 				}
 			} else {
-				// Neither was present: insert nested reasoning before closeObj
-				if hasTopLevelElements || len(topIns) > 0 {
-					topIns = append(topIns, ',')
-				}
-				topIns = append(topIns, `"reasoning":`...)
-				topIns = append(topIns, orVal...)
+				// Neither was present: queue nested reasoning for insertion before closeObj
+				orInsStart := len(scratch)
+				scratch = append(scratch, `"reasoning":`...)
+				scratch = append(scratch, orVal...)
+				missingReasoningIns = scratch[orInsStart:]
 			}
 		} else {
 			// Standard Cloud / Local: flat "reasoning_effort"
@@ -543,26 +658,96 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 					})
 				}
 			} else {
-				if hasTopLevelElements || len(topIns) > 0 {
-					topIns = append(topIns, ',')
+				flatInsStart := len(scratch)
+				scratch = append(scratch, `"reasoning_effort":`...)
+				scratch = append(scratch, reRepl...)
+				missingReasoningIns = scratch[flatInsStart:]
+			}
+		}
+	} else if decl.ForbidsEffortNone {
+		// targetTier.ReasoningEffort == "" and provider forbids "none":
+		// Check inbound client spans individually.
+		var delBuf [8]memberSpan
+		delSpans := delBuf[:0]
+
+		for _, sp := range reSpans {
+			if isEffortNone(body[sp.vStart:sp.vEnd]) {
+				delSpans = append(delSpans, sp)
+			}
+		}
+
+		for _, sp := range reasoningSpans {
+			sole, hasNone, effKStart, effVEnd := isNestedReasoningSoleEffort(body, sp.vStart, sp.vEnd)
+			if hasNone {
+				if sole {
+					delSpans = append(delSpans, sp)
+				} else {
+					// Delete only the "effort": "none" member inside the "reasoning" object
+					dStart, dEnd := deleteMemberSpan(body, effKStart, effVEnd, sp.vStart, sp.vEnd)
+					edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
 				}
-				topIns = append(topIns, `"reasoning_effort":`...)
-				topIns = append(topIns, reRepl...)
+			}
+		}
+
+		if len(delSpans) > 0 {
+			numDeletedTopMembers += len(delSpans)
+			n := coalesceDeleteSpans(body, delSpans)
+			for _, sp := range delSpans[:n] {
+				dStart, dEnd := deleteMemberSpan(body, sp.kStart, sp.vEnd, startObj, closeObj)
+				edits = append(edits, zeroalloc.Edit{Start: dStart, End: dEnd, Repl: nil})
 			}
 		}
 	}
 
-	if isStream && len(streamOptionsSpans) == 0 {
-		if hasTopLevelElements || len(topIns) > 0 {
-			topIns = append(topIns, ',')
+	hasRemainingElements := totalMembers > numDeletedTopMembers
+
+	// Insert missing top-level keys before closeObj
+	if !foundModel && targetTier.Model != "" || len(missingReasoningIns) > 0 || (isStream && len(streamOptionsSpans) == 0) {
+		if scratchPtr == nil {
+			scratchPtr = scratchPool.Get().(*[]byte)
+			scratch = (*scratchPtr)[:0]
 		}
-		topIns = append(topIns, `"stream_options":{"include_usage":true}`...)
 	}
-	if len(topIns) > 0 {
-		edits = append(edits, zeroalloc.Edit{Start: closeObj, End: closeObj, Repl: topIns})
+
+	topInsStart := len(scratch)
+	if !foundModel && targetTier.Model != "" {
+		if hasRemainingElements || len(scratch) > topInsStart {
+			scratch = append(scratch, ',')
+		}
+		scratch = append(scratch, `"model":`...)
+		if modelRepl != nil {
+			scratch = append(scratch, modelRepl...)
+		} else {
+			scratch = zeroalloc.AppendEscapedJSONString(scratch, targetTier.Model)
+		}
+	}
+
+	if len(missingReasoningIns) > 0 {
+		if hasRemainingElements || len(scratch) > topInsStart {
+			scratch = append(scratch, ',')
+		}
+		scratch = append(scratch, missingReasoningIns...)
+	}
+
+	if isStream && len(streamOptionsSpans) == 0 {
+		if hasRemainingElements || len(scratch) > topInsStart {
+			scratch = append(scratch, ',')
+		}
+		scratch = append(scratch, `"stream_options":{"include_usage":true}`...)
+	}
+
+	if len(scratch) > topInsStart {
+		edits = append(edits, zeroalloc.Edit{
+			Start: closeObj,
+			End:   closeObj,
+			Repl:  scratch[topInsStart:],
+		})
 	}
 
 	if len(edits) == 0 {
+		if scratchPtr != nil {
+			scratchPool.Put(scratchPtr)
+		}
 		return body
 	}
 
@@ -586,6 +771,9 @@ func modifyTopLevelPayload(body []byte, targetTier *contract.Tier, targetProvide
 	// so the caller's body remains 100% pristine for fallback tiers and cycle recovery.
 	dst := make([]byte, 0, len(body)+extraCap)
 	out, ok := zeroalloc.SpliceInto(dst, body, edits)
+	if scratchPtr != nil {
+		scratchPool.Put(scratchPtr)
+	}
 	if !ok {
 		return body
 	}

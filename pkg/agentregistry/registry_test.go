@@ -6,6 +6,7 @@ package agentregistry
 import (
 	"encoding/json"
 	"io/fs"
+	"net/http"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -142,6 +143,13 @@ func TestRegistry_DetectShellWrite(t *testing.T) {
 		{"cmd\r\ntouch file.txt", true},
 		{"echo 'test'\r\nrm file.txt", true},
 		{"git status\r\nls -la", false},
+		{`{"commands": ["Set-Content -Path 'strategy.go' -Value @'"]}`, true},
+		{`{"command": "cat << 'EOF' > strategy.go"}`, true},
+		{`{"command": "echo 'test' > output.txt"}`, true},
+		{`{"commands": ["ls -la", "go test ./..."]}`, false},
+		{`powershell -Command "Set-Content -Path 'file.txt' -Value 'hi'"`, true},
+		{`{"commands": ["Set-Content `, true},
+		{`{\"commands\": [\"Set-Content `, true},
 	}
 
 	for _, tt := range tests {
@@ -316,6 +324,16 @@ func BenchmarkRegistry_DetectShellWrite(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = reg.DetectShellWrite(cmd)
+	}
+}
+
+func BenchmarkRegistry_DetectShellWrite_JSON(b *testing.B) {
+	reg := DefaultRegistry()
+	jsonCmd := `{"commands": ["Set-Content -Path 'strategy.go' -Value @'"]}`
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = reg.DetectShellWrite(jsonCmd)
 	}
 }
 
@@ -963,5 +981,242 @@ func TestRegistry_StripControlTokensInPlace_DeepEscaped(t *testing.T) {
 				t.Errorf("StripControlTokensInPlace mismatch:\nGot:  %q\nWant: %q", string(cleaned), tt.expected)
 			}
 		})
+	}
+}
+
+func TestRegistry_ReasoningCompactionConfigAndProfile(t *testing.T) {
+	reg := DefaultRegistry()
+	if reg == nil {
+		t.Fatal("expected default registry")
+	}
+
+	cfg := reg.GetReasoningCompactionConfig()
+	if cfg.MinKickoffBytes != 400 {
+		t.Errorf("expected MinKickoffBytes 400, got %d", cfg.MinKickoffBytes)
+	}
+	if cfg.KickoffScanTurns != 5 {
+		t.Errorf("expected KickoffScanTurns 5, got %d", cfg.KickoffScanTurns)
+	}
+	if cfg.MinSubstantialBytes != 200 {
+		t.Errorf("expected MinSubstantialBytes 200, got %d", cfg.MinSubstantialBytes)
+	}
+	if cfg.HysteresisHighWatermark != 6 {
+		t.Errorf("expected HysteresisHighWatermark 6, got %d", cfg.HysteresisHighWatermark)
+	}
+	if cfg.HysteresisLowWatermark != 2 {
+		t.Errorf("expected HysteresisLowWatermark 2, got %d", cfg.HysteresisLowWatermark)
+	}
+	if len(cfg.UniversalToolErrorPrefixes) != 7 {
+		t.Errorf("expected 7 UniversalToolErrorPrefixes, got %d", len(cfg.UniversalToolErrorPrefixes))
+	}
+
+	clineProfile := reg.GetProfile("cline")
+	if clineProfile == nil {
+		t.Fatal("expected cline profile")
+	}
+	if clineProfile.RecommendedRetentionTurns != 6 {
+		t.Errorf("expected cline RecommendedRetentionTurns 6, got %d", clineProfile.RecommendedRetentionTurns)
+	}
+}
+
+func TestRegistry_EdgeCasesAndCoverage(t *testing.T) {
+	// 1. Nil Registry receiver behavior
+	var nilReg *Registry
+	if nilReg.InteractiveToolsList() != nil {
+		t.Error("expected nil InteractiveToolsList for nil registry")
+	}
+	if nilReg.ModeHeuristicsList() != nil {
+		t.Error("expected nil ModeHeuristicsList for nil registry")
+	}
+	if nilReg.QuestionHeuristicsList() != nil {
+		t.Error("expected nil QuestionHeuristicsList for nil registry")
+	}
+	if nilReg.ErrorSignaturesList() != nil {
+		t.Error("expected nil ErrorSignaturesList for nil registry")
+	}
+	if nilReg.CycleKillerExemptToolsList() != nil {
+		t.Error("expected nil CycleKillerExemptToolsList for nil registry")
+	}
+	if nilReg.WriteToolsList() != nil {
+		t.Error("expected nil WriteToolsList for nil registry")
+	}
+	if nilReg.WriteTagByteMarkers() != nil {
+		t.Error("expected nil WriteTagByteMarkers for nil registry")
+	}
+	if nilReg.TagReplacer() != nil {
+		t.Error("expected nil TagReplacer for nil registry")
+	}
+	if nilReg.ReasoningByteMarkers() != nil {
+		t.Error("expected nil ReasoningByteMarkers for nil registry")
+	}
+	if nilReg.ControlTokensByteList() != nil {
+		t.Error("expected nil ControlTokensByteList for nil registry")
+	}
+	sampleBytes := []byte("hello world")
+	if string(nilReg.StripControlTokensInPlace(sampleBytes)) != "hello world" {
+		t.Error("expected unchanged bytes for nil StripControlTokensInPlace")
+	}
+	if nilReg.HasControlTokenMarker(sampleBytes) {
+		t.Error("expected false for nil HasControlTokenMarker")
+	}
+	if nilReg.FindTrailingDelimiterPrefix(sampleBytes, 10) != -1 {
+		t.Error("expected -1 for nil FindTrailingDelimiterPrefix")
+	}
+	if nilReg.IsKnownDelimiterPrefix(sampleBytes) {
+		t.Error("expected false for nil IsKnownDelimiterPrefix")
+	}
+	if nilReg.MatchesErrorSignature("some error") {
+		t.Error("expected false for nil MatchesErrorSignature")
+	}
+	if nilReg.RegisteredAgents() != nil {
+		t.Error("expected nil RegisteredAgents for nil registry")
+	}
+	if nilReg.GetProfile("cline") != nil {
+		t.Error("expected nil GetProfile for nil registry")
+	}
+	if got := nilReg.GetReasoningCompactionConfig(); got.MinKickoffBytes != 0 {
+		t.Errorf("expected zero struct for nil GetReasoningCompactionConfig, got %+v", got)
+	}
+	if got := nilReg.DetectClient(nil, nil); got != "unknown" {
+		t.Errorf("expected unknown for nil DetectClient, got %q", got)
+	}
+	if nilReg.IsToolError("error message", false) {
+		t.Error("expected false for nil IsToolError when isError is false")
+	}
+	if !nilReg.IsToolError("error message", true) {
+		t.Error("expected true for nil IsToolError when isError is true")
+	}
+
+	// 2. Non-nil Registry edge cases
+	reg := DefaultRegistry()
+	if reg == nil {
+		t.Fatal("expected default registry")
+	}
+
+	if reg.FindTrailingDelimiterPrefix(nil, 5) != -1 {
+		t.Error("expected -1 for nil slice in FindTrailingDelimiterPrefix")
+	}
+	if reg.FindTrailingDelimiterPrefix([]byte{}, 5) != -1 {
+		t.Error("expected -1 for empty slice in FindTrailingDelimiterPrefix")
+	}
+	if reg.IsKnownDelimiterPrefix(nil) {
+		t.Error("expected false for nil slice in IsKnownDelimiterPrefix")
+	}
+	if reg.IsKnownDelimiterPrefix([]byte{}) {
+		t.Error("expected false for empty slice in IsKnownDelimiterPrefix")
+	}
+	if reg.IsKnownDelimiterPrefix([]byte("not_a_delimiter_prefix_at_all_xyz")) {
+		t.Error("expected false for unknown delimiter prefix")
+	}
+	if len(reg.delimiterPrefixes) > 0 {
+		known := reg.delimiterPrefixes[0]
+		if !reg.IsKnownDelimiterPrefix(known) {
+			t.Errorf("expected true for known delimiter prefix %q", string(known))
+		}
+	}
+
+	if reg.MatchesErrorSignature("") {
+		t.Error("expected false for empty string in MatchesErrorSignature")
+	}
+	if reg.MatchesErrorSignature("all systems operational and nominal") {
+		t.Error("expected false for non-error string in MatchesErrorSignature")
+	}
+	sigs := reg.ErrorSignaturesList()
+	if len(sigs) == 0 {
+		t.Error("expected non-empty ErrorSignaturesList")
+	} else {
+		testMsg := "Attention: " + sigs[0] + " occurred during processing"
+		if !reg.MatchesErrorSignature(testMsg) {
+			t.Errorf("expected true for MatchesErrorSignature matching %q", sigs[0])
+		}
+	}
+
+	if len(reg.InteractiveToolsList()) == 0 {
+		t.Error("expected non-empty InteractiveToolsList")
+	}
+	if len(reg.ModeHeuristicsList()) == 0 {
+		t.Error("expected non-empty ModeHeuristicsList")
+	}
+	if len(reg.QuestionHeuristicsList()) == 0 {
+		t.Error("expected non-empty QuestionHeuristicsList")
+	}
+	if len(reg.CycleKillerExemptToolsList()) == 0 {
+		t.Error("expected non-empty CycleKillerExemptToolsList")
+	}
+	if len(reg.WriteToolsList()) == 0 {
+		t.Error("expected non-empty WriteToolsList")
+	}
+	if len(reg.WriteTagByteMarkers()) == 0 {
+		t.Error("expected non-empty WriteTagByteMarkers")
+	}
+	if len(reg.ControlTokensByteList()) == 0 {
+		t.Error("expected non-empty ControlTokensByteList")
+	}
+
+	if reg.StripControlTokensInPlace(nil) != nil {
+		t.Error("expected nil for StripControlTokensInPlace(nil)")
+	}
+	if len(reg.StripControlTokensInPlace([]byte{})) != 0 {
+		t.Error("expected empty for StripControlTokensInPlace(empty)")
+	}
+	if reg.HasControlTokenMarker(nil) {
+		t.Error("expected false for nil in HasControlTokenMarker")
+	}
+	if reg.HasControlTokenMarker([]byte{}) {
+		t.Error("expected false for empty in HasControlTokenMarker")
+	}
+
+	agents := reg.RegisteredAgents()
+	if len(agents) == 0 {
+		t.Error("expected non-empty RegisteredAgents")
+	}
+	if reg.GetProfile("non_existent_profile_xyz") != nil {
+		t.Error("expected nil for non-existent profile")
+	}
+
+	// 3. Client detection coverage
+	// Explicit X-Client-Id header
+	hdrClient := http.Header{"X-Client-Id": []string{"CustomAgent"}}
+	if got := reg.DetectClient(hdrClient, nil); got != "customagent" {
+		t.Errorf("expected customagent, got %q", got)
+	}
+	// Explicit X-Agent-Id header
+	hdrAgent := http.Header{"X-Agent-Id": []string{"Agent47"}}
+	if got := reg.DetectClient(hdrAgent, nil); got != "agent47" {
+		t.Errorf("expected agent47, got %q", got)
+	}
+	// User-Agent fallback
+	hdrUA := http.Header{"User-Agent": []string{"cline-extension/1.0"}}
+	if got := reg.DetectClient(hdrUA, nil); got != "cline" {
+		t.Errorf("expected cline from UA, got %q", got)
+	}
+	// Tool body fallback
+	if len(reg.uniqueToolMatchers) > 0 {
+		utm := reg.uniqueToolMatchers[0]
+		body := []byte(`{"tool": "` + string(utm.toolName) + `"}`)
+		if got := reg.DetectClient(http.Header{}, body); got != utm.clientID {
+			t.Errorf("expected %q from tool body fallback, got %q", utm.clientID, got)
+		}
+	}
+	// Unknown
+	if got := reg.DetectClient(http.Header{}, nil); got != "unknown" {
+		t.Errorf("expected unknown, got %q", got)
+	}
+
+	// 4. Internal helpers
+	if hasPrefixFold("short", "much_longer_prefix") {
+		t.Error("expected false when string is shorter than prefix")
+	}
+	if !containsFold("anything", "") {
+		t.Error("expected true when substr is empty")
+	}
+	if containsFold("hi", "longer_substr") {
+		t.Error("expected false when string is shorter than substr")
+	}
+	if containsCommandWord("hi", "") {
+		t.Error("expected false when word is empty")
+	}
+	if containsCommandWord("hi", "longer_word") {
+		t.Error("expected false when string is shorter than word")
 	}
 }

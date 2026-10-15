@@ -1035,6 +1035,64 @@ func TestStreamNormalizer_ClineEditor_ImmunityToFileWrites(t *testing.T) {
 	}
 }
 
+func TestStreamNormalizer_ReadFiles_BatchPaths_BypassesRepetition(t *testing.T) {
+	enabled := true
+	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{
+		Enabled: &enabled,
+		ToolLane: contract.ToolLaneConfig{
+			LaneConfig: contract.LaneConfig{
+				MaxTokens:    8192,
+				PhraseLength: 4,
+				MaxRepeats:   6,
+			},
+		},
+	})
+
+	// Replay Turn 2 batch read_files with 6 paths sharing the 11-word prefix
+	prefix := `C:\\Users\\karlk\\development\\Benchmark\\fixed it run 1 cline glm\\`
+	files := []string{"cover", "cover.out", "go.mod", "helpers_test.go", "main.go", "main_test.go"}
+
+	var sb strings.Builder
+	sb.WriteString("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"read_files\",\"arguments\":\"{\\\"files\\\": [\"}}]}}]}\n\n")
+	for i, f := range files {
+		comma := ","
+		if i == len(files)-1 {
+			comma = ""
+		}
+		chunkArg := fmt.Sprintf(`{\\\"path\\\": \\\"%s%s\\\"}%s`, prefix, f, comma)
+		sb.WriteString(fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"%s\"}}]}}]}\n\n", chunkArg))
+	}
+	sb.WriteString("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\" ]}\"}}]}}]}\n\n")
+	sb.WriteString("data: [DONE]\n\n")
+
+	r := io.NopCloser(strings.NewReader(sb.String()))
+	norm := NewStreamNormalizer(r)
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 256)
+	violated := false
+	var violationReason string
+	for {
+		_, err := norm.Read(buf)
+		if v, reason := norm.CheckCycleViolation(); v {
+			violated = true
+			violationReason = reason
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if violated {
+		t.Fatalf("expected batch read_files with shared path prefixes to complete cleanly, but got cycle violation: %s", violationReason)
+	}
+	if cb.ToolTokens() == 0 {
+		t.Errorf("expected ToolTokens > 0, got %d", cb.ToolTokens())
+	}
+}
+
 func TestStreamNormalizer_ClineXML_WriteToFile_Immunity(t *testing.T) {
 	enabled := true
 	cb := shield.NewCycleBreaker(&contract.CycleBreakerConfig{

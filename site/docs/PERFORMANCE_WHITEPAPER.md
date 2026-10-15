@@ -1,6 +1,6 @@
 # 📄 Architectural Whitepaper: Near-Zero Allocation Hot Paths & Wire-Speed Agent Supervision
 
-**How Nacho Flow Delivers Deep Semantic Payload Inspection, Live AST Evaluation, and In-Flight Stream Healing in $< 0.2\text{ms}$ with <!-- BENCHMARK:WHITEPAPER_SUBTITLE_START -->$31,000+\text{ req/s}$<!-- BENCHMARK:WHITEPAPER_SUBTITLE_END --> Throughput.**
+**How Nacho Flow Delivers Deep Semantic Payload Inspection, Live AST Evaluation, and In-Flight Stream Healing in $< 0.2\text{ms}$ with <!-- BENCHMARK:WHITEPAPER_SUBTITLE_START -->$30,000+\text{ req/s}$<!-- BENCHMARK:WHITEPAPER_SUBTITLE_END --> Throughput.**
 
 *Author: Karl Kwong / Dixieflatline76*  
 *Target Engine: Nacho Flow Core Engine (Pure Go, Static Binary, Zero CGO)*  
@@ -20,7 +20,7 @@ Indeed, popular enterprise gateways like **LiteLLM** add **$8.0\text{--}25.0\tex
 Yet, empirical micro-benchmarks and load testing on **Nacho Flow** demonstrate:
 - **Raw Pass-Through Proxy Latency**: **$0.184\text{ ms}$** ($184.7\,\mu\text{s}$)
 - **Full Deep-Inspection Latency** (Bearer Auth + AST Rules + Multi-Model Normalization): **$0.205\text{ ms}$** ($205.9\,\mu\text{s}$)
-- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$31,657\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
+- **Peak Sustained Throughput**: <!-- BENCHMARK:WHITEPAPER_EXEC_START -->**$30,284\text{ req/s}$** with **$100.0\%$ success rate** across 350,000 requests ($0$ dropped connections, $0$ data races)<!-- BENCHMARK:WHITEPAPER_EXEC_END -->.
 - **Idle Memory Footprint**: **$< 25\text{ MB}$** (peaking under $111\text{ MB}$ at $500$ simultaneous client streams).
 
 | Gateway / Architecture | Runtime Engine | Inspection Depth | Added Latency (Overhead) | Relative Speed vs. Python |
@@ -300,11 +300,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$28326.2\text{ req/s}$** | $1.56\text{ ms}$ | $6.91\text{ ms}$ | $128.6\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$26856.5\text{ req/s}$** | $3.11\text{ ms}$ | $15.80\text{ ms}$ | $135.2\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$28268.2\text{ req/s}$** | $7.89\text{ ms}$ | $32.35\text{ ms}$ | $186.9\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$28138.5\text{ req/s}$** | $13.15\text{ ms}$ | $76.03\text{ ms}$ | $217.3\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$24941.2\text{ req/s}$** | $29.90\text{ ms}$ | $124.06\text{ ms}$ | $274.1\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$25242.6\text{ req/s}$** | $1.89\text{ ms}$ | $8.98\text{ ms}$ | $120.1\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$22879.8\text{ req/s}$** | $3.41\text{ ms}$ | $17.07\text{ ms}$ | $157.6\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$26031.4\text{ req/s}$** | $8.17\text{ ms}$ | $38.82\text{ ms}$ | $191.6\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$23683.1\text{ req/s}$** | $17.96\text{ ms}$ | $70.44\text{ ms}$ | $151.5\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$24940.9\text{ req/s}$** | $37.74\text{ ms}$ | $75.45\text{ ms}$ | $215.5\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 #### High-Concurrency Scaling Analysis:

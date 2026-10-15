@@ -33,6 +33,12 @@ var (
 	writeTagByteMarkers  = agentregistry.DefaultRegistry().WriteTagByteMarkers()
 	writeToolsList       = agentregistry.DefaultRegistry().WriteToolsList()
 	finishReasonMarker   = []byte("\"finish_reason\":")
+	dataPrefix           = []byte("data: ")
+	dataPrefixNoSpace    = []byte("data:")
+	doneMarker           = []byte("[DONE]")
+	toolCallsMarker      = []byte("\"tool_calls\"")
+	usageMarker          = []byte("\"usage\"")
+	roleMarker           = []byte("\"role\"")
 )
 
 const honestTruncationNoticeChunk = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\\n\\n> ⚠️ **Nacho Flow • Reasoning Limit Reached**\\n> Model reached its output token limit without producing a response.\\n\"}}]}\n\n"
@@ -56,26 +62,43 @@ func hasAnyWriteMarker(payload []byte) bool {
 }
 
 func findEarliestOpenTag(s string) (startIdx, endIdx int, tagName string) {
+	return findEarliestWriteTag(s, false)
+}
+
+func findEarliestCloseTag(s string) (startIdx, endIdx int, tagName string) {
+	return findEarliestWriteTag(s, true)
+}
+
+func findEarliestWriteTag(s string, closing bool) (startIdx, endIdx int, tagName string) {
 	curr := s
 	offset := 0
+	prefixLen := 1
+	if closing {
+		prefixLen = 2
+	}
+
 	for {
-		idx := strings.IndexByte(curr, '<')
+		var idx int
+		if closing {
+			idx = strings.Index(curr, "</")
+		} else {
+			idx = strings.IndexByte(curr, '<')
+		}
 		if idx == -1 {
 			return -1, -1, ""
 		}
 		actualStart := offset + idx
-		// Check if it's a closing tag
-		if idx+1 < len(curr) && curr[idx+1] == '/' {
+		if !closing && idx+1 < len(curr) && curr[idx+1] == '/' {
 			curr = curr[idx+1:]
 			offset = actualStart + 1
 			continue
 		}
 
-		rest := curr[idx+1:]
+		rest := curr[idx+prefixLen:]
 		nameEnd := 0
 		for nameEnd < len(rest) {
 			b := rest[nameEnd]
-			if b == '>' || b == ' ' || b == '\t' || b == '\r' || b == '\n' || b == '/' {
+			if b == '>' || b == ' ' || b == '\t' || b == '\r' || b == '\n' || (!closing && b == '/') {
 				break
 			}
 			nameEnd++
@@ -84,99 +107,53 @@ func findEarliestOpenTag(s string) (startIdx, endIdx int, tagName string) {
 		if nameEnd > 0 {
 			name := strings.ToLower(rest[:nameEnd])
 			if agentregistry.DefaultRegistry().IsWriteTool(name) {
-				gtIdx := strings.IndexByte(rest, '>')
-				if gtIdx != -1 {
-					return actualStart, actualStart + 1 + gtIdx + 1, name
+				if gtIdx := strings.IndexByte(rest, '>'); gtIdx != -1 {
+					return actualStart, actualStart + prefixLen + gtIdx + 1, name
 				}
 				return actualStart, -1, name
 			}
 		}
 
-		curr = curr[idx+1:]
-		offset = actualStart + 1
-	}
-}
-
-func findEarliestCloseTag(s string) (startIdx, endIdx int, tagName string) {
-	curr := s
-	offset := 0
-	for {
-		idx := strings.Index(curr, "</")
-		if idx == -1 {
-			return -1, -1, ""
-		}
-		actualStart := offset + idx
-		rest := curr[idx+2:]
-		nameEnd := 0
-		for nameEnd < len(rest) {
-			b := rest[nameEnd]
-			if b == '>' || b == ' ' || b == '\t' || b == '\r' || b == '\n' {
-				break
-			}
-			nameEnd++
-		}
-
-		if nameEnd > 0 {
-			name := strings.ToLower(rest[:nameEnd])
-			if agentregistry.DefaultRegistry().IsWriteTool(name) {
-				gtIdx := strings.IndexByte(rest, '>')
-				if gtIdx != -1 {
-					return actualStart, actualStart + 2 + gtIdx + 1, name
-				}
-				return actualStart, -1, name
-			}
-		}
-
-		curr = curr[idx+2:]
-		offset = actualStart + 2
+		curr = curr[idx+prefixLen:]
+		offset = actualStart + prefixLen
 	}
 }
 
 func findPartialOpenTagSuffix(s string) string {
-	checkLen := len(s)
-	if checkLen > 25 {
-		checkLen = 25
-	}
-	tail := s[len(s)-checkLen:]
-	ltIdx := strings.LastIndexByte(tail, '<')
-	if ltIdx == -1 {
-		return ""
-	}
-	candidate := tail[ltIdx:]
-	if strings.ContainsRune(candidate, '>') {
-		return ""
-	}
-	if strings.HasPrefix(candidate, "</") {
-		return ""
-	}
-
-	afterLt := strings.ToLower(candidate[1:])
-	for _, tag := range writeToolsList {
-		if strings.HasPrefix(tag, afterLt) {
-			return candidate
-		}
-	}
-	return ""
+	return findPartialWriteTagSuffix(s, false)
 }
 
 func findPartialCloseTagSuffix(s string) string {
+	return findPartialWriteTagSuffix(s, true)
+}
+
+func findPartialWriteTagSuffix(s string, closing bool) string {
 	checkLen := len(s)
 	if checkLen > 25 {
 		checkLen = 25
 	}
 	tail := s[len(s)-checkLen:]
-	ltIdx := strings.LastIndex(tail, "</")
+
+	var ltIdx int
+	prefixLen := 1
+	if closing {
+		ltIdx = strings.LastIndex(tail, "</")
+		prefixLen = 2
+	} else {
+		ltIdx = strings.LastIndexByte(tail, '<')
+	}
 	if ltIdx == -1 {
 		return ""
 	}
+
 	candidate := tail[ltIdx:]
-	if strings.ContainsRune(candidate, '>') {
+	if strings.ContainsRune(candidate, '>') || (!closing && strings.HasPrefix(candidate, "</")) {
 		return ""
 	}
 
-	afterSlash := strings.ToLower(candidate[2:])
+	afterPrefix := strings.ToLower(candidate[prefixLen:])
 	for _, tag := range writeToolsList {
-		if strings.HasPrefix(tag, afterSlash) {
+		if strings.HasPrefix(tag, afterPrefix) {
 			return candidate
 		}
 	}
@@ -375,47 +352,16 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 			s.processLine(line)
 		}
 		if readErr != nil {
-			if readErr == io.EOF {
-				s.eofReached = true
-				wasInThinking := s.inThinking
-				s.inThinking = false
-				s.inStructuredReasoning = false
-				if s.pendingDelimiterBuf != "" {
-					buf := s.pendingDelimiterBuf
-					s.pendingDelimiterBuf = ""
-					suppress := len(buf) >= 2 && agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(buf))
-					if !suppress {
-						delta := fastDelta{}
-						if wasInThinking {
-							s.recordReasoning(buf)
-							delta.ReasoningContent = buf
-						} else {
-							s.recordProse(buf)
-							delta.Content = buf
-						}
-						chunk := fastStreamChunk{
-							Choices: []fastStreamChoice{
-								{
-									Index: 0,
-									Delta: delta,
-								},
-							},
-						}
-						s.emitChunk(chunk)
-					}
-				}
-				if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
-					if s.IsEmptyTruncatedTurn() {
-						if s.deferTerminal {
-							return 0, nil
-						}
-						s.outBuf.WriteString(honestTruncationNoticeChunk)
-					}
-					s.outBuf.Write(s.heldTerminal.Bytes())
-					s.heldTerminal.Reset()
-				}
-			} else {
+			if readErr != io.EOF {
 				return 0, readErr
+			}
+			s.eofReached = true
+			wasInThinking := s.inThinking
+			s.inThinking = false
+			s.inStructuredReasoning = false
+			s.flushPendingDelimiter(wasInThinking, false)
+			if s.flushHeldTerminal() {
+				return 0, nil
 			}
 		}
 	}
@@ -423,12 +369,50 @@ func (s *StreamNormalizer) Read(p []byte) (n int, err error) {
 	if s.outBuf.Len() > 0 {
 		return s.outBuf.Read(p)
 	}
-
 	if s.eofReached {
 		return 0, io.EOF
 	}
-
 	return 0, nil
+}
+
+func (s *StreamNormalizer) flushPendingDelimiter(wasInThinking, skipIfToolCalls bool) {
+	if s.pendingDelimiterBuf == "" {
+		return
+	}
+	buf := s.pendingDelimiterBuf
+	s.pendingDelimiterBuf = ""
+	if skipIfToolCalls && s.hasEmittedToolCalls {
+		return
+	}
+	if len(buf) >= 2 && agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(buf)) {
+		return
+	}
+	var delta fastDelta
+	if wasInThinking {
+		s.recordReasoning(buf)
+		delta.ReasoningContent = buf
+	} else {
+		s.recordProse(buf)
+		delta.Content = buf
+	}
+	s.emitChunk(fastStreamChunk{
+		Choices: []fastStreamChoice{{Index: 0, Delta: delta}},
+	})
+}
+
+func (s *StreamNormalizer) flushHeldTerminal() bool {
+	if s.heldTerminal == nil || s.heldTerminal.Len() == 0 {
+		return false
+	}
+	if s.IsEmptyTruncatedTurn() {
+		if s.deferTerminal {
+			return true
+		}
+		s.outBuf.WriteString(honestTruncationNoticeChunk)
+	}
+	s.outBuf.Write(s.heldTerminal.Bytes())
+	s.heldTerminal.Reset()
+	return false
 }
 
 // processLine frames, inspects, and routes an individual SSE stream line.
@@ -446,10 +430,10 @@ func (s *StreamNormalizer) processLine(line []byte) {
 	// caused the entire line to bypass captureUsage() silently.
 	var payload []byte
 	switch {
-	case bytes.HasPrefix(trimmed, []byte("data: ")):
-		payload = trimmed[6:] // len("data: ") == 6
-	case bytes.HasPrefix(trimmed, []byte("data:")):
-		payload = trimmed[5:] // len("data:") == 5
+	case bytes.HasPrefix(trimmed, dataPrefix):
+		payload = trimmed[len(dataPrefix):] // len(dataPrefix) == 6
+	case bytes.HasPrefix(trimmed, dataPrefixNoSpace):
+		payload = trimmed[len(dataPrefixNoSpace):] // len(dataPrefixNoSpace) == 5
 	default:
 		if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
 			s.heldTerminal.Write(line)
@@ -458,7 +442,7 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		s.outBuf.Write(line)
 		return
 	}
-	if bytes.Equal(payload, []byte("[DONE]")) {
+	if bytes.Equal(payload, doneMarker) {
 		s.handleDone(line)
 		return
 	}
@@ -471,11 +455,11 @@ func (s *StreamNormalizer) processLine(line []byte) {
 		s.preludeSuppressed = true
 	}
 
-	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
+	if bytes.Contains(payload, toolCallsMarker) {
 		s.hasNativeTools = true
 	}
 
-	if bytes.Contains(payload, []byte("\"usage\"")) {
+	if bytes.Contains(payload, usageMarker) {
 		s.captureUsage(payload)
 	}
 
@@ -502,7 +486,7 @@ func (s *StreamNormalizer) processLine(line []byte) {
 
 // fastPassProse handles prose chunks that require no JSON transformations.
 func (s *StreamNormalizer) fastPassProse(line, payload []byte) {
-	if bytes.Contains(payload, []byte("\"tool_calls\"")) || bytes.Contains(payload, finishReasonMarker) {
+	if bytes.Contains(payload, toolCallsMarker) || bytes.Contains(payload, finishReasonMarker) {
 		s.processChunkLine(line, payload)
 		return
 	}
@@ -529,7 +513,7 @@ func (s *StreamNormalizer) fastPassProse(line, payload []byte) {
 
 // fastPassWrite handles file write tool chunks with zero JSON overhead.
 func (s *StreamNormalizer) fastPassWrite(line, payload []byte) {
-	if bytes.Contains(payload, []byte("\"tool_calls\"")) || bytes.Contains(payload, finishReasonMarker) {
+	if bytes.Contains(payload, toolCallsMarker) || bytes.Contains(payload, finishReasonMarker) {
 		s.processChunkLine(line, payload)
 		return
 	}
@@ -544,9 +528,26 @@ func (s *StreamNormalizer) fastPassWrite(line, payload []byte) {
 	s.outBuf.Write(line)
 }
 
+func stripControlTokensIfNeeded(text string) string {
+	if text == "" || strings.IndexByte(text, '<') == -1 {
+		return text
+	}
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	buf.WriteString(text)
+	cleaned := agentregistry.DefaultRegistry().StripControlTokensInPlace(buf.Bytes())
+	if len(cleaned) == len(text) {
+		bufPool.Put(buf)
+		return text
+	}
+	res := string(cleaned)
+	bufPool.Put(buf)
+	return res
+}
+
 // processChunkLine parses a JSON streaming chunk and canonicalizes reasoning vs content deltas.
 func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
-	if bytes.Contains(payload, []byte("\"tool_calls\"")) {
+	if bytes.Contains(payload, toolCallsMarker) {
 		reg := agentregistry.DefaultRegistry()
 		if reg != nil {
 			modified := false
@@ -561,10 +562,10 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 			if modified {
 				trimmed := bytes.TrimRight(line, "\r\n")
 				switch {
-				case bytes.HasPrefix(trimmed, []byte("data: ")):
-					payload = trimmed[6:]
-				case bytes.HasPrefix(trimmed, []byte("data:")):
-					payload = trimmed[5:]
+				case bytes.HasPrefix(trimmed, dataPrefix):
+					payload = trimmed[len(dataPrefix):]
+				case bytes.HasPrefix(trimmed, dataPrefixNoSpace):
+					payload = trimmed[len(dataPrefixNoSpace):]
 				}
 			}
 		}
@@ -607,16 +608,7 @@ func (s *StreamNormalizer) processChunkLine(line, payload []byte) {
 			reasoningText = reasoningText[:idx]
 		}
 
-		if strings.IndexByte(reasoningText, '<') != -1 {
-			buf := bufPool.Get().(*bytes.Buffer)
-			buf.Reset()
-			buf.WriteString(reasoningText)
-			cleaned := agentregistry.DefaultRegistry().StripControlTokensInPlace(buf.Bytes())
-			choice.Delta.ReasoningContent = string(cleaned)
-			bufPool.Put(buf)
-		} else {
-			choice.Delta.ReasoningContent = reasoningText
-		}
+		choice.Delta.ReasoningContent = stripControlTokensIfNeeded(reasoningText)
 
 		choice.Delta.Reasoning = ""
 		choice.Delta.Reason = ""
@@ -700,10 +692,7 @@ func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
 		}
 	} else if strings.Contains(content, "<think>") {
 		parts := strings.SplitN(content, "<think>", 2)
-		prefix := parts[0]
-		if strings.Contains(prefix, "</think>") {
-			prefix = strings.ReplaceAll(prefix, "</think>", "")
-		}
+		prefix := strings.ReplaceAll(parts[0], "</think>", "")
 		after := parts[1]
 		if strings.Contains(after, "</think>") {
 			subParts := strings.SplitN(after, "</think>", 2)
@@ -715,42 +704,17 @@ func (s *StreamNormalizer) normalizeContentDelta(choice *fastStreamChoice) {
 			proseDelta = prefix
 			s.inThinking = true
 		}
-	} else if content == "</think>" {
-		proseDelta = ""
-	} else if strings.HasPrefix(content, "</think>") {
-		proseDelta = content[len("</think>"):]
-	} else if strings.HasSuffix(content, "</think>") {
-		proseDelta = content[:len(content)-len("</think>")]
-	} else if strings.Contains(content, "</think>") {
-		proseDelta = strings.ReplaceAll(content, "</think>", "")
 	} else {
-		proseDelta = content
+		proseDelta = strings.ReplaceAll(content, "</think>", "")
 	}
 
-	if reasoningDelta != "" && strings.IndexByte(reasoningDelta, '<') != -1 {
-		buf := bufPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		buf.WriteString(reasoningDelta)
-		cleaned := agentregistry.DefaultRegistry().StripControlTokensInPlace(buf.Bytes())
-		reasoningDelta = string(cleaned)
-		bufPool.Put(buf)
-	}
-	if proseDelta != "" && strings.IndexByte(proseDelta, '<') != -1 {
-		buf := bufPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		buf.WriteString(proseDelta)
-		cleaned := agentregistry.DefaultRegistry().StripControlTokensInPlace(buf.Bytes())
-		proseDelta = string(cleaned)
-		bufPool.Put(buf)
-	}
-
-	choice.Delta.ReasoningContent = reasoningDelta
-	choice.Delta.Content = proseDelta
+	choice.Delta.ReasoningContent = stripControlTokensIfNeeded(reasoningDelta)
+	choice.Delta.Content = stripControlTokensIfNeeded(proseDelta)
 	choice.Delta.Reasoning = ""
 	choice.Delta.Reason = ""
 
-	s.recordReasoning(reasoningDelta)
-	s.routeContentDelta(proseDelta)
+	s.recordReasoning(choice.Delta.ReasoningContent)
+	s.routeContentDelta(choice.Delta.Content)
 }
 
 // routeContentDelta demuxes content streams between prose and active XML tool lanes.
@@ -834,13 +798,18 @@ func (s *StreamNormalizer) routeContentDelta(content string) {
 	}
 }
 
-// emitChunk serializes and writes a modified SSE chunk into the output buffer.
+// emitChunk serializes and writes a modified SSE chunk into the output buffer using bufPool.
 func (s *StreamNormalizer) emitChunk(chunk fastStreamChunk) {
-	if newPayload, err := marshalNoEscapeHTML(chunk); err == nil {
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(chunk); err == nil {
 		s.outBuf.WriteString("data: ")
-		s.outBuf.Write(newPayload)
+		s.outBuf.Write(bytes.TrimRight(buf.Bytes(), "\n"))
 		s.outBuf.WriteString("\n\n")
 	}
+	bufPool.Put(buf)
 }
 
 // handleDone finalizes the stream on [DONE] and synthesizes an agent tool call if required.
@@ -849,32 +818,8 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 	s.inThinking = false
 	s.inStructuredReasoning = false
 	s.hasActiveToolCall = false
-	if s.pendingDelimiterBuf != "" {
-		buf := s.pendingDelimiterBuf
-		s.pendingDelimiterBuf = ""
-		if !s.hasEmittedToolCalls {
-			suppress := len(buf) >= 2 && agentregistry.DefaultRegistry().IsKnownDelimiterPrefix([]byte(buf))
-			if !suppress {
-				delta := fastDelta{}
-				if wasInThinking {
-					s.recordReasoning(buf)
-					delta.ReasoningContent = buf
-				} else {
-					s.recordProse(buf)
-					delta.Content = buf
-				}
-				chunk := fastStreamChunk{
-					Choices: []fastStreamChoice{
-						{
-							Index: 0,
-							Delta: delta,
-						},
-					},
-				}
-				s.emitChunk(chunk)
-			}
-		}
-	}
+	s.flushPendingDelimiter(wasInThinking, true)
+
 	if s.pendingWriteTagBuf != "" {
 		if s.inWriteTool {
 			s.recordToolDelta(s.pendingWriteTagBuf)
@@ -895,60 +840,60 @@ func (s *StreamNormalizer) handleDone(doneLine []byte) {
 		}
 	}
 
-	// Emit truthful terminal chunks: if turn truncated on reasoning limit, emit honest notice.
-	// Never resuscitate empty turns with fake codebase verification prose (Decision D1).
-	if s.heldTerminal != nil && s.heldTerminal.Len() > 0 {
-		if s.IsEmptyTruncatedTurn() {
-			if s.deferTerminal {
-				return
-			}
-			s.outBuf.WriteString(honestTruncationNoticeChunk)
-		}
-		s.outBuf.Write(s.heldTerminal.Bytes())
-		s.heldTerminal.Reset()
+	if s.flushHeldTerminal() {
+		return
 	}
-
 	s.outBuf.Write(doneLine)
+}
+
+type syntheticToolDelta struct {
+	ToolCalls [1]*shield.RawToolCall `json:"tool_calls"`
+}
+
+type syntheticToolChoice struct {
+	Index int                `json:"index"`
+	Delta syntheticToolDelta `json:"delta"`
+}
+
+type syntheticToolChunk struct {
+	Choices [1]syntheticToolChoice `json:"choices"`
+}
+
+type syntheticFinishChoice struct {
+	Index        int      `json:"index"`
+	Delta        struct{} `json:"delta"`
+	FinishReason string   `json:"finish_reason"`
+}
+
+type syntheticFinishChunk struct {
+	Choices [1]syntheticFinishChoice `json:"choices"`
 }
 
 // emitSyntheticToolCall injects synthetic tool_calls and finish_reason SSE chunks.
 func (s *StreamNormalizer) emitSyntheticToolCall(synthCall *shield.RawToolCall) {
-	deltaJSON, _ := json.Marshal(map[string]any{
-		"choices": []map[string]any{
-			{
-				"index": 0,
-				"delta": map[string]any{
-					"tool_calls": []any{
-						map[string]any{
-							"index": 0,
-							"id":    synthCall.ID,
-							"type":  synthCall.Type,
-							"function": map[string]string{
-								"name":      synthCall.Function.Name,
-								"arguments": synthCall.Function.Arguments,
-							},
-						},
-					},
-				},
-			},
-		},
-	})
-	s.outBuf.WriteString("data: ")
-	s.outBuf.Write(deltaJSON)
-	s.outBuf.WriteString("\n\n")
+	toolChunk := syntheticToolChunk{
+		Choices: [1]syntheticToolChoice{{
+			Index: 0,
+			Delta: syntheticToolDelta{ToolCalls: [1]*shield.RawToolCall{synthCall}},
+		}},
+	}
+	if deltaJSON, err := json.Marshal(toolChunk); err == nil {
+		s.outBuf.WriteString("data: ")
+		s.outBuf.Write(deltaJSON)
+		s.outBuf.WriteString("\n\n")
+	}
 
-	finishJSON, _ := json.Marshal(map[string]any{
-		"choices": []map[string]any{
-			{
-				"index":         0,
-				"delta":         map[string]any{},
-				"finish_reason": "tool_calls",
-			},
-		},
-	})
-	s.outBuf.WriteString("data: ")
-	s.outBuf.Write(finishJSON)
-	s.outBuf.WriteString("\n\n")
+	finishChunk := syntheticFinishChunk{
+		Choices: [1]syntheticFinishChoice{{
+			Index:        0,
+			FinishReason: "tool_calls",
+		}},
+	}
+	if finishJSON, err := json.Marshal(finishChunk); err == nil {
+		s.outBuf.WriteString("data: ")
+		s.outBuf.Write(finishJSON)
+		s.outBuf.WriteString("\n\n")
+	}
 }
 
 // captureUsage extracts upstream usage metadata from the stream chunk.
@@ -1021,25 +966,25 @@ func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
 	}
 	s.hasEmittedToolCalls = true
 	s.toolChunksScratch = s.toolChunksScratch[:0]
-	if err := json.Unmarshal(raw, &s.toolChunksScratch); err == nil {
-		for i := range s.toolChunksScratch {
-			s.hasActiveToolCall = true
-			if s.toolChunksScratch[i].Function.Name != "" {
-				name := s.toolChunksScratch[i].Function.Name
-				if router.IsBuiltinWriteTool(name) || router.IsBuiltinCycleKillerExempt(name) {
-					s.currentToolCategory = shield.ToolCategoryFileWrite
-				} else {
-					s.currentToolCategory = shield.ToolCategoryCommand
-				}
-			}
-			args := s.toolChunksScratch[i].Function.Arguments
-			if args != "" {
-				if s.currentToolCategory == shield.ToolCategoryCommand && router.DetectShellWrite(args) {
-					s.currentToolCategory = shield.ToolCategoryFileWrite
-				}
-				s.recordToolDelta(args)
-			}
+
+	if err := json.Unmarshal(raw, &s.toolChunksScratch); err != nil {
+		return
+	}
+
+	for i := range s.toolChunksScratch {
+		fn := &s.toolChunksScratch[i].Function
+		s.hasActiveToolCall = true
+
+		if fn.Name != "" {
+			s.currentToolCategory = router.ClassifyToolCategory(fn.Name)
 		}
+		if fn.Arguments == "" {
+			continue
+		}
+		if s.currentToolCategory == shield.ToolCategoryCommand && router.DetectShellWrite(fn.Arguments) {
+			s.currentToolCategory = shield.ToolCategoryFileWrite
+		}
+		s.recordToolDelta(fn.Arguments)
 	}
 }
 
@@ -1057,7 +1002,7 @@ func payloadContent(payload []byte) string {
 }
 
 func isRoleOnlyPreludeChunk(payload []byte) bool {
-	if !bytes.Contains(payload, []byte("\"role\"")) {
+	if !bytes.Contains(payload, roleMarker) {
 		return false
 	}
 	var c fastStreamChunk
@@ -1073,13 +1018,18 @@ func isRoleOnlyPreludeChunk(payload []byte) bool {
 }
 
 func marshalNoEscapeHTML(v any) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+	enc := json.NewEncoder(buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
 		return nil, err
 	}
-	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+	res := bytes.TrimRight(buf.Bytes(), "\n")
+	cp := make([]byte, len(res))
+	copy(cp, res)
+	return cp, nil
 }
 
 // Close closes the underlying stream and returns pooled buffers.

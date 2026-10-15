@@ -48,5 +48,21 @@
     "|channel",
     "tool_call",
     "tool_response"
-  ]
+  ],
+  "compaction": {
+    "min_kickoff_bytes": 400,
+    "kickoff_scan_turns": 5,
+    "min_substantial_bytes": 200,
+    "hysteresis_high_watermark": 6,
+    "hysteresis_low_watermark": 2,
+    "universal_tool_error_prefixes": [
+      "{\"error\":",
+      "Error:",
+      "Error executing",
+      "[ERROR]",
+      "<error>",
+      "Command failed",
+      "exit status"
+    ]
+  }
 }
