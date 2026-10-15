@@ -19,13 +19,20 @@ var targetJSONFields = []string{"result", "output", "text", "content"}
 // and applies wire-speed NTS compaction to tool outputs with dual-lane immunity guards.
 type Transformer struct {
 	pipeline *Pipeline
+	registry *agentregistry.Registry
 }
 
 // NewTransformer creates a new payload Transformer backed by the given NTS config.
 func NewTransformer(cfg Config) *Transformer {
 	return &Transformer{
 		pipeline: NewPipeline(cfg),
+		registry: agentregistry.DefaultRegistry(),
 	}
+}
+
+// SetRegistry sets the agent registry used for profile lookups and error signatures.
+func (t *Transformer) SetRegistry(reg *agentregistry.Registry) {
+	t.registry = reg
 }
 
 // Pipeline returns the underlying compaction pipeline.
@@ -64,8 +71,14 @@ func (t *Transformer) transformPayload(body []byte) ([]byte, ReductionResult, er
 		return body, ReductionResult{Bypassed: true, BypassReason: "invalid_messages"}, nil
 	}
 
+	var agentProfile *agentregistry.AgentProfile
+	if t.registry != nil {
+		agentID := t.registry.DetectClient(nil, body)
+		agentProfile = t.registry.GetProfile(agentID)
+	}
+
 	toolNames := indexToolNames(msgs)
-	modified, totalResult, changedIndices := t.processMessages(msgs, toolNames)
+	modified, totalResult, changedIndices := t.processMessages(msgs, toolNames, agentProfile)
 	if !modified {
 		totalResult.Bypassed = true
 		totalResult.BypassReason = "no_modifications"
@@ -213,7 +226,7 @@ func indexToolNames(msgs []interface{}) map[string]string {
 }
 
 // processMessages traverses messages, identifies tool outputs, and applies compaction in-place.
-func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]string) (bool, ReductionResult, map[int]struct{}) {
+func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]string, agentProfile *agentregistry.AgentProfile) (bool, ReductionResult, map[int]struct{}) {
 	var total ReductionResult
 	modified := false
 	changedIndices := make(map[int]struct{})
@@ -227,27 +240,10 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 		staleIDs = IdentifyStaleToolCallIDs(msgs, depth)
 	}
 
-	var historicalAssistantIndices map[int]struct{}
+	var toPruneReasoning zeroalloc.BitSet512
+	var hasReasoningToPrune bool
 	if t.pipeline.config.StripHistoricalReasoning {
-		var assistantIndices []int
-		for idx, msgItem := range msgs {
-			if msg, ok := msgItem.(map[string]interface{}); ok {
-				if role, _ := msg["role"].(string); role == "assistant" {
-					assistantIndices = append(assistantIndices, idx)
-				}
-			}
-		}
-		keepTurns := t.pipeline.config.KeepRecentReasoningTurns
-		if keepTurns < 0 {
-			keepTurns = 0
-		}
-		cutoff := len(assistantIndices) - keepTurns
-		if cutoff > 0 {
-			historicalAssistantIndices = make(map[int]struct{}, cutoff)
-			for i := 0; i < cutoff; i++ {
-				historicalAssistantIndices[assistantIndices[i]] = struct{}{}
-			}
-		}
+		toPruneReasoning, hasReasoningToPrune = t.identifyHistoricalReasoningIndices(msgs, agentProfile)
 	}
 
 	var remindersCtx *DeduplicateRemindersContext
@@ -267,12 +263,10 @@ func (t *Transformer) processMessages(msgs []interface{}, toolNames map[string]s
 		}
 
 		// Historical assistant reasoning compaction
-		if historicalAssistantIndices != nil {
-			if _, isHistorical := historicalAssistantIndices[idx]; isHistorical {
-				if t.pruneAssistantReasoning(msg, &total) {
-					modified = true
-					changedIndices[idx] = struct{}{}
-				}
+		if hasReasoningToPrune && toPruneReasoning.Has(idx) {
+			if t.pruneAssistantReasoning(msg, &total) {
+				modified = true
+				changedIndices[idx] = struct{}{}
 			}
 		}
 
@@ -893,3 +887,408 @@ func isCleanMessagesArray(body []byte) bool {
 	}
 	return false
 }
+
+const maxErrorScanBytes = 4096
+
+// isToolErrorMessage is protocol-agnostic across OpenAI native tools (Zoo/Kilo/Cursor),
+// Anthropic tool_result, and XML/reflected user blocks (Cline/Roo/Aider).
+func (t *Transformer) isToolErrorMessage(
+	msg map[string]interface{},
+	agentProfile *agentregistry.AgentProfile,
+	universalPrefixes []string,
+) bool {
+	// 1. Structured boolean flag (Anthropic / MCP standard)
+	if isErr, _ := msg["is_error"].(bool); isErr {
+		return true
+	}
+
+	role, _ := msg["role"].(string)
+
+	// 2. Native OpenAI role="tool" (Zoo, Kilo, Cursor, Roo native tools)
+	// Safe to match universal tool error prefixes because humans cannot send role="tool"
+	if role == "tool" {
+		if contentStr, ok := msg["content"].(string); ok {
+			return t.matchesToolError(contentStr, agentProfile, universalPrefixes, true)
+		}
+		if contentList, ok := msg["content"].([]interface{}); ok {
+			for _, item := range contentList {
+				if part, ok := item.(map[string]interface{}); ok {
+					if txt, ok := part["text"].(string); ok && t.matchesToolError(txt, agentProfile, universalPrefixes, true) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+
+	// 3. role="user" (Anthropic tool_result, Cline/Kilo XML text blocks, or Aider reflected errors)
+	if contentStr, ok := msg["content"].(string); ok {
+		// Plain string user message: only match explicit registry signatures to avoid false positives on human chat
+		return t.matchesToolError(contentStr, agentProfile, universalPrefixes, false)
+	}
+
+	if contentList, ok := msg["content"].([]interface{}); ok {
+		for _, partItem := range contentList {
+			part, ok := partItem.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			partType, _ := part["type"].(string)
+
+			if partType == "tool_result" {
+				if isErr, _ := part["is_error"].(bool); isErr {
+					return true
+				}
+				if c, ok := part["content"].(string); ok && t.matchesToolError(c, agentProfile, universalPrefixes, true) {
+					return true
+				}
+				if nestedList, ok := part["content"].([]interface{}); ok {
+					for _, nItem := range nestedList {
+						if nMap, ok := nItem.(map[string]interface{}); ok {
+							if txt, ok := nMap["text"].(string); ok && t.matchesToolError(txt, agentProfile, universalPrefixes, true) {
+								return true
+							}
+						}
+					}
+				}
+			} else if partType == "text" {
+				// Multi-part user text blocks (Cline / Roo / Kilo XML tool results)
+				if txt, ok := part["text"].(string); ok && t.matchesToolError(txt, agentProfile, universalPrefixes, false) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// matchesToolError checks universal prefixes (for native tool outputs) and registry error signatures.
+// Scan window is bounded to maxErrorScanBytes (4KB) so large file reads stay O(1) on the hot path.
+func (t *Transformer) matchesToolError(
+	s string,
+	agentProfile *agentregistry.AgentProfile,
+	universalPrefixes []string,
+	allowUniversalPrefixes bool,
+) bool {
+	if len(s) == 0 {
+		return false
+	}
+	scanWindow := s
+	if len(scanWindow) > maxErrorScanBytes {
+		scanWindow = scanWindow[:maxErrorScanBytes]
+	}
+	trimmed := strings.TrimSpace(scanWindow)
+
+	if allowUniversalPrefixes {
+		for _, pfx := range universalPrefixes {
+			if len(pfx) > 0 && strings.HasPrefix(trimmed, pfx) {
+				return true
+			}
+		}
+	}
+
+	if agentProfile != nil {
+		for _, sig := range agentProfile.ErrorSignatures {
+			if len(sig) > 0 && strings.Contains(scanWindow, sig) {
+				return true
+			}
+		}
+		return false
+	}
+	reg := t.registry
+	if reg == nil {
+		reg = agentregistry.DefaultRegistry()
+	}
+	return reg != nil && reg.MatchesErrorSignature(scanWindow)
+}
+
+// precededByToolError scans backward across contiguous non-assistant messages to handle parallel tool calls.
+func (t *Transformer) precededByToolError(
+	msgs []interface{},
+	assistantIdx int,
+	agentProfile *agentregistry.AgentProfile,
+	universalPrefixes []string,
+) bool {
+	for i := assistantIdx - 1; i >= 0; i-- {
+		msg, ok := msgs[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := msg["role"].(string)
+		if role == "assistant" {
+			break // Reached the previous assistant turn without finding an error
+		}
+		if (role == "tool" || role == "user") && t.isToolErrorMessage(msg, agentProfile, universalPrefixes) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveBool(val *bool, defaultVal bool) bool {
+	if val != nil {
+		return *val
+	}
+	return defaultVal
+}
+
+func resolveThreshold(val *int, catalogVal int, fallback int) int {
+	if val != nil && *val > 0 {
+		return *val
+	}
+	if catalogVal > 0 {
+		return catalogVal
+	}
+	return fallback
+}
+
+func (t *Transformer) inspectReasoningPresence(msg map[string]interface{}) (bool, int) {
+	totalLen := 0
+	hasReasoning := false
+
+	// 1. Top-level OpenAI / deepseek reasoning fields
+	for _, field := range []string{"reasoning_content", "reasoning", "reason"} {
+		if val, exists := msg[field]; exists {
+			switch v := val.(type) {
+			case string:
+				if len(v) > 0 {
+					hasReasoning = true
+					totalLen += len(v)
+				}
+			case []byte:
+				if len(v) > 0 {
+					hasReasoning = true
+					totalLen += len(v)
+				}
+			default:
+				if b, err := json.Marshal(v); err == nil && len(b) > 0 {
+					hasReasoning = true
+					totalLen += len(b)
+				}
+			}
+		}
+	}
+
+	reg := t.registry
+	if reg == nil {
+		reg = agentregistry.DefaultRegistry()
+	}
+
+	// 2. Anthropic content blocks or inline thinking tags
+	switch contentVal := msg["content"].(type) {
+	case []interface{}:
+		for _, item := range contentVal {
+			part, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			partType, _ := part["type"].(string)
+			if isReasoningBlockType(partType) {
+				hasReasoning = true
+				totalLen += calculateBlockLength(part)
+			} else if partType == "text" {
+				if txt, ok := part["text"].(string); ok && strings.IndexByte(txt, '<') != -1 {
+					canonical := reg.TagReplacer().Replace(txt)
+					if strings.Contains(canonical, "<think>") || strings.Contains(canonical, "</think>") || canonical != txt {
+						hasReasoning = true
+						totalLen += len(txt)
+					}
+				}
+			}
+		}
+	case string:
+		if strings.IndexByte(contentVal, '<') != -1 {
+			canonical := reg.TagReplacer().Replace(contentVal)
+			if strings.Contains(canonical, "<think>") || strings.Contains(canonical, "</think>") || canonical != contentVal {
+				hasReasoning = true
+				totalLen += len(contentVal)
+			}
+		}
+	}
+
+	return hasReasoning, totalLen
+}
+
+func (t *Transformer) identifyHistoricalReasoningIndices(
+	msgs []interface{},
+	agentProfile *agentregistry.AgentProfile,
+) (toPrune zeroalloc.BitSet512, hasAny bool) {
+	cfg := t.pipeline.config
+	n := len(msgs)
+	if !cfg.StripHistoricalReasoning || n == 0 {
+		return toPrune, false
+	}
+	if n > 512 {
+		n = 512 // Bounded to BitSet512 capacity
+	}
+
+	// 1. Resolve thresholds: YAML override > Agent Profile / Registry Catalog > Safe Fallback
+	reg := t.registry
+	if reg == nil {
+		reg = agentregistry.DefaultRegistry()
+	}
+	catalog := reg.GetReasoningCompactionConfig()
+	preserveKickoff := resolveBool(cfg.PreserveKickoffReasoning, true)
+	minKickoff := resolveThreshold(cfg.MinKickoffBytes, catalog.MinKickoffBytes, 400)
+	scanTurns := resolveThreshold(cfg.KickoffScanTurns, catalog.KickoffScanTurns, 5)
+	minSubstantial := resolveThreshold(cfg.MinSubstantialBytes, catalog.MinSubstantialBytes, 200)
+	freezeOnErrors := resolveBool(cfg.FreezeOnToolErrors, true)
+	useHysteresis := resolveBool(cfg.HysteresisCompaction, false)
+	universalPfx := catalog.UniversalToolErrorPrefixes
+
+	// Resolve Low Watermark / base retention target:
+	// YAML override > Agent Profile > Catalog LowWatermark > 2
+	keepTurns := cfg.KeepRecentReasoningTurns
+	if keepTurns < 0 {
+		keepTurns = 0
+	}
+	if keepTurns <= 0 && cfg.KeepRecentReasoningTurns == 0 {
+		// Explicit request to strip all reasoning across all turns (keep 0)
+		keepTurns = 0
+	} else if keepTurns <= 0 {
+		if agentProfile != nil && agentProfile.RecommendedRetentionTurns > 0 {
+			keepTurns = agentProfile.RecommendedRetentionTurns
+		} else if catalog.HysteresisLowWatermark > 0 {
+			keepTurns = catalog.HysteresisLowWatermark
+		} else {
+			keepTurns = 2
+		}
+	}
+
+	// 2. Pass 1: Forward scan for reasoning presence, substantiality, and Kickoff High-Watermark
+	var substantialSet zeroalloc.BitSet512
+	totalSubstantial := 0
+	kickoffIdx := -1
+	kickoffMaxLen := 0
+	assistantCount := 0
+
+	for idx := 0; idx < n; idx++ {
+		msg, ok := msgs[idx].(map[string]interface{})
+		if !ok || msg["role"] != "assistant" {
+			continue
+		}
+		assistantCount++
+		hasR, rLen := t.inspectReasoningPresence(msg)
+		if !hasR {
+			continue
+		}
+
+		toPrune.Set(idx)
+
+		if rLen >= minSubstantial {
+			substantialSet.Set(idx)
+			totalSubstantial++
+		}
+
+		if preserveKickoff && assistantCount <= scanTurns && rLen >= minKickoff && rLen > kickoffMaxLen {
+			kickoffMaxLen = rLen
+			kickoffIdx = idx
+		}
+	}
+
+	if keepTurns == 0 {
+		// When keepTurns is explicitly 0, prune all candidate reasoning turns unconditionally
+		return toPrune, !toPrune.IsEmpty()
+	}
+
+	// If no turns met minSubstantial, fallback so all candidate reasoning turns count as substantial
+	if totalSubstantial == 0 && !toPrune.IsEmpty() {
+		substantialSet = toPrune
+		totalSubstantial = assistantCount
+	}
+
+	// Permanently protect Kickoff Anchor
+	if kickoffIdx != -1 {
+		toPrune.Clear(kickoffIdx)
+		if substantialSet.Has(kickoffIdx) {
+			totalSubstantial-- // Exclude pinned kickoff from sliding/hysteresis pool
+		}
+	}
+
+	// 3. Peel active tail error streak once: protect retry turns & discount from effectiveSubstantial.
+	// Handles unit tests ending on assistant turns as well as requests ending on tool outputs.
+	effectiveSubstantial := totalSubstantial
+	if freezeOnErrors && n > 0 {
+		inTailError := false
+		seenTrailingTool := false
+
+		for i := n - 1; i >= 0; i-- {
+			msg, ok := msgs[i].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			role, _ := msg["role"].(string)
+			if role == "tool" || role == "user" {
+				seenTrailingTool = true
+				if t.isToolErrorMessage(msg, agentProfile, universalPfx) {
+					inTailError = true
+				}
+				continue
+			}
+			if role == "assistant" {
+				if seenTrailingTool && !inTailError {
+					break // Latest tool execution succeeded; tail is clean
+				}
+				if t.precededByToolError(msgs, i, agentProfile, universalPfx) {
+					// Active retry turn: protect immediately and exclude from hysteresis pool
+					inTailError = true
+					toPrune.Clear(i)
+					if substantialSet.Has(i) {
+						substantialSet.Clear(i)
+						if i != kickoffIdx {
+							effectiveSubstantial--
+						}
+					}
+				} else if inTailError {
+					// Reached the clean causal setup turn: protect it permanently
+					// and leave it in substantialSet so Pass 2 counts it against remainingBudget.
+					toPrune.Clear(i)
+					break
+				} else {
+					// Tail ended on assistant without preceding tool error: tail is clean!
+					break
+				}
+			}
+		}
+	}
+	if effectiveSubstantial < 0 {
+		effectiveSubstantial = 0
+	}
+
+	// 4. Calculate Effective Clean Retention Budget (Stateless Hysteresis vs. Sliding Window)
+	remainingBudget := keepTurns
+	if useHysteresis {
+		lowWM := keepTurns
+		step := catalog.HysteresisHighWatermark - catalog.HysteresisLowWatermark
+		if step <= 0 {
+			step = 4
+		}
+		highWM := lowWM + step
+
+		if effectiveSubstantial < highWM {
+			// Below high watermark: prune nothing (100% prefix cache stability)
+			return zeroalloc.BitSet512{}, false
+		}
+		pruneSubstantialCount := ((effectiveSubstantial - lowWM) / step) * step
+		remainingBudget = effectiveSubstantial - pruneSubstantialCount
+	}
+
+	// 5. Pass 2: Pure bitwise backward scan (0 string/map lookups on the hot path!)
+	for idx := n - 1; idx >= 0 && remainingBudget > 0; idx-- {
+		if !toPrune.Has(idx) {
+			if substantialSet.Has(idx) && idx != kickoffIdx {
+				remainingBudget--
+			}
+			continue
+		}
+		toPrune.Clear(idx)
+		if substantialSet.Has(idx) {
+			remainingBudget--
+		}
+	}
+
+	return toPrune, !toPrune.IsEmpty()
+}
+

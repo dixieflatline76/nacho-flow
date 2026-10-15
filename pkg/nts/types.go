@@ -36,6 +36,14 @@ type Config struct {
 	CollapseVerboseTests     bool `json:"collapse_verbose_tests" yaml:"collapse_verbose_tests"`
 	DeduplicateToolOutputs   bool `json:"deduplicate_tool_outputs" yaml:"deduplicate_tool_outputs"`
 	MinDuplicateOutputBytes  int  `json:"min_duplicate_output_bytes" yaml:"min_duplicate_output_bytes"` // Minimum bytes for duplicate tool output referencing (default: 200)
+
+	// Semantic Reasoning Compaction (SRC) — Overridable in YAML, defaults loaded from registry
+	PreserveKickoffReasoning *bool `json:"preserve_kickoff_reasoning,omitempty" yaml:"preserve_kickoff_reasoning,omitempty"`
+	MinKickoffBytes          *int  `json:"min_kickoff_bytes,omitempty" yaml:"min_kickoff_bytes,omitempty"`
+	KickoffScanTurns         *int  `json:"kickoff_scan_turns,omitempty" yaml:"kickoff_scan_turns,omitempty"`
+	MinSubstantialBytes      *int  `json:"min_substantial_bytes,omitempty" yaml:"min_substantial_bytes,omitempty"`
+	FreezeOnToolErrors       *bool `json:"freeze_on_tool_errors,omitempty" yaml:"freeze_on_tool_errors,omitempty"`
+	HysteresisCompaction     *bool `json:"hysteresis_compaction,omitempty" yaml:"hysteresis_compaction,omitempty"`
 }
 
 // DefaultConfig returns the production default configuration for NTS.

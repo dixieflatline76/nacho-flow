@@ -142,6 +142,13 @@ func TestRegistry_DetectShellWrite(t *testing.T) {
 		{"cmd\r\ntouch file.txt", true},
 		{"echo 'test'\r\nrm file.txt", true},
 		{"git status\r\nls -la", false},
+		{`{"commands": ["Set-Content -Path 'strategy.go' -Value @'"]}`, true},
+		{`{"command": "cat << 'EOF' > strategy.go"}`, true},
+		{`{"command": "echo 'test' > output.txt"}`, true},
+		{`{"commands": ["ls -la", "go test ./..."]}`, false},
+		{`powershell -Command "Set-Content -Path 'file.txt' -Value 'hi'"`, true},
+		{`{"commands": ["Set-Content `, true},
+		{`{\"commands\": [\"Set-Content `, true},
 	}
 
 	for _, tt := range tests {
@@ -316,6 +323,16 @@ func BenchmarkRegistry_DetectShellWrite(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = reg.DetectShellWrite(cmd)
+	}
+}
+
+func BenchmarkRegistry_DetectShellWrite_JSON(b *testing.B) {
+	reg := DefaultRegistry()
+	jsonCmd := `{"commands": ["Set-Content -Path 'strategy.go' -Value @'"]}`
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = reg.DetectShellWrite(jsonCmd)
 	}
 }
 
@@ -965,3 +982,39 @@ func TestRegistry_StripControlTokensInPlace_DeepEscaped(t *testing.T) {
 		})
 	}
 }
+
+func TestRegistry_ReasoningCompactionConfigAndProfile(t *testing.T) {
+	reg := DefaultRegistry()
+	if reg == nil {
+		t.Fatal("expected default registry")
+	}
+
+	cfg := reg.GetReasoningCompactionConfig()
+	if cfg.MinKickoffBytes != 400 {
+		t.Errorf("expected MinKickoffBytes 400, got %d", cfg.MinKickoffBytes)
+	}
+	if cfg.KickoffScanTurns != 5 {
+		t.Errorf("expected KickoffScanTurns 5, got %d", cfg.KickoffScanTurns)
+	}
+	if cfg.MinSubstantialBytes != 200 {
+		t.Errorf("expected MinSubstantialBytes 200, got %d", cfg.MinSubstantialBytes)
+	}
+	if cfg.HysteresisHighWatermark != 6 {
+		t.Errorf("expected HysteresisHighWatermark 6, got %d", cfg.HysteresisHighWatermark)
+	}
+	if cfg.HysteresisLowWatermark != 2 {
+		t.Errorf("expected HysteresisLowWatermark 2, got %d", cfg.HysteresisLowWatermark)
+	}
+	if len(cfg.UniversalToolErrorPrefixes) != 7 {
+		t.Errorf("expected 7 UniversalToolErrorPrefixes, got %d", len(cfg.UniversalToolErrorPrefixes))
+	}
+
+	clineProfile := reg.GetProfile("cline")
+	if clineProfile == nil {
+		t.Fatal("expected cline profile")
+	}
+	if clineProfile.RecommendedRetentionTurns != 6 {
+		t.Errorf("expected cline RecommendedRetentionTurns 6, got %d", clineProfile.RecommendedRetentionTurns)
+	}
+}
+

@@ -18,6 +18,8 @@ const (
 	ToolCategoryCommand ToolActivityCategory = iota
 	// ToolCategoryFileWrite exempts content from N-gram loop detection and applies defaultMaxWriteTokens (32768).
 	ToolCategoryFileWrite
+	// ToolCategoryFileRead exempts file path inspection from N-gram loop detection and applies defaultMaxToolTokens (4096/8192).
+	ToolCategoryFileRead
 )
 
 const (
@@ -366,10 +368,18 @@ func (cb *CycleBreaker) ProcessToolDelta(content string, category ...ToolActivit
 	deltaTokens := (len(content) + 3) / 4
 	lane.tokens += deltaTokens
 
-	// Category A: File writes (zero-alloc fast path)
+	// Category A1: File writes (zero-alloc fast path, 32k ceiling)
 	if actCat == ToolCategoryFileWrite {
 		if lane.tokens > cb.cfg.MaxWriteTokens {
 			return true, "write_budget_exceeded"
+		}
+		return false, ""
+	}
+
+	// Category A2: File reads (zero-alloc fast path, standard 8k tool ceiling, exempt from N-gram loop check)
+	if actCat == ToolCategoryFileRead {
+		if lane.tokens > cb.cfg.MaxToolTokens {
+			return true, "tool_budget_exceeded"
 		}
 		return false, ""
 	}

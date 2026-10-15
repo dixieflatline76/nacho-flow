@@ -22,6 +22,7 @@ type AgentProfile struct {
 	ErrorSignatures               []string                       `json:"error_signatures,omitempty"`
 	ParameterSanitizers           []ParameterSanitizer           `json:"parameter_sanitizers,omitempty"`
 	RepetitiveEnvironmentSections []RepetitiveEnvironmentSection `json:"repetitive_environment_sections,omitempty"`
+	RecommendedRetentionTurns     int                            `json:"recommended_retention_turns,omitempty"`
 }
 
 // RepetitiveEnvironmentSection defines metadata for identifying repetitive context wrappers (e.g. todo lists, reminders).
@@ -51,15 +52,26 @@ type ResuscitationCatalog struct {
 	SilentTurnMessage string `json:"silent_turn_message,omitempty"`
 }
 
+// ReasoningCompactionCatalog defines data-driven thresholds for semantic reasoning compaction and hysteresis.
+type ReasoningCompactionCatalog struct {
+	MinKickoffBytes            int      `json:"min_kickoff_bytes"`
+	KickoffScanTurns           int      `json:"kickoff_scan_turns"`
+	MinSubstantialBytes        int      `json:"min_substantial_bytes"`
+	HysteresisHighWatermark    int      `json:"hysteresis_high_watermark"`
+	HysteresisLowWatermark     int      `json:"hysteresis_low_watermark"`
+	UniversalToolErrorPrefixes []string `json:"universal_tool_error_prefixes"`
+}
+
 // ReasoningCatalog defines model chat-template and thought delimiters to canonicalize or strip.
 type ReasoningCatalog struct {
-	Version          string               `json:"version"`
-	CanonicalOpen    map[string][]string  `json:"canonical_open"`
-	CanonicalClose   map[string][]string  `json:"canonical_close"`
-	StripDelimiters  []string             `json:"strip_delimiters"`
-	ReasoningFields  []string             `json:"reasoning_fields"`
-	ExtraByteMarkers []string             `json:"extra_byte_markers"`
-	Resuscitation    ResuscitationCatalog `json:"resuscitation,omitempty"`
+	Version          string                     `json:"version"`
+	CanonicalOpen    map[string][]string        `json:"canonical_open"`
+	CanonicalClose   map[string][]string        `json:"canonical_close"`
+	StripDelimiters  []string                   `json:"strip_delimiters"`
+	ReasoningFields  []string                   `json:"reasoning_fields"`
+	ExtraByteMarkers []string                   `json:"extra_byte_markers"`
+	Resuscitation    ResuscitationCatalog       `json:"resuscitation,omitempty"`
+	Compaction       ReasoningCompactionCatalog `json:"compaction,omitempty"`
 }
 
 // ShellCatalog defines the platform-specific commands and pipes that perform file writes.

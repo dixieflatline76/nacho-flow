@@ -1358,3 +1358,21 @@ func TestIsBuiltinCycleKillerExempt(t *testing.T) {
 		t.Errorf("expected bash NOT to be cycle killer exempt")
 	}
 }
+
+func TestIsBuiltinReadTool(t *testing.T) {
+	if !IsBuiltinReadTool("read_files") {
+		t.Errorf("expected read_files to be recognized as builtin read tool")
+	}
+	if !IsBuiltinReadTool("read_file") {
+		t.Errorf("expected read_file to be recognized as builtin read tool")
+	}
+	if !IsBuiltinReadTool("view_file") {
+		t.Errorf("expected view_file to be recognized as builtin read tool")
+	}
+	if IsBuiltinReadTool("execute_command") {
+		t.Errorf("expected execute_command NOT to be recognized as builtin read tool")
+	}
+	if IsBuiltinReadTool("write_to_file") {
+		t.Errorf("expected write_to_file NOT to be recognized as builtin read tool")
+	}
+}

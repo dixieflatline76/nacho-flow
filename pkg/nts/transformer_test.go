@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/nts"
 	"github.com/dixieflatline76/nacho-flow/pkg/wirejson"
 )
@@ -1370,5 +1371,461 @@ test result: FAILED. 2 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; 
 		}
 
 		history = append(history, transformedTurn{rawMessages: currentRawMsgs})
+	}
+}
+
+func TestTransformer_IsToolErrorMessage(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	tr := nts.NewTransformer(cfg)
+	reg := agentregistry.DefaultRegistry()
+	universalPfx := reg.GetReasoningCompactionConfig().UniversalToolErrorPrefixes
+	clineProfile := reg.GetProfile("cline")
+
+	// 1. OpenAI role="tool" with "Error: exit status 1" -> true
+	toolMsg := map[string]interface{}{
+		"role":    "tool",
+		"content": "Error: exit status 1",
+	}
+	if !tr.IsToolErrorMessage(toolMsg, nil, universalPfx) {
+		t.Errorf("expected OpenAI role=tool with Error prefix to be classified as error")
+	}
+
+	// 2. Anthropic tool_result (is_error: true + nested blocks) -> true
+	anthropicErr1 := map[string]interface{}{
+		"role": "user",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type":     "tool_result",
+				"is_error": true,
+				"content":  "operation aborted",
+			},
+		},
+	}
+	if !tr.IsToolErrorMessage(anthropicErr1, nil, universalPfx) {
+		t.Errorf("expected Anthropic tool_result with is_error=true to be classified as error")
+	}
+
+	anthropicErr2 := map[string]interface{}{
+		"role": "user",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type": "tool_result",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "text",
+						"text": `{"error": "file not found"}`,
+					},
+				},
+			},
+		},
+	}
+	if !tr.IsToolErrorMessage(anthropicErr2, nil, universalPfx) {
+		t.Errorf("expected Anthropic nested tool_result with universal error prefix to be classified as error")
+	}
+
+	// 3. Cline user text block with "Editor operation failed" -> true
+	clineUserMsg := map[string]interface{}{
+		"role": "user",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type": "text",
+				"text": "Editor operation failed: invalid line offset",
+			},
+			map[string]interface{}{
+				"type": "text",
+				"text": "<environment_details>\n# Current Time\n2026-10-15T12:00:00Z\n</environment_details>",
+			},
+		},
+	}
+	if !tr.IsToolErrorMessage(clineUserMsg, clineProfile, universalPfx) {
+		t.Errorf("expected Cline text block with registered error signature to be classified as error")
+	}
+
+	// 4. Human user prompt "Error: please fix my db" -> false
+	humanPrompt := map[string]interface{}{
+		"role":    "user",
+		"content": "Error: please fix my db",
+	}
+	if tr.IsToolErrorMessage(humanPrompt, clineProfile, universalPfx) {
+		t.Errorf("human user prompt starting with 'Error:' must NOT be classified as tool error")
+	}
+
+	// 5. 50KB source code read containing `{"error": "unauthorized"}` beyond 4KB -> false
+	largeContent := strings.Repeat("// filler code line\n", 300) + `{"error": "unauthorized"}`
+	if len(largeContent) < 5000 {
+		t.Fatalf("test setup error: largeContent length is %d, expected > 5000", len(largeContent))
+	}
+	largeFileRead := map[string]interface{}{
+		"role":    "tool",
+		"content": largeContent,
+	}
+	if tr.IsToolErrorMessage(largeFileRead, nil, universalPfx) {
+		t.Errorf("large file read with error signature beyond 4KB scan window must NOT be classified as error")
+	}
+}
+
+func TestTransformer_PrecededByToolError(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	tr := nts.NewTransformer(cfg)
+	reg := agentregistry.DefaultRegistry()
+	universalPfx := reg.GetReasoningCompactionConfig().UniversalToolErrorPrefixes
+
+	// Case A: Parallel tool calls where one failed
+	msgs := []interface{}{
+		map[string]interface{}{"role": "user", "content": "do tasks"},
+		map[string]interface{}{"role": "assistant", "content": "calling tools"},
+		map[string]interface{}{"role": "tool", "content": "Error: command failed"},
+		map[string]interface{}{"role": "tool", "content": "success output"},
+		map[string]interface{}{"role": "assistant", "content": "handling failure"}, // idx 4
+	}
+
+	if !tr.PrecededByToolError(msgs, 4, nil, universalPfx) {
+		t.Errorf("expected assistant turn 4 to be preceded by tool error due to parallel failed tool")
+	}
+
+	// Case B: Parallel tool calls both succeeded
+	msgsClean := []interface{}{
+		map[string]interface{}{"role": "user", "content": "do tasks"},
+		map[string]interface{}{"role": "assistant", "content": "calling tools"},
+		map[string]interface{}{"role": "tool", "content": "success 1"},
+		map[string]interface{}{"role": "tool", "content": "success 2"},
+		map[string]interface{}{"role": "assistant", "content": "proceeding"}, // idx 4
+	}
+
+	if tr.PrecededByToolError(msgsClean, 4, nil, universalPfx) {
+		t.Errorf("expected clean tool executions to not be preceded by error")
+	}
+
+	// Case C: Error occurred in earlier turn, but intervened by another assistant turn
+	msgsIntervened := []interface{}{
+		map[string]interface{}{"role": "tool", "content": "Error: old failure"},
+		map[string]interface{}{"role": "assistant", "content": "retry"},
+		map[string]interface{}{"role": "tool", "content": "success now"},
+		map[string]interface{}{"role": "assistant", "content": "final step"}, // idx 3
+	}
+
+	if tr.PrecededByToolError(msgsIntervened, 3, nil, universalPfx) {
+		t.Errorf("expected scan to stop at previous assistant turn and not see old failure")
+	}
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func intPtr(i int) *int {
+	return &i
+}
+
+func TestTransformer_KickoffHighWatermark(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.StripHistoricalReasoning = true
+	cfg.KeepRecentReasoningTurns = 2
+	cfg.HysteresisCompaction = boolPtr(false) // Test raw sliding window retention with kickoff protection
+
+	tr := nts.NewTransformer(cfg)
+
+	// Build 7 turns:
+	// Turn 1 (idx 1): 180B recon
+	// Turn 2 (idx 3): 150B recon
+	// Turn 3 (idx 5): 650B architecture plan (>= 400B kickoff threshold)
+	// Turn 4 (idx 7): 250B substantial reasoning
+	// Turn 5 (idx 9): 250B substantial reasoning
+	// Turn 6 (idx 11): 250B substantial reasoning
+	// Turn 7 (idx 13): 250B substantial reasoning
+	var msgs []interface{}
+	for i := 1; i <= 7; i++ {
+		msgs = append(msgs, map[string]interface{}{"role": "user", "content": fmt.Sprintf("step %d", i)})
+		var reasoningLen int
+		switch i {
+		case 1:
+			reasoningLen = 180
+		case 2:
+			reasoningLen = 150
+		case 3:
+			reasoningLen = 650
+		default:
+			reasoningLen = 250
+		}
+		msgs = append(msgs, map[string]interface{}{
+			"role":              "assistant",
+			"reasoning_content": strings.Repeat("a", reasoningLen),
+			"content":           fmt.Sprintf("done step %d", i),
+		})
+	}
+
+	toPrune, hasAny := tr.IdentifyHistoricalReasoningIndices(msgs, nil)
+	if !hasAny {
+		t.Fatalf("expected historical reasoning to be pruned")
+	}
+
+	turn1Idx := 1
+	turn3Idx := 5
+	turn6Idx := 11
+	turn7Idx := 13
+
+	// Turn 1 (180B recon) must be pruned
+	if !toPrune.Has(turn1Idx) {
+		t.Errorf("expected Turn 1 (180B recon) to be pruned")
+	}
+
+	// Turn 3 (650B plan) must be permanently pinned as Kickoff Anchor
+	if toPrune.Has(turn3Idx) {
+		t.Errorf("expected Turn 3 (650B plan) to be preserved as Kickoff Anchor, but was pruned")
+	}
+
+	// Recent 2 turns (Turn 6 and Turn 7) must be preserved
+	if toPrune.Has(turn6Idx) {
+		t.Errorf("expected Turn 6 (recent turn) to be preserved")
+	}
+	if toPrune.Has(turn7Idx) {
+		t.Errorf("expected Turn 7 (most recent turn) to be preserved")
+	}
+}
+
+func TestTransformer_MicroThoughtsDoNotConsumeQuota(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.StripHistoricalReasoning = true
+	cfg.KeepRecentReasoningTurns = 2
+	cfg.HysteresisCompaction = boolPtr(false)
+
+	tr := nts.NewTransformer(cfg)
+
+	// Turn 1 (idx 1): 500B reasoning plan (substantial)
+	// Turns 2..6 (idx 3, 5, 7, 9, 11): 5 turns of 60B micro-thoughts (< 200B min_substantial_bytes)
+	var msgs []interface{}
+	msgs = append(msgs, map[string]interface{}{"role": "user", "content": "initial prompt"})
+	msgs = append(msgs, map[string]interface{}{
+		"role":              "assistant",
+		"reasoning_content": strings.Repeat("p", 500),
+		"content":           "Here is the detailed plan.",
+	})
+
+	for i := 2; i <= 6; i++ {
+		msgs = append(msgs, map[string]interface{}{"role": "user", "content": fmt.Sprintf("step %d", i)})
+		msgs = append(msgs, map[string]interface{}{
+			"role":              "assistant",
+			"reasoning_content": strings.Repeat("m", 60), // micro-thought < 200B
+			"content":           fmt.Sprintf("tactical step %d", i),
+		})
+	}
+
+	toPrune, _ := tr.IdentifyHistoricalReasoningIndices(msgs, nil)
+
+	turn1Idx := 1
+	if toPrune.Has(turn1Idx) {
+		t.Errorf("Turn 1 substantial plan was pruned by subsequent micro-thoughts; micro-thoughts must not consume retention budget")
+	}
+}
+
+func TestTransformer_HysteresisCacheStability(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.StripHistoricalReasoning = true
+	cfg.KeepRecentReasoningTurns = 2
+	cfg.HysteresisCompaction = boolPtr(true)
+
+	tr := nts.NewTransformer(cfg)
+
+	// Build 10 substantial assistant turns (each with 300B reasoning)
+	var msgs []interface{}
+	for i := 1; i <= 10; i++ {
+		msgs = append(msgs, map[string]interface{}{"role": "user", "content": fmt.Sprintf("user %d", i)})
+		msgs = append(msgs, map[string]interface{}{
+			"role":              "assistant",
+			"reasoning_content": strings.Repeat("s", 300),
+			"content":           fmt.Sprintf("assistant %d", i),
+		})
+	}
+
+	// Turn 1..5 (messages 0..9): below high watermark (6 substantial turns), prunes nothing!
+	for turns := 1; turns <= 5; turns++ {
+		subMsgs := msgs[:turns*2]
+		toPrune, hasAny := tr.IdentifyHistoricalReasoningIndices(subMsgs, nil)
+		if hasAny || !toPrune.IsEmpty() {
+			t.Errorf("Turn %d: expected 0 pruned turns below high watermark, got prune set", turns)
+		}
+	}
+
+	// Turn 6 (messages 0..11): reaches high watermark 6!
+	// pruneSubstantialCount = ((6 - 2) / 4) * 4 = 4. Turns 1..4 pruned (idx 1, 3, 5, 7)
+	msgsTurn6 := msgs[:12]
+	toPrune6, hasAny6 := tr.IdentifyHistoricalReasoningIndices(msgsTurn6, nil)
+	if !hasAny6 {
+		t.Fatalf("Turn 6: expected compaction at high watermark")
+	}
+
+	for _, idx := range []int{1, 3, 5, 7} {
+		if !toPrune6.Has(idx) {
+			t.Errorf("Turn 6: expected assistant msg at idx %d to be pruned", idx)
+		}
+	}
+	if toPrune6.Has(9) || toPrune6.Has(11) {
+		t.Errorf("Turn 6: recent turns 5 and 6 must be preserved")
+	}
+
+	// Turns 7, 8, 9 must produce the EXACT same pruned bitset as Turn 6! (100% KV cache stability)
+	for turns := 7; turns <= 9; turns++ {
+		subMsgs := msgs[:turns*2]
+		toPruneN, hasAnyN := tr.IdentifyHistoricalReasoningIndices(subMsgs, nil)
+		if !hasAnyN {
+			t.Fatalf("Turn %d: expected compaction", turns)
+		}
+		for _, idx := range []int{1, 3, 5, 7} {
+			if !toPruneN.Has(idx) {
+				t.Errorf("Turn %d: expected assistant msg at idx %d to remain pruned (prefix invariance)", turns, idx)
+			}
+		}
+		// Any newer turns (turns >= 5, i.e. idx >= 9) must NOT be pruned
+		for idx := 9; idx < turns*2; idx += 2 {
+			if toPruneN.Has(idx) {
+				t.Errorf("Turn %d: assistant msg at idx %d must be preserved", turns, idx)
+			}
+		}
+	}
+
+	// Turn 10: reaches high watermark 10!
+	// pruneSubstantialCount = ((10 - 2) / 4) * 4 = 8. Turns 1..8 pruned!
+	msgsTurn10 := msgs[:20]
+	toPrune10, _ := tr.IdentifyHistoricalReasoningIndices(msgsTurn10, nil)
+	for i := 1; i <= 15; i += 2 { // Turns 1..8 are indices 1, 3, 5, 7, 9, 11, 13, 15
+		if !toPrune10.Has(i) {
+			t.Errorf("Turn 10: expected assistant msg at idx %d to be pruned", i)
+		}
+	}
+	if toPrune10.Has(17) || toPrune10.Has(19) {
+		t.Errorf("Turn 10: recent turns 9 and 10 must be preserved")
+	}
+}
+
+func TestTransformer_ErrorStormAndRecoveryInvariance(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.StripHistoricalReasoning = true
+	cfg.KeepRecentReasoningTurns = 2
+	cfg.HysteresisCompaction = boolPtr(true)
+	cfg.FreezeOnToolErrors = boolPtr(true)
+
+	tr := nts.NewTransformer(cfg)
+
+	// Baseline: 6 clean substantial turns
+	// User 1 -> Assistant 1 -> Tool 1 -> ... -> User 6 -> Assistant 6
+	var msgs []interface{}
+	for i := 1; i <= 6; i++ {
+		msgs = append(msgs, map[string]interface{}{"role": "user", "content": fmt.Sprintf("user %d", i)})
+		msgs = append(msgs, map[string]interface{}{
+			"role":              "assistant",
+			"reasoning_content": strings.Repeat("c", 300),
+			"content":           fmt.Sprintf("assistant %d", i),
+		})
+	}
+	// Assistant 6 is at index 11.
+	// Check baseline at Turn 6:
+	toPruneBase, _ := tr.IdentifyHistoricalReasoningIndices(msgs, nil)
+	for _, idx := range []int{1, 3, 5, 7} {
+		if !toPruneBase.Has(idx) {
+			t.Fatalf("Baseline Turn 6: expected msg %d to be pruned", idx)
+		}
+	}
+
+	// Now Turn 6 executes a tool that FAILS!
+	msgs = append(msgs, map[string]interface{}{
+		"role":    "tool",
+		"content": "Error: command failed with exit status 1",
+	}) // idx 12
+
+	// Retry Turn 7: Assistant 7 fails again
+	msgs = append(msgs, map[string]interface{}{
+		"role":              "assistant",
+		"reasoning_content": strings.Repeat("r", 300),
+		"content":           "retrying with flag --force",
+	}) // idx 13
+	msgs = append(msgs, map[string]interface{}{
+		"role":    "tool",
+		"content": "Error: syntax error in script",
+	}) // idx 14
+
+	// Check during error streak at Turn 7:
+	toPruneErr1, _ := tr.IdentifyHistoricalReasoningIndices(msgs, nil)
+	for _, idx := range []int{1, 3, 5, 7} {
+		if !toPruneErr1.Has(idx) {
+			t.Errorf("Error Streak Turn 7: historical turns 1..4 (idx %d) must stay pruned", idx)
+		}
+	}
+	if toPruneErr1.Has(11) {
+		t.Errorf("Error Streak Turn 7: causal setup Turn 6 (idx 11) must be protected")
+	}
+	if toPruneErr1.Has(13) {
+		t.Errorf("Error Streak Turn 7: active retry Turn 7 (idx 13) must be protected")
+	}
+
+	// Retry Turn 8: Assistant 8 fails again
+	msgs = append(msgs, map[string]interface{}{
+		"role":              "assistant",
+		"reasoning_content": strings.Repeat("r", 300),
+		"content":           "retrying with sudo",
+	}) // idx 15
+	msgs = append(msgs, map[string]interface{}{
+		"role":    "tool",
+		"content": "Error: unable to lock database",
+	}) // idx 16
+
+	// Check during error streak at Turn 8:
+	toPruneErr2, _ := tr.IdentifyHistoricalReasoningIndices(msgs, nil)
+	for _, idx := range []int{1, 3, 5, 7} {
+		if !toPruneErr2.Has(idx) {
+			t.Errorf("Error Streak Turn 8: historical turns 1..4 (idx %d) must stay pruned", idx)
+		}
+	}
+	if toPruneErr2.Has(11) || toPruneErr2.Has(13) || toPruneErr2.Has(15) {
+		t.Errorf("Error Streak Turn 8: setup and all retries must be protected")
+	}
+
+	// Turn 9: RECOVERY TURN! Assistant 9 succeeds!
+	msgs = append(msgs, map[string]interface{}{
+		"role":              "assistant",
+		"reasoning_content": strings.Repeat("r", 300),
+		"content":           "fixing lockfile and rerunning",
+	}) // idx 17
+	msgs = append(msgs, map[string]interface{}{
+		"role":    "tool",
+		"content": "success: database updated",
+	}) // idx 18
+
+	// Check on RECOVERY TURN:
+	toPruneRecovery, _ := tr.IdentifyHistoricalReasoningIndices(msgs, nil)
+	for _, idx := range []int{1, 3, 5, 7} {
+		if !toPruneRecovery.Has(idx) {
+			t.Errorf("Recovery Turn 9: historical turns 1..4 (idx %d) must remain 100%% byte-identical to pre-error baseline", idx)
+		}
+	}
+}
+
+func BenchmarkIdentifyHistoricalReasoningIndices(b *testing.B) {
+	cfg := nts.DefaultConfig()
+	cfg.StripHistoricalReasoning = true
+	cfg.KeepRecentReasoningTurns = 2
+	cfg.HysteresisCompaction = boolPtr(true)
+	tr := nts.NewTransformer(cfg)
+	reg := agentregistry.DefaultRegistry()
+	agentProfile := reg.GetProfile("cline")
+
+	// Construct 60-message fixture OUTSIDE the benchmark loop
+	var msgs []interface{}
+	for i := 0; i < 30; i++ {
+		msgs = append(msgs, map[string]interface{}{
+			"role":    "user",
+			"content": fmt.Sprintf("do task %d", i),
+		})
+		msgs = append(msgs, map[string]interface{}{
+			"role":              "assistant",
+			"reasoning_content": strings.Repeat("thinking step ", 20),
+			"content":           fmt.Sprintf("result %d", i),
+		})
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		tr.IdentifyHistoricalReasoningIndices(msgs, agentProfile)
 	}
 }

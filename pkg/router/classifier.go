@@ -872,6 +872,11 @@ func IsBuiltinCycleKillerExempt(name string) bool {
 	return agentregistry.DefaultRegistry().IsCycleKillerExempt(name)
 }
 
+// IsBuiltinReadTool checks if the tool name represents a known file reading tool.
+func IsBuiltinReadTool(name string) bool {
+	return agentregistry.DefaultRegistry().IsFileReadTool(name)
+}
+
 // extractCommandFromRaw pulls the shell command string from tool call argument payloads.
 func extractCommandFromRaw(raw json.RawMessage) string {
 	if len(raw) == 0 {
