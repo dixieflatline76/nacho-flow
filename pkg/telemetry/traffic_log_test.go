@@ -754,3 +754,48 @@ func TestReadCompleteSessionsFiltered(t *testing.T) {
 		t.Fatalf("Expected 5 total records, got %d", len(allRecords))
 	}
 }
+
+func TestTrafficLogger_EdgeCases(t *testing.T) {
+	// ClientCounts / DistinctClients with non-existent file
+	counts, err := ClientCounts("non_existent_file_xyz_123.jsonl")
+	if err != nil || len(counts) != 0 {
+		t.Errorf("expected empty counts, nil err for missing file, got %v, %v", counts, err)
+	}
+	distinct, err := DistinctClients("non_existent_file_xyz_123.jsonl")
+	if err != nil || len(distinct) != 0 {
+		t.Errorf("expected empty distinct, nil err for missing file, got %v, %v", distinct, err)
+	}
+
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "closed_traffic.jsonl")
+	tl, err := NewTrafficLogger(logPath, 100)
+	if err != nil {
+		t.Fatalf("failed to create logger: %v", err)
+	}
+	if err := tl.Close(); err != nil {
+		t.Fatalf("first close failed: %v", err)
+	}
+	// Second close should return nil
+	if err := tl.Close(); err != nil {
+		t.Errorf("second close failed: %v", err)
+	}
+	// Flush and Emit on closed logger should be safe no-ops
+	tl.Flush()
+	tl.Emit(TurnRecord{})
+
+	// Test unknown client ID counting
+	jsonlWithEmptyClient := filepath.Join(tempDir, "empty_client.jsonl")
+	_ = os.WriteFile(jsonlWithEmptyClient, []byte("{}\n"), 0600)
+	cMap, err := ClientCounts(jsonlWithEmptyClient)
+	if err != nil || cMap["unknown"] != 1 {
+		t.Errorf("expected 1 unknown client, got %v, err=%v", cMap, err)
+	}
+
+	// Test default filePath and bufferSize
+	t.Setenv("NACHO_LOG_DIR", t.TempDir())
+	defaultTL, err := NewTrafficLogger("", 0)
+	if err != nil {
+		t.Fatalf("failed to create default logger: %v", err)
+	}
+	_ = defaultTL.Close()
+}

@@ -300,11 +300,11 @@ The figures below represent the empirical measurements captured across isolated 
 <!-- BENCHMARK:WHITEPAPER_STRESS_START -->
 | Concurrency Level | Total Requests | Throughput (Req/Sec) | P50 Latency | P99 Latency | Peak Heap Memory | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **$24339.5\text{ req/s}$** | $1.88\text{ ms}$ | $9.14\text{ ms}$ | $139.8\text{ MB}$ | **100.0%** (0 errors) |
-| **100 workers** | 50,000 | **$22048.0\text{ req/s}$** | $3.43\text{ ms}$ | $21.16\text{ ms}$ | $168.7\text{ MB}$ | **100.0%** (0 errors) |
-| **250 workers** | 75,000 | **$24366.4\text{ req/s}$** | $7.82\text{ ms}$ | $42.11\text{ ms}$ | $173.4\text{ MB}$ | **100.0%** (0 errors) |
-| **500 workers** | 100,000 | **$26477.6\text{ req/s}$** | $17.56\text{ ms}$ | $44.46\text{ ms}$ | $172.5\text{ MB}$ | **100.0%** (0 errors) |
-| **1,000 workers** | 100,000 | **$23972.7\text{ req/s}$** | $35.71\text{ ms}$ | $131.84\text{ ms}$ | $225.3\text{ MB}$ | **100.0%** (0 errors) |
+| **50 workers** | 25,000 | **$25242.6\text{ req/s}$** | $1.89\text{ ms}$ | $8.98\text{ ms}$ | $120.1\text{ MB}$ | **100.0%** (0 errors) |
+| **100 workers** | 50,000 | **$22879.8\text{ req/s}$** | $3.41\text{ ms}$ | $17.07\text{ ms}$ | $157.6\text{ MB}$ | **100.0%** (0 errors) |
+| **250 workers** | 75,000 | **$26031.4\text{ req/s}$** | $8.17\text{ ms}$ | $38.82\text{ ms}$ | $191.6\text{ MB}$ | **100.0%** (0 errors) |
+| **500 workers** | 100,000 | **$23683.1\text{ req/s}$** | $17.96\text{ ms}$ | $70.44\text{ ms}$ | $151.5\text{ MB}$ | **100.0%** (0 errors) |
+| **1,000 workers** | 100,000 | **$24940.9\text{ req/s}$** | $37.74\text{ ms}$ | $75.45\text{ ms}$ | $215.5\text{ MB}$ | **100.0%** (0 errors) |
 <!-- BENCHMARK:WHITEPAPER_STRESS_END -->
 
 #### High-Concurrency Scaling Analysis:

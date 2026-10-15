@@ -183,3 +183,15 @@ func TestToolDedup_EdgeCases(t *testing.T) {
 		t.Fatalf("non-text blocks should bypass")
 	}
 }
+
+func TestToolDedup_NegativeSavingsClamped(t *testing.T) {
+	ctx := nts.NewToolDedupContext(5)
+	ctx.Deduplicate("short text", "bash", false)
+	_, red, changed := ctx.Deduplicate("short text", "bash", false)
+	if !changed {
+		t.Fatal("expected duplicate replacement")
+	}
+	if red.BytesSaved != 0 {
+		t.Errorf("expected BytesSaved to be clamped to 0, got %d", red.BytesSaved)
+	}
+}

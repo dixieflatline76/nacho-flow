@@ -540,9 +540,9 @@ func TestPipeline_FairyDust_ReasoningEffort_DirectAssignment(t *testing.T) {
 
 	// 1. Explicit effort in FairyDustEntry overrides routine tier
 	reqCtx1 := &contract.RequestContext{
-		FairyDusted:      true,
-		FairyDustEntry:   "audit-high",
-		FairyDustCount:   1,
+		FairyDusted:    true,
+		FairyDustEntry: "audit-high",
+		FairyDustCount: 1,
 	}
 	out1 := s.applyFairyDustTierOverride(reqCtx1, routineTier, cfg)
 	if out1.ReasoningEffort != "high" {
@@ -554,9 +554,9 @@ func TestPipeline_FairyDust_ReasoningEffort_DirectAssignment(t *testing.T) {
 
 	// 2. Omitted effort in FairyDustEntry does NOT inherit routine tier's "low"
 	reqCtx2 := &contract.RequestContext{
-		FairyDusted:      true,
-		FairyDustEntry:   "audit-native-default",
-		FairyDustCount:   1,
+		FairyDusted:    true,
+		FairyDustEntry: "audit-native-default",
+		FairyDustCount: 1,
 	}
 	out2 := s.applyFairyDustTierOverride(reqCtx2, routineTier, cfg)
 	if out2.ReasoningEffort != "" {
@@ -572,4 +572,3 @@ func TestPipeline_FairyDust_ReasoningEffort_DirectAssignment(t *testing.T) {
 		t.Errorf("expected routine tier ReasoningEffort 'low' to be retained when not fairy dusted, got %q", out3.ReasoningEffort)
 	}
 }
-

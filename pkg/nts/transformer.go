@@ -936,7 +936,8 @@ func (t *Transformer) isToolErrorMessage(
 			}
 			partType, _ := part["type"].(string)
 
-			if partType == "tool_result" {
+			switch partType {
+			case "tool_result":
 				if isErr, _ := part["is_error"].(bool); isErr {
 					return true
 				}
@@ -952,7 +953,7 @@ func (t *Transformer) isToolErrorMessage(
 						}
 					}
 				}
-			} else if partType == "text" {
+			case "text":
 				// Multi-part user text blocks (Cline / Roo / Kilo XML tool results)
 				if txt, ok := part["text"].(string); ok && t.matchesToolError(txt, agentProfile, universalPrefixes, false) {
 					return true
@@ -1291,4 +1292,3 @@ func (t *Transformer) identifyHistoricalReasoningIndices(
 
 	return toPrune, !toPrune.IsEmpty()
 }
-

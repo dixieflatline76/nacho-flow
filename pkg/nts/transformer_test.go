@@ -1513,10 +1513,6 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
-func intPtr(i int) *int {
-	return &i
-}
-
 func TestTransformer_KickoffHighWatermark(t *testing.T) {
 	cfg := nts.DefaultConfig()
 	cfg.StripHistoricalReasoning = true
@@ -1825,7 +1821,39 @@ func BenchmarkIdentifyHistoricalReasoningIndices(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tr.IdentifyHistoricalReasoningIndices(msgs, agentProfile)
+	}
+}
+
+func TestTransformer_SetRegistry_Pipeline_ToolError(t *testing.T) {
+	cfg := nts.DefaultConfig()
+	cfg.StripHistoricalReasoning = true
+	cfg.KeepRecentReasoningTurns = 1
+	tr := nts.NewTransformer(cfg)
+	reg := agentregistry.DefaultRegistry()
+	tr.SetRegistry(reg)
+	if tr.Pipeline() == nil {
+		t.Error("expected non-nil pipeline")
+	}
+
+	// OpenAI format with role="tool" and list content containing an error
+	req := `{
+		"model": "gpt-4o",
+		"messages": [
+			{"role": "user", "content": "run command"},
+			{"role": "assistant", "content": "ok"},
+			{"role": "tool", "tool_call_id": "call_1", "content": [
+				{"type": "text", "text": "Error: command failed with exit code 1"}
+			]},
+			{"role": "assistant", "reasoning_content": "fixing error step", "content": "fixed"}
+		]
+	}`
+	out, _, err := tr.TransformOpenAI([]byte(req))
+	if err != nil {
+		t.Fatalf("TransformOpenAI failed: %v", err)
+	}
+	if !bytes.Contains(out, []byte("fixing error step")) {
+		t.Error("expected error-preceded assistant reasoning to be preserved")
 	}
 }

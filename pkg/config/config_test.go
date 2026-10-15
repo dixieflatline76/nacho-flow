@@ -804,3 +804,23 @@ func TestConfig_YDriveValidation(t *testing.T) {
 		t.Errorf("Tier 1: Local GPU Workhorse was not found")
 	}
 }
+
+func TestResolveEnvVars_EdgeCases(t *testing.T) {
+	ResolveEnvVars(nil) // Should not panic
+
+	// Global auth token fallback
+	t.Setenv(contract.GlobalAuthTokenEnv, "global-secret-token")
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"p1": {APIKey: "ENV_MY_API_KEY"},
+		},
+	}
+	t.Setenv("MY_API_KEY", "resolved-api-key")
+	ResolveEnvVars(cfg)
+	if cfg.AuthToken != "global-secret-token" {
+		t.Errorf("expected global auth token, got %q", cfg.AuthToken)
+	}
+	if cfg.Providers["p1"].APIKey != "resolved-api-key" {
+		t.Errorf("expected resolved api key, got %q", cfg.Providers["p1"].APIKey)
+	}
+}

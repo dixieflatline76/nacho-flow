@@ -1393,4 +1393,3 @@ func TestClassifyToolCategory(t *testing.T) {
 		t.Errorf("expected execute_command -> ToolCategoryCommand, got %v", cat)
 	}
 }
-

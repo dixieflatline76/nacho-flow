@@ -163,3 +163,20 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 		t.Errorf("expected persisted yaml to contain fairy_dust, got: %s", persistStr)
 	}
 }
+
+func TestDTO_NilAndToMap(t *testing.T) {
+	var nilDTO *SanitizedConfigDTO
+	if nilDTO.ToMap() != nil {
+		t.Error("expected nil for nilDTO.ToMap()")
+	}
+	enabled := true
+	cfgCycleBreaker := &contract.Config{
+		CycleBreaker: contract.CycleBreakerConfig{
+			Enabled: &enabled,
+		},
+	}
+	dto := ToPublicDTO(cfgCycleBreaker)
+	if dto == nil || dto.CycleKiller.Enabled == nil || !*dto.CycleKiller.Enabled {
+		t.Error("expected CycleBreaker fallback to populate CycleKiller")
+	}
+}

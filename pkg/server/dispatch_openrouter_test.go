@@ -21,6 +21,7 @@ func (m *testOpenRouterProvider) ID() string      { return "openrouter" }
 func (m *testOpenRouterProvider) Name() string    { return "OpenRouter" }
 func (m *testOpenRouterProvider) BaseURL() string { return "https://openrouter.ai/api/v1" }
 func (m *testOpenRouterProvider) IsLocal() bool   { return false }
+
 var staticTestOpenRouterDeclarator = &provider.WireDeclarator{
 	Dialect:           provider.ReasoningDialectNested,
 	ForbidsEffortNone: true,
@@ -521,4 +522,3 @@ func BenchmarkModifyTopLevelPayload_OpenRouter_StripNone(b *testing.B) {
 		_ = modifyTopLevelPayload(body, tier, p)
 	}
 }
-

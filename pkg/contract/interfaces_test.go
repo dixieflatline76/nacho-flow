@@ -1,9 +1,11 @@
 package contract_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"gopkg.in/yaml.v3"
 )
 
 func TestProviderConfig_IsLocal(t *testing.T) {
@@ -445,5 +447,80 @@ func TestConfig_Normalize(t *testing.T) {
 	}
 	if fullCfg.Tiers[0].CycleBreaker.ToolLane.MaxWriteTokens != 16384 {
 		t.Errorf("expected normalized Tier CycleBreaker")
+	}
+}
+
+func TestThoughtSlapOptIn_MarshalAndUnmarshal(t *testing.T) {
+	// 1. Disabled
+	disabled := contract.ThoughtSlapOptIn{Enabled: false}
+	yVal, err := disabled.MarshalYAML()
+	if err != nil || yVal != false {
+		t.Errorf("expected MarshalYAML false, got %v, err %v", yVal, err)
+	}
+	jBytes, err := disabled.MarshalJSON()
+	if err != nil || string(jBytes) != "false" {
+		t.Errorf("expected MarshalJSON 'false', got %s, err %v", string(jBytes), err)
+	}
+
+	// 2. Enabled with no overrides
+	enabledNoOverrides := contract.ThoughtSlapOptIn{Enabled: true}
+	yVal, err = enabledNoOverrides.MarshalYAML()
+	if err != nil || yVal != true {
+		t.Errorf("expected MarshalYAML true, got %v, err %v", yVal, err)
+	}
+	jBytes, err = enabledNoOverrides.MarshalJSON()
+	if err != nil || string(jBytes) != "true" {
+		t.Errorf("expected MarshalJSON 'true', got %s, err %v", string(jBytes), err)
+	}
+
+	// 3. Enabled with overrides
+	enabledWithOverrides := contract.ThoughtSlapOptIn{
+		Enabled: true,
+		Overrides: contract.ThoughtSlapConfig{
+			MaxAttempts: 2,
+			RescueTier:  "Tier 2",
+		},
+	}
+	yVal, err = enabledWithOverrides.MarshalYAML()
+	if err != nil {
+		t.Errorf("expected MarshalYAML overrides, err %v", err)
+	}
+	jBytes, err = enabledWithOverrides.MarshalJSON()
+	if err != nil || !strings.Contains(string(jBytes), "Tier 2") {
+		t.Errorf("expected MarshalJSON containing 'Tier 2', got %s, err %v", string(jBytes), err)
+	}
+
+	// 4. YAML unmarshal invalid sequence node
+	type wrapper struct {
+		Opt contract.ThoughtSlapOptIn `yaml:"opt"`
+	}
+	var w wrapper
+	if err := yaml.Unmarshal([]byte("opt: [1, 2, 3]"), &w); err == nil {
+		t.Errorf("expected error unmarshaling sequence YAML node into ThoughtSlapOptIn")
+	}
+}
+
+func TestDealsConfig_Filters(t *testing.T) {
+	// Default nil checks
+	cfgDefault := contract.DealsConfig{}
+	if !cfgDefault.ShouldExcludeBatch() {
+		t.Errorf("expected ShouldExcludeBatch default to true")
+	}
+	if !cfgDefault.ShouldExcludeFree() {
+		t.Errorf("expected ShouldExcludeFree default to true")
+	}
+
+	// Explicit false checks
+	f := false
+	tr := true
+	cfgExplicit := contract.DealsConfig{
+		ExcludeBatch: &f,
+		ExcludeFree:  &tr,
+	}
+	if cfgExplicit.ShouldExcludeBatch() {
+		t.Errorf("expected ShouldExcludeBatch explicit false")
+	}
+	if !cfgExplicit.ShouldExcludeFree() {
+		t.Errorf("expected ShouldExcludeFree explicit true")
 	}
 }

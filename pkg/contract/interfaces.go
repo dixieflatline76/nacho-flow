@@ -641,11 +641,11 @@ type AgentShieldConfig struct {
 
 // FairyDustEntry defines a single proactive quality checkpoint configuration.
 type FairyDustEntry struct {
-	Name          string `yaml:"name" json:"name"`
-	Model         string `yaml:"model" json:"model"`
-	Provider      string `yaml:"provider,omitempty" json:"provider,omitempty"`
-	Frequency     int    `yaml:"frequency" json:"frequency"`
-	MaxPerSession int    `yaml:"max_per_session" json:"max_per_session"`
+	Name            string `yaml:"name" json:"name"`
+	Model           string `yaml:"model" json:"model"`
+	Provider        string `yaml:"provider,omitempty" json:"provider,omitempty"`
+	Frequency       int    `yaml:"frequency" json:"frequency"`
+	MaxPerSession   int    `yaml:"max_per_session" json:"max_per_session"`
 	Priority        int    `yaml:"priority,omitempty" json:"priority,omitempty"`
 	Prompt          string `yaml:"prompt,omitempty" json:"prompt,omitempty"`
 	ReasoningEffort string `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
