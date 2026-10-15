@@ -10,6 +10,7 @@ import (
 
 	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/router/shield"
 )
 
 type RequestClassifier struct {
@@ -875,6 +876,17 @@ func IsBuiltinCycleKillerExempt(name string) bool {
 // IsBuiltinReadTool checks if the tool name represents a known file reading tool.
 func IsBuiltinReadTool(name string) bool {
 	return agentregistry.DefaultRegistry().IsFileReadTool(name)
+}
+
+// ClassifyToolCategory maps a tool name to its cycle-breaker enforcement lane.
+func ClassifyToolCategory(name string) shield.ToolActivityCategory {
+	if IsBuiltinWriteTool(name) || IsBuiltinCycleKillerExempt(name) {
+		return shield.ToolCategoryFileWrite
+	}
+	if IsBuiltinReadTool(name) {
+		return shield.ToolCategoryFileRead
+	}
+	return shield.ToolCategoryCommand
 }
 
 // extractCommandFromRaw pulls the shell command string from tool call argument payloads.
