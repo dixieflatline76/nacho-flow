@@ -7,7 +7,7 @@ This document details the performance characteristics, load-testing methodology,
 ## 1. Executive Summary
 
 <!-- BENCHMARK:EXECUTIVE_SUMMARY_START -->
-- **Peak Throughput**: **31,656 requests/second** under full production authentication and tool normalization load.
+- **Peak Throughput**: **30,284 requests/second** under full production authentication and tool normalization load.
 - **Pipeline Latency**: **~0.19 ms** raw pass-through overhead per request (**~0.22 ms** with full multi-model tool-call normalization).
 - **Extreme Concurrency**: Handled **1,000 parallel workers** across **350,000 total requests** with **100.0% success rate** (0 dropped connections, 0 errors, zero data races).
 - **Memory Footprint**: Peak heap memory remained under **111 MB** sustaining up to 500 concurrent client streams.
@@ -70,11 +70,11 @@ Stress Plan:    Scaling concurrency: 50 -> 100 -> 250 -> 500 -> 1,000 parallel w
 <!-- BENCHMARK:STRESS_TABLE_START -->
 | Concurrency | Total Requests | Success Rate | Throughput (RPS) | P50 Latency | P99 Latency | Heap Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **50 workers** | 25,000 | **100.0%** | **28326.2 req/s** | 1.56 ms | 6.91 ms | 128.6 MB |
-| **100 workers** | 50,000 | **100.0%** | **26856.5 req/s** | 3.11 ms | 15.80 ms | 135.2 MB |
-| **250 workers** | 75,000 | **100.0%** | **28268.2 req/s** | 7.89 ms | 32.35 ms | 186.9 MB |
-| **500 workers** | 100,000 | **100.0%** | **28138.5 req/s** | 13.15 ms | 76.03 ms | 217.3 MB |
-| **1000 workers** | 100,000 | **100.0%** | **24941.2 req/s** | 29.90 ms | 124.06 ms | 274.1 MB |
+| **50 workers** | 25,000 | **100.0%** | **24339.5 req/s** | 1.88 ms | 9.14 ms | 139.8 MB |
+| **100 workers** | 50,000 | **100.0%** | **22048.0 req/s** | 3.43 ms | 21.16 ms | 168.7 MB |
+| **250 workers** | 75,000 | **100.0%** | **24366.4 req/s** | 7.82 ms | 42.11 ms | 173.4 MB |
+| **500 workers** | 100,000 | **100.0%** | **26477.6 req/s** | 17.56 ms | 44.46 ms | 172.5 MB |
+| **1000 workers** | 100,000 | **100.0%** | **23972.7 req/s** | 35.71 ms | 131.84 ms | 225.3 MB |
 <!-- BENCHMARK:STRESS_TABLE_END -->
 
 ---
@@ -93,10 +93,10 @@ To stress the proxy under true production conditions, we benchmarked Nacho Flow 
 <!-- BENCHMARK:AB_TABLE_START -->
 | Workers | Raw Pass-Through (Zero Normalization) | Full Normalization + Auth | Throughput Delta | P50 Latency Delta | P99 Tail Latency Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **25 workers** | 29115.3 req/s | 28491.0 req/s | **-2.1%** | **-0.05 ms** (0.56ms vs 0.51ms) | +0.29 ms |
-| **50 workers** | 31656.7 req/s | 29473.4 req/s | **-6.9%** | **-0.22 ms** (1.77ms vs 1.56ms) | +0.79 ms |
-| **100 workers** | 30231.6 req/s | 27749.7 req/s | **-8.2%** | **+0.29 ms** (2.71ms vs 3.00ms) | +3.43 ms |
-| **200 workers** | 29467.5 req/s | 28846.4 req/s | **-2.1%** | **+0.32 ms** (5.93ms vs 6.24ms) | -6.11 ms |
+| **25 workers** | 25421.4 req/s | 25202.3 req/s | **-0.9%** | **-0.05 ms** (0.64ms vs 0.59ms) | +0.98 ms |
+| **50 workers** | 25881.1 req/s | 24859.1 req/s | **-3.9%** | **+0.33 ms** (1.59ms vs 1.92ms) | -0.58 ms |
+| **100 workers** | 26298.3 req/s | 26447.1 req/s | **+0.6%** | **+0.08 ms** (3.00ms vs 3.08ms) | -1.57 ms |
+| **200 workers** | 27810.0 req/s | 26087.4 req/s | **-6.2%** | **+0.72 ms** (6.02ms vs 6.74ms) | -5.69 ms |
 <!-- BENCHMARK:AB_TABLE_END -->
 
 **Engineering Finding**: 
