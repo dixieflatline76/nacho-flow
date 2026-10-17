@@ -541,3 +541,211 @@ func BenchmarkDetectTestSignals(b *testing.B) {
 		}
 	}
 }
+
+func TestScanTrailingMessages_RecencyResolution_NewPassClearsFail(t *testing.T) {
+	clf := &RequestClassifier{}
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-1",
+					"function": map[string]interface{}{
+						"name":      "execute_command",
+						"arguments": `{"command":"go test ./..."}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-1",
+			"content":      "--- FAIL: TestFoo (0.01s)\nFAIL\tpkg/foo\t0.02s",
+		},
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-2",
+					"function": map[string]interface{}{
+						"name":      "write_to_file",
+						"arguments": `{"path":"pkg/foo/foo.go","content":"package foo"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-2",
+			"content":      "Successfully wrote 12 bytes.",
+		},
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-3",
+					"function": map[string]interface{}{
+						"name":      "execute_command",
+						"arguments": `{"command":"go test ./..."}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-3",
+			"content":      "--- PASS: TestFoo (0.01s)\nPASS\nok  \tpkg/foo\t0.02s",
+		},
+	}
+
+	body, err := json.Marshal(map[string]interface{}{"messages": messages})
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	ctx, err := clf.Classify(body)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+
+	if !ctx.HasTestPass {
+		t.Errorf("expected HasTestPass=true, got false")
+	}
+	if ctx.HasTestFail {
+		t.Errorf("expected HasTestFail=false because newer clean pass clears older failure, got true")
+	}
+	if ctx.HasActiveRepair {
+		t.Errorf("expected HasActiveRepair=false once tests pass cleanly, got true")
+	}
+}
+
+func TestScanTrailingMessages_RecencyResolution_MixedOutputPreservesBoth(t *testing.T) {
+	clf := &RequestClassifier{}
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-1",
+					"function": map[string]interface{}{
+						"name":      "execute_command",
+						"arguments": `{"command":"go test ./..."}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-1",
+			"content":      "--- PASS: TestA (0.01s)\n--- FAIL: TestB (0.01s)\nFAIL\tpkg/foo\t0.02s",
+		},
+	}
+
+	body, err := json.Marshal(map[string]interface{}{"messages": messages})
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	ctx, err := clf.Classify(body)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+
+	if !ctx.HasTestPass {
+		t.Errorf("expected HasTestPass=true on mixed test run, got false")
+	}
+	if !ctx.HasTestFail {
+		t.Errorf("expected HasTestFail=true on mixed test run, got false")
+	}
+}
+
+func TestScanTrailingMessages_ActiveRepair(t *testing.T) {
+	clf := &RequestClassifier{}
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-1",
+					"function": map[string]interface{}{
+						"name":      "execute_command",
+						"arguments": `{"command":"go test ./..."}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-1",
+			"content":      "--- FAIL: TestFoo (0.01s)\nFAIL\tpkg/foo\t0.02s",
+		},
+		map[string]interface{}{
+			"role": "assistant",
+			"tool_calls": []interface{}{
+				map[string]interface{}{
+					"id": "call-2",
+					"function": map[string]interface{}{
+						"name":      "write_to_file",
+						"arguments": `{"path":"pkg/foo/foo.go","content":"package foo"}`,
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"role":         "tool",
+			"tool_call_id": "call-2",
+			"content":      "Successfully wrote 12 bytes.",
+		},
+	}
+
+	body, err := json.Marshal(map[string]interface{}{"messages": messages})
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	ctx, err := clf.Classify(body)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+
+	if !ctx.HasTestFail {
+		t.Errorf("expected HasTestFail=true, got false")
+	}
+	if !ctx.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=true, got false")
+	}
+	if !ctx.HasActiveRepair {
+		t.Errorf("expected HasActiveRepair=true (failing test + write progress), got false")
+	}
+}
+
+func TestScanTrailingMessages_ToolResultXMLNotTreatedAsAssistantWrite(t *testing.T) {
+	clf := &RequestClassifier{}
+	// Anthropic style: user message with tool_result part containing XML text
+	messages := []interface{}{
+		map[string]interface{}{
+			"role": "user",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type":         "tool_result",
+					"tool_use_id":  "toolu_123",
+					"content":      "<write_to_file><path>foo.go</path><content>package foo</content></write_to_file>",
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(map[string]interface{}{"messages": messages})
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	ctx, err := clf.Classify(body)
+	if err != nil {
+		t.Fatalf("classify error: %v", err)
+	}
+
+	if ctx.HasWriteProgress {
+		t.Errorf("expected HasWriteProgress=false for tool_result content containing XML, got true")
+	}
+	if ctx.HasActiveRepair {
+		t.Errorf("expected HasActiveRepair=false, got true")
+	}
+}
+

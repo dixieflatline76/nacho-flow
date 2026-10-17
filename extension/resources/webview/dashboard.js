@@ -562,9 +562,12 @@
 		const bytesSaved = nts.bytes_saved || 0;
 		const compactedTurns = nts.compacted_turns || 0;
 		const totalTokens = nts.total_tokens || 0;
-		const compressionRatio = (totalTokens + tokensSaved) > 0
-			? Math.round((tokensSaved / (totalTokens + tokensSaved)) * 100)
+		const rawRatio = (totalTokens + tokensSaved) > 0
+			? (tokensSaved / (totalTokens + tokensSaved)) * 100
 			: 0;
+		const compressionRatio = rawRatio >= 1
+			? Math.round(rawRatio)
+			: (rawRatio >= 0.1 ? rawRatio.toFixed(1) : (tokensSaved > 0 ? '<0.1' : 0));
 
 		const tokensSavedStr = tokensSaved >= 1000000
 			? (tokensSaved / 1000000).toFixed(1) + 'M'

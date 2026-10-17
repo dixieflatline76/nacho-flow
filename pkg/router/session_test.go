@@ -949,7 +949,67 @@ func TestSessionTracker_RecordTurnTask_ConversationalChat(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_RecordTurnTaskWithHold(t *testing.T) {
+	tracker := NewSessionTracker(5 * time.Minute)
+	sessionID := "hold-session-1"
+
+	root := "Task: Implement feature X"
+	rootHash := HashPrompt(root)
+	prompt1 := "Initial attempt"
+	p1Hash := HashPrompt(prompt1)
+
+	// Turn 0: Fresh kickoff
+	retries, isRetry := tracker.RecordTurnTaskWithHold(sessionID, rootHash, p1Hash, false, false, true, 2)
+	if retries != 0 || isRetry {
+		t.Fatalf("Turn 0 expected retries=0, isRetry=false; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 1: Initial test failure occurs. Even if holdRetries=true, retries=0 MUST escalate to 1!
+	prompt2 := "Test failed: fix assertion"
+	p2Hash := HashPrompt(prompt2)
+	retries, isRetry = tracker.RecordTurnTaskWithHold(sessionID, rootHash, p2Hash, false, true, true, 4)
+	if retries != 1 || !isRetry {
+		t.Fatalf("Turn 1 (initial failure) expected retries=1, isRetry=true; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 2: Active repair in progress (model edited file, holdRetries=true, hasToolProgress=false).
+	// Because retries=1 > 0, retries MUST hold steady at 1!
+	prompt3 := "Wrote file foo.go, re-running test"
+	p3Hash := HashPrompt(prompt3)
+	retries, isRetry = tracker.RecordTurnTaskWithHold(sessionID, rootHash, p3Hash, false, true, true, 6)
+	if retries != 1 || !isRetry {
+		t.Fatalf("Turn 2 (active repair hold) expected retries=1, isRetry=true; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 3: Second edit in active repair (holdRetries=true). MUST still hold steady at 1!
+	prompt4 := "Wrote file bar.go"
+	p4Hash := HashPrompt(prompt4)
+	retries, isRetry = tracker.RecordTurnTaskWithHold(sessionID, rootHash, p4Hash, false, true, true, 8)
+	if retries != 1 || !isRetry {
+		t.Fatalf("Turn 3 (second repair edit) expected retries=1, isRetry=true; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 4: Model stalls without active repair (holdRetries=false, hasToolProgress=false).
+	// MUST escalate to 2!
+	prompt5 := "Model produced rambling text without write or pass"
+	p5Hash := HashPrompt(prompt5)
+	retries, isRetry = tracker.RecordTurnTaskWithHold(sessionID, rootHash, p5Hash, false, false, true, 10)
+	if retries != 2 || !isRetry {
+		t.Fatalf("Turn 4 (stall) expected retries=2, isRetry=true; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+
+	// Turn 5: Forward progress achieved (tests pass: hasToolProgress=true, holdRetries=false).
+	// MUST reset to 0!
+	prompt6 := "Tests passed cleanly"
+	p6Hash := HashPrompt(prompt6)
+	retries, isRetry = tracker.RecordTurnTaskWithHold(sessionID, rootHash, p6Hash, true, false, true, 12)
+	if retries != 0 || isRetry {
+		t.Fatalf("Turn 5 (forward progress) expected retries=0, isRetry=false; got retries=%d, isRetry=%v", retries, isRetry)
+	}
+}
+
 func BenchmarkSessionTracker_RecordTurnTask_ZeroAlloc(b *testing.B) {
+
 	tracker := NewSessionTracker(5 * time.Minute)
 	sessionID := "bench-session"
 	rootHash := HashPrompt("Root task")

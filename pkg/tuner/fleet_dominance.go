@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
@@ -55,6 +56,20 @@ func (t *activeTierInfo) isLateralOrKickoff() bool {
 	return t.requiresKickstart || t.requiresImages || t.isKickoff
 }
 
+func effectiveTierCoding(t *TierReplayConfig) float64 {
+	if t == nil {
+		return 0
+	}
+	if t.ReasoningEffort == "" {
+		return t.CodingIndex
+	}
+	if base, _ := ResolveModelBenchmark(t.Model); base > 0 && math.Abs(t.CodingIndex-base) > 0.01 {
+		// Already scaled by EffectiveCodingIndex in config_bridge / builder
+		return t.CodingIndex
+	}
+	return EffectiveCodingIndex(t.CodingIndex, t.ReasoningEffort)
+}
+
 // CountFleetDominanceConflicts returns the number of static capability inversions.
 // Zero-allocation hot path function for EvaluateFleetConflict.
 func CountFleetDominanceConflicts(cfg *MultiTierConfig) int {
@@ -79,7 +94,7 @@ func CountFleetDominanceConflicts(cfg *MultiTierConfig) int {
 			reasoningEffort:   t.ReasoningEffort,
 			retryBound:        t.RetryBound,
 			retryFloor:        t.RetryFloor,
-			codingIndex:       EffectiveCodingIndex(t.CodingIndex, t.ReasoningEffort),
+			codingIndex:       effectiveTierCoding(t),
 			hasVision:         t.SupportsVision,
 			hasTools:          t.SupportsTools,
 			isFrontier:        t.IsFrontier || IsFrontierModel(t.Model),
@@ -128,7 +143,7 @@ func CountFleetDominanceConflicts(cfg *MultiTierConfig) int {
 	}
 
 	defaultIsFrontier := cfg.DefaultTier.IsFrontier || IsFrontierModel(cfg.DefaultTier.Model)
-	defaultCoding := EffectiveCodingIndex(cfg.DefaultTier.CodingIndex, cfg.DefaultTier.ReasoningEffort)
+	defaultCoding := effectiveTierCoding(&cfg.DefaultTier)
 	if !defaultIsFrontier && defaultCoding > 0 {
 		var highestPred *activeTierInfo
 		for i := 0; i < activeCount; i++ {
@@ -169,7 +184,7 @@ func HighestPredecessorCodingIndex(cfg *MultiTierConfig) float64 {
 		if t.IsDisabled || t.RequiresKickstart || t.RequiresImages || t.MessageCountMax > 0 || t.RetryFloor > 0 {
 			continue
 		}
-		effCoding := EffectiveCodingIndex(t.CodingIndex, t.ReasoningEffort)
+		effCoding := effectiveTierCoding(t)
 		if effCoding > highest {
 			highest = effCoding
 		}
@@ -202,7 +217,7 @@ func AnalyzeFleetDominance(cfg *MultiTierConfig) []StaticDominanceConflict {
 			reasoningEffort:   t.ReasoningEffort,
 			retryBound:        t.RetryBound,
 			retryFloor:        t.RetryFloor,
-			codingIndex:       EffectiveCodingIndex(t.CodingIndex, t.ReasoningEffort),
+			codingIndex:       effectiveTierCoding(t),
 			hasVision:         t.SupportsVision,
 			hasTools:          t.SupportsTools,
 			isFrontier:        t.IsFrontier || IsFrontierModel(t.Model),
@@ -291,7 +306,7 @@ func AnalyzeFleetDominance(cfg *MultiTierConfig) []StaticDominanceConflict {
 	// Also inspect DefaultTier against the highest capability prerequisite in the active cascade,
 	// only if DefaultTier itself is NOT a frontier model/tier.
 	defaultIsFrontier := cfg.DefaultTier.IsFrontier || IsFrontierModel(cfg.DefaultTier.Model)
-	defaultCoding := EffectiveCodingIndex(cfg.DefaultTier.CodingIndex, cfg.DefaultTier.ReasoningEffort)
+	defaultCoding := effectiveTierCoding(&cfg.DefaultTier)
 	if !defaultIsFrontier && defaultCoding > 0 {
 		var highestPred *activeTierInfo
 		for i := 0; i < activeCount; i++ {

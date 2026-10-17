@@ -366,7 +366,7 @@ func (c *RequestClassifier) Classify(body []byte) (contract.RequestContext, erro
 	}
 
 	// 2.5 Scan trailing messages for error patterns and tool progress
-	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasShellWrite, reqCtx.HasTestPass, reqCtx.HasTestFail = c.scanTrailingTyped(payload.Messages)
+	reqCtx.HistoryErrors, reqCtx.HasToolProgress, reqCtx.HasWriteProgress, reqCtx.HasShellWrite, reqCtx.HasTestPass, reqCtx.HasTestFail, reqCtx.HasActiveRepair = c.scanTrailingTyped(payload.Messages)
 	reqCtx.HasTestProgress = reqCtx.HasTestPass && !reqCtx.HasTestFail
 
 	// 3. Approximate total token count using zero-allocation len(body) estimator
@@ -454,7 +454,7 @@ func hashMessageContent(msg *classifyMessage) uint64 {
 	return h
 }
 
-func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasShellWrite bool, hasTestPass bool, hasTestFail bool) {
+func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (historyErrors int, hasToolProgress bool, hasWriteProgress bool, hasShellWrite bool, hasTestPass bool, hasTestFail bool, hasActiveRepair bool) {
 	signatures := c.GetErrorSignatures()
 	writeTools := c.GetKickstartWriteTools()
 
@@ -470,6 +470,17 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 	var stackShellIDs [8]string
 	shellWriteCallIDs := stackShellIDs[:0]
 	hasAnyShellWriteCall := false
+
+	var assistantXMLWrite [8]bool
+	var assistantXMLShellWrite [8]bool
+
+	lastAssistantIdx := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			lastAssistantIdx = i
+			break
+		}
+	}
 
 	// Pass 1: assistant tool calls
 	for i := start; i < len(messages); i++ {
@@ -551,6 +562,19 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 					for toolName := range writeTools {
 						if containsXMLToolTag(lowerText, toolName) {
 							hasAnyWriteCall = true
+							if i-start < 8 {
+								assistantXMLWrite[i-start] = true
+							}
+							break
+						}
+					}
+				} else if reg := agentregistry.DefaultRegistry(); reg != nil {
+					for _, toolName := range reg.WriteToolsList() {
+						if containsXMLToolTag(lowerText, strings.ToLower(toolName)) {
+							hasAnyWriteCall = true
+							if i-start < 8 {
+								assistantXMLWrite[i-start] = true
+							}
 							break
 						}
 					}
@@ -559,6 +583,9 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 					if containsXMLToolTag(lowerText, shellName) {
 						if cmd := extractXMLCommand(assistantText); cmd != "" && detectShellWrite(cmd) {
 							hasAnyShellWriteCall = true
+							if i-start < 8 {
+								assistantXMLShellWrite[i-start] = true
+							}
 							break
 						}
 					}
@@ -567,81 +594,113 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 		}
 	}
 
+	lastWriteIdx := -1
+	lastTestPassIdx := -1
+	lastTestFailIdx := -1
+	immediateWrite := false
+
 	// Pass 2: tool results
 	for i := start; i < len(messages); i++ {
 		msg := messages[i]
+		msgHadWrite := false
+		hasStructuredToolResults := false
+
 		if msg.Role == "tool" {
+			hasStructuredToolResults = true
 			text := msg.Text()
 			if !isErrorText(text, signatures) {
 				hasToolProgress = true
-				if msg.ToolCallID != "" && writeCallIDsContains(writeCallIDs, msg.ToolCallID) {
+				if (msg.ToolCallID != "" && writeCallIDsContains(writeCallIDs, msg.ToolCallID)) || (msg.ToolCallID == "" && hasAnyWriteCall) {
 					hasWriteProgress = true
-				} else if msg.ToolCallID == "" && hasAnyWriteCall {
-					hasWriteProgress = true
+					msgHadWrite = true
 				}
-				if msg.ToolCallID != "" && writeCallIDsContains(shellWriteCallIDs, msg.ToolCallID) {
+				if (msg.ToolCallID != "" && writeCallIDsContains(shellWriteCallIDs, msg.ToolCallID)) || (msg.ToolCallID == "" && hasAnyShellWriteCall) {
 					hasShellWrite = true
-				} else if msg.ToolCallID == "" && hasAnyShellWriteCall {
-					hasShellWrite = true
+					msgHadWrite = true
 				}
 			}
 			p, f := detectTestSignals(text)
 			if p {
-				hasTestPass = true
+				lastTestPassIdx = i
 			}
 			if f {
-				hasTestFail = true
+				lastTestFailIdx = i
 			}
 		}
 		// Anthropic tool_result parts
 		for _, part := range msg.Content.Parts {
 			if part.Type == "tool_result" {
+				hasStructuredToolResults = true
 				text := part.Text
 				if !part.IsError {
 					if !isErrorText(text, signatures) {
 						hasToolProgress = true
-						if part.ToolUseID != "" && writeCallIDsContains(writeCallIDs, part.ToolUseID) {
+						if (part.ToolUseID != "" && writeCallIDsContains(writeCallIDs, part.ToolUseID)) || (part.ToolUseID == "" && hasAnyWriteCall) {
 							hasWriteProgress = true
-						} else if part.ToolUseID == "" && hasAnyWriteCall {
-							hasWriteProgress = true
+							msgHadWrite = true
 						}
-						if part.ToolUseID != "" && writeCallIDsContains(shellWriteCallIDs, part.ToolUseID) {
+						if (part.ToolUseID != "" && writeCallIDsContains(shellWriteCallIDs, part.ToolUseID)) || (part.ToolUseID == "" && hasAnyShellWriteCall) {
 							hasShellWrite = true
-						} else if part.ToolUseID == "" && hasAnyShellWriteCall {
-							hasShellWrite = true
+							msgHadWrite = true
 						}
 					}
 				}
 				p, f := detectTestSignals(text)
 				if p {
-					hasTestPass = true
+					lastTestPassIdx = i
 				}
 				if f {
-					hasTestFail = true
+					lastTestFailIdx = i
 				}
 			}
 		}
 		// Cline-style: user message following an assistant with XML tool calls.
 		// In Cline's protocol, every user message after a tool call IS the tool result.
-		if msg.Role == "user" && (hasAnyWriteCall || hasAnyShellWriteCall) {
-			text := msg.Text()
-			if !isErrorText(text, signatures) {
-				hasToolProgress = true
-				if hasAnyWriteCall {
-					hasWriteProgress = true
-				}
-				if hasAnyShellWriteCall {
-					hasShellWrite = true
-				}
+		// CRITICAL GUARD: Only evaluate if the message did NOT contain structured tool results!
+		if !hasStructuredToolResults && msg.Role == "user" {
+			prevIdx := i - 1
+			prevHadXMLWrite := false
+			prevHadXMLShellWrite := false
+			if prevIdx >= start && prevIdx-start < 8 {
+				prevHadXMLWrite = assistantXMLWrite[prevIdx-start]
+				prevHadXMLShellWrite = assistantXMLShellWrite[prevIdx-start]
 			}
-			p, f := detectTestSignals(text)
-			if p {
-				hasTestPass = true
-			}
-			if f {
-				hasTestFail = true
+			if prevHadXMLWrite || prevHadXMLShellWrite {
+				text := msg.Text()
+				if !isErrorText(text, signatures) {
+					hasToolProgress = true
+					if prevHadXMLWrite {
+						hasWriteProgress = true
+						msgHadWrite = true
+					}
+					if prevHadXMLShellWrite {
+						hasShellWrite = true
+						msgHadWrite = true
+					}
+				}
+				p, f := detectTestSignals(text)
+				if p {
+					lastTestPassIdx = i
+				}
+				if f {
+					lastTestFailIdx = i
+				}
 			}
 		}
+
+		if msgHadWrite {
+			lastWriteIdx = i
+			if i > lastAssistantIdx {
+				immediateWrite = true
+			}
+		}
+	}
+
+	hasTestPass = lastTestPassIdx != -1 && lastTestPassIdx >= lastTestFailIdx
+	hasTestFail = lastTestFailIdx != -1 && lastTestFailIdx >= lastTestPassIdx
+
+	if hasTestFail && lastWriteIdx > lastTestFailIdx && immediateWrite {
+		hasActiveRepair = true
 	}
 
 	// Pass 3: trailing consecutive error turns (from the end, backwards)
@@ -671,7 +730,7 @@ func (c *RequestClassifier) scanTrailingTyped(messages []classifyMessage) (histo
 		}
 	}
 
-	return historyErrors, hasToolProgress, hasWriteProgress, hasShellWrite, hasTestPass, hasTestFail
+	return historyErrors, hasToolProgress, hasWriteProgress, hasShellWrite, hasTestPass, hasTestFail, hasActiveRepair
 }
 
 // containsXMLToolTag checks whether text contains an XML tool tag (e.g. <write_to_file> or <write_to_file )

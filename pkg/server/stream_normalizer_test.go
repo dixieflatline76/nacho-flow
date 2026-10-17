@@ -2188,3 +2188,44 @@ func BenchmarkStreamNormalizer_ToolLane_Clean_ZeroAlloc(b *testing.B) {
 		}
 	}
 }
+
+func TestStreamNormalizer_AnthropicMultiChunk_BashFileWrite_ExemptFromCycleKiller(t *testing.T) {
+	enabled := true
+	cb := shield.GetCycleBreaker(&contract.CycleBreakerConfig{Enabled: &enabled})
+	defer shield.PutCycleBreaker(cb)
+
+	// Stream simulation of Anthropic tool call:
+	// Chunk 1: content_block_start -> name: "bash", arguments: ""
+	// Chunk 2: arguments delta -> {"description": "Fix tests", "timeout": 60000,
+	// Chunk 3: arguments delta -> "command": "cat << 'EOF' > internal/game/game_test.go\n
+	// Chunks 4..25: streaming repeated table test lines (name omitted as Anthropic does in SSE input_json_delta)
+	var streamData strings.Builder
+	streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_bash_1\",\"function\":{\"name\":\"bash\",\"arguments\":\"\"}}]}}]}\n\n")
+	streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"description\\\":\\\"Fix tests\\\",\\\"timeout\\\":60000,\"}}]}}]}\n\n")
+	streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"command\\\":\\\"cat << 'EOF' > internal/game/game_test.go\\n\"}}]}}]}\n\n")
+
+	// Repeat 22 chunks of identical lines to trigger cycle repetition if not exempted
+	for i := 0; i < 22; i++ {
+		streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"func TestScore(t *testing.T) { assert.Equal(t, 10, score) }\\n\"}}]}}]}\n\n")
+	}
+	streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"EOF\\\"}\"}}]}}]}\n\n")
+	streamData.WriteString("data: [DONE]\n\n")
+
+	norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(streamData.String())))
+	norm.SetCycleBreaker(cb)
+	defer norm.Close()
+
+	buf := make([]byte, 4096)
+	for {
+		_, err := norm.Read(buf)
+		if err != nil {
+			break
+		}
+	}
+
+	violated, reason := norm.CheckCycleViolation()
+	if violated {
+		t.Fatalf("expected bash file write to be exempt from cycle killer, but triggered violation: %s", reason)
+	}
+}
+

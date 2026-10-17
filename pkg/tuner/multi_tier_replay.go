@@ -162,6 +162,7 @@ func replayMultiTierSessionInternal(
 	var currentRootHash uint64
 	var sessionEscalated bool
 	var prevSimulatedModel string
+	var prevSimulatedReasoning string
 	var prevSimulatedTokens int
 
 	defaultTierIdx := len(cfg.Tiers)
@@ -176,11 +177,13 @@ func replayMultiTierSessionInternal(
 		if i == 0 {
 			currentRootHash = turn.RootPromptHash
 			prevSimulatedModel = ""
+			prevSimulatedReasoning = ""
 			prevSimulatedTokens = 0
 		} else if turn.RootPromptHash != 0 && turn.RootPromptHash != currentRootHash {
 			currentRootHash = turn.RootPromptHash
 			currentRetries = 0
 			prevSimulatedModel = ""
+			prevSimulatedReasoning = ""
 			prevSimulatedTokens = 0
 		}
 		retriesBeforeTurn := currentRetries
@@ -299,6 +302,8 @@ func replayMultiTierSessionInternal(
 				currentRetries++
 				result.TotalWastedRetries++
 				result.TierStats[selectedTierIdx].WastedRetries++
+			} else if turn.HasActiveRepair && currentRetries > 0 {
+				// Active repair under red test: hold retries steady
 			} else if isWriteOnly {
 				if hasProgress {
 					currentRetries = 0
@@ -326,9 +331,9 @@ func replayMultiTierSessionInternal(
 			}
 		} else {
 			// Cloud Tier (Workhorse or Frontier Fallback)
-			// Model prompt cache discount (prefix-bounded, 80% discount on simulated same-model consecutive turns)
+			// Model prompt cache discount (prefix-bounded, 80% discount on simulated same-model consecutive turns with identical reasoning effort)
 			effectivePromptTokens := float64(turn.Tokens)
-			if i > 0 && prevSimulatedModel == targetTier.Model && targetTier.Model != "" {
+			if i > 0 && prevSimulatedModel == targetTier.Model && prevSimulatedReasoning == targetTier.ReasoningEffort && targetTier.Model != "" {
 				cachedTokens := prevSimulatedTokens
 				if cachedTokens > turn.Tokens {
 					cachedTokens = turn.Tokens
@@ -361,14 +366,20 @@ func replayMultiTierSessionInternal(
 				if turn.Tokens > 100_000 {
 					result.HighContextEscalationTurns++
 					result.HighContextCostUSD += cost
-					result.NTSProjectedSavingsUSD += (float64(turn.Tokens) * 0.35 / 1_000_000.0) * targetTier.PromptCostPerMillion
+					rate := targetTier.PromptCostPerMillion
+					if rate <= 0 {
+						rate = targetTier.ComprehensiveRate
+					}
+					result.NTSProjectedSavingsUSD += (effectivePromptTokens * 0.35 / 1_000_000.0) * rate
 				}
 				if retriesBeforeTurn > 0 && !turn.HasTestFail {
 					result.ReadBurstEscalations++
 				}
 			}
 
-			if isUpstreamTransient {
+			if turn.HasActiveRepair && currentRetries > 0 {
+				// Active repair under red test: hold retries steady (do not increment, do not reset)
+			} else if isUpstreamTransient {
 				// Non-model infrastructure error: do not penalize tier model
 			} else if isWriteOnly {
 				if hasProgress || (turn.IsLocal && targetTier.CodingIndex >= 70.0) {
@@ -403,6 +414,7 @@ func replayMultiTierSessionInternal(
 		}
 
 		prevSimulatedModel = targetTier.Model
+		prevSimulatedReasoning = targetTier.ReasoningEffort
 		prevSimulatedTokens = turn.Tokens
 	}
 

@@ -150,6 +150,10 @@ func TestRegistry_DetectShellWrite(t *testing.T) {
 		{`powershell -Command "Set-Content -Path 'file.txt' -Value 'hi'"`, true},
 		{`{"commands": ["Set-Content `, true},
 		{`{\"commands\": [\"Set-Content `, true},
+		{`{"description": "Fix tests", "timeout": 60000, "command": "cat << 'EOF' > game_test.go"}`, true},
+		{`{"timeout": 60000, "cmd": "echo 'ok' > output.log"}`, true},
+		{`python -c "open('test.txt', 'w').write('hello')"`, true},
+		{`node -e "require('fs').writeFileSync('test.txt', 'hello')"`, true},
 	}
 
 	for _, tt := range tests {

@@ -845,6 +845,9 @@ func (opt *MinConflictsOptimizer) repairDefaultTierModel(currentCfg *MultiTierCo
 		if cand.ModelID == currentCfg.DefaultTier.Model {
 			continue
 		}
+		if !IsModelCompatibleWithProvider(cand.ModelID, currentCfg.DefaultTier.Provider, currentCfg.DefaultTier.IsLocal, rc.providers) {
+			continue
+		}
 		// A tier already used as an early kickoff/utility tier with lower capability than the cascade
 		// must never replace the cascade/fallback tier
 		if earlyUtilityModels[cand.ModelID] && highestPredCoding > 0 && cand.CodingIndex <= highestPredCoding {

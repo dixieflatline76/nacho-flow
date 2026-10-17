@@ -288,11 +288,15 @@ func (s *Server) evaluateTurnAndReadSlap(
 	} else if reqCtx.HasTestProgress {
 		turnProgress = true
 	}
-	retries, isRetry := s.sessionTracker.RecordTurnTask(
+	// Hold Steady during active repair: when the test suite is failing, but the model has performed
+	// productive file writes since the latest test failure (HasActiveRepair), do not increment retries.
+	holdRetries := reqCtx.HasActiveRepair && !turnProgress
+	retries, isRetry := s.sessionTracker.RecordTurnTaskWithHold(
 		sessionKey,
 		rootPromptHash,
 		promptHash,
 		turnProgress,
+		holdRetries,
 		reqCtx.HasTools,
 		reqCtx.MessageCount,
 	)
