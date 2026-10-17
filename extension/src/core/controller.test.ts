@@ -968,6 +968,67 @@ tiers:
       });
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Nacho Flow: Failed to apply optimization: Update failed');
     });
+
+    it('should correctly apply reasoning_effort recommendations in applyOptimization', async () => {
+      const yamlBefore = `tiers:
+  - name: "Tier 1: Flash Plan"
+    model: "z-ai/glm-5.3-flash"
+    reasoning_effort: "low"
+    when: tokens < 100000
+default_tier:
+  name: "Fallback Catch-All"
+  model: "google/gemini-2.5-flash"
+  reasoning_effort: "low"
+`;
+      let savedYaml = '';
+      const mockRestClient = {
+        getConfigYaml: jest.fn().mockResolvedValue(yamlBefore),
+        updateConfigYaml: jest.fn().mockImplementation(async (yaml: string) => {
+          savedYaml = yaml;
+          return { status: 'ok' };
+        })
+      };
+      (extensionController as any).restClient = mockRestClient;
+
+      await extensionController.applyOptimization({
+        tiers: [
+          {
+            tier_name: 'Tier 1: Flash Plan',
+            original_reasoning_effort: 'low',
+            recommended_reasoning_effort: 'high',
+            apply_reasoning: true
+          }
+        ],
+        default_tier: {
+          tier_name: 'Fallback Catch-All',
+          original_reasoning_effort: 'low',
+          recommended_reasoning_effort: 'max',
+          apply_reasoning: true
+        }
+      });
+
+      expect(mockRestClient.updateConfigYaml).toHaveBeenCalled();
+      expect(savedYaml).toContain('reasoning_effort: "high"');
+      expect(savedYaml).toContain('reasoning_effort: "max"');
+    });
+
+    it('should test replaceTierReasoningEffortInYaml insertion and update', () => {
+      const yamlWithout = `tiers:
+  - name: "Tier 1: Fast"
+    model: "test/model"
+default_tier:
+  name: "Fallback"
+  model: "test/fallback"
+`;
+      const withTierReasoning = extensionController.replaceTierReasoningEffortInYaml(yamlWithout, 'Tier 1: Fast', false, 'medium');
+      expect(withTierReasoning).toContain('reasoning_effort: "medium"');
+
+      const withDefReasoning = extensionController.replaceTierReasoningEffortInYaml(withTierReasoning, 'Fallback', true, 'high');
+      expect(withDefReasoning).toContain('reasoning_effort: "high"');
+
+      const updated = extensionController.replaceTierReasoningEffortInYaml(withDefReasoning, 'Tier 1: Fast', false, 'max');
+      expect(updated).toContain('reasoning_effort: "max"');
+    });
   });
 
   describe('adoptDeal & YAML preservation', () => {

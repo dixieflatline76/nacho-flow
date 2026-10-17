@@ -51,9 +51,12 @@ func DefaultTuningPolicy() TuningPolicy {
 type TierTuningResult struct {
 	TierName                 string   `json:"tier_name"`
 	Model                    string   `json:"model,omitempty"`
-	OriginalModel            string   `json:"original_model,omitempty"`
-	RecommendedModel         string   `json:"recommended_model,omitempty"`
-	ModelBenefit             string   `json:"model_benefit,omitempty"`
+	ReasoningEffort            string   `json:"reasoning_effort,omitempty"`
+	OriginalReasoningEffort    string   `json:"original_reasoning_effort,omitempty"`
+	RecommendedReasoningEffort string   `json:"recommended_reasoning_effort,omitempty"`
+	OriginalModel              string   `json:"original_model,omitempty"`
+	RecommendedModel           string   `json:"recommended_model,omitempty"`
+	ModelBenefit               string   `json:"model_benefit,omitempty"`
 	CodingIndex              float64  `json:"coding_index,omitempty"`
 	ToolReliability          float64  `json:"tool_reliability,omitempty"`
 	PromptCostPerMillion     float64  `json:"prompt_cost_per_million,omitempty"`

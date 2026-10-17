@@ -43,6 +43,7 @@ type catalogIndex struct {
 	exactMap      map[string]ModelCuratedProfile
 	normalizedMap map[string]ModelCuratedProfile
 	modelList     []catalogModelEntry
+	namespaces    map[string]struct{}
 }
 
 type catalogModelEntry struct {
@@ -97,6 +98,7 @@ func buildCatalogIndex(cat *CuratedCatalog) *catalogIndex {
 		exactMap:      make(map[string]ModelCuratedProfile, len(cat.Models)*3),
 		normalizedMap: make(map[string]ModelCuratedProfile, len(cat.Models)*3),
 		modelList:     make([]catalogModelEntry, 0, len(cat.Models)),
+		namespaces:    make(map[string]struct{}),
 	}
 
 	putIfBetter := func(m map[string]ModelCuratedProfile, k string, p ModelCuratedProfile, id string) {
@@ -117,7 +119,17 @@ func buildCatalogIndex(cat *CuratedCatalog) *catalogIndex {
 		m[k] = p
 	}
 
-	for id, profile := range cat.Models {
+	sortedKeys := make([]string, 0, len(cat.Models))
+	for id := range cat.Models {
+		sortedKeys = append(sortedKeys, id)
+	}
+	sort.Strings(sortedKeys)
+
+	for _, id := range sortedKeys {
+		profile := cat.Models[id]
+		if slash := strings.Index(id, "/"); slash >= 0 {
+			idx.namespaces[strings.ToLower(id[:slash])] = struct{}{}
+		}
 		if profile.ModelID == "" {
 			profile.ModelID = id
 		}
@@ -298,16 +310,30 @@ func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
 		}
 	}
 
-	// 6. Data-driven token overlap: match significant words (length >= 4) from modelID against catalog keys
-	tokens := strings.FieldsFunc(lower, func(r rune) bool {
+	// 6. Data-driven token overlap: match significant words (length >= 4) from model name against catalog model names
+	modelPart := lower
+	if parts := strings.SplitN(lower, "/", 2); len(parts) == 2 {
+		modelPart = parts[1]
+	}
+	tokens := strings.FieldsFunc(modelPart, func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 	})
 	for _, tok := range tokens {
-		if len(tok) < 4 || tok == "custom" || tok == "tier" || tok == "model" || tok == "fleet" {
+		if len(tok) < 4 || tok == "custom" || tok == "tier" || tok == "model" || tok == "fleet" ||
+			tok == "coder" || tok == "instruct" || tok == "chat" || tok == "preview" || tok == "latest" || tok == "base" || tok == "turbo" {
 			continue
 		}
+		if idx.namespaces != nil {
+			if _, isNamespace := idx.namespaces[tok]; isNamespace {
+				continue
+			}
+		}
 		for _, entry := range idx.modelList {
-			if strings.Contains(entry.key, tok) {
+			entryModelPart := entry.key
+			if parts := strings.SplitN(entry.key, "/", 2); len(parts) == 2 {
+				entryModelPart = parts[1]
+			}
+			if strings.Contains(entryModelPart, tok) {
 				return entry.profile, true
 			}
 		}

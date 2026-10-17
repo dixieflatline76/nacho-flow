@@ -71,6 +71,7 @@ type TurnRecord struct {
 	HasWriteProgress   bool   `json:"has_write_progress,omitempty"`   // Did this turn produce file writes
 	HasTestPass        bool   `json:"has_test_pass,omitempty"`        // Did tests pass this turn
 	HasTestFail        bool   `json:"has_test_fail,omitempty"`        // Did tests fail this turn
+	MessageCount       int    `json:"message_count,omitempty"`        // Context message count for Turn 0 kickoff rules
 	ClientID           string `json:"client_id,omitempty"`            // Agent client identifier (cline, zoo, cursor, etc.)
 }
 

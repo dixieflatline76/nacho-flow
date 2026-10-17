@@ -2,9 +2,11 @@ package tuner
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
@@ -335,6 +337,7 @@ func TestCandidateFilters_NamesAndNilContext(t *testing.T) {
 		filter CandidateFilter
 		name   string
 	}{
+		{&ProviderCompatibilityFilter{}, "provider_compatibility"},
 		{&LocalTierImmunityFilter{}, "local_tier_immunity"},
 		{&ContextParityFilter{}, "context_parity"},
 		{&ModalityFilter{}, "modality_preservation"},
@@ -433,3 +436,266 @@ func TestCandidateModel_IsFrontier(t *testing.T) {
 		t.Error("expected standard workhorse not to be frontier")
 	}
 }
+
+func TestEffectiveCodingIndex(t *testing.T) {
+	base := 50.0
+
+	// 1. Empty / unstated effort preserves base
+	if eff := EffectiveCodingIndex(base, ""); eff != 50.0 {
+		t.Errorf("expected 50.0 for empty effort, got %f", eff)
+	}
+
+	// 2. Multipliers across effort levels
+	tests := []struct {
+		effort   string
+		expected float64
+	}{
+		{"low", 50.0 * 1.02},
+		{"LOW", 50.0 * 1.02},
+		{"med", 50.0 * 1.06},
+		{"medium", 50.0 * 1.06},
+		{"high", 50.0 * 1.10},
+		{"max", 50.0 * 1.14},
+		{"unknown", 50.0},
+	}
+
+	for _, tc := range tests {
+		got := EffectiveCodingIndex(base, tc.effort)
+		if math.Abs(got-tc.expected) > 1e-6 {
+			t.Errorf("EffectiveCodingIndex(50.0, %q) = %f, expected %f", tc.effort, got, tc.expected)
+		}
+	}
+
+	// Zero base produces zero
+	if eff := EffectiveCodingIndex(0, "high"); eff != 0 {
+		t.Errorf("expected 0 for base 0, got %f", eff)
+	}
+}
+
+func TestProviderCompatibilityFilter(t *testing.T) {
+	filter := &ProviderCompatibilityFilter{}
+
+	anthropicProviders := map[string]contract.ProviderConfig{
+		"anthropic": {
+			BaseURL: "https://api.anthropic.com",
+			Type:    contract.ProviderTypeAnthropic,
+		},
+	}
+
+	openrouterProviders := map[string]contract.ProviderConfig{
+		"openrouter": {
+			BaseURL: "https://openrouter.ai/api/v1",
+			Type:    contract.ProviderTypeOpenRouter,
+		},
+	}
+
+	dualProviders := map[string]contract.ProviderConfig{
+		"anthropic": {
+			BaseURL: "https://api.anthropic.com",
+			Type:    contract.ProviderTypeAnthropic,
+		},
+		"openrouter": {
+			BaseURL: "https://openrouter.ai/api/v1",
+			Type:    contract.ProviderTypeOpenRouter,
+		},
+	}
+
+	openaiProviders := map[string]contract.ProviderConfig{
+		"openai": {
+			BaseURL: "https://api.openai.com/v1",
+			Type:    contract.ProviderTypeCloud,
+		},
+	}
+
+	googleProviders := map[string]contract.ProviderConfig{
+		"google": {
+			BaseURL: "https://generativelanguage.googleapis.com",
+			Type:    contract.ProviderTypeCloud,
+		},
+	}
+
+	localProviders := map[string]contract.ProviderConfig{
+		"llama_cluster": {
+			BaseURL: "http://127.0.0.1:8080/v1",
+			Type:    contract.ProviderTypeLocal,
+		},
+	}
+
+	// 1. Tier with provider: "anthropic" must REJECT DeepSeek
+	ctxAnthropicDeepSeek := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		Candidate:  &CandidateModel{ModelID: "deepseek/deepseek-v4-flash-0731"},
+		Providers:  anthropicProviders,
+	}
+	passed, reason := filter.Passes(ctxAnthropicDeepSeek)
+	if passed || !strings.HasPrefix(reason, "provider_model_incompatible") {
+		t.Errorf("expected rejection for DeepSeek on anthropic tier, got passed=%v, reason=%s", passed, reason)
+	}
+
+	// 2. Tier with provider: "anthropic" must REJECT GLM
+	ctxAnthropicGLM := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		Candidate:  &CandidateModel{ModelID: "z-ai/glm-5.3-flash"},
+		Providers:  anthropicProviders,
+	}
+	passed, reason = filter.Passes(ctxAnthropicGLM)
+	if passed || !strings.HasPrefix(reason, "provider_model_incompatible") {
+		t.Errorf("expected rejection for GLM on anthropic tier, got passed=%v, reason=%s", passed, reason)
+	}
+
+	// 3. Even if openrouter is ALSO declared in providers, a tier with provider: "anthropic" must REJECT DeepSeek
+	ctxDualAnthropicTier := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		Candidate:  &CandidateModel{ModelID: "deepseek/deepseek-v4-flash-0731"},
+		Providers:  dualProviders,
+	}
+	passed, reason = filter.Passes(ctxDualAnthropicTier)
+	if passed || !strings.HasPrefix(reason, "provider_model_incompatible") {
+		t.Errorf("expected rejection for DeepSeek on anthropic tier even with dual providers, got passed=%v, reason=%s", passed, reason)
+	}
+
+	// 4. Tier with provider: "anthropic" must ALLOW Claude candidate
+	ctxAnthropicClaude := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		Candidate:  &CandidateModel{ModelID: "claude-sonnet-5-5"},
+		Providers:  anthropicProviders,
+	}
+	passed, _ = filter.Passes(ctxAnthropicClaude)
+	if !passed {
+		t.Errorf("expected pass for Claude model on anthropic tier, got passed=false")
+	}
+
+	// 5. Tier with provider: "openrouter" must ALLOW cross-vendor candidate
+	ctxOpenRouterDeepSeek := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "openrouter", Model: "qwen/qwen3-coder-plus"},
+		Candidate:  &CandidateModel{ModelID: "deepseek/deepseek-v4-flash-0731"},
+		Providers:  openrouterProviders,
+	}
+	passed, _ = filter.Passes(ctxOpenRouterDeepSeek)
+	if !passed {
+		t.Errorf("expected pass for DeepSeek on openrouter tier, got passed=false")
+	}
+
+	// 6. Direct OpenAI tier must reject Claude
+	ctxOpenAIClaude := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "openai", Model: "gpt-4o"},
+		Candidate:  &CandidateModel{ModelID: "claude-sonnet-5-5"},
+		Providers:  openaiProviders,
+	}
+	passed, reason = filter.Passes(ctxOpenAIClaude)
+	if passed || !strings.HasPrefix(reason, "provider_model_incompatible") {
+		t.Errorf("expected rejection for Claude on openai tier, got passed=%v, reason=%s", passed, reason)
+	}
+
+	// 7. Direct Google tier must reject Claude
+	ctxGoogleClaude := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "google", Model: "gemini-2.5-flash"},
+		Candidate:  &CandidateModel{ModelID: "claude-sonnet-5-5"},
+		Providers:  googleProviders,
+	}
+	passed, reason = filter.Passes(ctxGoogleClaude)
+	if passed || !strings.HasPrefix(reason, "provider_model_incompatible") {
+		t.Errorf("expected rejection for Claude on google tier, got passed=%v, reason=%s", passed, reason)
+	}
+
+	// 8. Local tier must reject proprietary cloud models
+	ctxLocalClaude := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "llama_cluster", Model: "qwen2.5-coder:7b", IsLocal: true},
+		Candidate:  &CandidateModel{ModelID: "claude-sonnet-5-5"},
+		Providers:  localProviders,
+	}
+	passed, reason = filter.Passes(ctxLocalClaude)
+	if passed || !strings.HasPrefix(reason, "provider_model_incompatible") {
+		t.Errorf("expected rejection for Claude on local tier, got passed=%v, reason=%s", passed, reason)
+	}
+
+	// 9. Test Model ID Prefix Normalization
+	normAnthropic := NormalizeModelForProvider("anthropic/claude-3-5-sonnet", "anthropic")
+	if normAnthropic != "claude-3-5-sonnet" {
+		t.Errorf("expected 'claude-3-5-sonnet', got %q", normAnthropic)
+	}
+	normOpenRouter := NormalizeModelForProvider("anthropic/claude-3-5-sonnet", "openrouter")
+	if normOpenRouter != "anthropic/claude-3-5-sonnet" {
+		t.Errorf("expected 'anthropic/claude-3-5-sonnet', got %q", normOpenRouter)
+	}
+	normOpenAI := NormalizeModelForProvider("openai/gpt-4o", "openai")
+	if normOpenAI != "gpt-4o" {
+		t.Errorf("expected 'gpt-4o', got %q", normOpenAI)
+	}
+	normGoogle := NormalizeModelForProvider("google/gemini-2.5-flash", "google")
+	if normGoogle != "gemini-2.5-flash" {
+		t.Errorf("expected 'gemini-2.5-flash', got %q", normGoogle)
+	}
+	normDeepSeek := NormalizeModelForProvider("deepseek/deepseek-chat", "deepseek")
+	if normDeepSeek != "deepseek-chat" {
+		t.Errorf("expected 'deepseek-chat', got %q", normDeepSeek)
+	}
+}
+
+func TestOptimize_AnthropicProfileDoesNotRecommendDeepSeek(t *testing.T) {
+	policy := DefaultTuningPolicy()
+	opt := NewMinConflictsOptimizer(policy)
+
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"anthropic": {
+				BaseURL: "https://api.anthropic.com",
+				Type:    contract.ProviderTypeAnthropic,
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:            "Tier 1: Haiku 4.5 (Workhorse)",
+				Provider:        "anthropic",
+				Model:           "claude-haiku-4-5",
+				ReasoningEffort: "medium",
+				When:            "Retries < 3 && !HasTestFail",
+			},
+			{
+				Name:            "Tier 2: Claude Sonnet 5.5",
+				Provider:        "anthropic",
+				Model:           "claude-sonnet-5-5",
+				ReasoningEffort: "medium",
+				When:            "Retries < 6",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:            "Default Tier",
+			Provider:        "anthropic",
+			Model:           "claude-sonnet-5-5",
+			ReasoningEffort: "high",
+		},
+	}
+
+	var records []telemetry.TurnRecord
+	for i := 0; i < 20; i++ {
+		records = append(records, telemetry.TurnRecord{
+			SessionID:    "sess-1",
+			TargetModel:  "claude-haiku-4-5",
+			SelectedTier: "Tier 1: Haiku 4.5 (Workhorse)",
+			Provider:     "anthropic",
+			HasImages:    true,
+			HasTools:     true,
+			Tokens:       5000,
+			IsRetry:      true,
+			StatusCode:   500,
+		})
+	}
+
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error during optimize: %v", err)
+	}
+
+	for _, tr := range res.Tiers {
+		if tr.TierName == "Tier 1: Haiku 4.5 (Workhorse)" {
+			if tr.RecommendedModel != "" && tr.RecommendedModel != "claude-haiku-4-5" {
+				if strings.Contains(tr.RecommendedModel, "deepseek") || strings.Contains(tr.RecommendedModel, "glm") {
+					t.Errorf("FATAL: Anthropic tier recommended incompatible cross-vendor model %q", tr.RecommendedModel)
+				}
+			}
+		}
+	}
+}
+
+

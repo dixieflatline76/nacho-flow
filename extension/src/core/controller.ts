@@ -979,6 +979,65 @@ export class ExtensionController {
 		return yaml;
 	}
 
+	public replaceTierReasoningEffortInYaml(yaml: string, tierName: string, isDefault: boolean | undefined, newReasoningEffort: string): string {
+		const lines = yaml.split('\n');
+		let inTargetTier = false;
+		let inTiersList = false;
+		let targetModelLine = -1;
+		let targetModelIndent = '    ';
+
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+
+			if (/^tiers\s*:/.test(line)) {
+				inTiersList = true;
+				inTargetTier = false;
+				continue;
+			}
+
+			if (/^default_tier\s*:/.test(line)) {
+				inTiersList = false;
+				inTargetTier = !!isDefault;
+				continue;
+			}
+
+			// Root-level non-tier key ends current section
+			if (/^[a-zA-Z0-9_-]+\s*:/.test(line) && !line.startsWith(' ') && !line.startsWith('\t')) {
+				inTiersList = false;
+				inTargetTier = false;
+			}
+
+			if (inTiersList) {
+				const nameMatch = line.match(/^\s*(?:-\s+)?name\s*:\s*["']?([^"'\n#]+)["']?/);
+				if (nameMatch) {
+					inTargetTier = nameMatch[1].trim() === tierName;
+				}
+			}
+
+			if (inTargetTier) {
+				const reasoningMatch = line.match(/^(\s*(?:-\s+)?reasoning_effort\s*:\s*)(["']?[^#\n]*?["']?)(\s*(?:#.*)?)$/);
+				if (reasoningMatch) {
+					const prefix = reasoningMatch[1];
+					const trailingComment = reasoningMatch[3];
+					lines[i] = `${prefix}"${newReasoningEffort}"${trailingComment}`;
+					return lines.join('\n');
+				}
+				const modelMatch = line.match(/^(\s*)(?:-\s+)?model\s*:/);
+				if (modelMatch) {
+					targetModelLine = i;
+					targetModelIndent = modelMatch[1];
+				}
+			}
+		}
+
+		if (targetModelLine >= 0) {
+			lines.splice(targetModelLine + 1, 0, `${targetModelIndent}reasoning_effort: "${newReasoningEffort}"`);
+			return lines.join('\n');
+		}
+
+		return yaml;
+	}
+
 	private activeConfigDocUri: vscode.Uri | null = null;
 
 	public getStandardConfigPaths(): string[] {
@@ -1178,6 +1237,9 @@ export class ExtensionController {
 				const originalModel = tier.original_model || tier.originalModel;
 				const applyRule = tier.apply_rule !== false && tier.applyRule !== false;
 				const applyModel = tier.apply_model !== false && tier.applyModel !== false;
+				const applyReasoning = tier.apply_reasoning !== false && tier.applyReasoning !== false;
+				const recommendedReasoning = tier.recommended_reasoning_effort || tier.recommendedReasoningEffort;
+				const originalReasoning = tier.original_reasoning_effort || tier.originalReasoningEffort;
 
 				if (applyRule && tierName && synthesizedRule) {
 					const updatedYaml = this.replaceTierRuleInYaml(yamlContent, tierName, synthesizedRule);
@@ -1188,6 +1250,13 @@ export class ExtensionController {
 				}
 				if (applyModel && tierName && recommendedModel && originalModel && recommendedModel !== originalModel) {
 					const updatedYaml = this.replaceTierModelInYaml(yamlContent, tierName, false, recommendedModel);
+					if (updatedYaml !== yamlContent) {
+						yamlContent = updatedYaml;
+						appliedCount++;
+					}
+				}
+				if (applyReasoning && tierName && recommendedReasoning && recommendedReasoning !== originalReasoning) {
+					const updatedYaml = this.replaceTierReasoningEffortInYaml(yamlContent, tierName, false, recommendedReasoning);
 					if (updatedYaml !== yamlContent) {
 						yamlContent = updatedYaml;
 						appliedCount++;
@@ -1208,10 +1277,24 @@ export class ExtensionController {
 						appliedCount++;
 					}
 				}
+				const defRecReasoning = defTier.recommended_reasoning_effort || defTier.recommendedReasoningEffort;
+				const defOrigReasoning = defTier.original_reasoning_effort || defTier.originalReasoningEffort;
+				const applyDefReasoning = defTier.apply_reasoning !== false && defTier.applyReasoning !== false;
+				if (applyDefReasoning && defRecReasoning && defRecReasoning !== defOrigReasoning) {
+					const updatedYaml = this.replaceTierReasoningEffortInYaml(yamlContent, defTierName, true, defRecReasoning);
+					if (updatedYaml !== yamlContent) {
+						yamlContent = updatedYaml;
+						appliedCount++;
+					}
+				}
 			}
 
 			if (appliedCount === 0) {
-				const allDeselected = tiers.length > 0 && tiers.every(t => (t.apply_rule === false || t.applyRule === false) && (t.apply_model === false || t.applyModel === false));
+				const allDeselected = tiers.length > 0 && tiers.every(t =>
+					(t.apply_rule === false || t.applyRule === false) &&
+					(t.apply_model === false || t.applyModel === false) &&
+					(t.apply_reasoning === undefined || t.apply_reasoning === false || t.applyReasoning === false)
+				);
 				if (allDeselected) {
 					vscode.window.showWarningMessage('Nacho Flow: No recommendations selected to apply');
 				} else {

@@ -874,35 +874,88 @@
 		const avgTurnsVal = typeof optData.avg_turns_per_session === 'number' ? optData.avg_turns_per_session.toFixed(1) : (optData.avg_turns_per_session || '--');
 		const escalationRatePct = typeof optData.escalation_rate === 'number' ? `${(optData.escalation_rate * 100).toFixed(1)}%` : '--';
 
-		// Model Self-Recovery Meters
+		// Context & Efficiency Audit fields
+		const highContextTurns = typeof optData.high_context_escalation_turns === 'number' ? optData.high_context_escalation_turns : 0;
+		const highContextCost = typeof optData.high_context_cost_usd === 'number' ? optData.high_context_cost_usd : 0;
+		const highContextPct = typeof optData.high_context_cost_pct === 'number' ? optData.high_context_cost_pct : 0;
+		const readBurstStalls = typeof optData.read_burst_escalations === 'number' ? optData.read_burst_escalations : 0;
+		const ntsSavingsUSD = typeof optData.nts_projected_savings_usd === 'number' ? optData.nts_projected_savings_usd : 0;
+		const hasContextAudit = highContextTurns > 0 || readBurstStalls > 0 || ntsSavingsUSD > 0;
+
+		// Static Dominance Conflicts
+		const dominanceConflicts = (Array.isArray(optData.static_dominance_conflicts) && optData.static_dominance_conflicts.length > 0)
+			? optData.static_dominance_conflicts
+			: [];
+
+		// Helper to normalize model IDs by stripping provider prefix (e.g. "z-ai/glm-5.3-flash" -> "glm-5.3-flash")
+		function normalizeModel(m) {
+			if (!m) return '';
+			const parts = String(m).split('/');
+			return (parts[parts.length - 1] || m).toLowerCase().trim();
+		}
+
+		// Model Self-Recovery Meters scoped to Active Profile & Recommendations
 		let recoveryRows = '';
 		if (optData.recovery_stats && Object.keys(optData.recovery_stats).length > 0) {
-			const models = Object.keys(optData.recovery_stats).sort();
-			recoveryRows = models.map(m => {
-				const stat = optData.recovery_stats[m];
-				const rawPct = stat.self_recovery_rate || 0;
-				const pct = Math.min(100, Math.max(0, Math.round(rawPct * 100)));
-				let barColor = '#ef4444'; // Red for < 20%
-				if (pct >= 50) barColor = '#10b981'; // Green for >= 50%
-				else if (pct >= 20) barColor = '#f59e0b'; // Amber for 20-49%
+			const activeModelSet = new Set();
+			if (currentState.config) {
+				if (Array.isArray(currentState.config.tiers)) {
+					currentState.config.tiers.forEach(t => {
+						if (t.model) activeModelSet.add(normalizeModel(t.model));
+					});
+				}
+				if (currentState.config.default_tier?.model) {
+					activeModelSet.add(normalizeModel(currentState.config.default_tier.model));
+				}
+			}
+			if (Array.isArray(optData.tiers)) {
+				optData.tiers.forEach(t => {
+					if (t.model) activeModelSet.add(normalizeModel(t.model));
+					if (t.original_model) activeModelSet.add(normalizeModel(t.original_model));
+					if (t.recommended_model) activeModelSet.add(normalizeModel(t.recommended_model));
+				});
+			}
+			if (optData.default_tier) {
+				if (optData.default_tier.model) activeModelSet.add(normalizeModel(optData.default_tier.model));
+				if (optData.default_tier.original_model) activeModelSet.add(normalizeModel(optData.default_tier.original_model));
+				if (optData.default_tier.recommended_model) activeModelSet.add(normalizeModel(optData.default_tier.recommended_model));
+			}
 
-				const turnsText = (stat.avg_turns_to_recover && stat.avg_turns_to_recover > 0)
-					? `recovers in ~${stat.avg_turns_to_recover.toFixed(1)} turns`
-					: (pct === 0 ? 'loops on failure — cloud handoff required' : 'swift self-healing');
+			const allModels = Object.keys(optData.recovery_stats);
+			const models = allModels.filter(m => {
+				if (activeModelSet.size === 0) return true;
+				return activeModelSet.has(normalizeModel(m));
+			}).sort();
 
-				return `
-					<div class="recovery-item">
-						<div class="recovery-header">
-							<span class="recovery-model-name">${escapeHtml(stat.model || m)}</span>
-							<span class="recovery-pct" style="color: ${barColor}">${pct}% self-recovery</span>
+			if (models.length > 0) {
+				recoveryRows = models.map(m => {
+					const stat = optData.recovery_stats[m];
+					const rawPct = stat.self_recovery_rate || 0;
+					const pct = Math.min(100, Math.max(0, Math.round(rawPct * 100)));
+					let barColor = '#ef4444'; // Red for < 20%
+					if (pct >= 50) barColor = '#10b981'; // Green for >= 50%
+					else if (pct >= 20) barColor = '#f59e0b'; // Amber for 20-49%
+
+					const turnsText = (stat.avg_turns_to_recover && stat.avg_turns_to_recover > 0)
+						? `recovers in ~${stat.avg_turns_to_recover.toFixed(1)} turns`
+						: (pct === 0 ? 'loops on failure — cloud handoff required' : 'swift self-healing');
+
+					return `
+						<div class="recovery-item">
+							<div class="recovery-header">
+								<span class="recovery-model-name">${escapeHtml(stat.model || m)}</span>
+								<span class="recovery-pct" style="color: ${barColor}">${pct}% self-recovery</span>
+							</div>
+							<div class="recovery-bar-track">
+								<div class="recovery-bar-fill" style="width: ${pct}%; background-color: ${barColor}"></div>
+							</div>
+							<div class="recovery-subtext">${escapeHtml(turnsText)} (${stat.self_recoveries || 0}/${stat.total_failures || 0} healed)</div>
 						</div>
-						<div class="recovery-bar-track">
-							<div class="recovery-bar-fill" style="width: ${pct}%; background-color: ${barColor}"></div>
-						</div>
-						<div class="recovery-subtext">${escapeHtml(turnsText)} (${stat.self_recoveries || 0}/${stat.total_failures || 0} healed)</div>
-					</div>
-				`;
-			}).join('');
+					`;
+				}).join('');
+			} else {
+				recoveryRows = `<div class="recovery-empty">No repeated failures detected for active profile models in sample history. Clean turn progression across fleet.</div>`;
+			}
 		} else {
 			recoveryRows = `<div class="recovery-empty">No repeated model failures detected in sample history. Clean turn progression across local models.</div>`;
 		}
@@ -942,7 +995,8 @@
 				
 				const hasRuleChange = !isDisabled && !isPruned && tier.synthesized_rule && (oldRule.trim() !== tier.synthesized_rule.trim());
 				const hasModelChange = !isPruned && !!(tier.recommended_model && tier.original_model && tier.recommended_model !== tier.original_model);
-				const isUnchanged = !isPruned && !isDisabled && !hasRuleChange && !hasModelChange;
+				const hasReasoningChange = !isPruned && !!(tier.recommended_reasoning_effort && tier.recommended_reasoning_effort !== (tier.original_reasoning_effort || ''));
+				const isUnchanged = !isPruned && !isDisabled && !hasRuleChange && !hasModelChange && !hasReasoningChange;
 
 				if (isPruned || (!isDisabled && !isUnchanged)) {
 					hasAnyChanges = true;
@@ -951,7 +1005,12 @@
 				// Benchmark and pricing pills
 				let benchmarkPill = '';
 				if (tier.coding_index && tier.coding_index > 0) {
-					benchmarkPill = `<span class="signal-pill signal-pill-benchmark">⭐ Coding Score: ${tier.coding_index}/100</span>`;
+					const roundedScore = Math.round(Number(tier.coding_index) * 100) / 100;
+					benchmarkPill = `<span class="signal-pill signal-pill-benchmark">⭐ Coding Score: ${roundedScore}/100</span>`;
+				}
+				let reasoningPill = '';
+				if (tier.reasoning_effort) {
+					reasoningPill = `<span class="signal-pill signal-pill-reasoning">🧠 Effort: ${escapeHtml(tier.reasoning_effort)}</span>`;
 				}
 				let ratePill = '';
 				if (tier.is_local) {
@@ -996,6 +1055,21 @@
 							</div>
 						`;
 					}
+					if (hasReasoningChange) {
+						diffContent += `
+							<div class="diff-action-block" id="diff-action-${tierKey}-reasoning">
+								<div class="diff-action-header">
+									<label class="tuner-action-toggle">
+										<input type="checkbox" class="tuner-item-check" data-tier-key="${tierKey}" data-field="reasoning" checked onchange="onTunerSelectionChange()">
+										<span class="tuner-action-title">${isDefault ? 'Escalate Fallback Reasoning' : 'Escalate Reasoning Effort'}: <span class="model-name-orig">${escapeHtml(tier.original_reasoning_effort || 'standard')}</span> &rarr; <span class="model-name-rec">${escapeHtml(tier.recommended_reasoning_effort)}</span></span>
+									</label>
+								</div>
+								<div class="diff-line diff-del"><span class="diff-sign">-</span> <span class="diff-desc">reasoning_effort: "${escapeHtml(tier.original_reasoning_effort || 'none')}"</span></div>
+								<div class="diff-line diff-add"><span class="diff-sign">+</span> <span class="diff-desc">reasoning_effort: "${escapeHtml(tier.recommended_reasoning_effort)}"</span></div>
+								${tier.model_benefit && !hasModelChange ? `<div class="diff-line diff-neutral" style="color: #6ee7b7; font-size: 0.85em;"><span class="diff-sign">✨</span> <span class="diff-desc">${escapeHtml(tier.model_benefit)}</span></div>` : ''}
+							</div>
+						`;
+					}
 					if (hasRuleChange) {
 						diffContent += `
 							<div class="diff-action-block" id="diff-action-${tierKey}-rule">
@@ -1019,6 +1093,7 @@
 							<span class="diff-tier-label">${tierPrefix} <strong>${escapeHtml(tierName)}</strong></span>
 							<div class="tier-pills-row">
 								${benchmarkPill}
+								${reasoningPill}
 								${ratePill}
 								${isPruned ? '<span class="signal-pill signal-pill-warning">✂️ Redundant Tier Bypassed</span>' : (isDisabled ? '<span class="signal-pill signal-pill-neutral">🔒 Disabled</span>' : '')}
 								${!isDisabled && !isPruned && !isDefault && threshold ? `<span class="signal-pill signal-pill-accent">🎯 Context Cliff: ${threshold.toLocaleString()} tokens</span>` : ''}
@@ -1050,7 +1125,7 @@
 				<div class="tuner-header">
 					<div class="tuner-title-group">
 						<h3>🌮 Auto-Tuner: Route Optimization</h3>
-						<span class="badge badge-deal">${hasAnyChanges ? 'Routing Improvements Suggested' : 'Routing Currently Optimal'}</span>
+						<span class="badge ${hasAnyChanges ? 'badge-deal' : (dominanceConflicts.length > 0 ? 'badge-defect' : 'badge-deal')}">${hasAnyChanges ? 'Routing Improvements Suggested' : (dominanceConflicts.length > 0 ? 'Routing Defects Detected' : 'Routing Currently Optimal')}</span>
 					</div>
 					<div class="tuner-hero-badges">
 						${retriesAvoided > 0 ? `<div class="tuner-badge tuner-retries-badge">⚡ ~${retriesAvoided} Retries Avoided</div>` : ''}
@@ -1080,6 +1155,23 @@
 								<span class="tuner-metric-label">Sample Size:</span>
 								<strong class="tuner-metric-val">${sampleSize} real turns analyzed</strong>
 							</div>
+							${hasContextAudit ? `
+								<div class="tuner-audit-divider" style="border-top: 1px solid rgba(255,255,255,0.07); margin: 10px 0; padding-top: 8px;"></div>
+								<div class="tuner-metric-row">
+									<span class="tuner-metric-label">High-Context (&gt;100k):</span>
+									<strong class="tuner-metric-val">${highContextTurns} turns ($${highContextCost.toFixed(2)} / ${highContextPct.toFixed(1)}%)</strong>
+								</div>
+								<div class="tuner-metric-row">
+									<span class="tuner-metric-label">Read-Burst Stalls:</span>
+									<strong class="tuner-metric-val" style="${readBurstStalls > 0 ? 'color: #f59e0b;' : 'opacity: 0.6;'}">${readBurstStalls} sessions</strong>
+								</div>
+								${ntsSavingsUSD > 0 ? `
+									<div class="tuner-metric-row">
+										<span class="tuner-metric-label">Projected NTS Savings:</span>
+										<strong class="tuner-metric-val" style="color: #34d399;">~$${ntsSavingsUSD.toFixed(2)}</strong>
+									</div>
+								` : ''}
+							` : ''}
 						</div>
 					</div>
 
@@ -1100,6 +1192,23 @@
 							<button type="button" class="btn btn-preset btn-preset-rules" onclick="setTunerPreset('rules-only')">⚡ Rules Only</button>
 							<button type="button" class="btn btn-preset" onclick="setTunerPreset('all')">Select All</button>
 							<button type="button" class="btn btn-preset" onclick="setTunerPreset('none')">Deselect All</button>
+						</div>
+					</div>
+				` : ''}
+
+				${dominanceConflicts.length > 0 ? `
+					<div class="tuner-dominance-callout">
+						<div class="tuner-dominance-header">
+							<span>⚠️</span>
+							<span>Static Routing Defects Detected (${dominanceConflicts.length})</span>
+						</div>
+						<div class="tuner-dominance-body">
+							${dominanceConflicts.map(c => `
+								<div class="tuner-dominance-item">
+									<span class="tuner-dominance-bullet">&bull;</span>
+									<span>${escapeHtml(c.reason || `Dominance defect in tier "${c.tier_name}"`)}</span>
+								</div>
+							`).join('')}
 						</div>
 					</div>
 				` : ''}
@@ -1439,13 +1548,17 @@
 			opt.tiers.forEach((tier, idx) => {
 				const ruleCb = document.querySelector(`.tuner-item-check[data-tier-key="${idx}"][data-field="rule"]`);
 				const modelCb = document.querySelector(`.tuner-item-check[data-tier-key="${idx}"][data-field="model"]`);
+				const reasoningCb = document.querySelector(`.tuner-item-check[data-tier-key="${idx}"][data-field="reasoning"]`);
 				if (ruleCb) tier.apply_rule = ruleCb.checked;
 				if (modelCb) tier.apply_model = modelCb.checked;
+				if (reasoningCb) tier.apply_reasoning = reasoningCb.checked;
 			});
 		}
 		if (opt.default_tier) {
 			const defModelCb = document.querySelector(`.tuner-item-check[data-tier-key="default"][data-field="model"]`);
+			const defReasoningCb = document.querySelector(`.tuner-item-check[data-tier-key="default"][data-field="reasoning"]`);
 			if (defModelCb) opt.default_tier.apply_model = defModelCb.checked;
+			if (defReasoningCb) opt.default_tier.apply_reasoning = defReasoningCb.checked;
 		}
 
 		vscode.postMessage({

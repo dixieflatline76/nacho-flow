@@ -443,3 +443,58 @@ func TestASTHelpers_DirectUnit(t *testing.T) {
 		t.Error("expected nil for nil node")
 	}
 }
+
+func TestExtractRoutingFromWhenAST_MessageCountAndTestFail(t *testing.T) {
+	// 1. Bare identifier HasTestFail
+	p1 := extractRoutingFromWhenAST("HasTestFail && Retries < 4")
+	if !p1.RequiresTestFail {
+		t.Errorf("expected RequiresTestFail=true for bare HasTestFail, got false")
+	}
+	if p1.ProhibitsTestFail {
+		t.Errorf("expected ProhibitsTestFail=false for bare HasTestFail, got true")
+	}
+
+	// 2. Unary negation !HasTestFail
+	p2 := extractRoutingFromWhenAST("!HasTestFail && Retries < 2")
+	if p2.RequiresTestFail {
+		t.Errorf("expected RequiresTestFail=false for !HasTestFail, got true")
+	}
+	if !p2.ProhibitsTestFail {
+		t.Errorf("expected ProhibitsTestFail=true for !HasTestFail, got false")
+	}
+
+	// 3. Binary equality HasTestFail == true and HasTestFail == false
+	p3 := extractRoutingFromWhenAST("HasTestFail == true")
+	if !p3.RequiresTestFail {
+		t.Errorf("expected RequiresTestFail=true for HasTestFail == true, got false")
+	}
+	p4 := extractRoutingFromWhenAST("HasTestFail == false")
+	if !p4.ProhibitsTestFail {
+		t.Errorf("expected ProhibitsTestFail=true for HasTestFail == false, got false")
+	}
+
+	// 4. MessageCount <= 14
+	p5 := extractRoutingFromWhenAST("MessageCount <= 14 && Tokens < 32000")
+	if p5.MessageCountMax != 14 {
+		t.Errorf("expected MessageCountMax=14, got %d", p5.MessageCountMax)
+	}
+	if p5.TokenThreshold != 32000 {
+		t.Errorf("expected TokenThreshold=32000, got %d", p5.TokenThreshold)
+	}
+
+	// 5. RewriteRuleAST preserves MessageCount and HasTestFail clauses
+	rewritten, err := RewriteRuleAST("MessageCount <= 14 && !HasTestFail && Tokens < 10000", 25000, 0, nil, false, false)
+	if err != nil {
+		t.Fatalf("RewriteRuleAST failed: %v", err)
+	}
+	if !strings.Contains(rewritten, "MessageCount <= 14") {
+		t.Errorf("expected rewritten rule to preserve MessageCount <= 14, got %q", rewritten)
+	}
+	if !strings.Contains(rewritten, "!HasTestFail") {
+		t.Errorf("expected rewritten rule to preserve !HasTestFail, got %q", rewritten)
+	}
+	if !strings.Contains(rewritten, "Tokens < 25000") {
+		t.Errorf("expected rewritten rule to update Tokens < 25000, got %q", rewritten)
+	}
+}
+

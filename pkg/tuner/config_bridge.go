@@ -17,7 +17,7 @@ func ResolveModelRates(model string, isLocal bool) (promptCost, compCost, compRa
 	if p, ok := curation.DefaultManager().Lookup(model); ok && p.PromptCostPerMillion > 0 {
 		promptCost = p.PromptCostPerMillion
 		compCost = p.CompletionCostPerMillion
-		compRate = promptCost + 0.25*compCost
+		compRate = ResolveComprehensiveRate(promptCost, compCost, 0)
 		return promptCost, compCost, compRate
 	}
 	// Fallback to standard cloud baseline rate from DefaultTuningPolicy for uncatalogued models
@@ -57,6 +57,7 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 		isLocal := IsLocalTier(tier, cfg.Providers)
 		promptCost, compCost, compRate := ResolveModelRates(tier.Model, isLocal)
 		codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
+		codingIndex = EffectiveCodingIndex(codingIndex, tier.ReasoningEffort)
 
 		parsed := extractRoutingFromWhenAST(tier.When)
 
@@ -111,6 +112,7 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 			TierName:                 tier.Name,
 			Provider:                 tier.Provider,
 			Model:                    tier.Model,
+			ReasoningEffort:          tier.ReasoningEffort,
 			IsLocal:                  isLocal,
 			IsDisabled:               isDisabled,
 			IsFrontier:               isFrontier,
@@ -131,6 +133,9 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 			RetryBound:               retryBound,
 			RestrictImages:           restrictImages,
 			RestrictTools:            restrictTools,
+			MessageCountMax:          parsed.MessageCountMax,
+			RequiresTestFail:         parsed.RequiresTestFail,
+			ProhibitsTestFail:        parsed.ProhibitsTestFail,
 			ExcludedKeywords:         excludedKws,
 		})
 	}
@@ -139,6 +144,7 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 	defLocal := IsLocalTier(cfg.DefaultTier, cfg.Providers)
 	defPrompt, defComp, defRate := ResolveModelRates(cfg.DefaultTier.Model, defLocal)
 	defCoding, defTool := ResolveModelBenchmark(cfg.DefaultTier.Model)
+	defCoding = EffectiveCodingIndex(defCoding, cfg.DefaultTier.ReasoningEffort)
 	defVision, defTools := ResolveModelCapabilities(cfg.DefaultTier.Model)
 	if cfg.DefaultTier.HasVision != nil {
 		defVision = *cfg.DefaultTier.HasVision
@@ -163,6 +169,7 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 		TierName:                 cfg.DefaultTier.Name,
 		Provider:                 cfg.DefaultTier.Provider,
 		Model:                    cfg.DefaultTier.Model,
+		ReasoningEffort:          cfg.DefaultTier.ReasoningEffort,
 		IsLocal:                  defLocal,
 		IsFrontier:               defIsFrontier,
 		CodingIndex:              defCoding,

@@ -18,6 +18,9 @@ type ExtractedRoutingRules struct {
 	RestrictTools     bool
 	RequiresTools     bool
 	ExcludedKeywords  []string
+	MessageCountMax   int
+	RequiresTestFail  bool
+	ProhibitsTestFail bool
 }
 
 func isIdent(n ast.Node, name string) bool {
@@ -101,85 +104,15 @@ func extractRoutingFromWhenAST(whenStr string) ExtractedRoutingRules {
 	conjuncts := splitASTConjuncts(tree.Node)
 
 	for _, c := range conjuncts {
-		// 1. Kickstart / Read Slap prerequisite
-		if isIdent(c, "SessionKickstarted") || isIdent(c, "SessionReadSlapped") {
-			rules.RequiresKickstart = true
-		} else if b, ok := c.(*ast.BinaryNode); ok && b.Operator == "==" {
-			if ((isIdent(b.Left, "SessionKickstarted") || isIdent(b.Left, "SessionReadSlapped")) && isBoolLit(b.Right, true)) ||
-				((isIdent(b.Right, "SessionKickstarted") || isIdent(b.Right, "SessionReadSlapped")) && isBoolLit(b.Left, true)) {
-				rules.RequiresKickstart = true
-			}
+		switch node := c.(type) {
+		case *ast.IdentifierNode:
+			applyIdentConjunct(node.Value, &rules)
+		case *ast.UnaryNode:
+			applyUnaryConjunct(node, &rules)
+		case *ast.BinaryNode:
+			applyBinaryConjunct(node, &rules)
 		}
-
-		// 2. Modality negations and positive prerequisites
-		if u, ok := c.(*ast.UnaryNode); ok && u.Operator == "!" {
-			if isIdent(u.Node, "HasImages") {
-				rules.RestrictImages = true
-			}
-			if isIdent(u.Node, "HasTools") {
-				rules.RestrictTools = true
-			}
-		}
-		if b, ok := c.(*ast.BinaryNode); ok && b.Operator == "==" {
-			if (isIdent(b.Left, "HasImages") && isBoolLit(b.Right, false)) ||
-				(isIdent(b.Right, "HasImages") && isBoolLit(b.Left, false)) {
-				rules.RestrictImages = true
-			}
-			if (isIdent(b.Left, "HasTools") && isBoolLit(b.Right, false)) ||
-				(isIdent(b.Right, "HasTools") && isBoolLit(b.Left, false)) {
-				rules.RestrictTools = true
-			}
-			if (isIdent(b.Left, "HasImages") && isBoolLit(b.Right, true)) ||
-				(isIdent(b.Right, "HasImages") && isBoolLit(b.Left, true)) {
-				rules.RequiresImages = true
-			}
-			if (isIdent(b.Left, "HasTools") && isBoolLit(b.Right, true)) ||
-				(isIdent(b.Right, "HasTools") && isBoolLit(b.Left, true)) {
-				rules.RequiresTools = true
-			}
-		}
-		if isIdent(c, "HasImages") {
-			rules.RequiresImages = true
-		}
-		if isIdent(c, "HasTools") {
-			rules.RequiresTools = true
-		}
-
-		// 3. Tokens & Retries
-		if b, ok := c.(*ast.BinaryNode); ok {
-			if isIdent(b.Left, "Tokens") && b.Operator == "<" {
-				if val, ok := getIntLit(b.Right); ok && val > 0 {
-					rules.TokenThreshold = val
-				}
-			}
-			if isIdent(b.Left, "Retries") {
-				if val, ok := getIntLit(b.Right); ok {
-					if b.Operator == "<" && val > 0 {
-						rules.RetryBound = val
-					} else if b.Operator == ">=" && val > 0 {
-						rules.RetryFloor = val
-					} else if b.Operator == ">" && val >= 0 {
-						rules.RetryFloor = val + 1
-					}
-				}
-			}
-		}
-
-		// 4. Keywords
-		hasKeywords := false
-		var stringsFound []string
-		walkAST(c, func(n ast.Node) bool {
-			if isIdent(n, "Keywords") {
-				hasKeywords = true
-			}
-			if s, ok := n.(*ast.StringNode); ok {
-				stringsFound = append(stringsFound, s.Value)
-			}
-			return true
-		})
-		if hasKeywords && len(stringsFound) > 0 {
-			rules.ExcludedKeywords = append(rules.ExcludedKeywords, stringsFound...)
-		}
+		extractKeywordsFromConjunct(c, &rules)
 	}
 
 	if rules.RestrictImages {
@@ -190,6 +123,136 @@ func extractRoutingFromWhenAST(whenStr string) ExtractedRoutingRules {
 	}
 
 	return rules
+}
+
+func extractIdentBoolEq(b *ast.BinaryNode) (ident string, val bool, ok bool) {
+	if b.Operator != "==" {
+		return "", false, false
+	}
+	if id, isId := b.Left.(*ast.IdentifierNode); isId {
+		if boolNode, isB := b.Right.(*ast.BoolNode); isB {
+			return id.Value, boolNode.Value, true
+		}
+	}
+	if id, isId := b.Right.(*ast.IdentifierNode); isId {
+		if boolNode, isB := b.Left.(*ast.BoolNode); isB {
+			return id.Value, boolNode.Value, true
+		}
+	}
+	return "", false, false
+}
+
+func applyIdentConjunct(name string, rules *ExtractedRoutingRules) {
+	switch {
+	case strings.EqualFold(name, "SessionKickstarted"), strings.EqualFold(name, "SessionReadSlapped"):
+		rules.RequiresKickstart = true
+	case strings.EqualFold(name, "HasImages"):
+		rules.RequiresImages = true
+	case strings.EqualFold(name, "HasTools"):
+		rules.RequiresTools = true
+	case strings.EqualFold(name, "HasTestFail"):
+		rules.RequiresTestFail = true
+	}
+}
+
+func applyUnaryConjunct(u *ast.UnaryNode, rules *ExtractedRoutingRules) {
+	if u.Operator != "!" {
+		return
+	}
+	if id, ok := u.Node.(*ast.IdentifierNode); ok {
+		switch {
+		case strings.EqualFold(id.Value, "HasImages"):
+			rules.RestrictImages = true
+		case strings.EqualFold(id.Value, "HasTools"):
+			rules.RestrictTools = true
+		case strings.EqualFold(id.Value, "HasTestFail"):
+			rules.ProhibitsTestFail = true
+		}
+	}
+}
+
+func applyBinaryConjunct(b *ast.BinaryNode, rules *ExtractedRoutingRules) {
+	if ident, val, ok := extractIdentBoolEq(b); ok {
+		switch {
+		case strings.EqualFold(ident, "SessionKickstarted"), strings.EqualFold(ident, "SessionReadSlapped"):
+			if val {
+				rules.RequiresKickstart = true
+			}
+		case strings.EqualFold(ident, "HasImages"):
+			if val {
+				rules.RequiresImages = true
+			} else {
+				rules.RestrictImages = true
+			}
+		case strings.EqualFold(ident, "HasTools"):
+			if val {
+				rules.RequiresTools = true
+			} else {
+				rules.RestrictTools = true
+			}
+		case strings.EqualFold(ident, "HasTestFail"):
+			if val {
+				rules.RequiresTestFail = true
+			} else {
+				rules.ProhibitsTestFail = true
+			}
+		}
+		return
+	}
+
+	// 3. Tokens, Retries & MessageCount
+	if isIdent(b.Left, "MessageCount") {
+		if val, ok := getIntLit(b.Right); ok {
+			switch b.Operator {
+			case "<=":
+				rules.MessageCountMax = val
+			case "<":
+				rules.MessageCountMax = val - 1
+			}
+		}
+	} else if isIdent(b.Right, "MessageCount") {
+		if val, ok := getIntLit(b.Left); ok {
+			switch b.Operator {
+			case ">=":
+				rules.MessageCountMax = val
+			case ">":
+				rules.MessageCountMax = val - 1
+			}
+		}
+	}
+	if isIdent(b.Left, "Tokens") && b.Operator == "<" {
+		if val, ok := getIntLit(b.Right); ok && val > 0 {
+			rules.TokenThreshold = val
+		}
+	}
+	if isIdent(b.Left, "Retries") {
+		if val, ok := getIntLit(b.Right); ok {
+			if b.Operator == "<" && val > 0 {
+				rules.RetryBound = val
+			} else if b.Operator == ">=" && val > 0 {
+				rules.RetryFloor = val
+			} else if b.Operator == ">" && val >= 0 {
+				rules.RetryFloor = val + 1
+			}
+		}
+	}
+}
+
+func extractKeywordsFromConjunct(c ast.Node, rules *ExtractedRoutingRules) {
+	hasKeywords := false
+	var stringsFound []string
+	walkAST(c, func(n ast.Node) bool {
+		if isIdent(n, "Keywords") {
+			hasKeywords = true
+		}
+		if s, ok := n.(*ast.StringNode); ok {
+			stringsFound = append(stringsFound, s.Value)
+		}
+		return true
+	})
+	if hasKeywords && len(stringsFound) > 0 {
+		rules.ExcludedKeywords = append(rules.ExcludedKeywords, stringsFound...)
+	}
 }
 
 // containsTokenConstraint checks via AST whether an expression contains a Tokens comparison.

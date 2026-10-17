@@ -115,6 +115,17 @@ export interface ModelPricing {
 // Tier Tuning Result
 export interface TierTuningResult {
 	tier_name: string;
+	model?: string;
+	reasoning_effort?: string;
+	original_model?: string;
+	recommended_model?: string;
+	original_reasoning_effort?: string;
+	recommended_reasoning_effort?: string;
+	model_benefit?: string;
+	coding_index?: number;
+	tool_reliability?: number;
+	comprehensive_rate?: number;
+	is_disabled?: boolean;
 	optimal_threshold: number;
 	optimal_retries: number;
 	friction_keywords: string[];
@@ -123,11 +134,15 @@ export interface TierTuningResult {
 	preserved_clauses?: string[];
 	original_rule?: string;
 	synthesized_rule: string;
+	apply_rule?: boolean;
+	apply_model?: boolean;
+	apply_reasoning?: boolean;
 }
 
 // Tuning Result
 export interface TuningResult {
 	tiers: TierTuningResult[];
+	default_tier?: TierTuningResult;
 	current_cost_usd: number;
 	projected_cost_usd: number;
 	projected_savings_usd: number;
@@ -136,6 +151,19 @@ export interface TuningResult {
 	total_sessions?: number;
 	avg_turns_per_session?: number;
 	escalation_rate?: number;
+	recovery_stats?: Record<string, any>;
+	static_dominance_conflicts?: Array<{
+		tier_index: number;
+		tier_name: string;
+		predecessor_index?: number;
+		predecessor_name?: string;
+		reason: string;
+	}>;
+	high_context_escalation_turns?: number;
+	high_context_cost_usd?: number;
+	high_context_cost_pct?: number;
+	read_burst_escalations?: number;
+	nts_projected_savings_usd?: number;
 }
 
 // Dashboard SSOT Snapshot State

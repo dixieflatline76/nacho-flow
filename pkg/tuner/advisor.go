@@ -151,6 +151,13 @@ func (b *AdvisoryReportBuilder) WithTierPolicies() *AdvisoryReportBuilder {
 				fmt.Fprintf(&b.sb, "    Benefit:             %s\n", tier.ModelBenefit)
 			}
 		}
+		if tier.RecommendedReasoningEffort != tier.OriginalReasoningEffort && (tier.OriginalReasoningEffort != "" || tier.RecommendedReasoningEffort != "") {
+			origDisplay := tier.OriginalReasoningEffort
+			if origDisplay == "" {
+				origDisplay = "standard"
+			}
+			fmt.Fprintf(&b.sb, "  • Reasoning Effort:    %s -> %s\n", origDisplay, tier.RecommendedReasoningEffort)
+		}
 		if tier.RestrictImages {
 			b.sb.WriteString("  • Multimodal Vision:   Restricted\n")
 		} else {
@@ -170,12 +177,25 @@ func (b *AdvisoryReportBuilder) WithTierPolicies() *AdvisoryReportBuilder {
 
 // WithFallbackPolicy renders the fallback tier recommendation.
 func (b *AdvisoryReportBuilder) WithFallbackPolicy() *AdvisoryReportBuilder {
-	if b.res.DefaultTier != nil && b.res.DefaultTier.RecommendedModel != "" && b.res.DefaultTier.RecommendedModel != b.res.DefaultTier.OriginalModel {
-		fmt.Fprintf(&b.sb, "\n  [Fallback Tier: %s]\n"+
-			"  • Model Substitution:  %s -> %s\n",
-			b.res.DefaultTier.TierName, b.res.DefaultTier.OriginalModel, b.res.DefaultTier.RecommendedModel)
-		if b.res.DefaultTier.ModelBenefit != "" {
-			fmt.Fprintf(&b.sb, "    Benefit:             %s\n", b.res.DefaultTier.ModelBenefit)
+	if b.res.DefaultTier != nil {
+		dt := b.res.DefaultTier
+		hasModelDiff := dt.RecommendedModel != "" && dt.RecommendedModel != dt.OriginalModel
+		hasReasoningDiff := dt.RecommendedReasoningEffort != dt.OriginalReasoningEffort && (dt.OriginalReasoningEffort != "" || dt.RecommendedReasoningEffort != "")
+		if hasModelDiff || hasReasoningDiff {
+			fmt.Fprintf(&b.sb, "\n  [Fallback Tier: %s]\n", dt.TierName)
+			if hasModelDiff {
+				fmt.Fprintf(&b.sb, "  • Model Substitution:  %s -> %s\n", dt.OriginalModel, dt.RecommendedModel)
+			}
+			if hasReasoningDiff {
+				origDisplay := dt.OriginalReasoningEffort
+				if origDisplay == "" {
+					origDisplay = "standard"
+				}
+				fmt.Fprintf(&b.sb, "  • Reasoning Effort:    %s -> %s\n", origDisplay, dt.RecommendedReasoningEffort)
+			}
+			if dt.ModelBenefit != "" {
+				fmt.Fprintf(&b.sb, "    Benefit:             %s\n", dt.ModelBenefit)
+			}
 		}
 	}
 	return b
@@ -198,14 +218,23 @@ func (b *AdvisoryReportBuilder) WithConfigDiff() *AdvisoryReportBuilder {
 	var diffCount int
 	for _, tier := range b.res.Tiers {
 		hasModelDiff := tier.RecommendedModel != "" && tier.RecommendedModel != tier.OriginalModel
+		hasReasoningDiff := tier.RecommendedReasoningEffort != tier.OriginalReasoningEffort && (tier.OriginalReasoningEffort != "" || tier.RecommendedReasoningEffort != "")
 		hasRuleDiff := tier.SynthesizedRule != "" && tier.SynthesizedRule != tier.OriginalRule
-		if !hasModelDiff && !hasRuleDiff {
+		if !hasModelDiff && !hasReasoningDiff && !hasRuleDiff {
 			continue
 		}
 		diffCount++
 		fmt.Fprintf(&b.sb, "  Tier: %q\n", tier.TierName)
 		if hasModelDiff {
 			fmt.Fprintf(&b.sb, "  - model: %q\n  + model: %q\n", tier.OriginalModel, tier.RecommendedModel)
+		}
+		if hasReasoningDiff {
+			if tier.OriginalReasoningEffort != "" {
+				fmt.Fprintf(&b.sb, "  - reasoning_effort: %q\n", tier.OriginalReasoningEffort)
+			}
+			if tier.RecommendedReasoningEffort != "" {
+				fmt.Fprintf(&b.sb, "  + reasoning_effort: %q\n", tier.RecommendedReasoningEffort)
+			}
 		}
 		if hasRuleDiff {
 			if tier.OriginalRule != "" {
@@ -215,12 +244,26 @@ func (b *AdvisoryReportBuilder) WithConfigDiff() *AdvisoryReportBuilder {
 		}
 		b.sb.WriteString("\n")
 	}
-	if b.res.DefaultTier != nil && b.res.DefaultTier.RecommendedModel != "" && b.res.DefaultTier.RecommendedModel != b.res.DefaultTier.OriginalModel {
-		diffCount++
-		fmt.Fprintf(&b.sb, "  Fallback Tier: %q\n"+
-			"  - model: %q\n"+
-			"  + model: %q\n\n",
-			b.res.DefaultTier.TierName, b.res.DefaultTier.OriginalModel, b.res.DefaultTier.RecommendedModel)
+	if b.res.DefaultTier != nil {
+		dt := b.res.DefaultTier
+		hasModelDiff := dt.RecommendedModel != "" && dt.RecommendedModel != dt.OriginalModel
+		hasReasoningDiff := dt.RecommendedReasoningEffort != dt.OriginalReasoningEffort && (dt.OriginalReasoningEffort != "" || dt.RecommendedReasoningEffort != "")
+		if hasModelDiff || hasReasoningDiff {
+			diffCount++
+			fmt.Fprintf(&b.sb, "  Fallback Tier: %q\n", dt.TierName)
+			if hasModelDiff {
+				fmt.Fprintf(&b.sb, "  - model: %q\n  + model: %q\n", dt.OriginalModel, dt.RecommendedModel)
+			}
+			if hasReasoningDiff {
+				if dt.OriginalReasoningEffort != "" {
+					fmt.Fprintf(&b.sb, "  - reasoning_effort: %q\n", dt.OriginalReasoningEffort)
+				}
+				if dt.RecommendedReasoningEffort != "" {
+					fmt.Fprintf(&b.sb, "  + reasoning_effort: %q\n", dt.RecommendedReasoningEffort)
+				}
+			}
+			b.sb.WriteString("\n")
+		}
 	}
 	if diffCount == 0 {
 		b.sb.WriteString("  (No configuration changes recommended — active fleet policy is optimal)\n\n")
