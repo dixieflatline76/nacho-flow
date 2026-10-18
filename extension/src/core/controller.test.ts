@@ -109,7 +109,33 @@ jest.mock('vscode', () => ({
   },
   StatusBarAlignment: {
     Right: 1
-  }
+  },
+  languages: {
+    createDiagnosticCollection: jest.fn().mockImplementation((name: string) => ({
+      name,
+      set: jest.fn(),
+      delete: jest.fn(),
+      clear: jest.fn(),
+      dispose: jest.fn()
+    }))
+  },
+  Diagnostic: jest.fn().mockImplementation((range: any, message: string, severity: any) => ({
+    range,
+    message,
+    severity
+  })),
+  DiagnosticSeverity: {
+    Error: 0,
+    Warning: 1,
+    Information: 2,
+    Hint: 3
+  },
+  Range: jest.fn().mockImplementation((startLine: number, startCharacter: number, endLine: number, endCharacter: number) => ({
+    startLine,
+    startCharacter,
+    endLine,
+    endCharacter
+  }))
 }), { virtual: true });
 
 // Mock other modules
@@ -3426,6 +3452,104 @@ other_key:
         process.env.JEST_WORKER_ID = origWorker;
         jest.useRealTimers();
       }
+    });
+
+    it('should pause local restart when Pre-Flight Save Gate detects validation errors', async () => {
+      await extensionController.initialize();
+
+      const mockProcessManager = (extensionController as any).processManager;
+      const restartSpy = jest.spyOn(mockProcessManager, 'restart').mockResolvedValue({ success: true });
+      (extensionController as any).shouldLocalEngineBeRunning = jest.fn().mockReturnValue(true);
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      const toastSpy = jest.spyOn(extensionController as any, 'showTransientToast').mockImplementation(() => {});
+
+      const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+      // Document with validation errors: unknown provider reference
+      const invalidDoc = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+        getText: () => `
+providers:
+  llamacpp:
+    base_url: "http://127.0.0.1:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "Tier 1"
+    provider: "ghost_provider"
+`
+      };
+
+      await lastSaveListener(invalidDoc);
+
+      // Pre-Flight Save Gate must block restart!
+      expect(restartSpy).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('validation error'));
+
+      // Now save with valid document
+      const validDoc = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+        getText: () => `
+providers:
+  llamacpp:
+    base_url: "http://127.0.0.1:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "Tier 1"
+    provider: "llamacpp"
+`
+      };
+
+      await lastSaveListener(validDoc);
+      expect(restartSpy).toHaveBeenCalled();
+    });
+
+    it('should create and set diagnostics when vscode.languages is available', async () => {
+      await extensionController.initialize();
+      expect(vscode.languages.createDiagnosticCollection).toHaveBeenCalledWith('nacho-flow-config');
+
+      const mockCollection = (extensionController as any).diagnosticCollection;
+      expect(mockCollection).toBeDefined();
+
+      const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+      const docWithWarning = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+        getText: () => `
+providers:
+  llamacpp:
+    base_url: "http://127.0.0.1:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "T1"
+    provider: llamacpp
+    when: "true"
+  - name: "T2"
+    provider: llamacpp
+    when: "Tokens > 10"
+`
+      };
+
+      await lastSaveListener(docWithWarning);
+      expect(mockCollection.set).toHaveBeenCalledWith(
+        docWithWarning.uri,
+        expect.arrayContaining([
+          expect.objectContaining({ message: expect.stringContaining('is unreachable') })
+        ])
+      );
+
+      extensionController.dispose();
+      expect(mockCollection.dispose).toHaveBeenCalled();
     });
   });
 });

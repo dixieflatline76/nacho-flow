@@ -13,6 +13,7 @@ import { ProcessManager, ParsedStartupError } from './process-manager';
 import { TelemetryPoller, RefreshIntervalSeconds } from './telemetry-poller';
 import { DashboardSnapshot, DashboardEngineState } from './types/nacho-types';
 import { parseConfigVersion, compareConfigVersions } from './config/config-version';
+import { validateNachoConfigYaml } from './config/yaml-validator';
 
 export class ExtensionController {
 	private context: vscode.ExtensionContext;
@@ -30,6 +31,7 @@ export class ExtensionController {
 	private activeProfile: string = 'profile1';
 	private lastKnownServerVersion: string = '';
 	private saveDebounceTimer: NodeJS.Timeout | null = null;
+	private diagnosticCollection?: vscode.DiagnosticCollection;
 
 	public get activePreset(): string {
 		return this.activeProfile;
@@ -82,6 +84,9 @@ export class ExtensionController {
 
 		// Register Activity Bar Sidebar View Provider
 		this.registerSidebarProvider();
+
+		// Diagnostic collection for YAML validation
+		this.diagnosticCollection = vscode.languages?.createDiagnosticCollection?.('nacho-flow-config');
 
 		// Auto-sync configuration to daemon when config is saved
 		this.context.subscriptions.push(
@@ -141,6 +146,37 @@ export class ExtensionController {
 								} catch (err: any) {
 									vscode.window.showErrorMessage(`Nacho Flow: Failed to persist config to ${profileUri.fsPath}: ${err.message || err}`);
 								}
+							}
+
+							// Pre-Flight Save Gate: validate YAML configuration before restarting engine
+							const validationIssues = validateNachoConfigYaml(doc.getText());
+							const hasValidationErrors = validationIssues.some((i) => i.severity === 'Error');
+
+							if (this.diagnosticCollection && typeof (vscode as any).Range === 'function' && typeof (vscode as any).Diagnostic === 'function') {
+								const diagnostics = validationIssues.map((issue) => {
+									const range = new vscode.Range(
+										issue.range.startLine,
+										issue.range.startCharacter,
+										issue.range.endLine,
+										issue.range.endCharacter
+									);
+									const severity = issue.severity === 'Error'
+										? vscode.DiagnosticSeverity.Error
+										: issue.severity === 'Warning'
+										? vscode.DiagnosticSeverity.Warning
+										: vscode.DiagnosticSeverity.Information;
+									return new vscode.Diagnostic(range, issue.message, severity);
+								});
+								this.diagnosticCollection.set(doc.uri, diagnostics);
+							}
+
+							if (hasValidationErrors) {
+								const errCount = validationIssues.filter((i) => i.severity === 'Error').length;
+								this.outputChannel?.appendLine(
+									`[Controller] Pre-Flight Save Gate: ${errCount} validation error(s) detected in ${path.basename(doc.fileName)}. Local engine restart paused.`
+								);
+								this.showTransientToast(`⚠️ Nacho Flow: Configuration has ${errCount} validation error(s) — fix issues to restart engine.`);
+								return;
 							}
 
 							// Local engine: restart cleanly via native --config flag
@@ -2476,5 +2512,6 @@ export class ExtensionController {
 		if (this.processManager) {
 			this.processManager.dispose();
 		}
+		this.diagnosticCollection?.dispose?.();
 	}
 }
