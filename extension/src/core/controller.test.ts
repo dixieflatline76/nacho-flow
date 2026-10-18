@@ -5,6 +5,7 @@ import { AuthManager } from './config/auth-manager';
 import { RestClient } from './api/client';
 import { SSEClient } from './sse/client';
 import { DashboardPanel } from '../ui/webview/dashboard';
+import { SidebarViewProvider } from '../ui/sidebar/sidebar-view-provider';
 
 // Mock VS Code API
 jest.mock('vscode', () => ({
@@ -2584,6 +2585,94 @@ default_tier:
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
         expect.stringContaining('Profile renaming is disabled in remote server mode')
       );
+    });
+
+    it('should clone an existing profile, read its custom content, and switch to it', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (extensionController as any).activeProfile = 'profile2';
+      await extensionController.setProfileName('profile2', 'Custom Workhorse');
+
+      (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValueOnce([
+        ['profile1.yaml', vscode.FileType.File],
+        ['profile2.yaml', vscode.FileType.File],
+        ['profile3.yaml', vscode.FileType.File]
+      ]);
+
+      const customYamlBytes = Buffer.from('port: 9000\nproviders:\n  my_custom_llm:\n    base_url: "http://localhost:8000/v1"\n');
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValueOnce(customYamlBytes);
+
+      (vscode.window.showInputBox as jest.Mock).mockImplementationOnce(async (options: any) => {
+        expect(options.title).toContain('Cloned Custom Workhorse -> Profile 4');
+        expect(options.value).toBe('Custom Workhorse Copy');
+        expect(options.validateInput('a'.repeat(25))).toBe('Name must be 24 characters or less');
+        expect(options.validateInput('Valid Name')).toBeNull();
+        return 'Cloned Workhorse';
+      });
+
+      const switchSpy = jest.spyOn(extensionController, 'switchProfile').mockResolvedValue(undefined);
+      const mockDoc = { uri: { path: '/global/profiles/profile4.yaml' } };
+      (vscode.workspace.openTextDocument as jest.Mock).mockResolvedValueOnce(mockDoc);
+
+      await extensionController.cloneProfile('profile2');
+
+      // Verify source was profile2.yaml and target was profile4.yaml
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ path: expect.stringContaining('profile4.yaml') }),
+        customYamlBytes
+      );
+      expect(extensionController.getProfileLabel('profile4')).toBe('Cloned Workhorse');
+      expect(switchSpy).toHaveBeenCalledWith('profile4');
+      expect(vscode.window.showTextDocument).toHaveBeenCalledWith(mockDoc);
+    });
+
+    it('should suppress cloneProfile in remote host mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      await extensionController.cloneProfile();
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Profile management is disabled in remote server mode')
+      );
+    });
+
+    it('should handle sidebar cloneProfile webview message', async () => {
+      (extensionController as any).registerSidebarProvider();
+      const onMessage = (SidebarViewProvider as any).getLastMessageCallback();
+      const cloneSpy = jest.spyOn(extensionController, 'cloneProfile').mockResolvedValue(undefined);
+      await onMessage({
+        command: 'cloneProfile',
+        profileId: 'profile3'
+      });
+      expect(cloneSpy).toHaveBeenCalledWith('profile3');
+    });
+
+    it('should offer Clone Active Profile option in switchProfile QuickPick', async () => {
+      (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValueOnce([
+        ['profile1.yaml', vscode.FileType.File],
+        ['profile2.yaml', vscode.FileType.File],
+        ['profile3.yaml', vscode.FileType.File]
+      ]);
+
+      const cloneSpy = jest.spyOn(extensionController, 'cloneProfile').mockResolvedValue(undefined);
+      (vscode.window.showQuickPick as jest.Mock).mockImplementationOnce(async (items: any[]) => {
+        const cloneItem = items.find((it: any) => it.action === 'clone');
+        expect(cloneItem).toBeDefined();
+        expect(cloneItem.label).toContain('Clone Active Profile');
+        return cloneItem;
+      });
+
+      await extensionController.switchProfile();
+      expect(cloneSpy).toHaveBeenCalled();
+    });
+
+    it('should register nacho-flow.cloneProfile command', async () => {
+      (extensionController as any).registerCommands();
+      const cloneCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(
+        (c: any[]) => c[0] === 'nacho-flow.cloneProfile'
+      );
+      expect(cloneCall).toBeDefined();
+      const cloneSpy = jest.spyOn(extensionController, 'cloneProfile').mockResolvedValue(undefined);
+      await cloneCall[1]('profile2');
+      expect(cloneSpy).toHaveBeenCalledWith('profile2');
     });
 
     it('should rename active profile and validate length', async () => {

@@ -448,6 +448,13 @@
 		vscode.postMessage({ command: 'addProfile' });
 	};
 
+	function cloneProfile() {
+		const selector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
+		const profileId = (selector && selector.value) || state.activeProfile || 'profile1';
+		vscode.postMessage({ command: 'cloneProfile', profileId });
+	}
+	window.cloneProfile = cloneProfile;
+
 	window.deleteProfile = function() {
 		const selector = document.getElementById('profile-selector') || document.getElementById('preset-selector');
 		const profileId = (selector && selector.value) || state.activeProfile || 'profile1';

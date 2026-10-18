@@ -334,6 +334,10 @@ export class ExtensionController {
 				await this.addProfile();
 			}),
 
+			vscode.commands.registerCommand('nacho-flow.cloneProfile', async (profileId?: string) => {
+				await this.cloneProfile(profileId);
+			}),
+
 			vscode.commands.registerCommand('nacho-flow.deleteProfile', async (profileId?: string) => {
 				await this.deleteProfile(profileId);
 			}),
@@ -529,6 +533,9 @@ export class ExtensionController {
 					}
 					case 'addProfile':
 						await this.addProfile();
+						break;
+					case 'cloneProfile':
+						await this.cloneProfile(message.profileId);
 						break;
 					case 'deleteProfile':
 						await this.deleteProfile(message.profileId);
@@ -1798,10 +1805,21 @@ export class ExtensionController {
 	}
 
 	public async addProfile(): Promise<void> {
+		await this.createOrCloneProfile();
+	}
+
+	public async cloneProfile(sourceProfileId?: string): Promise<void> {
+		const sourceId = sourceProfileId || this.activeProfile;
+		await this.createOrCloneProfile({ cloneSourceId: sourceId });
+	}
+
+	private async createOrCloneProfile(options?: { cloneSourceId?: string }): Promise<void> {
 		if (this.isRemoteHost()) {
 			vscode.window.showInformationMessage('Nacho Flow: Profile management is disabled in remote server mode.');
 			return;
 		}
+
+		if (!this.context.globalStorageUri || !this.context.extensionUri) return;
 
 		const existing = await this.getAvailableProfiles();
 		const maxNum = existing.reduce((max, p) => (p.number > max ? p.number : max), 0);
@@ -1809,7 +1827,6 @@ export class ExtensionController {
 		const newId = `profile${nextNum}`;
 		const filename = `${newId}.yaml`;
 
-		if (!this.context.globalStorageUri || !this.context.extensionUri) return;
 		const profilesDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles');
 		try {
 			await vscode.workspace.fs.createDirectory(profilesDir);
@@ -1817,10 +1834,20 @@ export class ExtensionController {
 
 		const targetUri = vscode.Uri.joinPath(profilesDir, filename);
 
-		// Copy from default template
+		const isClone = !!options?.cloneSourceId;
+		const sourceId = options?.cloneSourceId || this.activeProfile;
+		const sourceLabel = this.getProfileLabel(sourceId);
+
+		// Read source bytes (either from source profile for clone, or template for add)
 		try {
-			const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
-			const data = await vscode.workspace.fs.readFile(templateUri);
+			let sourceUri: vscode.Uri;
+			if (isClone) {
+				const resolved = await this.resolveProfileUri(sourceId);
+				sourceUri = resolved.uri;
+			} else {
+				sourceUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
+			}
+			const data = await vscode.workspace.fs.readFile(sourceUri);
 			await vscode.workspace.fs.writeFile(targetUri, data);
 		} catch (err) {
 			vscode.window.showErrorMessage(`Nacho Flow: Failed to create ${filename}: ${err}`);
@@ -1828,10 +1855,12 @@ export class ExtensionController {
 		}
 
 		// Prompt user for optional custom name
+		const defaultValue = isClone ? `${sourceLabel} Copy`.slice(0, 24) : `Profile ${nextNum}`;
+		const title = isClone ? `🌮 Cloned ${sourceLabel} -> Profile ${nextNum}` : `🌮 Created Profile ${nextNum}`;
 		const enteredName = await vscode.window.showInputBox({
-			title: `🌮 Created Profile ${nextNum}`,
+			title,
 			prompt: `Enter a custom name for Profile ${nextNum} (max 24 characters), or press Enter to keep default:`,
-			value: `Profile ${nextNum}`,
+			value: defaultValue,
 			validateInput: (val: string) => {
 				if (val && val.trim().length > 24) {
 					return 'Name must be 24 characters or less';
@@ -1840,7 +1869,7 @@ export class ExtensionController {
 			}
 		});
 
-		if (enteredName && enteredName.trim() && enteredName.trim() !== `Profile ${nextNum}`) {
+		if (enteredName && enteredName.trim() && (isClone || enteredName.trim() !== `Profile ${nextNum}`)) {
 			await this.setProfileName(newId, enteredName.trim());
 		}
 
@@ -1853,7 +1882,11 @@ export class ExtensionController {
 			await vscode.window.showTextDocument(doc);
 		} catch (_) {}
 
-		this.showTransientToast(`🌮 Created and switched to ${this.getProfileLabel(newId)}!`);
+		if (isClone) {
+			this.showTransientToast(`🌮 Cloned ${sourceLabel} to ${this.getProfileLabel(newId)}!`);
+		} else {
+			this.showTransientToast(`🌮 Created and switched to ${this.getProfileLabel(newId)}!`);
+		}
 	}
 
 	public async renameProfile(profileId?: string): Promise<void> {
@@ -1993,6 +2026,11 @@ export class ExtensionController {
 				action: 'add'
 			});
 			items.push({
+				label: '$(copy) Clone Active Profile...',
+				description: `Duplicate ${this.getProfileLabel(this.activeProfile)}`,
+				action: 'clone'
+			});
+			items.push({
 				label: '$(trash) Delete Profile (－)',
 				description: 'Delete a custom profile',
 				action: 'delete'
@@ -2011,6 +2049,10 @@ export class ExtensionController {
 
 			if (selected.action === 'add') {
 				await this.addProfile();
+				return;
+			}
+			if (selected.action === 'clone') {
+				await this.cloneProfile();
 				return;
 			}
 			if (selected.action === 'delete') {

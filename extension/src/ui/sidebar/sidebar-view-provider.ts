@@ -161,16 +161,19 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		<div id="local-profile-container" class="section-body" style="padding-bottom: 4px;">
 			<div style="margin-bottom: 8px;">
 				<div class="partner-desc" style="margin-bottom: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7;">Active Profile</div>
-				<div style="display: flex; gap: 6px; align-items: center;">
-					<select id="profile-selector" onchange="onProfileChanged(this.value)" style="flex: 1; min-width: 0;">
+				<div style="margin-bottom: 6px;">
+					<select id="profile-selector" onchange="onProfileChanged(this.value)" style="width: 100%; box-sizing: border-box;">
 						<option value="profile1">Profile 1</option>
 						<option value="profile2">Profile 2</option>
 						<option value="profile3">Profile 3</option>
 					</select>
+				</div>
+				<div style="display: flex; gap: 4px; align-items: center;">
 					<button class="btn btn-secondary btn-icon" id="btn-add-profile" onclick="addProfile()" title="Add new profile (+)">＋</button>
-					<button class="btn btn-secondary btn-icon" id="btn-delete-profile" onclick="deleteProfile()" title="Delete custom profile (－)">－</button>
+					<button class="btn btn-secondary btn-icon" id="btn-clone-profile" onclick="cloneProfile()" title="Clone active profile">⧉</button>
 					<button class="btn btn-secondary btn-icon" id="btn-rename-profile" onclick="renameProfile()" title="Rename active profile">✏️</button>
-					<button class="btn btn-secondary btn-action" id="btn-reset-profile" onclick="resetProfile()" title="Reset selected profile to factory default template">
+					<button class="btn btn-secondary btn-icon" id="btn-delete-profile" onclick="deleteProfile()" title="Delete custom profile (－)">－</button>
+					<button class="btn btn-secondary btn-action" id="btn-reset-profile" onclick="resetProfile()" title="Reset selected profile to factory default template" style="margin-left: auto;">
 						Reset
 					</button>
 				</div>
