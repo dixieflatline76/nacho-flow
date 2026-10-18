@@ -26,6 +26,10 @@ const ALLOWED_REQUEST_CONTEXT_VARS = new Set([
 	'MessageCount',
 	'HasImages',
 	'HasTools',
+	'InteractiveTool',
+	'Keywords',
+	'Prompt',
+	'CleanPrompt',
 	'HasToolProgress',
 	'HasWriteProgress',
 	'HasShellWrite',
@@ -41,11 +45,19 @@ const ALLOWED_REQUEST_CONTEXT_VARS = new Set([
 	'HistoryErrors',
 	'CycleRetries',
 	'CycleBreakerTriggered',
+	'CycleBreakerReason',
 	'CycleContentTokens',
 	'CycleThinkingTokens',
 	'CycleToolTokens',
 	'SessionReadSlapped',
 	'SessionReadSlapCount',
+	'SessionThoughtSlapCount',
+	'ThoughtSlapAttempts',
+	'ThoughtSlapOutcome',
+	'ThoughtSlapTier',
+	'ForcedTier',
+	'ForcedModel',
+	'IsModelCoolingDown',
 	'FairyDusted',
 	'FairyDustCount',
 	'ClientID',
@@ -65,8 +77,49 @@ const DSL_KEYWORDS = new Set([
 	'matches',
 	'contains',
 	'startsWith',
-	'endsWith'
+	'endsWith',
+	// expr-lang built-ins
+	'any',
+	'all',
+	'none',
+	'one',
+	'filter',
+	'map',
+	'count',
+	'len',
+	'lower',
+	'upper',
+	'trim',
+	'split'
 ]);
+
+function maskStringLiterals(expr: string): string {
+	const chars = expr.split('');
+	let inSingle = false;
+	let inDouble = false;
+
+	for (let i = 0; i < chars.length; i++) {
+		const c = chars[i];
+		if (c === '\\') {
+			chars[i] = ' ';
+			continue;
+		}
+		if (c === "'" && !inDouble) {
+			inSingle = !inSingle;
+			chars[i] = ' ';
+			continue;
+		}
+		if (c === '"' && !inSingle) {
+			inDouble = !inDouble;
+			chars[i] = ' ';
+			continue;
+		}
+		if (inSingle || inDouble) {
+			chars[i] = ' ';
+		}
+	}
+	return chars.join('');
+}
 
 function levenshteinDistance(s1: string, s2: string): number {
 	const m = s1.length;
@@ -407,9 +460,10 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 			}
 
 			// Check identifiers
+			const maskedExpr = maskStringLiterals(exprStr);
 			const idRegex = /[a-zA-Z_][a-zA-Z0-9_]*/g;
 			let match: RegExpExecArray | null;
-			while ((match = idRegex.exec(exprStr)) !== null) {
+			while ((match = idRegex.exec(maskedExpr)) !== null) {
 				const id = match[0];
 				if (!DSL_KEYWORDS.has(id) && !ALLOWED_REQUEST_CONTEXT_VARS.has(id)) {
 					const closestVar = findClosestMatch(id, Array.from(ALLOWED_REQUEST_CONTEXT_VARS));

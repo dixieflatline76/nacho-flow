@@ -203,4 +203,12 @@ tiers:
     expect(index.tiers.has('Tier Separate')).toBe(true);
     expect(index.tiers.get('Tier Separate')?.provider).toBe('local');
   });
+
+  it('should return empty rename edits on empty text or unknown symbol', () => {
+    const emptyIndex = parseConfigSymbolIndex('');
+    expect(emptyIndex.getRenameEdits('anything')).toEqual([]);
+
+    const populatedIndex = parseConfigSymbolIndex(sampleYaml);
+    expect(populatedIndex.getRenameEdits('nonexistent_symbol')).toEqual([]);
+  });
 });

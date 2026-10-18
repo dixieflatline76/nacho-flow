@@ -14,6 +14,7 @@ import { TelemetryPoller, RefreshIntervalSeconds } from './telemetry-poller';
 import { DashboardSnapshot, DashboardEngineState } from './types/nacho-types';
 import { parseConfigVersion, compareConfigVersions } from './config/config-version';
 import { validateNachoConfigYaml } from './config/yaml-validator';
+import { registerYamlLanguageFeatures } from './config/yaml-language-features';
 
 export class ExtensionController {
 	private context: vscode.ExtensionContext;
@@ -87,6 +88,11 @@ export class ExtensionController {
 
 		// Diagnostic collection for YAML validation
 		this.diagnosticCollection = vscode.languages?.createDiagnosticCollection?.('nacho-flow-config');
+
+		// Register YAML Language Features (autocompletion, hover, definition, rename, lenses, quickfixes, and commands)
+		if (typeof (vscode.languages as any)?.registerCompletionItemProvider === 'function') {
+			registerYamlLanguageFeatures(this.context, this.diagnosticCollection);
+		}
 
 		// Auto-sync configuration to daemon when config is saved
 		this.context.subscriptions.push(

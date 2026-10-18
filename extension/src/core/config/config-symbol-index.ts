@@ -56,6 +56,7 @@ export interface ConfigSymbolIndex {
 	defaultTier?: TierSymbolDef;
 	providerUsages: ProviderUsageRef[];
 	rescueTierUsages: RescueTierUsageRef[];
+	getRenameEdits(oldName: string, newName?: string): SourceRange[];
 }
 
 /**
@@ -134,7 +135,8 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 			tiers,
 			defaultTier,
 			providerUsages,
-			rescueTierUsages
+			rescueTierUsages,
+			getRenameEdits: () => []
 		};
 	}
 
@@ -401,11 +403,37 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 	finishCurrentProvider(lines.length - 1);
 	finishCurrentTier(lines.length - 1);
 
-	return {
+	const index: ConfigSymbolIndex = {
 		providers,
 		tiers,
 		defaultTier,
 		providerUsages,
-		rescueTierUsages
+		rescueTierUsages,
+		getRenameEdits: (oldName: string) => {
+			const ranges: SourceRange[] = [];
+			const prov = providers.get(oldName);
+			if (prov) {
+				ranges.push(prov.idRange);
+				for (const u of providerUsages) {
+					if (u.providerId === oldName) {
+						ranges.push(u.valueRange);
+					}
+				}
+				return ranges;
+			}
+			const tier = tiers.get(oldName) || (defaultTier?.name === oldName ? defaultTier : undefined);
+			if (tier) {
+				ranges.push(tier.nameValueRange);
+				for (const r of rescueTierUsages) {
+					if (r.tierName === oldName) {
+						ranges.push(r.valueRange);
+					}
+				}
+				return ranges;
+			}
+			return ranges;
+		}
 	};
+
+	return index;
 }

@@ -239,4 +239,57 @@ tiers:
     const issues = validateNachoConfigYaml(prematureParenYaml);
     expect(issues.some((i) => i.ruleId === 'INVALID_WHEN_EXPR' && i.message.includes('unbalanced parentheses'))).toBe(true);
   });
+
+  // Phase 1B Guardrail 1: Auto-Tuner v3 when expressions and string literal masking
+  it('should validate Auto-Tuner v3 when expressions and mask string literals cleanly', () => {
+    const autoTunerYaml = `
+providers:
+  llamacpp:
+    base_url: "http://localhost:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "Tier 1: Complex Expression"
+    provider: llamacpp
+    when: "!any(Keywords, { # in ['debug', 'refactor'] }) && ClientID == 'cline'"
+
+  - name: "Tier 2: Thought Slap & Cooling Down"
+    provider: llamacpp
+    when: "SessionThoughtSlapCount > 0 && !IsModelCoolingDown(\\"qwen-32b\\")"
+
+  - name: "Tier 3: Tools & Context"
+    provider: llamacpp
+    when: "InteractiveTool in ['write_to_file', 'replace_file_content'] && CycleBreakerReason != ''"
+`;
+    const issues = validateNachoConfigYaml(autoTunerYaml);
+    const errors = issues.filter((i) => i.severity === 'Error');
+    expect(errors).toHaveLength(0);
+  });
+
+  it('should preserve exact character offsets for quickFixes when string literals exist in when expression', () => {
+    const yamlWithUnknownAndStrings = `
+providers:
+  llamacpp:
+    base_url: "http://localhost:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "Tier Test"
+    provider: llamacpp
+    when: "ClientID == 'cline' && Tokns > 100"
+`;
+    const issues = validateNachoConfigYaml(yamlWithUnknownAndStrings);
+    const exprError = issues.find((i) => i.ruleId === 'INVALID_WHEN_EXPR' && i.message.includes('Tokns'));
+    expect(exprError).toBeDefined();
+    expect(exprError?.quickFixes).toBeDefined();
+    expect(exprError?.quickFixes?.[0].replacement).toBe('Tokens');
+
+    const lines = yamlWithUnknownAndStrings.split('\n');
+    const tierLineIndex = lines.findIndex((l) => l.includes('Tokns'));
+    const expectedCol = lines[tierLineIndex].indexOf('Tokns');
+    expect(exprError?.quickFixes?.[0].range.startLine).toBe(tierLineIndex);
+    expect(exprError?.quickFixes?.[0].range.startCharacter).toBe(expectedCol);
+    expect(exprError?.quickFixes?.[0].range.endCharacter).toBe(expectedCol + 'Tokns'.length);
+  });
 });
+

@@ -1,0 +1,219 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Nacho Flow Configuration",
+  "description": "Nacho Flow runtime configuration schema for profile*.yaml and config.yaml",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration schema version (e.g. '1.1.0')"
+    },
+    "port": {
+      "type": "integer",
+      "default": 8000,
+      "description": "Port on which the Nacho Flow model gateway listens"
+    },
+    "admin_port": {
+      "type": "integer",
+      "default": 8001,
+      "description": "Port on which the Nacho Flow admin and telemetry API listens"
+    },
+    "bind_address": {
+      "type": "string",
+      "default": "127.0.0.1",
+      "description": "Network bind interface address"
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Telemetry and metrics collection settings",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "db_path": { "type": "string" },
+        "retention_days": { "type": "integer", "default": 30 }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "description": "Upstream LLM providers (local llama-server, vLLM, Ollama, OpenRouter, Anthropic)",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "base_url"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["local", "cloud", "anthropic", "openrouter", "mock"],
+            "description": "Provider execution type"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "HTTP/HTTPS base URL endpoint of the upstream provider"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "Optional API authentication key or environment variable reference"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "default": 120000,
+            "description": "Timeout in milliseconds for inference requests"
+          },
+          "max_retries": {
+            "type": "integer",
+            "default": 2,
+            "description": "Maximum number of automatic retry attempts on network or upstream failures"
+          },
+          "context_window": {
+            "type": "integer",
+            "description": "Maximum context window capacity in tokens"
+          },
+          "cost_per_input_token": {
+            "type": "number",
+            "description": "Cost per million or per input token in USD"
+          },
+          "cost_per_output_token": {
+            "type": "number",
+            "description": "Cost per million or per output token in USD"
+          },
+          "wire_format": {
+            "type": "string",
+            "enum": ["openai", "anthropic", "raw"],
+            "default": "openai",
+            "description": "Wire protocol format expected by the provider"
+          }
+        }
+      }
+    },
+    "tiers": {
+      "type": "array",
+      "description": "Waterfall routing tiers evaluated sequentially from top to bottom (first match wins)",
+      "items": {
+        "type": "object",
+        "required": ["name", "provider"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique descriptive identifier for this tier"
+          },
+          "provider": {
+            "type": "string",
+            "description": "ID of the provider defined under 'providers:'"
+          },
+          "model": {
+            "type": "string",
+            "description": "Upstream model ID to dispatch to"
+          },
+          "when": {
+            "type": "string",
+            "description": "Boolean expression evaluated against RequestContext (e.g. 'Tokens < 50000 && !HasImages')"
+          },
+          "reasoning_effort": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "description": "Reasoning effort budget passed to reasoning models"
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 2.0,
+            "description": "Sampling temperature"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Maximum completion output tokens limit"
+          },
+          "thought_slap": {
+            "oneOf": [
+              { "type": "boolean" },
+              {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "max_attempts": { "type": "integer", "default": 1 },
+                  "rescue_tier": { "type": "string" },
+                  "prompt_override": { "type": "string" }
+                }
+              }
+            ],
+            "description": "Reasoning truncation loop defense and recovery tier"
+          }
+        }
+      }
+    },
+    "default_tier": {
+      "type": "object",
+      "required": ["name", "provider"],
+      "description": "Fallback catch-all tier when no waterfall tier 'when' conditions evaluate to true",
+      "properties": {
+        "name": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "reasoning_effort": { "type": "string", "enum": ["low", "medium", "high"] },
+        "temperature": { "type": "number" },
+        "max_tokens": { "type": "integer" }
+      }
+    },
+    "kickstart": {
+      "type": "object",
+      "description": "Cross-turn idle loop and reasoning limit defense",
+      "properties": {
+        "read_slap": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "threshold": { "type": "integer", "default": 3 },
+            "max_slaps": { "type": "integer", "default": 2 },
+            "prompt_override": { "type": "string" }
+          }
+        },
+        "thought_slap": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "max_attempts": { "type": "integer", "default": 1 },
+            "rescue_tier": { "type": "string" },
+            "prompt_override": { "type": "string" }
+          }
+        }
+      }
+    },
+    "fairy_dust": {
+      "type": "object",
+      "description": "Autonomous checkpoint reviewer tier injection",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "provider"],
+            "properties": {
+              "name": { "type": "string" },
+              "provider": { "type": "string" },
+              "model": { "type": "string" },
+              "frequency": { "type": "integer" },
+              "prompt_override": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "normalizers": {
+      "type": "object",
+      "description": "Selective tool and stream normalizer strategies",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "markdown": { "type": "boolean", "default": true },
+        "bare_json": { "type": "boolean", "default": true },
+        "react": { "type": "boolean", "default": true },
+        "think": { "type": "boolean", "default": true }
+      }
+    },
+    "router": {
+      "type": "object",
+      "description": "In-flight routing directives configuration",
+      "properties": {
+        "enable_in_prompt_directives": { "type": "boolean", "default": true }
+      }
+    }
+  }
+}

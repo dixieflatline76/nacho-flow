@@ -127,6 +127,22 @@
       {
         "command": "nacho-flow.renameProfile",
         "title": "Nacho Flow: Rename Active Profile"
+      },
+      {
+        "command": "nacho-flow.pickProvider",
+        "title": "Nacho Flow: Pick Provider"
+      },
+      {
+        "command": "nacho-flow.pickRescueTier",
+        "title": "Nacho Flow: Pick Rescue Tier"
+      },
+      {
+        "command": "nacho-flow.pickModel",
+        "title": "Nacho Flow: Pick Model from Discovered /v1/models"
+      },
+      {
+        "command": "nacho-flow.pingProviderEndpoint",
+        "title": "Nacho Flow: Ping Provider Endpoint"
       }
     ],
     "viewsContainers": {
@@ -186,7 +202,33 @@
           "description": "Local GPU VRAM memory limit in gigabytes (GB) for auto-tuning routing thresholds (0 for unconstrained / auto)"
         }
       }
-    }
+    },
+    "yamlValidation": [
+      {
+        "fileMatch": [
+          "*config*.yaml",
+          "*config*.yml",
+          "profile*.yaml",
+          "profile*.yml",
+          ".nacho/*.yaml",
+          "profiles/*.yaml"
+        ],
+        "url": "./resources/schema/nacho-config.schema.json"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "*config*.yaml",
+          "*config*.yml",
+          "profile*.yaml",
+          "profile*.yml",
+          ".nacho/*.yaml",
+          "profiles/*.yaml"
+        ],
+        "url": "./resources/schema/nacho-config.schema.json"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && node esbuild.config.js",
