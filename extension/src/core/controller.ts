@@ -29,6 +29,7 @@ export class ExtensionController {
 	private routesRefreshInterval: RefreshIntervalSeconds = 60;
 	private activeProfile: string = 'profile1';
 	private lastKnownServerVersion: string = '';
+	private saveDebounceTimer: NodeJS.Timeout | null = null;
 
 	public get activePreset(): string {
 		return this.activeProfile;
@@ -87,7 +88,7 @@ export class ExtensionController {
 			vscode.workspace.onDidSaveTextDocument(async (doc) => {
 				if (!this.restClient) return;
 
-				if (this.isLocalEngineOffline()) {
+				if (this.authManager.getEngineMode() === 'local' && !this.shouldLocalEngineBeRunning()) {
 					return;
 				}
 
@@ -105,7 +106,19 @@ export class ExtensionController {
 				const isExplicitEditTarget = this.activeConfigDocUri &&
 					doc.uri.toString() === this.activeConfigDocUri.toString();
 
-				if (isActiveProfileFile || isExplicitEditTarget) {
+				let isProfileUriMatch = false;
+				let resolvedProfileUri: vscode.Uri | null = null;
+				if (!isRemote) {
+					try {
+						const { uri: pUri } = await this.resolveProfileUri(this.activeProfile);
+						resolvedProfileUri = pUri;
+						if (path.resolve(doc.uri.fsPath).toLowerCase() === path.resolve(pUri.fsPath).toLowerCase()) {
+							isProfileUriMatch = true;
+						}
+					} catch (_) {}
+				}
+
+				if (isActiveProfileFile || isExplicitEditTarget || isProfileUriMatch) {
 					if (isRemote) {
 						try {
 							await this.restClient.updateConfigYaml(doc.getText());
@@ -116,33 +129,49 @@ export class ExtensionController {
 							vscode.window.showErrorMessage(`Nacho Flow: Failed to update remote config: ${err.message || err}`);
 						}
 					} else {
-						// Local engine: ensure changes from shadow config are written to the resolved active profile file on disk
-						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
-						const normDocPath = path.resolve(doc.uri.fsPath).toLowerCase();
-						const normProfilePath = path.resolve(profileUri.fsPath).toLowerCase();
-						const isShadowConfig = Boolean(isExplicitEditTarget && normDocPath.endsWith('nacho-flow-config.yaml'));
+						const handleLocalSave = async () => {
+							const profileUri = resolvedProfileUri || (await this.resolveProfileUri(this.activeProfile)).uri;
+							const normDocPath = path.resolve(doc.uri.fsPath).toLowerCase();
+							const normProfilePath = path.resolve(profileUri.fsPath).toLowerCase();
+							const isShadowConfig = Boolean(isExplicitEditTarget && normDocPath.endsWith('nacho-flow-config.yaml'));
 
-						if (isShadowConfig && normDocPath !== normProfilePath) {
-							try {
-								await vscode.workspace.fs.writeFile(profileUri, Buffer.from(doc.getText(), 'utf8'));
-							} catch (err: any) {
-								vscode.window.showErrorMessage(`Nacho Flow: Failed to persist config to ${profileUri.fsPath}: ${err.message || err}`);
+							if (isShadowConfig && normDocPath !== normProfilePath) {
+								try {
+									await vscode.workspace.fs.writeFile(profileUri, Buffer.from(doc.getText(), 'utf8'));
+								} catch (err: any) {
+									vscode.window.showErrorMessage(`Nacho Flow: Failed to persist config to ${profileUri.fsPath}: ${err.message || err}`);
+								}
 							}
-						}
 
-						// Local engine: restart cleanly via native --config flag
-						if (this.processManager && this.processManager.isRunning()) {
-							const daemonUrl = await this.authManager.getBaseUrl();
-							const profileLabel = this.getProfileLabel(this.activeProfile);
-							this.showTransientToast(`🔄 Nacho Flow: Restarting local engine with updated ${profileLabel}...`);
-							const result = await this.processManager.restart(daemonUrl, profileUri.fsPath);
-							if (result.success) {
-								await this.initializeClients();
-								await this.syncSidebarState();
-								await this.loadDashboardData();
-							} else if (result.error) {
-								await this.handleEngineStartError(result);
+							// Local engine: restart cleanly via native --config flag
+							if (this.processManager && this.shouldLocalEngineBeRunning()) {
+								const daemonUrl = await this.authManager.getBaseUrl();
+								const profileLabel = this.getProfileLabel(this.activeProfile);
+								this.showTransientToast(`🔄 Nacho Flow: Restarting local engine with updated ${profileLabel}...`);
+								const result = await this.processManager.restart(daemonUrl, profileUri.fsPath);
+								if (result.success) {
+									await this.initializeClients();
+									await this.syncSidebarState();
+									await this.loadDashboardData();
+								} else if (result.error) {
+									await this.syncSidebarState();
+									await this.loadDashboardData();
+									await this.handleEngineStartError(result);
+								}
 							}
+						};
+
+						const debounceMs = (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined) ? 0 : 500;
+						if (debounceMs === 0) {
+							await handleLocalSave();
+						} else {
+							if (this.saveDebounceTimer) {
+								clearTimeout(this.saveDebounceTimer);
+							}
+							this.saveDebounceTimer = setTimeout(() => {
+								this.saveDebounceTimer = null;
+								handleLocalSave().catch(() => {});
+							}, debounceMs);
 						}
 					}
 				}
@@ -323,13 +352,14 @@ export class ExtensionController {
 						const result = await this.processManager.start(daemonUrl, configPath);
 						if (result.success) {
 							await this.authManager.setLocalEngineRunning(true);
-						} else if (result.error) {
-							await this.handleEngineStartError(result);
 						}
 						await this.initializeClients();
 						await this.syncSidebarState();
 						await this.updateStats();
 						await this.loadDashboardData();
+						if (!result.success && result.error) {
+							await this.handleEngineStartError(result);
+						}
 						break;
 					}
 					case 'restartEngine': {
@@ -350,13 +380,14 @@ export class ExtensionController {
 						const result = await this.processManager.restart(daemonUrl, configPath);
 						if (result.success) {
 							await this.authManager.setLocalEngineRunning(true);
-						} else if (result.error) {
-							await this.handleEngineStartError(result);
 						}
 						await this.initializeClients();
 						await this.syncSidebarState();
 						await this.updateStats();
 						await this.loadDashboardData();
+						if (!result.success && result.error) {
+							await this.handleEngineStartError(result);
+						}
 						break;
 					}
 					case 'stopEngine': {
@@ -504,6 +535,19 @@ export class ExtensionController {
 
 	private isLocalEngineOffline(): boolean {
 		return this.authManager.getEngineMode() === 'local' && (!this.processManager || !this.processManager.isRunning());
+	}
+
+	private shouldLocalEngineBeRunning(): boolean {
+		if (this.isRemoteHost()) {
+			return false;
+		}
+		const isProcessActive = Boolean(this.processManager && this.processManager.isRunning());
+		const isIntentActive = Boolean(
+			this.authManager &&
+			typeof (this.authManager as any).isLocalEngineRunning === 'function' &&
+			(this.authManager as any).isLocalEngineRunning()
+		);
+		return isProcessActive || isIntentActive;
 	}
 
 	private async resumeLocalEngine(): Promise<void> {
@@ -1679,8 +1723,8 @@ export class ExtensionController {
 			await vscode.workspace.fs.writeFile(profileUri, templateBytes);
 			vscode.window.showInformationMessage(`🌮 ${profileLabel} reset to factory default template (v${templateVersion})!`);
 
-			// If local engine is running and this is the active profile, restart cleanly
-			if (this.processManager && this.processManager.isRunning() && this.activeProfile === profileId) {
+			// If local engine is running or intended to run and this is the active profile, restart cleanly
+			if (this.processManager && this.shouldLocalEngineBeRunning() && this.activeProfile === profileId) {
 				const daemonUrl = await this.authManager.getBaseUrl();
 				await this.processManager.restart(daemonUrl, profileUri.fsPath);
 			}
@@ -1987,9 +2031,9 @@ export class ExtensionController {
 		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
 		const locationHint = isWorkspace ? ' (Workspace Override)' : '';
 
-		// If local engine is running, restart cleanly with --config <configPath>
+		// If local engine is running or intended to run, restart cleanly with --config <configPath>
 		const daemonUrl = await this.authManager.getBaseUrl();
-		if (this.processManager && this.processManager.isRunning()) {
+		if (this.processManager && this.shouldLocalEngineBeRunning()) {
 			if (this.sidebarProvider) {
 				this.sidebarProvider.updateEngineStatus({ starting: true });
 			}
@@ -2001,10 +2045,14 @@ export class ExtensionController {
 			if (result.success) {
 				await this.authManager.setLocalEngineRunning(true);
 				this.showTransientToast(`🌮 Switched to ${profileLabel}${locationHint}!`);
-			} else if (result.error) {
-				await this.handleEngineStartError(result);
 			}
 			await this.initializeClients();
+			await this.loadDashboardData();
+			await this.syncSidebarState();
+			if (!result.success && result.error) {
+				await this.handleEngineStartError(result);
+			}
+			return;
 		} else {
 			this.showTransientToast(`🌮 Selected ${profileLabel}${locationHint} (Engine offline)`);
 		}
@@ -2413,6 +2461,10 @@ export class ExtensionController {
 	}
 
 	public dispose(): void {
+		if (this.saveDebounceTimer) {
+			clearTimeout(this.saveDebounceTimer);
+			this.saveDebounceTimer = null;
+		}
 		if (this.telemetryPoller) {
 			this.telemetryPoller.dispose();
 			this.telemetryPoller = null;

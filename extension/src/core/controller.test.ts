@@ -3237,5 +3237,195 @@ other_key:
       expect((extensionController as any).sseClient).toBeNull();
       expect(appendLineSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to initialize SSE client: SSE connect boom'));
     });
+
+    it('should recover and restart local engine on save when engine was left stopped but intent is running', async () => {
+      await extensionController.initialize();
+
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).restClient = {
+        updateConfigYaml: jest.fn().mockResolvedValue({})
+      };
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null)
+      };
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false),
+        restart: restartSpy
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).showTransientToast = jest.fn();
+
+      const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+      const doc = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+        getText: () => 'port: 8000\n'
+      };
+
+      await lastSaveListener(doc);
+
+      expect(restartSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', '/test/profile1.yaml');
+    });
+
+    it('should recover and restart engine on switchProfile when engine was left stopped by config error', async () => {
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        setLastProfile: jest.fn().mockResolvedValue(undefined),
+        setLocalEngineRunning: jest.fn().mockResolvedValue(undefined)
+      };
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false),
+        restart: restartSpy
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile2.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).updateStats = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).showTransientToast = jest.fn();
+
+      await (extensionController as any).switchProfile('profile2');
+
+      expect(restartSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', '/test/profile2.yaml');
+    });
+
+    it('should recover and restart engine on resetProfile when engine was left stopped by config error', async () => {
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000')
+      };
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false),
+        restart: restartSpy
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).updateStats = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).showTransientToast = jest.fn();
+      (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Reset Profile');
+
+      await (extensionController as any).resetProfile('profile1');
+
+      expect(restartSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', '/test/profile1.yaml');
+    });
+
+    it('should sync sidebar state and update stats before awaiting handleEngineStartError', async () => {
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        setLocalEngineRunning: jest.fn().mockResolvedValue(undefined)
+      };
+      const callOrder: string[] = [];
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        isLocalUrl: jest.fn().mockReturnValue(true),
+        start: jest.fn().mockResolvedValue({ success: false, error: 'Port in use' })
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockImplementation(async () => {
+        callOrder.push('syncSidebarState');
+      });
+      (extensionController as any).initializeClients = jest.fn().mockImplementation(async () => {
+        callOrder.push('initializeClients');
+      });
+      (extensionController as any).updateStats = jest.fn().mockImplementation(async () => {
+        callOrder.push('updateStats');
+      });
+      (extensionController as any).loadDashboardData = jest.fn().mockImplementation(async () => {
+        callOrder.push('loadDashboardData');
+      });
+      (extensionController as any).handleEngineStartError = jest.fn().mockImplementation(async () => {
+        callOrder.push('handleEngineStartError');
+      });
+      (extensionController as any).showTransientToast = jest.fn();
+
+      (extensionController as any).registerSidebarProvider();
+      const mockSidebarClass = require('../ui/sidebar/sidebar-view-provider').SidebarViewProvider;
+      const onMessage = mockSidebarClass.getLastMessageCallback();
+      await onMessage({ command: 'startEngine' });
+
+      expect(callOrder).toContain('syncSidebarState');
+      expect(callOrder).toContain('handleEngineStartError');
+      expect(callOrder.indexOf('syncSidebarState')).toBeLessThan(callOrder.indexOf('handleEngineStartError'));
+    });
+
+    it('should debounce saves when debounceMs is positive', async () => {
+      const origEnv = process.env.NODE_ENV;
+      const origWorker = process.env.JEST_WORKER_ID;
+      try {
+        delete (process.env as any).NODE_ENV;
+        delete (process.env as any).JEST_WORKER_ID;
+
+        jest.useFakeTimers();
+        await extensionController.initialize();
+        (extensionController as any).activeProfile = 'profile1';
+        (extensionController as any).authManager = {
+          getEngineMode: jest.fn().mockReturnValue('local'),
+          isLocalEngineRunning: jest.fn().mockReturnValue(true),
+          getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+          getAuthToken: jest.fn().mockResolvedValue(null)
+        };
+        const restartSpy = jest.fn().mockResolvedValue({ success: true });
+        (extensionController as any).processManager = {
+          isRunning: jest.fn().mockReturnValue(true),
+          restart: restartSpy
+        };
+        (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+          uri: { fsPath: '/test/profile1.yaml' }
+        });
+        (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).showTransientToast = jest.fn();
+
+        const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+        const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+        const doc = {
+          fileName: '/test/profile1.yaml',
+          uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+          getText: () => 'port: 8000\n'
+        };
+
+        await lastSaveListener(doc);
+        expect(restartSpy).not.toHaveBeenCalled();
+
+        jest.advanceTimersByTime(550);
+        await Promise.resolve();
+        expect(restartSpy).toHaveBeenCalled();
+      } finally {
+        process.env.NODE_ENV = origEnv;
+        process.env.JEST_WORKER_ID = origWorker;
+        jest.useRealTimers();
+      }
+    });
   });
 });

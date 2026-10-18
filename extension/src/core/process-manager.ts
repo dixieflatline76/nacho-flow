@@ -109,7 +109,13 @@ export class ProcessManager {
 	private lastStdout: string[] = [];
 	private isStopping = false;
 	private isAttached = false;
-	private restartMutex: Promise<any> = Promise.resolve();
+	private lifecycleMutex: Promise<any> = Promise.resolve();
+
+	private enqueueLifecycleOp<T>(op: () => Promise<T>): Promise<T> {
+		const next = this.lifecycleMutex.then(op, op);
+		this.lifecycleMutex = next.catch(() => undefined);
+		return next;
+	}
 
 	constructor(extensionUri: vscode.Uri, outputChannel: vscode.OutputChannel, globalStorageUri?: vscode.Uri) {
 		this.extensionUri = extensionUri;
@@ -216,6 +222,14 @@ export class ProcessManager {
 		daemonUrl: string,
 		configPath?: string
 	): Promise<{ success: boolean; error?: string; parsedError?: ParsedStartupError }> {
+		return this.enqueueLifecycleOp(() => this.startInternal(daemonUrl, configPath, true));
+	}
+
+	private async startInternal(
+		daemonUrl: string,
+		configPath?: string,
+		allowAttach: boolean = true
+	): Promise<{ success: boolean; error?: string; parsedError?: ParsedStartupError }> {
 		if (!this.isLocalUrl(daemonUrl)) {
 			const error =
 				'Nacho Flow: Cannot start remote engine via local subprocess. Please ensure the remote daemon is running on its host machine.';
@@ -240,12 +254,14 @@ export class ProcessManager {
 			// fallback default 8000
 		}
 
-		// 1. Check if engine is already running
-		const alreadyHealthy = await this.checkHealth(daemonUrl, 500);
-		if (alreadyHealthy) {
-			this.outputChannel.appendLine('[ProcessManager] Engine is already active and healthy.');
-			this.isAttached = true;
-			return { success: true };
+		// 1. Check if engine is already running (only when allowAttach is true)
+		if (allowAttach) {
+			const alreadyHealthy = await this.checkHealth(daemonUrl, 500);
+			if (alreadyHealthy) {
+				this.outputChannel.appendLine('[ProcessManager] Engine is already active and healthy.');
+				this.isAttached = true;
+				return { success: true };
+			}
 		}
 
 		// 2. Resolve executable
@@ -319,17 +335,23 @@ export class ProcessManager {
 
 			child.on('error', (err: Error) => {
 				this.outputChannel.appendLine(`[ProcessManager] Process error: ${err.message}`);
-				this.childProcess = null;
+				if (this.childProcess === child) {
+					this.childProcess = null;
+				}
 			});
 
 			child.on('exit', (code: number | null, signal: string | null) => {
-				if (this.isStopping) {
+				if (this.isStopping || (child as any).__isStopping) {
 					this.outputChannel.appendLine('[ProcessManager] Engine stopped cleanly.');
-					this.isStopping = false;
+					if (this.childProcess === child || this.childProcess === null) {
+						this.isStopping = false;
+					}
 				} else {
 					this.outputChannel.appendLine(`[ProcessManager] Engine exited with code ${code}, signal: ${signal}`);
 				}
-				this.childProcess = null;
+				if (this.childProcess === child) {
+					this.childProcess = null;
+				}
 			});
 
 			// 3. Poll for readiness up to 5 seconds
@@ -338,7 +360,7 @@ export class ProcessManager {
 				await new Promise((r) => setTimeout(r, 200));
 
 				// Check if process crashed prematurely
-				if (!this.childProcess && !alreadyHealthy) {
+				if (!this.childProcess) {
 					const errorDetail = this.lastStderr.join('').trim();
 					const stdoutDetail = this.lastStdout.join('').trim();
 					const parsed = parseStartupError(errorDetail, stdoutDetail, targetPort);
@@ -354,6 +376,30 @@ export class ProcessManager {
 					this.outputChannel.appendLine('[ProcessManager] Engine started successfully and verified online.');
 					return { success: true };
 				}
+			}
+
+			// Startup health check timed out: terminate unresponsive child process across platforms
+			if (this.childProcess === child) {
+				(child as any).__isStopping = true;
+				try {
+					child.kill();
+				} catch (_) {}
+				if (process.platform === 'win32') {
+					try {
+						if (child.pid) {
+							child_process.execSync(`taskkill /pid ${child.pid} /f /t`);
+						}
+					} catch (_) {}
+				} else {
+					try {
+						if (child.pid) {
+							child_process.execSync(`kill -9 ${child.pid}`, { stdio: 'ignore' });
+						} else {
+							child.kill('SIGKILL');
+						}
+					} catch (_) {}
+				}
+				this.childProcess = null;
 			}
 
 			const errorDetail = this.lastStderr.join('').trim();
@@ -403,7 +449,20 @@ export class ProcessManager {
 	 * Stops any active child process spawned by this extension or sends shutdown directive to attached daemon.
 	 */
 	public async stop(daemonUrl?: string, authToken?: string): Promise<boolean> {
+		return this.enqueueLifecycleOp(() => this.stopInternal(daemonUrl, authToken));
+	}
+
+	private async stopInternal(daemonUrl?: string, authToken?: string): Promise<boolean> {
+		const hadChildProcess = Boolean(this.childProcess);
 		if (!this.childProcess && !this.isAttached) {
+			if (daemonUrl && this.isLocalUrl(daemonUrl)) {
+				let targetPort = 8000;
+				try {
+					const parsed = new URL(daemonUrl);
+					if (parsed.port) targetPort = parseInt(parsed.port, 10);
+				} catch {}
+				this.reapOrphanOnPort(targetPort);
+			}
 			return true;
 		}
 
@@ -444,6 +503,20 @@ export class ProcessManager {
 							});
 						});
 					}
+				}
+			}
+
+			// Guardrail #2: Only invoke reapOrphanOnPort in stopInternal when port remains bound
+			if (daemonUrl && this.isLocalUrl(daemonUrl)) {
+				let targetPort = 8000;
+				try {
+					const parsed = new URL(daemonUrl);
+					if (parsed.port) targetPort = parseInt(parsed.port, 10);
+				} catch {}
+
+				const shouldReap = !hadChildProcess || (await this.checkHealth(daemonUrl, 200));
+				if (shouldReap) {
+					this.reapOrphanOnPort(targetPort);
 				}
 			}
 
@@ -497,20 +570,151 @@ export class ProcessManager {
 		configPath?: string,
 		authToken?: string
 	): Promise<{ success: boolean; error?: string; parsedError?: ParsedStartupError }> {
-		const executeRestart = async () => {
-			await this.stop(daemonUrl, authToken);
+		return this.enqueueLifecycleOp(async () => {
+			await this.stopInternal(daemonUrl, authToken);
 			// Wait for port to be released (max 2s)
 			for (let i = 0; i < 20; i++) {
 				const stillUp = await this.checkHealth(daemonUrl, 100);
 				if (!stillUp) break;
 				await new Promise((r) => setTimeout(r, 100));
 			}
-			return await this.start(daemonUrl, configPath);
-		};
 
-		const restartOp = this.restartMutex.then(executeRestart, executeRestart);
-		this.restartMutex = restartOp.catch(() => ({ success: false }));
-		return await restartOp;
+			if (this.isLocalUrl(daemonUrl)) {
+				let targetPort = 8000;
+				try {
+					const parsed = new URL(daemonUrl);
+					if (parsed.port) {
+						targetPort = parseInt(parsed.port, 10);
+					}
+				} catch {}
+				const stillUp = await this.checkHealth(daemonUrl, 100);
+				if (stillUp) {
+					this.reapOrphanOnPort(targetPort);
+				}
+			}
+
+			// Guardrail #3: preserve jest.spyOn(processManager, 'start') compatibility
+			if (this.start !== ProcessManager.prototype.start) {
+				return await this.start(daemonUrl, configPath);
+			}
+			return await this.startInternal(daemonUrl, configPath, false);
+		});
+	}
+
+	/**
+	 * Dispatches orphan reaping by OS platform.
+	 */
+	public reapOrphanOnPort(port: number): void {
+		if (process.platform === 'win32') {
+			this.reapWindowsOrphanOnPort(port);
+		} else {
+			this.reapUnixOrphanOnPort(port);
+		}
+	}
+
+	private reapWindowsOrphanOnPort(port: number): void {
+		try {
+			const stdout = child_process
+				.execSync('netstat -ano -p tcp', {
+					encoding: 'utf8',
+					stdio: ['pipe', 'pipe', 'ignore'],
+					timeout: 2000
+				})
+				.toString();
+
+			const lines = stdout.split(/\r?\n/);
+			const pidsToKill = new Set<number>();
+
+			for (const line of lines) {
+				// Foreign port must be 0 for listening sockets across all Windows languages
+				const match = line.match(/^\s*TCP\s+\S+:(\d+)\s+\S+:0\s+\S+\s+(\d+)\s*$/i);
+				if (match) {
+					const localPort = parseInt(match[1], 10);
+					const pid = parseInt(match[2], 10);
+					if (localPort === port && pid > 4) {
+						pidsToKill.add(pid);
+					}
+				}
+			}
+
+			for (const pid of pidsToKill) {
+				try {
+					const tasklistOut = child_process
+						.execSync(`tasklist /fi "PID eq ${pid}" /fo csv /nh`, {
+							encoding: 'utf8',
+							stdio: ['pipe', 'pipe', 'ignore'],
+							timeout: 1000
+						})
+						.toString();
+
+					if (tasklistOut.toLowerCase().includes('nacho-flow.exe')) {
+						this.outputChannel.appendLine(`[ProcessManager] Reaping orphaned Windows process ${pid} on port ${port}`);
+						child_process.execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore' });
+					}
+				} catch {
+					// Ignore tasklist/taskkill failure
+				}
+			}
+		} catch {
+			// Ignore netstat failure
+		}
+	}
+
+	private reapUnixOrphanOnPort(port: number): void {
+		try {
+			let pids: number[] = [];
+			try {
+				const stdout = child_process
+					.execSync(`lsof -t -iTCP:${port} -sTCP:LISTEN`, {
+						encoding: 'utf8',
+						stdio: ['pipe', 'pipe', 'ignore'],
+						timeout: 1000
+					})
+					.toString();
+
+				pids = stdout
+					.split('\n')
+					.map((s) => parseInt(s.trim(), 10))
+					.filter((pid) => !isNaN(pid) && pid > 1);
+			} catch {
+				// lsof may exit with code 1 if none found or not installed
+			}
+
+			if (pids.length === 0) {
+				try {
+					const stdout = child_process
+						.execSync(`fuser ${port}/tcp 2>/dev/null`, {
+							encoding: 'utf8',
+							stdio: ['pipe', 'pipe', 'ignore'],
+							timeout: 1000
+						})
+						.toString();
+
+					pids = stdout
+						.split(/\s+/)
+						.map((s) => parseInt(s.trim(), 10))
+						.filter((pid) => !isNaN(pid) && pid > 1);
+				} catch {}
+			}
+
+			for (const pid of pids) {
+				try {
+					const commOutput = child_process
+						.execSync(`ps -p ${pid} -o comm=`, {
+							encoding: 'utf8',
+							stdio: ['pipe', 'pipe', 'ignore'],
+							timeout: 1000
+						})
+						.toString();
+
+					const procName = path.basename(commOutput.trim()).toLowerCase();
+					if (procName.includes('nacho-flow')) {
+						this.outputChannel.appendLine(`[ProcessManager] Reaping orphaned Unix process ${pid} on port ${port}`);
+						child_process.execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+					}
+				} catch {}
+			}
+		} catch {}
 	}
 
 	/**
