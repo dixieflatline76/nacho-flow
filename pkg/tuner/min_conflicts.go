@@ -114,11 +114,14 @@ func (b *CandidateConfigBuilder) WithPrunedTier(tierIdx int) *CandidateConfigBui
 	return b
 }
 
-// WithCandidateModel substitutes a tier's model with an evaluated CandidateModel.
-func (b *CandidateConfigBuilder) WithCandidateModel(tierIdx int, cand CandidateModel) *CandidateConfigBuilder {
-	tier := &b.cfg.Tiers[tierIdx]
-	tier.Model = cand.ModelID
-	tier.CodingIndex = cand.CodingIndex
+// applyCandidateToTier applies CandidateModel attributes to an arbitrary tier configuration.
+func applyCandidateToTier(tier *TierReplayConfig, cand CandidateModel) {
+	newModel := NormalizeModelForProvider(cand.ModelID, tier.Provider)
+	if newModel != tier.Model {
+		tier.ReasoningEffort = ""
+	}
+	tier.Model = newModel
+	tier.CodingIndex = EffectiveCodingIndex(cand.CodingIndex, tier.ReasoningEffort)
 	tier.ToolReliability = cand.ToolReliability
 	tier.IsFrontier = cand.IsFrontier()
 
@@ -135,18 +138,19 @@ func (b *CandidateConfigBuilder) WithCandidateModel(tierIdx int, cand CandidateM
 	if !tier.IsLocal {
 		tier.PromptCostPerMillion = cand.PromptCostPerMillion
 		tier.CompletionCostPerMillion = cand.CompletionCostPerMillion
-		compRate := cand.ComprehensiveRate
-		if compRate <= 0 {
-			compRate = cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
-		}
-		tier.ComprehensiveRate = compRate
-		tier.CostPerMillion = compRate
+		tier.ComprehensiveRate = ResolveComprehensiveRate(cand.PromptCostPerMillion, cand.CompletionCostPerMillion, cand.ComprehensiveRate)
+		tier.CostPerMillion = tier.ComprehensiveRate
 	} else {
 		tier.PromptCostPerMillion = 0
 		tier.CompletionCostPerMillion = 0
 		tier.ComprehensiveRate = 0
 		tier.CostPerMillion = 0
 	}
+}
+
+// WithCandidateModel substitutes a tier's model with an evaluated CandidateModel.
+func (b *CandidateConfigBuilder) WithCandidateModel(tierIdx int, cand CandidateModel) *CandidateConfigBuilder {
+	applyCandidateToTier(&b.cfg.Tiers[tierIdx], cand)
 	return b
 }
 
@@ -157,37 +161,7 @@ func (b *CandidateConfigBuilder) WithModelCandidate(tierIdx int, cand curation.M
 
 // WithDefaultTierCandidateModel substitutes the fallback default tier's model with an evaluated CandidateModel.
 func (b *CandidateConfigBuilder) WithDefaultTierCandidateModel(cand CandidateModel) *CandidateConfigBuilder {
-	dt := &b.cfg.DefaultTier
-	dt.Model = cand.ModelID
-	dt.CodingIndex = cand.CodingIndex
-	dt.ToolReliability = cand.ToolReliability
-	dt.IsFrontier = cand.IsFrontier()
-
-	candVision, candTools := ResolveModelCapabilities(cand.ModelID)
-	if cand.SupportsVision {
-		candVision = true
-	}
-	if cand.SupportsTools {
-		candTools = true
-	}
-	dt.SupportsVision = candVision
-	dt.SupportsTools = candTools
-
-	if !dt.IsLocal {
-		dt.PromptCostPerMillion = cand.PromptCostPerMillion
-		dt.CompletionCostPerMillion = cand.CompletionCostPerMillion
-		compRate := cand.ComprehensiveRate
-		if compRate <= 0 {
-			compRate = cand.PromptCostPerMillion + 0.25*cand.CompletionCostPerMillion
-		}
-		dt.ComprehensiveRate = compRate
-		dt.CostPerMillion = compRate
-	} else {
-		dt.PromptCostPerMillion = 0
-		dt.CompletionCostPerMillion = 0
-		dt.ComprehensiveRate = 0
-		dt.CostPerMillion = 0
-	}
+	applyCandidateToTier(&b.cfg.DefaultTier, cand)
 	return b
 }
 
@@ -196,9 +170,58 @@ func (b *CandidateConfigBuilder) WithDefaultTierModel(cand curation.ModelCurated
 	return b.WithDefaultTierCandidateModel(ConvertProfileToCandidate(cand))
 }
 
+// WithReasoningEffort updates a tier's reasoning effort level and recomputes effective coding index.
+func (b *CandidateConfigBuilder) WithReasoningEffort(tierIdx int, effort string) *CandidateConfigBuilder {
+	t := &b.cfg.Tiers[tierIdx]
+	t.ReasoningEffort = effort
+	baseCoding, _ := ResolveModelBenchmark(t.Model)
+	if baseCoding <= 0 {
+		baseCoding = t.CodingIndex
+	}
+	t.CodingIndex = EffectiveCodingIndex(baseCoding, effort)
+	return b
+}
+
+// WithDefaultTierReasoningEffort updates the fallback default tier's reasoning effort level.
+func (b *CandidateConfigBuilder) WithDefaultTierReasoningEffort(effort string) *CandidateConfigBuilder {
+	t := &b.cfg.DefaultTier
+	t.ReasoningEffort = effort
+	baseCoding, _ := ResolveModelBenchmark(t.Model)
+	if baseCoding <= 0 {
+		baseCoding = t.CodingIndex
+	}
+	t.CodingIndex = EffectiveCodingIndex(baseCoding, effort)
+	return b
+}
+
+// getHigherReasoningEfforts returns laddered escalation levels higher than current.
+func getHigherReasoningEfforts(current string) []string {
+	normalized := strings.ToLower(strings.TrimSpace(current))
+	switch normalized {
+	case "low":
+		return []string{"medium", "high", "max"}
+	case "med", "medium":
+		return []string{"high", "max"}
+	case "high":
+		return []string{"max"}
+	default:
+		return nil
+	}
+}
+
+// containsKeyword checks if target string is in keywords slice using case-insensitive ASCII comparison without allocation.
+func containsKeyword(keywords []string, target string) bool {
+	for _, kw := range keywords {
+		if equalFoldASCII(kw, target) {
+			return true
+		}
+	}
+	return false
+}
+
 // WithExcludedKeyword adds a keyword exclusion to the tier.
 func (b *CandidateConfigBuilder) WithExcludedKeyword(tierIdx int, kw string) *CandidateConfigBuilder {
-	if !hasKeyword([]string{kw}, b.cfg.Tiers[tierIdx].ExcludedKeywords) {
+	if !containsKeyword(b.cfg.Tiers[tierIdx].ExcludedKeywords, kw) {
 		b.cfg.Tiers[tierIdx].ExcludedKeywords = append(b.cfg.Tiers[tierIdx].ExcludedKeywords, kw)
 	}
 	return b
@@ -212,12 +235,15 @@ func (b *CandidateConfigBuilder) Build() MultiTierConfig {
 // repairContext holds intermediate state and buffers during local search repair moves.
 type repairContext struct {
 	opt            *MinConflictsOptimizer
+	policy         TuningPolicy
 	trajectories   []SessionTrajectory
+	recoveryStats  map[string]RecoveryStats
 	bestConflict   float64
 	minValConflict float64
 	bestValCfg     MultiTierConfig
 	tabu           *TabuMemory
 	evalBuf        *MultiTierReplayResult
+	providers      map[string]contract.ProviderConfig
 }
 
 func (rc *repairContext) evalCandidate(candCfg *MultiTierConfig) {
@@ -225,7 +251,7 @@ func (rc *repairContext) evalCandidate(candCfg *MultiTierConfig) {
 		return
 	}
 	h := hashState(candCfg)
-	c := EvaluateFleetConflict(rc.trajectories, candCfg, &rc.opt.policy, rc.evalBuf)
+	c := EvaluateFleetConflict(rc.trajectories, candCfg, &rc.policy, rc.evalBuf)
 	if rc.tabu.Contains(h) && c >= rc.bestConflict {
 		return
 	}
@@ -247,9 +273,13 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		return opt.handleEmptyRecords(currentConfig), nil
 	}
 
-	// if currentConfig.Kickstart.WriteOnly || currentConfig.CycleKiller.KickstartWriteOnly || currentConfig.CycleBreaker.KickstartWriteOnly {
-	// 	opt.policy.WriteOnly = true
-	// }
+	// Propagate WriteOnly policy from active config without mutating shared receiver
+	policy := opt.policy
+	if currentConfig.Kickstart.ReadSlap.WriteOnly {
+		policy.WriteOnly = true
+	}
+	wOpt := *opt
+	wOpt.policy = policy
 
 	// 1. Group records into session trajectories
 	trajectories := GroupBySession(records)
@@ -264,7 +294,7 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	}
 
 	// 1. Analyze high-friction candidate keywords
-	keywordAnalyzer := NewKeywordRiskAnalyzer(opt.policy)
+	keywordAnalyzer := NewKeywordRiskAnalyzer(policy)
 	candidateKeywords := keywordAnalyzer.Analyze(records)
 	if len(candidateKeywords) > 8 {
 		candidateKeywords = candidateKeywords[:8]
@@ -280,8 +310,8 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 
 	// 3. Evaluate initial baseline
 	var baselineBuf MultiTierReplayResult
-	ReplayMultiTierFleet(trajectories, &currentCfg, &opt.policy, &baselineBuf)
-	baselineConflict := EvaluateFleetConflict(trajectories, &currentCfg, &opt.policy, &baselineBuf)
+	ReplayMultiTierFleet(trajectories, &currentCfg, &policy, &baselineBuf)
+	baselineConflict := EvaluateFleetConflict(trajectories, &currentCfg, &policy, &baselineBuf)
 
 	bestCfg := copyMultiTierConfig(&currentCfg)
 	bestConflict := baselineConflict
@@ -299,15 +329,19 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	// #nosec G404 - pseudo-random epsilon perturbation for heuristic search
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
+	recoveryStats := AnalyzeRecovery(trajectories)
 	rc := repairContext{
-		opt:          opt,
-		trajectories: trajectories,
-		tabu:         tabu,
-		evalBuf:      &evalBuf,
+		opt:           &wOpt,
+		policy:        policy,
+		trajectories:  trajectories,
+		recoveryStats: recoveryStats,
+		tabu:          tabu,
+		evalBuf:       &evalBuf,
+		providers:     currentConfig.Providers,
 	}
 
 	for iter := 0; iter < maxIterations; iter++ {
-		report := EvaluateFleetWithAttribution(trajectories, &currentCfg, &opt.policy, candidateKeywords)
+		report := EvaluateFleetWithAttribution(trajectories, &currentCfg, &policy, candidateKeywords)
 		if report.TotalConflict == 0 {
 			break
 		}
@@ -360,34 +394,7 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		rc.bestValCfg = copyMultiTierConfig(&currentCfg)
 
 		for _, cv := range candidateVars {
-			targetVar := cv.name
-
-			if strings.HasPrefix(targetVar, "tier_") {
-				parts := strings.Split(targetVar, ":")
-				if len(parts) == 2 {
-					tierIdxStr := strings.TrimPrefix(parts[0], "tier_")
-					attr := parts[1]
-					tierIdx, err := strconv.Atoi(tierIdxStr)
-					if err == nil && tierIdx >= 0 && tierIdx < len(currentCfg.Tiers) && !currentCfg.Tiers[tierIdx].IsDisabled {
-						switch attr {
-						case "tokens":
-							opt.repairTokens(&currentCfg, tierIdx, &rc)
-						case "retries":
-							opt.repairRetries(&currentCfg, tierIdx, &rc)
-						case "tools", "images":
-							opt.repairModalityGates(&currentCfg, tierIdx, attr, &rc)
-						case "model":
-							opt.repairModelOrPrune(&currentCfg, tierIdx, &rc)
-						}
-					}
-				}
-			} else if strings.HasPrefix(targetVar, "keyword:") {
-				kw := strings.TrimPrefix(targetVar, "keyword:")
-				opt.repairKeyword(&currentCfg, kw, &rc)
-			} else if targetVar == "default_tier:model" {
-				opt.repairDefaultTierModel(&currentCfg, currentConfig, &rc)
-			}
-
+			wOpt.dispatchRepairMove(cv.name, &currentCfg, currentConfig, &rc)
 			if rc.minValConflict < report.TotalConflict {
 				break
 			}
@@ -399,17 +406,84 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 		if rc.minValConflict < bestConflict {
 			bestConflict = rc.minValConflict
 			bestCfg = copyMultiTierConfig(&currentCfg)
+			consecutiveStagnations = 0
 		}
 	}
 
 	// 5b. Post-CSP model substitution sweep for active cloud tiers.
-	opt.sweepModelReplacements(trajectories, &bestCfg, &evalBuf, &bestConflict)
+	wOpt.sweepModelReplacements(trajectories, &bestCfg, &evalBuf, &bestConflict, currentConfig.Providers)
 
 	// 6. Synthesize final multi-tier rules and impact metrics
 	var finalBuf MultiTierReplayResult
-	ReplayMultiTierFleet(trajectories, &bestCfg, &opt.policy, &finalBuf)
+	ReplayMultiTierFleet(trajectories, &bestCfg, &policy, &finalBuf)
 
-	return opt.synthesizeTuningResult(currentConfig, initialCfg, bestCfg, baselineBuf, finalBuf, trajectories, initialDominance)
+	return wOpt.synthesizeTuningResult(currentConfig, initialCfg, bestCfg, baselineBuf, finalBuf, trajectories, initialDominance, recoveryStats)
+}
+
+// dispatchRepairMove dispatches a single variable repair step based on targetVar name.
+func (opt *MinConflictsOptimizer) dispatchRepairMove(
+	targetVar string,
+	currentCfg *MultiTierConfig,
+	currentConfig *contract.Config,
+	rc *repairContext,
+) {
+	if strings.HasPrefix(targetVar, "tier_") {
+		parts := strings.Split(targetVar, ":")
+		if len(parts) == 2 {
+			tierIdxStr := strings.TrimPrefix(parts[0], "tier_")
+			attr := parts[1]
+			tierIdx, err := strconv.Atoi(tierIdxStr)
+			if err == nil && tierIdx >= 0 && tierIdx < len(currentCfg.Tiers) && !currentCfg.Tiers[tierIdx].IsDisabled {
+				switch attr {
+				case "tokens":
+					opt.repairTokens(currentCfg, tierIdx, rc)
+				case "retries":
+					opt.repairRetries(currentCfg, tierIdx, rc)
+				case "tools", "images":
+					opt.repairModalityGates(currentCfg, tierIdx, attr, rc)
+				case "model":
+					opt.repairModelOrPrune(currentCfg, tierIdx, rc)
+				}
+			}
+		}
+		return
+	}
+	if strings.HasPrefix(targetVar, "keyword:") {
+		kw := strings.TrimPrefix(targetVar, "keyword:")
+		opt.repairKeyword(currentCfg, kw, rc)
+		return
+	}
+	if targetVar == "default_tier:model" {
+		opt.repairDefaultTierModel(currentCfg, currentConfig, rc)
+	}
+}
+
+// findImmediateNeighbors returns the non-disabled predecessor and successor tiers for the given index.
+func findImmediateNeighbors(tiers []TierReplayConfig, idx int) (pred, succ *TierReplayConfig) {
+	for j := idx - 1; j >= 0; j-- {
+		if !tiers[j].IsDisabled {
+			pred = &tiers[j]
+			break
+		}
+	}
+	for j := idx + 1; j < len(tiers); j++ {
+		if !tiers[j].IsDisabled {
+			succ = &tiers[j]
+			break
+		}
+	}
+	return pred, succ
+}
+
+// resolveTierRole determines the operational role for candidate matching based on tier capabilities and escalation status.
+func resolveTierRole(t *TierReplayConfig, isEscalation bool) curation.TierRole {
+	if t.RequiresImages || (t.SupportsVision && !t.SupportsTools) {
+		return curation.RoleVisionWorkhorse
+	}
+	if t.IsFrontier || IsFrontierModel(t.Model) || isEscalation {
+		return curation.RoleGeneral
+	}
+	return curation.RoleCodingWorkhorse
 }
 
 // sweepModelReplacements performs a post-CSP pass over active cloud tiers with spend,
@@ -419,6 +493,7 @@ func (opt *MinConflictsOptimizer) sweepModelReplacements(
 	bestCfg *MultiTierConfig,
 	evalBuf *MultiTierReplayResult,
 	bestConflict *float64,
+	providers map[string]contract.ProviderConfig,
 ) {
 	ReplayMultiTierFleet(trajectories, bestCfg, &opt.policy, evalBuf)
 	for i := 0; i < len(bestCfg.Tiers); i++ {
@@ -434,27 +509,18 @@ func (opt *MinConflictsOptimizer) sweepModelReplacements(
 			continue
 		}
 
-		var immediatePred *TierReplayConfig
-		for j := i - 1; j >= 0; j-- {
-			if !bestCfg.Tiers[j].IsDisabled {
-				immediatePred = &bestCfg.Tiers[j]
-				break
-			}
-		}
-		var immediateSucc *TierReplayConfig
-		for j := i + 1; j < len(bestCfg.Tiers); j++ {
-			if !bestCfg.Tiers[j].IsDisabled {
-				immediateSucc = &bestCfg.Tiers[j]
-				break
-			}
+		immediatePred, immediateSucc := findImmediateNeighbors(bestCfg.Tiers, i)
+
+		// Invariance: Do not perform single-tier model replacement if this tier shares its model
+		// with an adjacent predecessor or successor tier with differential reasoning effort.
+		// Doing so would shatter KV prompt cache stickiness.
+		isReasoningEscalationChain := (immediatePred != nil && immediatePred.Model == t.Model && immediatePred.ReasoningEffort != t.ReasoningEffort && t.ReasoningEffort != "") ||
+			(immediateSucc != nil && immediateSucc.Model == t.Model && immediateSucc.ReasoningEffort != t.ReasoningEffort && t.ReasoningEffort != "")
+		if isReasoningEscalationChain {
+			continue
 		}
 
-		tierRole := curation.RoleCodingWorkhorse
-		if t.RequiresImages || (t.SupportsVision && !t.SupportsTools) {
-			tierRole = curation.RoleVisionWorkhorse
-		} else if t.IsFrontier {
-			tierRole = curation.RoleGeneral
-		}
+		tierRole := resolveTierRole(t, false)
 
 		candidates := CollectCandidateModels(tierRole, t.IsLocal, t.Model, opt.policy.LocalVRAMGB, opt.policy.CandidateDeals)
 		pipeline := NewDefaultFilterPipeline()
@@ -470,6 +536,7 @@ func (opt *MinConflictsOptimizer) sweepModelReplacements(
 				ImmediatePred: immediatePred,
 				ImmediateSucc: immediateSucc,
 				Policy:        &opt.policy,
+				Providers:     providers,
 			}
 			if passed, _ := pipeline.Evaluate(fCtx); !passed {
 				continue
@@ -499,6 +566,11 @@ func (opt *MinConflictsOptimizer) sweepModelReplacements(
 
 // repairTokens explores candidate context thresholds for a tier.
 func (opt *MinConflictsOptimizer) repairTokens(currentCfg *MultiTierConfig, tierIdx int, rc *repairContext) {
+	// Only mutate token cliffs for local GPU tiers (to prevent VRAM OOM).
+	// Never artificially clamp cloud workhorses with 1M context down to 64k.
+	if !currentCfg.Tiers[tierIdx].IsLocal {
+		return
+	}
 	for _, candT := range TokenCandidateValues {
 		if currentCfg.Tiers[tierIdx].MaxContext > 0 && candT > currentCfg.Tiers[tierIdx].MaxContext {
 			continue
@@ -512,7 +584,20 @@ func (opt *MinConflictsOptimizer) repairTokens(currentCfg *MultiTierConfig, tier
 
 // repairRetries explores candidate retry bounds for a tier.
 func (opt *MinConflictsOptimizer) repairRetries(currentCfg *MultiTierConfig, tierIdx int, rc *repairContext) {
-	for _, candR := range RetryCandidateValues {
+	cands := RetryCandidateValues
+	model := currentCfg.Tiers[tierIdx].Model
+	if rc.recoveryStats != nil && model != "" {
+		if stat, ok := rc.recoveryStats[model]; ok && stat.TotalFailures > 0 {
+			if stat.SelfRecoveryRate < 0.20 {
+				cands = []int{1, 2}
+			} else if stat.AvgTurnsToRecover <= 2.0 {
+				cands = []int{2, 3, 4}
+			} else {
+				cands = []int{3, 4, 6}
+			}
+		}
+	}
+	for _, candR := range cands {
 		candCfg := NewCandidateBuilder(currentCfg).
 			WithRetryBound(tierIdx, candR).
 			Build()
@@ -537,7 +622,7 @@ func (opt *MinConflictsOptimizer) repairModalityGates(currentCfg *MultiTierConfi
 // repairModelOrPrune explores autonomous tier pruning and Pareto candidate model substitutions.
 func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig, tierIdx int, rc *repairContext) {
 	// Preserve local model unless user explicitly requests local VRAM model substitution
-	if currentCfg.Tiers[tierIdx].IsLocal && opt.policy.LocalVRAMGB == 0 {
+	if currentCfg.Tiers[tierIdx].IsLocal && rc.policy.LocalVRAMGB == 0 {
 		return
 	}
 
@@ -565,47 +650,64 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 	isFrontier := currentCfg.Tiers[tierIdx].IsFrontier || IsFrontierModel(currentCfg.Tiers[tierIdx].Model)
 	isEscalationTier := currentCfg.Tiers[tierIdx].RetryFloor > 0 || (immediatePred != nil && immediatePred.CodingIndex >= 70.0)
 
+	// Invariance Guard: Do NOT prune an escalation tier if it steps reasoning effort
+	// over its predecessor (e.g. glm-5.3-flash low -> high -> max).
+	isReasoningEscalation := immediatePred != nil &&
+		immediatePred.Model == currentCfg.Tiers[tierIdx].Model &&
+		immediatePred.ReasoningEffort != currentCfg.Tiers[tierIdx].ReasoningEffort &&
+		currentCfg.Tiers[tierIdx].ReasoningEffort != ""
+
 	// Autonomous Tier Pruning Candidate:
 	// Try disabling this intermediate escalation tier entirely.
 	// Whichever produces lower total fleet conflict C(X) wins.
-	if isEscalationTier && tierIdx > 0 && tierIdx < len(currentCfg.Tiers)-1 {
+	if isEscalationTier && !isReasoningEscalation && tierIdx > 0 && tierIdx < len(currentCfg.Tiers)-1 {
 		candCfg := NewCandidateBuilder(currentCfg).
 			WithPrunedTier(tierIdx).
 			Build()
-		if CheckHardConstraints(&candCfg) {
-			h := hashState(&candCfg)
-			c := EvaluateFleetConflict(rc.trajectories, &candCfg, &rc.opt.policy, rc.evalBuf)
-			if !(rc.tabu.Contains(h) && c >= rc.bestConflict) && c < rc.minValConflict {
-				rc.minValConflict = c
-				rc.bestValCfg = candCfg
-			}
-		}
+		rc.evalCandidate(&candCfg)
 	}
 
-	tierRole := curation.RoleCodingWorkhorse
-	if currentCfg.Tiers[tierIdx].RequiresImages || (currentCfg.Tiers[tierIdx].SupportsVision && !currentCfg.Tiers[tierIdx].SupportsTools) {
-		tierRole = curation.RoleVisionWorkhorse
-	} else if isFrontier || isEscalationTier {
-		tierRole = curation.RoleGeneral
+	// Invariance Guard: Do not perform single-tier model candidate replacement
+	// on an intermediate tier in a same-model reasoning chain
+	if isReasoningEscalation {
+		return
 	}
+
+	initialTierConflicts := CountFleetDominanceConflicts(currentCfg)
+
+	// Try laddering reasoning effort on the existing tier model first before model substitution
+	higherEfforts := getHigherReasoningEfforts(currentCfg.Tiers[tierIdx].ReasoningEffort)
+	solvedViaTierReasoning := false
+	for _, effort := range higherEfforts {
+		candCfg := NewCandidateBuilder(currentCfg).
+			WithReasoningEffort(tierIdx, effort).
+			Build()
+		if initialTierConflicts > 0 && CountFleetDominanceConflicts(&candCfg) == 0 {
+			rc.evalCandidate(&candCfg)
+			solvedViaTierReasoning = true
+			break
+		}
+		rc.evalCandidate(&candCfg)
+	}
+
+	if solvedViaTierReasoning {
+		// Prefer same-model reasoning escalation over external model swap
+		return
+	}
+
+	tierRole := resolveTierRole(&currentCfg.Tiers[tierIdx], isEscalationTier)
 	candidates := CollectCandidateModels(
 		tierRole,
 		currentCfg.Tiers[tierIdx].IsLocal,
 		currentCfg.Tiers[tierIdx].Model,
-		opt.policy.LocalVRAMGB,
-		opt.policy.CandidateDeals,
+		rc.policy.LocalVRAMGB,
+		rc.policy.CandidateDeals,
 	)
 
 	pipeline := NewDefaultFilterPipeline()
 	scorer := &CompositeValueScorer{}
 
-	var immediateSucc *TierReplayConfig
-	for j := tierIdx + 1; j < len(currentCfg.Tiers); j++ {
-		if !currentCfg.Tiers[j].IsDisabled {
-			immediateSucc = &currentCfg.Tiers[j]
-			break
-		}
-	}
+	_, immediateSucc := findImmediateNeighbors(currentCfg.Tiers, tierIdx)
 
 	for _, cand := range candidates {
 		if cand.ModelID == currentCfg.Tiers[tierIdx].Model {
@@ -622,16 +724,22 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 			Candidate:     &cand,
 			ImmediatePred: immediatePred,
 			ImmediateSucc: immediateSucc,
-			Policy:        &opt.policy,
+			Policy:        &rc.policy,
+			Providers:     rc.providers,
 		}
-		if passed, _ := pipeline.Evaluate(fCtx); !passed {
+		candEffCoding := cand.CodingIndex
+		if passed, reason := pipeline.Evaluate(fCtx); !passed {
+			// Hard filters: provider incompatibility, local tier protection, and nil context must NEVER be bypassed
+			if strings.HasPrefix(reason, "provider_") || reason == "local_tier_protected" || reason == "nil_context" {
+				continue
+			}
 			// For escalation tiers resolving capability failures, allow benchmark leap if frontier or meets escalation gain
-			minGain := opt.policy.MinEscalationGainPct
+			minGain := rc.policy.MinEscalationGainPct
 			if minGain <= 0 {
 				minGain = 0.05
 			}
 			isEscalationUpgrade := isEscalationTier && immediatePred != nil &&
-				(cand.IsFrontier() || cand.CodingIndex >= immediatePred.CodingIndex*(1.0+minGain))
+				(cand.IsFrontier() || candEffCoding >= immediatePred.CodingIndex*(1.0+minGain))
 			if !isEscalationUpgrade {
 				continue
 			}
@@ -639,10 +747,10 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 
 		// Frontier tier protection: never downgrade a frontier tier to a non-frontier or lower-benchmark model
 		if isFrontier {
-			if !cand.IsFrontier() && cand.CodingIndex < 80.0 {
+			if !cand.IsFrontier() && candEffCoding < 80.0 {
 				continue
 			}
-			if currentCfg.Tiers[tierIdx].CodingIndex > 0 && cand.CodingIndex < currentCfg.Tiers[tierIdx].CodingIndex {
+			if currentCfg.Tiers[tierIdx].CodingIndex > 0 && candEffCoding < currentCfg.Tiers[tierIdx].CodingIndex {
 				continue
 			}
 			if currentCfg.Tiers[tierIdx].ToolReliability > 0 && cand.ToolReliability < currentCfg.Tiers[tierIdx].ToolReliability {
@@ -658,7 +766,7 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 			continue
 		}
 		h := hashState(&candCfg)
-		c := EvaluateFleetConflict(rc.trajectories, &candCfg, &rc.opt.policy, rc.evalBuf)
+		c := EvaluateFleetConflict(rc.trajectories, &candCfg, &rc.policy, rc.evalBuf)
 		if rc.tabu.Contains(h) && c >= rc.bestConflict {
 			continue
 		}
@@ -688,18 +796,64 @@ func (opt *MinConflictsOptimizer) repairKeyword(currentCfg *MultiTierConfig, kw 
 	}
 }
 
-// repairDefaultTierModel explores Pareto candidate substitutions on the fallback tier.
+// repairDefaultTierModel explores Pareto candidate substitutions and reasoning escalation on the fallback tier.
 func (opt *MinConflictsOptimizer) repairDefaultTierModel(currentCfg *MultiTierConfig, currentConfig *contract.Config, rc *repairContext) {
+	initialDefConflicts := CountFleetDominanceConflicts(currentCfg)
+
+	// Try laddering reasoning effort on the existing fallback model first before model substitution
+	higherEfforts := getHigherReasoningEfforts(currentCfg.DefaultTier.ReasoningEffort)
+	solvedViaReasoning := false
+	for _, effort := range higherEfforts {
+		candCfg := NewCandidateBuilder(currentCfg).
+			WithDefaultTierReasoningEffort(effort).
+			Build()
+		if initialDefConflicts > 0 && CountFleetDominanceConflicts(&candCfg) == 0 {
+			rc.evalCandidate(&candCfg)
+			solvedViaReasoning = true
+			break
+		}
+		rc.evalCandidate(&candCfg)
+	}
+
+	if solvedViaReasoning {
+		// Prefer same-model reasoning escalation over external model swap to preserve prompt cache stickiness
+		return
+	}
+
 	isFrontierFallback := currentCfg.DefaultTier.IsFrontier || IsFrontierModel(currentConfig.DefaultTier.Model)
+	highestPredCoding := HighestPredecessorCodingIndex(currentCfg)
+
+	// Collect models already utilized as early kickoff / utility tiers (lateral, kickoff, vision)
+	earlyUtilityModels := make(map[string]bool)
+	for i := range currentCfg.Tiers {
+		t := &currentCfg.Tiers[i]
+		if t.IsDisabled {
+			continue
+		}
+		if t.RequiresKickstart || t.RequiresImages || t.MessageCountMax > 0 {
+			earlyUtilityModels[t.Model] = true
+		}
+	}
 
 	candidates := curation.DefaultManager().ParetoCandidates(
 		curation.RoleGeneral,
 		currentCfg.DefaultTier.IsLocal,
 		currentCfg.DefaultTier.Model,
-		opt.policy.LocalVRAMGB,
+		rc.policy.LocalVRAMGB,
 	)
 	for _, cand := range candidates {
 		if cand.ModelID == currentCfg.DefaultTier.Model {
+			continue
+		}
+		if !IsModelCompatibleWithProvider(cand.ModelID, currentCfg.DefaultTier.Provider, currentCfg.DefaultTier.IsLocal, rc.providers) {
+			continue
+		}
+		// A tier already used as an early kickoff/utility tier with lower capability than the cascade
+		// must never replace the cascade/fallback tier
+		if earlyUtilityModels[cand.ModelID] && highestPredCoding > 0 && cand.CodingIndex <= highestPredCoding {
+			continue
+		}
+		if highestPredCoding > 0 && cand.CodingIndex < highestPredCoding {
 			continue
 		}
 		if isFrontierFallback {
@@ -739,7 +893,7 @@ func (opt *MinConflictsOptimizer) handleEmptyRecords(currentConfig *contract.Con
 				Model:                    tier.Model,
 				OriginalModel:            tier.Model,
 				RecommendedModel:         tier.Model,
-				CodingIndex:              codingIndex,
+				CodingIndex:              math.Round(codingIndex*100) / 100,
 				ToolReliability:          toolReliability,
 				PromptCostPerMillion:     promptCost,
 				CompletionCostPerMillion: compCost,
@@ -765,7 +919,7 @@ func (opt *MinConflictsOptimizer) handleEmptyRecords(currentConfig *contract.Con
 			Model:                    tier.Model,
 			OriginalModel:            tier.Model,
 			RecommendedModel:         tier.Model,
-			CodingIndex:              codingIndex,
+			CodingIndex:              math.Round(codingIndex*100) / 100,
 			ToolReliability:          toolReliability,
 			PromptCostPerMillion:     promptCost,
 			CompletionCostPerMillion: compCost,
@@ -781,190 +935,206 @@ func (opt *MinConflictsOptimizer) handleEmptyRecords(currentConfig *contract.Con
 	}
 }
 
-// synthesizeTuningResult transforms the winning CSP configuration into human-readable TuningResults and AST rules.
-func (opt *MinConflictsOptimizer) synthesizeTuningResult(
-	currentConfig *contract.Config,
-	initialCfg MultiTierConfig,
-	bestCfg MultiTierConfig,
-	baselineBuf MultiTierReplayResult,
-	finalBuf MultiTierReplayResult,
-	trajectories []SessionTrajectory,
-	initialDominance []StaticDominanceConflict,
-) (*TuningResult, error) {
-	var tierResults []TierTuningResult
-	for i, tier := range bestCfg.Tiers {
-		var origWhen, origModel string
-		if i < len(currentConfig.Tiers) {
-			origWhen = currentConfig.Tiers[i].When
-			origModel = currentConfig.Tiers[i].Model
-		}
+// isTierRoutingUnchanged checks if candidate tier routing limits match the original baseline tier.
+func isTierRoutingUnchanged(tier, origTier *TierReplayConfig) bool {
+	if tier == nil || origTier == nil {
+		return false
+	}
+	return tier.TokenThreshold == origTier.TokenThreshold &&
+		tier.RetryBound == origTier.RetryBound &&
+		tier.RestrictImages == origTier.RestrictImages &&
+		tier.RestrictTools == origTier.RestrictTools &&
+		tier.MessageCountMax == origTier.MessageCountMax &&
+		tier.RequiresTestFail == origTier.RequiresTestFail &&
+		tier.ProhibitsTestFail == origTier.ProhibitsTestFail &&
+		equalStringSlices(tier.ExcludedKeywords, origTier.ExcludedKeywords)
+}
 
-		isDisabled := tier.IsDisabled || strings.TrimSpace(origWhen) == "false"
-		if clean := strings.TrimSpace(origWhen); clean != "" && clean != "false" {
-			if _, err := parser.Parse(clean); err != nil {
-				return nil, fmt.Errorf("failed to rewrite AST for tier %q: %w", tier.TierName, err)
-			}
+// synthesizeTierRule generates the new AST when expression for a tuned tier.
+func synthesizeTierRule(
+	origWhen string,
+	tier *TierReplayConfig,
+	origTier *TierReplayConfig,
+	hasOrig bool,
+	turnsRouted int,
+	isDisabled bool,
+) (string, error) {
+	if isDisabled {
+		tier.TokenThreshold = 0
+		tier.RetryBound = 0
+		return "false", nil
+	}
+	if turnsRouted == 0 {
+		// Zero traffic reached this tier during replay -> preserve original rule and thresholds strictly
+		if hasOrig {
+			tier.TokenThreshold = origTier.TokenThreshold
+			tier.RetryBound = origTier.RetryBound
+			tier.RestrictImages = origTier.RestrictImages
+			tier.RestrictTools = origTier.RestrictTools
+			tier.ExcludedKeywords = origTier.ExcludedKeywords
 		}
-
-		var routingUnchanged bool
-		var origTier TierReplayConfig
-		var hasOrigTier bool
-		if i < len(initialCfg.Tiers) {
-			origTier = initialCfg.Tiers[i]
-			hasOrigTier = true
-			routingUnchanged = (tier.TokenThreshold == origTier.TokenThreshold &&
-				tier.RetryBound == origTier.RetryBound &&
-				tier.RestrictImages == origTier.RestrictImages &&
-				tier.RestrictTools == origTier.RestrictTools &&
-				equalStringSlices(tier.ExcludedKeywords, origTier.ExcludedKeywords))
+		return origWhen, nil
+	}
+	if hasOrig && tier.Model != origTier.Model {
+		if origTier.SupportsVision && !tier.SupportsVision && !tier.RequiresImages {
+			tier.RestrictImages = true
 		}
-
-		var synthRule string
-		if isDisabled {
-			synthRule = "false"
-			tier.TokenThreshold = 0
-			tier.RetryBound = 0
-		} else if routingUnchanged {
-			synthRule = origWhen
-		} else if i < len(finalBuf.TierStats) && finalBuf.TierStats[i].TurnsRouted == 0 {
-			// Zero traffic reached this tier during replay -> preserve original rule and thresholds strictly
-			synthRule = origWhen
-			if hasOrigTier {
-				tier.TokenThreshold = origTier.TokenThreshold
-				tier.RetryBound = origTier.RetryBound
-				tier.RestrictImages = origTier.RestrictImages
-				tier.RestrictTools = origTier.RestrictTools
-				tier.ExcludedKeywords = origTier.ExcludedKeywords
-			}
-		} else {
-			var err error
-			synthRule, err = RewriteRuleAST(
-				origWhen,
-				tier.TokenThreshold,
-				tier.RetryBound,
-				tier.ExcludedKeywords,
-				tier.RestrictImages,
-				tier.RestrictTools,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to rewrite AST for tier %q: %w", tier.TierName, err)
-			}
+		if origTier.SupportsTools && !tier.SupportsTools && !tier.RequiresTools {
+			tier.RestrictTools = true
 		}
-
-		recModel := tier.Model
-		var modelBenefit string
-		if isDisabled && origModel != "" && strings.TrimSpace(origWhen) != "false" {
-			origCoding, _ := ResolveModelBenchmark(origModel)
-			var predCoding float64
-			for j := i - 1; j >= 0; j-- {
-				if !bestCfg.Tiers[j].IsDisabled {
-					predCoding = bestCfg.Tiers[j].CodingIndex
-					break
-				}
-			}
-			gainPct := 0.0
-			if predCoding > 0 && origCoding > 0 {
-				gainPct = ((origCoding - predCoding) / predCoding) * 100.0
-			}
-			sign := "+"
-			if gainPct < 0 {
-				sign = ""
-			}
-			modelBenefit = fmt.Sprintf(
-				"Redundant Escalation Tier Bypassed: Capability gain over predecessor (%s%.1f%%) does not justify intermediate retry burn; bypassing saves wasted turns",
-				sign, gainPct,
-			)
-			recModel = origModel
-		} else if recModel != "" && recModel != origModel {
-			origCoding, _ := ResolveModelBenchmark(origModel)
-			origPrompt, origComp, origCompRate := ResolveModelRates(origModel, tier.IsLocal)
-			if !tier.IsLocal && (tier.ComprehensiveRate < origCompRate || tier.PromptCostPerMillion < origPrompt || tier.CompletionCostPerMillion < origComp) {
-				savingsPct := 0.0
-				if origCompRate > 0 {
-					savingsPct = ((origCompRate - tier.ComprehensiveRate) / origCompRate) * 100.0
-				}
-				if tier.CodingIndex > origCoding {
-					gainPct := 0.0
-					if origCoding > 0 {
-						gainPct = ((tier.CodingIndex - origCoding) / origCoding) * 100.0
-					}
-					modelBenefit = fmt.Sprintf(BenefitMsgWithCognitiveGain, tier.CodingIndex, origCoding, gainPct, savingsPct, tier.ComprehensiveRate, origCompRate)
-				} else {
-					modelBenefit = fmt.Sprintf(BenefitMsgAtCognitiveParity, tier.CodingIndex, savingsPct, tier.ComprehensiveRate, origCompRate)
-				}
-			} else if tier.CodingIndex > origCoding {
-				deltaCoding := tier.CodingIndex - origCoding
-				deltaCostPerM := tier.ComprehensiveRate - origCompRate
-				gainPct := (deltaCoding / origCoding) * 100.0
-				if deltaCostPerM > 0.01 {
-					efficiency := deltaCoding / deltaCostPerM
-					modelBenefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f (+%.1f%%, %.1f pts/$M)", origCoding, tier.CodingIndex, gainPct, efficiency)
-				} else {
-					modelBenefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f (+%.1f%%) at no additional cost", origCoding, tier.CodingIndex, gainPct)
-				}
-			} else {
-				modelBenefit = "Optimizes fleet cost-to-performance frontier"
-			}
-		}
-
-		tierResults = append(tierResults, TierTuningResult{
-			TierName:                 tier.TierName,
-			Model:                    recModel,
-			OriginalModel:            origModel,
-			RecommendedModel:         recModel,
-			ModelBenefit:             modelBenefit,
-			CodingIndex:              tier.CodingIndex,
-			ToolReliability:          tier.ToolReliability,
-			PromptCostPerMillion:     tier.PromptCostPerMillion,
-			CompletionCostPerMillion: tier.CompletionCostPerMillion,
-			ComprehensiveRate:        tier.ComprehensiveRate,
-			IsDisabled:               isDisabled,
-			OptimalThreshold:         tier.TokenThreshold,
-			OptimalRetries:           tier.RetryBound,
-			FrictionKeywords:         tier.ExcludedKeywords,
-			RestrictImages:           tier.RestrictImages,
-			RestrictTools:            tier.RestrictTools,
-			OriginalRule:             origWhen,
-			SynthesizedRule:          synthRule,
-		})
+	}
+	if hasOrig && isTierRoutingUnchanged(tier, origTier) {
+		return origWhen, nil
 	}
 
-	var defaultTierResult *TierTuningResult
+	if tier.Model != "" && !tier.SupportsVision && !tier.RequiresImages {
+		tier.RestrictImages = true
+	}
+	if tier.Model != "" && !tier.SupportsTools && !tier.RequiresTools {
+		tier.RestrictTools = true
+	}
+	synthRule, err := RewriteRuleAST(
+		origWhen,
+		tier.TokenThreshold,
+		tier.RetryBound,
+		tier.ExcludedKeywords,
+		tier.RestrictImages,
+		tier.RestrictTools,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to rewrite AST for tier %q: %w", tier.TierName, err)
+	}
+	return synthRule, nil
+}
+
+// formatModelBenefit computes human-readable explanation of why a model or pruning was recommended.
+func formatModelBenefit(
+	tier, origTier *TierReplayConfig,
+	bestCfg *MultiTierConfig,
+	tierIdx int,
+	isDisabled bool,
+	origModel, origWhen string,
+) (recModel string, benefit string) {
+	recModel = tier.Model
+	if isDisabled && origModel != "" && strings.TrimSpace(origWhen) != "false" {
+		origCoding, _ := ResolveModelBenchmark(origModel)
+		if origTier != nil {
+			origCoding = EffectiveCodingIndex(origCoding, origTier.ReasoningEffort)
+		}
+		var predCoding float64
+		pred, _ := findImmediateNeighbors(bestCfg.Tiers, tierIdx)
+		if pred != nil {
+			predCoding = pred.CodingIndex
+		}
+		gainPct := 0.0
+		if predCoding > 0 && origCoding > 0 {
+			gainPct = ((origCoding - predCoding) / predCoding) * 100.0
+		}
+		sign := "+"
+		if gainPct < 0 {
+			sign = ""
+		}
+		benefit = fmt.Sprintf(
+			"Redundant Escalation Tier Bypassed: Capability gain over predecessor (%s%.1f%%) does not justify intermediate retry burn; bypassing saves wasted turns",
+			sign, gainPct,
+		)
+		return origModel, benefit
+	}
+
+	if recModel == "" || recModel == origModel {
+		return recModel, ""
+	}
+
+	origCoding, _ := ResolveModelBenchmark(origModel)
+	if origTier != nil {
+		origCoding = EffectiveCodingIndex(origCoding, origTier.ReasoningEffort)
+	}
+	origPrompt, origComp, origCompRate := ResolveModelRates(origModel, tier.IsLocal)
+	if !tier.IsLocal && (tier.ComprehensiveRate < origCompRate || tier.PromptCostPerMillion < origPrompt || tier.CompletionCostPerMillion < origComp) {
+		savingsPct := 0.0
+		if origCompRate > 0 {
+			savingsPct = ((origCompRate - tier.ComprehensiveRate) / origCompRate) * 100.0
+		}
+		if tier.CodingIndex > origCoding {
+			gainPct := 0.0
+			if origCoding > 0 {
+				gainPct = ((tier.CodingIndex - origCoding) / origCoding) * 100.0
+			}
+			benefit = fmt.Sprintf(BenefitMsgWithCognitiveGain, tier.CodingIndex, origCoding, gainPct, savingsPct, tier.ComprehensiveRate, origCompRate)
+		} else {
+			benefit = fmt.Sprintf(BenefitMsgAtCognitiveParity, tier.CodingIndex, savingsPct, tier.ComprehensiveRate, origCompRate)
+		}
+	} else if tier.CodingIndex > origCoding {
+		deltaCoding := tier.CodingIndex - origCoding
+		deltaCostPerM := tier.ComprehensiveRate - origCompRate
+		gainPct := (deltaCoding / origCoding) * 100.0
+		if deltaCostPerM > 0.01 {
+			efficiency := deltaCoding / deltaCostPerM
+			benefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f (+%.1f%%, %.1f pts/$M)", origCoding, tier.CodingIndex, gainPct, efficiency)
+		} else {
+			benefit = fmt.Sprintf("Improves coding benchmark from %.1f to %.1f (+%.1f%%) at no additional cost", origCoding, tier.CodingIndex, gainPct)
+		}
+	} else {
+		benefit = "Optimizes fleet cost-to-performance frontier"
+	}
+	return recModel, benefit
+}
+
+// buildDefaultTierResult synthesizes recommendations for the fallback default tier if upgraded.
+func buildDefaultTierResult(currentConfig *contract.Config, bestCfg *MultiTierConfig) *TierTuningResult {
 	origDefModel := currentConfig.DefaultTier.Model
 	recDefModel := bestCfg.DefaultTier.Model
-	if recDefModel != "" && recDefModel != origDefModel {
-		origDefCoding, _ := ResolveModelBenchmark(origDefModel)
-		var defBenefit string
-		if bestCfg.DefaultTier.CodingIndex > origDefCoding {
-			defBenefit = fmt.Sprintf("Improves fallback benchmark from %.1f to %.1f", origDefCoding, bestCfg.DefaultTier.CodingIndex)
+	origDefReasoning := currentConfig.DefaultTier.ReasoningEffort
+	recDefReasoning := bestCfg.DefaultTier.ReasoningEffort
+
+	modelChanged := recDefModel != "" && recDefModel != origDefModel
+	reasoningChanged := recDefReasoning != "" && recDefReasoning != origDefReasoning
+
+	if !modelChanged && !reasoningChanged {
+		return nil
+	}
+	origDefCoding, _ := ResolveModelBenchmark(origDefModel)
+	origDefCoding = EffectiveCodingIndex(origDefCoding, origDefReasoning)
+	var defBenefit string
+	if bestCfg.DefaultTier.CodingIndex > origDefCoding {
+		if reasoningChanged && !modelChanged {
+			origDisplay := origDefReasoning
+			if origDisplay == "" {
+				origDisplay = "standard"
+			}
+			defBenefit = fmt.Sprintf("Improves fallback benchmark from %.1f to %.1f (escalates reasoning: %s -> %s)", origDefCoding, bestCfg.DefaultTier.CodingIndex, origDisplay, recDefReasoning)
 		} else {
-			defBenefit = "Reduces fallback cloud cost while preserving reasoning capability"
+			defBenefit = fmt.Sprintf("Improves fallback benchmark from %.1f to %.1f", origDefCoding, bestCfg.DefaultTier.CodingIndex)
 		}
-		defaultTierResult = &TierTuningResult{
-			TierName:                 bestCfg.DefaultTier.TierName,
-			Model:                    recDefModel,
-			OriginalModel:            origDefModel,
-			RecommendedModel:         recDefModel,
-			ModelBenefit:             defBenefit,
-			CodingIndex:              bestCfg.DefaultTier.CodingIndex,
-			ToolReliability:          bestCfg.DefaultTier.ToolReliability,
-			PromptCostPerMillion:     bestCfg.DefaultTier.PromptCostPerMillion,
-			CompletionCostPerMillion: bestCfg.DefaultTier.CompletionCostPerMillion,
-			ComprehensiveRate:        bestCfg.DefaultTier.ComprehensiveRate,
-		}
+	} else {
+		defBenefit = "Reduces fallback cloud cost while preserving reasoning capability"
 	}
-
-	retriesAvoided := baselineBuf.TotalWastedRetries - finalBuf.TotalWastedRetries
-	if retriesAvoided < 0 {
-		retriesAvoided = 0
+	return &TierTuningResult{
+		TierName:                   bestCfg.DefaultTier.TierName,
+		Model:                      recDefModel,
+		OriginalModel:              origDefModel,
+		RecommendedModel:           recDefModel,
+		ReasoningEffort:            recDefReasoning,
+		OriginalReasoningEffort:    origDefReasoning,
+		RecommendedReasoningEffort: recDefReasoning,
+		ModelBenefit:               defBenefit,
+		CodingIndex:                math.Round(bestCfg.DefaultTier.CodingIndex*100) / 100,
+		ToolReliability:            bestCfg.DefaultTier.ToolReliability,
+		PromptCostPerMillion:       bestCfg.DefaultTier.PromptCostPerMillion,
+		CompletionCostPerMillion:   bestCfg.DefaultTier.CompletionCostPerMillion,
+		ComprehensiveRate:          bestCfg.DefaultTier.ComprehensiveRate,
 	}
+}
 
-	savingsUSD := baselineBuf.TotalCostUSD - finalBuf.TotalCostUSD
-	if savingsUSD < 0 {
-		savingsUSD = 0
-	}
-
-	hasDominanceResolution := len(AnalyzeFleetDominance(&initialCfg)) > len(AnalyzeFleetDominance(&bestCfg))
+// applyRuleInvarianceGuard rolls back syntax modifications when fleet metrics did not improve.
+func applyRuleInvarianceGuard(
+	tierResults []TierTuningResult,
+	defaultTierResult **TierTuningResult,
+	retriesAvoided int,
+	savingsUSD float64,
+	initialCfg, bestCfg *MultiTierConfig,
+) {
+	hasDominanceResolution := len(AnalyzeFleetDominance(initialCfg)) > len(AnalyzeFleetDominance(bestCfg))
 	hasPruning := false
 	for _, t := range tierResults {
 		if t.IsDisabled && strings.TrimSpace(t.OriginalRule) != "false" {
@@ -979,23 +1149,34 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 			break
 		}
 	}
-	if defaultTierResult != nil && defaultTierResult.RecommendedModel != defaultTierResult.OriginalModel {
+	if *defaultTierResult != nil && (*defaultTierResult).RecommendedModel != (*defaultTierResult).OriginalModel {
 		hasModelChange = true
+	}
+	hasReasoningChange := false
+	for _, t := range tierResults {
+		if t.RecommendedReasoningEffort != "" && t.RecommendedReasoningEffort != t.OriginalReasoningEffort {
+			hasReasoningChange = true
+			break
+		}
+	}
+	if *defaultTierResult != nil && (*defaultTierResult).RecommendedReasoningEffort != (*defaultTierResult).OriginalReasoningEffort {
+		hasReasoningChange = true
 	}
 
 	if retriesAvoided <= 0 && savingsUSD <= 0.001 && !hasDominanceResolution && !hasPruning {
-		if !hasModelChange {
-			defaultTierResult = nil
+		if !hasModelChange && !hasReasoningChange {
+			*defaultTierResult = nil
 			for i := range tierResults {
 				if !tierResults[i].IsDisabled {
 					tierResults[i].SynthesizedRule = tierResults[i].OriginalRule
 				}
 				tierResults[i].RecommendedModel = tierResults[i].OriginalModel
+				tierResults[i].RecommendedReasoningEffort = tierResults[i].OriginalReasoningEffort
 				tierResults[i].ModelBenefit = ""
 			}
 		} else {
 			// Rule Invariance: No retry or dominance pressure to mutate syntax,
-			// preserve AST rules while recommending qualifying replacement models
+			// preserve AST rules while recommending qualifying replacement models or reasoning
 			for i := range tierResults {
 				if !tierResults[i].IsDisabled {
 					tierResults[i].SynthesizedRule = tierResults[i].OriginalRule
@@ -1003,14 +1184,97 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 			}
 		}
 	}
+}
 
-	escalationRate := 0.0
-	if len(trajectories) > 0 {
-		escalationRate = float64(finalBuf.EscalatedSessions) / float64(len(trajectories))
+// synthesizeTuningResult transforms the winning CSP configuration into human-readable TuningResults and AST rules.
+func (opt *MinConflictsOptimizer) synthesizeTuningResult(
+	currentConfig *contract.Config,
+	initialCfg MultiTierConfig,
+	bestCfg MultiTierConfig,
+	baselineBuf MultiTierReplayResult,
+	finalBuf MultiTierReplayResult,
+	trajectories []SessionTrajectory,
+	initialDominance []StaticDominanceConflict,
+	recoveryStats map[string]RecoveryStats,
+) (*TuningResult, error) {
+	var tierResults []TierTuningResult
+	for i := range bestCfg.Tiers {
+		tier := &bestCfg.Tiers[i]
+		var origWhen, origModel, origReasoning string
+		if i < len(currentConfig.Tiers) {
+			origWhen = currentConfig.Tiers[i].When
+			origModel = currentConfig.Tiers[i].Model
+			origReasoning = currentConfig.Tiers[i].ReasoningEffort
+		}
+		recReasoning := tier.ReasoningEffort
+
+		isDisabled := tier.IsDisabled || strings.TrimSpace(origWhen) == "false"
+		if clean := strings.TrimSpace(origWhen); clean != "" && clean != "false" {
+			if _, err := parser.Parse(clean); err != nil {
+				return nil, fmt.Errorf("failed to rewrite AST for tier %q: %w", tier.TierName, err)
+			}
+		}
+
+		var origTier *TierReplayConfig
+		hasOrig := i < len(initialCfg.Tiers)
+		if hasOrig {
+			origTier = &initialCfg.Tiers[i]
+		}
+
+		turnsRouted := 0
+		if i < len(finalBuf.TierStats) {
+			turnsRouted = finalBuf.TierStats[i].TurnsRouted
+		}
+
+		synthRule, err := synthesizeTierRule(origWhen, tier, origTier, hasOrig, turnsRouted, isDisabled)
+		if err != nil {
+			return nil, err
+		}
+
+		recModel, modelBenefit := formatModelBenefit(tier, origTier, &bestCfg, i, isDisabled, origModel, origWhen)
+
+		tierResults = append(tierResults, TierTuningResult{
+			TierName:                   tier.TierName,
+			Model:                      recModel,
+			ReasoningEffort:            recReasoning,
+			OriginalModel:              origModel,
+			RecommendedModel:           recModel,
+			OriginalReasoningEffort:    origReasoning,
+			RecommendedReasoningEffort: recReasoning,
+			ModelBenefit:               modelBenefit,
+			CodingIndex:                math.Round(tier.CodingIndex*100) / 100,
+			ToolReliability:            tier.ToolReliability,
+			PromptCostPerMillion:       tier.PromptCostPerMillion,
+			CompletionCostPerMillion:   tier.CompletionCostPerMillion,
+			ComprehensiveRate:          tier.ComprehensiveRate,
+			IsDisabled:                 isDisabled,
+			OptimalThreshold:           tier.TokenThreshold,
+			OptimalRetries:             tier.RetryBound,
+			FrictionKeywords:           tier.ExcludedKeywords,
+			RestrictImages:             tier.RestrictImages,
+			RestrictTools:              tier.RestrictTools,
+			OriginalRule:               origWhen,
+			SynthesizedRule:            synthRule,
+		})
 	}
 
+	defaultTierResult := buildDefaultTierResult(currentConfig, &bestCfg)
+
+	retriesAvoided := baselineBuf.TotalWastedRetries - finalBuf.TotalWastedRetries
+	if retriesAvoided < 0 {
+		retriesAvoided = 0
+	}
+	savingsUSD := baselineBuf.TotalCostUSD - finalBuf.TotalCostUSD
+	if savingsUSD < 0 {
+		savingsUSD = 0
+	}
+
+	applyRuleInvarianceGuard(tierResults, &defaultTierResult, retriesAvoided, savingsUSD, &initialCfg, &bestCfg)
+
+	escalationRate := 0.0
 	avgTurns := 0.0
 	if len(trajectories) > 0 {
+		escalationRate = float64(finalBuf.EscalatedSessions) / float64(len(trajectories))
 		avgTurns = float64(finalBuf.TotalTurns) / float64(len(trajectories))
 	}
 
@@ -1031,6 +1295,7 @@ func (opt *MinConflictsOptimizer) synthesizeTuningResult(
 		AvgTurnsPerSession:         avgTurns,
 		EscalationRate:             escalationRate,
 		StaticDominanceConflicts:   initialDominance,
+		RecoveryStats:              recoveryStats,
 		HighContextEscalationTurns: baselineBuf.HighContextEscalationTurns,
 		HighContextCostUSD:         baselineBuf.HighContextCostUSD,
 		HighContextCostPct:         highContextCostPct,
@@ -1109,6 +1374,16 @@ func hashState(cfg *MultiTierConfig) uint64 {
 		for i := 0; i < len(t.Model); i++ {
 			h = (h ^ uint64(t.Model[i])) * prime
 		}
+		for i := 0; i < len(t.ReasoningEffort); i++ {
+			h = (h ^ uint64(t.ReasoningEffort[i])) * prime
+		}
+		h = (h ^ uint64(t.MessageCountMax)) * prime
+		if t.RequiresTestFail {
+			h = (h ^ 0x08) * prime
+		}
+		if t.ProhibitsTestFail {
+			h = (h ^ 0x10) * prime
+		}
 		for _, kw := range t.ExcludedKeywords {
 			for i := 0; i < len(kw); i++ {
 				h = (h ^ uint64(kw[i])) * prime
@@ -1117,6 +1392,9 @@ func hashState(cfg *MultiTierConfig) uint64 {
 	}
 	for i := 0; i < len(cfg.DefaultTier.Model); i++ {
 		h = (h ^ uint64(cfg.DefaultTier.Model[i])) * prime
+	}
+	for i := 0; i < len(cfg.DefaultTier.ReasoningEffort); i++ {
+		h = (h ^ uint64(cfg.DefaultTier.ReasoningEffort[i])) * prime
 	}
 	return h
 }

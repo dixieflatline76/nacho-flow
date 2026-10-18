@@ -136,6 +136,8 @@ func EvaluateFleetWithAttribution(
 		traj := &trajectories[sIdx]
 		var currentRetries int
 		var currentRootHash uint64
+		var prevSimulatedModel string
+		var prevSimulatedTokens int
 
 		for i := 0; i < len(traj.Turns); i++ {
 			turn := &traj.Turns[i]
@@ -144,9 +146,13 @@ func EvaluateFleetWithAttribution(
 			// Boundary reset
 			if i == 0 {
 				currentRootHash = turn.RootPromptHash
+				prevSimulatedModel = ""
+				prevSimulatedTokens = 0
 			} else if turn.RootPromptHash != 0 && turn.RootPromptHash != currentRootHash {
 				currentRootHash = turn.RootPromptHash
 				currentRetries = 0
+				prevSimulatedModel = ""
+				prevSimulatedTokens = 0
 			}
 
 			retriesBeforeTurn := currentRetries
@@ -170,6 +176,25 @@ func EvaluateFleetWithAttribution(
 					continue
 				}
 				if candidate.RetryFloor > 0 && currentRetries < candidate.RetryFloor {
+					continue
+				}
+
+				// Turn / Message count guard (Turn 0 kickoff)
+				if candidate.MessageCountMax > 0 {
+					msgCount := turn.MessageCount
+					if msgCount <= 0 {
+						msgCount = (i + 1) * 2
+					}
+					if msgCount > candidate.MessageCountMax {
+						continue
+					}
+				}
+
+				// Test failure state guards
+				if candidate.RequiresTestFail && !turn.HasTestFail {
+					continue
+				}
+				if candidate.ProhibitsTestFail && turn.HasTestFail {
 					continue
 				}
 				if candidate.MaxContext > 0 && turn.Tokens > candidate.MaxContext {
@@ -251,11 +276,21 @@ func EvaluateFleetWithAttribution(
 				}
 			} else {
 				// Cloud tier
+				// Model prompt cache discount (prefix-bounded, 80% discount on simulated same-model consecutive turns)
+				effectivePromptTokens := float64(turn.Tokens)
+				if i > 0 && prevSimulatedModel == targetTier.Model && targetTier.Model != "" {
+					cachedTokens := prevSimulatedTokens
+					if cachedTokens > turn.Tokens {
+						cachedTokens = turn.Tokens
+					}
+					effectivePromptTokens = float64(cachedTokens)*0.20 + float64(turn.Tokens-cachedTokens)
+				}
+
 				turnCost = turn.CostSpentUSD
-				if turnCost == 0 || turn.IsLocal || targetTier.CostPerMillion > 0 {
+				if turnCost == 0 || turn.IsLocal || targetTier.CostPerMillion > 0 || targetTier.PromptCostPerMillion > 0 {
 					outputTokens := turn.CycleContentTokens + turn.CycleThinkingTokens + turn.CycleToolTokens
 					if outputTokens > 0 && targetTier.CompletionCostPerMillion > 0 {
-						turnCost = (float64(turn.Tokens)/1_000_000.0)*targetTier.PromptCostPerMillion +
+						turnCost = (effectivePromptTokens/1_000_000.0)*targetTier.PromptCostPerMillion +
 							(float64(outputTokens)/1_000_000.0)*targetTier.CompletionCostPerMillion
 					} else {
 						rate := targetTier.ComprehensiveRate
@@ -265,7 +300,7 @@ func EvaluateFleetWithAttribution(
 						if rate <= 0 && policy != nil {
 							rate = policy.CostPerMillionCloud
 						}
-						turnCost = (float64(turn.Tokens) / 1_000_000.0) * rate
+						turnCost = (effectivePromptTokens / 1_000_000.0) * rate
 					}
 				}
 				totalCostUSD += turnCost
@@ -284,7 +319,7 @@ func EvaluateFleetWithAttribution(
 							turnFailed = true
 						}
 					}
-				} else if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
+				} else if (!turn.IsRetry && !turn.HasTestFail) || (turn.IsLocal && targetTier.CodingIndex >= 70.0) {
 					currentRetries = 0
 				} else {
 					currentRetries++
@@ -303,6 +338,9 @@ func EvaluateFleetWithAttribution(
 				totalCycleTrips++
 				turnFailed = true
 			}
+
+			prevSimulatedModel = targetTier.Model
+			prevSimulatedTokens = turn.Tokens
 
 			// Fractional Attribution on Failure
 			if turnFailed {
@@ -362,7 +400,7 @@ func EvaluateFleetWithAttribution(
 
 					// Candidate 6: Monitored Keyword Exclusions
 					for _, kw := range monitoredKeywords {
-						if !hasKeyword([]string{kw}, targetTier.ExcludedKeywords) && hasKeyword(turn.Keywords, []string{kw}) {
+						if !containsKeyword(targetTier.ExcludedKeywords, kw) && containsKeyword(turn.Keywords, kw) {
 							repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("keyword:%s", kw))
 						}
 					}

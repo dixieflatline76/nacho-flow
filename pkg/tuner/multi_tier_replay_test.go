@@ -3,6 +3,7 @@ package tuner
 import (
 	"bufio"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -804,3 +805,322 @@ func TestMultiTierReplay_WriteOnlyFidelity(t *testing.T) {
 		t.Errorf("Expected NTS projected savings > 0, got %f", resWO.NTSProjectedSavingsUSD)
 	}
 }
+
+func TestReplay_PrefixBoundedPromptCacheDiscount(t *testing.T) {
+	now := time.Now().UTC()
+
+	// 1. Session with same model consecutive turns
+	trajSameModel := SessionTrajectory{
+		SessionID: "sess-cache-1",
+		Turns: []telemetry.TurnRecord{
+			{
+				Timestamp:      now,
+				Tokens:         10000,
+				RootPromptHash: 0x999,
+				TargetModel:    "anthropic/claude-sonnet-5",
+			},
+			{
+				Timestamp:      now.Add(10 * time.Second),
+				Tokens:         12000,
+				RootPromptHash: 0x999,
+				TargetModel:    "anthropic/claude-sonnet-5",
+			},
+		},
+	}
+
+	cfgSame := MultiTierConfig{
+		DefaultTier: TierReplayConfig{
+			TierName:             "Tier 1: Cloud Same",
+			Model:                "anthropic/claude-sonnet-5",
+			CostPerMillion:       10.0,
+			PromptCostPerMillion: 10.0,
+		},
+	}
+
+	policy := DefaultTuningPolicy()
+	var resSame MultiTierReplayResult
+	ReplayMultiTierSession(&trajSameModel, &cfgSame, &policy, &resSame)
+
+	// Turn 1: 10,000 / 1M * 10 = $0.10
+	// Turn 2: Cached = 10,000, Uncached = 2,000 -> effective = 10,000*0.20 + 2,000 = 4,000 tokens -> 4,000 / 1M * 10 = $0.04
+	// Total expected cost = $0.14
+	expectedSameCost := 0.14
+	if math.Abs(resSame.TotalCostUSD-expectedSameCost) > 1e-4 {
+		t.Errorf("expected same-model discounted cost ~$0.14, got $%f", resSame.TotalCostUSD)
+	}
+
+	// 2. Session with model switch: Turn 1 on Model A, Turn 2 on Model B
+	cfgSwitch := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:             "Tier 0: Turn 0 Only",
+				Model:                "google/gemini-2.5-flash",
+				MessageCountMax:      2,
+				CostPerMillion:       10.0,
+				PromptCostPerMillion: 10.0,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:             "Tier 1: Cloud Fallback",
+			Model:                "anthropic/claude-sonnet-5",
+			CostPerMillion:       10.0,
+			PromptCostPerMillion: 10.0,
+		},
+	}
+
+	trajSwitch := SessionTrajectory{
+		SessionID: "sess-cache-2",
+		Turns: []telemetry.TurnRecord{
+			{
+				Timestamp:      now,
+				Tokens:         10000,
+				MessageCount:   2,
+				RootPromptHash: 0x999,
+			},
+			{
+				Timestamp:      now.Add(10 * time.Second),
+				Tokens:         12000,
+				MessageCount:   4,
+				RootPromptHash: 0x999,
+			},
+		},
+	}
+
+	var resSwitch MultiTierReplayResult
+	ReplayMultiTierSession(&trajSwitch, &cfgSwitch, &policy, &resSwitch)
+
+	// Turn 1 on Gemini: 10,000 / 1M * 10 = $0.10
+	// Turn 2 on Claude (switch): 0 cached -> 12,000 / 1M * 10 = $0.12
+	// Total expected cost = $0.22 (NO prompt cache discount across model switches)
+	expectedSwitchCost := 0.22
+	if math.Abs(resSwitch.TotalCostUSD-expectedSwitchCost) > 1e-4 {
+		t.Errorf("expected model switch cost ~$0.22, got $%f", resSwitch.TotalCostUSD)
+	}
+}
+
+func TestReplay_MessageCountMax_HistoricalZeroFallback(t *testing.T) {
+	now := time.Now().UTC()
+
+	// Historical telemetry where MessageCount was unrecorded (0)
+	traj := SessionTrajectory{
+		SessionID: "sess-msg-fallback",
+		Turns: []telemetry.TurnRecord{
+			{Timestamp: now, Tokens: 1000, MessageCount: 0, RootPromptHash: 0x1},                   // turn 0: estMsgCount = (0+1)*2 = 2 <= 4 -> Tier 0
+			{Timestamp: now.Add(5 * time.Second), Tokens: 1000, MessageCount: 0, RootPromptHash: 0x1}, // turn 1: estMsgCount = (1+1)*2 = 4 <= 4 -> Tier 0
+			{Timestamp: now.Add(10 * time.Second), Tokens: 1000, MessageCount: 0, RootPromptHash: 0x1}, // turn 2: estMsgCount = (2+1)*2 = 6 > 4 -> Tier 1
+		},
+	}
+
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:        "Tier 0: Kickoff",
+				Model:           "google/gemini-2.5-flash",
+				MessageCountMax: 4,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName: "Tier 1: Fallback",
+			Model:    "anthropic/claude-sonnet-5",
+		},
+	}
+
+	policy := DefaultTuningPolicy()
+	var res MultiTierReplayResult
+	ReplayMultiTierSession(&traj, &cfg, &policy, &res)
+
+	if res.TierStats[0].TurnsRouted != 2 {
+		t.Errorf("expected exactly 2 turns on Tier 0, got %d", res.TierStats[0].TurnsRouted)
+	}
+	if res.TierStats[1].TurnsRouted != 1 {
+		t.Errorf("expected exactly 1 turn routed to Tier 1, got %d", res.TierStats[1].TurnsRouted)
+	}
+}
+
+func TestReplay_TestFailGuards(t *testing.T) {
+	now := time.Now().UTC()
+
+	traj := SessionTrajectory{
+		SessionID: "sess-testfail",
+		Turns: []telemetry.TurnRecord{
+			{Timestamp: now, Tokens: 1000, HasTestFail: false, RootPromptHash: 0x2}, // Turn 0: clean -> Tier 0 (ProhibitsTestFail)
+			{Timestamp: now.Add(5 * time.Second), Tokens: 1000, HasTestFail: true, RootPromptHash: 0x2},  // Turn 1: failure -> Tier 1 (RequiresTestFail)
+		},
+	}
+
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:          "Tier 0: Happy Path Only",
+				Model:             "z-ai/glm-5.3-flash",
+				ProhibitsTestFail: true,
+			},
+			{
+				TierName:         "Tier 1: Test Failure Escalation",
+				Model:            "anthropic/claude-sonnet-5",
+				RequiresTestFail: true,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName: "Tier 2: Fallback",
+			Model:    "google/gemini-2.5-flash",
+		},
+	}
+
+	policy := DefaultTuningPolicy()
+	var res MultiTierReplayResult
+	ReplayMultiTierSession(&traj, &cfg, &policy, &res)
+
+	if res.TierStats[0].TurnsRouted != 1 {
+		t.Errorf("expected Turn 0 to route to Tier 0, got %d", res.TierStats[0].TurnsRouted)
+	}
+	if res.TierStats[1].TurnsRouted != 1 {
+		t.Errorf("expected Turn 1 to route to Tier 1, got %d", res.TierStats[1].TurnsRouted)
+	}
+}
+
+func TestReplay_PromptCache_ReasoningEffortInvalidation(t *testing.T) {
+	now := time.Now().UTC()
+
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:             "Tier 0: High Reasoning Effort",
+				Model:                "anthropic/claude-sonnet-5",
+				ReasoningEffort:      "high",
+				MessageCountMax:      2,
+				CostPerMillion:       10.0,
+				PromptCostPerMillion: 10.0,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:             "Tier 1: Low Reasoning Effort Fallback",
+			Model:                "anthropic/claude-sonnet-5",
+			ReasoningEffort:      "low",
+			CostPerMillion:       10.0,
+			PromptCostPerMillion: 10.0,
+		},
+	}
+
+	traj := SessionTrajectory{
+		SessionID: "sess-reasoning-cache",
+		Turns: []telemetry.TurnRecord{
+			{
+				Timestamp:      now,
+				Tokens:         10000,
+				MessageCount:   2,
+				RootPromptHash: 0x777,
+			},
+			{
+				Timestamp:      now.Add(10 * time.Second),
+				Tokens:         12000,
+				MessageCount:   4,
+				RootPromptHash: 0x777,
+			},
+			{
+				Timestamp:      now.Add(20 * time.Second),
+				Tokens:         14000,
+				MessageCount:   6,
+				RootPromptHash: 0x777,
+			},
+		},
+	}
+
+	policy := DefaultTuningPolicy()
+	var res MultiTierReplayResult
+	ReplayMultiTierSession(&traj, &cfg, &policy, &res)
+
+	// Turn 0: Tier 0 (effort="high") -> 10,000 / 1M * 10 = $0.10
+	// Turn 1: Tier 1 (effort="low", changed from "high") -> cache invalidated! 12,000 / 1M * 10 = $0.12
+	// Turn 2: Tier 1 (effort="low", identical to Turn 1) -> cache discount applies!
+	//         Cached: 12,000, Uncached: 2,000 -> effective = 12,000*0.2 + 2,000 = 4,400 tokens -> 4,400 / 1M * 10 = $0.044
+	// Total expected cost = 0.10 + 0.12 + 0.044 = $0.264
+	expectedCost := 0.264
+	if math.Abs(res.TotalCostUSD-expectedCost) > 1e-4 {
+		t.Errorf("expected cost with reasoning effort cache invalidation ~$0.264, got $%f", res.TotalCostUSD)
+	}
+}
+
+func TestReplay_ActiveRepair_HoldsRetries(t *testing.T) {
+	now := time.Now().UTC()
+
+	traj := SessionTrajectory{
+		SessionID: "sess-repair-hold",
+		Turns: []telemetry.TurnRecord{
+			{
+				Timestamp:      now,
+				Tokens:         1000,
+				MessageCount:   2,
+				RootPromptHash: 0x888,
+				HasTestFail:    false,
+			},
+			{
+				Timestamp:        now.Add(5 * time.Second),
+				Tokens:           1000,
+				MessageCount:     4,
+				RootPromptHash:   0x888,
+				HasTestFail:      true,
+				HasWriteProgress: true,
+				HasActiveRepair:  true,
+			},
+			{
+				Timestamp:        now.Add(10 * time.Second),
+				Tokens:           1000,
+				MessageCount:     6,
+				RootPromptHash:   0x888,
+				HasTestFail:      true,
+				HasWriteProgress: true,
+				HasActiveRepair:  true,
+			},
+			{
+				Timestamp:        now.Add(15 * time.Second),
+				Tokens:           1000,
+				MessageCount:     8,
+				RootPromptHash:   0x888,
+				HasTestFail:      true,
+				HasWriteProgress: false,
+				HasActiveRepair:  false, // Stalled repair
+			},
+			{
+				Timestamp:      now.Add(20 * time.Second),
+				Tokens:         1000,
+				MessageCount:   10,
+				RootPromptHash: 0x888,
+				HasTestFail:    false,
+				HasTestPass:    true, // Clean pass
+			},
+		},
+	}
+
+	cfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:   "Tier 0: Workhorse (Escalates on Retry >= 2)",
+				Model:      "openrouter/workhorse",
+				RetryBound: 2, // Routes when currentRetries < 2; escalates when currentRetries >= 2
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName: "Tier 1: Frontier Fallback",
+			Model:    "anthropic/frontier",
+		},
+	}
+
+	policy := DefaultTuningPolicy()
+	var res MultiTierReplayResult
+	ReplayMultiTierSession(&traj, &cfg, &policy, &res)
+
+	// Turn 0: retries=0 (< 2) -> routed to Tier 0. Succeeded -> retries=0
+	// Turn 1: retries=0 (< 2) -> routed to Tier 0. Initial fail -> retries escalates 0 -> 1
+	// Turn 2: retries=1 (< 2) -> routed to Tier 0. Active repair hold -> retries held steady at 1!
+	// Turn 3: retries=1 (< 2) -> routed to Tier 0. Stalled repair -> retries escalates 1 -> 2!
+	// Turn 4: retries=2 (>= 2) -> routed to Tier 1! Clean pass -> retries reset to 0!
+	if res.TierStats[0].TurnsRouted != 4 {
+		t.Errorf("expected 4 turns on Tier 0 (Turns 0, 1, 2, 3), got %d", res.TierStats[0].TurnsRouted)
+	}
+	if res.TierStats[1].TurnsRouted != 1 {
+		t.Errorf("expected 1 turn on Tier 1 (Turn 4), got %d", res.TierStats[1].TurnsRouted)
+	}
+}
+
+

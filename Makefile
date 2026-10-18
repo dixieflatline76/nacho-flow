@@ -2,7 +2,7 @@ VERSION := $(shell sh -c "cat version.txt" 2> /dev/null || cmd /c "type version.
 BINARY_NAME=nacho-flow
 LDFLAGS_COMMON := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build test test-race test-cover test-extension build-extension package-extension fmt vet lint check ci bench bench-sync cover-sync test-sync docs doc tune tune-apply bump-patch bump-minor bump-major build-win-amd64 build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-all clean
+.PHONY: all build test test-race test-cover test-extension build-extension package-extension fmt vet lint check ci bench bench-sync cover-sync test-sync docs doc tune tune-apply catalog-gen bump-patch bump-minor bump-major build-win-amd64 build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-all clean
 
 all: check build
 
@@ -91,6 +91,10 @@ tune:
 tune-apply:
 	@echo "Applying tuned rules to config.yaml..."
 	go run ./cmd/nacho-flow tune --apply
+
+catalog-gen:
+	@echo "Generating curated models catalog from upstream..."
+	go run ./cmd/util/gen_catalog -version v1.1.0 -out data/models.json -embed-out pkg/telemetry/curation/models.json
 
 check: fmt vet sec test-race test-extension
 	@echo "✅ All code quality checks, security scans, race tests, and extension tests passed!"

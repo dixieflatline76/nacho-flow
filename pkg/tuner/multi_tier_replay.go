@@ -7,6 +7,7 @@ type TierReplayConfig struct {
 	TierName                 string   `json:"tier_name"`
 	Provider                 string   `json:"provider"`
 	Model                    string   `json:"model"`
+	ReasoningEffort          string   `json:"reasoning_effort,omitempty"`
 	IsLocal                  bool     `json:"is_local"`
 	IsDisabled               bool     `json:"is_disabled"` // e.g. when: "false"
 	IsFrontier               bool     `json:"is_frontier"` // True if model satisfies frontier capability class
@@ -27,6 +28,9 @@ type TierReplayConfig struct {
 	RequiresImages           bool     `json:"requires_images"`
 	RequiresTools            bool     `json:"requires_tools"`
 	RetryFloor               int      `json:"retry_floor"`
+	MessageCountMax          int      `json:"message_count_max,omitempty"` // MessageCount <= MessageCountMax (0 = unlimited)
+	RequiresTestFail         bool     `json:"requires_test_fail,omitempty"`
+	ProhibitsTestFail        bool     `json:"prohibits_test_fail,omitempty"`
 	ExcludedKeywords         []string `json:"excluded_keywords"`
 }
 
@@ -157,6 +161,9 @@ func replayMultiTierSessionInternal(
 	var currentRetries int
 	var currentRootHash uint64
 	var sessionEscalated bool
+	var prevSimulatedModel string
+	var prevSimulatedReasoning string
+	var prevSimulatedTokens int
 
 	defaultTierIdx := len(cfg.Tiers)
 	if defaultTierIdx >= MaxSupportedTiers {
@@ -169,9 +176,15 @@ func replayMultiTierSessionInternal(
 		// 1. Task boundary reset check
 		if i == 0 {
 			currentRootHash = turn.RootPromptHash
+			prevSimulatedModel = ""
+			prevSimulatedReasoning = ""
+			prevSimulatedTokens = 0
 		} else if turn.RootPromptHash != 0 && turn.RootPromptHash != currentRootHash {
 			currentRootHash = turn.RootPromptHash
 			currentRetries = 0
+			prevSimulatedModel = ""
+			prevSimulatedReasoning = ""
+			prevSimulatedTokens = 0
 		}
 		retriesBeforeTurn := currentRetries
 
@@ -198,6 +211,25 @@ func replayMultiTierSessionInternal(
 				continue
 			}
 			if candidate.RetryFloor > 0 && currentRetries < candidate.RetryFloor {
+				continue
+			}
+
+			// Turn / Message count guard (Turn 0 kickoff)
+			if candidate.MessageCountMax > 0 {
+				msgCount := turn.MessageCount
+				if msgCount <= 0 {
+					msgCount = (i + 1) * 2
+				}
+				if msgCount > candidate.MessageCountMax {
+					continue
+				}
+			}
+
+			// Test failure state guards
+			if candidate.RequiresTestFail && !turn.HasTestFail {
+				continue
+			}
+			if candidate.ProhibitsTestFail && turn.HasTestFail {
 				continue
 			}
 
@@ -270,6 +302,8 @@ func replayMultiTierSessionInternal(
 				currentRetries++
 				result.TotalWastedRetries++
 				result.TierStats[selectedTierIdx].WastedRetries++
+			} else if turn.HasActiveRepair && currentRetries > 0 {
+				// Active repair under red test: hold retries steady
 			} else if isWriteOnly {
 				if hasProgress {
 					currentRetries = 0
@@ -297,11 +331,21 @@ func replayMultiTierSessionInternal(
 			}
 		} else {
 			// Cloud Tier (Workhorse or Frontier Fallback)
+			// Model prompt cache discount (prefix-bounded, 80% discount on simulated same-model consecutive turns with identical reasoning effort)
+			effectivePromptTokens := float64(turn.Tokens)
+			if i > 0 && prevSimulatedModel == targetTier.Model && prevSimulatedReasoning == targetTier.ReasoningEffort && targetTier.Model != "" {
+				cachedTokens := prevSimulatedTokens
+				if cachedTokens > turn.Tokens {
+					cachedTokens = turn.Tokens
+				}
+				effectivePromptTokens = float64(cachedTokens)*0.20 + float64(turn.Tokens-cachedTokens)
+			}
+
 			cost := turn.CostSpentUSD
-			if cost == 0 || turn.IsLocal || targetTier.CostPerMillion > 0 {
+			if cost == 0 || turn.IsLocal || targetTier.CostPerMillion > 0 || targetTier.PromptCostPerMillion > 0 {
 				outputTokens := turn.CycleContentTokens + turn.CycleThinkingTokens + turn.CycleToolTokens
 				if outputTokens > 0 && targetTier.CompletionCostPerMillion > 0 {
-					cost = (float64(turn.Tokens)/1_000_000.0)*targetTier.PromptCostPerMillion +
+					cost = (effectivePromptTokens/1_000_000.0)*targetTier.PromptCostPerMillion +
 						(float64(outputTokens)/1_000_000.0)*targetTier.CompletionCostPerMillion
 				} else {
 					rate := targetTier.ComprehensiveRate
@@ -311,7 +355,7 @@ func replayMultiTierSessionInternal(
 					if rate <= 0 && policy != nil {
 						rate = policy.CostPerMillionCloud
 					}
-					cost = (float64(turn.Tokens) / 1_000_000.0) * rate
+					cost = (effectivePromptTokens / 1_000_000.0) * rate
 				}
 			}
 			result.TotalCostUSD += cost
@@ -322,14 +366,20 @@ func replayMultiTierSessionInternal(
 				if turn.Tokens > 100_000 {
 					result.HighContextEscalationTurns++
 					result.HighContextCostUSD += cost
-					result.NTSProjectedSavingsUSD += (float64(turn.Tokens) * 0.35 / 1_000_000.0) * targetTier.PromptCostPerMillion
+					rate := targetTier.PromptCostPerMillion
+					if rate <= 0 {
+						rate = targetTier.ComprehensiveRate
+					}
+					result.NTSProjectedSavingsUSD += (effectivePromptTokens * 0.35 / 1_000_000.0) * rate
 				}
 				if retriesBeforeTurn > 0 && !turn.HasTestFail {
 					result.ReadBurstEscalations++
 				}
 			}
 
-			if isUpstreamTransient {
+			if turn.HasActiveRepair && currentRetries > 0 {
+				// Active repair under red test: hold retries steady (do not increment, do not reset)
+			} else if isUpstreamTransient {
 				// Non-model infrastructure error: do not penalize tier model
 			} else if isWriteOnly {
 				if hasProgress || (turn.IsLocal && targetTier.CodingIndex >= 70.0) {
@@ -341,7 +391,7 @@ func replayMultiTierSessionInternal(
 						result.TierStats[selectedTierIdx].WastedRetries++
 					}
 				}
-			} else if !turn.IsRetry || turn.IsLocal || targetTier.CodingIndex >= 70.0 {
+			} else if (!turn.IsRetry && !turn.HasTestFail) || (turn.IsLocal && targetTier.CodingIndex >= 70.0) {
 				currentRetries = 0
 			} else {
 				currentRetries++
@@ -362,6 +412,10 @@ func replayMultiTierSessionInternal(
 			result.TotalCycleTrips++
 			result.TierStats[selectedTierIdx].CycleTrips++
 		}
+
+		prevSimulatedModel = targetTier.Model
+		prevSimulatedReasoning = targetTier.ReasoningEffort
+		prevSimulatedTokens = turn.Tokens
 	}
 
 	if sessionEscalated {

@@ -100,6 +100,11 @@ func (st *SessionTracker) RecordTurn(sessionKey string, promptHash uint64, hasTo
 // RecordTurnTask records a turn for sessionKey with distinct rootPromptHash (task identity)
 // and promptHash (turn prompt), tracking retries across autonomous agent loops and user interventions.
 func (st *SessionTracker) RecordTurnTask(sessionKey string, rootPromptHash, promptHash uint64, hasToolProgress bool, hasTools bool, messageCount int) (retries int, isRetry bool) {
+	return st.RecordTurnTaskWithHold(sessionKey, rootPromptHash, promptHash, hasToolProgress, false, hasTools, messageCount)
+}
+
+// RecordTurnTaskWithHold records a turn for sessionKey with support for holding retries steady during active repair.
+func (st *SessionTracker) RecordTurnTaskWithHold(sessionKey string, rootPromptHash, promptHash uint64, hasToolProgress bool, holdRetries bool, hasTools bool, messageCount int) (retries int, isRetry bool) {
 	if sessionKey == "" {
 		return 0, false
 	}
@@ -170,6 +175,13 @@ func (st *SessionTracker) RecordTurnTask(sessionKey string, rootPromptHash, prom
 						state.LastTurnTime = now
 						retries = 0
 						isRetry = false
+					} else if holdRetries && state.RetriesCount > 0 {
+						// Active repair under red test suite: model modified files since latest test failure.
+						// Retain current retry count so tier stays escalated (e.g. Tier 2) without escalating to Tier 3.
+						state.PromptHash = promptHash
+						state.LastTurnTime = now
+						retries = state.RetriesCount
+						isRetry = true
 					} else {
 						// No forward progress (test failure, tool stall, read-only loop, or user corrective intervention).
 						// Increment retries within this task to trigger tier escalation.

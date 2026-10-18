@@ -311,3 +311,130 @@ func TestAnalyzeFleetDominance_DefaultTierDecoupledFromKickstartAndEscalation(t 
 		}
 	}
 }
+
+func TestAnalyzeFleetDominance_ReasoningEffortEscalation(t *testing.T) {
+	// 1. A low -> high -> max same-model escalation chain should produce 0 conflicts
+	validChainCfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:        "Tier 1: Fast Coding Workhorse (GLM-5.3-Flash Low)",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "low",
+				CodingIndex:     71.5,
+				RetryBound:      2,
+			},
+			{
+				TierName:        "Tier 2: Debug & Reasoning (GLM-5.3-Flash High)",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "high",
+				CodingIndex:     71.5,
+				RetryFloor:      2,
+				RetryBound:      6,
+			},
+			{
+				TierName:        "Tier 3: De-escalation (GLM-5.3-Flash Max)",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "max",
+				CodingIndex:     71.5,
+				RetryFloor:      6,
+				RetryBound:      10,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:    "Default Catch-All",
+			Model:       "anthropic/claude-sonnet-5",
+			CodingIndex: 71.5,
+			IsFrontier:  true,
+		},
+	}
+
+	count := CountFleetDominanceConflicts(&validChainCfg)
+	if count != 0 {
+		t.Errorf("Expected 0 conflicts from CountFleetDominanceConflicts for low->high->max reasoning chain, got %d", count)
+	}
+
+	conflicts := AnalyzeFleetDominance(&validChainCfg)
+	if len(conflicts) != 0 {
+		t.Errorf("Expected 0 conflicts from AnalyzeFleetDominance for low->high->max reasoning chain, got %d: %+v", len(conflicts), conflicts)
+	}
+
+	// 2. A low -> low same-model escalation must still trigger duplicate model conflict
+	duplicateChainCfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:        "Tier 1: Workhorse Low",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "low",
+				CodingIndex:     71.5,
+				RetryBound:      2,
+			},
+			{
+				TierName:        "Tier 2: Duplicate Workhorse Low",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "low",
+				CodingIndex:     71.5,
+				RetryFloor:      2,
+				RetryBound:      6,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:    "Default Catch-All",
+			Model:       "anthropic/claude-sonnet-5",
+			CodingIndex: 71.5,
+			IsFrontier:  true,
+		},
+	}
+
+	dupCount := CountFleetDominanceConflicts(&duplicateChainCfg)
+	if dupCount != 1 {
+		t.Errorf("Expected 1 conflict from CountFleetDominanceConflicts for low->low duplicate chain, got %d", dupCount)
+	}
+
+	dupConflicts := AnalyzeFleetDominance(&duplicateChainCfg)
+	if len(dupConflicts) != 1 {
+		t.Fatalf("Expected 1 conflict from AnalyzeFleetDominance for low->low duplicate chain, got %d: %+v", len(dupConflicts), dupConflicts)
+	}
+	if !strings.Contains(dupConflicts[0].Reason, "duplicates predecessor model") {
+		t.Errorf("Expected duplicate predecessor model conflict reason, got %q", dupConflicts[0].Reason)
+	}
+
+	// 3. A high -> low same-model escalation should trigger capability regression conflict
+	regressingChainCfg := MultiTierConfig{
+		Tiers: []TierReplayConfig{
+			{
+				TierName:        "Tier 1: Workhorse High",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "high",
+				CodingIndex:     71.5,
+				RetryBound:      2,
+			},
+			{
+				TierName:        "Tier 2: Degraded Workhorse Low",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "low",
+				CodingIndex:     71.5,
+				RetryFloor:      2,
+				RetryBound:      6,
+			},
+		},
+		DefaultTier: TierReplayConfig{
+			TierName:    "Default Catch-All",
+			Model:       "anthropic/claude-sonnet-5",
+			CodingIndex: 71.5,
+			IsFrontier:  true,
+		},
+	}
+
+	regCount := CountFleetDominanceConflicts(&regressingChainCfg)
+	if regCount != 1 {
+		t.Errorf("Expected 1 conflict from CountFleetDominanceConflicts for high->low regression, got %d", regCount)
+	}
+
+	regConflicts := AnalyzeFleetDominance(&regressingChainCfg)
+	if len(regConflicts) != 1 {
+		t.Fatalf("Expected 1 conflict from AnalyzeFleetDominance for high->low regression, got %d: %+v", len(regConflicts), regConflicts)
+	}
+	if !strings.Contains(regConflicts[0].Reason, "regresses capability") {
+		t.Errorf("Expected capability regression conflict reason, got %q", regConflicts[0].Reason)
+	}
+}

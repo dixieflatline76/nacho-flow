@@ -150,6 +150,7 @@ type Observation struct {
 	HasWriteProgress        bool
 	HasTestPass             bool
 	HasTestFail             bool
+	HasActiveRepair         bool
 	FailureCategory         FailureCategory
 	ClientID                string
 	UpstreamFinishReason    string
@@ -680,6 +681,7 @@ func (s *StatsTracker) worker() {
 				HasWriteProgress:          obs.HasWriteProgress,
 				HasTestPass:               obs.HasTestPass,
 				HasTestFail:               obs.HasTestFail,
+				HasActiveRepair:           obs.HasActiveRepair,
 				FailureCategory:           obs.FailureCategory,
 				ClientID:                  obs.ClientID,
 				UpstreamFinishReason:      obs.UpstreamFinishReason,

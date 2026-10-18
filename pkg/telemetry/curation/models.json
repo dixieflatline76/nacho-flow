@@ -994,7 +994,9 @@
         "tier_3_workhorse"
       ],
       "benchmark_source": "artificial_analysis",
-      "provenance_url": "https://artificialanalysis.ai"
+      "provenance_url": "https://artificialanalysis.ai",
+      "supports_vision": true,
+      "supports_tools": true
     },
     "google/gemini-3.8-flash:batch": {
       "name": "Google: Gemini 3.8 Flash (batch)",
@@ -1007,7 +1009,9 @@
         "tier_3_workhorse"
       ],
       "benchmark_source": "artificial_analysis",
-      "provenance_url": "https://artificialanalysis.ai"
+      "provenance_url": "https://artificialanalysis.ai",
+      "supports_vision": true,
+      "supports_tools": true
     },
     "google/gemma-3-12b-it": {
       "name": "Google: Gemma 3 12B",

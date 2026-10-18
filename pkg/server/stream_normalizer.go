@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/agentregistry"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
@@ -246,6 +247,8 @@ type StreamNormalizer struct {
 	deferTerminal           bool
 	suppressPrelude         bool
 	preludeSuppressed       bool
+	cmdHeaderBuf            [1024]byte
+	cmdHeaderLen            int
 }
 
 // NewStreamNormalizer constructs a new StreamNormalizer for an SSE io.ReadCloser.
@@ -965,6 +968,7 @@ func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
 		return
 	}
 	s.hasEmittedToolCalls = true
+	clear(s.toolChunksScratch[:cap(s.toolChunksScratch)])
 	s.toolChunksScratch = s.toolChunksScratch[:0]
 
 	if err := json.Unmarshal(raw, &s.toolChunksScratch); err != nil {
@@ -977,12 +981,18 @@ func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
 
 		if fn.Name != "" {
 			s.currentToolCategory = router.ClassifyToolCategory(fn.Name)
+			s.cmdHeaderLen = 0
 		}
 		if fn.Arguments == "" {
 			continue
 		}
-		if s.currentToolCategory == shield.ToolCategoryCommand && router.DetectShellWrite(fn.Arguments) {
-			s.currentToolCategory = shield.ToolCategoryFileWrite
+		if s.currentToolCategory == shield.ToolCategoryCommand && s.cmdHeaderLen < len(s.cmdHeaderBuf) {
+			n := copy(s.cmdHeaderBuf[s.cmdHeaderLen:], fn.Arguments)
+			s.cmdHeaderLen += n
+			header := unsafe.String(&s.cmdHeaderBuf[0], s.cmdHeaderLen)
+			if router.DetectShellWrite(header) {
+				s.currentToolCategory = shield.ToolCategoryFileWrite
+			}
 		}
 		s.recordToolDelta(fn.Arguments)
 	}
@@ -1041,6 +1051,7 @@ func (s *StreamNormalizer) Close() error {
 	s.hasActiveToolCall = false
 	s.inWriteTool = false
 	s.pendingWriteTagBuf = ""
+	s.cmdHeaderLen = 0
 	var err error
 	if s.upstream != nil {
 		err = s.upstream.Close()

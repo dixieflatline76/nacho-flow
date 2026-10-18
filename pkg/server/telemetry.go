@@ -105,6 +105,7 @@ func (s *Server) recordTelemetry(
 		HasWriteProgress:          reqCtx.HasWriteProgress,
 		HasTestPass:               reqCtx.HasTestPass,
 		HasTestFail:               reqCtx.HasTestFail,
+		HasActiveRepair:           reqCtx.HasActiveRepair,
 		FailureCategory:           failureCat,
 		ClientID:                  reqCtx.ClientID,
 		UpstreamFinishReason:      reqCtx.UpstreamFinishReason,

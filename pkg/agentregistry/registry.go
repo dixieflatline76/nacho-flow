@@ -734,7 +734,19 @@ func (r *Registry) DetectShellWrite(cmd string) bool {
 
 	// 0. If wrapped in JSON object/array (e.g. tool call arguments payload), strip outer envelope with zero allocations
 	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		if colonIdx := strings.Index(trimmed, ":"); colonIdx != -1 {
+		colonIdx := -1
+		for _, key := range []string{`"command"`, `"cmd"`, `"script"`} {
+			if kIdx := strings.Index(trimmed, key); kIdx != -1 {
+				if relColon := strings.IndexByte(trimmed[kIdx+len(key):], ':'); relColon != -1 {
+					colonIdx = kIdx + len(key) + relColon
+					break
+				}
+			}
+		}
+		if colonIdx == -1 {
+			colonIdx = strings.IndexByte(trimmed, ':')
+		}
+		if colonIdx != -1 {
 			trimmed = strings.TrimSpace(trimmed[colonIdx+1:])
 			trimmed = strings.TrimPrefix(trimmed, "[")
 			trimmed = strings.TrimSpace(trimmed)
@@ -821,6 +833,24 @@ func (r *Registry) DetectShellWrite(cmd string) bool {
 				}
 			}
 		}
+	}
+
+	// 6. Script-based inline file writing / code generation (Python/Node/Bun/Deno)
+	if (containsCommandWord(trimmed, "python") || containsCommandWord(trimmed, "python3") || containsCommandWord(trimmed, "py")) &&
+		(containsFold(trimmed, "open(") ||
+			containsFold(trimmed, "path(") ||
+			containsFold(trimmed, ".write") ||
+			containsFold(trimmed, "'''") ||
+			containsFold(trimmed, "\"\"\"") ||
+			containsFold(trimmed, `\"\"\"`)) {
+		return true
+	}
+	if (containsCommandWord(trimmed, "node") || containsCommandWord(trimmed, "bun") || containsCommandWord(trimmed, "deno")) &&
+		(containsFold(trimmed, "writefile") ||
+			containsFold(trimmed, "createwritestream") ||
+			containsFold(trimmed, "fs.") ||
+			containsFold(trimmed, "node:fs")) {
+		return true
 	}
 
 	return false

@@ -3,6 +3,7 @@ package tuner
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
@@ -28,7 +29,7 @@ func GroupBySession(records []telemetry.TurnRecord) []SessionTrajectory {
 
 	grouped := make(map[string][]telemetry.TurnRecord)
 	for _, r := range records {
-		if r.SessionID == "" {
+		if r.SessionID == "" || strings.HasPrefix(r.SessionID, "title-") || (r.SessionID == "127.0.0.1" && !r.HasTools && r.RootPromptHash == 0) {
 			continue
 		}
 		key := r.SessionID

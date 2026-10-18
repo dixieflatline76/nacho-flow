@@ -181,6 +181,24 @@ func run(args []string, apiURL string) error {
 		return fmt.Errorf("failed to generate catalog: %w", err)
 	}
 
+	// Merge with existing catalog if output file exists to preserve unlisted models & aliases
+	if *outputFlag != "" {
+		if existingData, readErr := os.ReadFile(*outputFlag); readErr == nil {
+			var existingCatalog curation.CuratedCatalog
+			if jsonErr := json.Unmarshal(existingData, &existingCatalog); jsonErr == nil {
+				for id, existingProfile := range existingCatalog.Models {
+					if _, exists := catalog.Models[id]; !exists {
+						catalog.Models[id] = existingProfile
+					} else if len(existingProfile.Aliases) > 0 && len(catalog.Models[id].Aliases) == 0 {
+						p := catalog.Models[id]
+						p.Aliases = existingProfile.Aliases
+						catalog.Models[id] = p
+					}
+				}
+			}
+		}
+	}
+
 	data, err := json.MarshalIndent(catalog, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to serialize catalog: %w", err)

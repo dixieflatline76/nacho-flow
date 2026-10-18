@@ -177,3 +177,34 @@ func TestSessionGrouper_SplitsByRootPromptHash(t *testing.T) {
 		t.Errorf("Expected 2 turns per trajectory, got %d and %d", trajectories[0].TotalTurns, trajectories[1].TotalTurns)
 	}
 }
+
+func TestSessionGrouper_IgnoresTitleAndDiagnosticSessions(t *testing.T) {
+	records := []telemetry.TurnRecord{
+		// 1. Title generation request (ignored)
+		{SessionID: "title-ses_12345", Tokens: 1000, HasTools: false},
+		// 2. Diagnostic ping: 127.0.0.1, no tools, RootPromptHash: 0 (ignored)
+		{SessionID: "127.0.0.1", Tokens: 500, HasTools: false, RootPromptHash: 0},
+		// 3. Live coding turn: 127.0.0.1, has tools, RootPromptHash: 12345 (kept & grouped under "127.0.0.1:12345")
+		{SessionID: "127.0.0.1", Tokens: 3000, HasTools: true, RootPromptHash: 12345},
+		// 4. Standard valid coding session (kept)
+		{SessionID: "ses_valid_coding", Tokens: 2500, HasTools: true},
+	}
+
+	trajectories := GroupBySession(records)
+	if len(trajectories) != 2 {
+		t.Fatalf("Expected 2 trajectories (live coding sessions only), got %d", len(trajectories))
+	}
+
+	trajMap := make(map[string]SessionTrajectory)
+	for _, traj := range trajectories {
+		trajMap[traj.SessionID] = traj
+	}
+
+	if _, ok := trajMap["127.0.0.1:12345"]; !ok {
+		t.Errorf("Expected trajectory for '127.0.0.1:12345', got: %+v", trajectories)
+	}
+	if _, ok := trajMap["ses_valid_coding"]; !ok {
+		t.Errorf("Expected trajectory for 'ses_valid_coding', got: %+v", trajectories)
+	}
+}
+

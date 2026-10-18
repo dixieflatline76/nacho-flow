@@ -1940,3 +1940,262 @@ func TestCandidateConfigBuilder_WithModelCandidate(t *testing.T) {
 		t.Errorf("expected model %q, got %q", "new-curated-model", built.Tiers[0].Model)
 	}
 }
+
+func TestMinConflicts_ReasoningEscalationRepair_DefaultTier(t *testing.T) {
+	// Task 3a: Assert that a profile starting with reasoning_effort: "low" on both a cascade tier
+	// and default_tier outputs RecommendedReasoningEffort: "high" / "max" to overcome dominance defects and retry loops.
+	policy := DefaultTuningPolicy()
+	opt := NewMinConflictsOptimizer(policy)
+
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"llama_cluster": {
+				BaseURL: "http://127.0.0.1:8080/v1",
+				Type:    contract.ProviderTypeLocal,
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:            "Tier 1: Fast Worker",
+				Provider:        "llama_cluster",
+				Model:           "qwen3.8-27b",
+				ReasoningEffort: "low",
+				When:            "Tokens < 120000 && Retries < 2",
+			},
+			{
+				Name:            "Tier 2: Debug & Reasoning",
+				Provider:        "llama_cluster",
+				Model:           "qwen3.8-27b",
+				ReasoningEffort: "medium", // CodingIndex 76.5
+				When:            "Tokens < 120000 && Retries < 6",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:            "Default Catch-All",
+			Provider:        "llama_cluster",
+			Model:           "qwen3.8-27b",
+			ReasoningEffort: "low", // CodingIndex 70.9 (inferior to Tier 2's 76.5)
+			When:            "true",
+		},
+	}
+
+	now := time.Now().UTC()
+	records := []telemetry.TurnRecord{
+		{
+			Timestamp:    now,
+			SessionID:    "sess-default-1",
+			Tokens:       1000,
+			SelectedTier: "Tier 1: Fast Worker",
+			TargetModel:  "qwen3.8-27b",
+			StatusCode:   200,
+		},
+		{
+			Timestamp:    now.Add(time.Second),
+			SessionID:    "sess-default-1",
+			Tokens:       130000, // routes to Default Catch-All
+			SelectedTier: "Default Catch-All",
+			TargetModel:  "qwen3.8-27b",
+			IsRetry:      true,
+			StatusCode:   500,
+		},
+	}
+
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	if res.DefaultTier == nil {
+		t.Fatalf("Expected DefaultTier recommendation to be populated")
+	}
+
+	// Verify reasoning effort escalation on DefaultTier
+	if res.DefaultTier.RecommendedReasoningEffort != "high" && res.DefaultTier.RecommendedReasoningEffort != "max" {
+		t.Errorf("Expected DefaultTier RecommendedReasoningEffort to be 'high' or 'max', got %q", res.DefaultTier.RecommendedReasoningEffort)
+	}
+	if res.DefaultTier.OriginalReasoningEffort != "low" {
+		t.Errorf("Expected DefaultTier OriginalReasoningEffort to be 'low', got %q", res.DefaultTier.OriginalReasoningEffort)
+	}
+	if res.DefaultTier.CodingIndex <= 71.30 {
+		t.Errorf("Expected DefaultTier CodingIndex > 71.30 to defeat Tier 2, got %.2f", res.DefaultTier.CodingIndex)
+	}
+	if !strings.Contains(res.DefaultTier.ModelBenefit, "escalates reasoning") {
+		t.Errorf("Expected ModelBenefit to mention reasoning escalation, got %q", res.DefaultTier.ModelBenefit)
+	}
+}
+
+func TestMinConflicts_ProviderScopedModelSubstitution(t *testing.T) {
+	// Task 3b: Assert that an overpriced tier on provider: "openrouter" substitutes across vendors
+	// for Pareto cost savings, whereas the identical scenario on provider: "anthropic" stays strictly within Anthropic models.
+	policy := DefaultTuningPolicy()
+	policy.MinCloudSpendUSD = 0.001
+	opt := NewMinConflictsOptimizer(policy)
+
+	// Build synthetic turn records for an expensive tier
+	now := time.Now().UTC()
+	var records []telemetry.TurnRecord
+	for i := 0; i < 15; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Timestamp:    now.Add(time.Duration(i) * time.Second),
+			SessionID:    fmt.Sprintf("sess-%d", i),
+			Tokens:       12000,
+			SelectedTier: "Tier 1: Cloud Workhorse",
+			TargetModel:  "anthropic/claude-3-5-haiku",
+			CostSpentUSD: 0.20,
+			StatusCode:   200,
+		})
+	}
+
+	// Scenario A: provider: "openrouter"
+	cfgOpenRouter := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {BaseURL: "https://openrouter.ai/api/v1", Type: contract.ProviderTypeCloud},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Cloud Workhorse",
+				Provider: "openrouter",
+				Model:    "anthropic/claude-3-5-haiku",
+				When:     "Retries < 3",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Catch-All",
+			Provider: "openrouter",
+			Model:    "anthropic/claude-sonnet-5",
+			When:     "true",
+		},
+	}
+
+	resOR, err := opt.Optimize(records, cfgOpenRouter)
+	if err != nil {
+		t.Fatalf("Optimize openrouter failed: %v", err)
+	}
+
+	tierOR := resOR.Tiers[0]
+	if tierOR.RecommendedModel == "" || tierOR.RecommendedModel == "anthropic/claude-3-5-haiku" {
+		t.Errorf("Expected openrouter tier to substitute overpriced claude-3-5-haiku, got %q", tierOR.RecommendedModel)
+	}
+
+	// Scenario B: provider: "anthropic"
+	cfgAnthropic := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"anthropic": {BaseURL: "https://api.anthropic.com", Type: contract.ProviderTypeAnthropic},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Cloud Workhorse",
+				Provider: "anthropic",
+				Model:    "anthropic/claude-3-5-haiku",
+				When:     "Retries < 3",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Catch-All",
+			Provider: "anthropic",
+			Model:    "anthropic/claude-sonnet-5",
+			When:     "true",
+		},
+	}
+
+	resAnthropic, err := opt.Optimize(records, cfgAnthropic)
+	if err != nil {
+		t.Fatalf("Optimize anthropic failed: %v", err)
+	}
+
+	tierAnthropic := resAnthropic.Tiers[0]
+	if tierAnthropic.RecommendedModel != "" {
+		// Must be an Anthropic model (e.g. claude-* or anthropic/claude-*)
+		isAnthropic := strings.HasPrefix(tierAnthropic.RecommendedModel, "claude-") ||
+			strings.HasPrefix(tierAnthropic.RecommendedModel, "anthropic/claude-")
+		if !isAnthropic {
+			t.Errorf("Expected anthropic tier recommendation to be strictly an Anthropic Claude model, got %q", tierAnthropic.RecommendedModel)
+		}
+	}
+}
+
+func TestMinConflicts_ReasoningEscalation_PrefersSameModelOverSwap(t *testing.T) {
+	// Assert that when default_tier (z-ai/glm-5.3-flash at high) sits below predecessor tiers
+	// (including google/gemini-3.8-flash at utility tiers and z-ai/glm-5.3-flash at high),
+	// the solver recommends RecommendedReasoningEffort: "max" on z-ai/glm-5.3-flash
+	// and does NOT swap the model to google/gemini-3.8-flash.
+	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
+
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"openrouter": {Type: contract.ProviderTypeCloud},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Kickstart Escalation",
+				Provider: "openrouter",
+				Model:    "google/gemini-3.8-flash",
+				When:     "SessionReadSlapped && Retries < 3",
+			},
+			{
+				Name:     "Tier 2: Multimodal Vision",
+				Provider: "openrouter",
+				Model:    "google/gemini-3.8-flash",
+				When:     "Retries < 6 && HasImages",
+			},
+			{
+				Name:            "Tier 3: Coding Workhorse",
+				Provider:        "openrouter",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "low",
+				When:            "Tokens < 1000000 && Retries < 2",
+			},
+			{
+				Name:            "Tier 4: Debug & Reasoning",
+				Provider:        "openrouter",
+				Model:           "z-ai/glm-5.3-flash",
+				ReasoningEffort: "high",
+				When:            "Tokens < 1000000 && Retries < 6",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:            "Default Catch-All",
+			Provider:        "openrouter",
+			Model:           "z-ai/glm-5.3-flash",
+			ReasoningEffort: "high", // duplicate loop against Tier 4
+			When:            "true",
+		},
+	}
+
+	now := time.Now().UTC()
+	records := []telemetry.TurnRecord{
+		{
+			Timestamp:        now,
+			SessionID:        "sess-same-model-1",
+			Tokens:           1500000, // overflows to default tier
+			SelectedTier:     "Default Catch-All",
+			TargetModel:      "z-ai/glm-5.3-flash",
+			StatusCode:       200,
+			HasWriteProgress: true,
+			RootPromptHash:   9001,
+		},
+	}
+
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	if res.DefaultTier == nil {
+		t.Fatalf("Expected DefaultTier recommendation to be populated")
+	}
+
+	// Must preserve model family (z-ai/glm-5.3-flash)
+	if res.DefaultTier.RecommendedModel != "z-ai/glm-5.3-flash" {
+		t.Errorf("Expected DefaultTier to keep model 'z-ai/glm-5.3-flash', but got %q", res.DefaultTier.RecommendedModel)
+	}
+
+	// Must escalate reasoning_effort from high -> max
+	if res.DefaultTier.RecommendedReasoningEffort != "max" {
+		t.Errorf("Expected DefaultTier RecommendedReasoningEffort 'max', got %q", res.DefaultTier.RecommendedReasoningEffort)
+	}
+	if res.DefaultTier.OriginalReasoningEffort != "high" {
+		t.Errorf("Expected DefaultTier OriginalReasoningEffort 'high', got %q", res.DefaultTier.OriginalReasoningEffort)
+	}
+}
+
