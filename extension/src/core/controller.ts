@@ -553,6 +553,13 @@ export class ExtensionController {
 					case 'editActiveProfile':
 						await this.editActiveProfileFile();
 						break;
+					case 'findProviderReferences': {
+						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+						const doc = await vscode.workspace.openTextDocument(profileUri);
+						await vscode.window.showTextDocument(doc, { preview: false });
+						await vscode.commands.executeCommand('nacho-flow.findProviderReferences', message.providerId);
+						break;
+					}
 					case 'hotSwapPreset': {
 						const presetId = message.presetId as any;
 						if (presetId) {
@@ -691,6 +698,17 @@ export class ExtensionController {
 							displayName = key.charAt(0).toUpperCase() + key.slice(1);
 						}
 
+						let usageCount = 0;
+						if (Array.isArray(config.tiers)) {
+							usageCount += config.tiers.filter((t: any) => t.provider === key).length;
+						}
+						if (config.default_tier?.provider === key) {
+							usageCount += 1;
+						}
+						if (Array.isArray(config.fairy_dust?.entries)) {
+							usageCount += config.fairy_dust.entries.filter((e: any) => e.provider === key).length;
+						}
+
 						providers.push({
 							id: key,
 							name: displayName,
@@ -699,7 +717,8 @@ export class ExtensionController {
 							baseUrl: pConfig?.base_url || '',
 							models: tierModels,
 							active: isActive,
-							circuitState
+							circuitState,
+							usageCount
 						});
 					}
 				}

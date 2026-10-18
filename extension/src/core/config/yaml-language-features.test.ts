@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import {
   isNachoConfigDocument,
   toVsCodeRange,
+  replaceScalarRange,
+  getAllRouteTargets,
+  resolveRouteTarget,
   NachoCompletionItemProvider,
   NachoHoverProvider,
   NachoDefinitionProvider,
@@ -97,9 +100,19 @@ jest.mock('vscode', () => {
     constructor(public range: any, public message: string, public severity: any) {}
   }
 
+  class MockSelection extends MockRange {
+    constructor(
+      public anchor: any,
+      public active: any
+    ) {
+      super(anchor?.line || 0, anchor?.character || 0, active?.line || 0, active?.character || 0);
+    }
+  }
+
   return {
     Range: MockRange,
     Position: MockPosition,
+    Selection: MockSelection,
     Location: MockLocation,
     CompletionItem: MockCompletionItem,
     MarkdownString: MockMarkdownString,
@@ -127,6 +140,12 @@ jest.mock('vscode', () => {
     Uri: {
       file: (f: string) => ({ fsPath: f, toString: () => f }),
       parse: (s: string) => ({ fsPath: s, toString: () => s })
+    },
+    TextEditorRevealType: {
+      Default: 0,
+      InCenter: 1,
+      InCenterIfOutsideViewport: 2,
+      AtTop: 3
     },
     Disposable: {
       from: (...items: any[]) => ({
@@ -273,13 +292,43 @@ default_tier:
       const items = await provider.provideCompletionItems(doc, new vscode.Position(9, 11));
       expect(items.length).toBe(2);
       expect(items.some((i) => (i.label as string).includes('qwen-32b-q8'))).toBe(true);
-      expect(modelDiscovery.discoverModels).toHaveBeenCalledWith('http://127.0.0.1:8080/v1');
+      expect(modelDiscovery.discoverModels).toHaveBeenCalledWith('http://127.0.0.1:8080/v1', { apiKey: undefined, providerType: 'local' });
+    });
+
+    it('discovers live models when completing model inside a fairy_dust entry', async () => {
+      const fdYaml = `providers:
+  p1:
+    base_url: "http://127.0.0.1:8080/v1"
+tiers:
+  - name: "Tier 1"
+    provider: p1
+fairy_dust:
+  enabled: true
+  entries:
+    - name: "Tactical Review"
+      provider: p1
+      model: `;
+      const fdDoc = createMockDoc(fdYaml);
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 12,
+        models: ['fairy-model-1', 'fairy-model-2']
+      });
+
+      const lines = fdYaml.split('\n');
+      const modelLineIdx = lines.findIndex((l) => l.includes('model: '));
+      const items = await provider.provideCompletionItems(
+        fdDoc,
+        new vscode.Position(modelLineIdx, 13)
+      );
+      expect(items).toBeDefined();
+      expect(items.some((c) => (c.label as string).includes('fairy-model-1'))).toBe(true);
     });
 
     it('should complete reasoning_effort enums', async () => {
       const doc = createMockDoc(sampleConfigYaml);
       const items = await provider.provideCompletionItems(doc, new vscode.Position(10, 22));
-      expect(items.map((i) => i.label)).toEqual(['low', 'medium', 'high']);
+      expect(items.map((i) => i.label)).toEqual(['low', 'medium', 'high', 'max']);
     });
 
     it('should complete RequestContext variables and DSL keywords in when:', async () => {
@@ -328,6 +377,47 @@ default_tier:
       const hover = hoverProvider.provideHover(doc, new vscode.Position(13, 25)); // "Tier 2: Reasoning"
       expect(hover).toBeDefined();
       expect((hover?.contents as any).value).toContain('Rescue Tier Reference');
+    });
+
+    it('should provide rich documentation for configuration keys (fairy_dust, agent_shield, cycle_killer, nts, deals)', () => {
+      const advancedConfigYaml = `
+nts:
+  enabled: true
+  strip_ansi: true
+cycle_killer:
+  phrase_length: 6
+agent_shield:
+  tail_buffer_bytes: 256
+deals:
+  alert_threshold_pct: 30.0
+fairy_dust:
+  frequency: 10
+`;
+      const doc = createMockDoc(advancedConfigYaml);
+
+      const ntsHover = hoverProvider.provideHover(doc, new vscode.Position(1, 2));
+      expect(ntsHover).toBeDefined();
+      expect((ntsHover?.contents as any).value).toContain('Neural Token Saver');
+
+      const ansiHover = hoverProvider.provideHover(doc, new vscode.Position(3, 4));
+      expect(ansiHover).toBeDefined();
+      expect((ansiHover?.contents as any).value).toContain('strip_ansi');
+
+      const cycleHover = hoverProvider.provideHover(doc, new vscode.Position(4, 2));
+      expect(cycleHover).toBeDefined();
+      expect((cycleHover?.contents as any).value).toContain('cycle_killer');
+
+      const shieldHover = hoverProvider.provideHover(doc, new vscode.Position(6, 2));
+      expect(shieldHover).toBeDefined();
+      expect((shieldHover?.contents as any).value).toContain('agent_shield');
+
+      const dealsHover = hoverProvider.provideHover(doc, new vscode.Position(8, 2));
+      expect(dealsHover).toBeDefined();
+      expect((dealsHover?.contents as any).value).toContain('deals');
+
+      const fairyHover = hoverProvider.provideHover(doc, new vscode.Position(10, 2));
+      expect(fairyHover).toBeDefined();
+      expect((fairyHover?.contents as any).value).toContain('fairy_dust');
     });
 
     it('should return null when hovering outside recognized tokens', () => {
@@ -404,11 +494,55 @@ default_tier:
       expect((edit as any).edits.every((e: any) => e.newText === 'llama_9070xt')).toBe(true);
     });
 
-    it('should provide atomic rename edits for tier name', () => {
+    it('should prepare rename on provider usage, tier name, rescue tier usage, and default tier name', async () => {
       const doc = createMockDoc(sampleConfigYaml);
-      const edit = renameProvider.provideRenameEdits(doc, new vscode.Position(15, 15), 'Tier 2: Advanced Reasoning');
-      expect((edit as any).edits.length).toBe(2); // def + rescue_tier usage
-      expect((edit as any).edits.every((e: any) => e.newText === 'Tier 2: Advanced Reasoning')).toBe(true);
+      // Provider usage
+      const pUsagePrep = renameProvider.prepareRename(doc, new vscode.Position(8, 20));
+      expect(pUsagePrep.placeholder).toBe('llamacpp_local');
+
+      // Tier name definition
+      const tNamePrep = renameProvider.prepareRename(doc, new vscode.Position(15, 15));
+      expect(tNamePrep.placeholder).toBe('Tier 2: Reasoning');
+
+      // Rescue tier usage
+      const rescuePrep = renameProvider.prepareRename(doc, new vscode.Position(13, 25));
+      expect(rescuePrep.placeholder).toBe('Tier 2: Reasoning');
+
+      // Default tier name
+      const defTierPrep = renameProvider.prepareRename(doc, new vscode.Position(21, 15));
+      expect(defTierPrep.placeholder).toBe('Default Catch-All');
+
+      // Non-Nacho doc guard checks across all 8 providers
+      const nonNacho = {
+        uri: vscode.Uri.file('c:/other/random.txt'),
+        fileName: 'c:/other/random.txt',
+        languageId: 'plaintext',
+        getText: () => 'hello',
+        lineAt: () => ({ text: 'hello' })
+      } as any;
+      const emptyEdits = renameProvider.provideRenameEdits(nonNacho, new vscode.Position(0, 0), 'new');
+      expect((emptyEdits as any).edits.length).toBe(0);
+
+      const compP = new NachoCompletionItemProvider();
+      expect(await compP.provideCompletionItems(nonNacho, new vscode.Position(0, 0))).toEqual([]);
+
+      const hoverP = new NachoHoverProvider();
+      expect(hoverP.provideHover(nonNacho, new vscode.Position(0, 0))).toBeNull();
+
+      const defP = new NachoDefinitionProvider();
+      expect(defP.provideDefinition(nonNacho, new vscode.Position(0, 0))).toBeNull();
+
+      const refP = new NachoReferenceProvider();
+      expect(refP.provideReferences(nonNacho, new vscode.Position(0, 0))).toEqual([]);
+
+      const actP = new NachoCodeActionProvider();
+      expect(actP.provideCodeActions(nonNacho, new vscode.Range(0, 0, 0, 0), {} as any)).toEqual([]);
+
+      const lensP = new NachoCodeLensProvider();
+      expect(lensP.provideCodeLenses(nonNacho)).toEqual([]);
+
+      const linkP = new NachoDocumentLinkProvider();
+      expect(linkP.provideDocumentLinks(nonNacho)).toEqual([]);
     });
   });
 
@@ -436,6 +570,28 @@ tiers:
       expect(actions.some((a) => a.title.includes('llamacpp'))).toBe(true);
       expect(actions.some((a) => a.title.includes('Pick from defined providers'))).toBe(true);
     });
+
+    it('should provide Pick Rescue Tier action when UNKNOWN_RESCUE_TIER diagnostic is present', () => {
+      const invalidRescueYaml = `
+providers:
+  llamacpp:
+    base_url: "http://localhost:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "Tier 1"
+    provider: llamacpp
+    thought_slap:
+      rescue_tier: "nonexistent_tier"
+`;
+      const doc = createMockDoc(invalidRescueYaml);
+      const actions = actionProvider.provideCodeActions(
+        doc,
+        new vscode.Range(10, 19, 10, 37),
+        { diagnostics: [] } as any
+      );
+      expect(actions.some((a) => a.title.includes('Pick from defined tiers'))).toBe(true);
+    });
   });
 
   describe('NachoCodeLensProvider', () => {
@@ -449,6 +605,99 @@ tiers:
       expect(lenses.some((l) => l.command?.title.includes('Ping Endpoint'))).toBe(true);
       expect(lenses.some((l) => l.command?.title.includes('Switch Provider'))).toBe(true);
       expect(lenses.some((l) => l.command?.title.includes('Pick Model'))).toBe(true);
+    });
+
+    it('should use nacho-flow.findProviderReferences for both refCount > 0 and refCount === 0', () => {
+      const doc = createMockDoc(sampleConfigYaml);
+      const lenses = lensProvider.provideCodeLenses(doc);
+      const refLenses = lenses.filter(
+        (l) => l.command?.title.includes('reference')
+      );
+      expect(refLenses.length).toBeGreaterThanOrEqual(1);
+      for (const lens of refLenses) {
+        expect(lens.command?.command).toBe('nacho-flow.findProviderReferences');
+        expect(lens.command?.arguments).toEqual(['llamacpp_local']);
+      }
+
+      // Test with 0 references provider
+      const unusedDoc = createMockDoc(`
+providers:
+  unused_p:
+    base_url: "http://127.0.0.1:8080/v1"
+tiers: []
+`);
+      const unusedLenses = lensProvider.provideCodeLenses(unusedDoc);
+      const zeroRefLens = unusedLenses.find((l) => l.command?.title.includes('0 references'));
+      expect(zeroRefLens).toBeDefined();
+      expect(zeroRefLens?.command?.command).toBe('nacho-flow.findProviderReferences');
+      expect(zeroRefLens?.command?.arguments).toEqual(['unused_p']);
+    });
+
+    it('should provide Switch Provider and Pick Model lenses for default_tier', () => {
+      const doc = createMockDoc(sampleConfigYaml);
+      const lenses = lensProvider.provideCodeLenses(doc);
+      const defaultTierLenses = lenses.filter(
+        (l) => l.command?.arguments?.[0]?.isDefaultTier === true
+      );
+      expect(defaultTierLenses.length).toBe(2);
+      expect(defaultTierLenses.some((l) => l.command?.title === '🔌 Switch Provider')).toBe(true);
+      expect(defaultTierLenses.some((l) => l.command?.title === '🧠 Pick Model')).toBe(true);
+    });
+
+    it('should provide Switch Provider and Pick Model lenses for fairy_dust entries', () => {
+      const fdDoc = createMockDoc(`
+providers:
+  p1:
+    base_url: "http://127.0.0.1:8080/v1"
+tiers:
+  - name: "Tier 1"
+    provider: p1
+fairy_dust:
+  enabled: true
+  entries:
+    - name: "Architecture Review"
+      provider: p1
+      model: "glm-5.3"
+`);
+      const lenses = lensProvider.provideCodeLenses(fdDoc);
+      const fdLenses = lenses.filter(
+        (l) => l.command?.arguments?.[0]?.fairyDustEntryName === 'Architecture Review'
+      );
+      expect(fdLenses.length).toBe(2);
+      expect(fdLenses.some((l) => l.command?.title === '🔌 Switch Provider')).toBe(true);
+      expect(fdLenses.some((l) => l.command?.title === '🧠 Pick Model')).toBe(true);
+    });
+
+    it('provides CodeLenses for default_tier without explicit name and does not pollute rescue_tier completions', async () => {
+      const unnamedDefaultYaml = `
+providers:
+  p1:
+    base_url: "http://127.0.0.1:8080/v1"
+default_tier:
+  provider: p1
+  model: "model-1"
+tiers:
+  - name: "Tier 1"
+    provider: p1
+    rescue_tier: 
+`;
+      const doc = createMockDoc(unnamedDefaultYaml);
+      const lenses = lensProvider.provideCodeLenses(doc);
+      const defaultTierLenses = lenses.filter(
+        (l) => l.command?.arguments?.[0]?.isDefaultTier === true
+      );
+      expect(defaultTierLenses.length).toBe(2);
+      expect(defaultTierLenses[0].command?.arguments?.[0]?.tierName).toBe('default_tier');
+
+      const compProvider = new NachoCompletionItemProvider();
+      const completions = await compProvider.provideCompletionItems(
+        doc,
+        new vscode.Position(10, 16)
+      );
+      const proposedNames = completions.map((c) => c.label);
+      expect(proposedNames).not.toContain('"default_tier"');
+      expect(proposedNames).not.toContain('default_tier');
+      expect(proposedNames).toContain('"Tier 1"');
     });
   });
 
@@ -566,12 +815,112 @@ tiers:
       await pickModelHandler({ tierName: 'Tier 1: Coding' });
       expect(mockEdit).toHaveBeenCalled();
 
-      // Test findProviderReferences command
+      // Test pickProvider for default_tier
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'openrouter',
+        providerId: 'openrouter'
+      });
+      await pickProvHandler({ isDefaultTier: true });
+      expect(mockEdit).toHaveBeenCalled();
+
+      // Test pickModel for default_tier
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 10,
+        models: ['claude-3-7-sonnet']
+      });
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'claude-3-7-sonnet',
+        modelId: 'claude-3-7-sonnet'
+      });
+      await pickModelHandler({ isDefaultTier: true });
+      expect(mockEdit).toHaveBeenCalled();
+
+      // Test pickProvider and pickModel for fairy_dust entry
+      const fdDoc = createMockDoc(`
+providers:
+  llamacpp_local:
+    base_url: "http://127.0.0.1:8080/v1"
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+tiers:
+  - name: "Tier 1: Coding"
+    provider: llamacpp_local
+fairy_dust:
+  enabled: true
+  entries:
+    - name: "Tactical Review"
+      provider: llamacpp_local
+      model: "qwen-32b"
+`);
+      (vscode.window as any).activeTextEditor = {
+        document: fdDoc,
+        selection: new vscode.Range(0, 0, 0, 0),
+        edit: mockEdit
+      };
+
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'openrouter',
+        providerId: 'openrouter'
+      });
+      await pickProvHandler({ fairyDustEntryName: 'Tactical Review' });
+      expect(mockEdit).toHaveBeenCalled();
+
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 10,
+        models: ['claude-3-7-sonnet']
+      });
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'claude-3-7-sonnet',
+        modelId: 'claude-3-7-sonnet'
+      });
+      await pickModelHandler({ fairyDustEntryName: 'Tactical Review' });
+      expect(mockEdit).toHaveBeenCalled();
+
+      // Test pickProvider cursor fallback inside a fairy_dust entry
+      const fdLines = fdDoc.getText().split('\n');
+      const fdEntryLine = fdLines.findIndex((l) => l.includes('Tactical Review'));
+      (vscode.window as any).activeTextEditor.selection = new vscode.Range(fdEntryLine, 0, fdEntryLine, 0);
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'openrouter',
+        providerId: 'openrouter'
+      });
+      await pickProvHandler();
+      expect(mockEdit).toHaveBeenCalled();
+
+      // Test pickModel cursor fallback inside a fairy_dust entry
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 10,
+        models: ['claude-3-7-sonnet']
+      });
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'claude-3-7-sonnet',
+        modelId: 'claude-3-7-sonnet'
+      });
+      await pickModelHandler();
+      expect(mockEdit).toHaveBeenCalled();
+
+      // Restore activeTextEditor to doc for remaining tests
+      (vscode.window as any).activeTextEditor = {
+        document: doc,
+        selection: new vscode.Range(0, 0, 0, 0),
+        edit: mockEdit
+      };
+
+      // Test findProviderReferences command with single and multiple references
       const findRefsCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(
         (c) => c[0] === 'nacho-flow.findProviderReferences'
       );
       expect(findRefsCall).toBeDefined();
       const findRefsHandler = findRefsCall[1];
+
+      // Single/multiple reference QuickPick jump
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'Tier 1: Coding (Line 8)',
+        usage: { valueRange: { startLine: 7, startCharacter: 14, endLine: 7, endCharacter: 28 } }
+      });
       await findRefsHandler('llamacpp_local');
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
         'editor.action.showReferences',
@@ -580,23 +929,487 @@ tiers:
         expect.anything()
       );
 
+      // Test pingProviderEndpoint command (online and offline)
+      const pingCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(
+        (c) => c[0] === 'nacho-flow.pingProviderEndpoint'
+      );
+      expect(pingCall).toBeDefined();
+      const offlinePingHandler = pingCall[1];
+
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: false,
+        latencyMs: 1500,
+        models: [],
+        error: 'Connection refused'
+      });
+      await offlinePingHandler('http://127.0.0.1:9999/v1', 'llamacpp_local');
+      expect(vscode.window.showErrorMessage).toHaveBeenCalled();
+
+      // Test pickProvider cursor-based fallback
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'llamacpp_local',
+        providerId: 'llamacpp_local'
+      });
+      await pickProvHandler();
+      expect(mockEdit).toHaveBeenCalled();
+
+      // Test pickModel cursor-based fallback
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 10,
+        models: ['qwen-32b']
+      });
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'qwen-32b',
+        modelId: 'qwen-32b'
+      });
+      await pickModelHandler();
+      expect(mockEdit).toHaveBeenCalled();
+
+      // Test pickRescueTier with empty config
+      const activeEd = (vscode.window as any).activeTextEditor;
+      activeEd.revealRange = jest.fn();
+      const emptyDoc = createMockDoc('port: 8000\n');
+      activeEd.document = emptyDoc;
+      await pickRescueHandler();
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith('No tiers defined in this configuration.');
+
+      // Test pickProvider with empty config (no providers)
+      await pickProvHandler();
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith('No providers defined in this configuration.');
+
+      // Test pickModel with empty config (no target)
+      await pickModelHandler();
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith('No tier or fairy dust entry with a configured provider found at cursor.');
+      activeEd.document = doc;
+
+      // Test pickProvider fallback when target has no providerValueRange
+      const noProvValRangeDoc = createMockDoc(`
+providers:
+  prov_any:
+    base_url: "http://localhost:8080/v1"
+tiers:
+  - name: "Tier Cursor"
+`);
+      activeEd.document = noProvValRangeDoc;
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'prov_any',
+        providerId: 'prov_any'
+      });
+      await pickProvHandler({ tierName: 'Tier Cursor' });
+      expect(mockEdit).toHaveBeenCalled();
+      activeEd.document = doc;
+
+      // Test findProviderReferences when provider has 0 usages
+      const unusedProvDoc = createMockDoc(`
+providers:
+  unused_p:
+    base_url: "http://localhost:8080/v1"
+tiers: []
+`);
+      activeEd.document = unusedProvDoc;
+      await findRefsHandler('unused_p');
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith("Provider 'unused_p' is unused (0 references).");
+      activeEd.document = doc;
+
+      // Test findProviderReferences with 1 usage (direct jump without quickpick)
+      const singleUsageDoc = createMockDoc(`
+providers:
+  single_p:
+    base_url: "http://localhost:8080/v1"
+tiers:
+  - name: "Tier 1"
+    provider: single_p
+`);
+      activeEd.document = singleUsageDoc;
+      await findRefsHandler('single_p');
+      expect(activeEd.revealRange).toHaveBeenCalled();
+      activeEd.document = doc;
+
+      // Test findProviderReferences with multiple usages (QuickPick selection)
+      const multiUsageDoc = createMockDoc(`
+providers:
+  multi_p:
+    base_url: "http://localhost:8080/v1"
+tiers:
+  - name: "Tier 1"
+    provider: multi_p
+  - name: "Tier 2"
+    provider: multi_p
+`);
+      activeEd.document = multiUsageDoc;
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'Tier 2 (Line 7)',
+        usage: { valueRange: { startLine: 6, startCharacter: 14, endLine: 6, endCharacter: 21 } }
+      });
+      await findRefsHandler('multi_p');
+      expect(activeEd.revealRange).toHaveBeenCalled();
+
+      // Test findProviderReferences when activeTextEditor is undefined but visibleTextEditors has doc
+      (vscode.window as any).activeTextEditor = undefined;
+      (vscode.window as any).visibleTextEditors = [activeEd];
+      await findRefsHandler('llamacpp_local');
+      (vscode.window as any).activeTextEditor = activeEd;
+      activeEd.document = doc;
+
+      // Test pingProviderEndpoint with no arguments (falls back to active doc)
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 15,
+        models: ['m1', 'm2', 'm3', 'm4']
+      });
+      await offlinePingHandler();
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('🔌 [llamacpp_local] Online (15ms) — 4 models available: m1, m2, m3...')
+      );
+
+      // Test pingProviderEndpoint with no baseUrl available
+      activeEd.document = emptyDoc;
+      await offlinePingHandler();
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith('No provider base_url available to ping.');
+      activeEd.document = doc;
+
+      // Test pickModel failure cases
+      const brokenProvDoc = createMockDoc(`
+providers:
+  no_url:
+    type: "local"
+tiers:
+  - name: "Tier broken"
+    provider: no_url
+`);
+      activeEd.document = brokenProvDoc;
+      await pickModelHandler({ tierName: 'Tier broken' });
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith("Provider 'no_url' has no base_url configured.");
+
+      // Test pickModel discovery failure
+      activeEd.document = doc;
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: false,
+        latencyMs: 100,
+        models: [],
+        error: 'Network Timeout'
+      });
+      await pickModelHandler({ tierName: 'Tier 1: Coding' });
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to discover models')
+      );
+
       // Test live document listeners
       const openDocListeners = (vscode.workspace.onDidOpenTextDocument as jest.Mock).mock.calls;
       const changeDocListeners = (vscode.workspace.onDidChangeTextDocument as jest.Mock).mock.calls;
       const closeDocListeners = (vscode.workspace.onDidCloseTextDocument as jest.Mock).mock.calls;
 
+      const issueDoc = createMockDoc('tiers:\n  - name: T1\n    when: Tokenss\n');
       if (openDocListeners.length > 0) {
-        openDocListeners[0][0](doc);
+        openDocListeners[0][0](issueDoc);
         expect(mockDiagnostics.set).toHaveBeenCalled();
       }
       if (changeDocListeners.length > 0) {
-        changeDocListeners[0][0]({ document: doc });
+        changeDocListeners[0][0]({ document: issueDoc });
         expect(mockDiagnostics.set).toHaveBeenCalled();
       }
       if (closeDocListeners.length > 0) {
-        closeDocListeners[0][0](doc);
-        expect(mockDiagnostics.delete).toHaveBeenCalledWith(doc.uri);
+        closeDocListeners[0][0](issueDoc);
+        expect(mockDiagnostics.delete).toHaveBeenCalledWith(issueDoc.uri);
       }
+    });
+
+    it('handles unresolved provider and rescue_tier hover/definitions', () => {
+      const brokenDoc = createMockDoc(`
+providers:
+  valid_p:
+    base_url: "http://127.0.0.1:8080/v1"
+tiers:
+  - name: "Tier 1"
+    provider: ghost_provider
+    thought_slap:
+      rescue_tier: "Ghost Tier"
+default_tier:
+  name: "Fallback"
+  provider: valid_p
+`);
+      const hoverProvider = new NachoHoverProvider();
+      // Hover on unresolved provider
+      const provHover = hoverProvider.provideHover(brokenDoc, new vscode.Position(6, 17));
+      expect(provHover).not.toBeNull();
+      expect((provHover?.contents as any).value).toContain('Provider `ghost_provider` is not defined');
+
+      // Hover on unresolved rescue_tier
+      const rescueHover = hoverProvider.provideHover(brokenDoc, new vscode.Position(8, 22));
+      expect(rescueHover).not.toBeNull();
+      expect((rescueHover?.contents as any).value).toContain('Tier `Ghost Tier` is not defined');
+
+      // Hover on subsystem documentation keys
+      const ntsDoc = createMockDoc('nts:\n  enabled: true\ncycle_killer:\n  enabled: true\n');
+      const ntsHover = hoverProvider.provideHover(ntsDoc, new vscode.Position(0, 1));
+      expect(ntsHover).not.toBeNull();
+      expect((ntsHover?.contents as any).value).toContain('Neural Token Saver');
+
+      const defProvider = new NachoDefinitionProvider();
+      // Definition for rescue_tier pointing to default_tier
+      const rescueToDefaultDoc = createMockDoc(`
+providers:
+  p1:
+    base_url: "http://127.0.0.1:8080/v1"
+tiers:
+  - name: "Tier 1"
+    provider: p1
+    thought_slap:
+      rescue_tier: "Fallback"
+default_tier:
+  name: "Fallback"
+  provider: p1
+`);
+      const defLoc = defProvider.provideDefinition(rescueToDefaultDoc, new vscode.Position(8, 22));
+      expect(defLoc).not.toBeNull();
+
+      const refProvider = new NachoReferenceProvider();
+      // References for provider usage
+      const refsUsage = refProvider.provideReferences(rescueToDefaultDoc, new vscode.Position(6, 15));
+      expect(refsUsage.length).toBeGreaterThanOrEqual(2);
+
+      // References for rescue_tier usage
+      const refsRescue = refProvider.provideReferences(rescueToDefaultDoc, new vscode.Position(8, 22));
+      expect(refsRescue.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('identifies nacho config documents accurately', () => {
+      expect(isNachoConfigDocument({ fileName: 'c:/foo/profile1.yaml', languageId: 'yaml' } as any)).toBe(true);
+      expect(isNachoConfigDocument({ fileName: 'c:/foo/.nacho/app.yaml', languageId: 'yaml' } as any)).toBe(true);
+      expect(isNachoConfigDocument({ fileName: 'c:/foo/other.json', languageId: 'json' } as any)).toBe(false);
+    });
+
+    it('replaces scalars quote-safely: bare string for already-quoted and double-quoted for unquoted', async () => {
+      // 1. Direct replaceScalarRange tests
+      const doubleQuotedDoc = createMockDoc('provider: "openrouter"');
+      const doubleQuotedEdit = { replace: jest.fn() };
+      replaceScalarRange(
+        doubleQuotedDoc,
+        doubleQuotedEdit as any,
+        { startLine: 0, startCharacter: 11, endLine: 0, endCharacter: 21 },
+        'llamacpp'
+      );
+      expect(doubleQuotedEdit.replace).toHaveBeenCalledWith(expect.any(vscode.Range), 'llamacpp');
+
+      const singleQuotedDoc = createMockDoc("provider: 'openrouter'");
+      const singleQuotedEdit = { replace: jest.fn() };
+      replaceScalarRange(
+        singleQuotedDoc,
+        singleQuotedEdit as any,
+        { startLine: 0, startCharacter: 11, endLine: 0, endCharacter: 21 },
+        'llamacpp'
+      );
+      expect(singleQuotedEdit.replace).toHaveBeenCalledWith(expect.any(vscode.Range), 'llamacpp');
+
+      const unquotedDoc = createMockDoc('provider: openrouter');
+      const unquotedEdit = { replace: jest.fn() };
+      replaceScalarRange(
+        unquotedDoc,
+        unquotedEdit as any,
+        { startLine: 0, startCharacter: 10, endLine: 0, endCharacter: 20 },
+        'llamacpp'
+      );
+      expect(unquotedEdit.replace).toHaveBeenCalledWith(expect.any(vscode.Range), '"llamacpp"');
+
+      // 2. Interactive command tests (pickProvider, pickModel, pickRescueTier)
+      const context = { subscriptions: [] as any[] } as vscode.ExtensionContext;
+      const registeredCommands = new Map<string, Function>();
+      (vscode.commands.registerCommand as jest.Mock).mockImplementation((name, fn) => {
+        registeredCommands.set(name, fn);
+        return { dispose: jest.fn() };
+      });
+      registerYamlLanguageFeatures(context);
+
+      const pickProv = registeredCommands.get('nacho-flow.pickProvider')!;
+      const pickModel = registeredCommands.get('nacho-flow.pickModel')!;
+      const pickRescue = registeredCommands.get('nacho-flow.pickRescueTier')!;
+
+      // Case A: Quoted provider in tier
+      const quotedTierDoc = createMockDoc(`
+providers:
+  prov_a:
+    base_url: "http://127.0.0.1:8080/v1"
+  prov_b:
+    base_url: "http://127.0.0.1:8081/v1"
+tiers:
+  - name: "Tier A"
+    provider: "prov_a"
+    model: "model_a"
+    thought_slap:
+      rescue_tier: "Tier A"
+`);
+      let lastReplacedText = '';
+      const mockActiveEd = {
+        document: quotedTierDoc,
+        selection: new vscode.Range(0, 0, 0, 0),
+        edit: jest.fn().mockImplementation((cb: (builder: any) => void) => {
+          cb({
+            replace: (_range: any, text: string) => {
+              lastReplacedText = text;
+            }
+          });
+          return Promise.resolve(true);
+        })
+      };
+      (vscode.window as any).activeTextEditor = mockActiveEd;
+
+      // Pick provider on quoted tier -> replaces with bare 'prov_b'
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'prov_b',
+        providerId: 'prov_b'
+      });
+      await pickProv({ tierName: 'Tier A' });
+      expect(lastReplacedText).toBe('prov_b');
+
+      // Pick model on quoted tier -> replaces with bare 'model_b'
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 10,
+        models: ['model_b']
+      });
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'model_b',
+        modelId: 'model_b'
+      });
+      await pickModel({ tierName: 'Tier A' });
+      expect(lastReplacedText).toBe('model_b');
+
+      // Pick rescue tier on cursor line of rescue_tier
+      mockActiveEd.selection = new vscode.Range(11, 20, 11, 20) as any;
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'Tier A',
+        tierName: 'Tier A'
+      });
+      await pickRescue();
+      expect(lastReplacedText).toBe('Tier A');
+
+      // Case B: Unquoted provider in tier
+      const unquotedTierDoc = createMockDoc(`
+providers:
+  prov_a:
+    base_url: "http://127.0.0.1:8080/v1"
+  prov_b:
+    base_url: "http://127.0.0.1:8081/v1"
+tiers:
+  - name: "Tier B"
+    provider: prov_a
+    model: model_a
+`);
+      mockActiveEd.document = unquotedTierDoc;
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'prov_b',
+        providerId: 'prov_b'
+      });
+      await pickProv({ tierName: 'Tier B' });
+      expect(lastReplacedText).toBe('"prov_b"');
+
+      // Pick model on unquoted tier -> wraps in quotes
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 10,
+        models: ['model_b']
+      });
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'model_b',
+        modelId: 'model_b'
+      });
+      await pickModel({ tierName: 'Tier B' });
+      expect(lastReplacedText).toBe('"model_b"');
+
+      // Case C: QuickFix invocation with args.range on double quoted doc
+      const docWithProviders = createMockDoc(`
+providers:
+  prov_a:
+    base_url: "http://127.0.0.1:8080/v1"
+  prov_b:
+    base_url: "http://127.0.0.1:8081/v1"
+tiers:
+  - name: "Tier A"
+    provider: "prov_a"
+    rescue_tier: "Tier A"
+`);
+      mockActiveEd.document = docWithProviders;
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'prov_b',
+        providerId: 'prov_b'
+      });
+      await pickProv({ range: { startLine: 8, startCharacter: 15, endLine: 8, endCharacter: 21 } });
+      expect(lastReplacedText).toBe('prov_b');
+
+      // QuickFix invocation on rescue tier with args.range
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'Tier B',
+        tierName: 'Tier B'
+      });
+      await pickRescue({ range: { startLine: 9, startCharacter: 18, endLine: 9, endCharacter: 24 } });
+      expect(lastReplacedText).toBe('Tier B');
+    });
+
+    it('should extract all route targets and resolve route target correctly', () => {
+      const { parseConfigSymbolIndex } = require('./config-symbol-index');
+      const docYaml = `
+providers:
+  prov_1:
+    base_url: "http://127.0.0.1:8080/v1"
+tiers:
+  - name: "Tier Alpha"
+    provider: "prov_1"
+    model: "model_alpha"
+default_tier:
+  name: "My Fallback"
+  provider: "prov_1"
+  model: "model_fallback"
+fairy_dust:
+  enabled: true
+  entries:
+    - name: "Reviewer One"
+      provider: "prov_1"
+      model: "model_reviewer"
+`;
+      const index = parseConfigSymbolIndex(docYaml);
+      const targets = getAllRouteTargets(index);
+      expect(targets.length).toBe(3);
+
+      const tierTarget = targets.find((t) => t.commandArgs.tierName === 'Tier Alpha');
+      expect(tierTarget).toBeDefined();
+      expect(tierTarget?.provider).toBe('prov_1');
+      expect(tierTarget?.model).toBe('model_alpha');
+
+      const dtTarget = targets.find((t) => t.commandArgs.isDefaultTier);
+      expect(dtTarget).toBeDefined();
+      expect(dtTarget?.label).toBe('My Fallback');
+
+      const fdTarget = targets.find((t) => t.commandArgs.fairyDustEntryName === 'Reviewer One');
+      expect(fdTarget).toBeDefined();
+      expect(fdTarget?.label).toBe('Reviewer One');
+
+      // resolveRouteTarget tests
+      expect(resolveRouteTarget(index, { isDefaultTier: true })).toEqual(dtTarget);
+      expect(resolveRouteTarget(index, { fairyDustEntryName: 'Reviewer One' })).toEqual(fdTarget);
+      expect(resolveRouteTarget(index, { tierName: 'Tier Alpha' })).toEqual(tierTarget);
+
+      // Resolve by cursorLine inside Tier Alpha block
+      expect(resolveRouteTarget(index, undefined, tierTarget!.blockRange.startLine)).toEqual(tierTarget);
+
+      // CursorLine outside any block
+      expect(resolveRouteTarget(index, undefined, 9999)).toBeUndefined();
+      expect(resolveRouteTarget(index, undefined, undefined)).toBeUndefined();
+
+      // Test default_tier without explicit name
+      const unnamedDtYaml = `
+providers:
+  prov_1:
+    base_url: "http://127.0.0.1:8080/v1"
+default_tier:
+  provider: "prov_1"
+  model: "model_default"
+`;
+      const unnamedIndex = parseConfigSymbolIndex(unnamedDtYaml);
+      const unnamedTargets = getAllRouteTargets(unnamedIndex);
+      const unnamedDtTarget = unnamedTargets.find((t) => t.commandArgs.isDefaultTier);
+      expect(unnamedDtTarget?.label).toBe('default_tier');
     });
   });
 });
+

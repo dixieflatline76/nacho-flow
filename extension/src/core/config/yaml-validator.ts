@@ -415,10 +415,11 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 	let catchAllTierName = '';
 
 	for (const tier of index.tiers.values()) {
+		const tierLabel = tier.name || 'unnamed';
 		if (catchAllReached) {
 			issues.push({
 				ruleId: 'UNREACHABLE_TIER',
-				message: `Tier '${tier.name}' is unreachable because prior tier '${catchAllTierName}' is a catch-all (when: true).`,
+				message: `Tier '${tierLabel}' is unreachable because prior tier '${catchAllTierName}' is a catch-all (when: true).`,
 				severity: 'Warning',
 				range: tier.nameValueRange
 			});
@@ -430,14 +431,14 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 
 			if (exprStr === 'true') {
 				catchAllReached = true;
-				catchAllTierName = tier.name;
+				catchAllTierName = tierLabel;
 			}
 
 			// Trailing operator check
 			if (/(&&|\|\||<|>|<=|>=|==|!=|\+|\-|\*|\/|!)\s*$/.test(exprStr)) {
 				issues.push({
 					ruleId: 'INVALID_WHEN_EXPR',
-					message: `Tier '${tier.name}' when expression ends with incomplete trailing operator.`,
+					message: `Tier '${tierLabel}' when expression ends with incomplete trailing operator.`,
 					severity: 'Error',
 					range: whenRange
 				});
@@ -453,7 +454,7 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 			if (parenDepth !== 0) {
 				issues.push({
 					ruleId: 'INVALID_WHEN_EXPR',
-					message: `Tier '${tier.name}' when expression has unbalanced parentheses.`,
+					message: `Tier '${tierLabel}' when expression has unbalanced parentheses.`,
 					severity: 'Error',
 					range: whenRange
 				});
@@ -483,7 +484,7 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 
 					issues.push({
 						ruleId: 'INVALID_WHEN_EXPR',
-						message: `Tier '${tier.name}' when expression references unknown variable '${id}'.`,
+						message: `Tier '${tierLabel}' when expression references unknown variable '${id}'.`,
 						severity: 'Error',
 						range: whenRange,
 						quickFixes

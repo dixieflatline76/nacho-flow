@@ -130,7 +130,7 @@
       },
       {
         "command": "nacho-flow.pickProvider",
-        "title": "Nacho Flow: Pick Provider"
+        "title": "Nacho Flow: Switch Provider"
       },
       {
         "command": "nacho-flow.pickRescueTier",
@@ -138,7 +138,7 @@
       },
       {
         "command": "nacho-flow.pickModel",
-        "title": "Nacho Flow: Pick Model from Discovered /v1/models"
+        "title": "Nacho Flow: Choose / Pick Model from Discovered /v1/models"
       },
       {
         "command": "nacho-flow.pingProviderEndpoint",

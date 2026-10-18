@@ -1,7 +1,7 @@
 import * as http from 'http';
 import * as https from 'https';
 import { EventEmitter } from 'events';
-import { discoverModels, clearModelDiscoveryCache, ModelDiscoveryResult } from './model-discovery';
+import { discoverModels, clearModelDiscoveryCache, ModelDiscoveryResult, ANTHROPIC_STANDARD_MODELS } from './model-discovery';
 
 jest.mock('http');
 jest.mock('https');
@@ -244,4 +244,169 @@ describe('ModelDiscovery', () => {
     expect(result.models).toEqual([]);
     expect(result.error).toContain('Invalid URL');
   });
+
+  it('should fallback to ANTHROPIC_STANDARD_MODELS when Anthropic returns 401/404 or empty models', async () => {
+    setupMockRequest(https, {
+      statusCode: 401,
+      body: JSON.stringify({ error: { message: 'x-api-key header missing' } })
+    });
+
+    const result = await discoverModels('https://api.anthropic.com');
+
+    expect(result.online).toBe(true);
+    expect(result.models).toContain('claude-sonnet-4-6');
+    expect(result.models).toContain('claude-opus-4-6');
+    expect(result.models).toContain('claude-sonnet-4-5-20250929');
+    expect(result.models).toContain('claude-haiku-4-5-20251001');
+    expect(result.models).toContain('claude-3-7-sonnet-20250219');
+    expect(result.models).toContain('claude-3-5-sonnet-20241022');
+    expect(result.models).toContain('claude-3-5-haiku-20241022');
+    expect(result.models).toContain('claude-3-opus-20240229');
+    expect(result.models.length).toBe(ANTHROPIC_STANDARD_MODELS.length);
+  });
+
+  it('should resolve environment variables in apiKey like ${ANTHROPIC_API_KEY} and $ANTHROPIC_API_KEY', async () => {
+    process.env.ANTHROPIC_API_KEY = 'secret-env-ant-token';
+    process.env.OPENROUTER_API_KEY = 'secret-env-or-token';
+
+    setupMockRequest(https, {
+      statusCode: 200,
+      body: JSON.stringify({ data: [{ id: 'claude-test' }] })
+    });
+
+    await discoverModels('https://api.anthropic.com/v1', {
+      apiKey: '${ANTHROPIC_API_KEY}'
+    });
+
+    expect(https.request).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-api-key': 'secret-env-ant-token'
+        })
+      }),
+      expect.any(Function)
+    );
+
+    setupMockRequest(http, {
+      statusCode: 200,
+      body: JSON.stringify({ data: [{ id: 'or-test' }] })
+    });
+
+    await discoverModels('http://openrouter.ai/api/v1', {
+      apiKey: '$OPENROUTER_API_KEY'
+    });
+
+    expect(http.request).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer secret-env-or-token'
+        })
+      }),
+      expect.any(Function)
+    );
+
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+  });
+
+  it('should resolve environment variable references using ENV_ prefix', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-env-prefixed-secret';
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-env-prefixed-secret';
+
+    setupMockRequest(http, {
+      statusCode: 200,
+      body: JSON.stringify({ data: [{ id: 'openrouter/model-1' }] })
+    });
+
+    await discoverModels('http://openrouter.ai/api/v1', {
+      apiKey: 'ENV_OPENROUTER_API_KEY'
+    });
+
+    expect(http.request).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-or-env-prefixed-secret'
+        })
+      }),
+      expect.any(Function)
+    );
+
+    setupMockRequest(https, {
+      statusCode: 200,
+      body: JSON.stringify({ data: [{ id: 'claude-3-7-sonnet' }] })
+    });
+
+    await discoverModels('https://api.anthropic.com/v1', {
+      apiKey: 'ENV_ANTHROPIC_API_KEY'
+    });
+
+    expect(https.request).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-api-key': 'sk-ant-env-prefixed-secret',
+          'anthropic-version': '2023-06-01'
+        })
+      }),
+      expect.any(Function)
+    );
+
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+  });
+
+  it('should pass Anthropic headers when apiKey is provided', async () => {
+    setupMockRequest(https, {
+      statusCode: 200,
+      body: JSON.stringify({
+        data: [{ id: 'claude-custom-tier' }]
+      })
+    });
+
+    const result = await discoverModels('https://api.anthropic.com/v1', {
+      apiKey: 'sk-ant-test-key-123'
+    });
+
+    expect(result.online).toBe(true);
+    expect(result.models).toContain('claude-custom-tier');
+    expect(https.request).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: '/v1/models' }),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-api-key': 'sk-ant-test-key-123',
+          'anthropic-version': '2023-06-01'
+        })
+      }),
+      expect.any(Function)
+    );
+  });
+
+  it('should pass Authorization header for non-Anthropic providers with apiKey', async () => {
+    setupMockRequest(http, {
+      statusCode: 200,
+      body: JSON.stringify({
+        data: [{ id: 'custom-openrouter-model' }]
+      })
+    });
+
+    const result = await discoverModels('http://openrouter.ai/api/v1', {
+      apiKey: 'sk-or-test-key'
+    });
+
+    expect(result.online).toBe(true);
+    expect(result.models).toContain('custom-openrouter-model');
+    expect(http.request).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: '/api/v1/models' }),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-or-test-key'
+        })
+      }),
+      expect.any(Function)
+    );
+  });
 });
+

@@ -400,7 +400,8 @@ select:focus {
 }
 
 .brand-logo-svg.zoo,
-.brand-logo-svg.opencode {
+.brand-logo-svg.opencode,
+.brand-logo-svg.kilo {
 	color: #ffffff;
 	width: 16px;
 	height: 16px;
@@ -485,56 +486,82 @@ select:focus {
 .agent-config-row {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 6px;
+	gap: 8px;
 	font-size: 11px;
 }
 
 .agent-config-label {
 	color: var(--vscode-descriptionForeground);
 	font-weight: 600;
-	min-width: 60px;
+	width: 58px;
+	flex-shrink: 0;
 }
 
 .agent-config-val {
+	flex: 1;
+	min-width: 0;
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	overflow: hidden;
 }
 
 .agent-config-code {
+	flex: 1;
+	min-width: 0;
 	background: rgba(0, 0, 0, 0.35);
 	border: 1px solid rgba(255, 255, 255, 0.08);
-	padding: 2px 6px;
-	border-radius: 3px;
+	padding: 3px 6px;
+	border-radius: 4px;
 	font-family: var(--vscode-editor-font-family, monospace);
 	font-size: 10px;
 	color: #93c5fd;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	max-width: 140px;
+	box-sizing: border-box;
+	user-select: all;
 }
 
 .btn-icon-copy {
 	background: rgba(255, 255, 255, 0.08);
 	border: 1px solid rgba(255, 255, 255, 0.12);
 	color: var(--vscode-foreground);
-	border-radius: 3px;
-	padding: 2px 6px;
+	border-radius: 4px;
+	padding: 3px 6px;
 	cursor: pointer;
 	font-size: 10px;
 	font-weight: 500;
 	display: inline-flex;
 	align-items: center;
-	gap: 3px;
+	gap: 4px;
 	flex-shrink: 0;
 }
 
 .btn-icon-copy:hover {
 	background: rgba(255, 255, 255, 0.18);
 	color: #fff;
+}
+
+.agent-buttons-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.agent-buttons-grid .btn-compact {
+	padding: 5px 4px;
+	font-size: 10.5px;
+	gap: 4px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+@media (max-width: 290px) {
+	.agent-buttons-grid {
+		grid-template-columns: 1fr;
+	}
 }
 
 /* Modals */

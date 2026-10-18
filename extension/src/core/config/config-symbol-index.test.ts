@@ -1,4 +1,4 @@
-import { parseConfigSymbolIndex } from './config-symbol-index';
+import { parseConfigSymbolIndex, ProviderUsageRef } from './config-symbol-index';
 
 describe('ConfigSymbolIndex', () => {
   const sampleYaml = `# =============================================================================
@@ -55,11 +55,13 @@ fairy_dust:
     expect(emptyIndex.providers.size).toBe(0);
     expect(emptyIndex.tiers.size).toBe(0);
     expect(emptyIndex.defaultTier).toBeUndefined();
+    expect(emptyIndex.fairyDustEntries.size).toBe(0);
     expect(emptyIndex.providerUsages).toHaveLength(0);
     expect(emptyIndex.rescueTierUsages).toHaveLength(0);
 
     const wsIndex = parseConfigSymbolIndex('   \n\n  \t  \n');
     expect(wsIndex.providers.size).toBe(0);
+    expect(wsIndex.fairyDustEntries.size).toBe(0);
   });
 
   it('should extract provider definitions with accurate ranges and metadata', () => {
@@ -114,7 +116,7 @@ fairy_dust:
     // 1 in Tier 1, 1 in Tier 2, 1 in default_tier, 1 in fairy_dust = 4 total
     expect(index.providerUsages).toHaveLength(4);
 
-    const usagesByProvider = index.providerUsages.map((u) => ({
+    const usagesByProvider = index.providerUsages.map((u: ProviderUsageRef) => ({
       providerId: u.providerId,
       context: u.context,
       owner: u.ownerName
@@ -176,7 +178,7 @@ fairy_dust:
     expect(slicedName).toBe('Tier 1: Fast Workhorse');
 
     // provider with trailing comment: provider: llamacpp_local # local GPU
-    const t1Usage = index.providerUsages.find((u) => u.ownerName === 'Tier 1: Fast Workhorse')!;
+    const t1Usage = index.providerUsages.find((u: ProviderUsageRef) => u.ownerName === 'Tier 1: Fast Workhorse')!;
     const provLine = lines[t1Usage.valueRange.startLine];
     const slicedProv = provLine.slice(t1Usage.valueRange.startCharacter, t1Usage.valueRange.endCharacter);
     expect(slicedProv).toBe('llamacpp_local');
@@ -211,4 +213,142 @@ tiers:
     const populatedIndex = parseConfigSymbolIndex(sampleYaml);
     expect(populatedIndex.getRenameEdits('nonexistent_symbol')).toEqual([]);
   });
+
+  it('should parse default_tier without explicit name, extracting model and reasoning_effort', () => {
+    const unnamedDefaultYaml = `
+providers:
+  anthropic:
+    base_url: "https://api.anthropic.com"
+    api_key: "sk-ant-test"
+    type: "anthropic"
+
+default_tier:
+  provider: "anthropic"
+  model: "claude-3-5-sonnet-20241022"
+  reasoning_effort: "high"
+  rescue_tier: "rescue_target"
+`;
+    const index = parseConfigSymbolIndex(unnamedDefaultYaml);
+    expect(index.defaultTier).toBeDefined();
+    expect(index.defaultTier?.name).toBeUndefined();
+    expect(index.defaultTier?.isDefaultTier).toBe(true);
+    expect(index.defaultTier?.provider).toBe('anthropic');
+    expect(index.defaultTier?.model).toBe('claude-3-5-sonnet-20241022');
+    expect(index.defaultTier?.reasoningEffort).toBe('high');
+    expect(index.defaultTier?.modelValueRange).toBeDefined();
+
+    const prov = index.providers.get('anthropic');
+    expect(prov?.apiKey).toBe('sk-ant-test');
+
+    expect(index.rescueTierUsages).toContainEqual(
+      expect.objectContaining({
+        tierName: 'rescue_target',
+        context: 'tier_thought_slap'
+      })
+    );
+
+    // Also assert explicit name on default_tier is preserved
+    const namedDefaultYaml = `
+default_tier:
+  name: "My Explicit Fallback"
+  provider: "anthropic"
+`;
+    const namedIndex = parseConfigSymbolIndex(namedDefaultYaml);
+    expect(namedIndex.defaultTier?.name).toBe('My Explicit Fallback');
+    expect(namedIndex.defaultTier?.isDefaultTier).toBe(true);
+  });
+
+  it('should extract fairy_dust entries with names, providers, models, and ranges', () => {
+    const fdYaml = `
+fairy_dust:
+  enabled: true
+  entries:
+    # Strategic Architecture Review
+    - name: "Strategic Architecture Review"
+      model: "z-ai/glm-5.3-flash"
+      provider: "openrouter_cloud"
+      frequency: 60
+    # Secondary Review
+    - name: "Tactical Code Review"
+      model: "claude-sonnet-4"
+      provider: "anthropic"
+`;
+    const index = parseConfigSymbolIndex(fdYaml);
+    expect(index.fairyDustEntries.size).toBe(2);
+
+    const strat = index.fairyDustEntries.get('Strategic Architecture Review')!;
+    expect(strat).toBeDefined();
+    expect(strat.name).toBe('Strategic Architecture Review');
+    expect(strat.model).toBe('z-ai/glm-5.3-flash');
+    expect(strat.provider).toBe('openrouter_cloud');
+    expect(strat.nameValueRange).toBeDefined();
+    expect(strat.modelValueRange).toBeDefined();
+    expect(strat.providerValueRange).toBeDefined();
+    expect(strat.blockRange).toBeDefined();
+
+    const tact = index.fairyDustEntries.get('Tactical Code Review')!;
+    expect(tact).toBeDefined();
+    expect(tact.name).toBe('Tactical Code Review');
+    expect(tact.model).toBe('claude-sonnet-4');
+    expect(tact.provider).toBe('anthropic');
+
+    // Test separate line - then name:
+    const separateDashYaml = `
+fairy_dust:
+  entries:
+    -
+      name: "Separate Line Entry"
+      provider: "anthropic"
+`;
+    const sepIndex = parseConfigSymbolIndex(separateDashYaml);
+    expect(sepIndex.fairyDustEntries.has('Separate Line Entry')).toBe(true);
+
+    // Test getRenameEdits for tier name
+    const populatedIndex = parseConfigSymbolIndex(sampleYaml);
+    const tierEdits = populatedIndex.getRenameEdits('Tier 2: Reasoning');
+    expect(tierEdits.length).toBeGreaterThan(0);
+  });
+
+  it('should handle multi-line prompt: > with markdown bullets and prose without misparsing entries or overwriting model', () => {
+    const multiLinePromptYaml = `
+fairy_dust:
+  enabled: true
+  entries:
+    # Strategic Reviewer
+    - name: "Strategic Reviewer"
+      provider: "anthropic"
+      model: "claude-3-7-sonnet"
+      prompt: >
+        You are a principal architect reviewing the agent plan.
+        - Check that no files are deleted without permission
+        - Ensure that model: deepseek-coder is not hardcoded
+        - Verify provider: llamacpp fallbacks are respected
+        End of review guidelines.
+    # Second Entry
+    - provider: "openrouter"
+      model: "mistral-large"
+`;
+    const index = parseConfigSymbolIndex(multiLinePromptYaml);
+    // Should have exactly 2 entries, NOT extra entries from "- Check that..."
+    expect(index.fairyDustEntries.size).toBe(2);
+
+    const first = index.fairyDustEntries.get('Strategic Reviewer')!;
+    expect(first).toBeDefined();
+    expect(first.provider).toBe('anthropic');
+    expect(first.model).toBe('claude-3-7-sonnet'); // Not overwritten by 'deepseek-coder' prose!
+
+    // Second unnamed entry should be anchored to its '-' line, not the preceding '# Second Entry' comment line
+    const second = index.fairyDustEntries.get('entry_1')!;
+    expect(second).toBeDefined();
+    expect(second.provider).toBe('openrouter');
+    expect(second.model).toBe('mistral-large');
+    expect(second.nameValueRange).toBeDefined();
+
+    const lines = multiLinePromptYaml.split('\n');
+    const secondDashLineIdx = lines.findIndex((l) => l.includes('- provider: "openrouter"'));
+    expect(second.nameValueRange?.startLine).toBe(secondDashLineIdx);
+    // blockRange should start at the preceding comment
+    expect(second.blockRange.startLine).toBe(secondDashLineIdx - 1);
+  });
 });
+

@@ -20,10 +20,11 @@ export interface ProviderSymbolDef {
 	typeRange?: SourceRange;
 	baseUrl?: string;
 	baseUrlRange?: SourceRange;
+	apiKey?: string;
 }
 
 export interface TierSymbolDef {
-	name: string;
+	name?: string;
 	nameValueRange: SourceRange;
 	blockRange: SourceRange;
 	provider?: string;
@@ -50,10 +51,21 @@ export interface RescueTierUsageRef {
 	ownerTierName?: string;
 }
 
+export interface FairyDustEntrySymbolDef {
+	name?: string;
+	nameValueRange?: SourceRange;
+	blockRange: SourceRange;
+	provider?: string;
+	providerValueRange?: SourceRange;
+	model?: string;
+	modelValueRange?: SourceRange;
+}
+
 export interface ConfigSymbolIndex {
 	providers: Map<string, ProviderSymbolDef>;
 	tiers: Map<string, TierSymbolDef>;
 	defaultTier?: TierSymbolDef;
+	fairyDustEntries: Map<string, FairyDustEntrySymbolDef>;
 	providerUsages: ProviderUsageRef[];
 	rescueTierUsages: RescueTierUsageRef[];
 	getRenameEdits(oldName: string, newName?: string): SourceRange[];
@@ -126,6 +138,7 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 	const providers = new Map<string, ProviderSymbolDef>();
 	const tiers = new Map<string, TierSymbolDef>();
 	let defaultTier: TierSymbolDef | undefined;
+	const fairyDustEntries = new Map<string, FairyDustEntrySymbolDef>();
 	const providerUsages: ProviderUsageRef[] = [];
 	const rescueTierUsages: RescueTierUsageRef[] = [];
 
@@ -134,6 +147,7 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 			providers,
 			tiers,
 			defaultTier,
+			fairyDustEntries,
 			providerUsages,
 			rescueTierUsages,
 			getRenameEdits: () => []
@@ -147,6 +161,8 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 
 	let currentProviderDef: Partial<ProviderSymbolDef> | null = null;
 	let currentTierDef: Partial<TierSymbolDef> | null = null;
+	let currentFairyDustEntry: Partial<FairyDustEntrySymbolDef> | null = null;
+	let fairyDustEntryCounter = 0;
 	let currentTierOwnerName = '';
 	let currentFairyDustOwnerName = '';
 
@@ -164,7 +180,7 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 	};
 
 	const finishCurrentTier = (endLine: number) => {
-		if (currentTierDef && currentTierDef.name) {
+		if (currentTierDef && (currentTierDef.name || currentTierDef.isDefaultTier)) {
 			currentTierDef.blockRange = {
 				startLine: currentTierDef.blockRange?.startLine ?? currentTierDef.nameValueRange!.startLine,
 				startCharacter: 0,
@@ -173,10 +189,24 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 			};
 			if (currentTierDef.isDefaultTier) {
 				defaultTier = currentTierDef as TierSymbolDef;
-			} else {
+			} else if (currentTierDef.name) {
 				tiers.set(currentTierDef.name, currentTierDef as TierSymbolDef);
 			}
 			currentTierDef = null;
+		}
+	};
+
+	const finishCurrentFairyDustEntry = (endLine: number) => {
+		if (currentFairyDustEntry) {
+			currentFairyDustEntry.blockRange = {
+				startLine: currentFairyDustEntry.blockRange?.startLine ?? (currentFairyDustEntry.nameValueRange ? currentFairyDustEntry.nameValueRange.startLine : 0),
+				startCharacter: 0,
+				endLine,
+				endCharacter: (lines[endLine] || '').length
+			};
+			const key = currentFairyDustEntry.name || `entry_${++fairyDustEntryCounter}`;
+			fairyDustEntries.set(key, currentFairyDustEntry as FairyDustEntrySymbolDef);
+			currentFairyDustEntry = null;
 		}
 	};
 
@@ -189,13 +219,24 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 		if (topKeyMatch) {
 			finishCurrentProvider(Math.max(0, lineIdx - 1));
 			finishCurrentTier(Math.max(0, lineIdx - 1));
+			finishCurrentFairyDustEntry(Math.max(0, lineIdx - 1));
 
 			const key = topKeyMatch[1];
 			if (key === 'providers') currentSection = 'providers';
 			else if (key === 'tiers') currentSection = 'tiers';
 			else if (key === 'default_tier') {
 				currentSection = 'default_tier';
-				currentTierDef = { isDefaultTier: true, blockRange: { startLine: lineIdx, startCharacter: 0, endLine: lineIdx, endCharacter: rawLine.length } };
+				const keyStart = rawLine.indexOf('default_tier');
+				currentTierDef = {
+					nameValueRange: {
+						startLine: lineIdx,
+						startCharacter: keyStart >= 0 ? keyStart : 0,
+						endLine: lineIdx,
+						endCharacter: keyStart >= 0 ? keyStart + 'default_tier'.length : rawLine.length
+					},
+					isDefaultTier: true,
+					blockRange: { startLine: lineIdx, startCharacter: 0, endLine: lineIdx, endCharacter: rawLine.length }
+				};
 			} else if (key === 'kickstart') currentSection = 'kickstart';
 			else if (key === 'fairy_dust') currentSection = 'fairy_dust';
 			else currentSection = 'other';
@@ -243,6 +284,13 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 					const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);
 					currentProviderDef.type = value;
 					currentProviderDef.typeRange = range;
+				}
+
+				const apiKeyMatch = rawLine.match(/api_key\s*:\s*(.*)/);
+				if (apiKeyMatch) {
+					const valStart = rawLine.indexOf(apiKeyMatch[1]);
+					const { value } = extractInnerValueRange(rawLine, lineIdx, valStart);
+					currentProviderDef.apiKey = value;
 				}
 			}
 		} else if (currentSection === 'tiers') {
@@ -363,7 +411,34 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 						providerId: value,
 						valueRange: range,
 						context: 'default_tier',
-						ownerName: currentTierDef.name || 'Default Catch-All'
+						ownerName: currentTierDef.name || 'default_tier'
+					});
+				}
+
+				const modelMatch = rawLine.match(/^\s+model\s*:\s*(.*)/);
+				if (modelMatch) {
+					const valStart = rawLine.indexOf(modelMatch[1]);
+					const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);
+					currentTierDef.model = value;
+					currentTierDef.modelValueRange = range;
+				}
+
+				const effortMatch = rawLine.match(/^\s+reasoning_effort\s*:\s*(.*)/);
+				if (effortMatch) {
+					const valStart = rawLine.indexOf(effortMatch[1]);
+					const { value } = extractInnerValueRange(rawLine, lineIdx, valStart);
+					currentTierDef.reasoningEffort = value;
+				}
+
+				const rescueTierMatch = rawLine.match(/^\s+rescue_tier\s*:\s*(.*)/);
+				if (rescueTierMatch) {
+					const valStart = rawLine.indexOf(rescueTierMatch[1]);
+					const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);
+					rescueTierUsages.push({
+						tierName: value,
+						valueRange: range,
+						context: 'tier_thought_slap',
+						ownerTierName: currentTierDef.name || 'Default Catch-All'
 					});
 				}
 			}
@@ -379,34 +454,91 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 				});
 			}
 		} else if (currentSection === 'fairy_dust') {
-			const entryNameMatch = rawLine.match(/^\s+-\s*name\s*:\s*(.*)/) || rawLine.match(/^\s+name\s*:\s*(.*)/);
-			if (entryNameMatch) {
-				const valStart = rawLine.indexOf(entryNameMatch[1]);
-				const { value } = extractInnerValueRange(rawLine, lineIdx, valStart);
+			const fdItemMatch = rawLine.match(/^(\s{4}|\t\t)-\s*(.*)/);
+			if (fdItemMatch) {
+				finishCurrentFairyDustEntry(Math.max(0, lineIdx - 1));
+
+				let blockStartLine = lineIdx;
+				for (let backIdx = lineIdx - 1; backIdx >= 0; backIdx--) {
+					const prevTrimmed = lines[backIdx].trim();
+					if (prevTrimmed.startsWith('#')) {
+						blockStartLine = backIdx;
+					} else {
+						break;
+					}
+				}
+
+				const dashCol = rawLine.indexOf('-');
+				currentFairyDustEntry = {
+					nameValueRange: {
+						startLine: lineIdx,
+						startCharacter: dashCol >= 0 ? dashCol : 0,
+						endLine: lineIdx,
+						endCharacter: rawLine.length
+					},
+					blockRange: {
+						startLine: blockStartLine,
+						startCharacter: 0,
+						endLine: lineIdx,
+						endCharacter: rawLine.length
+					}
+				};
+
+				const restOfLine = fdItemMatch[2];
+				const nameOnFirstLine = restOfLine.match(/^name\s*:\s*(.*)/);
+				if (nameOnFirstLine) {
+					const valStart = rawLine.indexOf(nameOnFirstLine[1]);
+					const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);
+					currentFairyDustEntry.name = value;
+					currentFairyDustEntry.nameValueRange = range;
+					currentFairyDustOwnerName = value;
+				}
+			}
+
+			const nameMatch = rawLine.match(/^(?:\s{6}|\t{3})name\s*:\s*(.*)/);
+			if (nameMatch && currentFairyDustEntry && !currentFairyDustEntry.name) {
+				const valStart = rawLine.indexOf(nameMatch[1]);
+				const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);
+				currentFairyDustEntry.name = value;
+				currentFairyDustEntry.nameValueRange = range;
 				currentFairyDustOwnerName = value;
 			}
 
-			const provMatch = rawLine.match(/^\s+provider\s*:\s*(.*)/);
+			const provMatch = rawLine.match(/^(?:\s{6}|\t{3}|(?:\s{4}|\t\t)-\s*)provider\s*:\s*(.*)/);
 			if (provMatch) {
 				const valStart = rawLine.indexOf(provMatch[1]);
 				const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);
+				if (currentFairyDustEntry) {
+					currentFairyDustEntry.provider = value;
+					currentFairyDustEntry.providerValueRange = range;
+				}
 				providerUsages.push({
 					providerId: value,
 					valueRange: range,
 					context: 'fairy_dust',
-					ownerName: currentFairyDustOwnerName || 'Fairy Dust Entry'
+					ownerName: currentFairyDustEntry?.name || currentFairyDustOwnerName || 'Fairy Dust Entry'
 				});
+			}
+
+			const modelMatch = rawLine.match(/^(?:\s{6}|\t{3}|(?:\s{4}|\t\t)-\s*)model\s*:\s*(.*)/);
+			if (modelMatch && currentFairyDustEntry) {
+				const valStart = rawLine.indexOf(modelMatch[1]);
+				const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);
+				currentFairyDustEntry.model = value;
+				currentFairyDustEntry.modelValueRange = range;
 			}
 		}
 	}
 
 	finishCurrentProvider(lines.length - 1);
 	finishCurrentTier(lines.length - 1);
+	finishCurrentFairyDustEntry(lines.length - 1);
 
 	const index: ConfigSymbolIndex = {
 		providers,
 		tiers,
 		defaultTier,
+		fairyDustEntries,
 		providerUsages,
 		rescueTierUsages,
 		getRenameEdits: (oldName: string) => {
