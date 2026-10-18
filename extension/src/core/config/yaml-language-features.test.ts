@@ -144,7 +144,8 @@ jest.mock('vscode', () => {
       registerDocumentLinkProvider: jest.fn().mockReturnValue({ dispose: jest.fn() })
     },
     commands: {
-      registerCommand: jest.fn().mockReturnValue({ dispose: jest.fn() })
+      registerCommand: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+      executeCommand: jest.fn().mockResolvedValue(undefined)
     },
     window: {
       activeTextEditor: undefined as any,
@@ -564,6 +565,20 @@ tiers:
       });
       await pickModelHandler({ tierName: 'Tier 1: Coding' });
       expect(mockEdit).toHaveBeenCalled();
+
+      // Test findProviderReferences command
+      const findRefsCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(
+        (c) => c[0] === 'nacho-flow.findProviderReferences'
+      );
+      expect(findRefsCall).toBeDefined();
+      const findRefsHandler = findRefsCall[1];
+      await findRefsHandler('llamacpp_local');
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+        'editor.action.showReferences',
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
 
       // Test live document listeners
       const openDocListeners = (vscode.workspace.onDidOpenTextDocument as jest.Mock).mock.calls;

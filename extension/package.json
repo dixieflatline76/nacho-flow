@@ -143,6 +143,10 @@
       {
         "command": "nacho-flow.pingProviderEndpoint",
         "title": "Nacho Flow: Ping Provider Endpoint"
+      },
+      {
+        "command": "nacho-flow.findProviderReferences",
+        "title": "Nacho Flow: Find Provider References"
       }
     ],
     "viewsContainers": {

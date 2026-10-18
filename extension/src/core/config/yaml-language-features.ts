@@ -517,16 +517,32 @@ export class NachoCodeLensProvider implements vscode.CodeLensProvider {
 		// Providers
 		for (const [id, def] of index.providers) {
 			const range = toVsCodeRange(def.idRange);
-			const refCount = index.providerUsages.filter((u) => u.providerId === id).length;
+			const usages = index.providerUsages.filter((u) => u.providerId === id);
+			const refCount = usages.length;
 			const refTitle = refCount === 0 ? '⚠️ 0 references (Unused)' : `${refCount} reference${refCount === 1 ? '' : 's'}`;
 
-			lenses.push(
-				new vscode.CodeLens(range, {
-					title: refTitle,
-					command: 'nacho-flow.findProviderReferences',
-					arguments: [id]
-				})
-			);
+			if (refCount > 0) {
+				const locations = [
+					new vscode.Location(document.uri, toVsCodeRange(def.idRange)),
+					...usages.map((u) => new vscode.Location(document.uri, toVsCodeRange(u.valueRange)))
+				];
+				const pos = new vscode.Position(def.idRange.startLine, def.idRange.startCharacter);
+				lenses.push(
+					new vscode.CodeLens(range, {
+						title: refTitle,
+						command: 'editor.action.showReferences',
+						arguments: [document.uri, pos, locations]
+					})
+				);
+			} else {
+				lenses.push(
+					new vscode.CodeLens(range, {
+						title: refTitle,
+						command: 'nacho-flow.findProviderReferences',
+						arguments: [id]
+					})
+				);
+			}
 
 			if (def.baseUrl) {
 				lenses.push(
@@ -786,6 +802,27 @@ export function registerYamlLanguageFeatures(
 					`🔌 [${providerId || 'Provider'}] Offline: ${disc.error || 'Connection failed'}`
 				);
 			}
+		}),
+
+		vscode.commands.registerCommand('nacho-flow.findProviderReferences', async (providerId?: string) => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) return;
+			const index = parseConfigSymbolIndex(editor.document.getText());
+			const pId = providerId || Array.from(index.providers.keys())[0];
+			if (!pId) return;
+			const provDef = index.providers.get(pId);
+			if (!provDef) return;
+			const usages = index.providerUsages.filter((u) => u.providerId === pId);
+			if (usages.length === 0) {
+				vscode.window.showInformationMessage(`Provider '${pId}' is unused (0 references).`);
+				return;
+			}
+			const locations = [
+				new vscode.Location(editor.document.uri, toVsCodeRange(provDef.idRange)),
+				...usages.map((u) => new vscode.Location(editor.document.uri, toVsCodeRange(u.valueRange)))
+			];
+			const pos = new vscode.Position(provDef.idRange.startLine, provDef.idRange.startCharacter);
+			await vscode.commands.executeCommand('editor.action.showReferences', editor.document.uri, pos, locations);
 		})
 	);
 
