@@ -423,7 +423,8 @@ export function isNachoConfigDocument(document: {
 	getText?: () => string;
 }): boolean {
 	const fsPath = document.uri?.fsPath || document.fileName || '';
-	const base = path.basename(fsPath).toLowerCase();
+	const normalized = fsPath.replace(/\\/g, '/').toLowerCase();
+	const base = path.posix.basename(normalized);
 
 	if (!base.endsWith('.yaml') && !base.endsWith('.yml')) {
 		return false;
@@ -433,7 +434,6 @@ export function isNachoConfigDocument(document: {
 		return true;
 	}
 
-	const normalized = fsPath.replace(/\\/g, '/').toLowerCase();
 	if (normalized.includes('/.nacho/') || normalized.includes('/profiles/')) {
 		return true;
 	}
