@@ -350,5 +350,26 @@ fairy_dust:
     // blockRange should start at the preceding comment
     expect(second.blockRange.startLine).toBe(secondDashLineIdx - 1);
   });
+
+  it('should parse CRLF (\r\n) YAML documents with exact ranges and without trailing \r offsets', () => {
+    const crlfYaml = [
+      'providers: # inline comment',
+      '  llamacpp:',
+      '    base_url: "http://localhost:8080/v1"',
+      '    type: "local"',
+      'tiers:',
+      '  - name: "Tier 1"',
+      '    provider: llamacpp',
+      '    model: "qwen"'
+    ].join('\r\n');
+
+    const lfYaml = crlfYaml.replace(/\r\n/g, '\n');
+    const crlfIndex = parseConfigSymbolIndex(crlfYaml);
+    const lfIndex = parseConfigSymbolIndex(lfYaml);
+
+    expect(crlfIndex.providers.get('llamacpp')).toEqual(lfIndex.providers.get('llamacpp'));
+    expect(crlfIndex.tiers.get('Tier 1')).toEqual(lfIndex.tiers.get('Tier 1'));
+    expect(crlfIndex.providerUsages).toEqual(lfIndex.providerUsages);
+  });
 });
 

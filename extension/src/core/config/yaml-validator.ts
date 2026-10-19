@@ -162,7 +162,7 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 		return issues;
 	}
 
-	const lines = text.split('\n');
+	const lines = text.split(/\r?\n/);
 	const index = parseConfigSymbolIndex(text);
 
 	// 1. SYNTAX_INDENT: Tab indentation & unclosed quotes check

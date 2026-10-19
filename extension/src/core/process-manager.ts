@@ -431,8 +431,10 @@ export class ProcessManager {
 	 */
 	public resolveLogDir(configPath?: string): string {
 		if (configPath) {
-			const dir = path.dirname(configPath);
-			if (path.basename(dir) === '.nacho' || path.basename(dir) === 'presets' || path.basename(dir) === 'profiles') {
+			const normalizedPath = configPath.replace(/[\\/]+/g, path.sep);
+			const dir = path.dirname(normalizedPath);
+			const dirBase = path.basename(dir);
+			if (dirBase === '.nacho' || dirBase === 'presets' || dirBase === 'profiles') {
 				return path.join(dir, 'logs');
 			}
 		}
@@ -440,7 +442,8 @@ export class ProcessManager {
 			return path.join(this.globalStorageUri.fsPath, 'presets', 'logs');
 		}
 		if (configPath) {
-			return path.join(path.dirname(configPath), 'logs');
+			const normalizedPath = configPath.replace(/[\\/]+/g, path.sep);
+			return path.join(path.dirname(normalizedPath), 'logs');
 		}
 		return path.join(os.homedir(), '.nacho-flow', 'logs');
 	}
@@ -707,7 +710,7 @@ export class ProcessManager {
 						})
 						.toString();
 
-					const procName = path.basename(commOutput.trim()).toLowerCase();
+					const procName = path.posix.basename(commOutput.trim().replace(/\\/g, '/')).toLowerCase();
 					if (procName.includes('nacho-flow')) {
 						this.outputChannel.appendLine(`[ProcessManager] Reaping orphaned Unix process ${pid} on port ${port}`);
 						child_process.execSync(`kill -9 ${pid}`, { stdio: 'ignore' });

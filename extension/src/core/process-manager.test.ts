@@ -878,6 +878,14 @@ describe('ProcessManager', () => {
 			expect(res.success).toBe(false);
 			expect(processManager.isEngineAttached()).toBe(false);
 		});
+
+		it('should resolve log dir across both Windows and POSIX profile paths', () => {
+			const winLogDir = processManager.resolveLogDir('C:\\Users\\test\\profiles\\profile1.yaml');
+			expect(winLogDir.replace(/\\/g, '/')).toBe('C:/Users/test/profiles/logs');
+
+			const posixLogDir = processManager.resolveLogDir('/home/user/.nacho/config.yaml');
+			expect(posixLogDir.replace(/\\/g, '/')).toBe('/home/user/.nacho/logs');
+		});
 	});
 
 	describe('parseStartupError', () => {

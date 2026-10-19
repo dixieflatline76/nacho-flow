@@ -291,5 +291,28 @@ tiers:
     expect(exprError?.quickFixes?.[0].range.startCharacter).toBe(expectedCol);
     expect(exprError?.quickFixes?.[0].range.endCharacter).toBe(expectedCol + 'Tokns'.length);
   });
+
+  it('should validate CRLF (\r\n) YAML documents with inline comments on providers: and clean tab quickFixes', () => {
+    const crlfYaml = [
+      'providers: # top-level providers comment',
+      '\tllamacpp:',
+      '    base_url: "http://localhost:8080/v1"',
+      '    type: "local"',
+      'tiers:',
+      '  - name: "Tier 1"',
+      '    provider: llamacpp',
+      '    when: "Tokens > 100"'
+    ].join('\r\n');
+
+    const issues = validateNachoConfigYaml(crlfYaml);
+    // Should NOT report EMPTY_PROVIDERS despite inline comment + CRLF
+    expect(issues.find((i) => i.ruleId === 'EMPTY_PROVIDERS')).toBeUndefined();
+
+    // Tab quickFix replacement should not include a trailing \r
+    const tabIssue = issues.find((i) => i.ruleId === 'SYNTAX_INDENT');
+    expect(tabIssue).toBeDefined();
+    expect(tabIssue?.quickFixes?.[0].replacement.endsWith('\r')).toBe(false);
+    expect(tabIssue?.quickFixes?.[0].range.endCharacter).toBe('  llamacpp:'.length - 1);
+  });
 });
 

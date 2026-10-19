@@ -154,7 +154,7 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 		};
 	}
 
-	const lines = text.split('\n');
+	const lines = text.split(/\r?\n/);
 
 	type TopSection = 'none' | 'providers' | 'tiers' | 'default_tier' | 'kickstart' | 'fairy_dust' | 'other';
 	let currentSection: TopSection = 'none';

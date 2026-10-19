@@ -179,7 +179,7 @@ export class ExtensionController {
 							if (hasValidationErrors) {
 								const errCount = validationIssues.filter((i) => i.severity === 'Error').length;
 								this.outputChannel?.appendLine(
-									`[Controller] Pre-Flight Save Gate: ${errCount} validation error(s) detected in ${path.basename(doc.fileName)}. Local engine restart paused.`
+									`[Controller] Pre-Flight Save Gate: ${errCount} validation error(s) detected in ${path.posix.basename(normalizedDocPath)}. Local engine restart paused.`
 								);
 								this.showTransientToast(`⚠️ Nacho Flow: Configuration has ${errCount} validation error(s) — fix issues to restart engine.`);
 								return;

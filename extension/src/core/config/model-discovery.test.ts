@@ -358,6 +358,22 @@ describe('ModelDiscovery', () => {
     delete process.env.ANTHROPIC_API_KEY;
   });
 
+  it('should omit Authorization header when ENV_ or ${ENV} api_key placeholder is unset in process.env', async () => {
+    delete process.env.UNSET_SECRET_KEY;
+
+    setupMockRequest(http, {
+      statusCode: 200,
+      body: JSON.stringify({ data: [{ id: 'local-model-1' }] })
+    });
+
+    await discoverModels('http://localhost:8080/v1', {
+      apiKey: 'ENV_UNSET_SECRET_KEY'
+    });
+
+    const callHeaders = (http.request as jest.Mock).mock.calls[0][1].headers;
+    expect(callHeaders.Authorization).toBeUndefined();
+  });
+
   it('should pass Anthropic headers when apiKey is provided', async () => {
     setupMockRequest(https, {
       statusCode: 200,

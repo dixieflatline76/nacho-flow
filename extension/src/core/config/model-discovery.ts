@@ -162,8 +162,8 @@ export async function discoverModels(
 			resolvedApiKey.match(/^ENV_([A-Za-z0-9_]+)$/) ||
 			resolvedApiKey.match(/^\$\{([A-Za-z0-9_]+)\}$/) ||
 			resolvedApiKey.match(/^\$([A-Za-z0-9_]+)$/);
-		if (envMatch && process.env[envMatch[1]]) {
-			resolvedApiKey = process.env[envMatch[1]];
+		if (envMatch) {
+			resolvedApiKey = process.env[envMatch[1]] || undefined;
 		}
 	}
 
