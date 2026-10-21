@@ -66,7 +66,7 @@ func setupMockPipelineServer(
 	}
 
 	reg := provider.NewRegistry()
-	reg.Register(provider.NewGenericLLMProvider("openrouter", cfg.Providers["openrouter"]))
+	reg.Register(provider.NewOpenAICompatibleProvider("openrouter", cfg.Providers["openrouter"]))
 
 	evaluator, err := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
 	if err != nil {
@@ -437,10 +437,13 @@ func newMockOpenCircuitProvider(id string) *mockOpenCircuitProvider {
 	return &mockOpenCircuitProvider{id: id, cb: cb}
 }
 
-func (p *mockOpenCircuitProvider) ID() string                               { return p.id }
-func (p *mockOpenCircuitProvider) Name() string                             { return "Mock Open Circuit Provider" }
-func (p *mockOpenCircuitProvider) BaseURL() string                          { return "http://127.0.0.1:9999" }
-func (p *mockOpenCircuitProvider) IsLocal() bool                            { return false }
+func (p *mockOpenCircuitProvider) ID() string      { return p.id }
+func (p *mockOpenCircuitProvider) Name() string    { return "Mock Open Circuit Provider" }
+func (p *mockOpenCircuitProvider) BaseURL() string { return "http://127.0.0.1:9999" }
+func (p *mockOpenCircuitProvider) IsLocal() bool   { return false }
+func (p *mockOpenCircuitProvider) Platform() contract.Platform {
+	return contract.PlatformOpenAICompatible
+}
 func (p *mockOpenCircuitProvider) GetAPIKey() string                        { return "dummy" }
 func (p *mockOpenCircuitProvider) CircuitBreaker() *provider.CircuitBreaker { return p.cb }
 

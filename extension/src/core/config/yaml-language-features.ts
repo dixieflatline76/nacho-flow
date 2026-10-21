@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { parseConfigSymbolIndex, SourceRange, ProviderSymbolDef, ConfigSymbolIndex } from './config-symbol-index';
 import { validateNachoConfigYaml } from './yaml-validator';
-import { discoverModels } from './model-discovery';
+import { discoverModels, resolveEffectiveBaseUrl } from './model-discovery';
 
 export const REQUEST_CONTEXT_DOCS: Record<string, string> = {
 	Tokens: 'Total estimated input tokens in the current request turn.',
@@ -618,11 +618,12 @@ export class NachoCompletionItemProvider implements vscode.CompletionItemProvide
 
 			if (targetProviderId) {
 				const provDef = index.providers.get(targetProviderId);
-				if (provDef?.baseUrl) {
+				const effectiveBaseUrl = resolveEffectiveBaseUrl(provDef);
+				if (effectiveBaseUrl) {
 					try {
-						const disc = await discoverModels(provDef.baseUrl, {
-							apiKey: provDef.apiKey,
-							providerType: provDef.type
+						const disc = await discoverModels(effectiveBaseUrl, {
+							apiKey: provDef?.apiKey,
+							providerType: provDef?.type
 						});
 						if (disc.online && disc.models.length > 0) {
 							const quoteMatch = lineUntilCursor.match(/model\s*:\s*(["'])/);
@@ -1008,12 +1009,13 @@ export class NachoCodeLensProvider implements vscode.CodeLensProvider {
 				})
 			);
 
-			if (def.baseUrl) {
+			const effectiveUrl = resolveEffectiveBaseUrl(def);
+			if (effectiveUrl) {
 				lenses.push(
 					new vscode.CodeLens(range, {
 						title: '🔌 Ping Endpoint',
 						command: 'nacho-flow.pingProviderEndpoint',
-						arguments: [def.baseUrl, id]
+						arguments: [effectiveUrl, id]
 					})
 				);
 			}
@@ -1238,17 +1240,18 @@ export function registerYamlLanguageFeatures(
 			}
 
 			const provDef = index.providers.get(target.provider);
-			if (!provDef || !provDef.baseUrl) {
+			const effectiveBaseUrl = resolveEffectiveBaseUrl(provDef);
+			if (!provDef || !effectiveBaseUrl) {
 				vscode.window.showWarningMessage(`Provider '${target.provider}' has no base_url configured.`);
 				return;
 			}
 
-			const disc = await discoverModels(provDef.baseUrl, {
+			const disc = await discoverModels(effectiveBaseUrl, {
 				apiKey: provDef.apiKey,
 				providerType: provDef.type
 			});
 			if (!disc.online || disc.models.length === 0) {
-				vscode.window.showErrorMessage(`Failed to discover models from ${provDef.baseUrl}: ${disc.error || 'No models returned'}`);
+				vscode.window.showErrorMessage(`Failed to discover models from ${effectiveBaseUrl}: ${disc.error || 'No models returned'}`);
 				return;
 			}
 
@@ -1284,18 +1287,18 @@ export function registerYamlLanguageFeatures(
 					provDef = index.providers.get(providerId);
 				}
 				if (!provDef && baseUrl) {
-					provDef = Array.from(index.providers.values()).find((p) => p.baseUrl === baseUrl);
+					provDef = Array.from(index.providers.values()).find((p) => p.baseUrl === baseUrl || resolveEffectiveBaseUrl(p) === baseUrl);
 				}
 				if (!provDef && !baseUrl && !providerId) {
 					const firstProv = Array.from(index.providers.values())[0];
-					baseUrl = firstProv?.baseUrl;
+					baseUrl = resolveEffectiveBaseUrl(firstProv);
 					providerId = firstProv?.id;
 					provDef = firstProv;
 				}
 			}
 
 			if (!baseUrl && provDef) {
-				baseUrl = provDef.baseUrl;
+				baseUrl = resolveEffectiveBaseUrl(provDef);
 			}
 			if (!providerId && provDef) {
 				providerId = provDef.id;

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
@@ -478,46 +479,47 @@ func TestProviderCompatibilityFilter(t *testing.T) {
 	anthropicProviders := map[string]contract.ProviderConfig{
 		"anthropic": {
 			BaseURL: "https://api.anthropic.com",
-			Type:    contract.ProviderTypeAnthropic,
+			Type:    provider.TypeAnthropic,
 		},
 	}
 
 	openrouterProviders := map[string]contract.ProviderConfig{
 		"openrouter": {
 			BaseURL: "https://openrouter.ai/api/v1",
-			Type:    contract.ProviderTypeOpenRouter,
+			Type:    provider.TypeOpenRouter,
 		},
 	}
 
 	dualProviders := map[string]contract.ProviderConfig{
 		"anthropic": {
 			BaseURL: "https://api.anthropic.com",
-			Type:    contract.ProviderTypeAnthropic,
+			Type:    provider.TypeAnthropic,
 		},
 		"openrouter": {
 			BaseURL: "https://openrouter.ai/api/v1",
-			Type:    contract.ProviderTypeOpenRouter,
+			Type:    provider.TypeOpenRouter,
 		},
 	}
 
 	openaiProviders := map[string]contract.ProviderConfig{
 		"openai": {
 			BaseURL: "https://api.openai.com/v1",
-			Type:    contract.ProviderTypeCloud,
+			Type:    provider.TypeOpenAICompatible,
 		},
 	}
 
 	googleProviders := map[string]contract.ProviderConfig{
 		"google": {
 			BaseURL: "https://generativelanguage.googleapis.com",
-			Type:    contract.ProviderTypeCloud,
+			Type:    provider.TypeOpenAICompatible,
 		},
 	}
 
 	localProviders := map[string]contract.ProviderConfig{
 		"llama_cluster": {
 			BaseURL: "http://127.0.0.1:8080/v1",
-			Type:    contract.ProviderTypeLocal,
+			Type:    provider.TypeOpenAICompatible,
+			Local:   true,
 		},
 	}
 
@@ -640,7 +642,7 @@ func TestOptimize_AnthropicProfileDoesNotRecommendDeepSeek(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic": {
 				BaseURL: "https://api.anthropic.com",
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -697,5 +699,3 @@ func TestOptimize_AnthropicProfileDoesNotRecommendDeepSeek(t *testing.T) {
 		}
 	}
 }
-
-

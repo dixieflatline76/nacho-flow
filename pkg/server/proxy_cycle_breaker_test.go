@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -69,7 +70,8 @@ func TestProxy_CycleBreaker_Stage1_LocalRetry(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -161,11 +163,12 @@ func TestProxy_CycleBreaker_Stage2_CloudFailover(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 			"cloud_provider": {
 				BaseURL: mockCloud.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -268,7 +271,8 @@ func TestProxy_CycleBreaker_NonStreaming_LocalRetry(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -331,7 +335,8 @@ func TestProxy_CycleBreaker_TierOverride_Disabled(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -415,7 +420,8 @@ func TestProxy_CycleBreaker_Phase2_MidStreamSevering(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -507,7 +513,8 @@ func TestProxy_CycleBreaker_ThinkingRunawaySevering(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -585,7 +592,8 @@ func TestProxy_Kickstart_PromptInjection(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -710,7 +718,8 @@ func TestProxy_Kickstart_WriteOnly_PromptInjection(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -826,7 +835,8 @@ func TestProxy_Kickstart_FailingTestDoesNotResetKickstart(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -920,7 +930,8 @@ func TestProxy_Kickstart_PassingTestResetsKickstart(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -1031,7 +1042,8 @@ func TestProxy_Kickstart_ReadingTestFileDoesNotResetKickstart(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -1144,9 +1156,11 @@ func TestProxy_CycleBreaker_AutoEscalationAndCooldown(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"openrouter-flash": {
 				BaseURL: mockFlash.URL,
+				Type:    provider.TypeOpenAICompatible,
 			},
 			"openrouter-pro": {
 				BaseURL: mockPro.URL,
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 	}
@@ -1239,7 +1253,7 @@ func TestProxy_ToolTokens_Telemetry_EndToEnd(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"mock-lumo": {
 				BaseURL: mockBackend.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -1308,7 +1322,7 @@ func TestProxy_ShellWrite_Telemetry_EndToEnd(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"mock-lumo": {
 				BaseURL: mockBackend.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -1455,7 +1469,7 @@ func TestSolveNQueens(t *testing.T) {
 			Providers: map[string]contract.ProviderConfig{
 				"mock-lumo": {
 					BaseURL: mockUpstream.URL,
-					Type:    "cloud",
+					Type:    provider.TypeOpenAICompatible,
 				},
 			},
 			Tiers: []contract.Tier{
@@ -1578,7 +1592,7 @@ func TestSolveNQueens(t *testing.T) {
 			Providers: map[string]contract.ProviderConfig{
 				"mock-lumo": {
 					BaseURL: mockUpstream.URL,
-					Type:    "cloud",
+					Type:    provider.TypeOpenAICompatible,
 				},
 			},
 			Tiers: []contract.Tier{
@@ -1665,7 +1679,8 @@ func TestProxy_CycleBreaker_TelemetryPreservesCycleStatsAndPromptTokens(t *testi
 		Providers: map[string]contract.ProviderConfig{
 			"mock-local": {
 				BaseURL: mockUpstream.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -1760,7 +1775,8 @@ func TestProxy_CycleBreaker_Phase2_MidStreamTelemetryPreservation(t *testing.T) 
 		Providers: map[string]contract.ProviderConfig{
 			"mock-local": {
 				BaseURL: mockUpstream.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -1841,7 +1857,8 @@ func TestProxy_CycleBreaker_Phase1_ToolCallViolation(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"mock-local": {
 				BaseURL: mockUpstream.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{

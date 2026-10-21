@@ -17,10 +17,11 @@ var (
 
 type testOpenRouterProvider struct{}
 
-func (m *testOpenRouterProvider) ID() string      { return "openrouter" }
-func (m *testOpenRouterProvider) Name() string    { return "OpenRouter" }
-func (m *testOpenRouterProvider) BaseURL() string { return "https://openrouter.ai/api/v1" }
-func (m *testOpenRouterProvider) IsLocal() bool   { return false }
+func (m *testOpenRouterProvider) ID() string                  { return "openrouter" }
+func (m *testOpenRouterProvider) Name() string                { return "OpenRouter" }
+func (m *testOpenRouterProvider) BaseURL() string             { return "https://openrouter.ai/api/v1" }
+func (m *testOpenRouterProvider) IsLocal() bool               { return false }
+func (m *testOpenRouterProvider) Platform() contract.Platform { return contract.PlatformOpenRouter }
 
 var staticTestOpenRouterDeclarator = &provider.WireDeclarator{
 	Dialect:           provider.ReasoningDialectNested,
@@ -34,10 +35,11 @@ func (m *testOpenRouterProvider) WireDeclarator() *provider.WireDeclarator {
 
 type testCloudProvider struct{}
 
-func (m *testCloudProvider) ID() string      { return "openai" }
-func (m *testCloudProvider) Name() string    { return "OpenAI" }
-func (m *testCloudProvider) BaseURL() string { return "https://api.openai.com/v1" }
-func (m *testCloudProvider) IsLocal() bool   { return false }
+func (m *testCloudProvider) ID() string                  { return "openai" }
+func (m *testCloudProvider) Name() string                { return "OpenAI" }
+func (m *testCloudProvider) BaseURL() string             { return "https://api.openai.com/v1" }
+func (m *testCloudProvider) IsLocal() bool               { return false }
+func (m *testCloudProvider) Platform() contract.Platform { return contract.PlatformOpenAICompatible }
 func (m *testCloudProvider) WireDeclarator() *provider.WireDeclarator {
 	return provider.DefaultWireDeclarator
 }

@@ -42,12 +42,32 @@
       "description": "Upstream LLM providers (local llama-server, vLLM, Ollama, OpenRouter, Anthropic)",
       "additionalProperties": {
         "type": "object",
-        "required": ["type", "base_url"],
+        "required": ["type"],
+        "allOf": [
+          {
+            "if": {
+              "properties": { "type": { "const": "openai_compatible" } }
+            },
+            "then": {
+              "required": ["base_url"]
+            },
+            "else": {
+              "not": { "required": ["local"] },
+              "properties": {
+                "local": false
+              }
+            }
+          }
+        ],
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["local", "cloud", "anthropic", "openrouter", "mock"],
+            "enum": ["openai_compatible", "anthropic", "openrouter"],
             "description": "Provider execution type"
+          },
+          "local": {
+            "type": "boolean",
+            "description": "Flag indicating if the provider is a locally running model server (only valid for openai_compatible)"
           },
           "base_url": {
             "type": "string",

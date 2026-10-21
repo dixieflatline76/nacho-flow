@@ -9,6 +9,7 @@ import (
 
 	"github.com/dixieflatline76/nacho-flow/pkg/config"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 )
 
 func TestValidateConfig_Valid(t *testing.T) {
@@ -16,15 +17,16 @@ func TestValidateConfig_Valid(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434",
-				Type:    contract.ProviderTypeLocal,
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 			"openrouter": {
 				BaseURL: "https://openrouter.ai/api/v1",
-				Type:    contract.ProviderTypeCloud,
+				Type:    provider.TypeOpenRouter,
 			},
 			"anthropic": {
 				BaseURL: "https://api.anthropic.com",
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -74,54 +76,119 @@ func TestValidateConfig_NoProviders(t *testing.T) {
 	}
 }
 
-func TestValidateConfig_MissingBaseURL(t *testing.T) {
-	cfg := &contract.Config{
-		Providers: map[string]contract.ProviderConfig{
-			"ollama": {
-				BaseURL: "   ",
-				Type:    contract.ProviderTypeLocal,
-			},
-		},
-	}
-	err := config.ValidateConfig(cfg)
-	if err == nil {
-		t.Fatal("expected error for missing base_url, got nil")
-	}
-	if !strings.Contains(err.Error(), "missing required 'base_url'") {
-		t.Errorf("unexpected error message: %v", err)
-	}
-}
-
-func TestValidateConfig_InvalidOrMissingType(t *testing.T) {
+func TestValidateConfig_ProviderTable(t *testing.T) {
 	tests := []struct {
-		name         string
-		providerType contract.ProviderType
+		name        string
+		providerID  string
+		cfg         contract.ProviderConfig
+		expectedErr string
 	}{
-		{"empty type", ""},
-		{"invalid type custom", "fast"},
-		{"invalid type uppercase", "LOCAL"},
+		{
+			name:       "type local removed",
+			providerID: "ollama",
+			cfg: contract.ProviderConfig{
+				Type:    "local",
+				BaseURL: "http://127.0.0.1:11434",
+			},
+			expectedErr: `provider "ollama": type "local" was removed; use type: openai_compatible with local: true`,
+		},
+		{
+			name:       "type cloud removed",
+			providerID: "openrouter",
+			cfg: contract.ProviderConfig{
+				Type:    "cloud",
+				BaseURL: "https://openrouter.ai/api/v1",
+			},
+			expectedErr: `provider "openrouter": type "cloud" was removed; use type: openai_compatible, or type: openrouter for OpenRouter`,
+		},
+		{
+			name:       "missing type",
+			providerID: "test_prov",
+			cfg: contract.ProviderConfig{
+				BaseURL: "http://127.0.0.1:8000",
+			},
+			expectedErr: `provider "test_prov": type is required and must be one of openai_compatible, anthropic, openrouter`,
+		},
+		{
+			name:       "unknown type",
+			providerID: "test_prov",
+			cfg: contract.ProviderConfig{
+				Type:    "fast",
+				BaseURL: "http://127.0.0.1:8000",
+			},
+			expectedErr: `provider "test_prov": type is required and must be one of openai_compatible, anthropic, openrouter`,
+		},
+		{
+			name:       "openai_compatible without base_url",
+			providerID: "custom",
+			cfg: contract.ProviderConfig{
+				Type: provider.TypeOpenAICompatible,
+			},
+			expectedErr: `provider "custom": base_url is required for type openai_compatible`,
+		},
+		{
+			name:       "local true on anthropic",
+			providerID: "anthropic",
+			cfg: contract.ProviderConfig{
+				Type:  provider.TypeAnthropic,
+				Local: true,
+			},
+			expectedErr: `provider "anthropic": local is only valid for type openai_compatible`,
+		},
+		{
+			name:       "local true on openrouter",
+			providerID: "openrouter",
+			cfg: contract.ProviderConfig{
+				Type:  provider.TypeOpenRouter,
+				Local: true,
+			},
+			expectedErr: `provider "openrouter": local is only valid for type openai_compatible`,
+		},
+		{
+			name:       "base_url not absolute http(s) URL",
+			providerID: "custom",
+			cfg: contract.ProviderConfig{
+				Type:    provider.TypeOpenAICompatible,
+				BaseURL: "invalid-url",
+			},
+			expectedErr: `provider "custom": base_url must be an absolute http(s) URL`,
+		},
+		{
+			name:       "base_url non-http scheme",
+			providerID: "custom",
+			cfg: contract.ProviderConfig{
+				Type:    provider.TypeOpenAICompatible,
+				BaseURL: "ftp://example.com/v1",
+			},
+			expectedErr: `provider "custom": base_url must be an absolute http(s) URL`,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &contract.Config{
 				Providers: map[string]contract.ProviderConfig{
-					"my-engine": {
-						BaseURL: "http://10.0.0.5:8000",
-						Type:    tc.providerType,
+					tc.providerID: tc.cfg,
+				},
+				Tiers: []contract.Tier{
+					{
+						Name:     "T1",
+						Model:    "m1",
+						Provider: tc.providerID,
 					},
+				},
+				DefaultTier: contract.Tier{
+					Name:     "Default",
+					Model:    "m1",
+					Provider: tc.providerID,
 				},
 			}
 			err := config.ValidateConfig(cfg)
 			if err == nil {
-				t.Fatalf("expected error for provider type %q, got nil", tc.providerType)
+				t.Fatalf("expected error %q, got nil", tc.expectedErr)
 			}
-			errMsg := err.Error()
-			if !strings.Contains(errMsg, "type' is required and must be 'local', 'cloud', 'anthropic', or 'openrouter'") {
-				t.Errorf("error does not contain required guidance: %s", errMsg)
-			}
-			if !strings.Contains(errMsg, "Example for local engines") || !strings.Contains(errMsg, "Example for cloud APIs") {
-				t.Errorf("error does not contain structured examples: %s", errMsg)
+			if err.Error() != tc.expectedErr {
+				t.Errorf("error = %q, want exact %q", err.Error(), tc.expectedErr)
 			}
 		})
 	}
@@ -132,7 +199,8 @@ func TestValidateConfig_UnknownTierProvider(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434",
-				Type:    contract.ProviderTypeLocal,
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -157,7 +225,8 @@ func TestValidateConfig_UnknownDefaultTierProvider(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434",
-				Type:    contract.ProviderTypeLocal,
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		DefaultTier: contract.Tier{
@@ -180,7 +249,8 @@ func TestValidateConfig_UnknownFairyDustProvider(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434",
-				Type:    contract.ProviderTypeLocal,
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		DefaultTier: contract.Tier{
@@ -295,7 +365,8 @@ func TestValidateConfig_Phase2Rules(t *testing.T) {
 			Providers: map[string]contract.ProviderConfig{
 				"mock": {
 					BaseURL: "http://127.0.0.1:8000",
-					Type:    contract.ProviderTypeLocal,
+					Type:    provider.TypeOpenAICompatible,
+					Local:   true,
 				},
 			},
 			Tiers: []contract.Tier{
@@ -436,7 +507,8 @@ func TestValidation_EmptyTierModelRejected(t *testing.T) {
 			Providers: map[string]contract.ProviderConfig{
 				"ollama": {
 					BaseURL: "http://127.0.0.1:11434",
-					Type:    contract.ProviderTypeLocal,
+					Type:    provider.TypeOpenAICompatible,
+					Local:   true,
 				},
 			},
 			Tiers: []contract.Tier{
@@ -503,4 +575,3 @@ func TestValidation_EmptyTierModelRejected(t *testing.T) {
 		}
 	})
 }
-

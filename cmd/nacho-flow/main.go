@@ -202,12 +202,17 @@ func (p *program) run(s service.Service) error {
 	modelClassifier := telemetry.NewClassifier(curationMgr)
 	oracle := telemetry.NewPricingOracleWithClassifier(modelClassifier)
 	for id, p := range cfg.Providers {
-		factory, ok := telemetry.LookupPricingFactory(id)
-		if !ok && p.Type != "" {
-			factory, ok = telemetry.LookupPricingFactory(string(p.Type))
+		platform, ok := reg.Platform(id)
+		if !ok {
+			continue
 		}
+		factory, ok := telemetry.LookupPricingFactory(string(platform))
 		if ok {
-			prov, syncInterval := factory(id, p, 0)
+			effectiveCfg := p
+			if provInstance, ok := reg.Get(id); ok {
+				effectiveCfg.BaseURL = provInstance.BaseURL()
+			}
+			prov, syncInterval := factory(id, effectiveCfg, 0)
 			oracle.RegisterProvider(prov, syncInterval)
 		}
 	}

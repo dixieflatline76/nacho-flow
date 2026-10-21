@@ -20,11 +20,6 @@ type OpenRouterPricingProvider struct {
 	client  *http.Client
 }
 
-// NewOpenRouterPricingProvider creates a new provider pointing to the production OpenRouter endpoint.
-func NewOpenRouterPricingProvider(apiKey string) *OpenRouterPricingProvider {
-	return NewOpenRouterPricingProviderWithURL(contract.OpenRouterProduction, apiKey)
-}
-
 // NewOpenRouterPricingProviderWithURL creates a provider with a custom base URL (useful for testing).
 func NewOpenRouterPricingProviderWithURL(baseURL, apiKey string) *OpenRouterPricingProvider {
 	return &OpenRouterPricingProvider{
@@ -169,10 +164,6 @@ func init() {
 				interval = parsed
 			}
 		}
-		baseURL := cfg.BaseURL
-		if baseURL == "" {
-			baseURL = contract.OpenRouterProduction
-		}
-		return NewOpenRouterPricingProviderWithURL(baseURL, cfg.APIKey), interval
+		return NewOpenRouterPricingProviderWithURL(cfg.BaseURL, cfg.APIKey), interval
 	})
 }

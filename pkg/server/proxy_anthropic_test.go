@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 )
@@ -60,7 +61,7 @@ func TestProxy_Anthropic_NonStreaming(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic-direct": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockAnthropic.URL,
 				APIKey:  "sk-ant-test-token-xyz",
 			},
@@ -217,7 +218,7 @@ func TestProxy_Anthropic_Streaming(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic-stream": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockAnthropic.URL,
 				APIKey:  "sk-ant-test-stream",
 			},
@@ -315,7 +316,7 @@ func TestProxy_Anthropic_ToolUse(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic-tools": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockAnthropic.URL,
 				APIKey:  "sk-ant-tool-key",
 			},
@@ -419,7 +420,7 @@ func TestProxy_Anthropic_ErrorHandling(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic-err": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockAnthropic.URL,
 				APIKey:  "sk-ant-test",
 			},
@@ -498,12 +499,12 @@ func TestDispatch_4xxNotRetriedOnDefaultTier(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"primary-prov": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockPrimary.URL,
 				APIKey:  "sk-ant-test",
 			},
 			"default-prov": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockDefault.URL,
 				APIKey:  "sk-ant-test",
 			},
@@ -540,4 +541,3 @@ func TestDispatch_4xxNotRetriedOnDefaultTier(t *testing.T) {
 		t.Fatalf("Expected 0 hits on default tier, got %d", defaultHits)
 	}
 }
-

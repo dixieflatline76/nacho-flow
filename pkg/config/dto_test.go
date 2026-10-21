@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,15 +37,15 @@ func TestDTO_ToPublicDTO_FullAndSerialization(t *testing.T) {
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"openrouter": {
-				BaseURL:             "https://openrouter.ai/api/v1",
 				APIKey:              "sk-or-v1-abcdef1234567890",
-				Type:                "cloud",
+				Type:                provider.TypeOpenRouter,
 				Headers:             map[string]string{"HTTP-Referer": "https://nacho-flow.dev"},
 				PricingSyncInterval: "15m",
 			},
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434",
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -178,5 +179,80 @@ func TestDTO_NilAndToMap(t *testing.T) {
 	dto := ToPublicDTO(cfgCycleBreaker)
 	if dto == nil || dto.CycleKiller.Enabled == nil || !*dto.CycleKiller.Enabled {
 		t.Error("expected CycleBreaker fallback to populate CycleKiller")
+	}
+}
+
+func TestDTO_PreserveLocalAndOmitBaseURL(t *testing.T) {
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"local_engine": {
+				Type:    provider.TypeOpenAICompatible,
+				BaseURL: "http://127.0.0.1:11434/v1",
+				Local:   true,
+			},
+			"openrouter": {
+				Type:   provider.TypeOpenRouter,
+				APIKey: "sk-or-test",
+			},
+			"anthropic": {
+				Type:   provider.TypeAnthropic,
+				APIKey: "sk-ant-test",
+			},
+		},
+		Tiers: []contract.Tier{
+			{Name: "T1", Model: "m1", Provider: "local_engine"},
+		},
+		DefaultTier: contract.Tier{Name: "Default", Model: "m1", Provider: "local_engine"},
+	}
+
+	// 1. ToPublicDTO
+	dto := ToPublicDTO(cfg)
+	if !dto.Providers["local_engine"].Local {
+		t.Errorf("expected local_engine.Local == true in DTO")
+	}
+	if dto.Providers["openrouter"].BaseURL != "" {
+		t.Errorf("expected openrouter BaseURL empty in DTO, got %q", dto.Providers["openrouter"].BaseURL)
+	}
+	if dto.Providers["anthropic"].BaseURL != "" {
+		t.Errorf("expected anthropic BaseURL empty in DTO, got %q", dto.Providers["anthropic"].BaseURL)
+	}
+
+	// 2. ToMap / JSON
+	dtoMap := dto.ToMap()
+	provMap := dtoMap["providers"].(map[string]any)
+	localMap := provMap["local_engine"].(map[string]any)
+	if localMap["local"] != true {
+		t.Errorf("expected local: true in local_engine map")
+	}
+	orMap := provMap["openrouter"].(map[string]any)
+	if _, hasBaseURL := orMap["base_url"]; hasBaseURL {
+		t.Errorf("expected openrouter map to omit 'base_url'")
+	}
+	if _, hasLocal := orMap["local"]; hasLocal {
+		t.Errorf("expected openrouter map to omit 'local'")
+	}
+	antMap := provMap["anthropic"].(map[string]any)
+	if _, hasBaseURL := antMap["base_url"]; hasBaseURL {
+		t.Errorf("expected anthropic map to omit 'base_url'")
+	}
+
+	// 3. SerializeConfigYAML
+	yamlBytes, err := SerializeConfigYAML(cfg)
+	if err != nil {
+		t.Fatalf("SerializeConfigYAML failed: %v", err)
+	}
+	var unmarshaled contract.Config
+	if err := yaml.Unmarshal(yamlBytes, &unmarshaled); err != nil {
+		t.Fatalf("failed to unmarshal serialized YAML: %v", err)
+	}
+	if !unmarshaled.Providers["local_engine"].Local {
+		t.Errorf("expected local_engine.Local preserved across SerializeConfigYAML round-trip")
+	}
+	if unmarshaled.Providers["openrouter"].BaseURL != "" {
+		t.Errorf("expected openrouter BaseURL empty across round-trip, got %q", unmarshaled.Providers["openrouter"].BaseURL)
+	}
+	if unmarshaled.Providers["anthropic"].BaseURL != "" {
+		t.Errorf("expected anthropic BaseURL empty across round-trip, got %q", unmarshaled.Providers["anthropic"].BaseURL)
 	}
 }

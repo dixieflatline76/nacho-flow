@@ -2228,4 +2228,3 @@ func TestStreamNormalizer_AnthropicMultiChunk_BashFileWrite_ExemptFromCycleKille
 		t.Fatalf("expected bash file write to be exempt from cycle killer, but triggered violation: %s", reason)
 	}
 }
-

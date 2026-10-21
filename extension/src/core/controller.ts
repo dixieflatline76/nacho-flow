@@ -667,40 +667,32 @@ export class ExtensionController {
 
 						let icon = '🔌';
 						let displayName = key.toUpperCase();
-						let pType: 'local' | 'cloud' = pConfig?.type === 'local' ? 'local' : 'cloud';
+						const pType: 'local' | 'cloud' = pConfig?.local ? 'local' : 'cloud';
 
 						if (key === 'ollama') {
 							icon = '🦙';
 							displayName = 'Ollama';
-							pType = 'local';
 						} else if (key === 'openrouter') {
 							icon = '⚡';
 							displayName = 'OpenRouter';
-							pType = 'cloud';
 						} else if (key === 'vllm') {
 							icon = '🚀';
 							displayName = 'vLLM';
-							pType = 'local';
 						} else if (key === 'sglang') {
 							icon = '⚡';
 							displayName = 'SGLang';
-							pType = 'local';
 						} else if (key.includes('llama')) {
 							icon = '🦙';
 							displayName = 'llama.cpp';
-							pType = 'local';
 						} else if (key === 'openai') {
 							icon = '🟢';
 							displayName = 'OpenAI';
-							pType = 'cloud';
 						} else if (key === 'anthropic') {
 							icon = '🧠';
 							displayName = 'Anthropic';
-							pType = 'cloud';
 						} else if (key === 'deepseek') {
 							icon = '🐋';
 							displayName = 'DeepSeek';
-							pType = 'cloud';
 						} else {
 							displayName = key.charAt(0).toUpperCase() + key.slice(1);
 						}
@@ -1242,7 +1234,7 @@ export class ExtensionController {
 				try {
 					await vscode.workspace.fs.createDirectory(vscode.Uri.file(targetDir));
 				} catch (_) {}
-				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Agent Supervisor & Model Dispatcher\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "local"\n\n  openrouter:\n    base_url: "https://openrouter.ai/api/v1"\n    type: "cloud"\n    api_key: "ENV_OPENROUTER_API_KEY"\n`;
+				const starter = `# =============================================================================\n# 🌮 NACHO FLOW CONFIGURATION\n# Agent Supervisor & Model Dispatcher\n# =============================================================================\n\nport: 8000\n\nproviders:\n  ollama:\n    base_url: "http://127.0.0.1:11434"\n    type: "openai_compatible"\n    local: true\n\n  openrouter:\n    api_key: "ENV_OPENROUTER_API_KEY"\n    type: "openrouter"\n`;
 				await vscode.workspace.fs.writeFile(vscode.Uri.file(targetPath), Buffer.from(starter, 'utf8'));
 				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
 				this.activeConfigDocUri = doc.uri;

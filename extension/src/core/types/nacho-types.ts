@@ -47,9 +47,10 @@ export interface CircuitInfo {
 
 // Configuration
 export interface ProviderConfig {
-	base_url: string;
+	base_url?: string;
 	api_key?: string;
-	type?: 'local' | 'cloud';
+	type?: 'openai_compatible' | 'anthropic' | 'openrouter';
+	local?: boolean;
 	headers?: Record<string, string>;
 }
 

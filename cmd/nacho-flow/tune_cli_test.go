@@ -21,10 +21,11 @@ func TestRunTune_JSONFormat(t *testing.T) {
 providers:
   local:
     base_url: "http://localhost:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
   cloud:
     base_url: "https://api.deepseek.com"
-    type: "cloud"
+    type: "openai_compatible"
 tiers:
   - name: "Local GPU"
     provider: "local"
@@ -108,7 +109,8 @@ func TestRunTune_MaxSessions(t *testing.T) {
 providers:
   local:
     base_url: "http://localhost:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local GPU"
     provider: "local"
@@ -170,7 +172,8 @@ func TestRunTune_EmptyLog_JSONFormat(t *testing.T) {
 providers:
   local:
     base_url: "http://localhost:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local GPU"
     provider: "local"
@@ -209,7 +212,8 @@ func TestRunTune_StrategiesAndVRAM(t *testing.T) {
 	sampleCfg := `providers:
   local:
     base_url: "http://localhost:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local GPU"
     provider: "local"
@@ -273,7 +277,8 @@ func TestRunTune_ClientPartition(t *testing.T) {
 	sampleCfg := `providers:
   local:
     base_url: "http://localhost:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local GPU"
     provider: "local"

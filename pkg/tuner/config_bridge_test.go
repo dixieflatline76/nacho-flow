@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 )
 
 func TestResolveModelRates_DataDriven(t *testing.T) {
@@ -93,8 +94,8 @@ func TestExtractRoutingState_Comprehensive(t *testing.T) {
 
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -182,7 +183,7 @@ func TestExtractRoutingState_Comprehensive(t *testing.T) {
 func TestExtractRoutingState_LocalFallbacks(t *testing.T) {
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {Type: contract.ProviderTypeLocal},
+			"ollama": {Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{

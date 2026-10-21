@@ -32,7 +32,7 @@ func NewAnthropicPricingProviderWithManager(mgr *curation.Manager) *AnthropicPri
 
 // Name returns the provider identifier "anthropic".
 func (p *AnthropicPricingProvider) Name() string {
-	return string(contract.ProviderTypeAnthropic)
+	return string(contract.PlatformAnthropic)
 }
 
 // FetchPricing extracts all Anthropic models from the curated catalog and indexes them by both full ID and base ID.
@@ -55,7 +55,7 @@ func (p *AnthropicPricingProvider) FetchPricing(ctx context.Context) (map[string
 				CompletionCostPerMillion: profile.CompletionCostPerMillion,
 			},
 			ModelID:           id,
-			Provider:          string(contract.ProviderTypeAnthropic),
+			Provider:          string(contract.PlatformAnthropic),
 			Name:              profile.Name,
 			SupportsVision:    profile.SupportsVision,
 			SupportsTools:     profile.SupportsTools,
@@ -103,7 +103,7 @@ func (p *AnthropicPricingProvider) FetchPricing(ctx context.Context) (map[string
 }
 
 func init() {
-	RegisterPricingFactory(string(contract.ProviderTypeAnthropic), func(id string, cfg contract.ProviderConfig, defaultInterval time.Duration) (PricingProvider, time.Duration) {
+	RegisterPricingFactory(string(contract.PlatformAnthropic), func(id string, cfg contract.ProviderConfig, defaultInterval time.Duration) (PricingProvider, time.Duration) {
 		interval := defaultInterval
 		if interval == 0 {
 			interval = 24 * time.Hour

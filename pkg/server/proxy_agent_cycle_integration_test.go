@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 )
@@ -56,7 +57,7 @@ func TestProxy_ToolCallLoopSevering(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"loop_provider": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -153,11 +154,12 @@ func TestProxy_FailingTestReadOnlyLoop_EscalatesToCloud(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_provider": {
 				BaseURL: mockLocal.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 			"cloud_provider": {
 				BaseURL: mockCloud.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -327,7 +329,7 @@ func TestProxy_StreamOptionsAndCalibration(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"stream_provider": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -454,7 +456,7 @@ func TestProxy_ClineXML_NQueensTableDrivenTestReplay(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"qwen_provider": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{

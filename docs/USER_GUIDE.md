@@ -149,13 +149,13 @@ host: "127.0.0.1" # Default: 127.0.0.1 (local machine only). Use "0.0.0.0" for L
 providers:
   # Local GPU (Free turns)
   ollama:
+    type: "openai_compatible"
+    local: true
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
 
   # Cloud Fallback (When reasoning context exceeds local limits)
   openrouter:
-    base_url: "https://openrouter.ai/api/v1"
-    type: "cloud"
+    type: "openrouter"
     api_key: "ENV_OPENROUTER_API_KEY"
 
 tiers:
@@ -193,13 +193,13 @@ auth_token: "sk-nacho-gateway-token"
 providers:
   # 1. Local GPU (Ollama / vLLM / llama.cpp - $0.00 cost)
   ollama:
+    type: "openai_compatible"
+    local: true
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
 
   # 2. OpenRouter Aggregator
   openrouter:
-    base_url: "https://openrouter.ai/api/v1"
-    type: "cloud"
+    type: "openrouter"
     api_key: "ENV_OPENROUTER_API_KEY"
     headers:
       HTTP-Referer: "https://spicebox.dev"
@@ -207,21 +207,20 @@ providers:
 
   # 3. Langdock Enterprise / Private Tenant
   langdock:
+    type: "openai_compatible"
     base_url: "https://api.langdock.com/v1"
-    type: "cloud"
     api_key: "ENV_LANGDOCK_API_KEY"
     headers:
       X-Custom-Org: "engineering"
 
   # 4. DeepSeek Direct
   deepseek:
+    type: "openai_compatible"
     base_url: "https://api.deepseek.com/v1"
-    type: "cloud"
     api_key: "ENV_DEEPSEEK_API_KEY"
 
-  # 5. Direct Native Anthropic (Messages API with automatic prompt caching & wire normalization)
+  # 5. Direct Native Anthropic (Messages API with automatic prompt caching)
   anthropic:
-    base_url: "https://api.anthropic.com"
     type: "anthropic"
     api_key: "ENV_ANTHROPIC_API_KEY"
 

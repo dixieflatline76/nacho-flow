@@ -24,10 +24,27 @@ var (
 )
 
 const (
-	AnthropicAPIVersion       = "2023-06-01"
-	AnthropicBetaCaching      = "prompt-caching-2024-07-31"
-	DefaultAnthropicMaxTokens = 8192
+	// TypeAnthropic is the provider type identifier for native Anthropic Messages API endpoints.
+	TypeAnthropic             contract.ProviderType = "anthropic"
+	AnthropicAPIVersion                             = "2023-06-01"
+	AnthropicBetaCaching                            = "prompt-caching-2024-07-31"
+	DefaultAnthropicMaxTokens                       = 8192
+	DefaultAnthropicBaseURL                         = "https://api.anthropic.com"
 )
+
+func init() {
+	RegisterDescriptor(Descriptor{
+		Type:           TypeAnthropic,
+		DefaultBaseURL: DefaultAnthropicBaseURL,
+		AllowsLocal:    false,
+		Platform: func(cfg contract.ProviderConfig) contract.Platform {
+			return contract.PlatformAnthropic
+		},
+		New: func(id string, cfg contract.ProviderConfig) LLMProvider {
+			return NewAnthropicProvider(id, cfg)
+		},
+	})
+}
 
 // AnthropicProvider implements native Anthropic Messages API connectivity
 // with zero-allocation slicing and direct wire payload formatting.
@@ -44,6 +61,12 @@ func NewAnthropicProvider(id string, cfg contract.ProviderConfig) *AnthropicProv
 	name := id
 	if strings.Contains(strings.ToLower(id), "anthropic") {
 		name = "Anthropic Direct"
+	}
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	if baseURL == "" {
+		cfg.BaseURL = DefaultAnthropicBaseURL
+	} else {
+		cfg.BaseURL = baseURL
 	}
 	return &AnthropicProvider{
 		id:             id,
@@ -68,6 +91,10 @@ func (p *AnthropicProvider) BaseURL() string {
 
 func (p *AnthropicProvider) IsLocal() bool {
 	return false
+}
+
+func (p *AnthropicProvider) Platform() contract.Platform {
+	return contract.PlatformAnthropic
 }
 
 func (p *AnthropicProvider) GetAPIKey() string {
@@ -893,7 +920,7 @@ func normalizeAnthropicBaseURL(u string) string {
 	cleaned := strings.TrimRight(strings.TrimSpace(u), "/")
 	cleaned = strings.TrimSuffix(cleaned, "/v1")
 	if cleaned == "" {
-		return "https://api.anthropic.com"
+		return DefaultAnthropicBaseURL
 	}
 	return cleaned
 }

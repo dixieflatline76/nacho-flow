@@ -236,8 +236,8 @@ func TestProxy_ForcedDirective_CircuitOpen_BlocksRequest(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"dead_local": {BaseURL: deadLocalURL, Type: "local"},
-			"cloud_p":    {BaseURL: "http://127.0.0.1:59998", Type: "cloud"},
+			"dead_local": {BaseURL: deadLocalURL, Type: provider.TypeOpenAICompatible, Local: true},
+			"cloud_p":    {BaseURL: "http://127.0.0.1:59998", Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Model: "qwen", Provider: "dead_local", When: "Tokens < 8000"},
@@ -414,7 +414,7 @@ func TestProxy_DirectivesDisabledByConfig(t *testing.T) {
 			EnableInPromptDirectives: &disabled,
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Cloud Tier", Model: "claude", Provider: "cloud_p", When: "Tokens < 8000"},
@@ -590,8 +590,8 @@ func TestProxy_SessionGuardrailsAndKickstartAutoSuspend(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"local_p": {BaseURL: mockUpstream.URL, Type: "local"},
-			"cloud_p": {BaseURL: mockUpstream.URL, Type: "cloud"},
+			"local_p": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
+			"cloud_p": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Tier 1: Local", Model: "local-model", Provider: "local_p"},

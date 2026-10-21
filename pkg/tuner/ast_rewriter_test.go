@@ -497,4 +497,3 @@ func TestExtractRoutingFromWhenAST_MessageCountAndTestFail(t *testing.T) {
 		t.Errorf("expected rewritten rule to update Tokens < 25000, got %q", rewritten)
 	}
 }
-

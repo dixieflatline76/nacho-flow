@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
 
@@ -93,7 +94,7 @@ func TestPricingFactoryRegistry_OpenRouterAutoRegistration(t *testing.T) {
 	pCfg := contract.ProviderConfig{
 		BaseURL:             "https://openrouter.ai/api/v1",
 		APIKey:              "sk-or-test-key",
-		Type:                contract.ProviderTypeCloud,
+		Type:                provider.TypeOpenRouter,
 		PricingSyncInterval: "45m",
 	}
 
@@ -110,8 +111,9 @@ func TestPricingFactoryRegistry_OpenRouterAutoRegistration(t *testing.T) {
 
 	// Test default baseURL and default interval fallback
 	pCfgDefault := contract.ProviderConfig{
-		APIKey: "sk-or-test-key",
-		Type:   contract.ProviderTypeCloud,
+		BaseURL: "https://openrouter.ai/api/v1",
+		APIKey:  "sk-or-test-key",
+		Type:    provider.TypeOpenRouter,
 	}
 	provDef, intervalDef := factory("openrouter", pCfgDefault, 30*time.Minute)
 	if provDef == nil {

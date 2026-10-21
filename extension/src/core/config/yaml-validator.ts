@@ -16,7 +16,7 @@ export interface YamlValidationIssue {
 	quickFixes?: QuickFixAction[];
 }
 
-const VALID_PROVIDER_TYPES = new Set(['local', 'cloud', 'anthropic', 'openrouter']);
+const VALID_PROVIDER_TYPES = new Set(['openai_compatible', 'anthropic', 'openrouter']);
 
 const ALLOWED_REQUEST_CONTEXT_VARS = new Set([
 	'Tokens',
@@ -230,14 +230,32 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 		}
 	}
 
-	// 3. INVALID_PROVIDER_TYPE & MISSING_BASE_URL
+	// 3. Provider validation (type, local, base_url)
 	for (const provider of index.providers.values()) {
+		if (provider.type === 'local') {
+			issues.push({
+				ruleId: 'REMOVED_PROVIDER_TYPE',
+				message: `provider "${provider.id}": type "local" was removed; use type: openai_compatible with local: true`,
+				severity: 'Error',
+				range: provider.typeRange || provider.idRange
+			});
+			continue;
+		}
+		if (provider.type === 'cloud') {
+			issues.push({
+				ruleId: 'REMOVED_PROVIDER_TYPE',
+				message: `provider "${provider.id}": type "cloud" was removed; use type: openai_compatible, or type: openrouter for OpenRouter`,
+				severity: 'Error',
+				range: provider.typeRange || provider.idRange
+			});
+			continue;
+		}
+
 		if (!provider.type || !VALID_PROVIDER_TYPES.has(provider.type)) {
 			const range = provider.typeRange || provider.idRange;
-			const typeVal = provider.type || 'missing';
 			issues.push({
 				ruleId: 'INVALID_PROVIDER_TYPE',
-				message: `Provider '${provider.id}' has invalid type '${typeVal}'. Must be 'local', 'cloud', 'anthropic', or 'openrouter'.`,
+				message: `provider "${provider.id}": type is required and must be one of openai_compatible, anthropic, openrouter`,
 				severity: 'Error',
 				range,
 				quickFixes: Array.from(VALID_PROVIDER_TYPES).map((t) => ({
@@ -246,12 +264,22 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 					range
 				}))
 			});
+			continue;
 		}
 
-		if (!provider.baseUrl || !provider.baseUrl.trim()) {
+		if (provider.local && provider.type !== 'openai_compatible') {
+			issues.push({
+				ruleId: 'INVALID_PROVIDER_LOCAL',
+				message: `provider "${provider.id}": local is only valid for type openai_compatible`,
+				severity: 'Error',
+				range: provider.localRange || provider.idRange
+			});
+		}
+
+		if (provider.type === 'openai_compatible' && (!provider.baseUrl || !provider.baseUrl.trim())) {
 			issues.push({
 				ruleId: 'MISSING_BASE_URL',
-				message: `Provider '${provider.id}' is missing required 'base_url'.`,
+				message: `provider "${provider.id}": base_url is required for type openai_compatible`,
 				severity: 'Error',
 				range: provider.idRange,
 				quickFixes: [
@@ -262,6 +290,28 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 					}
 				]
 			});
+		}
+
+		if (provider.baseUrl && provider.baseUrl.trim()) {
+			const urlStr = provider.baseUrl.trim();
+			try {
+				const parsed = new URL(urlStr);
+				if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+					issues.push({
+						ruleId: 'INVALID_BASE_URL',
+						message: `provider "${provider.id}": base_url must be an absolute http(s) URL`,
+						severity: 'Error',
+						range: provider.baseUrlRange || provider.idRange
+					});
+				}
+			} catch {
+				issues.push({
+					ruleId: 'INVALID_BASE_URL',
+					message: `provider "${provider.id}": base_url must be an absolute http(s) URL`,
+					severity: 'Error',
+					range: provider.baseUrlRange || provider.idRange
+				});
+			}
 		}
 	}
 

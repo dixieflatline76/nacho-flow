@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
@@ -91,7 +92,7 @@ func IsModelCompatibleWithProvider(modelID, providerName string, isLocal bool, p
 	// 2. Local provider check
 	isLocalProvider := isLocal
 	if provConfig != nil {
-		isLocalProvider = isLocalProvider || provConfig.IsLocal() || provConfig.Type == contract.ProviderTypeLocal
+		isLocalProvider = isLocalProvider || provConfig.IsLocal()
 	}
 	if normProv == "ollama" || normProv == "llama_cluster" || normProv == "lmstudio" ||
 		normProv == "vllm" || normProv == "llamacpp" || normProv == "llama.cpp" || normProv == "local" {
@@ -112,12 +113,14 @@ func IsModelCompatibleWithProvider(modelID, providerName string, isLocal bool, p
 		return true
 	}
 
-	// 3. Direct vendor provider checks
-	// Direct Anthropic (e.g. provider: "anthropic" or baseURL contains api.anthropic.com)
-	isAnthropicDirect := normProv == "anthropic"
-	if provConfig != nil && (provConfig.Type == contract.ProviderTypeAnthropic || strings.Contains(strings.ToLower(provConfig.BaseURL), "api.anthropic.com")) {
-		isAnthropicDirect = true
+	var resolvedPlat contract.Platform
+	if provConfig != nil {
+		resolvedPlat, _ = provider.ResolvePlatform(*provConfig)
 	}
+
+	// 3. Direct vendor provider checks
+	// Direct Anthropic (e.g. provider: "anthropic" or platform: anthropic)
+	isAnthropicDirect := normProv == "anthropic" || resolvedPlat == contract.PlatformAnthropic
 	if isAnthropicDirect {
 		return strings.HasPrefix(lowerModel, "claude-") ||
 			strings.HasPrefix(lowerModel, "anthropic/claude-") ||
@@ -159,16 +162,13 @@ func IsModelCompatibleWithProvider(modelID, providerName string, isLocal bool, p
 	}
 
 	// 4. Aggregator providers (openrouter, litellm, etc.)
-	isAggregator := normProv == "openrouter" || normProv == "litellm"
-	if provConfig != nil && (provConfig.Type == contract.ProviderTypeOpenRouter || strings.Contains(strings.ToLower(provConfig.BaseURL), "openrouter.ai")) {
-		isAggregator = true
-	}
+	isAggregator := normProv == "openrouter" || normProv == "litellm" || resolvedPlat == contract.PlatformOpenRouter
 	if isAggregator {
 		return true
 	}
 
 	// Generic cloud provider with configured entry
-	if provConfig != nil && provConfig.Type == contract.ProviderTypeCloud {
+	if resolvedPlat == contract.PlatformOpenAICompatible {
 		return true
 	}
 

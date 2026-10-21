@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 )
@@ -76,7 +77,7 @@ func TestProxy_FairyDust_Immunity_CycleKillerAndNextTurnReset(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"test_provider": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -230,7 +231,7 @@ func TestProxy_FairyDust_Immunity_KickstartAndShieldBypassed(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"test_provider": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{

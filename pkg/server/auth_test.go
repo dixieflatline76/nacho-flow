@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 )
@@ -26,7 +27,7 @@ func createAuthTestServer(authToken string) (*Server, *httptest.Server) {
 			"test_prov": {
 				BaseURL: upstream.URL,
 				APIKey:  "real-cloud-api-key",
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{

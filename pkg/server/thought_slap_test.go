@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 )
@@ -59,7 +60,7 @@ func setupTestServerWithThoughtSlap(t *testing.T, handler http.HandlerFunc, tsOp
 			"mock-prov": {
 				BaseURL: mockUpstream.URL,
 				APIKey:  "test-key",
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{

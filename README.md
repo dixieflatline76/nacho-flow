@@ -134,22 +134,23 @@ auth_token: "sk-nacho-secret-key"
 
 providers:
   ollama:
+    type: "openai_compatible"
+    local: true
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
 
   openrouter:
-    base_url: "https://openrouter.ai/api/v1"
+    type: "openrouter"
     api_key: "ENV_OPENROUTER_API_KEY"
     headers:
       HTTP-Referer: "https://spicebox.dev"
       X-Title: "nacho-flow"
 
   langdock:
+    type: "openai_compatible"
     base_url: "https://api.langdock.com/v1"
     api_key: "ENV_LANGDOCK_API_KEY"
 
   anthropic:
-    base_url: "https://api.anthropic.com"
     type: "anthropic"
     api_key: "ENV_ANTHROPIC_API_KEY"
 

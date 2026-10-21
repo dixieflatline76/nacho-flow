@@ -20,7 +20,7 @@ func TestAnthropicProvider_Basics(t *testing.T) {
 	cfg := contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com/v1",
 		APIKey:  "test-anthropic-key",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	}
 	p := provider.NewAnthropicProvider("anthropic-direct", cfg)
 
@@ -45,7 +45,7 @@ func TestBuildRequest_SystemExtractionAndCaching(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
 		APIKey:  "sk-ant-test",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -120,7 +120,7 @@ func TestBuildRequest_ToolResultGroupingAndAlternation(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
 		APIKey:  "sk-ant-test",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -217,7 +217,7 @@ func TestBuildRequest_ToolResultGroupingAndAlternation(t *testing.T) {
 func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -301,7 +301,7 @@ func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 func TestBuildRequest_ImageTranslation(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -358,7 +358,7 @@ func TestBuildRequest_ImageTranslation(t *testing.T) {
 func TestBuildRequest_ThinkingModelSanitization(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -389,7 +389,7 @@ func TestBuildRequest_ThinkingModelSanitization(t *testing.T) {
 func TestTranslateResponseBody_Success(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	anthropicJSON := `{
@@ -497,7 +497,7 @@ func TestTranslateResponseBody_Success(t *testing.T) {
 func TestTranslateResponseBody_Error(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	anthropicErrJSON := `{
@@ -536,7 +536,7 @@ func TestTranslateResponseBody_Error(t *testing.T) {
 func TestBuildRequest_ToolChoiceNone(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -572,7 +572,7 @@ func TestBuildRequest_ToolChoiceNone(t *testing.T) {
 func TestBuildRequest_ThinkingModelPrefillStripping(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -605,7 +605,7 @@ func TestBuildRequest_ThinkingModelPrefillStripping(t *testing.T) {
 func TestBuildRequest_ReasoningEffortToThinking(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	// Claude 5 models use adaptive thinking + output_config.effort
@@ -843,7 +843,7 @@ func TestAnthropicProvider_CoverageExtensions(t *testing.T) {
 	cfg := contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com/v1",
 		APIKey:  "sk-test",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	}
 	p := provider.NewAnthropicProvider("anthropic", cfg)
 	if p.BaseURL() != "https://api.anthropic.com/v1" {
@@ -863,7 +863,7 @@ func TestAnthropicProvider_CoverageExtensions(t *testing.T) {
 	pServer := provider.NewAnthropicProvider("test-ping", contract.ProviderConfig{
 		BaseURL: server.URL,
 		APIKey:  "sk-test",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 	if err := pServer.Ping(context.Background()); err != nil {
 		t.Errorf("expected ping to succeed, got %v", err)
@@ -1112,8 +1112,8 @@ func TestAnthropicProvider_CoverageExtensions(t *testing.T) {
 	// 10. Normalization of empty URL and model variants, plus lazy CircuitBreaker
 	t.Run("Normalization Variants and Lazy CircuitBreaker", func(t *testing.T) {
 		pEmpty := provider.NewAnthropicProvider("empty", contract.ProviderConfig{})
-		if pEmpty.BaseURL() != "" {
-			t.Errorf("expected empty config base URL preserved")
+		if pEmpty.BaseURL() != provider.DefaultAnthropicBaseURL {
+			t.Errorf("expected default base URL %q, got %q", provider.DefaultAnthropicBaseURL, pEmpty.BaseURL())
 		}
 
 		var nilP *provider.AnthropicProvider
@@ -1298,7 +1298,7 @@ func TestBuildRequest_NoHTMLEscaping(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
 		APIKey:  "sk-ant-test",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -1331,7 +1331,7 @@ func TestBuildRequest_ToolSchemaNoHTMLEscaping(t *testing.T) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
 		APIKey:  "sk-ant-test",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := `{
@@ -1374,7 +1374,7 @@ func TestBuildRequest_SendsModelVerbatim(t *testing.T) {
 	cfg := contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
 		APIKey:  "test-anthropic-key",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	}
 	p := provider.NewAnthropicProvider("anthropic-direct", cfg)
 
@@ -1453,7 +1453,7 @@ func TestBuildRequest_ThinkingDefaults(t *testing.T) {
 	cfg := contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
 		APIKey:  "test-anthropic-key",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	}
 	p := provider.NewAnthropicProvider("anthropic-direct", cfg)
 
@@ -1506,4 +1506,3 @@ func TestBuildRequest_ThinkingDefaults(t *testing.T) {
 		}
 	})
 }
-

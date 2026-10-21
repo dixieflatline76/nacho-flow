@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 )
 
 func TestFullZooCodeAgentTurnSequence(t *testing.T) {
@@ -220,8 +221,8 @@ func TestExprEvaluator_ForcedDirectives(t *testing.T) {
 		{Name: "Cloud Fast", Model: "qwen-30b", Provider: "openrouter", When: "Tokens >= 8000"},
 	}
 	providers := map[string]contract.ProviderConfig{
-		"ollama":     {Type: contract.ProviderTypeLocal, BaseURL: "http://127.0.0.1:11434"},
-		"openrouter": {Type: contract.ProviderTypeCloud, BaseURL: "https://openrouter.ai/api/v1"},
+		"ollama":     {Type: provider.TypeOpenAICompatible, Local: true, BaseURL: "http://127.0.0.1:11434"},
+		"openrouter": {Type: provider.TypeOpenRouter, BaseURL: "https://openrouter.ai/api/v1"},
 	}
 
 	defaultTier := contract.Tier{Name: "Default Cloud", Model: "claude-sonnet-5", Provider: "openrouter"}

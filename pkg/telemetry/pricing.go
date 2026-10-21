@@ -286,8 +286,8 @@ func (o *PricingOracle) GetModelMetadata(provider, model string) (ModelMetadata,
 		if profile, found := o.classifier.gallery.Lookup(model); found {
 			return modelMetadataFromCuratedProfile(profile), true
 		}
-	} else if (provider == "" || strings.EqualFold(provider, string(contract.ProviderTypeAnthropic))) &&
-		(strings.EqualFold(provider, string(contract.ProviderTypeAnthropic)) || strings.HasPrefix(strings.ToLower(model), "claude") || strings.HasPrefix(strings.ToLower(model), "anthropic/")) {
+	} else if (provider == "" || strings.EqualFold(provider, string(contract.PlatformAnthropic))) &&
+		(strings.EqualFold(provider, string(contract.PlatformAnthropic)) || strings.HasPrefix(strings.ToLower(model), "claude") || strings.HasPrefix(strings.ToLower(model), "anthropic/")) {
 		if profile, found := curation.DefaultManager().Lookup(model); found {
 			return modelMetadataFromCuratedProfile(profile), true
 		}

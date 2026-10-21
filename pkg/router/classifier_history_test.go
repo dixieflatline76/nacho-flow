@@ -724,9 +724,9 @@ func TestScanTrailingMessages_ToolResultXMLNotTreatedAsAssistantWrite(t *testing
 			"role": "user",
 			"content": []interface{}{
 				map[string]interface{}{
-					"type":         "tool_result",
-					"tool_use_id":  "toolu_123",
-					"content":      "<write_to_file><path>foo.go</path><content>package foo</content></write_to_file>",
+					"type":        "tool_result",
+					"tool_use_id": "toolu_123",
+					"content":     "<write_to_file><path>foo.go</path><content>package foo</content></write_to_file>",
 				},
 			},
 		},
@@ -748,4 +748,3 @@ func TestScanTrailingMessages_ToolResultXMLNotTreatedAsAssistantWrite(t *testing
 		t.Errorf("expected HasActiveRepair=false, got true")
 	}
 }
-

@@ -550,38 +550,40 @@ func (t *Tier) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// ProviderType defines the execution classification of an LLM backend.
+// ProviderType selects the wire-protocol implementation for a provider.
+// Concrete ProviderType values are defined and registered by provider implementations in pkg/provider.
 type ProviderType string
-
-const (
-	// ProviderTypeLocal designates free local/on-prem inference (e.g. Ollama, vLLM, LM Studio, llama.cpp).
-	// Incurred cost is exactly $0.00, and full baseline token savings are credited.
-	ProviderTypeLocal ProviderType = "local"
-
-	// ProviderTypeCloud designates metered cloud APIs (e.g. OpenRouter, Anthropic, OpenAI, DeepSeek Cloud).
-	// Incurred cost is calculated against live or cached token rate pricing tables.
-	ProviderTypeCloud ProviderType = "cloud"
-
-	// ProviderTypeAnthropic designates native Anthropic Messages API cloud endpoints.
-	ProviderTypeAnthropic ProviderType = "anthropic"
-
-	// ProviderTypeOpenRouter designates OpenRouter aggregator cloud endpoints.
-	ProviderTypeOpenRouter ProviderType = "openrouter"
-)
 
 // ProviderConfig defines a first-class LLM provider configuration.
 type ProviderConfig struct {
-	BaseURL             string            `yaml:"base_url" json:"base_url"`
+	Type                ProviderType      `yaml:"type" json:"type"`                             // MANDATORY
+	BaseURL             string            `yaml:"base_url,omitempty" json:"base_url,omitempty"` // required for openai_compatible; optional override otherwise
+	Local               bool              `yaml:"local,omitempty" json:"local,omitempty"`       // openai_compatible only
 	APIKey              string            `yaml:"api_key,omitempty" json:"api_key,omitempty"`
-	Type                ProviderType      `yaml:"type" json:"type"` // MANDATORY: "local" or "cloud"
 	Headers             map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-	PricingSyncInterval string            `yaml:"pricing_sync_interval,omitempty" json:"pricing_sync_interval,omitempty"` // e.g. "15m", "24h"
+	PricingSyncInterval string            `yaml:"pricing_sync_interval,omitempty" json:"pricing_sync_interval,omitempty"`
 }
 
 // IsLocal returns true if the provider is a free local/on-prem inference engine.
 // O(1) evaluation, zero heap allocations.
 func (p ProviderConfig) IsLocal() bool {
-	return p.Type == ProviderTypeLocal
+	return p.Local
+}
+
+// Platform identifies the upstream platform family a provider implementation speaks to.
+// Declared by provider implementations; never inferred outside pkg/provider.
+type Platform string
+
+const (
+	PlatformLocal            Platform = "local"
+	PlatformOpenAICompatible Platform = "openai_compatible"
+	PlatformAnthropic        Platform = "anthropic"
+	PlatformOpenRouter       Platform = "openrouter"
+)
+
+// PlatformResolver maps a configured provider ID to the Platform declared by its implementation.
+type PlatformResolver interface {
+	Platform(providerID string) (Platform, bool)
 }
 
 // DealsConfig configures the spot market and discount detection engine.

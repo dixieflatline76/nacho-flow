@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 )
 
 // Test 1.1: Structured providers parsing
@@ -19,18 +20,19 @@ port: 9000
 providers:
   local_gpu:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "sk-or-test-key"
-    type: "cloud"
+    type: "openrouter"
     headers:
       HTTP-Referer: "https://spicebox.dev"
       X-Title: "nacho-flow"
   langdock:
     base_url: "https://api.langdock.com/v1"
     api_key: "sk-langdock-test"
-    type: "cloud"
+    type: "openai_compatible"
     headers:
       X-Custom-Org: "engineering"
 tiers:
@@ -61,7 +63,7 @@ default_tier:
 	if !ok {
 		t.Fatalf("Missing local_gpu provider")
 	}
-	if local.BaseURL != "http://127.0.0.1:11434/v1" || local.Type != "local" {
+	if local.BaseURL != "http://127.0.0.1:11434/v1" || local.Type != "openai_compatible" || !local.Local {
 		t.Errorf("Unexpected local_gpu config: %+v", local)
 	}
 
@@ -104,7 +106,7 @@ providers:
   langdock:
     base_url: "https://api.langdock.com/v1"
     api_key: "ENV_TEST_LANGDOCK_API_SECRET"
-    type: "cloud"
+    type: "openai_compatible"
 tiers:
   - name: "Langdock Tier"
     model: "claude-3-5-sonnet"
@@ -139,6 +141,7 @@ func TestConfig_Validation_MissingBaseURL(t *testing.T) {
 port: 8000
 providers:
   broken_provider:
+    type: "openai_compatible"
     api_key: "secret"
 tiers:
   - name: "Broken Tier"
@@ -173,7 +176,8 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Ghost Tier"
     model: "claude-3-5-sonnet"
@@ -209,7 +213,8 @@ auth_token: "ENV_SECRET_GATEWAY_TOKEN"
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
@@ -236,7 +241,8 @@ port: 8080
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
@@ -309,7 +315,8 @@ port: 8000
 providers:
   local:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 default_tier:
   name: "Fallback"
   model: "qwen2.5"
@@ -337,7 +344,8 @@ func TestConfig_DefaultPortAssignment(t *testing.T) {
 providers:
   local:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
@@ -366,7 +374,8 @@ port: 9000
 providers:
   local:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
@@ -395,7 +404,8 @@ port: 8000
 providers:
   local:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0600); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
@@ -485,7 +495,8 @@ port: 9876
 providers:
   custom_prov:
     base_url: "http://127.0.0.1:5000/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 default_tier:
   name: "Custom Fallback"
   model: "custom-model"
@@ -557,7 +568,8 @@ port: 9123
 providers:
   test_prov:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 default_tier:
   name: "Fallback"
   model: "test-model"
@@ -597,12 +609,13 @@ func TestResolveEnvVars(t *testing.T) {
 			"openrouter": {
 				APIKey:  "ENV_TEST_OPENROUTER_KEY",
 				BaseURL: "https://openrouter.ai/api/v1",
-				Type:    "cloud",
+				Type:    provider.TypeOpenRouter,
 			},
 			"ollama": {
 				APIKey:  "",
 				BaseURL: "http://127.0.0.1:11434",
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 	}
@@ -704,7 +717,8 @@ nts:
 providers:
   local_gpu:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local"
     model: "qwen2.5-coder:14b"

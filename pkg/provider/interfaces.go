@@ -4,6 +4,9 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"sync"
+
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
 // ModelPricing represents prompt and completion rates per million tokens.
@@ -16,8 +19,50 @@ type ModelPricing struct {
 type LLMProvider interface {
 	ID() string
 	Name() string
-	BaseURL() string
+	BaseURL() string // effective URL, provider default already applied
 	IsLocal() bool
+	Platform() contract.Platform
+}
+
+// Descriptor defines metadata and factory for a provider wire-protocol implementation.
+type Descriptor struct {
+	Type           contract.ProviderType
+	DefaultBaseURL string // "" = base_url is required in config
+	AllowsLocal    bool   // true = local: true is permitted in config for this provider
+	Platform       func(cfg contract.ProviderConfig) contract.Platform
+	New            func(id string, cfg contract.ProviderConfig) LLMProvider
+}
+
+var (
+	descriptorsMu sync.RWMutex
+	descriptors   = make(map[contract.ProviderType]Descriptor)
+)
+
+// RegisterDescriptor registers a provider descriptor. Typically called in init().
+func RegisterDescriptor(d Descriptor) {
+	descriptorsMu.Lock()
+	defer descriptorsMu.Unlock()
+	descriptors[d.Type] = d
+}
+
+// LookupDescriptor finds a registered descriptor by provider type.
+func LookupDescriptor(t contract.ProviderType) (Descriptor, bool) {
+	descriptorsMu.RLock()
+	defer descriptorsMu.RUnlock()
+	d, ok := descriptors[t]
+	return d, ok
+}
+
+// ResolvePlatform resolves the Platform for a ProviderConfig via its registered Descriptor.
+func ResolvePlatform(cfg contract.ProviderConfig) (contract.Platform, bool) {
+	d, ok := LookupDescriptor(cfg.Type)
+	if !ok {
+		return "", false
+	}
+	if d.Platform != nil {
+		return d.Platform(cfg), true
+	}
+	return "", false
 }
 
 // AuthProvider is an optional capability interface for providers requiring API Keys / Bearer tokens.

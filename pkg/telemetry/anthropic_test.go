@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 )
 
 func TestAnthropicPricingProvider_FetchPricing(t *testing.T) {
 	prov := NewAnthropicPricingProvider()
-	if prov.Name() != string(contract.ProviderTypeAnthropic) {
-		t.Fatalf("expected name %s, got %s", contract.ProviderTypeAnthropic, prov.Name())
+	if prov.Name() != string(provider.TypeAnthropic) {
+		t.Fatalf("expected name %s, got %s", provider.TypeAnthropic, prov.Name())
 	}
 
 	prices, err := prov.FetchPricing(context.Background())
@@ -79,18 +80,18 @@ func TestAnthropicPricingProvider_FetchPricing(t *testing.T) {
 }
 
 func TestAnthropicPricingFactory_Registration(t *testing.T) {
-	factory, ok := LookupPricingFactory(string(contract.ProviderTypeAnthropic))
+	factory, ok := LookupPricingFactory(string(provider.TypeAnthropic))
 	if !ok {
-		t.Fatalf("expected factory registered for %s", contract.ProviderTypeAnthropic)
+		t.Fatalf("expected factory registered for %s", provider.TypeAnthropic)
 	}
 
 	cfg := contract.ProviderConfig{
-		Type:                contract.ProviderTypeAnthropic,
+		Type:                provider.TypeAnthropic,
 		PricingSyncInterval: "12h",
 	}
 
 	prov, interval := factory("my-anthropic", cfg, time.Hour)
-	if prov.Name() != string(contract.ProviderTypeAnthropic) {
+	if prov.Name() != string(provider.TypeAnthropic) {
 		t.Errorf("expected provider name anthropic, got %s", prov.Name())
 	}
 	if interval != 12*time.Hour {
@@ -103,7 +104,7 @@ func TestAnthropicPricingProvider_NilManager(t *testing.T) {
 	if prov == nil {
 		t.Fatal("expected non-nil provider")
 	}
-	factory, ok := LookupPricingFactory(string(contract.ProviderTypeAnthropic))
+	factory, ok := LookupPricingFactory(string(provider.TypeAnthropic))
 	if !ok {
 		t.Fatal("expected factory")
 	}

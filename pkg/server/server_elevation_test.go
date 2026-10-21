@@ -510,8 +510,8 @@ func TestServer_ServeHTTP_FairyDust_Kickstart_And_Directives(t *testing.T) {
 		"openrouter": {BaseURL: mockUpstream.URL, APIKey: "test"},
 	}
 	reg := provider.NewRegistry()
-	reg.Register(provider.NewGenericLLMProvider("ollama", cfg.Providers["ollama"]))
-	reg.Register(provider.NewGenericLLMProvider("openrouter", cfg.Providers["openrouter"]))
+	reg.Register(provider.NewOpenAICompatibleProvider("ollama", cfg.Providers["ollama"]))
+	reg.Register(provider.NewOpenAICompatibleProvider("openrouter", cfg.Providers["openrouter"]))
 	srvDisabledDirectives := NewServerWithTelemetryAndRegistry(&cfg, srv.GetEvaluator(), srv.classifier, srv.sanitizer, srv.oracle, srv.tracker, reg, nil)
 	reqDisabled := httptest.NewRequest(http.MethodPost, contract.PathChatCompletions, strings.NewReader(`{"messages":[{"role":"user","content":"@nacho:tier3 test"}]}`))
 	reqDisabled.Header.Set("Authorization", "Bearer test-secret-token")
@@ -663,7 +663,7 @@ func TestServer_EscalationBudget_Deescalation(t *testing.T) {
 		},
 	}
 	reg := provider.NewRegistry()
-	reg.Register(provider.NewGenericLLMProvider("mock_prov", cfg.Providers["mock_prov"]))
+	reg.Register(provider.NewOpenAICompatibleProvider("mock_prov", cfg.Providers["mock_prov"]))
 	srv := NewServerWithTelemetryAndRegistry(cfg, nil, nil, nil, nil, nil, reg, nil)
 
 	// Turns 1..3: Uses default tier, verifies standard expensive model routing on stuck retries
@@ -761,7 +761,7 @@ func TestServer_API_MethodNotAllowed_Branches(t *testing.T) {
 
 func TestServer_DispatchTier_EdgeCases(t *testing.T) {
 	// 1. Target provider URL invalid -> 500
-	badURLProv := provider.NewGenericLLMProvider("bad_prov", contract.ProviderConfig{
+	badURLProv := provider.NewOpenAICompatibleProvider("bad_prov", contract.ProviderConfig{
 		BaseURL: "http://invalid-url-with-control\x7f-chars",
 	})
 	reg := provider.NewRegistry()
@@ -790,7 +790,7 @@ func TestServer_DispatchTier_EdgeCases(t *testing.T) {
 	}))
 	defer mock500.Close()
 
-	prov500 := provider.NewGenericLLMProvider("prov500", contract.ProviderConfig{
+	prov500 := provider.NewOpenAICompatibleProvider("prov500", contract.ProviderConfig{
 		BaseURL: mock500.URL,
 	})
 	reg500 := provider.NewRegistry()
@@ -888,8 +888,8 @@ func TestServer_DispatchTier_Streaming_QualityDefect_And_CycleSevering(t *testin
 		Port:      8000,
 		AuthToken: "test-secret-token",
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal, BaseURL: mockLocalDone.URL},
-			"openrouter": {Type: contract.ProviderTypeCloud, BaseURL: mockCloudGood.URL, APIKey: "test"},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true, BaseURL: mockLocalDone.URL},
+			"openrouter": {Type: provider.TypeOpenRouter, BaseURL: mockCloudGood.URL, APIKey: "test"},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -907,8 +907,8 @@ func TestServer_DispatchTier_Streaming_QualityDefect_And_CycleSevering(t *testin
 	}
 
 	reg := provider.NewRegistry()
-	reg.Register(provider.NewGenericLLMProvider("ollama", cfg.Providers["ollama"]))
-	reg.Register(provider.NewGenericLLMProvider("openrouter", cfg.Providers["openrouter"]))
+	reg.Register(provider.NewOpenAICompatibleProvider("ollama", cfg.Providers["ollama"]))
+	reg.Register(provider.NewOpenAICompatibleProvider("openrouter", cfg.Providers["openrouter"]))
 
 	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier, cfg.Providers)
 	srv := NewServerWithTelemetryAndRegistry(cfg, evaluator, router.NewClassifier(), router.NewSanitizer(), nil, nil, reg, nil)
@@ -940,8 +940,8 @@ func TestServer_DispatchTier_Streaming_QualityDefect_And_CycleSevering(t *testin
 		Port:      8000,
 		AuthToken: "test-secret-token",
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal, BaseURL: mockLocalEmptyJSON.URL},
-			"openrouter": {Type: contract.ProviderTypeCloud, BaseURL: mockCloudGoodJSON.URL, APIKey: "test"},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true, BaseURL: mockLocalEmptyJSON.URL},
+			"openrouter": {Type: provider.TypeOpenRouter, BaseURL: mockCloudGoodJSON.URL, APIKey: "test"},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -958,8 +958,8 @@ func TestServer_DispatchTier_Streaming_QualityDefect_And_CycleSevering(t *testin
 		},
 	}
 	regJSON := provider.NewRegistry()
-	regJSON.Register(provider.NewGenericLLMProvider("ollama", cfgJSON.Providers["ollama"]))
-	regJSON.Register(provider.NewGenericLLMProvider("openrouter", cfgJSON.Providers["openrouter"]))
+	regJSON.Register(provider.NewOpenAICompatibleProvider("ollama", cfgJSON.Providers["ollama"]))
+	regJSON.Register(provider.NewOpenAICompatibleProvider("openrouter", cfgJSON.Providers["openrouter"]))
 
 	evaluatorJSON, _ := strategy.NewExprEvaluator(cfgJSON.Tiers, cfgJSON.DefaultTier, cfgJSON.Providers)
 	srvJSON := NewServerWithTelemetryAndRegistry(cfgJSON, evaluatorJSON, router.NewClassifier(), router.NewSanitizer(), nil, nil, regJSON, nil)
@@ -1108,7 +1108,7 @@ func TestServer_AgentUserCorrection_EscalatesToFrontier(t *testing.T) {
 	}
 
 	reg := provider.NewRegistry()
-	reg.Register(provider.NewGenericLLMProvider("mock_prov", cfg.Providers["mock_prov"]))
+	reg.Register(provider.NewOpenAICompatibleProvider("mock_prov", cfg.Providers["mock_prov"]))
 	srv := NewServerWithTelemetryAndRegistry(cfg, nil, nil, nil, nil, nil, reg, nil)
 
 	sessionID := "agent-root-hash-session"

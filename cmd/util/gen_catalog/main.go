@@ -14,13 +14,14 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
 // GenerateCatalog pulls OpenRouter models, blends verified Artificial Analysis ratings, and generates catalog JSON.
 func GenerateCatalog(ctx context.Context, apiURL, version string) (*curation.CuratedCatalog, error) {
 	if apiURL == "" {
-		apiURL = fmt.Sprintf("%s%s", contract.OpenRouterProduction, contract.OpenRouterModelsPath)
+		apiURL = fmt.Sprintf("%s%s", provider.DefaultOpenRouterBaseURL, contract.OpenRouterModelsPath)
 	}
 	if version == "" {
 		version = contract.DefaultCatalogVersion

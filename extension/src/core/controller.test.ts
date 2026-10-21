@@ -1804,15 +1804,15 @@ default_tier:
         getHealth: jest.fn().mockResolvedValue({ version: '0.6.0' }),
         getConfig: jest.fn().mockResolvedValue({
           providers: {
-            ollama: { type: 'local' },
-            openrouter: { base_url: 'https://openrouter.ai/api/v1' },
-            vllm: { base_url: 'http://192.168.0.101:8000/v1', type: 'local' },
-            sglang: { base_url: 'http://192.168.0.102:8000/v1', type: 'local' },
-            llamacpp: { base_url: 'http://127.0.0.1:8080/v1', type: 'local' },
-            openai: { base_url: 'https://api.openai.com/v1' },
-            anthropic: { base_url: 'https://api.anthropic.com/v1' },
-            deepseek: { base_url: 'https://api.deepseek.com/v1' },
-            customai: { base_url: 'http://localhost:9000/v1' }
+            ollama: { type: 'openai_compatible', local: true },
+            openrouter: { base_url: 'https://openrouter.ai/api/v1', type: 'openrouter' },
+            vllm: { base_url: 'http://192.168.0.101:8000/v1', type: 'openai_compatible', local: true },
+            sglang: { base_url: 'http://192.168.0.102:8000/v1', type: 'openai_compatible', local: true },
+            llamacpp: { base_url: 'http://127.0.0.1:8080/v1', type: 'openai_compatible', local: true },
+            openai: { base_url: 'https://api.openai.com/v1', type: 'openai_compatible' },
+            anthropic: { type: 'anthropic' },
+            deepseek: { base_url: 'https://api.deepseek.com/v1', type: 'openai_compatible' },
+            customai: { base_url: 'http://localhost:9000/v1', type: 'openai_compatible' }
           },
           tiers: [
             { name: 'Tier 2: Local', provider: 'ollama', model: 'gemma4:12b-it-qat' },
@@ -1846,6 +1846,39 @@ default_tier:
           expect.objectContaining({ id: 'anthropic', name: 'Anthropic' }),
           expect.objectContaining({ id: 'deepseek', name: 'DeepSeek' }),
           expect.objectContaining({ id: 'customai', name: 'Customai' })
+        ])
+      }));
+    });
+
+    it('asserts provider locality ignores provider key and strictly reflects local property (§1.6)', async () => {
+      const mockSidebar = { updateState: jest.fn(), updateEngineStatus: jest.fn() };
+      (extensionController as any).sidebarProvider = mockSidebar;
+      (extensionController as any).engineMode = 'remote';
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('remote'),
+        getRemoteUrl: jest.fn().mockReturnValue('http://127.0.0.1:8000'),
+        getRemoteToken: jest.fn().mockResolvedValue('token-123'),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue('token-123')
+      };
+      (extensionController as any).restClient = {
+        getHealth: jest.fn().mockResolvedValue({ version: '1.6.1' }),
+        getConfig: jest.fn().mockResolvedValue({
+          providers: {
+            ollama: { type: 'openai_compatible', base_url: 'http://127.0.0.1:11434' }, // local omitted -> cloud despite key 'ollama'
+            custom_local: { type: 'openai_compatible', base_url: 'http://127.0.0.1:8080', local: true }, // local: true -> local
+            openrouter: { type: 'openrouter' } // cloud
+          }
+        }),
+        getCircuits: jest.fn().mockResolvedValue({ circuits: [] })
+      };
+
+      await (extensionController as any).syncSidebarState();
+      expect(mockSidebar.updateState).toHaveBeenCalledWith(expect.objectContaining({
+        providers: expect.arrayContaining([
+          expect.objectContaining({ id: 'ollama', type: 'cloud' }),
+          expect.objectContaining({ id: 'custom_local', type: 'local' }),
+          expect.objectContaining({ id: 'openrouter', type: 'cloud' })
         ])
       }));
     });
@@ -3566,7 +3599,8 @@ other_key:
 providers:
   llamacpp:
     base_url: "http://127.0.0.1:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "Tier 1"
@@ -3588,7 +3622,8 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://127.0.0.1:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "Tier 1"
@@ -3617,7 +3652,8 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://127.0.0.1:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "T1"

@@ -1,11 +1,12 @@
 package provider
 
 import (
-	"strings"
 	"sync"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
+
+var _ contract.PlatformResolver = (*Registry)(nil)
 
 // Registry manages the collection of active LLM providers.
 type Registry struct {
@@ -28,23 +29,24 @@ func NewRegistryFromConfig(cfg *contract.Config) *Registry {
 	}
 
 	for id, pCfg := range cfg.Providers {
-		var p LLMProvider
-		switch pCfg.Type {
-		case contract.ProviderTypeAnthropic:
-			p = NewAnthropicProvider(id, pCfg)
-		case contract.ProviderTypeOpenRouter:
-			p = NewOpenRouterProvider(id, pCfg)
-		default:
-			if strings.Contains(strings.ToLower(id), "openrouter") || strings.Contains(strings.ToLower(pCfg.BaseURL), "openrouter.ai") {
-				p = NewOpenRouterProvider(id, pCfg)
-			} else {
-				p = NewGenericLLMProvider(id, pCfg)
-			}
+		desc, ok := LookupDescriptor(pCfg.Type)
+		if !ok {
+			continue
 		}
+		p := desc.New(id, pCfg)
 		r.Register(p)
 	}
 
 	return r
+}
+
+// Platform maps a configured provider ID to the Platform declared by its implementation.
+func (r *Registry) Platform(providerID string) (contract.Platform, bool) {
+	p, ok := r.Get(providerID)
+	if !ok {
+		return "", false
+	}
+	return p.Platform(), true
 }
 
 // Register adds or replaces a provider in the registry.

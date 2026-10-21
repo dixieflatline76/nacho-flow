@@ -48,6 +48,23 @@ export function clearModelDiscoveryCache(): void {
 	discoveryCache.clear();
 }
 
+/**
+ * Resolves the effective base URL for a provider symbol definition,
+ * applying platform defaults when base_url is omitted.
+ */
+export function resolveEffectiveBaseUrl(provDef?: { baseUrl?: string; type?: string }): string {
+	if (provDef?.baseUrl && provDef.baseUrl.trim()) {
+		return provDef.baseUrl.trim();
+	}
+	if (provDef?.type === 'openrouter') {
+		return 'https://openrouter.ai/api/v1';
+	}
+	if (provDef?.type === 'anthropic') {
+		return 'https://api.anthropic.com';
+	}
+	return '';
+}
+
 interface RawHttpResponse {
 	statusCode: number;
 	statusMessage: string;

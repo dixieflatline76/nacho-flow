@@ -17,7 +17,7 @@ func BenchmarkAnthropic_BuildUpstreamRequest(b *testing.B) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
 		APIKey:  "sk-ant-bench",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := []byte(`{
@@ -66,7 +66,7 @@ func BenchmarkAnthropic_BuildUpstreamRequest(b *testing.B) {
 func BenchmarkAnthropic_TranslateResponseBody(b *testing.B) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	anthropicJSON := []byte(`{
@@ -121,4 +121,3 @@ func BenchmarkIsAdaptiveThinkingAnthropicModel(b *testing.B) {
 		}
 	}
 }
-
