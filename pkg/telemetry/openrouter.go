@@ -15,6 +15,7 @@ import (
 
 // OpenRouterPricingProvider fetches real-time pricing and model capabilities from OpenRouter API.
 type OpenRouterPricingProvider struct {
+	id      string
 	baseURL string
 	apiKey  string
 	client  *http.Client
@@ -23,6 +24,7 @@ type OpenRouterPricingProvider struct {
 // NewOpenRouterPricingProviderWithURL creates a provider with a custom base URL (useful for testing).
 func NewOpenRouterPricingProviderWithURL(baseURL, apiKey string) *OpenRouterPricingProvider {
 	return &OpenRouterPricingProvider{
+		id:      contract.ProviderOpenRouter,
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
 		client: &http.Client{
@@ -31,9 +33,22 @@ func NewOpenRouterPricingProviderWithURL(baseURL, apiKey string) *OpenRouterPric
 	}
 }
 
-// Name returns the provider name.
+// Name returns the configured provider name (defaults to "openrouter").
 func (p *OpenRouterPricingProvider) Name() string {
+	if p.id != "" {
+		return p.id
+	}
 	return contract.ProviderOpenRouter
+}
+
+// Platform returns contract.PlatformOpenRouter.
+func (p *OpenRouterPricingProvider) Platform() contract.Platform {
+	return contract.PlatformOpenRouter
+}
+
+// IsCatalogDerived reports false because OpenRouter fetches live market data.
+func (p *OpenRouterPricingProvider) IsCatalogDerived() bool {
+	return false
 }
 
 type openRouterModelsResponse struct {
@@ -139,7 +154,7 @@ func (p *OpenRouterPricingProvider) FetchPricing(ctx context.Context) (map[strin
 				CompletionCostPerMillion: compPerToken * contract.TokensPerMillion,
 			},
 			ModelID:           m.ID,
-			Provider:          contract.ProviderOpenRouter,
+			Provider:          p.Name(),
 			Name:              m.Name,
 			ContextLength:     m.ContextLength,
 			SupportsTools:     hasTools,
@@ -164,6 +179,10 @@ func init() {
 				interval = parsed
 			}
 		}
-		return NewOpenRouterPricingProviderWithURL(cfg.BaseURL, cfg.APIKey), interval
+		prov := NewOpenRouterPricingProviderWithURL(cfg.BaseURL, cfg.APIKey)
+		if id != "" {
+			prov.id = id
+		}
+		return prov, interval
 	})
 }

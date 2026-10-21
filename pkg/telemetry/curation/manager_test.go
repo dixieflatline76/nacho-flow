@@ -881,15 +881,18 @@ func TestLookupForPlatform_AnthropicOverridesPriceAndWireID(t *testing.T) {
 		t.Errorf("expected overridden completion price %f, got %f", customComp, pOverride.CompletionCostPerMillion)
 	}
 
-	// 4. Negative lookups
+	// 4. OpenRouter canonical resolution vs negative lookups
+	if pOR, ok := mgr.LookupForPlatform(contract.PlatformOpenRouter, "claude-sonnet-5"); !ok || pOR.ModelID != "anthropic/claude-sonnet-5" {
+		t.Errorf("expected openrouter to resolve canonical anthropic/claude-sonnet-5, got %q, %v", pOR.ModelID, ok)
+	}
 	if _, ok := mgr.LookupForPlatform(contract.PlatformAnthropic, "openai/gpt-4o"); ok {
 		t.Errorf("expected gpt-4o to fail LookupForPlatform on platform anthropic")
 	}
-	if _, ok := mgr.LookupForPlatform(contract.PlatformOpenRouter, "anthropic/claude-sonnet-5"); ok {
-		t.Errorf("expected openrouter to return false when no openrouter binding entry exists")
+	if _, ok := mgr.LookupForPlatform(contract.PlatformOpenAICompatible, "anthropic/claude-sonnet-5"); ok {
+		t.Errorf("expected openai_compatible to return false (no curated catalog)")
 	}
 	if _, ok := mgr.LookupForPlatform(contract.PlatformLocal, "anthropic/claude-sonnet-5"); ok {
-		t.Errorf("expected local to return false for cloud model without local binding")
+		t.Errorf("expected local to return false for closed-weights cloud model")
 	}
 	if _, ok := mgr.LookupForPlatform(contract.PlatformAnthropic, "non-existent-model"); ok {
 		t.Errorf("expected non-existent model to return false")
@@ -1018,4 +1021,57 @@ func TestIsSameModel(t *testing.T) {
 		t.Errorf("expected cataloged and uncataloged models to report false")
 	}
 }
+
+func TestRegisterDynamicModels_PreservesCuratedFields(t *testing.T) {
+	mgr := NewManager(t.TempDir(), "")
+	mgr.RegisterDynamicModels(map[string]ModelCuratedProfile{
+		"anthropic/claude-sonnet-5": {
+			ModelID:                  "anthropic/claude-sonnet-5",
+			Name:                     "Anthropic: Claude Sonnet 5 (Live)",
+			PromptCostPerMillion:     3.25,
+			CompletionCostPerMillion: 16.0,
+		},
+	})
+
+	p, ok := mgr.Lookup("anthropic/claude-sonnet-5")
+	if !ok {
+		t.Fatalf("expected anthropic/claude-sonnet-5 in catalog")
+	}
+	if p.PromptCostPerMillion != 3.25 || p.CompletionCostPerMillion != 16.0 {
+		t.Errorf("expected updated live prices 3.25/16.0, got %f/%f", p.PromptCostPerMillion, p.CompletionCostPerMillion)
+	}
+	if p.Providers == nil || p.Providers[contract.PlatformAnthropic].ModelID != "claude-sonnet-5" {
+		t.Errorf("expected Providers[anthropic] binding preserved after RegisterDynamicModels, got %+v", p.Providers)
+	}
+	if len(p.Aliases) == 0 {
+		t.Errorf("expected Aliases preserved after RegisterDynamicModels")
+	}
+	if p.ProvenanceURL == "" {
+		t.Errorf("expected ProvenanceURL preserved after RegisterDynamicModels")
+	}
+}
+
+func TestRegisterDynamicModels_EstimatedScoresNotOverwritten(t *testing.T) {
+	mgr := NewManager(t.TempDir(), "")
+	mgr.RegisterDynamicModels(map[string]ModelCuratedProfile{
+		"anthropic/claude-sonnet-5.5": {
+			ModelID:         "anthropic/claude-sonnet-5.5",
+			CodingIndex:     85.0,
+			ToolReliability: 95.0,
+			BenchmarkSource: "artificial_analysis",
+		},
+	})
+
+	p, ok := mgr.Lookup("anthropic/claude-sonnet-5.5")
+	if !ok {
+		t.Fatalf("expected anthropic/claude-sonnet-5.5 in catalog")
+	}
+	if p.CodingIndex != 77.0 {
+		t.Errorf("expected estimated CodingIndex 77.0 preserved, got %f", p.CodingIndex)
+	}
+	if p.BenchmarkSource != BenchmarkSourceEstimated {
+		t.Errorf("expected BenchmarkSource %q preserved, got %q", BenchmarkSourceEstimated, p.BenchmarkSource)
+	}
+}
+
 

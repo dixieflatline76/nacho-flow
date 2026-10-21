@@ -198,9 +198,10 @@ func (p *program) run(s service.Service) error {
 	reg := provider.NewRegistryFromConfig(cfg)
 
 	// 2. Setup Curated Gallery, Classifier, and Pricing Oracle with OpenRouter Plugin
-	curationMgr := curation.NewManager("", "")
+	curationMgr := curation.DefaultManager()
 	modelClassifier := telemetry.NewClassifier(curationMgr)
 	oracle := telemetry.NewPricingOracleWithClassifier(modelClassifier)
+	oracle.SetPlatformResolver(reg)
 	for id, p := range cfg.Providers {
 		platform, ok := reg.Platform(id)
 		if !ok {

@@ -1,5 +1,7 @@
 package provider
 
+//go:generate go run ../../cmd/util/gen_providers/main.go
+
 import (
 	"context"
 	"io"

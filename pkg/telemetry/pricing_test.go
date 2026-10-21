@@ -577,6 +577,8 @@ func TestPricingOracle_AnthropicNativeAndPromptCaching(t *testing.T) {
 
 func BenchmarkPricingOracle_GetPrice_ZeroAlloc(b *testing.B) {
 	oracle := NewPricingOracle()
+	oracle.RegisterProvider(NewAnthropicPricingProvider(), 0)
+	_ = oracle.Sync(context.Background())
 	b.ReportAllocs()
 	for b.Loop() {
 		_, _ = oracle.GetPrice("anthropic", "claude-sonnet-5")
@@ -585,9 +587,120 @@ func BenchmarkPricingOracle_GetPrice_ZeroAlloc(b *testing.B) {
 
 func BenchmarkPricingOracle_GetModelMetadata_ZeroAlloc(b *testing.B) {
 	oracle := NewPricingOracle()
+	oracle.RegisterProvider(NewAnthropicPricingProvider(), 0)
+	_ = oracle.Sync(context.Background())
 	b.ReportAllocs()
 	for b.Loop() {
 		_, _ = oracle.GetModelMetadata("anthropic", "claude-sonnet-5")
+	}
+}
+
+type mockPlatformPricingProvider struct {
+	name             string
+	platform         contract.Platform
+	isCatalogDerived bool
+	prices           map[string]ModelMetadata
+}
+
+func (m *mockPlatformPricingProvider) Name() string               { return m.name }
+func (m *mockPlatformPricingProvider) Platform() contract.Platform { return m.platform }
+func (m *mockPlatformPricingProvider) IsCatalogDerived() bool     { return m.isCatalogDerived }
+func (m *mockPlatformPricingProvider) FetchPricing(_ context.Context) (map[string]ModelMetadata, error) {
+	return m.prices, nil
+}
+
+type mockPlatformResolver map[string]contract.Platform
+
+func (m mockPlatformResolver) Platform(id string) (contract.Platform, bool) {
+	p, ok := m[id]
+	return p, ok
+}
+
+func TestPricingOracle_NamespacePrecedence_AnthropicVsOpenRouter(t *testing.T) {
+	oracle := NewPricingOracle()
+	anthProv := &mockPlatformPricingProvider{
+		name:             "anthropic",
+		platform:         contract.PlatformAnthropic,
+		isCatalogDerived: true,
+		prices: map[string]ModelMetadata{
+			"claude-sonnet-5": {
+				ModelID:      "claude-sonnet-5",
+				Provider:     "anthropic",
+				ModelPricing: ModelPricing{PromptCostPerMillion: 3.0, CompletionCostPerMillion: 15.0},
+			},
+		},
+	}
+	orProv := &mockPlatformPricingProvider{
+		name:             "openrouter",
+		platform:         contract.PlatformOpenRouter,
+		isCatalogDerived: false,
+		prices: map[string]ModelMetadata{
+			"claude-sonnet-5": {
+				ModelID:      "claude-sonnet-5",
+				Provider:     "openrouter",
+				ModelPricing: ModelPricing{PromptCostPerMillion: 3.5, CompletionCostPerMillion: 17.5},
+			},
+			"anthropic/claude-sonnet-5": {
+				ModelID:      "anthropic/claude-sonnet-5",
+				Provider:     "openrouter",
+				ModelPricing: ModelPricing{PromptCostPerMillion: 3.5, CompletionCostPerMillion: 17.5},
+			},
+		},
+	}
+
+	oracle.RegisterProvider(anthProv, 0)
+	oracle.RegisterProvider(orProv, 0)
+	_ = oracle.Sync(context.Background())
+
+	pAnth, ok := oracle.GetPrice("anthropic", "claude-sonnet-5")
+	if !ok || pAnth.PromptCostPerMillion != 3.0 {
+		t.Errorf("expected anthropic::claude-sonnet-5 price 3.0, got %+v (ok=%v)", pAnth, ok)
+	}
+	pOR, ok := oracle.GetPrice("openrouter", "claude-sonnet-5")
+	if !ok || pOR.PromptCostPerMillion != 3.5 {
+		t.Errorf("expected openrouter::claude-sonnet-5 price 3.5, got %+v (ok=%v)", pOR, ok)
+	}
+}
+
+func TestPricingOracle_BareKeyRefreshAndCustomProviderIDs(t *testing.T) {
+	oracle := NewPricingOracle()
+	oracle.SetPlatformResolver(mockPlatformResolver{
+		"my_claude":  contract.PlatformAnthropic,
+		"my_gateway": contract.PlatformOpenRouter,
+	})
+
+	orProv := &mockPlatformPricingProvider{
+		name:             "my_gateway",
+		platform:         contract.PlatformOpenRouter,
+		isCatalogDerived: false,
+		prices: map[string]ModelMetadata{
+			"anthropic/claude-sonnet-5": {
+				ModelID:      "anthropic/claude-sonnet-5",
+				Provider:     "my_gateway",
+				ModelPricing: ModelPricing{PromptCostPerMillion: 3.0, CompletionCostPerMillion: 15.0},
+			},
+		},
+	}
+	oracle.RegisterProvider(orProv, 0)
+	_ = oracle.Sync(context.Background())
+
+	// Second tick updates bare key price for the same provider
+	orProv.prices["anthropic/claude-sonnet-5"] = ModelMetadata{
+		ModelID:      "anthropic/claude-sonnet-5",
+		Provider:     "my_gateway",
+		ModelPricing: ModelPricing{PromptCostPerMillion: 2.75, CompletionCostPerMillion: 13.5},
+	}
+	_ = oracle.Sync(context.Background())
+
+	pBare, ok := oracle.GetPrice("", "anthropic/claude-sonnet-5")
+	if !ok || pBare.PromptCostPerMillion != 2.75 {
+		t.Errorf("expected refreshed bare key price 2.75, got %+v (ok=%v)", pBare, ok)
+	}
+
+	// Custom Anthropic provider ID resolves via SetPlatformResolver + Priority 2 catalog fallback
+	pClaude, ok := oracle.GetPrice("my_claude", "claude-opus-4-7")
+	if !ok || pClaude.PromptCostPerMillion != 5.0 {
+		t.Errorf("expected my_claude to resolve claude-opus-4-7 price 5.0 via PlatformResolver, got %+v (ok=%v)", pClaude, ok)
 	}
 }
 

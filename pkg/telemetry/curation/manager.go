@@ -388,57 +388,62 @@ func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
 	return ModelCuratedProfile{}, false
 }
 
-// LookupForPlatform retrieves a curated profile for a given platform, applying provider-specific
-// wire model ID and pricing overrides when present in Providers.
+// LookupForPlatform retrieves a curated profile for a given platform using its declarative
+// PlatformCatalogPolicy, applying provider-specific wire model ID and pricing overrides when present.
 func (m *Manager) LookupForPlatform(platform contract.Platform, modelID string) (ModelCuratedProfile, bool) {
 	if m == nil {
 		return ModelCuratedProfile{}, false
 	}
-	profile, ok := m.Lookup(modelID)
-	if !ok {
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.HasCuratedCatalog {
 		return ModelCuratedProfile{}, false
 	}
-	binding, ok := profile.Providers[platform]
-	if !ok {
+	profile, found := m.Lookup(modelID)
+	if !found {
 		return ModelCuratedProfile{}, false
 	}
-	cp := profile
-	cp.ModelID = binding.ModelID
-	if binding.PromptCostPerMillion != nil {
-		cp.PromptCostPerMillion = *binding.PromptCostPerMillion
+	if policy.RequiresOpenWeights && !profile.IsOpenWeights {
+		return ModelCuratedProfile{}, false
 	}
-	if binding.CompletionCostPerMillion != nil {
-		cp.CompletionCostPerMillion = *binding.CompletionCostPerMillion
+	if binding, hasBinding := profile.Providers[platform]; hasBinding {
+		profile.ModelID = binding.ModelID
+		if binding.PromptCostPerMillion != nil {
+			profile.PromptCostPerMillion = *binding.PromptCostPerMillion
+		}
+		if binding.CompletionCostPerMillion != nil {
+			profile.CompletionCostPerMillion = *binding.CompletionCostPerMillion
+		}
+		return profile, true
 	}
-	return cp, true
+	if policy.RequiresProviderBinding {
+		return ModelCuratedProfile{}, false
+	}
+	if policy.RequiresOpenWeights {
+		profile.PromptCostPerMillion = 0
+		profile.CompletionCostPerMillion = 0
+	}
+	return profile, true
 }
 
-// FormatModelForPlatform formats a model identifier for a specific platform family.
+// FormatModelForPlatform formats a model identifier for a specific platform family using its PlatformCatalogPolicy.
 func (m *Manager) FormatModelForPlatform(platform contract.Platform, modelID string) (string, bool) {
 	if m == nil {
 		return "", false
 	}
-	switch platform {
-	case contract.PlatformOpenRouter, "":
-		if p, ok := m.Lookup(modelID); ok {
-			return p.ModelID, true
-		}
-		return modelID, true
-	case contract.PlatformLocal:
-		if p, ok := m.Lookup(modelID); ok {
-			return p.ModelID, p.IsOpenWeights
-		}
-		return modelID, true
-	case contract.PlatformAnthropic:
-		if p, ok := m.LookupForPlatform(platform, modelID); ok {
-			return p.ModelID, true
-		}
-		return "", false
-	case contract.PlatformOpenAICompatible:
-		return "", false
-	default:
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.HasCuratedCatalog {
 		return "", false
 	}
+	if p, found := m.LookupForPlatform(platform, modelID); found {
+		return p.ModelID, true
+	}
+	if policy.AllowUncatalogedModels {
+		if p, found := m.Lookup(modelID); found {
+			return p.ModelID, false
+		}
+		return modelID, true
+	}
+	return "", false
 }
 
 // IsSameModel reports whether two model identifiers resolve to the same underlying canonical model.
@@ -492,24 +497,7 @@ func (m *Manager) RegisterDynamicModels(models map[string]ModelCuratedProfile) {
 			p.ModelID = id
 		}
 		if existing, exists := newModels[id]; exists {
-			if !p.SupportsVision && existing.SupportsVision {
-				p.SupportsVision = true
-			}
-			if !p.SupportsTools && existing.SupportsTools {
-				p.SupportsTools = true
-			}
-			if p.CodingIndex == 0 && existing.CodingIndex > 0 {
-				p.CodingIndex = existing.CodingIndex
-			}
-			if p.ToolReliability == 0 && existing.ToolReliability > 0 {
-				p.ToolReliability = existing.ToolReliability
-			}
-			if len(p.RecommendedTiers) == 0 && len(existing.RecommendedTiers) > 0 {
-				p.RecommendedTiers = existing.RecommendedTiers
-			}
-			if (p.TierRole == "" || p.TierRole == RoleGeneral) && existing.TierRole != "" && existing.TierRole != RoleGeneral {
-				p.TierRole = existing.TierRole
-			}
+			p = existing.MergeDynamicOverlay(p)
 		}
 		newModels[id] = p
 	}

@@ -581,6 +581,54 @@ const (
 	PlatformOpenRouter       Platform = "openrouter"
 )
 
+// PlatformCatalogPolicy declares how the curated catalog, pricing oracle, and tuner treat a Platform.
+type PlatformCatalogPolicy struct {
+	HasCuratedCatalog       bool // true = platform resolves models from the curated catalog
+	AllowRecommendations    bool // true = tuner may recommend candidate models for this platform
+	RequiresProviderBinding bool // true = only models with profile.Providers[platform] are valid
+	RequiresOpenWeights     bool // true = only open-weights models are valid ($0 local inference)
+	AllowUncatalogedModels  bool // true = uncataloged model IDs pass through FormatModelForPlatform
+}
+
+var platformCatalogPolicies = map[Platform]PlatformCatalogPolicy{
+	"": {
+		HasCuratedCatalog:      true,
+		AllowRecommendations:   true,
+		AllowUncatalogedModels: true,
+	},
+	PlatformOpenRouter: {
+		HasCuratedCatalog:      true,
+		AllowRecommendations:   true,
+		AllowUncatalogedModels: true,
+	},
+	PlatformLocal: {
+		HasCuratedCatalog:      true,
+		AllowRecommendations:   true,
+		RequiresOpenWeights:    true,
+		AllowUncatalogedModels: true,
+	},
+	PlatformAnthropic: {
+		HasCuratedCatalog:       true,
+		AllowRecommendations:    true,
+		RequiresProviderBinding: true,
+	},
+	PlatformOpenAICompatible: {
+		HasCuratedCatalog:    false,
+		AllowRecommendations: false,
+	},
+}
+
+// RegisterPlatformCatalogPolicy registers or overrides the catalog policy for a platform.
+func RegisterPlatformCatalogPolicy(p Platform, policy PlatformCatalogPolicy) {
+	platformCatalogPolicies[p] = policy
+}
+
+// LookupPlatformCatalogPolicy returns the declarative catalog policy for a platform (O(1), 0 allocs).
+func LookupPlatformCatalogPolicy(p Platform) (PlatformCatalogPolicy, bool) {
+	policy, ok := platformCatalogPolicies[p]
+	return policy, ok
+}
+
 // PlatformResolver maps a configured provider ID to the Platform declared by its implementation.
 type PlatformResolver interface {
 	Platform(providerID string) (Platform, bool)

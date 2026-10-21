@@ -375,6 +375,7 @@ func (s *Server) ApplyConfig(incoming *contract.Config, persistDisk bool, rawYAM
 
 	// 5b. Dynamically reconfigure PricingOracle providers upon hot-reload
 	if s.oracle != nil {
+		s.oracle.SetPlatformResolver(newReg)
 		for id, p := range merged.Providers {
 			platform, ok := newReg.Platform(id)
 			if !ok {

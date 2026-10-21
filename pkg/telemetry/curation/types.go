@@ -94,6 +94,36 @@ func (p ModelCuratedProfile) IsWorkhorse() bool {
 	return false
 }
 
+// MergeDynamicOverlay returns a copy of the curated base profile with live-discovered
+// capabilities and prices overlaid, preserving all curated fields (Providers, Aliases,
+// Notes, IsOpenWeights, RecommendedTiers, TierRole, ProvenanceURL, and estimated CodingIndex).
+func (base ModelCuratedProfile) MergeDynamicOverlay(live ModelCuratedProfile) ModelCuratedProfile {
+	base.SupportsVision = base.SupportsVision || live.SupportsVision
+	base.SupportsTools = base.SupportsTools || live.SupportsTools
+	if live.PromptCostPerMillion > 0 {
+		base.PromptCostPerMillion = live.PromptCostPerMillion
+	}
+	if live.CompletionCostPerMillion > 0 {
+		base.CompletionCostPerMillion = live.CompletionCostPerMillion
+	}
+	if live.CodingIndex > 0 && base.BenchmarkSource != BenchmarkSourceEstimated {
+		base.CodingIndex = live.CodingIndex
+		if live.BenchmarkSource != "" {
+			base.BenchmarkSource = live.BenchmarkSource
+		}
+	}
+	if live.ToolReliability > 0 && base.BenchmarkSource != BenchmarkSourceEstimated {
+		base.ToolReliability = live.ToolReliability
+	}
+	if len(base.RecommendedTiers) == 0 && len(live.RecommendedTiers) > 0 {
+		base.RecommendedTiers = live.RecommendedTiers
+	}
+	if (base.TierRole == "" || base.TierRole == RoleGeneral) && live.TierRole != "" && live.TierRole != RoleGeneral {
+		base.TierRole = live.TierRole
+	}
+	return base
+}
+
 // CuratedCatalog represents the canonical JSON structure for all curated model intelligence.
 type CuratedCatalog struct {
 	Version     string                         `json:"version"` // e.g. "v1.0.0" (Semver)
