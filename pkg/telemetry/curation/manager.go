@@ -577,7 +577,20 @@ func ExtractParameterSize(modelID string) float64 {
 
 // CandidateModels returns filtered candidate models matching the specified tier role and deployment mode.
 func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedProfile {
+	if isLocal {
+		return m.CandidateModelsForPlatform(role, contract.PlatformLocal)
+	}
+	return m.CandidateModelsForPlatform(role, contract.PlatformOpenRouter)
+}
+
+// CandidateModelsForPlatform returns filtered candidate models for a given TierRole and Platform
+// using the platform's declarative PlatformCatalogPolicy.
+func (m *Manager) CandidateModelsForPlatform(role TierRole, platform contract.Platform) []ModelCuratedProfile {
 	if m == nil {
+		return nil
+	}
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.AllowRecommendations {
 		return nil
 	}
 	cat := m.activeCatalog.Load()
@@ -600,7 +613,7 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 			continue
 		}
 
-		if isLocal {
+		if policy.RequiresOpenWeights {
 			// Local tier: candidate must be an open-weights model capable of local inference
 			if !p.IsOpenWeights {
 				continue
@@ -615,6 +628,18 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 			}
 		}
 
+		if binding, hasBinding := p.Providers[platform]; hasBinding {
+			p.ModelID = binding.ModelID
+			if binding.PromptCostPerMillion != nil {
+				p.PromptCostPerMillion = *binding.PromptCostPerMillion
+			}
+			if binding.CompletionCostPerMillion != nil {
+				p.CompletionCostPerMillion = *binding.CompletionCostPerMillion
+			}
+		} else if policy.RequiresProviderBinding {
+			continue
+		}
+
 		// Role matching
 		if role != "" && role != RoleGeneral {
 			if role == RoleVisionWorkhorse && !p.SupportsVision && p.TierRole != RoleVisionWorkhorse {
@@ -624,7 +649,7 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 				continue
 			}
 			if role == RoleDeepReasoner {
-				if !isLocal {
+				if !policy.RequiresOpenWeights {
 					if p.TierRole != RoleDeepReasoner {
 						continue
 					}
@@ -640,16 +665,22 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 	return candidates
 }
 
-// ParetoCandidates filters candidate models down to the Pareto-optimal frontier.
-// For local models (isLocal == true), candidates are bounded by localVRAMGB or currentModelID's parameter class.
-// For cloud models, candidates are pruned to the non-dominated set across (BlendedCost, CodingIndex).
-func (m *Manager) ParetoCandidates(role TierRole, isLocal bool, currentModelID string, localVRAMGB int) []ModelCuratedProfile {
-	allCandidates := m.CandidateModels(role, isLocal)
+// ParetoCandidates filters candidate models down to the Pareto-optimal frontier for the given platform.
+// Driven by contract.LookupPlatformCatalogPolicy(platform) with zero hardcoded platform switches.
+func (m *Manager) ParetoCandidates(role TierRole, platform contract.Platform, currentModelID string, localVRAMGB int) []ModelCuratedProfile {
+	if m == nil {
+		return nil
+	}
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.AllowRecommendations {
+		return nil
+	}
+	allCandidates := m.CandidateModelsForPlatform(role, platform)
 	if len(allCandidates) == 0 {
 		return nil
 	}
 
-	if isLocal {
+	if policy.RequiresOpenWeights {
 		// Determine maximum parameter ceiling
 		maxParams := 8.0 // default baseline ceiling
 		if localVRAMGB > 0 {

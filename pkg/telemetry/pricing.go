@@ -379,8 +379,21 @@ func (o *PricingOracle) GetModelMetadata(provider, model string) (ModelMetadata,
 	}
 
 	// Priority 2: Platform-aware Curated Catalog fallback via declarative PlatformCatalogPolicy
-	if profile, found := o.catalog().LookupForPlatform(o.resolvePlatform(provider), model); found {
-		return modelMetadataFromCuratedProfile(profile), true
+	reqPlat := o.resolvePlatform(provider)
+	if o.classifier != nil && o.classifier.gallery != nil {
+		if profile, found := o.classifier.gallery.LookupForPlatform(reqPlat, model); found {
+			return modelMetadataFromCuratedProfile(profile), true
+		}
+	} else if reqPlat != "" {
+		if policy, ok := contract.LookupPlatformCatalogPolicy(reqPlat); ok && policy.RequiresProviderBinding {
+			if profile, found := curation.DefaultManager().LookupForPlatform(reqPlat, model); found {
+				return modelMetadataFromCuratedProfile(profile), true
+			}
+		}
+	} else if provider == "" {
+		if profile, found := curation.DefaultManager().Lookup(model); found && len(profile.Providers) > 0 {
+			return modelMetadataFromCuratedProfile(profile), true
+		}
 	}
 
 	return ModelMetadata{}, false

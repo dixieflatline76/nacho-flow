@@ -426,7 +426,7 @@ func TestCandidateModels_And_Pareto(t *testing.T) {
 	}
 
 	// 2. Local Pareto with 8GB VRAM limit (should not include >8B)
-	pareto8GB := mgr.ParetoCandidates(RoleCodingWorkhorse, true, "qwen2.5-coder:7b", 8)
+	pareto8GB := mgr.ParetoCandidates(RoleCodingWorkhorse, contract.PlatformLocal, "qwen2.5-coder:7b", 8)
 	for _, cand := range pareto8GB {
 		size := ExtractParameterSize(cand.ModelID)
 		if size > 8.0 {
@@ -435,7 +435,7 @@ func TestCandidateModels_And_Pareto(t *testing.T) {
 	}
 
 	// 3. Local Pareto with 24GB VRAM limit (can include up to 32B)
-	pareto24GB := mgr.ParetoCandidates(RoleCodingWorkhorse, true, "qwen2.5-coder:7b", 24)
+	pareto24GB := mgr.ParetoCandidates(RoleCodingWorkhorse, contract.PlatformLocal, "qwen2.5-coder:7b", 24)
 	var foundOver8B bool
 	for _, cand := range pareto24GB {
 		size := ExtractParameterSize(cand.ModelID)
@@ -451,7 +451,7 @@ func TestCandidateModels_And_Pareto(t *testing.T) {
 	}
 
 	// 4. Cloud Pareto Candidates
-	cloudPareto := mgr.ParetoCandidates(RoleCodingWorkhorse, false, "anthropic/claude-3.5-sonnet", 0)
+	cloudPareto := mgr.ParetoCandidates(RoleCodingWorkhorse, contract.PlatformOpenRouter, "anthropic/claude-3.5-sonnet", 0)
 	if len(cloudPareto) == 0 {
 		t.Fatalf("expected cloud pareto candidates")
 	}
@@ -471,7 +471,7 @@ func TestCandidateModels_And_Pareto(t *testing.T) {
 	if c := nilMgr.CandidateModels(RoleCodingWorkhorse, true); c != nil {
 		t.Errorf("expected nil for nil manager candidates")
 	}
-	if p := nilMgr.ParetoCandidates(RoleCodingWorkhorse, true, "7b", 16); p != nil {
+	if p := nilMgr.ParetoCandidates(RoleCodingWorkhorse, contract.PlatformLocal, "7b", 16); p != nil {
 		t.Errorf("expected nil for nil manager pareto")
 	}
 }
@@ -594,8 +594,8 @@ func TestCurationManager_AdditionalCoverage(t *testing.T) {
 	// Various VRAM sizes and local model ceilings
 	vrams := []int{0, 8, 12, 16, 24, 48, 80}
 	for _, vram := range vrams {
-		_ = mgr.ParetoCandidates(RoleCodingWorkhorse, true, "gemma4:12b-it-qat", vram)
-		_ = mgr.ParetoCandidates(RoleGeneral, true, "", vram)
+		_ = mgr.ParetoCandidates(RoleCodingWorkhorse, contract.PlatformLocal, "gemma4:12b-it-qat", vram)
+		_ = mgr.ParetoCandidates(RoleGeneral, contract.PlatformLocal, "", vram)
 	}
 
 	// RoleVisionWorkhorse
@@ -611,7 +611,7 @@ func TestCurationManager_AdditionalCoverage(t *testing.T) {
 	if emptyMgr.CandidateModels(RoleCodingWorkhorse, false) != nil {
 		t.Errorf("expected nil for empty catalog")
 	}
-	if emptyMgr.ParetoCandidates(RoleCodingWorkhorse, false, "", 0) != nil {
+	if emptyMgr.ParetoCandidates(RoleCodingWorkhorse, contract.PlatformOpenRouter, "", 0) != nil {
 		t.Errorf("expected nil for empty catalog pareto")
 	}
 	if _, ok := emptyMgr.Lookup("test"); ok {
@@ -1073,5 +1073,51 @@ func TestRegisterDynamicModels_EstimatedScoresNotOverwritten(t *testing.T) {
 		t.Errorf("expected BenchmarkSource %q preserved, got %q", BenchmarkSourceEstimated, p.BenchmarkSource)
 	}
 }
+
+func TestParetoLadders_Anthropic(t *testing.T) {
+	mgr := DefaultManager()
+
+	assertIDs := func(role TierRole, want []string) {
+		t.Helper()
+		got := mgr.ParetoCandidates(role, contract.PlatformAnthropic, "", 0)
+		if len(got) != len(want) {
+			var ids []string
+			for _, g := range got {
+				ids = append(ids, g.ModelID)
+			}
+			t.Fatalf("role %s on PlatformAnthropic: expected %v, got %v", role, want, ids)
+		}
+		for i, g := range got {
+			if g.ModelID != want[i] {
+				t.Errorf("role %s index %d: expected %q, got %q", role, i, want[i], g.ModelID)
+			}
+			if g.BenchmarkSource == BenchmarkSourceEstimated {
+				t.Errorf("role %s returned estimated model %q", role, g.ModelID)
+			}
+		}
+	}
+
+	assertIDs(RoleCodingWorkhorse, []string{
+		"claude-sonnet-5",
+		"claude-opus-4-8",
+		"claude-fable-5-1",
+	})
+	assertIDs(RoleDeepReasoner, []string{
+		"claude-opus-4-8",
+		"claude-opus-5",
+	})
+	assertIDs(RoleGeneral, []string{
+		"claude-haiku-4-5",
+		"claude-sonnet-5",
+		"claude-opus-4-8",
+		"claude-fable-5-1",
+	})
+
+	// PlatformOpenAICompatible must return nil candidates
+	if got := mgr.ParetoCandidates(RoleCodingWorkhorse, contract.PlatformOpenAICompatible, "", 0); len(got) != 0 {
+		t.Errorf("expected 0 Pareto candidates for PlatformOpenAICompatible, got %d", len(got))
+	}
+}
+
 
 

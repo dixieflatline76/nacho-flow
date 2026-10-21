@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
@@ -378,7 +379,7 @@ func EvaluateFleetWithAttribution(
 								betterExists := false
 								candidates := curation.DefaultManager().ParetoCandidates(
 									curation.RoleCodingWorkhorse,
-									true,
+									contract.PlatformLocal,
 									targetTier.Model,
 									policy.LocalVRAMGB,
 								)

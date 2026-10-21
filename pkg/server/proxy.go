@@ -246,7 +246,7 @@ func NewServerWithTelemetryAndRegistry(
 		shieldMgr:      shieldMgr,
 		logger:         logger,
 		transport:      transport,
-		tuner:          tuner.NewMinConflictsOptimizer(tuner.DefaultTuningPolicy()),
+		tuner:          tuner.NewMinConflictsOptimizer(tuner.DefaultTuningPolicy(), reg),
 		ntsTransformer: ntsTr,
 		startTime:      time.Now(),
 	}

@@ -17,13 +17,19 @@ import (
 
 // MinConflictsOptimizer implements the 6D Min-Conflicts CSP local search optimizer.
 type MinConflictsOptimizer struct {
-	policy TuningPolicy
+	policy    TuningPolicy
+	platforms contract.PlatformResolver
 }
 
 // NewMinConflictsOptimizer creates an optimizer configured with the given tuning policy.
-func NewMinConflictsOptimizer(policy TuningPolicy) *MinConflictsOptimizer {
+func NewMinConflictsOptimizer(policy TuningPolicy, platforms ...contract.PlatformResolver) *MinConflictsOptimizer {
+	var pr contract.PlatformResolver
+	if len(platforms) > 0 {
+		pr = platforms[0]
+	}
 	return &MinConflictsOptimizer{
-		policy: policy,
+		policy:    policy,
+		platforms: pr,
 	}
 }
 
@@ -115,8 +121,11 @@ func (b *CandidateConfigBuilder) WithPrunedTier(tierIdx int) *CandidateConfigBui
 
 // applyCandidateToTier applies CandidateModel attributes to an arbitrary tier configuration.
 func applyCandidateToTier(tier *TierReplayConfig, cand CandidateModel) {
-	newModel := NormalizeModelForProvider(cand.ModelID, tier.Provider)
-	if newModel != tier.Model {
+	newModel, ok := NormalizeModelForProvider(cand.ModelID, tier.EffectivePlatform())
+	if !ok || newModel == "" {
+		newModel = cand.ModelID
+	}
+	if !curation.DefaultManager().IsSameModel(newModel, tier.Model) {
 		tier.ReasoningEffort = ""
 	}
 	tier.Model = newModel
@@ -300,7 +309,7 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	}
 
 	// 2. Extract initial state from active config
-	currentCfg := ExtractRoutingState(currentConfig, candidateKeywords)
+	currentCfg := ExtractRoutingState(currentConfig, candidateKeywords, opt.platforms)
 	if len(currentCfg.Tiers) == 0 {
 		return nil, fmt.Errorf("no tunable tiers found in active configuration")
 	}
@@ -521,7 +530,7 @@ func (opt *MinConflictsOptimizer) sweepModelReplacements(
 
 		tierRole := resolveTierRole(t, false)
 
-		candidates := CollectCandidateModels(tierRole, t.IsLocal, t.Model, opt.policy.LocalVRAMGB, opt.policy.CandidateDeals)
+		candidates := CollectCandidateModels(tierRole, t.EffectivePlatform(), t.Model, opt.policy.LocalVRAMGB, opt.policy.CandidateDeals)
 		pipeline := NewDefaultFilterPipeline()
 		scorer := &CompositeValueScorer{}
 
@@ -697,7 +706,7 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 	tierRole := resolveTierRole(&currentCfg.Tiers[tierIdx], isEscalationTier)
 	candidates := CollectCandidateModels(
 		tierRole,
-		currentCfg.Tiers[tierIdx].IsLocal,
+		currentCfg.Tiers[tierIdx].EffectivePlatform(),
 		currentCfg.Tiers[tierIdx].Model,
 		rc.policy.LocalVRAMGB,
 		rc.policy.CandidateDeals,
@@ -709,11 +718,11 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 	_, immediateSucc := findImmediateNeighbors(currentCfg.Tiers, tierIdx)
 
 	for _, cand := range candidates {
-		if cand.ModelID == currentCfg.Tiers[tierIdx].Model {
+		if curation.DefaultManager().IsSameModel(cand.ModelID, currentCfg.Tiers[tierIdx].Model) {
 			continue
 		}
 		// Anti-Duplication: Never duplicate immediate escalation predecessor
-		if immediatePred != nil && cand.ModelID == immediatePred.Model {
+		if immediatePred != nil && curation.DefaultManager().IsSameModel(cand.ModelID, immediatePred.Model) {
 			continue
 		}
 
@@ -836,15 +845,15 @@ func (opt *MinConflictsOptimizer) repairDefaultTierModel(currentCfg *MultiTierCo
 
 	candidates := curation.DefaultManager().ParetoCandidates(
 		curation.RoleGeneral,
-		currentCfg.DefaultTier.IsLocal,
+		currentCfg.DefaultTier.EffectivePlatform(),
 		currentCfg.DefaultTier.Model,
 		rc.policy.LocalVRAMGB,
 	)
 	for _, cand := range candidates {
-		if cand.ModelID == currentCfg.DefaultTier.Model {
+		if curation.DefaultManager().IsSameModel(cand.ModelID, currentCfg.DefaultTier.Model) {
 			continue
 		}
-		if !IsModelCompatibleWithProvider(cand.ModelID, currentCfg.DefaultTier.Provider, currentCfg.DefaultTier.IsLocal, rc.providers) {
+		if !IsModelCompatibleWithProvider(cand.ModelID, currentCfg.DefaultTier.Provider, currentCfg.DefaultTier.IsLocal, rc.providers, currentCfg.DefaultTier.Platform) {
 			continue
 		}
 		// A tier already used as an early kickoff/utility tier with lower capability than the cascade
@@ -883,7 +892,8 @@ func (opt *MinConflictsOptimizer) handleEmptyRecords(currentConfig *contract.Con
 	var tierResults []TierTuningResult
 	for _, tier := range currentConfig.Tiers {
 		isLocal := IsLocalTier(tier, currentConfig.Providers)
-		promptCost, compCost, compRate := ResolveModelRates(tier.Model, isLocal)
+		plat := ResolveProviderPlatform(tier.Provider, isLocal, currentConfig.Providers, opt.platforms)
+		promptCost, compCost, compRate := ResolveModelRates(plat, tier.Model)
 		codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
 		isDisabled := strings.TrimSpace(tier.When) == "false"
 		if isDisabled {
@@ -1048,7 +1058,7 @@ func formatModelBenefit(
 	if origTier != nil {
 		origCoding = EffectiveCodingIndex(origCoding, origTier.ReasoningEffort)
 	}
-	origPrompt, origComp, origCompRate := ResolveModelRates(origModel, tier.IsLocal)
+	origPrompt, origComp, origCompRate := ResolveModelRates(tier.EffectivePlatform(), origModel)
 	if !tier.IsLocal && (tier.ComprehensiveRate < origCompRate || tier.PromptCostPerMillion < origPrompt || tier.CompletionCostPerMillion < origComp) {
 		savingsPct := 0.0
 		if origCompRate > 0 {

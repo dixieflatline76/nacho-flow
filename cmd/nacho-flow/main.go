@@ -479,7 +479,7 @@ func runTune(args []string) error {
 		if *writeOnlyFlag || cfg.Kickstart.ReadSlap.WriteOnly {
 			policy.WriteOnly = true
 		}
-		optimizer = tuner.NewMinConflictsOptimizer(policy)
+		optimizer = tuner.NewMinConflictsOptimizer(policy, provider.NewRegistryFromConfig(cfg))
 	}
 	result, err := optimizer.Optimize(records, cfg)
 	if err != nil {

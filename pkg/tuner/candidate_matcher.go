@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
-	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
@@ -52,32 +51,24 @@ func (f *ProviderCompatibilityFilter) Passes(ctx *FilterContext) (bool, string) 
 	if ctx.TargetTier == nil || ctx.Candidate == nil {
 		return false, "nil_context"
 	}
-	if !IsModelCompatibleWithProvider(ctx.Candidate.ModelID, ctx.TargetTier.Provider, ctx.TargetTier.IsLocal, ctx.Providers) {
+	if !IsModelCompatibleWithProvider(ctx.Candidate.ModelID, ctx.TargetTier.Provider, ctx.TargetTier.IsLocal, ctx.Providers, ctx.TargetTier.Platform) {
 		return false, "provider_model_incompatible:" + ctx.TargetTier.Provider
 	}
 	return true, ""
 }
 
-// IsModelCompatibleWithProvider checks whether a model ID is valid for dispatch on a given provider.
-func IsModelCompatibleWithProvider(modelID, providerName string, isLocal bool, providers map[string]contract.ProviderConfig) bool {
+// IsModelCompatibleWithProvider checks whether a model ID is valid for dispatch on a given provider/platform
+// using declarative PlatformCatalogPolicy and FormatModelForPlatform.
+func IsModelCompatibleWithProvider(modelID, providerName string, isLocal bool, providers map[string]contract.ProviderConfig, explicitPlatform ...contract.Platform) bool {
 	if modelID == "" {
 		return false
 	}
-	if providerName == "" {
-		return true // Unconstrained test fixture
-	}
 
-	normProv := strings.ToLower(strings.TrimSpace(providerName))
-	lowerModel := strings.ToLower(strings.TrimSpace(modelID))
-
-	// 1. If providers map is provided and non-empty, verify provider exists in configuration
-	var provConfig *contract.ProviderConfig
-	if len(providers) > 0 {
-		cfg, exists := providers[providerName]
+	if len(providers) > 0 && providerName != "" {
+		_, exists := providers[providerName]
 		if !exists {
-			for k, v := range providers {
+			for k := range providers {
 				if strings.EqualFold(k, providerName) {
-					cfg = v
 					exists = true
 					break
 				}
@@ -86,118 +77,22 @@ func IsModelCompatibleWithProvider(modelID, providerName string, isLocal bool, p
 		if !exists {
 			return false
 		}
-		provConfig = &cfg
 	}
 
-	// 2. Local provider check
-	isLocalProvider := isLocal
-	if provConfig != nil {
-		isLocalProvider = isLocalProvider || provConfig.IsLocal()
-	}
-	if normProv == "ollama" || normProv == "llama_cluster" || normProv == "lmstudio" ||
-		normProv == "vllm" || normProv == "llamacpp" || normProv == "llama.cpp" || normProv == "local" {
-		isLocalProvider = true
-	}
-	if provConfig != nil && (strings.Contains(provConfig.BaseURL, "127.0.0.1") || strings.Contains(provConfig.BaseURL, "localhost")) {
-		isLocalProvider = true
+	var plat contract.Platform
+	if len(explicitPlatform) > 0 && explicitPlatform[0] != "" {
+		plat = explicitPlatform[0]
+	} else {
+		plat = ResolveProviderPlatform(providerName, isLocal, providers)
 	}
 
-	if isLocalProvider {
-		// Local providers can only run local/open-weights models, not proprietary cloud endpoints
-		if strings.HasPrefix(lowerModel, "anthropic/") || strings.HasPrefix(lowerModel, "claude-") ||
-			strings.HasPrefix(lowerModel, "openai/") || strings.HasPrefix(lowerModel, "gpt-") ||
-			strings.HasPrefix(lowerModel, "o1") || strings.HasPrefix(lowerModel, "o3") ||
-			strings.HasPrefix(lowerModel, "google/") || strings.HasPrefix(lowerModel, "gemini-") {
-			return false
-		}
-		return true
-	}
-
-	var resolvedPlat contract.Platform
-	if provConfig != nil {
-		resolvedPlat, _ = provider.ResolvePlatform(*provConfig)
-	}
-
-	// 3. Direct vendor provider checks
-	// Direct Anthropic (e.g. provider: "anthropic" or platform: anthropic)
-	isAnthropicDirect := normProv == "anthropic" || resolvedPlat == contract.PlatformAnthropic
-	if isAnthropicDirect {
-		return strings.HasPrefix(lowerModel, "claude-") ||
-			strings.HasPrefix(lowerModel, "anthropic/claude-") ||
-			strings.HasPrefix(lowerModel, "anthropic/")
-	}
-
-	// Direct OpenAI (e.g. provider: "openai" or baseURL contains api.openai.com)
-	isOpenAIDirect := normProv == "openai"
-	if provConfig != nil && strings.Contains(strings.ToLower(provConfig.BaseURL), "api.openai.com") {
-		isOpenAIDirect = true
-	}
-	if isOpenAIDirect {
-		return strings.HasPrefix(lowerModel, "gpt-") ||
-			strings.HasPrefix(lowerModel, "o1") ||
-			strings.HasPrefix(lowerModel, "o3") ||
-			strings.HasPrefix(lowerModel, "o4") ||
-			strings.HasPrefix(lowerModel, "openai/")
-	}
-
-	// Direct Google / Gemini (e.g. provider: "google" or "gemini" or baseURL contains googleapis.com)
-	isGoogleDirect := normProv == "google" || normProv == "gemini"
-	if provConfig != nil && (strings.Contains(strings.ToLower(provConfig.BaseURL), "googleapis.com") || strings.Contains(strings.ToLower(provConfig.BaseURL), "generativelanguage.googleapis.com")) {
-		isGoogleDirect = true
-	}
-	if isGoogleDirect {
-		return strings.HasPrefix(lowerModel, "gemini-") ||
-			strings.HasPrefix(lowerModel, "google/gemini-") ||
-			strings.HasPrefix(lowerModel, "google/")
-	}
-
-	// Direct DeepSeek (e.g. provider: "deepseek" or baseURL contains api.deepseek.com)
-	isDeepSeekDirect := normProv == "deepseek"
-	if provConfig != nil && strings.Contains(strings.ToLower(provConfig.BaseURL), "api.deepseek.com") {
-		isDeepSeekDirect = true
-	}
-	if isDeepSeekDirect {
-		return strings.HasPrefix(lowerModel, "deepseek-") ||
-			strings.HasPrefix(lowerModel, "deepseek/")
-	}
-
-	// 4. Aggregator providers (openrouter, litellm, etc.)
-	isAggregator := normProv == "openrouter" || normProv == "litellm" || resolvedPlat == contract.PlatformOpenRouter
-	if isAggregator {
-		return true
-	}
-
-	// Generic cloud provider with configured entry
-	if resolvedPlat == contract.PlatformOpenAICompatible {
-		return true
-	}
-
-	return true
+	_, ok := curation.DefaultManager().FormatModelForPlatform(plat, modelID)
+	return ok
 }
 
-// NormalizeModelForProvider ensures model IDs match the format expected by the provider
-// (e.g., stripping vendor prefix for direct Anthropic/OpenAI/Google/DeepSeek endpoints).
-func NormalizeModelForProvider(modelID, providerName string) string {
-	normProv := strings.ToLower(strings.TrimSpace(providerName))
-	switch normProv {
-	case "anthropic":
-		if strings.HasPrefix(strings.ToLower(modelID), "anthropic/") {
-			return modelID[len("anthropic/"):]
-		}
-	case "openai":
-		if strings.HasPrefix(strings.ToLower(modelID), "openai/") {
-			return modelID[len("openai/"):]
-		}
-	case "google", "gemini":
-		if strings.HasPrefix(strings.ToLower(modelID), "google/") {
-			return modelID[len("google/"):]
-		}
-	case "deepseek":
-		if strings.HasPrefix(strings.ToLower(modelID), "deepseek/") {
-			return modelID[len("deepseek/"):]
-		}
-	}
-	return modelID
+// NormalizeModelForProvider formats a model ID for the target platform via curation.DefaultManager().FormatModelForPlatform.
+func NormalizeModelForProvider(modelID string, platform contract.Platform) (string, bool) {
+	return curation.DefaultManager().FormatModelForPlatform(platform, modelID)
 }
 
 // LocalTierImmunityFilter protects zero-cost local inference engines ($0.00 Ollama/Gemma) from cloud replacement.
@@ -291,7 +186,7 @@ func (f *CostReductionFilter) Passes(ctx *FilterContext) (bool, string) {
 	}
 	origRate := ctx.TargetTier.ComprehensiveRate
 	if origRate <= 0 {
-		_, _, origRate = ResolveModelRates(ctx.TargetTier.Model, ctx.TargetTier.IsLocal)
+		_, _, origRate = ResolveModelRates(ctx.TargetTier.EffectivePlatform(), ctx.TargetTier.Model)
 	}
 	candRate := ResolveComprehensiveRate(ctx.Candidate.PromptCostPerMillion, ctx.Candidate.CompletionCostPerMillion, ctx.Candidate.ComprehensiveRate)
 	if origRate <= 0 {
@@ -318,7 +213,7 @@ func (f *DominanceOrderFilter) Passes(ctx *FilterContext) (bool, string) {
 		return false, "nil_context"
 	}
 	// Never duplicate immediate predecessor model
-	if ctx.ImmediatePred != nil && ctx.Candidate.ModelID == ctx.ImmediatePred.Model {
+	if ctx.ImmediatePred != nil && curation.DefaultManager().IsSameModel(ctx.Candidate.ModelID, ctx.ImmediatePred.Model) {
 		return false, "duplicates_predecessor_model"
 	}
 	candCoding := EffectiveCodingIndex(ctx.Candidate.CodingIndex, ctx.TargetTier.ReasoningEffort)
@@ -385,7 +280,7 @@ func (s *CompositeValueScorer) Score(target *TierReplayConfig, candidate *Candid
 	}
 	origRate := target.ComprehensiveRate
 	if origRate <= 0 {
-		_, _, origRate = ResolveModelRates(target.Model, target.IsLocal)
+		_, _, origRate = ResolveModelRates(target.EffectivePlatform(), target.Model)
 	}
 	candRate := ResolveComprehensiveRate(candidate.PromptCostPerMillion, candidate.CompletionCostPerMillion, candidate.ComprehensiveRate)
 	discountPct := 0.0
@@ -468,14 +363,20 @@ func IsDisallowedEndpoint(modelID, name string) bool {
 	return false
 }
 
-// CollectCandidateModels aggregates candidates from policy deals and curated profiles,
-// deduplicated by ModelID (deals taking precedence), excluding disallowed endpoints.
-func CollectCandidateModels(tierRole curation.TierRole, isLocal bool, currentModel string, localVRAMGB int, deals []contract.DealInfo) []CandidateModel {
+// CollectCandidateModels aggregates candidates from policy deals and curated profiles for a platform,
+// deduplicated by canonical model identity (deals taking precedence), excluding disallowed endpoints.
+func CollectCandidateModels(tierRole curation.TierRole, platform contract.Platform, currentModel string, localVRAMGB int, deals []contract.DealInfo) []CandidateModel {
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.AllowRecommendations {
+		return nil
+	}
+
 	seen := make(map[string]bool)
 	var result []CandidateModel
+	mgr := curation.DefaultManager()
 
 	addCandidate := func(cand CandidateModel, name string) {
-		if cand.ModelID == "" || cand.ModelID == currentModel || seen[cand.ModelID] {
+		if cand.ModelID == "" || mgr.IsSameModel(cand.ModelID, currentModel) || seen[cand.ModelID] {
 			return
 		}
 		if IsDisallowedEndpoint(cand.ModelID, name) {
@@ -485,11 +386,13 @@ func CollectCandidateModels(tierRole curation.TierRole, isLocal bool, currentMod
 		result = append(result, cand)
 	}
 
-	for _, d := range deals {
-		addCandidate(ConvertDealToCandidate(d), d.Name)
+	if !policy.RequiresOpenWeights && !policy.RequiresProviderBinding {
+		for _, d := range deals {
+			addCandidate(ConvertDealToCandidate(d), d.Name)
+		}
 	}
 
-	curated := curation.DefaultManager().ParetoCandidates(tierRole, isLocal, currentModel, localVRAMGB)
+	curated := mgr.ParetoCandidates(tierRole, platform, currentModel, localVRAMGB)
 	for _, p := range curated {
 		addCandidate(ConvertProfileToCandidate(p), p.Name)
 	}
@@ -516,21 +419,21 @@ func ConvertTierToCandidate(t *TierReplayConfig) CandidateModel {
 	}
 }
 
+var effortMultipliers = map[string]float64{
+	"low":    1.02,
+	"med":    1.06,
+	"medium": 1.06,
+	"high":   1.10,
+	"max":    1.14,
+}
+
 // EffectiveCodingIndex scales a model's base coding benchmark by its reasoning effort level.
 func EffectiveCodingIndex(baseCoding float64, effort string) float64 {
 	if baseCoding <= 0 {
 		return baseCoding
 	}
-	switch strings.ToLower(strings.TrimSpace(effort)) {
-	case "low":
-		return baseCoding * 1.02
-	case "medium", "med":
-		return baseCoding * 1.06
-	case "high":
-		return baseCoding * 1.10
-	case "max":
-		return baseCoding * 1.14
-	default:
-		return baseCoding
+	if mult, ok := effortMultipliers[strings.ToLower(strings.TrimSpace(effort))]; ok {
+		return baseCoding * mult
 	}
+	return baseCoding
 }

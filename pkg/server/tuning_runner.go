@@ -192,7 +192,7 @@ func (r *InProcessTuningRunner) RunTuning(ctx context.Context, configPath string
 			policy.CandidateDeals = r.server.oracle.GetDeals(cfg.Deals, 0.0, 0)
 		}
 	}
-	optimizer := tuner.NewMinConflictsOptimizer(policy)
+	optimizer := tuner.NewMinConflictsOptimizer(policy, r.server.GetRegistry())
 
 	return optimizer.OptimizeWithContext(ctx, records, cfg)
 }

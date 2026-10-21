@@ -556,15 +556,25 @@ func TestProviderCompatibilityFilter(t *testing.T) {
 		t.Errorf("expected rejection for DeepSeek on anthropic tier even with dual providers, got passed=%v, reason=%s", passed, reason)
 	}
 
-	// 4. Tier with provider: "anthropic" must ALLOW Claude candidate
+	// 4. Tier with provider: "anthropic" must ALLOW active Claude candidate and REJECT estimated 5.5
 	ctxAnthropicClaude := &FilterContext{
 		TargetTier: &TierReplayConfig{Provider: "anthropic", Model: "claude-haiku-4-5"},
-		Candidate:  &CandidateModel{ModelID: "claude-sonnet-5-5"},
+		Candidate:  &CandidateModel{ModelID: "claude-sonnet-4-6"},
 		Providers:  anthropicProviders,
 	}
 	passed, _ = filter.Passes(ctxAnthropicClaude)
 	if !passed {
-		t.Errorf("expected pass for Claude model on anthropic tier, got passed=false")
+		t.Errorf("expected pass for active Claude model on anthropic tier, got passed=false")
+	}
+
+	ctxAnthropicEstimated := &FilterContext{
+		TargetTier: &TierReplayConfig{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		Candidate:  &CandidateModel{ModelID: "claude-sonnet-5-5"},
+		Providers:  anthropicProviders,
+	}
+	passed, reason = filter.Passes(ctxAnthropicEstimated)
+	if passed || !strings.HasPrefix(reason, "provider_model_incompatible") {
+		t.Errorf("expected rejection for estimated 5.5 Claude model on anthropic tier, got passed=%v, reason=%s", passed, reason)
 	}
 
 	// 5. Tier with provider: "openrouter" must ALLOW cross-vendor candidate
@@ -611,26 +621,18 @@ func TestProviderCompatibilityFilter(t *testing.T) {
 		t.Errorf("expected rejection for Claude on local tier, got passed=%v, reason=%s", passed, reason)
 	}
 
-	// 9. Test Model ID Prefix Normalization
-	normAnthropic := NormalizeModelForProvider("anthropic/claude-3-5-sonnet", "anthropic")
-	if normAnthropic != "claude-3-5-sonnet" {
-		t.Errorf("expected 'claude-3-5-sonnet', got %q", normAnthropic)
+	// 9. Test Platform-Aware Model ID Formatting via NormalizeModelForProvider
+	normAnthropic, ok := NormalizeModelForProvider("anthropic/claude-sonnet-4.6", contract.PlatformAnthropic)
+	if !ok || normAnthropic != "claude-sonnet-4-6" {
+		t.Errorf("expected 'claude-sonnet-4-6', true, got %q, %v", normAnthropic, ok)
 	}
-	normOpenRouter := NormalizeModelForProvider("anthropic/claude-3-5-sonnet", "openrouter")
-	if normOpenRouter != "anthropic/claude-3-5-sonnet" {
-		t.Errorf("expected 'anthropic/claude-3-5-sonnet', got %q", normOpenRouter)
+	normOpenRouter, ok := NormalizeModelForProvider("claude-sonnet-4-6", contract.PlatformOpenRouter)
+	if !ok || normOpenRouter != "anthropic/claude-sonnet-4.6" {
+		t.Errorf("expected 'anthropic/claude-sonnet-4.6', true, got %q, %v", normOpenRouter, ok)
 	}
-	normOpenAI := NormalizeModelForProvider("openai/gpt-4o", "openai")
-	if normOpenAI != "gpt-4o" {
-		t.Errorf("expected 'gpt-4o', got %q", normOpenAI)
-	}
-	normGoogle := NormalizeModelForProvider("google/gemini-2.5-flash", "google")
-	if normGoogle != "gemini-2.5-flash" {
-		t.Errorf("expected 'gemini-2.5-flash', got %q", normGoogle)
-	}
-	normDeepSeek := NormalizeModelForProvider("deepseek/deepseek-chat", "deepseek")
-	if normDeepSeek != "deepseek-chat" {
-		t.Errorf("expected 'deepseek-chat', got %q", normDeepSeek)
+	normOpenAI, ok := NormalizeModelForProvider("openai/gpt-4o", contract.PlatformOpenAICompatible)
+	if ok || normOpenAI != "" {
+		t.Errorf("expected '', false for PlatformOpenAICompatible, got %q, %v", normOpenAI, ok)
 	}
 }
 
@@ -699,3 +701,114 @@ func TestOptimize_AnthropicProfileDoesNotRecommendDeepSeek(t *testing.T) {
 		}
 	}
 }
+
+func TestOptimize_DirectAnthropicTier(t *testing.T) {
+	policy := DefaultTuningPolicy()
+
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"my-claude-gateway": {
+				BaseURL: "https://internal-gateway.corp.local/anthropic",
+				Type:    provider.TypeAnthropic,
+				APIKey:  "sk-ant-test",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Sonnet 4.6",
+				Provider: "my-claude-gateway",
+				Model:    "claude-sonnet-4-6",
+				When:     "Retries < 2",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Tier",
+			Provider: "my-claude-gateway",
+			Model:    "claude-opus-5",
+		},
+	}
+	reg := provider.NewRegistryFromConfig(cfg)
+	opt := NewMinConflictsOptimizer(policy, reg)
+
+	var records []telemetry.TurnRecord
+	for i := 0; i < 15; i++ {
+		records = append(records, telemetry.TurnRecord{
+			SessionID:    "sess-anth",
+			TargetModel:  "claude-sonnet-4-6",
+			SelectedTier: "Tier 1: Sonnet 4.6",
+			Provider:     "my-claude-gateway",
+			HasTools:     true,
+			Tokens:       8000,
+			StatusCode:   200,
+		})
+	}
+
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Tiers) == 0 {
+		t.Fatalf("expected tier results")
+	}
+	tr := res.Tiers[0]
+	if strings.Contains(tr.RecommendedModel, "/") {
+		t.Errorf("expected hyphenated Anthropic wire ID without slash on PlatformAnthropic, got %q", tr.RecommendedModel)
+	}
+	if strings.Contains(tr.RecommendedModel, "5-5") || strings.Contains(tr.RecommendedModel, "5.5") {
+		t.Errorf("expected no estimated 5.5 model recommended, got %q", tr.RecommendedModel)
+	}
+}
+
+func TestOptimize_OpenAICompatiblePlatformNoReplacement(t *testing.T) {
+	policy := DefaultTuningPolicy()
+
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"groq-cloud": {
+				BaseURL: "https://api.groq.com/openai/v1",
+				Type:    provider.TypeOpenAICompatible,
+				APIKey:  "gsk-test",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Tier 1: Groq Llama",
+				Provider: "groq-cloud",
+				Model:    "llama-3.3-70b-versatile",
+				When:     "Retries < 3",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Tier",
+			Provider: "groq-cloud",
+			Model:    "llama-3.3-70b-versatile",
+		},
+	}
+	reg := provider.NewRegistryFromConfig(cfg)
+	opt := NewMinConflictsOptimizer(policy, reg)
+
+	var records []telemetry.TurnRecord
+	for i := 0; i < 15; i++ {
+		records = append(records, telemetry.TurnRecord{
+			SessionID:    "sess-groq",
+			TargetModel:  "llama-3.3-70b-versatile",
+			SelectedTier: "Tier 1: Groq Llama",
+			Provider:     "groq-cloud",
+			HasTools:     true,
+			Tokens:       4000,
+			IsRetry:      true,
+			StatusCode:   500,
+		})
+	}
+
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, tr := range res.Tiers {
+		if tr.RecommendedModel != "" && tr.RecommendedModel != tr.OriginalModel {
+			t.Errorf("expected PlatformOpenAICompatible tier %s to never replace model, got Original=%q Recommended=%q", tr.TierName, tr.OriginalModel, tr.RecommendedModel)
+		}
+	}
+}
+

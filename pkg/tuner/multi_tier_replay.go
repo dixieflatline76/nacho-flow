@@ -1,37 +1,61 @@
 package tuner
 
-import "github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+import (
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+)
 
 // TierReplayConfig defines the routing guardrails and economic properties for an individual tier.
 type TierReplayConfig struct {
-	TierName                 string   `json:"tier_name"`
-	Provider                 string   `json:"provider"`
-	Model                    string   `json:"model"`
-	ReasoningEffort          string   `json:"reasoning_effort,omitempty"`
-	IsLocal                  bool     `json:"is_local"`
-	IsDisabled               bool     `json:"is_disabled"` // e.g. when: "false"
-	IsFrontier               bool     `json:"is_frontier"` // True if model satisfies frontier capability class
-	CodingIndex              float64  `json:"coding_index"`
-	ToolReliability          float64  `json:"tool_reliability"`
-	PromptCostPerMillion     float64  `json:"prompt_cost_per_million"`
-	CompletionCostPerMillion float64  `json:"completion_cost_per_million"`
-	ComprehensiveRate        float64  `json:"comprehensive_rate"`
-	CostPerMillion           float64  `json:"cost_per_million"`
-	TokenThreshold           int      `json:"token_threshold"` // Tokens < TokenThreshold (0 = unlimited)
-	MaxContext               int      `json:"max_context"`     // Hardware context ceiling (0 = unlimited)
-	RetryBound               int      `json:"retry_bound"`     // Retries < RetryBound (0 = unlimited)
-	RestrictImages           bool     `json:"restrict_images"` // If true, prompts with images are blocked
-	RestrictTools            bool     `json:"restrict_tools"`  // If true, prompts with tools are blocked
-	SupportsVision           bool     `json:"supports_vision"`
-	SupportsTools            bool     `json:"supports_tools"`
-	RequiresKickstart        bool     `json:"requires_kickstart"`
-	RequiresImages           bool     `json:"requires_images"`
-	RequiresTools            bool     `json:"requires_tools"`
-	RetryFloor               int      `json:"retry_floor"`
-	MessageCountMax          int      `json:"message_count_max,omitempty"` // MessageCount <= MessageCountMax (0 = unlimited)
-	RequiresTestFail         bool     `json:"requires_test_fail,omitempty"`
-	ProhibitsTestFail        bool     `json:"prohibits_test_fail,omitempty"`
-	ExcludedKeywords         []string `json:"excluded_keywords"`
+	TierName                 string            `json:"tier_name"`
+	Provider                 string            `json:"provider"`
+	Platform                 contract.Platform `json:"platform,omitempty"`
+	Model                    string            `json:"model"`
+	ReasoningEffort          string            `json:"reasoning_effort,omitempty"`
+	IsLocal                  bool              `json:"is_local"`
+	IsDisabled               bool              `json:"is_disabled"` // e.g. when: "false"
+	IsFrontier               bool              `json:"is_frontier"` // True if model satisfies frontier capability class
+	CodingIndex              float64           `json:"coding_index"`
+	ToolReliability          float64           `json:"tool_reliability"`
+	PromptCostPerMillion     float64           `json:"prompt_cost_per_million"`
+	CompletionCostPerMillion float64           `json:"completion_cost_per_million"`
+	ComprehensiveRate        float64           `json:"comprehensive_rate"`
+	CostPerMillion           float64           `json:"cost_per_million"`
+	TokenThreshold           int               `json:"token_threshold"` // Tokens < TokenThreshold (0 = unlimited)
+	MaxContext               int               `json:"max_context"`     // Hardware context ceiling (0 = unlimited)
+	RetryBound               int               `json:"retry_bound"`     // Retries < RetryBound (0 = unlimited)
+	RestrictImages           bool              `json:"restrict_images"` // If true, prompts with images are blocked
+	RestrictTools            bool              `json:"restrict_tools"`  // If true, prompts with tools are blocked
+	SupportsVision           bool              `json:"supports_vision"`
+	SupportsTools            bool              `json:"supports_tools"`
+	RequiresKickstart        bool              `json:"requires_kickstart"`
+	RequiresImages           bool              `json:"requires_images"`
+	RequiresTools            bool              `json:"requires_tools"`
+	RetryFloor               int               `json:"retry_floor"`
+	MessageCountMax          int               `json:"message_count_max,omitempty"` // MessageCount <= MessageCountMax (0 = unlimited)
+	RequiresTestFail         bool              `json:"requires_test_fail,omitempty"`
+	ProhibitsTestFail        bool              `json:"prohibits_test_fail,omitempty"`
+	ExcludedKeywords         []string          `json:"excluded_keywords"`
+}
+
+// EffectivePlatform returns the resolved contract.Platform for the tier.
+func (t *TierReplayConfig) EffectivePlatform() contract.Platform {
+	if t == nil {
+		return ""
+	}
+	if t.Platform != "" {
+		return t.Platform
+	}
+	if t.IsLocal {
+		return contract.PlatformLocal
+	}
+	if t.Provider == "" {
+		return contract.PlatformOpenRouter
+	}
+	if _, ok := contract.LookupPlatformCatalogPolicy(contract.Platform(t.Provider)); ok {
+		return contract.Platform(t.Provider)
+	}
+	return contract.PlatformOpenRouter
 }
 
 // MaxSupportedTiers is the maximum number of cascade tiers handled in fixed-size buffers.

@@ -188,17 +188,10 @@ func run(args []string, apiURL string) error {
 			var existingCatalog curation.CuratedCatalog
 			if jsonErr := json.Unmarshal(existingData, &existingCatalog); jsonErr == nil {
 				for id, existingProfile := range existingCatalog.Models {
-					if _, exists := catalog.Models[id]; !exists {
-						catalog.Models[id] = existingProfile
+					if p, exists := catalog.Models[id]; exists {
+						catalog.Models[id] = existingProfile.MergeDynamicOverlay(p)
 					} else {
-						p := catalog.Models[id]
-						if len(existingProfile.Aliases) > 0 && len(p.Aliases) == 0 {
-							p.Aliases = existingProfile.Aliases
-						}
-						if len(existingProfile.Providers) > 0 && len(p.Providers) == 0 {
-							p.Providers = existingProfile.Providers
-						}
-						catalog.Models[id] = p
+						catalog.Models[id] = existingProfile
 					}
 				}
 			}

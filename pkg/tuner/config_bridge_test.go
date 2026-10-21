@@ -18,7 +18,7 @@ func TestResolveModelRates_DataDriven(t *testing.T) {
 		"local/deepseek-v3",
 	}
 	for _, lm := range localModels {
-		pCost, cCost, cRate := ResolveModelRates(lm, true)
+		pCost, cCost, cRate := ResolveModelRates(contract.PlatformLocal, lm)
 		if pCost != 0 || cCost != 0 || cRate != 0 {
 			t.Errorf("Expected local model %s to have 0 rates, got: %f, %f, %f", lm, pCost, cCost, cRate)
 		}
@@ -33,7 +33,7 @@ func TestResolveModelRates_DataDriven(t *testing.T) {
 	}
 
 	for _, cm := range cloudModels {
-		p, c, r := ResolveModelRates(cm, false)
+		p, c, r := ResolveModelRates(contract.PlatformOpenRouter, cm)
 		if p <= 0 {
 			t.Errorf("Model %s: expected positive prompt cost, got %f", cm, p)
 		}
@@ -48,7 +48,7 @@ func TestResolveModelRates_DataDriven(t *testing.T) {
 
 	// 3. Uncatalogued model fallback
 	defRate := DefaultTuningPolicy().CostPerMillionCloud
-	pUnk, cUnk, rUnk := ResolveModelRates("custom-org/my-unseen-model-v1", false)
+	pUnk, cUnk, rUnk := ResolveModelRates(contract.PlatformOpenRouter, "custom-org/my-unseen-model-v1")
 	if pUnk != defRate {
 		t.Errorf("Expected uncatalogued model prompt to equal defRate %f, got %f", defRate, pUnk)
 	}
@@ -215,10 +215,11 @@ func TestExtractRoutingState_LocalFallbacks(t *testing.T) {
 }
 
 func TestNoHardcodedModelSwitchesInTunerSource(t *testing.T) {
-	files := []string{"config_bridge.go", "fleet_dominance.go", "min_conflicts.go"}
+	files := []string{"config_bridge.go", "candidate_matcher.go", "fleet_dominance.go", "min_conflicts.go"}
 	forbiddenLiterals := []string{
 		"\"opus\"", "\"sonnet\"", "\"haiku\"", "\"deepseek\"", "\"qwen\"",
 		"\"gemini\"", "\"gpt-4\"", "\"gpt-5\"", "\"o1\"", "\"o3\"", "\"r1\"",
+		"\"claude\"", "\"anthropic\"", "\"openrouter\"",
 	}
 
 	for _, file := range files {
@@ -228,7 +229,7 @@ func TestNoHardcodedModelSwitchesInTunerSource(t *testing.T) {
 		}
 		src := string(content)
 
-		if file == "config_bridge.go" {
+		if file == "config_bridge.go" || file == "candidate_matcher.go" {
 			if strings.Contains(src, "switch ") || strings.Contains(src, "switch{") {
 				t.Errorf("Maintenance nightmare detected: %s still contains hardcoded switch statements!", file)
 			}

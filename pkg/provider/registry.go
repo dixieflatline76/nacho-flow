@@ -58,6 +58,9 @@ func (r *Registry) Register(p LLMProvider) {
 
 // Get retrieves a provider by ID in a thread-safe manner.
 func (r *Registry) Get(id string) (LLMProvider, bool) {
+	if r == nil {
+		return nil, false
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	p, ok := r.providers[id]
@@ -66,6 +69,9 @@ func (r *Registry) Get(id string) (LLMProvider, bool) {
 
 // All returns a slice of all registered providers.
 func (r *Registry) All() []LLMProvider {
+	if r == nil {
+		return nil
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	list := make([]LLMProvider, 0, len(r.providers))
