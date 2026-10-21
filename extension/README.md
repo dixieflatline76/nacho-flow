@@ -58,7 +58,7 @@ Routine turns run on your local GPU at full speed, while complex reasoning autom
 ### 🎛️ Sidebar Control Hub
 
 - **Local / Remote Gateway**: 1-click Start, Stop, Restart, and live streaming logs for the bundled Go engine. Connect across LAN or Tailscale with optional Bearer Auth.
-- **Routing Profiles**: Switch on the fly between pre-tuned config profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) with zero-downtime hot-reload:
+- **Routing Profiles & Action Toolbar**: Switch on the fly between built-in profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) or create unlimited custom slots via **`＋` Add**, **`⧉` Clone**, **`✏️` Rename**, **`－` Delete**, **`🔍 Diff`**, and **`Reset`** with zero-downtime hot-reload:
   - **Profile 1 (Standard Hybrid Pipeline — Default)**: Universal gateway configuration for autonomous coding agents (Cline, Kilo, Zoo, Cursor, Aider):
     - *Core Coding Engine*: Fast cloud workhorse (`z-ai/glm-5.3-flash` Low, 2–4s), Turn 0 Low Architecture Kickoff, Tier 2 Debug High, Tier 3 De-escalation Max ($0.65/M).
     - *Kickstart Escalation Tier*: Automatically resuscitates agents trapped in read-only browsing loops by injecting `[SYSTEM OVERRIDE]` and routing to `google/gemini-3.8-flash` to force concrete file edits or test executions.
@@ -71,10 +71,21 @@ Routine turns run on your local GPU at full speed, while complex reasoning autom
     - *Proven Benchmark Record*: 89 turns, 14.6 minutes, 93% test coverage, 0 race conditions, 100% pass rate on full Las Vegas Blackjack Monte Carlo simulation.
   - **Profile 3 (Anthropic Native Benchmark)**: Direct first-party Anthropic Messages API pipeline (`https://api.anthropic.com`):
     - Zero intermediary proxy latency with native prompt caching (`cache_control`) and multimodal vision.
-    - Claude Sonnet 5.5 Turn 0 Architecture → Claude Haiku 4.5 Fast Workhorse (guarded by real-time test failure inspection `!HasTestFail`) → Claude Sonnet 5.5 Error Escalation → Claude Sonnet 5.5 High Reasoning → Claude Opus 5.5 On-Demand override.
+    - Claude Sonnet 5.5 Turn 0 Architecture → Claude Haiku 5.5 Fast Workhorse (Medium & High reasoning, guarded by real-time test failure inspection `!HasTestFail`) → Claude Sonnet 5.5 Error Escalation → Claude Sonnet 5.5 High Reasoning → Claude Opus 5.5 On-Demand override.
     - *Speed Record*: Completed full autonomous project build in **39 turns in 8.3 minutes** with a 100% test pass rate.
-- **Provider Status**: Real-time health chips for local engines (Ollama, vLLM) and cloud APIs (OpenRouter, DeepSeek, Anthropic).
-- **Agent Setup**: 1-click copy for Base URL, API Key, and Model ID.
+- **Provider Status**: Real-time health chips for local engines (llama.cpp, Ollama, vLLM) and cloud APIs (OpenRouter, DeepSeek, Anthropic).
+- **Agent Setup**: 1-click copy for Base URL, API Key, and Model ID, plus 1-click Marketplace installers for **Zoo Code**, **Cline**, and **Kilo Code**.
+
+---
+
+### 🧠 Interactive YAML Config Assist
+
+Edit any Nacho Flow profile or `config.yaml` with full IDE language intelligence:
+
+- **Interactive CodeLenses**: Click **`Ping Endpoint`**, **`N tier reference(s)`**, **`Switch Provider`**, **`Choose Model`**, and **`Pick Rescue Tier`** directly above YAML blocks across `providers`, `tiers`, `default_tier`, `kickstart.thought_slap`, and `fairy_dust.entries`.
+- **Live `/v1/models` Discovery & Autocomplete (`Ctrl+Space`)**: Queries live model lists from local (`llama.cpp`, `Ollama`, `vLLM`) and cloud (`OpenRouter`, `Anthropic`) endpoints with 60s caching, automatic `ENV_*` key resolution, and curated offline fallbacks.
+- **Semantic Diagnostics, Quick Fixes & Pre-Flight Save Gate**: Catches unknown provider/tier references, unreachable tiers after `when: "true"`, invalid `when:` expressions, and tab indentation with 1-click Quick Fixes (`Ctrl+.`). Automatically pauses local engine restarts on save if validation errors exist.
+- **LSP Navigation & Refactoring**: Supports **Go to Definition (`F12`)**, **Find All References (`Shift+F12`)**, **Rename Symbol (`F2`)** across provider and tier references, and **Document Outline (`Ctrl+Shift+O`)**.
 
 ---
 
@@ -135,12 +146,24 @@ All features via `Ctrl+Shift+P` / `Cmd+Shift+P`:
 | :--- | :--- |
 | Show Dashboard | `nacho-flow.showDashboard` |
 | Open Controls in Sidebar | `nacho-flow.openSettings` |
-| Open Config Editor | `nacho-flow.openConfig` |
-| Run Auto-Tuner & Optimize | `nacho-flow.runOptimizer` |
+| Open Configuration (`config.yaml`) | `nacho-flow.openConfig` |
+| Switch Profile | `nacho-flow.switchProfile` |
+| Add New Profile (`＋`) | `nacho-flow.addProfile` |
+| Clone Active Profile (`⧉`) | `nacho-flow.cloneProfile` |
+| Rename Active Profile (`✏️`) | `nacho-flow.renameProfile` |
+| Delete Profile (`－`) | `nacho-flow.deleteProfile` |
+| Compare Profile with Factory Template | `nacho-flow.compareProfileWithTemplate` |
+| Reset Profile to Factory Default | `nacho-flow.resetProfileToDefault` |
+| Switch Provider (CodeLens) | `nacho-flow.pickProvider` |
+| Choose / Pick Model (`/v1/models`) | `nacho-flow.pickModel` |
+| Pick Rescue Tier (CodeLens) | `nacho-flow.pickRescueTier` |
+| Ping Provider Endpoint (CodeLens) | `nacho-flow.pingProviderEndpoint` |
+| Find Provider References (CodeLens) | `nacho-flow.findProviderReferences` |
+| Run Auto-Tuner & Optimize Routing | `nacho-flow.runOptimizer` |
 | Refresh Heatseeker Deals | `nacho-flow.refreshDeals` |
-| Reset Circuit Breaker | `nacho-flow.resetCircuit` |
+| Reset Circuit Breakers | `nacho-flow.resetCircuit` |
 | Refresh Statistics | `nacho-flow.refreshStats` |
-| Set Auth Token | `nacho-flow.setAuthToken` |
+| Set Bearer Auth Token | `nacho-flow.setAuthToken` |
 
 ---
 
@@ -149,10 +172,11 @@ All features via `Ctrl+Shift+P` / `Cmd+Shift+P`:
 | Setting | Default | Description |
 | :--- | :--- | :--- |
 | `nachoFlow.engineMode` | `"local"` | `'local'` runs the embedded daemon; `'remote'` connects to an external gateway |
-| `nachoFlow.daemonUrl` | `http://127.0.0.1:8000` | Gateway endpoint URL (supports LAN / Tailscale) |
+| `nachoFlow.daemonUrl` | `http://127.0.0.1:8000` | URL of the local Nacho Flow daemon |
+| `nachoFlow.remoteDaemonUrl` | `http://192.168.0.205:8000` | URL of the remote Nacho Flow daemon server (LAN / Tailscale) |
 | `nachoFlow.authToken` | `""` | Optional Bearer Auth Token for protected remote gateways |
-| `nachoFlow.autoStartDaemon` | `true` | Auto-resume the local binary on VS Code launch |
-| `nachoFlow.showStatusBar` | `true` | Display cost savings and local routing % in the status bar |
+| `nachoFlow.autoStartDaemon` | `true` | Auto-resume the local binary on VS Code launch if previously running |
+| `nachoFlow.localVramGB` | `16` | Local GPU VRAM limit in GB for auto-tuning routing thresholds (`0` for unconstrained) |
 
 ---
 

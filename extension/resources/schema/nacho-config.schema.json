@@ -1,0 +1,396 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Nacho Flow Configuration",
+  "description": "Nacho Flow runtime configuration schema for profile*.yaml and config.yaml",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration schema version (e.g. '1.1.0')"
+    },
+    "port": {
+      "type": "integer",
+      "default": 8000,
+      "description": "Port on which the Nacho Flow model gateway listens"
+    },
+    "admin_port": {
+      "type": "integer",
+      "default": 8001,
+      "description": "Port on which the Nacho Flow admin and telemetry API listens"
+    },
+    "bind_address": {
+      "type": "string",
+      "default": "127.0.0.1",
+      "description": "Network bind interface address"
+    },
+    "host": {
+      "type": "string",
+      "default": "127.0.0.1",
+      "description": "Network bind interface address (default: 127.0.0.1 for local isolation, 0.0.0.0 for LAN access)"
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Telemetry and metrics collection settings",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "db_path": { "type": "string" },
+        "retention_days": { "type": "integer", "default": 30 }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "description": "Upstream LLM providers (local llama-server, vLLM, Ollama, OpenRouter, Anthropic)",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "base_url"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["local", "cloud", "anthropic", "openrouter", "mock"],
+            "description": "Provider execution type"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "HTTP/HTTPS base URL endpoint of the upstream provider"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "Optional API authentication key or environment variable reference"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "default": 120000,
+            "description": "Timeout in milliseconds for inference requests"
+          },
+          "max_retries": {
+            "type": "integer",
+            "default": 2,
+            "description": "Maximum number of automatic retry attempts on network or upstream failures"
+          },
+          "context_window": {
+            "type": "integer",
+            "description": "Maximum context window capacity in tokens"
+          },
+          "cost_per_input_token": {
+            "type": "number",
+            "description": "Cost per million or per input token in USD"
+          },
+          "cost_per_output_token": {
+            "type": "number",
+            "description": "Cost per million or per output token in USD"
+          },
+          "wire_format": {
+            "type": "string",
+            "enum": ["openai", "anthropic", "raw"],
+            "default": "openai",
+            "description": "Wire protocol format expected by the provider"
+          }
+        }
+      }
+    },
+    "tiers": {
+      "type": "array",
+      "description": "Waterfall routing tiers evaluated sequentially from top to bottom (first match wins)",
+      "items": {
+        "type": "object",
+        "required": ["name", "provider"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique descriptive identifier for this tier"
+          },
+          "provider": {
+            "type": "string",
+            "description": "ID of the provider defined under 'providers:'"
+          },
+          "model": {
+            "type": "string",
+            "description": "Upstream model ID to dispatch to"
+          },
+          "when": {
+            "type": "string",
+            "description": "Boolean expression evaluated against RequestContext (e.g. 'Tokens < 50000 && !HasImages')"
+          },
+          "reasoning_effort": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "max"],
+            "description": "Reasoning effort budget passed to reasoning models"
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 2.0,
+            "description": "Sampling temperature"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Maximum completion output tokens limit"
+          },
+          "strip_images": {
+            "type": "boolean",
+            "default": false,
+            "description": "Strip base64 images from conversation history to preserve context tokens"
+          },
+          "has_vision": {
+            "type": "boolean",
+            "description": "Explicit declaration whether model supports vision/images"
+          },
+          "strip_tools": {
+            "type": "boolean",
+            "description": "Strip tool schemas and function call history from request"
+          },
+          "has_tools": {
+            "type": "boolean",
+            "description": "Explicit declaration whether model supports function/tool calling"
+          },
+          "max_context": {
+            "type": "integer",
+            "description": "Maximum context window allocated for this tier"
+          },
+          "raw": {
+            "type": "boolean",
+            "description": "Pass request through unmutated without normalizers or rewriting"
+          },
+          "shield": {
+            "type": "boolean",
+            "description": "Tier-level Agentic Tool Fallback Shield toggle"
+          },
+          "normalizer": {
+            "type": "boolean",
+            "description": "Tier-level toggle for response stream normalizer"
+          },
+          "normalizers": {
+            "$ref": "#/properties/normalizers"
+          },
+          "cycle_killer": {
+            "$ref": "#/definitions/cycleBreakerConfig"
+          },
+          "cycle_breaker": {
+            "$ref": "#/definitions/cycleBreakerConfig"
+          },
+          "thought_slap": {
+            "oneOf": [
+              { "type": "boolean" },
+              {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "max_attempts": { "type": "integer", "default": 1 },
+                  "rescue_tier": { "type": "string" },
+                  "prompt_override": { "type": "string" }
+                }
+              }
+            ],
+            "description": "Reasoning truncation loop defense and recovery tier"
+          }
+        }
+      }
+    },
+    "default_tier": {
+      "type": "object",
+      "required": ["provider"],
+      "description": "Fallback catch-all tier when no waterfall tier 'when' conditions evaluate to true",
+      "properties": {
+        "name": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "reasoning_effort": { "type": "string", "enum": ["low", "medium", "high", "max"] },
+        "temperature": { "type": "number" },
+        "max_tokens": { "type": "integer" }
+      }
+    },
+    "kickstart": {
+      "type": "object",
+      "description": "Cross-turn idle loop and reasoning limit defense",
+      "properties": {
+        "read_slap": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "threshold": { "type": "integer", "default": 3 },
+            "max_slaps": { "type": "integer", "default": 2 },
+            "prompt_override": { "type": "string" }
+          }
+        },
+        "thought_slap": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "max_attempts": { "type": "integer", "default": 1 },
+            "rescue_tier": { "type": "string" },
+            "prompt_override": { "type": "string" }
+          }
+        }
+      }
+    },
+    "fairy_dust": {
+      "type": "object",
+      "description": "Autonomous checkpoint reviewer tier injection",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "provider"],
+            "properties": {
+              "name": { "type": "string" },
+              "provider": { "type": "string" },
+              "model": { "type": "string" },
+              "frequency": { "type": "integer" },
+              "max_per_session": { "type": "integer" },
+              "priority": { "type": "integer" },
+              "prompt": { "type": "string" },
+              "prompt_override": { "type": "string" },
+              "reasoning_effort": { "type": "string", "enum": ["low", "medium", "high", "max"] }
+            }
+          }
+        }
+      }
+    },
+    "normalizers": {
+      "type": "object",
+      "description": "Selective tool and stream normalizer strategies",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "markdown": { "type": "boolean", "default": true },
+        "bare_json": { "type": "boolean", "default": true },
+        "react": { "type": "boolean", "default": true },
+        "think": { "type": "boolean", "default": true }
+      }
+    },
+    "router": {
+      "type": "object",
+      "description": "In-flight routing directives configuration",
+      "properties": {
+        "enable_in_prompt_directives": { "type": "boolean", "default": true }
+      }
+    },
+    "deals": {
+      "type": "object",
+      "description": "Heatseeker live model deals engine monitoring spot prices and discounts",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Master toggle for live model deal discovery and alerts" },
+        "alert_threshold_pct": { "type": "number", "default": 30.0, "description": "Minimum discount percentage required to alert or recommend a deal (e.g. 30.0%)" },
+        "min_coding_index": { "type": "number", "default": 40.0, "description": "Minimum benchmark coding index required for deal eligibility (e.g. 40.0)" },
+        "require_tools": { "type": "boolean", "default": true, "description": "Exclude deals for models that do not declare tool-calling capabilities" },
+        "exclude_batch": { "type": "boolean", "default": true, "description": "Exclude non-interactive batch endpoints" },
+        "exclude_free": { "type": "boolean", "default": true, "description": "Exclude heavily rate-limited free-tier endpoints" }
+      }
+    },
+    "agent_shield": {
+      "type": "object",
+      "description": "Agentic Tool Fallback Shield catching runaway agent loops and errors",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Master switch for agent shield runtime defense" },
+        "tail_buffer_bytes": { "type": "integer", "default": 256, "description": "Rolling byte window inspected for error signatures and loop patterns" },
+        "question_heuristics": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Regex patterns detecting redundant question loops"
+        },
+        "mode_switch_heuristics": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Regex patterns detecting unexpected mode switches"
+        },
+        "error_signatures": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Signatures indicating unrecoverable CLI/tool error loops"
+        }
+      }
+    },
+    "cycle_killer": {
+      "$ref": "#/definitions/cycleBreakerConfig"
+    },
+    "cycle_breaker": {
+      "$ref": "#/definitions/cycleBreakerConfig"
+    },
+    "nts": {
+      "type": "object",
+      "description": "Neural Token Saver (NTS) in-place prompt compaction engine",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Master switch for tool output compaction and token savings" },
+        "strip_ansi": { "type": "boolean", "default": true, "description": "Pass 1: Strip ANSI and OSC terminal escape sequences" },
+        "resolve_cr": { "type": "boolean", "default": true, "description": "Pass 2: Overwrite carriage returns from progress spinners" },
+        "deduplicate_lines": { "type": "boolean", "default": true, "description": "Strip consecutive duplicate lines from tool and terminal outputs" },
+        "dedup_threshold": { "type": "integer", "default": 3, "description": "Line count threshold triggering line deduplication" },
+        "strip_boilerplate": { "type": "boolean", "default": true, "description": "Strip common CLI and test boilerplate headers" },
+        "normalize_whitespace": { "type": "boolean", "default": true, "description": "Pass 3: Collapse multiple empty lines" },
+        "preserve_file_reads": { "type": "boolean", "default": true, "description": "Dual-lane immunity for read_file / view_file" },
+        "preserve_file_writes": { "type": "boolean", "default": true, "description": "Dual-lane immunity for write_to_file / apply_diff" },
+        "preserve_cache_control": { "type": "boolean", "default": true, "description": "Dual-lane immunity for prompt cache breakpoints" },
+        "strip_historical_reasoning": { "type": "boolean", "default": true, "description": "Prune older assistant reasoning/thoughts from prior turns" },
+        "keep_recent_reasoning_turns": { "type": "integer", "default": 3, "description": "Keep the N most recent assistant turns intact to prevent amnesia" },
+        "deduplicate_reminders": { "type": "boolean", "default": true, "description": "Deduplicate repeated reminder tables in <environment_details>" },
+        "reminders_refresh_interval": { "type": "integer", "default": 10, "description": "Re-emit full reminders table every N turns" },
+        "collapse_verbose_tests": { "type": "boolean", "default": true, "description": "Multi-language test output collapse (Go, Cargo, Pytest, Jest)" },
+        "deduplicate_tool_outputs": { "type": "boolean", "default": true, "description": "Deduplicate identical generic tool outputs (>200 B)" },
+        "min_duplicate_output_bytes": { "type": "integer", "default": 200, "description": "Minimum output length in bytes for duplicate referencing" },
+        "compact_stale_file_reads": { "type": "boolean", "default": false, "description": "Compact older file reads when the same file is read again" },
+        "stale_read_depth": { "type": "integer", "default": 5, "description": "Depth of turns before an unreferenced read is compacted" }
+      }
+    }
+  },
+  "definitions": {
+    "cycleBreakerConfig": {
+      "type": "object",
+      "description": "In-flight stream defense that murders infinite loops & monologue traps in <3s",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Master switch for all in-flight stream defense" },
+        "phrase_length": { "type": "integer", "default": 6, "description": "Default sliding n-gram window size (words) across lanes" },
+        "budget_max_repeats": { "type": "integer", "default": 20, "description": "Default repeat threshold once lane token budget is exceeded" },
+        "model_cooldown_seconds": { "type": "integer", "default": 120, "description": "Skip cycle-killed model on this session for 2m" },
+        "retry_floor": { "type": "integer", "default": 3, "description": "Minimum retry floor before cloud escalation" },
+        "max_retries": { "type": "integer", "default": 1, "description": "Stage 1 local retries with [SYSTEM OVERRIDE] before cloud escalation" },
+        "correction_prompt": { "type": "string", "description": "System correction injected into the stream to nudge the agent out of the loop" },
+        "thinking_lane": { "$ref": "#/definitions/laneConfig" },
+        "reasoning_lane": { "$ref": "#/definitions/laneConfig" },
+        "content_lane": { "$ref": "#/definitions/laneConfig" },
+        "tool_lane": { "$ref": "#/definitions/toolLaneConfig" },
+        "max_content_tokens": { "type": "integer", "description": "Maximum allowed tokens in content lane" },
+        "max_thinking_tokens": { "type": "integer", "description": "Maximum allowed tokens in reasoning/thinking lane" },
+        "max_tool_tokens": { "type": "integer", "description": "Maximum allowed tokens in tool lane" },
+        "max_write_tokens": { "type": "integer", "description": "Maximum allowed tokens in file write tool operations" },
+        "repetition_window": { "type": "integer", "description": "Sliding token window examined for repeated phrases" },
+        "repetition_threshold": { "type": "integer", "description": "Threshold count of repeats triggering stream break" },
+        "thinking_repetition_threshold": { "type": "integer", "description": "Threshold count of repeats in reasoning lane" },
+        "budget_repetition_threshold": { "type": "integer", "description": "Threshold count of repeats allowed under cooperative budget" },
+        "thinking_budget_repetition_threshold": { "type": "integer", "description": "Threshold count of repeats in reasoning lane under budget" }
+      }
+    },
+    "laneConfig": {
+      "type": "object",
+      "description": "Stream lane repetition and loop defense configuration",
+      "properties": {
+        "max_tokens": { "type": "integer", "description": "Maximum tokens allowed in lane stream before intervention" },
+        "phrase_length": { "type": "integer", "description": "Sliding n-gram window size for this lane" },
+        "max_repeats": { "type": "integer", "description": "Max identical repeats before stream termination" },
+        "budget_max_repeats": { "type": "integer", "description": "Max repeats allowed under cooperative budget" },
+        "repetition_window": { "type": "integer", "description": "Alias for phrase_length" },
+        "repetition_threshold": { "type": "integer", "description": "Alias for max_repeats" },
+        "budget_repetition_threshold": { "type": "integer", "description": "Alias for budget_max_repeats" }
+      }
+    },
+    "toolLaneConfig": {
+      "type": "object",
+      "description": "Tool argument streaming lane loop and token defense configuration",
+      "properties": {
+        "max_tokens": { "type": "integer", "description": "Maximum tokens allowed in tool lane" },
+        "phrase_length": { "type": "integer", "description": "Sliding n-gram window size for tool arguments" },
+        "max_repeats": { "type": "integer", "description": "Max identical repeats in tool arguments before break" },
+        "budget_max_repeats": { "type": "integer", "description": "Max repeats in tool arguments under cooperative budget" },
+        "repetition_window": { "type": "integer", "description": "Alias for phrase_length" },
+        "repetition_threshold": { "type": "integer", "description": "Alias for max_repeats" },
+        "budget_repetition_threshold": { "type": "integer", "description": "Alias for budget_max_repeats" },
+        "max_write_tokens": { "type": "integer", "description": "Maximum tokens permitted for file writes (default: 32768)" },
+        "write_tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of tool names classified as write tools (e.g. write_to_file, apply_diff)"
+        }
+      }
+    }
+  }
+}

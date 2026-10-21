@@ -5,6 +5,7 @@ import { AuthManager } from './config/auth-manager';
 import { RestClient } from './api/client';
 import { SSEClient } from './sse/client';
 import { DashboardPanel } from '../ui/webview/dashboard';
+import { SidebarViewProvider } from '../ui/sidebar/sidebar-view-provider';
 
 // Mock VS Code API
 jest.mock('vscode', () => ({
@@ -109,7 +110,33 @@ jest.mock('vscode', () => ({
   },
   StatusBarAlignment: {
     Right: 1
-  }
+  },
+  languages: {
+    createDiagnosticCollection: jest.fn().mockImplementation((name: string) => ({
+      name,
+      set: jest.fn(),
+      delete: jest.fn(),
+      clear: jest.fn(),
+      dispose: jest.fn()
+    }))
+  },
+  Diagnostic: jest.fn().mockImplementation((range: any, message: string, severity: any) => ({
+    range,
+    message,
+    severity
+  })),
+  DiagnosticSeverity: {
+    Error: 0,
+    Warning: 1,
+    Information: 2,
+    Hint: 3
+  },
+  Range: jest.fn().mockImplementation((startLine: number, startCharacter: number, endLine: number, endCharacter: number) => ({
+    startLine,
+    startCharacter,
+    endLine,
+    endCharacter
+  }))
 }), { virtual: true });
 
 // Mock other modules
@@ -2560,6 +2587,94 @@ default_tier:
       );
     });
 
+    it('should clone an existing profile, read its custom content, and switch to it', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(false);
+      (extensionController as any).activeProfile = 'profile2';
+      await extensionController.setProfileName('profile2', 'Custom Workhorse');
+
+      (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValueOnce([
+        ['profile1.yaml', vscode.FileType.File],
+        ['profile2.yaml', vscode.FileType.File],
+        ['profile3.yaml', vscode.FileType.File]
+      ]);
+
+      const customYamlBytes = Buffer.from('port: 9000\nproviders:\n  my_custom_llm:\n    base_url: "http://localhost:8000/v1"\n');
+      (vscode.workspace.fs.stat as jest.Mock).mockResolvedValue({});
+      (vscode.workspace.fs.readFile as jest.Mock).mockResolvedValueOnce(customYamlBytes);
+
+      (vscode.window.showInputBox as jest.Mock).mockImplementationOnce(async (options: any) => {
+        expect(options.title).toContain('Cloned Custom Workhorse -> Profile 4');
+        expect(options.value).toBe('Custom Workhorse Copy');
+        expect(options.validateInput('a'.repeat(25))).toBe('Name must be 24 characters or less');
+        expect(options.validateInput('Valid Name')).toBeNull();
+        return 'Cloned Workhorse';
+      });
+
+      const switchSpy = jest.spyOn(extensionController, 'switchProfile').mockResolvedValue(undefined);
+      const mockDoc = { uri: { path: '/global/profiles/profile4.yaml' } };
+      (vscode.workspace.openTextDocument as jest.Mock).mockResolvedValueOnce(mockDoc);
+
+      await extensionController.cloneProfile('profile2');
+
+      // Verify source was profile2.yaml and target was profile4.yaml
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ path: expect.stringContaining('profile4.yaml') }),
+        customYamlBytes
+      );
+      expect(extensionController.getProfileLabel('profile4')).toBe('Cloned Workhorse');
+      expect(switchSpy).toHaveBeenCalledWith('profile4');
+      expect(vscode.window.showTextDocument).toHaveBeenCalledWith(mockDoc);
+    });
+
+    it('should suppress cloneProfile in remote host mode', async () => {
+      jest.spyOn(extensionController, 'isRemoteHost').mockReturnValue(true);
+      await extensionController.cloneProfile();
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Profile management is disabled in remote server mode')
+      );
+    });
+
+    it('should handle sidebar cloneProfile webview message', async () => {
+      (extensionController as any).registerSidebarProvider();
+      const onMessage = (SidebarViewProvider as any).getLastMessageCallback();
+      const cloneSpy = jest.spyOn(extensionController, 'cloneProfile').mockResolvedValue(undefined);
+      await onMessage({
+        command: 'cloneProfile',
+        profileId: 'profile3'
+      });
+      expect(cloneSpy).toHaveBeenCalledWith('profile3');
+    });
+
+    it('should offer Clone Active Profile option in switchProfile QuickPick', async () => {
+      (vscode.workspace.fs.readDirectory as jest.Mock).mockResolvedValueOnce([
+        ['profile1.yaml', vscode.FileType.File],
+        ['profile2.yaml', vscode.FileType.File],
+        ['profile3.yaml', vscode.FileType.File]
+      ]);
+
+      const cloneSpy = jest.spyOn(extensionController, 'cloneProfile').mockResolvedValue(undefined);
+      (vscode.window.showQuickPick as jest.Mock).mockImplementationOnce(async (items: any[]) => {
+        const cloneItem = items.find((it: any) => it.action === 'clone');
+        expect(cloneItem).toBeDefined();
+        expect(cloneItem.label).toContain('Clone Active Profile');
+        return cloneItem;
+      });
+
+      await extensionController.switchProfile();
+      expect(cloneSpy).toHaveBeenCalled();
+    });
+
+    it('should register nacho-flow.cloneProfile command', async () => {
+      (extensionController as any).registerCommands();
+      const cloneCall = (vscode.commands.registerCommand as jest.Mock).mock.calls.find(
+        (c: any[]) => c[0] === 'nacho-flow.cloneProfile'
+      );
+      expect(cloneCall).toBeDefined();
+      const cloneSpy = jest.spyOn(extensionController, 'cloneProfile').mockResolvedValue(undefined);
+      await cloneCall[1]('profile2');
+      expect(cloneSpy).toHaveBeenCalledWith('profile2');
+    });
+
     it('should rename active profile and validate length', async () => {
       (vscode.window.showInputBox as jest.Mock).mockImplementationOnce(async (options: any) => {
         expect(options.validateInput('')).toBe('Profile name cannot be empty');
@@ -3236,6 +3351,294 @@ other_key:
       await (extensionController as any).initializeClients();
       expect((extensionController as any).sseClient).toBeNull();
       expect(appendLineSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to initialize SSE client: SSE connect boom'));
+    });
+
+    it('should recover and restart local engine on save when engine was left stopped but intent is running', async () => {
+      await extensionController.initialize();
+
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).restClient = {
+        updateConfigYaml: jest.fn().mockResolvedValue({})
+      };
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(null)
+      };
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false),
+        restart: restartSpy
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).showTransientToast = jest.fn();
+
+      const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+      const doc = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+        getText: () => 'port: 8000\n'
+      };
+
+      await lastSaveListener(doc);
+
+      expect(restartSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', '/test/profile1.yaml');
+    });
+
+    it('should recover and restart engine on switchProfile when engine was left stopped by config error', async () => {
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        setLastProfile: jest.fn().mockResolvedValue(undefined),
+        setLocalEngineRunning: jest.fn().mockResolvedValue(undefined)
+      };
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false),
+        restart: restartSpy
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile2.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).updateStats = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).showTransientToast = jest.fn();
+
+      await (extensionController as any).switchProfile('profile2');
+
+      expect(restartSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', '/test/profile2.yaml');
+    });
+
+    it('should recover and restart engine on resetProfile when engine was left stopped by config error', async () => {
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000')
+      };
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false),
+        restart: restartSpy
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).updateStats = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).showTransientToast = jest.fn();
+      (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Reset Profile');
+
+      await (extensionController as any).resetProfile('profile1');
+
+      expect(restartSpy).toHaveBeenCalledWith('http://127.0.0.1:8000', '/test/profile1.yaml');
+    });
+
+    it('should sync sidebar state and update stats before awaiting handleEngineStartError', async () => {
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        setLocalEngineRunning: jest.fn().mockResolvedValue(undefined)
+      };
+      const callOrder: string[] = [];
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        isLocalUrl: jest.fn().mockReturnValue(true),
+        start: jest.fn().mockResolvedValue({ success: false, error: 'Port in use' })
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockImplementation(async () => {
+        callOrder.push('syncSidebarState');
+      });
+      (extensionController as any).initializeClients = jest.fn().mockImplementation(async () => {
+        callOrder.push('initializeClients');
+      });
+      (extensionController as any).updateStats = jest.fn().mockImplementation(async () => {
+        callOrder.push('updateStats');
+      });
+      (extensionController as any).loadDashboardData = jest.fn().mockImplementation(async () => {
+        callOrder.push('loadDashboardData');
+      });
+      (extensionController as any).handleEngineStartError = jest.fn().mockImplementation(async () => {
+        callOrder.push('handleEngineStartError');
+      });
+      (extensionController as any).showTransientToast = jest.fn();
+
+      (extensionController as any).registerSidebarProvider();
+      const mockSidebarClass = require('../ui/sidebar/sidebar-view-provider').SidebarViewProvider;
+      const onMessage = mockSidebarClass.getLastMessageCallback();
+      await onMessage({ command: 'startEngine' });
+
+      expect(callOrder).toContain('syncSidebarState');
+      expect(callOrder).toContain('handleEngineStartError');
+      expect(callOrder.indexOf('syncSidebarState')).toBeLessThan(callOrder.indexOf('handleEngineStartError'));
+    });
+
+    it('should debounce saves when debounceMs is positive', async () => {
+      const origEnv = process.env.NODE_ENV;
+      const origWorker = process.env.JEST_WORKER_ID;
+      try {
+        delete (process.env as any).NODE_ENV;
+        delete (process.env as any).JEST_WORKER_ID;
+
+        jest.useFakeTimers();
+        await extensionController.initialize();
+        (extensionController as any).activeProfile = 'profile1';
+        (extensionController as any).authManager = {
+          getEngineMode: jest.fn().mockReturnValue('local'),
+          isLocalEngineRunning: jest.fn().mockReturnValue(true),
+          getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+          getAuthToken: jest.fn().mockResolvedValue(null)
+        };
+        const restartSpy = jest.fn().mockResolvedValue({ success: true });
+        (extensionController as any).processManager = {
+          isRunning: jest.fn().mockReturnValue(true),
+          restart: restartSpy
+        };
+        (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+          uri: { fsPath: '/test/profile1.yaml' }
+        });
+        (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).showTransientToast = jest.fn();
+
+        const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+        const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+        const doc = {
+          fileName: '/test/profile1.yaml',
+          uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+          getText: () => 'port: 8000\n'
+        };
+
+        await lastSaveListener(doc);
+        expect(restartSpy).not.toHaveBeenCalled();
+
+        jest.advanceTimersByTime(550);
+        await Promise.resolve();
+        expect(restartSpy).toHaveBeenCalled();
+      } finally {
+        process.env.NODE_ENV = origEnv;
+        process.env.JEST_WORKER_ID = origWorker;
+        jest.useRealTimers();
+      }
+    });
+
+    it('should pause local restart when Pre-Flight Save Gate detects validation errors', async () => {
+      await extensionController.initialize();
+
+      const mockProcessManager = (extensionController as any).processManager;
+      const restartSpy = jest.spyOn(mockProcessManager, 'restart').mockResolvedValue({ success: true });
+      (extensionController as any).shouldLocalEngineBeRunning = jest.fn().mockReturnValue(true);
+      (extensionController as any).activeProfile = 'profile1';
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      const toastSpy = jest.spyOn(extensionController as any, 'showTransientToast').mockImplementation(() => {});
+
+      const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+      // Document with validation errors: unknown provider reference
+      const invalidDoc = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+        getText: () => `
+providers:
+  llamacpp:
+    base_url: "http://127.0.0.1:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "Tier 1"
+    provider: "ghost_provider"
+`
+      };
+
+      await lastSaveListener(invalidDoc);
+
+      // Pre-Flight Save Gate must block restart!
+      expect(restartSpy).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('validation error'));
+
+      // Now save with valid document
+      const validDoc = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+        getText: () => `
+providers:
+  llamacpp:
+    base_url: "http://127.0.0.1:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "Tier 1"
+    provider: "llamacpp"
+`
+      };
+
+      await lastSaveListener(validDoc);
+      expect(restartSpy).toHaveBeenCalled();
+    });
+
+    it('should create and set diagnostics when vscode.languages is available', async () => {
+      await extensionController.initialize();
+      expect(vscode.languages.createDiagnosticCollection).toHaveBeenCalledWith('nacho-flow-config');
+
+      const mockCollection = (extensionController as any).diagnosticCollection;
+      expect(mockCollection).toBeDefined();
+
+      const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+      const docWithWarning = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => '/test/profile1.yaml' },
+        getText: () => `
+providers:
+  llamacpp:
+    base_url: "http://127.0.0.1:8080/v1"
+    type: "local"
+
+tiers:
+  - name: "T1"
+    provider: llamacpp
+    when: "true"
+  - name: "T2"
+    provider: llamacpp
+    when: "Tokens > 10"
+`
+      };
+
+      await lastSaveListener(docWithWarning);
+      expect(mockCollection.set).toHaveBeenCalledWith(
+        docWithWarning.uri,
+        expect.arrayContaining([
+          expect.objectContaining({ message: expect.stringContaining('is unreachable') })
+        ])
+      );
+
+      extensionController.dispose();
+      expect(mockCollection.dispose).toHaveBeenCalled();
     });
   });
 });

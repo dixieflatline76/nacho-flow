@@ -12,10 +12,11 @@ The **Nacho Flow VS Code Companion Extension** delivers a high-visibility, zero-
 2. [Installation & Quick Start](#2-installation--quick-start)
 3. [Sidebar Control Hub (Activity Bar)](#3-sidebar-control-hub-activity-bar)
    - [3.1 Model Dispatcher Lifecycle (Local vs. Remote Server)](#31-model-dispatcher-lifecycle-local-vs-remote-server)
-   - [3.2 User-Configurable Profiles & 1-Click Switching (Profile 1, Profile 2, Profile 3)](#32-user-configurable-profiles--1-click-switching-profile-1-profile-2-profile-3)
-   - [3.3 🏆 Recommended Local Model for 16GB Cards: Gemma 4 12B IT QAT & Perfected Ollama Tuning](#33--recommended-local-model-for-16gb-cards-gemma-4-12b-it-qat--perfected-ollama-tuning)
-   - [3.4 Coding Agent Pairing (Zoo Code, Cline, Cursor, Aider)](#34-coding-agent-pairing-zoo-code-cline-cursor-aider)
+   - [3.2 User-Configurable Profiles, Custom Slots & 1-Click Switching](#32-user-configurable-profiles--1-click-switching-profile-1-profile-2-profile-3)
+   - [3.3 🏆 Recommended Local Models & Server Tuning (16GB–24GB VRAM)](#33--recommended-local-models--server-tuning-16gb24gb-vram)
+   - [3.4 Coding Agent Pairing (Zoo Code, Cline, Kilo Code, Cursor, Aider)](#34-coding-agent-pairing-zoo-code-cline-cursor-aider)
    - [3.5 Maintenance & System Operations](#35-maintenance--system-operations)
+   - [3.6 🧠 Config Assist & Interactive YAML Intelligence](#36--config-assist--interactive-yaml-intelligence)
 4. [Real-Time Analytics Dashboard (`Ctrl+Shift+P` → `Show Dashboard`)](#4-real-time-analytics-dashboard)
    - [4.1 Flight Instruments & Time-Window Telemetry](#41-flight-instruments--time-window-telemetry)
    - [4.2 Cycle Killer Defense & Local Recovery](#42-cycle-killer-defense--local-recovery)
@@ -103,25 +104,27 @@ For developers hosting Nacho Flow on a dedicated GPU server, home lab workstatio
 
 ---
 
-### 3.2 User-Configurable Profiles & 1-Click Switching (Profile 1, Profile 2, Profile 3)
+### 3.2 User-Configurable Profiles & 1-Click Switching (Profile 1, Profile 2, Profile 3 & Custom Slots)
 
-Nacho Flow features three independent, fully customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) that can be switched on the fly with **native process isolation, zero configuration drift, and built-in template synchronization**:
+Nacho Flow ships with three built-in, customizable configuration profiles (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`) and supports **unlimited user-created or cloned custom profiles** (`profile4.yaml`, `profile5.yaml`, etc.) that can be switched on the fly with **native process isolation, zero configuration drift, and built-in template synchronization**:
 
 ```text
 [⚡ 2. Routing Configuration]          [🔍 Diff] [📝 Edit YAML]
   ACTIVE PROFILE
-  [ Profile 1           ▼ ]  [⚡ Switch]  [🔄 Reset]
+  [ Profile 1: Standard Hybrid Pipeline                 ▼ ]
+  [ ＋ ] [ ⧉ ] [ ✏️ ] [ － ]                        [ Reset ]
 ```
 
 #### 🚀 Out-of-the-Box Routing Profiles
 
-Nacho Flow ships with **two battle-tested, empirically validated production profiles** designed to eliminate cognitive deadlocks, reduce latency, and slash API bills:
+Nacho Flow ships with **three battle-tested, empirically validated production profiles** (plus unlimited custom slots via **`＋` Add** or **`⧉` Clone**) designed to eliminate cognitive deadlocks, reduce latency, and slash API bills:
 
 | Profile | Target File | Architecture & Core Engines | Cognitive Dynamics & Escapements | Benchmark Profile | Target Use Case |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **🌮 Profile 1** | `profile1.yaml` (`config.yaml`) | **Dynamic Reasoning Pipeline**<br>• Core: `z-ai/glm-5.3-flash`<br>• Kickstart/Vision: `google/gemini-3.8-flash` | • Priority 1: Kickstart Escalation (Gemini Flash)<br>• Priority 2: Vision Escapement (Gemini Flash)<br>• Priority 3: Turn 0 Max Planning (GLM)<br>• Priority 4: Tier 1 Low Workhorse (GLM, 2-4s)<br>• Priority 5: Tier 2 High Debug (GLM)<br>• Priority 6: Tier 3 Max De-escalation (GLM) | **54–60 turns**<br>**~$0.23–$0.38**<br>**88–91% Coverage**<br>**100% Pass** | **Goal-Based Autonomous Agentic Coding**: Long-running, multi-turn end-to-end task execution where an agent must self-steer, plan architecture, withstand read-only deadlocks via Kickstart idle recovery, verify UI visually, and iterate through failures to 100% completion without human babysitting or runaway API bills. |
-| **⚡ Profile 2** | `profile2.yaml` | **Anthropic Native Benchmark**<br>• `claude-sonnet-5`<br>• `claude-haiku-4-5` | • Priority 1: Sonnet 5.5 Plan (`<= 6` msgs)<br>• Priority 2: Haiku 4.5 Workhorse (`!HasTestFail`)<br>• Priority 3: Sonnet 5.5 Error Escalation<br>• Priority 4: Sonnet 5.5 High Reasoning<br>• Priority 5: Opus 5.5 Nuclear Option (On-Demand) | **39 turns**<br>**8.3 minutes**<br>**100% Pass**<br>**Speed Record** | **Challenging Scenarios with Maximum Speed (Cost Secondary)**: Complex architectural overhauls, high-difficulty debugging, and time-critical missions where developers prioritize raw execution velocity and single-turn accuracy over token frugality. |
-| **🛠️ Profile 3** | `profile3.yaml` | **Local GPU / Custom Sandbox**<br>Configurable slot (Ollama, vLLM, custom) | Fully customizable | User-defined | **Local GPU Offload & Custom Sandbox**: Reserved slot for local hardware inference (Ollama, vLLM, ROCm/CUDA clusters) or custom enterprise LLM endpoints. |
+| **🌮 Profile 1** | `profile1.yaml` (`config.yaml`) | **Standard Hybrid Pipeline (Default)**<br>• Core: `z-ai/glm-5.3-flash`<br>• Kickstart/Vision: `google/gemini-3.8-flash` | • Priority 1: Kickstart Escalation (`SessionReadSlapped && Retries < 3`)<br>• Priority 2: Vision Escapement (`Retries < 6 && HasImages`)<br>• Priority 3: Turn 0 Low Kickoff (`MessageCount <= 14`)<br>• Priority 4: Tier 1 Low Workhorse (GLM, 2–4s)<br>• Priority 5: Tier 2 High Debug (`Retries < 6`)<br>• Priority 6: Tier 3 Max De-escalation (`Retries >= 6`) | **54–60 turns**<br>**~$0.23–$0.38**<br>**88–91% Coverage**<br>**100% Pass** | **Daily Autonomous Agentic Coding**: Fast, low-latency multi-turn task execution where an agent self-steers, breaks read-only stalls via Kickstart escalation, processes UI screenshots via Gemini Flash, and scales reasoning effort only when errors occur. |
+| **🧠 Profile 2** | `profile2.yaml` | **Deep Reasoning & Autonomous Benchmark**<br>• Core: `z-ai/glm-5.3-flash`<br>• Kickstart/Vision: `google/gemini-3.8-flash` | • Turn 0 Max Reasoning (`reasoning_effort: "max"`) guarded by **`thought_slap: true`**<br>• Tiers 1–3 Dynamic GLM Ladder (`low` → `high` → `max`)<br>• Fairy Dusting (`high` @ 15 turns, `max` @ 60 turns) | **89 turns**<br>**14.6 minutes**<br>**93% Coverage**<br>**100% Pass** | **Deep Algorithmic & Architectural Missions**: Complex greenfield builds requiring unconstrained `max` chain-of-thought planning on Turn 0 with automatic Thought Slap truncation rescue (2.4s) and mid-flight Fairy Dust code reviews. |
+| **⚡ Profile 3** | `profile3.yaml` | **Anthropic Native Benchmark**<br>• `claude-sonnet-5-5`<br>• `claude-haiku-5-5`<br>• `claude-opus-5-5` | • Priority 1: Sonnet 5.5 Plan (`MessageCount <= 6`)<br>• Priority 2: Haiku 5.5 Workhorse (`Retries < 2 && !HasTestFail`, `medium` / `Retries < 4 && !HasTestFail`, `high`)<br>• Priority 3: Sonnet 5.5 Error Escalation (`Retries < 6`)<br>• Priority 4: Sonnet 5.5 High Reasoning (`Retries >= 6`)<br>• Priority 5: Opus 5.5 Nuclear Option (`when: "false"`) | **39 turns**<br>**8.3 minutes**<br>**100% Pass**<br>**Speed Record** | **First-Party Claude with Maximum Velocity**: Direct `api.anthropic.com` pipeline with native `cache_control` breakpoints and zero-delay `!HasTestFail` promotion from Haiku 5.5 to Sonnet 5.5. |
+| **🛠️ Custom (`＋` / `⧉`)** | `profile4.yaml`+ | **Custom / Cloned Sandbox**<br>Local GPU (llama.cpp, Ollama, vLLM) or custom cloud mix | Seeded from factory template (`＋`) or cloned byte-for-byte from active profile (`⧉`) | User-defined | **Local GPU Offload & Experimentation**: Clone any profile in 1 click to test local `llama.cpp` / `Ollama` models (`Qwen3-Coder`, `Gemma 4`) or custom routing rules without touching your baseline profile. |
 
 ---
 
@@ -140,7 +143,7 @@ The fundamental challenge of autonomous coding agents is that **single-model pip
 
 ```mermaid
 flowchart TD
-    Req["Incoming Agent Request"] --> P1{"SessionKickstarted AND<br/>Retries &lt; 3?"}
+    Req["Incoming Agent Request"] --> P1{"SessionReadSlapped AND<br/>Retries &lt; 3?"}
     
     P1 -->|"YES: Idling in Read Loop"| KS["⚡ Priority 1: Kickstart Escalation<br/>google/gemini-3.8-flash<br/>Inject 'SYSTEM OVERRIDE'<br/>Forces concrete file write / command"]
     KS -->|"Write Progress Emitted<br/>De-latches Kickstart"| GLM_Lane
@@ -174,7 +177,7 @@ Every turn dispatched to Nacho Flow is evaluated sequentially through the routin
 
 | Priority | Tier Name | Provider & Model | Trigger Condition (`when:`) | Reasoning Effort | Functional Role & Economics |
 | :---: | :--- | :--- | :--- | :---: | :--- |
-| **1** | **Kickstart Escalation** | `openrouter`<br>`google/gemini-3.8-flash` | `SessionKickstarted && Retries < 3` | *Default* | **Analysis Paralysis Defroster**: Injects `[SYSTEM OVERRIDE]` and hands execution to an orthogonal engine to break read-only browsing loops. ($0.75 / $3.75 MTok) |
+| **1** | **Kickstart Escalation** | `openrouter`<br>`google/gemini-3.8-flash` | `SessionReadSlapped && Retries < 3` | *Default* | **Analysis Paralysis Defroster**: Injects `[SYSTEM OVERRIDE]` and hands execution to an orthogonal engine to break read-only browsing loops. ($0.75 / $3.75 MTok) |
 | **2** | **Multimodal Vision** | `openrouter`<br>`google/gemini-3.8-flash` | `Retries < 6 && HasImages` | *Default* | **Visual State Escapement**: Intercepts screenshots and UI renders. Sub-second 1M context ingestion at rock-bottom cost without bloating the code generator. |
 | **3** | **Turn 0 Architecture Kickoff** | `openrouter`<br>`z-ai/glm-5.3-flash` | `MessageCount <= 14` | `max` | **System Architecture & Planning**: Grants unconstrained chain-of-thought to ingest specs, map dependencies, and draft the implementation plan. |
 | **4** | **Tier 1: Fast Workhorse** | `openrouter`<br>`z-ai/glm-5.3-flash` | `Tokens < 1000000 && Retries < 2` | `low` | **Routine Coding Workhorse**: Scaffolding files, writing code diffs, running passing test suites. **2–4s turn turnaround** (~$0.003/turn). |
@@ -205,7 +208,7 @@ If this prompt is given to the **same model** that is already stuck in the loop 
 - **Sub-Second Speed & Low Cost**: Gemini 3.8 Flash responds in sub-seconds at rock-bottom pricing ($0.75 / 1M prompt tokens), recovering the agent for under a tenth of a cent ($0.0008).
 
 ###### De-latching & Seamless Handoff
-As soon as Gemini emits a file write or command, `RecordKickstartState` registers `kickstartProgress = true`. This immediately clears `SessionKickstarted`. On the very next turn, the agent drops cleanly back into GLM-5.3-Flash (Tier 1 or Tier 2) with the files already written and the deadlock broken.
+As soon as Gemini emits a file write or command, `RecordKickstartState` registers `kickstartProgress = true`. This immediately clears `SessionReadSlapped`. On the very next turn, the agent drops cleanly back into GLM-5.3-Flash (Tier 1 or Tier 2) with the files already written and the deadlock broken.
 - **`Retries < 3` Guard**: If repeated failures occur despite stall recovery, the circuit breaker (`max_failures: 3`) steps aside to allow higher-order error recovery or user intervention.
 
 ---
@@ -268,37 +271,38 @@ Profile 1 integrates three layers of active daemon defenses:
 
 ---
 
-#### ⚡ Deep-Dive: Profile 2 — Anthropic Native Benchmark (Direct Multi-Tier Claude)
+#### ⚡ Deep-Dive: Profile 3 — Anthropic Native Benchmark (Direct Multi-Tier Claude)
 
 ##### 1. Architectural Vision & Core Philosophy
 
-**Profile 2** is engineered specifically for developers with native Anthropic API keys who want pure, first-party Claude execution with **zero intermediary proxy latency, direct Anthropic prompt caching (`cache_control`), and native multimodal vision handling**:
+**Profile 3** is engineered specifically for developers with native Anthropic API keys who want pure, first-party Claude execution with **zero intermediary proxy latency, direct Anthropic prompt caching (`cache_control`), and native multimodal vision handling**:
 
-- **Native Multimodal Support**: Unlike OpenRouter pipelines that require routing to external vision models, Claude Sonnet 5.5 and Claude Haiku 4.5 are native multimodal vision models. Screenshots and browser renders flow directly through the core ladder without needing an external escapement model.
+- **Native Multimodal Support**: Unlike OpenRouter pipelines that require routing to external vision models, Claude Sonnet 5.5 and Claude Haiku 5.5 are native multimodal vision models. Screenshots and browser renders flow directly through the core ladder without needing an external escapement model.
 - **Provider Isolation**: Operates directly against `https://api.anthropic.com` (`type: "anthropic"`), requiring no third-party accounts or external proxy keys.
 
 ```mermaid
 flowchart TD
-    A0["🎯 Turn 0: Architecture Kickoff<br/>Claude Sonnet 5.5<br/>reasoning_effort: medium • MessageCount &le; 6"] --> A1["⚡ Tier 1: Cost-Optimized Workhorse<br/>Claude Haiku 4.5 ($1 / $5 MTok)<br/>Retries &lt; 2 AND !HasTestFail"]
-    A1 -->|"Test Failure (HasTestFail) OR Retry &ge; 2"| A2["🔍 Tier 2: Primary Escalation<br/>Claude Sonnet 5.5 ($2 / $10 MTok)<br/>Retries &lt; 6"]
+    A0["🎯 Turn 0: Architecture Kickoff<br/>Claude Sonnet 5.5<br/>reasoning_effort: medium • MessageCount &le; 6"] --> A1["⚡ Tier 1: Cost-Optimized Workhorse<br/>Claude Haiku 5.5 ($0.10 / $0.50 MTok)<br/>Retries &lt; 2 AND !HasTestFail (medium)<br/>Retries &lt; 4 AND !HasTestFail (high)"]
+    A1 -->|"Test Failure (HasTestFail) OR Retry &ge; 4"| A2["🔍 Tier 2: Primary Escalation<br/>Claude Sonnet 5.5 ($2 / $10 MTok)<br/>Retries &lt; 6"]
     A2 -->|"Failure Loop (Retries &ge; 6)"| A3["🧠 Tier 3: High Reasoning Escalation<br/>Claude Sonnet 5.5 (Deep Thinking)<br/>reasoning_effort: high"]
     A3 -->|"Manual Directive Only"| A4["☢️ Tier 4: Claude Opus 5.5<br/>when: false (HotSauce override)"]
 ```
 
-##### 2. Full Ordered Routing Ladder (Priority 1 to 6 — First Match Wins)
+##### 2. Full Ordered Routing Ladder (Priority 1 to 7 — First Match Wins)
 
 | Priority | Tier Name | Provider & Model | Trigger Condition (`when:`) | Reasoning Effort | Functional Role & Economics |
 | :---: | :--- | :--- | :--- | :---: | :--- |
 | **1** | **Turn 0 Architecture Kickoff** | `anthropic`<br>`claude-sonnet-5-5` | `MessageCount <= 6` | `medium` | **System Architecture**: Harnesses Sonnet 5.5's world-class reasoning on session start to ingest requirements and map interfaces. |
-| **2** | **Tier 1: Haiku 4.5 Workhorse** | `anthropic`<br>`claude-haiku-4-5` | `Retries < 2 && !HasTestFail` | `medium` | **Fast & Frugal Workhorse**: Clean development turns only. Slashes token costs by 70% ($1 / $5 MTok) during routine file writes. |
-| **3** | **Tier 2: Sonnet 5.5 Escalation** | `anthropic`<br>`claude-sonnet-5-5` | `Retries < 6` | `medium` | **Primary Escalation**: Promoted **immediately** on test failure (`HasTestFail`) or when retries reach 2. Solves complex implementation tasks. |
-| **4** | **Tier 3: High Reasoning Escalation** | `anthropic`<br>`claude-sonnet-5-5` | `Retries >= 6` | `high` | **Deep Thinking Escalation**: Expands Sonnet 5.5's reasoning budget on stubborn failure loops. Delivers frontier problem solving at 80% lower cost than Opus. |
-| **5** | **Tier 4: Opus 5.5 Nuclear Option** | `anthropic`<br>`claude-opus-5-5` | `false` *(Manual only)* | `medium` | **Frontier Powerhouse**: Kept dormant to prevent autonomous billing spikes. Reachable via `@nacho:tier="Tier 4: Claude Opus 5.5"`. |
-| **6** | **Default Catch-All** | `anthropic`<br>`claude-sonnet-5-5` | `true` | `medium` | **Safety Net**: Guarantees Sonnet 5.5 handles any unexpected edge state. |
+| **2** | **Tier 1: Haiku 5.5 (medium reasoning)** | `anthropic`<br>`claude-haiku-5-5` | `Retries < 2 && !HasTestFail` | `medium` | **Fast & Ultra-Cheap Workhorse**: Clean development turns only ($0.10 / $0.50 MTok) during routine file writes. |
+| **3** | **Tier 1: Haiku 5.5 (high reasoning)** | `anthropic`<br>`claude-haiku-5-5` | `Retries < 4 && !HasTestFail` | `high` | **High Reasoning Workhorse**: Expands Haiku 5.5's adaptive thinking depth on clean non-test-failure retries (`2 <= Retries < 4`). |
+| **4** | **Tier 2: Sonnet 5.5 Escalation** | `anthropic`<br>`claude-sonnet-5-5` | `Retries < 6` | `medium` | **Primary Escalation**: Promoted **immediately** on test failure (`HasTestFail`) or when retries reach 4. Solves complex implementation tasks. |
+| **5** | **Tier 3: High Reasoning Escalation** | `anthropic`<br>`claude-sonnet-5-5` | `Retries >= 6` | `high` | **Deep Thinking Escalation**: Expands Sonnet 5.5's reasoning budget on stubborn failure loops. Delivers frontier problem solving at 80% lower cost than Opus. |
+| **6** | **Tier 4: Opus 5.5 Nuclear Option** | `anthropic`<br>`claude-opus-5-5` | `false` *(Manual only)* | `medium` | **Frontier Powerhouse**: Kept dormant to prevent autonomous billing spikes. Reachable via `@nacho:tier="Tier 4: Claude Opus 5.5"`. |
+| **7** | **Default Catch-All** | `anthropic`<br>`claude-sonnet-5-5` | `true` | `medium` | **Safety Net**: Guarantees Sonnet 5.5 handles any unexpected edge state. |
 
 ##### 3. Key Design Choices & Benchmark Records:
 1. **The `!HasTestFail` Innovation**:
-   - Rather than waiting for Haiku 4.5 to fail multiple times, Profile 2 inspects test runner output in real time. The instant a test suite fails (`HasTestFail == true`), the router immediately bypasses Tier 1 and promotes the session to Sonnet 5.5.
+   - Rather than waiting for Haiku 5.5 to fail multiple times, Profile 3 inspects test runner output in real time. The instant a test suite fails (`HasTestFail == true`), the router immediately bypasses Tier 1 and promotes the session to Sonnet 5.5.
 2. **Sonnet 5.5 High Reasoning Over Opus 5.5**:
    - In stubborn failure loops (`Retries >= 6`), Tier 3 engages Sonnet 5.5's deep thinking mode (`reasoning_effort: high`) rather than jumping to Opus 5.5. This achieves identical bug-resolution rates while saving 80% on token costs.
 3. **All-Time Benchmark Record**:
@@ -308,7 +312,7 @@ flowchart TD
 
 #### 📊 Comprehensive Architecture & Empirical Comparison
 
-| Architectural Dimension | 🌮 Profile 1: Dynamic Reasoning Pipeline | ⚡ Profile 2: Anthropic Native Benchmark |
+| Architectural Dimension | 🌮 Profile 1 / 2: Dynamic GLM Reasoning Pipeline | ⚡ Profile 3: Anthropic Native Benchmark |
 | :--- | :--- | :--- |
 | **Core Coding Engine** | `z-ai/glm-5.3-flash` (Homogeneous) | `claude-sonnet-5` + `claude-3-5-haiku` (Heterogeneous) |
 | **Cognitive Scaling Mechanism** | In-model dynamic reasoning effort (`low` $\rightarrow$ `high` $\rightarrow$ `max`) | Cross-model promotion (Haiku $\rightarrow$ Sonnet $\rightarrow$ Sonnet High) |
@@ -328,22 +332,29 @@ flowchart TD
 > [!NOTE]
 > **Loopback Security Isolation**: All bundled extension profile templates strictly enforce `host: "127.0.0.1"` to provide local machine isolation and prevent Windows Defender Firewall network permission prompts. If you require LAN access for remote machines, set `host: "0.0.0.0"` in your workspace config.
 
-#### 1-Click Profile Switching & Lifecycle Controls:
-1. **Dropdown Selection**: Select your target profile (`Profile 1`, `Profile 2`, or `Profile 3`) from the dropdown.
-2. **`⚡ Switch`**:
-   - **If the Local Engine is running**: The extension cleanly restarts the native Go daemon, passing the resolved absolute configuration path directly via the native `--config <path>` flag. In-flight processes terminate gracefully, and the engine boots immediately with the selected profile.
-   - **If the Local Engine is offline**: The extension updates your active profile selection so that the next time you click **`▶ Start`**, the engine automatically initializes with the chosen profile.
-3. **`🔍 Diff` (Side-by-Side Template Comparison)**:
-   - Click **`🔍 Diff`** (command `nacho-flow.compareProfileWithTemplate`) in the section header to open VS Code's native side-by-side diff editor (`vscode.diff`).
-   - Compares your active customized profile against the clean, bundled default template in real time, letting you easily spot new guardrail keys, schema additions, or upstream default updates without modifying your file.
-4. **`🔄 Reset` (Safe Reset to Default)**:
-   - Click **`Reset`** (command `nacho-flow.resetProfileToDefault`) to restore the selected profile back to its pristine default preset.
-   - **Safety First**: Automatically creates a timestamped backup copy (`profile<N>.yaml.bak`) of your existing customized file before replacing it, confirms via an explicit dialog, and automatically reloads the running gateway daemon with zero downtime.
-5. **`📝 Edit YAML` (Live Editing & Dynamic Sync)**:
-   - Click **`📝 Edit YAML`** next to the section header (or the dynamic **`[📝 Profile X (YAML)]`** button in the dashboard) to open the active profile file directly in VS Code with full YAML syntax highlighting and schema validation. Saving changes automatically hot-reloads the daemon in real time.
-6. **In Remote Server Mode**: Local profile switching, diffing, and resets are disabled to prevent accidental reconfiguration of remote or shared servers; the UI clearly displays `🌐 Remote Server`.
-7. Environment variable placeholders (`ENV_<KEY>`) in the profile are automatically expanded from the host process environment, keeping API authentication seamless.
-8. A transient confirmation toast appears: `🌮 Switched to Profile 1!`.
+#### 1-Click Profile Switching & Action Toolbar Controls:
+1. **Instant Full-Width Dropdown Selection**:
+   - Select any built-in (`Profile 1`, `Profile 2`, `Profile 3`) or custom profile from the full-width dropdown selector (`<select id="profile-selector">`).
+   - **If the Local Engine is running**: Selecting a profile immediately restarts the native Go daemon with `--config <path>`.
+   - **If the Local Engine is offline**: Updates the active profile selection so clicking **`▶ Start`** boots directly with that profile.
+2. **`＋` Add Profile (`nacho-flow.addProfile`)**:
+   - Creates a new custom profile file (`profile4.yaml`, `profile5.yaml`, etc.) in `<globalStorage>/profiles/` seeded from the factory default template.
+   - Prompts for a custom display label (up to 24 characters) and immediately switches to and opens the new profile in the editor.
+3. **`⧉` Clone Active Profile (`nacho-flow.cloneProfile`)**:
+   - Copies the exact YAML bytes of the currently active profile into a new profile slot (`profile<N>.yaml` in `<globalStorage>/profiles/`).
+   - Prompts for a custom name (up to 24 characters, defaulting to `<Active Profile Label> Copy`), switches to the newly cloned profile, and opens it in the editor. Also accessible from the Command Palette and Status Bar QuickPick menu.
+4. **`✏️` Rename Profile (`nacho-flow.renameProfile`)**:
+   - Prompts for a new display label (up to 24 characters) for any built-in or custom profile, persisted in `<globalStorage>/profiles/.profile-names.json`.
+5. **`－` Delete Profile (`nacho-flow.deleteProfile`)**:
+   - Permanently deletes a user-created custom profile (`profile4`+) after confirmation and automatically falls back to `Profile 1`. Built-in profiles (`Profile 1`–`3`) are protected and have the delete button disabled.
+6. **`Reset` (Safe Reset to Factory Default — `nacho-flow.resetProfileToDefault`)**:
+   - Right-aligned toolbar button that restores a built-in profile (`Profile 1`–`3`) back to its pristine bundled factory template.
+   - **Safety First**: Automatically creates a backup copy (`profile<N>.yaml.bak`) before replacing the file, confirms via a modal dialog, and reloads the running gateway daemon.
+7. **`🔍 Diff` (Side-by-Side Template Comparison — `nacho-flow.compareProfileWithTemplate`)**:
+   - Opens VS Code's native side-by-side diff editor (`vscode.diff`) comparing your active customized profile against the bundled factory template.
+8. **`📝 Edit YAML` (Live Editing & Pre-Flight Save Gate — `nacho-flow.openConfig`)**:
+   - Opens the active profile YAML in VS Code with full **Config Assist** intelligence (CodeLenses, `/v1/models` live discovery, semantic diagnostics, and LSP navigation). Saving valid changes automatically hot-reloads the daemon after a 300ms debounce.
+9. **In Remote Server Mode**: Local profile switching, cloning, diffing, and resets are hidden to prevent accidental local overrides; `📝 Edit YAML` fetches and hot-reloads the remote server's configuration directly via REST.
 
 ---
 
@@ -483,7 +494,7 @@ Under **3. Coding Agents**, the sidebar displays copy-ready configuration cards:
 3. Click **`📋 Copy`** next to **Base URL** and paste: `http://127.0.0.1:8000/v1`.
 4. Click **`📋 Copy`** next to **API Key** and paste: `sk-nacho-secret-key` *(or any dummy string if auth is not configured)*.
 5. Click **`📋 Copy`** next to **Model ID** and paste: `nacho-hybrid`.
-6. *(Optional)* Click **Install Zoo Code** or **Install Cline** in the sidebar for 1-click marketplace installation.
+6. *(Optional)* Click **Install Zoo**, **Install Cline**, or **Install Kilo** in the sidebar for 1-click VS Code Marketplace installation.
 
 ---
 
@@ -491,9 +502,58 @@ Under **3. Coding Agents**, the sidebar displays copy-ready configuration cards:
 
 The **4. Maintenance & Operations** card provides immediate recovery tools:
 
-- **`Recalculate Stats from Logs`**: Replays historical token volumes and counterfactual cost savings from `traffic.jsonl` on disk (`<globalStorage>/presets/logs/traffic.jsonl` or `~/.nacho-flow/logs/traffic.jsonl`).
-- **`Reset Circuit Breakers`**: If your local Ollama or vLLM instance crashed, ran out of VRAM, or was restarted, Nacho Flow trips the local circuit breaker to protect agent turns. Once your local engine is back up, click this button to instantly restore traffic to your GPU without restarting the gateway.
+- **`Recalculate Stats from Logs`**: Replays historical token volumes and counterfactual cost savings from `traffic.jsonl` on disk (`<globalStorage>/profiles/logs/traffic.jsonl`, `<globalStorage>/presets/logs/traffic.jsonl`, or `~/.nacho-flow/logs/traffic.jsonl`).
+- **`Reset Circuit Breakers`**: If your local llama.cpp, Ollama, or vLLM instance crashed, ran out of VRAM, or was restarted, Nacho Flow trips the local circuit breaker to protect agent turns. Once your local engine is back up, click this button to instantly restore traffic to your GPU without restarting the gateway.
 - **`Purge All Logs & Reset Stats`**: Archives active traffic and router logs to `*.bak.YYYYMMDD-HHMMSS`, clears cumulative statistics, and resets all financial counters to $0.00 via cold boot restart.
+
+---
+
+### 3.6 🧠 Config Assist & Interactive YAML Intelligence
+
+Whenever you open a Nacho Flow configuration file (`*config*.yaml`, `profile*.yaml`, `.nacho/*.yaml`, or `profiles/*.yaml`), the extension activates a dedicated YAML language intelligence suite powered by a single-pass AST/line symbol indexer (`ConfigSymbolIndex`):
+
+#### 1. Interactive Editor CodeLenses
+Clickable inline action lenses appear directly above your YAML blocks:
+- **Above Each Provider (`providers.<name>:`)**:
+  - **`$(pulse) Ping Endpoint`** (`nacho-flow.pingProviderEndpoint`): Performs a live HTTP health check against the provider's `base_url`, reporting status and round-trip latency in milliseconds.
+  - **`$(references) N tier reference(s)`** (`nacho-flow.findProviderReferences`): Opens VS Code's native **Peek References** widget highlighting every routing tier, default tier, and Fairy Dust checkpoint referencing that provider.
+- **Above Thought Slap Rescue Tier (`kickstart.thought_slap.rescue_tier:` or `tiers[*].thought_slap.rescue_tier:`)**:
+  - **`$(flame) Pick Rescue Tier`** (`nacho-flow.pickRescueTier`): Opens a QuickPick populated with all tier names defined in the current document to designate the active rescue tier.
+  - **`$(arrow-swap) Switch Provider`** (`nacho-flow.pickProvider`): Switches the provider for the referenced rescue tier directly from the rescue tier line.
+  - **`$(symbol-Misc) Choose Model`** (`nacho-flow.pickModel`): Queries live `/v1/models` from the rescue tier's provider and updates the rescue tier's model.
+- **Above Every Route Target (`tiers[*]`, `default_tier`, and `fairy_dust.entries[*]`)**:
+  - **`$(arrow-swap) Switch Provider (<provider>)`** (`nacho-flow.pickProvider`): Switches the entry's `provider:` field via QuickPick using all providers declared in `providers:`.
+  - **`$(symbol-Misc) Choose Model (<model>)`** (`nacho-flow.pickModel`): Queries the active provider's live `/v1/models` endpoint and opens a searchable model picker.
+
+#### 2. Live `/v1/models` Discovery & Context-Aware Autocomplete (`Ctrl+Space`)
+- **Live Endpoint Discovery**: Queries `/v1/models` (and `/api/tags` fallback for Ollama) across local (`llama.cpp`, `Ollama`, `vLLM`) and cloud (`OpenRouter`, `Anthropic`) providers with a 60-second in-memory cache TTL.
+- **Seamless Environment Key Resolution**: Automatically expands `ENV_<VAR>`, `${VAR}`, or `$VAR` in `api_key:` from the host environment when querying authenticated cloud `/v1/models` endpoints (and safely omits `Authorization` headers if the env var is unset).
+- **Curated Fallback Catalog**: If a local or cloud endpoint is offline, model pickers and IntelliSense gracefully fall back to curated model suggestions.
+- **Context-Aware Completions**: Triggering `Ctrl+Space` inside `provider:`, `model:`, `rescue_tier:`, or `when:` offers context-specific completions—including all valid routing variables (`Tokens`, `Retries`, `MessageCount`, `HasTools`, `HasImages`, `HasTestFail`, `SessionReadSlapped`, `ClientID`, `InteractiveTool`, `CycleBreakerReason`, etc.) inside `when:` expressions.
+
+#### 3. Real-Time Semantic Diagnostics, Quick Fixes (`Ctrl+.`) & Pre-Flight Save Gate
+In addition to structural JSON Schema validation (`nacho-config.schema.json`), Nacho Flow runs real-time semantic analysis on every keystroke:
+
+| Rule ID | Severity | Condition Detected | 1-Click Quick Fix (`Ctrl+.`) |
+| :--- | :---: | :--- | :--- |
+| `SYNTAX_INDENT` | 🔴 Error | Tab indentation or unclosed quotes in YAML lines | Converts leading tabs to 2-space indentation |
+| `EMPTY_PROVIDERS` | 🔴 Error | `providers:` section is missing or defines 0 providers | — |
+| `UNKNOWN_PROVIDER_REF` | 🔴 Error | A tier, `default_tier`, or `fairy_dust` entry references an undefined provider | Replaces with closest matching provider (Levenshtein distance $\le 3$) or first defined provider |
+| `UNKNOWN_RESCUE_TIER_REF` | 🔴 Error | `kickstart.thought_slap.rescue_tier` references a non-existent tier name | Replaces with closest matching tier name in `tiers:` |
+| `INVALID_WHEN_EXPR` | 🔴 Error | Unbalanced parentheses/quotes, trailing operators, or unknown variable names in `when:` | Replaces misspelled variable (e.g. `Tokns` $\rightarrow$ `Tokens`) |
+| `DUPLICATE_TIER_NAME` | 🟡 Warning | Multiple routing tiers share the exact same `name:` | — |
+| `UNREACHABLE_TIER` | 🟡 Warning | Tier is placed *below* an unconditional catch-all tier (`when: "true"`) | — |
+| `ORPHAN_PROVIDER` | 🔵 Info | Provider is defined under `providers:` but never referenced by any route target | Removes the unused provider block |
+
+> [!IMPORTANT]
+> **Pre-Flight Save Gate & Debounced Auto-Save**:
+> When you save an active profile YAML in local mode, Nacho Flow validates the document before restarting the daemon. If any `Error`-level diagnostic is present, the extension **pauses the local engine restart** and displays a warning toast (`⚠️ Configuration has N validation error(s) — fix issues to restart engine`), ensuring mid-edit syntax errors never take down your active gateway. Once errors are resolved, saving triggers a 300ms debounced hot-restart.
+
+#### 4. LSP Navigation, Refactoring & Document Outline
+- **Go to Definition (`F12` / `Ctrl+Click`)**: Jump directly from any `provider: "<name>"` or `rescue_tier: "<tier>"` value to its declaration block.
+- **Find All References (`Shift+F12`)**: Place the cursor on any provider key or reference to list all usages across `tiers`, `default_tier`, and `fairy_dust.entries`.
+- **Rename Symbol (`F2`)**: Rename a provider key or a tier's `name:` and atomically update both its declaration and all references across the YAML document in a single edit.
+- **Document Symbols & Breadcrumbs (`Ctrl+Shift+O`)**: Navigate `providers`, `tiers`, `default_tier`, `kickstart`, and `fairy_dust` hierarchies via VS Code's Outline view and editor breadcrumbs.
 
 ---
 
@@ -657,10 +717,19 @@ Click **`Run Auto-Tuner`** in the dashboard toolbar (or trigger `Ctrl+Shift+P` �
 ![Nacho Flow VS Code Auto-Tuner UI Recommendation Banner](images/vscode-autotuner-showcase.png)
 
 - **Trajectory Replay in 81 ns (37M turns/sec)**: Replays whole multi-turn developer sessions in memory with zero heap allocations, evaluating true cascading escalation states instead of isolated single-turn guesses.
-- **Prunes Redundant Tiers (Autonomous Tier Pruning — `✂️ Redundant Tier Bypassed`)**: Automatically flags and bypasses middle tiers that never catch traffic or immediately fail and escalate, eliminating dead rule baggage and routing latency.
+- **High-Context (> 100k) & Read-Burst Stall Detection**: Automatically identifies sessions where agents burn budget on massive token payloads (>100k) or get stuck in read-burst stalls (repetitive inspection loops). Calculates projected Nacho Token Saver (NTS) compression savings (~$1.25+ per run).
+- **Model Failure & Self-Recovery Analysis**: Measures empirical self-healing capabilities per model (e.g., Haiku 27% vs Sonnet 60% self-recovery in ~1.0 turns), ensuring you only escalate models that genuinely cannot heal themselves.
+- **Rich Multi-Dimensional Tier Inspection Badges**: Every tier card displays real-world telemetry:
+  - **Coding Score**: Empirical accuracy score (e.g. `79.5/100`, `82.5/100`).
+  - **Reasoning Effort & Rate**: Explicit reasoning level (`medium`, `high`) and blended $/1M token pricing.
+  - **Dynamic Retry Bounds**: Calibrates optimal retry bounds (e.g., `2 max retries` on Haiku before escalating to Sonnet).
+  - **Vision & Tool Call Health**: Validates vision and tool call error rates (`Clean (0% retry)`).
+  - **Friction Keyword Alerts**: Flags domain keywords (e.g. `reminders`, `deadlock`, `mutex`) that cause specific models to stall.
+  - **Disabled / Manual Only Isolation**: Clear badges for tiers restricted from active routing (`when: "false"`).
+- **Autonomous Tier Pruning (`✂️ Redundant Tier Bypassed`)**: Automatically flags and bypasses middle tiers that never catch traffic or immediately fail and escalate, eliminating dead rule baggage and routing latency.
 - **Escalation Plateau Filter**: Rejects expensive tier escalations when a cheaper or local model delivers within 5% of the same success rate.
 - **Filters Out Infrastructure Noise (Failure Taxonomy)**: Distinguishes client aborts, network drops, and provider 429 rate limits from genuine model capability flaws—so temporary API outages never corrupt your routing thresholds.
-- **Visual Diff & Granular Selective Apply**: Review the green/red YAML diff and individual proposed tuning recommendations directly in the dashboard webview. Use interactive checkboxes (with *Select All* / *Deselect All* controls) to cherry-pick exactly which tier adjustments or prunings you wish to adopt. Click **`Apply Selected Recommendations`** to atomically update `config.yaml` with an automatic timestamped backup (`config.yaml.bak_<timestamp>`) and zero-downtime hot-reload.
+- **Visual Diff, Quick Presets & Granular Selective Apply**: Review the green/red YAML diff and individual proposed tuning recommendations directly in the dashboard webview. Use **Quick Presets** (*Rules Only*, *Select All*, *Deselect All*) or individual checkboxes to cherry-pick adjustments. Click **`Apply Optimized Multi-Tier Policy to config.yaml`** to atomically update your configuration with an automatic timestamped backup (`config.yaml.bak_<timestamp>`) and zero-downtime hot-reload.
 
 ---
 
@@ -710,8 +779,9 @@ Timeframe: [1h] | **✓ [Today]** | [This Week] | [This Month] | [All Time]
 
 ### Interactive QuickPick Menu:
 Clicking the status bar item opens a quick-action menu:
-- **Open Dashboard**: Opens the full telemetry webview (`Ctrl+Shift+P` → `Nacho Flow: Open Dashboard`).
+- **Open Dashboard**: Opens the full telemetry webview (`Ctrl+Shift+P` → `Nacho Flow: Show Dashboard`).
 - **Switch Routing Profile**: Quick-switch between Profile 1, Profile 2, Profile 3, or any custom profile.
+- **Clone Active Profile**: Clones the current profile into a new custom slot and opens it in the editor.
 - **Start / Stop / Restart Engine**: Instant lifecycle controls.
 - **Open config.yaml**: Opens the active configuration document in your editor.
 - **Reset Circuit Breaker**: Restores tripped providers to `CLOSED` state.
@@ -765,15 +835,25 @@ All extension features can be accessed via `Ctrl+Shift+P` / `Cmd+Shift+P`:
 | :--- | :--- | :--- |
 | **Show Dashboard** | `nacho-flow.showDashboard` | Opens the full visual telemetry and route history dashboard. |
 | **Open Controls in Sidebar** | `nacho-flow.openSettings` | Focuses the Nacho Flow control panel in the Activity Bar. |
-| **Open Config Editor** | `nacho-flow.openConfig` | Opens the active preset YAML file in the editor. |
-| **Switch Active Profile** | `nacho-flow.switchProfile` | Displays QuickPick selector to switch between active engine profiles. |
-| **Delete Custom Profile** | `nacho-flow.deleteProfile` | Permanently deletes a user-created custom routing profile YAML file. |
-| **Run Auto-Tuner & Optimize** | `nacho-flow.runOptimizer` | Analyzes historical logs and recommends optimized context thresholds. |
+| **Open Configuration (`config.yaml`)** | `nacho-flow.openConfig` | Opens the active profile YAML file in the editor. |
+| **Switch Profile** | `nacho-flow.switchProfile` | Displays QuickPick selector to switch between active engine profiles. |
+| **Add New Profile (`＋`)** | `nacho-flow.addProfile` | Creates a new custom routing profile from the factory template. |
+| **Clone Active Profile (`⧉`)** | `nacho-flow.cloneProfile` | Copies the active profile YAML into a new custom profile slot and opens it. |
+| **Rename Active Profile (`✏️`)** | `nacho-flow.renameProfile` | Prompts for a custom display label (up to 24 chars) for any profile. |
+| **Delete Profile (`－`)** | `nacho-flow.deleteProfile` | Permanently deletes a user-created custom routing profile (`profile4`+). |
+| **Compare Profile with Factory Template** | `nacho-flow.compareProfileWithTemplate` | Opens a side-by-side diff comparing the active profile against its default template. |
+| **Reset Profile to Factory Default** | `nacho-flow.resetProfileToDefault` | Restores a built-in profile to its factory template (with automatic `.bak` backup). |
+| **Switch Provider (CodeLens)** | `nacho-flow.pickProvider` | Opens a QuickPick to change a tier, default tier, or Fairy Dust entry's `provider:`. |
+| **Choose / Pick Model (`/v1/models`)** | `nacho-flow.pickModel` | Queries live `/v1/models` from the provider and updates `model:` via QuickPick. |
+| **Pick Rescue Tier (CodeLens)** | `nacho-flow.pickRescueTier` | Opens a QuickPick to select `kickstart.thought_slap.rescue_tier`. |
+| **Ping Provider Endpoint (CodeLens)** | `nacho-flow.pingProviderEndpoint` | Tests live HTTP connectivity and latency for a configured provider. |
+| **Find Provider References (CodeLens)** | `nacho-flow.findProviderReferences` | Opens VS Code Peek References showing all tiers referencing a provider. |
+| **Run Auto-Tuner & Optimize Routing** | `nacho-flow.runOptimizer` | Analyzes historical logs and recommends optimized context thresholds. |
 | **Refresh Heatseeker Deals** | `nacho-flow.refreshDeals` | Scans upstream pricing oracles for model discounts and subsidized endpoints. |
-| **Reset Circuit Breaker** | `nacho-flow.resetCircuit` | Clears tripped provider circuit breakers and restores traffic. |
+| **Reset Circuit Breakers** | `nacho-flow.resetCircuit` | Clears tripped provider circuit breakers and restores traffic. |
 | **Refresh Statistics** | `nacho-flow.refreshStats` | Forces an immediate refresh of local and cloud token telemetry. |
-| **Set Auth Token** | `nacho-flow.setAuthToken` | Prompts for Bearer Auth Token for connecting to authenticated gateways. |
-| **Set Timeframe (Today / Week / Month / All Time)** | `nacho-flow.setTimeWindow*` | Switches the active analytics reporting horizon. |
+| **Set Bearer Auth Token** | `nacho-flow.setAuthToken` | Prompts for Bearer Auth Token for connecting to authenticated gateways. |
+| **Set Timeframe (`1h` / `Today` / `Yesterday` / `Week` / `Month` / `All Time`)** | `nacho-flow.setTimeWindow*` | Switches the active analytics reporting horizon. |
 | **Open User Guide & Documentation** | `nacho-flow.openDocs` | Opens the online User Guide at spicebox.dev. |
 | **Open Support & Community** | `nacho-flow.openSupport` | Opens the Nacho Flow Support & Community portal. |
 
@@ -788,17 +868,20 @@ Configure extension behaviors in VS Code Settings (`Ctrl+,` → search `Nacho Fl
   // Operating mode: "local" runs the embedded daemon; "remote" connects to an external gateway
   "nachoFlow.engineMode": "local",
 
-  // Endpoint URL of the active gateway daemon (supports local or remote Tailscale/LAN URLs)
+  // URL of the local Nacho Flow daemon
   "nachoFlow.daemonUrl": "http://127.0.0.1:8000",
+
+  // URL of the remote Nacho Flow daemon server (LAN / Tailscale)
+  "nachoFlow.remoteDaemonUrl": "http://192.168.0.205:8000",
 
   // Optional Bearer Auth Token if connecting to a protected remote gateway
   "nachoFlow.authToken": "",
 
-  // Automatically resume the bundled local binary on VS Code launch if previously running
+  // Automatically restart the local engine on VS Code launch if it was running when VS Code closed
   "nachoFlow.autoStartDaemon": true,
 
-  // Display real-time cost savings and local routing percentage in the status bar
-  "nachoFlow.showStatusBar": true
+  // Local GPU VRAM memory limit in gigabytes (GB) for auto-tuning routing thresholds (0 for unconstrained / auto)
+  "nachoFlow.localVramGB": 16
 }
 ```
 
@@ -842,9 +925,10 @@ If you are diagnosing daemon startup issues, attaching logs to GitHub bug report
 #### On-Disk Log Paths:
 | Environment | Log Directory Path |
 | :--- | :--- |
-| **VS Code Extension (Windows)** | `%APPDATA%\Code\User\globalStorage\dixieflatline76.nacho-flow\presets\logs\` |
-| **VS Code Extension (macOS)** | `~/Library/Application Support/Code/User/globalStorage/dixieflatline76.nacho-flow/presets/logs/` |
-| **VS Code Extension (Linux)** | `~/.config/Code/User/globalStorage/dixieflatline76.nacho-flow/presets/logs/` |
+| **VS Code Extension (Windows)** | `%APPDATA%\Code\User\globalStorage\dixieflatline76.nacho-flow\profiles\logs\` *(or `presets\logs\`)* |
+| **VS Code Extension (macOS)** | `~/Library/Application Support/Code/User/globalStorage/dixieflatline76.nacho-flow/profiles/logs/` *(or `presets/logs/`)* |
+| **VS Code Extension (Linux)** | `~/.config/Code/User/globalStorage/dixieflatline76.nacho-flow/profiles/logs/` *(or `presets/logs/`)* |
+| **Workspace Override (`.nacho/`)** | `<workspace>/.nacho/logs/` |
 | **Standalone CLI Daemon** | `~/.nacho-flow/logs/` (or directory specified via `--log-dir <path>`) |
 
 #### Log Files Produced:

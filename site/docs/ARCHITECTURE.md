@@ -95,16 +95,19 @@ Every incoming request passes through an optimized multi-stage processing pipeli
     - `@nacho:help`, `@nacho:tiers`, `@nacho:deals`: Operational assistance and spot market inspection.
   - Serialized via `JSONMetaPresenter` (OpenAI `chat.completion`) or `SSEMetaPresenter` (OpenAI `chat.completion.chunk` event streams).
   - Integrated with Levenshtein typo suggestion and sliding-window anti-abuse debounce.
-- **Agentic Progress Awareness & Session Guardrails (`pkg/router/session.go`)**:
+- **Agentic Progress Awareness, Repair Latch & Session Guardrails (`pkg/router/session.go`, `pkg/router/classifier.go`)**:
   - Computes an FNV-1a hash of the initial conversation prompt prefix to correlate prompt turns within a sliding 5-minute window.
   - **SessionGuardrails**: Thread-safe per-session configuration store (`KickstartDisabled`, `CycleKillerDisabled`, `ShieldDisabled`, `RawModeEnabled`, `FairyDustDisabled`) initialized early upon first contact (`getOrCreateState`) and wiped cleanly on `@nacho:reset`.
-  - **Tool Progress Gate & Test-Failure Tracking (`hasToolProgress`)**: In multi-step autonomous agent loops (where the latest user prompt string remains identical across dozens of file reads/writes), the session tracker detects intermediate successful tool executions (`role: tool` / `tool_result`) and resets `RetriesCount = 0` to prevent false retry escalation. However, if unit tests are actively failing (`HasTestFail == true`), file modifications without passing tests are recognized as ongoing troubleshooting rather than real progress—preserving the consecutive retry count so loop-break escalation can fire.
+  - **Tool Progress Gate & Test-Failure Tracking (`hasToolProgress`, `HasTestFail`)**: In multi-step autonomous agent loops (where the latest user prompt string remains identical across dozens of file reads/writes), the session tracker detects intermediate successful tool executions (`role: tool` / `tool_result`) and resets `RetriesCount = 0` to prevent false retry escalation. However, if unit tests are actively failing (`HasTestFail == true`), file modifications without passing tests are recognized as ongoing troubleshooting rather than real progress.
+  - **Repair Latch (`HasActiveRepair`)**: When an autonomous agent detects test failures and initiates an active repair loop, `HasActiveRepair` holds the retry counter steady across repair attempts. This prevents premature retry escalation, runaway model laddering, and circuit breaker tripping, allowing the agent sufficient turns to fix the bug without thrashing.
 - **In-History Trailing Error Scanner & Tool Capability Classifier (`pkg/router/classifier.go`)**:
   - Scans the trailing messages in conversation history for known client error signatures (`[ERROR] You did not use a tool`, `Missing value for required parameter`, `<error_details>`, `No sufficiently similar match found`, etc.).
   - Extracts consecutive error counts (`HistoryErrors`) and overrides `reqCtx.Retries`, triggering automatic rule-based tier escalation to recover from failures without requiring custom client HTTP headers.
   - **Tool Capability Detection (`HasWriteCapability`)**: Scans declared client tools in `reqCtx.Tools`. If tools are declared (`HasTools == true`) but none match configured `kickstart_write_tools`, `HasWriteCapability` is set to `false`. This accurately detects Plan Mode, Architect Mode, and pure investigation tasks.
   - **Cline XML Tool Call Detection Engine**: Scans raw assistant text content for embedded XML write tools (`<write_to_file>`, `<replace_in_file>`, `<execute_command>`, etc.) from `kickstart_write_tools`, and maps subsequent user tool results to `HasToolProgress` and `HasWriteProgress` across OpenAI JSON, Anthropic JSON, and Cline XML formats.
-- **Adaptive Token Estimation**: Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities across the **compacted prompt payload**.
+- **Adaptive Token Estimation & Prompt Cache Optimization**:
+  - Uses a lock-free Exponential Moving Average (EMA, $\alpha=0.2$) estimator seeded at 3.2 chars/token to accurately estimate code and JSON token densities across the **compacted prompt payload**.
+  - **Prompt Cache Optimization & Ephemeral Markers**: Automatically shifts and preserves provider-specific cache boundaries (e.g. Anthropic `cache_control: { type: "ephemeral" }`), ensuring high prompt cache hit rates (> 80% discount) while purging transient reasoning noise.
 - **Multimodal Detection**: Scans message blocks for `image_url` payloads and base64 strings (`HasImages`).
 - **Tool Calling Detection**: Inspects `tools` array and `tool_choice` parameters (`HasTools`), extracting declared interactive tools (`ask_followup_question`, `ask_question`).
 - **Scoped Keyword Extraction**: Extracts programming concepts (`deadlock`, `mutex`, `race`, `concurrency`, `atomic`, `sql`, `refactor`) **strictly from the clean prompt**, preventing historical multi-turn token pollution.
@@ -114,6 +117,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **HotSauce Kickstart Resuscitation (Read Slap & Thought Slap)**:
   - **Read Slap (Analysis Paralysis)**: Detects semantic idle loops where the agent stops issuing write/tool commands and injects explicit steer prompts or escalates to default cloud tiers.
   - **Thought Slap (Reasoning Truncation Resuscitation)**: When models emit internal reasoning blocks and hit output token limits without producing a tool call, Thought Slap intercepts the empty turn and triggers an immediate recovery turn (< 3s) that forces an executable tool action.
+  - **Reasoning Effort Laddering (`reasoning_effort: low | medium | high | max`)**: Dynamic escalation of thinking budgets across tiers and resuscitations, enabling economical fast turns for routine code generation while scaling up to maximum reasoning effort during error recovery and Thought Slap interventions.
   - **Anti-Latching Protection**: Caps consecutive frontier escalations at 3 turns to prevent unfixable errors from draining cloud spend.
   - **Plan Mode Protection**: If `reqCtx.HasTools && !reqCtx.HasWriteCapability` (e.g., Cline/Zoo in Plan Mode with only `view_file` or `grep_search`), Kickstart idle stall escalation is automatically suspended. Agents explore and plan freely across unlimited turns with $0.00 cost and zero interruptions.
   - **Session Toggle**: Kickstart can be manually toggled off for the entire session via `@nacho:kickstart-off` (or `@nacho:kickstart=off`).
@@ -122,7 +126,7 @@ Every incoming request passes through an optimized multi-stage processing pipeli
 - **Directive Override Fast-Path**: If `ForcedTier` or `ForcedModel` is present, `SelectTier` directly resolves the target tier or transient model tier without evaluating AST expressions.
 - **$\mathcal{O}(1)$ Context Boundary Guard**: If a tier defines `max_context` and `Tokens > max_context`, the tier is skipped immediately without expression evaluation overhead.
 - **Bytecode Expression Engine**: Uses `github.com/expr-lang/expr` compiled bytecode expressions to evaluate 1..N tiers sequentially (*Top-to-Bottom: First Match Wins* in $< 0.6 \mu\text{s}$).
-- Supported context variables: `Tokens`, `HasImages`, `HasTools`, `HasWriteCapability`, `Keywords`, `Retries`, `IsRetry`, `Model`, `SessionKickstarted`, `SessionKickstartCount`, `HasToolProgress`, `HasWriteProgress`, `HistoryErrors`, `CoolingDownModels`.
+- Supported context variables: `Tokens`, `HasImages`, `HasTools`, `HasWriteCapability`, `Keywords`, `Retries`, `IsRetry`, `Model`, `SessionReadSlapped`, `SessionReadSlapCount`, `HasToolProgress`, `HasWriteProgress`, `HistoryErrors`, `HasTestFail`, `HasActiveRepair`, `CoolingDownModels`.
 - **Spicy Directive Model Isolation (`when: "false"`)**: Tiers configured with `when: "false"` are skipped during AST tier selection, guaranteeing zero accidental routing to expensive models (e.g. Claude Opus 5), while keeping them accessible on-demand via `@nacho:model` / `X-Spicy-Model` and Fairy Dusting.
 
 ### Stage 4: Payload Sanitization & Model Rewriting (`pkg/router/sanitizer.go`)
@@ -380,7 +384,31 @@ The **Heat Seeker Engine** scans upstream providers for flash discounts, subsidi
 
 ---
 
-## 8. Distribution & Packaging Architecture
+---
+
+## 8. Auto-Tuner & Min-Conflicts v3 / Multi-Tier Replay CSP Optimizer (`pkg/tuner`)
+
+The **Auto-Tuner Engine** analyzes recorded historical agent traffic (`traffic.jsonl`) to synthesize optimal routing policies and eliminate trial-and-error configuration tuning:
+
+1. **Multi-Variable Constraint Satisfaction Problem (CSP)**:
+   - Formulates routing rule synthesis as a constrained optimization problem balancing cost minimization against latency and agent task success rates.
+   - Evaluates multi-tier boundary variables: token thresholds (`Tokens < N`), keyword boundaries, model assignments, and reasoning effort levels.
+2. **Min-Conflicts v3 Local Search Heuristic**:
+   - Uses an enhanced Min-Conflicts v3 stochastic local search algorithm with adaptive repair weights and randomized walk breakouts to escape local minima.
+   - Rapidly converges on Pareto-optimal rule candidates in milliseconds without brute-force combinatorial explosion.
+3. **Multi-Tier Trace Replay & Counterfactual Evaluation**:
+   - Replays historical multi-step session traces through candidate routing graphs.
+   - Evaluates counterfactual spend (calculating exact hypothetical costs if candidate rules had been active) while enforcing hard constraints:
+     - Zero SLA regressions on high-complexity turns.
+     - Strict preservation of test repair windows (`HasActiveRepair`).
+     - Bounded cloud escalation ceilings.
+4. **Advisory & In-Place Application Modes**:
+   - **`nacho-flow tune`**: Emits an advisory report with quantified cost delta projections, rule diffs, and confidence scores.
+   - **`nacho-flow tune --apply`**: Atomically updates `config.yaml` with the synthesized rule set, triggering zero-downtime hot-reload via atomic RCU.
+
+---
+
+## 9. Distribution & Packaging Architecture
 
 Nacho Flow employs a tri-channel distribution model:
 
@@ -393,7 +421,7 @@ Nacho Flow employs a tri-channel distribution model:
 
 ---
 
-## 9. VS Code Companion Extension & Management Control Plane Architecture
+## 10. VS Code Companion Extension & Management Control Plane Architecture
 
 Nacho Flow includes an integrated VS Code companion extension designed under the strict **Thin-Client Doctrine** (for full protocol DTOs and state machines, see the [VS Code Companion Extension Guide](EXTENSION_USER_GUIDE.md)):
 
@@ -408,6 +436,7 @@ flowchart TD
         StatusBar["Status Bar Widget<br/>(Live Cost Hover Card)"]:::ui
         WebviewDashboard["Analytics Webview Dashboard<br/>(Route Inspector, Circuit Manager, Config Editor)"]:::ui
         AuthMgr["AuthManager<br/>(Isolated Local vs Remote SecretStorage)"]:::vscode
+        ConfigAssist["Config Assist Engine<br/>(Symbol Indexer, CodeLenses, Live /v1/models, Save Gate)"]:::vscode
     end
 
     subgraph GoDaemon ["🌮 Nacho Flow Go Daemon Core"]
@@ -424,21 +453,22 @@ flowchart TD
     EventBroker -->|SSE Event Stream: stats_update, route_record| WebviewDashboard
     EventBroker -->|SSE Event Stream: stats_update| StatusBar
     RingBuffer -->|GET /api/v1/routes, Live Route Stream| WebviewDashboard
+    ConfigAssist -->|Pre-Flight Save Validation & Interactive Edits| VSCodeClient
 ```
 
-### 9.1 Thin-Client Separation of Concerns
+### 10.1 Thin-Client Separation of Concerns
 1. **Zero Domain Logic in TypeScript**: All token calculation, `expr` AST rule evaluation, circuit trips, pricing oracle lookups, and stream transformations execute exclusively in the compiled Go daemon. The extension never duplicates routing or token math.
 2. **Real-Time Push Updates via SSE**: Rather than polling, the extension subscribes to the daemon's Server-Sent Events broker (`GET /api/v1/events`). Metrics update in real-time across the Status Bar and Analytics Webview with zero CPU spin.
 3. **Isolated Credential State**: `AuthManager` isolates Local mode (`127.0.0.1:8000`) and Remote mode (`http://<ip>:8000`), storing tokens securely in `vscode.SecretStorage` and guaranteeing that toggling modes never overwrites remote server credentials.
 4. **Single Source of Truth (`config.yaml`)**: To prevent configuration drift, the extension provides no parallel sidebar toggle switches. All operational rules and normalizer flags are edited in `config.yaml` with instant hot-reload via atomic RCU.
 
-### 9.2 Resilient Daemon Lifecycle & Actionable Diagnostics
+### 10.2 Resilient Daemon Lifecycle & Actionable Diagnostics
 1. **Socket Collision Pre-Flight Probing**: The daemon inspects port availability using cross-platform socket tests (`isAddressInUse`), detecting POSIX `EADDRINUSE` and Windows `WSAEADDRINUSE (10048)`.
 2. **Structured Fatal Error Signals**: On fatal startup errors, the daemon writes machine-parseable tags to stderr (e.g., `[FATAL:PORT_IN_USE:8000]`, `[FATAL:CONFIG_ERROR]`).
 3. **Actionable VS Code Notifications**: The extension parses structured stderr signals and presents human-readable error toasts equipped with a 1-click **`[📝 Open config.yaml]`** button to resolve port conflicts instantly.
 4. **Graceful Subprocess Termination**: Process trees on Windows are terminated using clean job objects/tree kills, safely suppressing expected `taskkill` exit codes (`4294967295`) without user-facing errors.
 
-### 9.3 Dynamic Multi-Profile Lifecycle Management & Native `--config` Flag Isolation
+### 10.3 Dynamic Multi-Profile Lifecycle Management & Native `--config` Flag Isolation
 1. **User-Customizable Multi-Profile Architecture (`profile1`, `profile2`, `profile3`)**: The extension provides three independent, pre-tuned and user-customizable configuration slots (`profile1.yaml`, `profile2.yaml`, `profile3.yaml`):
    - **`Profile 1` (`profile1.yaml` / `config.yaml`)**: Standard Hybrid Pipeline (Default) — universal gateway configuration for autonomous coding agents (Cline, Kilo, Zoo, Cursor, Aider) featuring Z-AI GLM-5.3-Flash (Tier 1 fast cloud workhorse, 2–4s), Turn 0 Low Architecture Kickoff, Tier 2 Debug High, Tier 3 De-escalation Max, guarded by Kickstart Read Slap (`SessionReadSlapped && Retries < 3`) and Gemini 3.8 Flash Vision Escapement.
    - **`Profile 2` (`profile2.yaml`)**: Deep Reasoning & Autonomous Benchmark — tuned for deep chain-of-thought, complex algorithmic benchmarks, and runaway thought prevention. Features Turn 0 Architecture Kickoff at Max Reasoning guarded by `thought_slap: true` (rescuing token budget truncations in 2.4s), Cycle Killer tuned for deep algorithmic matrices (16k thinking, 20 repeats), and periodic Fairy Dusting (turns 15 and 60).
@@ -451,17 +481,41 @@ flowchart TD
 4. **Clean Hot-Restart Semantics**: Switching profiles while the local engine is active triggers an immediate, seamless restart with the new `--config` target. When offline, switching profiles updates the active profile intent so that the next `▶ Start` invocation boots with the selected configuration.
 5. **Config Schema Versioning & Default Template Diffs (`version: "1.2.2"`, `compareProfileWithTemplate`, `resetProfileToDefault`)**: Profiles declare a top-level `version:` field validated against bundled extension templates via a SemVer delta engine (`compareConfigVersions`). The extension provides live side-by-side diffing (`vscode.diff`) to inspect template divergence and safe reset to defaults with automatic `.bak` backups.
 
-### 9.4 Remote Daemon Mode & Host Process Auto-Resume
+### 10.4 Remote Daemon Mode & Host Process Auto-Resume
 1. **Strict Local vs. Remote Separation**: The extension detects whether the configured gateway endpoint is local (`127.0.0.1`, `localhost`) or remote (LAN, VPN, Tailscale IP, or domain).
 2. **Resource Hibernation**: When switching to **Remote Server** mode, the extension automatically terminates the local daemon subprocess to release local GPU memory and socket bindings.
 3. **Intent-Preserving Auto-Resume**: The extension preserves the user's local execution intent (`isLocalEngineRunning`). When switching back to **This Machine** mode, if the local engine was previously running prior to the remote switch, it is automatically resumed without requiring manual user intervention.
 4. **Remote Action Guardrails**: To prevent unintended mutations on shared or remote daemon instances, destructive local operations (local engine start/stop/restart and local profile file switching) are safely disabled with informative user feedback, and the active profile indicator reflects `🌐 Remote Server`.
 
-### 9.5 Unified Dashboard State Snapshot Pipeline & Monotonic Top-Down Rendering
+### 10.5 Unified Dashboard State Snapshot Pipeline & Monotonic Top-Down Rendering
 1. **Parallel Non-Blocking Telemetry Aggregation (`buildDashboardSnapshot`)**: Rather than firing disconnected, ad-hoc polling requests that update individual UI components piecemeal, the controller queries all telemetry sources in parallel via `Promise.all([statsPromise, dealsPromise, routesPromise, circuitsPromise, configPromise])`.
 2. **Atomic Dispatch & Monotonic Timestamp Ordering (`syncSnapshot`)**: The controller dispatches a single immutable `DashboardSnapshot` DTO carrying an epoch timestamp (`Date.now()`) and an atomic `DashboardEngineState`. The webview runtime verifies that `snapshot.timestamp >= currentState.timestamp`. Any out-of-order deliveries caused by network jitter or rapid profile switching are immediately rejected.
 3. **JSDOM-Validated State Store**: The webview runtime maintains a single central state object persisted via `vscode.setState()`. Receipt of a snapshot triggers an atomic, top-down render cycle across all instruments: active profile badge (`📋 Profile X` / `🌐 Remote Server`), config editor button (`[📝 Profile X (YAML)]` / `[📝 Remote config.yaml]`), connection state banners, financial KPIs, routes table, circuit breakers, and deals.
 4. **Complete Ghost-State Cleanup on Engine State Transitions**: When transitioning from a live engine to an offline or unreachable state, `syncSnapshot` atomically purges all data caches and renders clean offline banners across all panels simultaneously, eliminating ghost cards and stale metrics.
+
+### 10.6 Interactive YAML Config Assist, Relational Symbol Graph & Live Discovery Architecture (`extension/src/core/config`)
+1. **Zero-Dependency Relational Symbol Indexer (`ConfigSymbolIndex`)**:
+   - Single-pass line/AST indexer (`config-symbol-index.ts`) extracts precise source ranges for providers, route targets (tiers, default tier, Fairy Dust entries), and cross-references (`providerUsages`, `rescueTierUsages`).
+   - Powers atomic `F2` renaming across entire configuration documents for provider IDs and tier names without regex collisions.
+   - Powers `F12` definition navigation (jumping from tier provider reference to provider definition, or from `rescue_tier` reference to tier definition) and `Shift+F12` reference lookups.
+   - Quote-safe scalar replacement (`replaceScalarRange`) preserves existing single/double quotes and automatically wraps unquoted scalar updates.
+2. **Interactive Editor CodeLenses (`NachoCodeLensProvider`)**:
+   - *Provider blocks*: Inline `🔌 Ping Endpoint` health check (with live round-trip latency and discovered models preview) and `🔍 N tier references` (native Peek References widget).
+   - *Route Target blocks (`tiers[*]`, `default_tier`, `fairy_dust.entries[*]`)*: Inline `🔌 Switch Provider` (QuickPick populated with declared providers) and `🧠 Pick Model` (live `/v1/models` catalog).
+   - *Thought Slap Rescue Tier blocks (`rescue_tier:`)*: Inline `🚑 Pick Rescue Tier` (QuickPick of defined routing tiers), `🔌 Switch Provider` (updates provider of the referenced rescue tier), and `🧠 Pick Model` (updates model of the referenced rescue tier).
+3. **Live `/v1/models` Discovery Engine (`model-discovery.ts`)**:
+   - Queries live `/v1/models` (and `/api/tags` fallback for Ollama) across local engines (`llama.cpp`, `Ollama`, `vLLM`) and cloud gateways (`OpenRouter`, `Anthropic`).
+   - Features a 60-second in-memory TTL cache with instant manual refresh bypass (`Ping Endpoint`).
+   - Resolves environment variable templates (`ENV_<VAR>`, `${VAR}`, `$VAR`) in `api_key:` from the host system environment, preventing secrets exposure while authenticating cloud requests.
+   - Falls back gracefully to curated model suggestions if endpoints are offline.
+4. **Real-Time Semantic Diagnostics & 1-Click QuickFixes (`yaml-validator.ts`, `yaml-language-features.ts`)**:
+   - Validates configuration semantics on every keystroke: indentation errors (`SYNTAX_INDENT`), missing providers (`EMPTY_PROVIDERS`), invalid cross-references (`UNKNOWN_PROVIDER_REF`, `UNKNOWN_RESCUE_TIER_REF`), syntax or unknown variables in DSL rules (`INVALID_WHEN_EXPR`), duplicate tier names (`DUPLICATE_TIER_NAME`), unreachable catch-all tiers (`UNREACHABLE_TIER`), and unused providers (`ORPHAN_PROVIDER`).
+   - Provides 1-click QuickFix CodeActions (`Ctrl+.`) with Levenshtein-distance fuzzy matching to repair typos automatically.
+5. **Pre-Flight Save Gate Interceptor (`onWillSaveTextDocument`)**:
+   - Intercepts document saves to prevent persisting malformed configuration files that could cause daemon startup crashes.
+   - Blocks save and presents actionable alerts when critical errors exist (`EMPTY_PROVIDERS`, `UNKNOWN_PROVIDER_REF`, `UNKNOWN_RESCUE_TIER_REF`, `SYNTAX_INDENT`).
+6. **Profile Studio Control Plane**:
+   - Comprehensive profile management directly from the VS Code command palette and webview editor: Switch active profile, Add new profile (`＋`), Clone active profile (`⧉`), Rename profile (`✏️`), Delete profile (`－`), Compare with factory template (side-by-side diff), and Reset to factory default (with `.bak` backup).
 
 
 

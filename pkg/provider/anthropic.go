@@ -209,7 +209,13 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 	mLower := strings.ToLower(targetModel)
 	isClaude5 := strings.Contains(mLower, "sonnet-5") ||
 		strings.Contains(mLower, "opus-5") ||
-		strings.Contains(mLower, "fable-5")
+		strings.Contains(mLower, "fable-5") ||
+		strings.Contains(mLower, "haiku-5") ||
+		strings.Contains(mLower, "mythos-5") ||
+		strings.Contains(mLower, "opus-4.7") ||
+		strings.Contains(mLower, "opus-4-7") ||
+		strings.Contains(mLower, "opus-4.8") ||
+		strings.Contains(mLower, "opus-4-8")
 
 	isThinkingModel := strings.Contains(mLower, "thinking") ||
 		isClaude5 ||
@@ -225,9 +231,15 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 	var outputConfig *fastAnthropicOutputConfig
 
 	if isClaude5 {
-		if effort != "" {
+		if effort == "none" || effort == "off" || effort == "disabled" {
 			thinking = &fastAnthropicThinking{
-				Type: "adaptive",
+				Type: "disabled",
+			}
+			outputConfig = nil
+		} else if effort != "" {
+			thinking = &fastAnthropicThinking{
+				Type:    "adaptive",
+				Display: "summarized",
 			}
 			outputConfig = &fastAnthropicOutputConfig{
 				Effort: effort,
@@ -428,6 +440,7 @@ type fastOpenAIReq struct {
 type fastAnthropicThinking struct {
 	Type         string `json:"type"`
 	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	Display      string `json:"display,omitempty"`
 }
 
 type fastAnthropicOutputConfig struct {
@@ -897,6 +910,10 @@ func normalizeAnthropicModel(model string) string {
 	case strings.HasPrefix(mLower, "claude-3-opus"),
 		strings.HasPrefix(mLower, "claude-3.0-opus"):
 		return "claude-opus-5"
+	case strings.HasPrefix(mLower, "claude-haiku-5.5"),
+		strings.HasPrefix(mLower, "haiku-5.5"),
+		strings.HasPrefix(mLower, "haiku-5-5"):
+		return "claude-haiku-5-5"
 	default:
 		return cleaned
 	}

@@ -366,13 +366,24 @@ The TypeScript companion extension source code is located in the `extension/` di
 ### 11.1 Project Structure
 ```text
 extension/
-├── package.json               # Extension manifest, commands, views & settings
+├── package.json               # Extension manifest, commands, views, configuration & settings
 ├── esbuild.config.js          # Fast JS/CSS bundler configuration
-├── jest.config.js             # Test runner configuration
+├── jest.config.js             # Test runner configuration (strict 95%+ global coverage gate)
 ├── src/
 │   ├── core/                  # ProcessManager, AuthManager, API Client, SSE Client, Controller
+│   │   ├── api/               # Daemon REST Client (/api/v1/*)
+│   │   ├── config/            # Relational Symbol Indexer, YAML Language Features, Diagnostics & Discovery
+│   │   │   ├── config-symbol-index.ts    # Single-pass relational AST/symbol graph indexer
+│   │   │   ├── config-version.ts         # Profile schema version validation & SemVer delta engine
+│   │   │   ├── model-discovery.ts        # Live /v1/models cache & provider discovery engine
+│   │   │   ├── yaml-language-features.ts # CodeLenses, completions, hover, F2 rename, F12 navigation
+│   │   │   └── yaml-validator.ts         # Semantic diagnostics, pre-flight save gate & QuickFixes
+│   │   └── sse/               # Real-time SSE Pub/Sub Client (/api/v1/events)
 │   ├── ui/                    # Sidebar Provider, Status Bar Widget, Webview Dashboard Panels
-│   ├── utils/                 # Money and token formatters
+│   │   ├── sidebar/           # Sidebar Control Hub (Process Manager, Agent Setup)
+│   │   ├── status-bar/        # Status Bar Widget (Live Cost & Health Card)
+│   │   └── webview/           # Analytics Webview (Route Inspector, Circuit Manager, Profile Studio)
+│   ├── utils/                 # Money, token, and string formatters
 │   └── extension.ts           # Extension entrypoint (activate / deactivate)
 └── resources/                 # Icons (SVGs), Sidebar HTML/CSS/JS, Webview HTML/CSS/JS
 ```
@@ -386,7 +397,7 @@ cd extension && npm install
 npm run compile
 node esbuild.config.js
 
-# 3. Run Jest Unit & Integration Test Suite
+# 3. Run Jest Unit & Integration Test Suite (Strict 95%+ Coverage Gate)
 npm test
 
 # 4. Package VSIX bundle
@@ -396,7 +407,13 @@ npx vsce package --no-dependencies --out "../dist/nacho-flow.vsix"
 code --install-extension "../dist/nacho-flow.vsix" --force
 ```
 
-### 11.3 Debugging in VS Code
+### 11.3 Testing Standards & Quality Gates
+1. **Jest Coverage Thresholds**: The extension enforces a hard $\ge 95\%$ coverage requirement across all TypeScript files (`statements`, `branches`, `functions`, and `lines`). PRs failing this threshold will be blocked by CI.
+2. **Dual-Environment Test Architecture**: Webview controllers and DOM manipulation are tested under JSDOM (`dashboard-webview.test.ts`), while core logic runs under standard Node.js test runners.
+3. **Symbol Graph & Quote-Safety Testing**: All modifications to `ConfigSymbolIndex` or `replaceScalarRange` must include round-trip AST tests verifying that quotes, trailing `#` comments, and indentation are preserved with zero corruption.
+
+### 11.4 Debugging in VS Code
 - Open the root workspace in VS Code.
 - Press `F5` or select **Run Extension** in the Debug menu to launch an isolated **Extension Development Host** window.
+
 

@@ -55,6 +55,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'sidebar', 'sidebar.css'));
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'sidebar', 'sidebar.js'));
 		const zooIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'icons', 'zoo.svg'));
+		const kiloIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'resources', 'icons', 'kilo.svg'));
 
 		const vramSetting = (vscode?.workspace?.getConfiguration)
 			? (vscode.workspace.getConfiguration('nachoFlow').get<number>('localVramGB', 16) ?? 16)
@@ -160,16 +161,19 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 		<div id="local-profile-container" class="section-body" style="padding-bottom: 4px;">
 			<div style="margin-bottom: 8px;">
 				<div class="partner-desc" style="margin-bottom: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7;">Active Profile</div>
-				<div style="display: flex; gap: 6px; align-items: center;">
-					<select id="profile-selector" onchange="onProfileChanged(this.value)" style="flex: 1; min-width: 0;">
+				<div style="margin-bottom: 6px;">
+					<select id="profile-selector" onchange="onProfileChanged(this.value)" style="width: 100%; box-sizing: border-box;">
 						<option value="profile1">Profile 1</option>
 						<option value="profile2">Profile 2</option>
 						<option value="profile3">Profile 3</option>
 					</select>
+				</div>
+				<div style="display: flex; gap: 4px; align-items: center;">
 					<button class="btn btn-secondary btn-icon" id="btn-add-profile" onclick="addProfile()" title="Add new profile (+)">＋</button>
-					<button class="btn btn-secondary btn-icon" id="btn-delete-profile" onclick="deleteProfile()" title="Delete custom profile (－)">－</button>
+					<button class="btn btn-secondary btn-icon" id="btn-clone-profile" onclick="cloneProfile()" title="Clone active profile">⧉</button>
 					<button class="btn btn-secondary btn-icon" id="btn-rename-profile" onclick="renameProfile()" title="Rename active profile">✏️</button>
-					<button class="btn btn-secondary btn-action" id="btn-reset-profile" onclick="resetProfile()" title="Reset selected profile to factory default template">
+					<button class="btn btn-secondary btn-icon" id="btn-delete-profile" onclick="deleteProfile()" title="Delete custom profile (－)">－</button>
+					<button class="btn btn-secondary btn-action" id="btn-reset-profile" onclick="resetProfile()" title="Reset selected profile to factory default template" style="margin-left: auto;">
 						Reset
 					</button>
 				</div>
@@ -184,7 +188,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 	<div class="section-card">
 		<div class="section-header">🤖 3. Coding Agents</div>
 		<div class="section-body">
-			<div class="partner-desc">Configure OpenAI-compatible provider in Zoo Code, Cline, or Cursor:</div>
+			<div class="partner-desc">Configure OpenAI-compatible provider in Zoo Code, Cline, Kilo Code, or Cursor:</div>
 			<div class="agent-config-card">
 				<div class="agent-config-row">
 					<span class="agent-config-label">Base URL</span>
@@ -199,7 +203,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 				<div class="agent-config-row">
 					<span class="agent-config-label">API Key</span>
 					<div class="agent-config-val">
-						<span id="agent-token-text" class="agent-config-code">•••••••• (Auth Token)</span>
+						<span id="agent-token-text" class="agent-config-code">•••••••• (Active Token)</span>
 						<button class="btn-icon-copy" onclick="copyActiveToken()" title="Copy Active Token">
 							<span class="brand-logo-svg" style="width: 10px; height: 10px;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></span>
 							Copy
@@ -217,14 +221,18 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 					</div>
 				</div>
 			</div>
-			<div class="btn-row" style="margin-top: 4px;">
-				<button class="btn btn-secondary btn-compact" onclick="openMarketplace('zoocodeorganization.zoo-code')">
-					<img src="${zooIconUri}" class="brand-logo-svg zoo" style="width: 14px; height: 14px; object-fit: contain;" alt="Zoo Code" />
-					Install Zoo Code
+			<div class="agent-buttons-grid">
+				<button class="btn btn-secondary btn-compact" onclick="openMarketplace('zoocodeorganization.zoo-code')" title="Install Zoo Code from Marketplace">
+					<img src="${zooIconUri}" class="brand-logo-svg zoo" style="width: 13px; height: 13px; object-fit: contain;" alt="Zoo Code" />
+					<span>Install Zoo</span>
 				</button>
-				<button class="btn btn-secondary btn-compact" onclick="openMarketplace('saoudrizwan.claude-dev')">
-					<span class="brand-logo-svg cline"><svg viewBox="0 0 466.73 487.04" fill="currentColor"><path d="M463.6,275.08l-29.26-58.75v-33.83c0-56.08-45.01-101.5-100.53-101.5h-50.01c3.62-7.43,5.61-15.79,5.61-24.61,0-31.17-25.08-56.39-56.07-56.39s-56.07,25.22-56.07,56.39c0,8.82,1.99,17.17,5.61,24.61h-50.01c-55.51,0-100.52,45.42-100.52,101.5v33.83l-29.87,58.59c-3.01,5.9-3.01,12.92,0,18.81l29.87,57.93v33.83c0,56.08,45.01,101.5,100.52,101.5h200.95c55.51,0,100.53-45.42,100.53-101.5v-33.83l29.21-58.13c2.9-5.79,2.9-12.61.05-18.46ZM202.75,322.96c0,25.48-20.54,46.14-45.88,46.14s-45.88-20.66-45.88-46.14v-82.02c0-25.48,20.54-46.14,45.88-46.14s45.88,20.66,45.88,46.14v82.02ZM350.58,322.96c0,25.48-20.54,46.14-45.88,46.14s-45.88-20.66-45.88-46.14v-82.02c0-25.48,20.54-46.14,45.88-46.14s45.88,20.66,45.88,46.14v82.02Z"/></svg></span>
-					Install Cline
+				<button class="btn btn-secondary btn-compact" onclick="openMarketplace('saoudrizwan.claude-dev')" title="Install Cline from Marketplace">
+					<span class="brand-logo-svg cline" style="width: 13px; height: 13px; display: inline-flex;"><svg viewBox="0 0 466.73 487.04" fill="currentColor" style="width: 100%; height: 100%;"><path d="M463.6,275.08l-29.26-58.75v-33.83c0-56.08-45.01-101.5-100.53-101.5h-50.01c3.62-7.43,5.61-15.79,5.61-24.61,0-31.17-25.08-56.39-56.07-56.39s-56.07,25.22-56.07,56.39c0,8.82,1.99,17.17,5.61,24.61h-50.01c-55.51,0-100.52,45.42-100.52,101.5v33.83l-29.87,58.59c-3.01,5.9-3.01,12.92,0,18.81l29.87,57.93v33.83c0,56.08,45.01,101.5,100.52,101.5h200.95c55.51,0,100.53-45.42,100.53-101.5v-33.83l29.21-58.13c2.9-5.79,2.9-12.61.05-18.46ZM202.75,322.96c0,25.48-20.54,46.14-45.88,46.14s-45.88-20.66-45.88-46.14v-82.02c0-25.48,20.54-46.14,45.88-46.14s45.88,20.66,45.88,46.14v82.02ZM350.58,322.96c0,25.48-20.54,46.14-45.88,46.14s-45.88-20.66-45.88-46.14v-82.02c0-25.48,20.54-46.14,45.88-46.14s45.88,20.66,45.88,46.14v82.02Z"/></svg></span>
+					<span>Install Cline</span>
+				</button>
+				<button class="btn btn-secondary btn-compact" onclick="openMarketplace('kilocode.kilo-code')" title="Install Kilo Code from Marketplace">
+					<span class="brand-logo-svg kilo" style="width: 13px; height: 13px; display: inline-flex;"><svg viewBox="0 0 24 24" fill="currentColor" style="width: 100%; height: 100%;"><path d="M4 3h3.5v7.2L14.7 3H19.5l-7.9 8.2L20 21h-4.3l-6.2-7.5V21H4V3z"/></svg></span>
+					<span>Install Kilo</span>
 				</button>
 			</div>
 		</div>

@@ -13,6 +13,8 @@ import { ProcessManager, ParsedStartupError } from './process-manager';
 import { TelemetryPoller, RefreshIntervalSeconds } from './telemetry-poller';
 import { DashboardSnapshot, DashboardEngineState } from './types/nacho-types';
 import { parseConfigVersion, compareConfigVersions } from './config/config-version';
+import { validateNachoConfigYaml } from './config/yaml-validator';
+import { registerYamlLanguageFeatures } from './config/yaml-language-features';
 
 export class ExtensionController {
 	private context: vscode.ExtensionContext;
@@ -29,6 +31,8 @@ export class ExtensionController {
 	private routesRefreshInterval: RefreshIntervalSeconds = 60;
 	private activeProfile: string = 'profile1';
 	private lastKnownServerVersion: string = '';
+	private saveDebounceTimer: NodeJS.Timeout | null = null;
+	private diagnosticCollection?: vscode.DiagnosticCollection;
 
 	public get activePreset(): string {
 		return this.activeProfile;
@@ -82,12 +86,20 @@ export class ExtensionController {
 		// Register Activity Bar Sidebar View Provider
 		this.registerSidebarProvider();
 
+		// Diagnostic collection for YAML validation
+		this.diagnosticCollection = vscode.languages?.createDiagnosticCollection?.('nacho-flow-config');
+
+		// Register YAML Language Features (autocompletion, hover, definition, rename, lenses, quickfixes, and commands)
+		if (typeof (vscode.languages as any)?.registerCompletionItemProvider === 'function') {
+			registerYamlLanguageFeatures(this.context, this.diagnosticCollection);
+		}
+
 		// Auto-sync configuration to daemon when config is saved
 		this.context.subscriptions.push(
 			vscode.workspace.onDidSaveTextDocument(async (doc) => {
 				if (!this.restClient) return;
 
-				if (this.isLocalEngineOffline()) {
+				if (this.authManager.getEngineMode() === 'local' && !this.shouldLocalEngineBeRunning()) {
 					return;
 				}
 
@@ -105,7 +117,19 @@ export class ExtensionController {
 				const isExplicitEditTarget = this.activeConfigDocUri &&
 					doc.uri.toString() === this.activeConfigDocUri.toString();
 
-				if (isActiveProfileFile || isExplicitEditTarget) {
+				let isProfileUriMatch = false;
+				let resolvedProfileUri: vscode.Uri | null = null;
+				if (!isRemote) {
+					try {
+						const { uri: pUri } = await this.resolveProfileUri(this.activeProfile);
+						resolvedProfileUri = pUri;
+						if (path.resolve(doc.uri.fsPath).toLowerCase() === path.resolve(pUri.fsPath).toLowerCase()) {
+							isProfileUriMatch = true;
+						}
+					} catch (_) {}
+				}
+
+				if (isActiveProfileFile || isExplicitEditTarget || isProfileUriMatch) {
 					if (isRemote) {
 						try {
 							await this.restClient.updateConfigYaml(doc.getText());
@@ -116,33 +140,80 @@ export class ExtensionController {
 							vscode.window.showErrorMessage(`Nacho Flow: Failed to update remote config: ${err.message || err}`);
 						}
 					} else {
-						// Local engine: ensure changes from shadow config are written to the resolved active profile file on disk
-						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
-						const normDocPath = path.resolve(doc.uri.fsPath).toLowerCase();
-						const normProfilePath = path.resolve(profileUri.fsPath).toLowerCase();
-						const isShadowConfig = Boolean(isExplicitEditTarget && normDocPath.endsWith('nacho-flow-config.yaml'));
+						const handleLocalSave = async () => {
+							const profileUri = resolvedProfileUri || (await this.resolveProfileUri(this.activeProfile)).uri;
+							const normDocPath = path.resolve(doc.uri.fsPath).toLowerCase();
+							const normProfilePath = path.resolve(profileUri.fsPath).toLowerCase();
+							const isShadowConfig = Boolean(isExplicitEditTarget && normDocPath.endsWith('nacho-flow-config.yaml'));
 
-						if (isShadowConfig && normDocPath !== normProfilePath) {
-							try {
-								await vscode.workspace.fs.writeFile(profileUri, Buffer.from(doc.getText(), 'utf8'));
-							} catch (err: any) {
-								vscode.window.showErrorMessage(`Nacho Flow: Failed to persist config to ${profileUri.fsPath}: ${err.message || err}`);
+							if (isShadowConfig && normDocPath !== normProfilePath) {
+								try {
+									await vscode.workspace.fs.writeFile(profileUri, Buffer.from(doc.getText(), 'utf8'));
+								} catch (err: any) {
+									vscode.window.showErrorMessage(`Nacho Flow: Failed to persist config to ${profileUri.fsPath}: ${err.message || err}`);
+								}
 							}
-						}
 
-						// Local engine: restart cleanly via native --config flag
-						if (this.processManager && this.processManager.isRunning()) {
-							const daemonUrl = await this.authManager.getBaseUrl();
-							const profileLabel = this.getProfileLabel(this.activeProfile);
-							this.showTransientToast(`🔄 Nacho Flow: Restarting local engine with updated ${profileLabel}...`);
-							const result = await this.processManager.restart(daemonUrl, profileUri.fsPath);
-							if (result.success) {
-								await this.initializeClients();
-								await this.syncSidebarState();
-								await this.loadDashboardData();
-							} else if (result.error) {
-								await this.handleEngineStartError(result);
+							// Pre-Flight Save Gate: validate YAML configuration before restarting engine
+							const validationIssues = validateNachoConfigYaml(doc.getText());
+							const hasValidationErrors = validationIssues.some((i) => i.severity === 'Error');
+
+							if (this.diagnosticCollection && typeof (vscode as any).Range === 'function' && typeof (vscode as any).Diagnostic === 'function') {
+								const diagnostics = validationIssues.map((issue) => {
+									const range = new vscode.Range(
+										issue.range.startLine,
+										issue.range.startCharacter,
+										issue.range.endLine,
+										issue.range.endCharacter
+									);
+									const severity = issue.severity === 'Error'
+										? vscode.DiagnosticSeverity.Error
+										: issue.severity === 'Warning'
+										? vscode.DiagnosticSeverity.Warning
+										: vscode.DiagnosticSeverity.Information;
+									return new vscode.Diagnostic(range, issue.message, severity);
+								});
+								this.diagnosticCollection.set(doc.uri, diagnostics);
 							}
+
+							if (hasValidationErrors) {
+								const errCount = validationIssues.filter((i) => i.severity === 'Error').length;
+								this.outputChannel?.appendLine(
+									`[Controller] Pre-Flight Save Gate: ${errCount} validation error(s) detected in ${path.posix.basename(normalizedDocPath)}. Local engine restart paused.`
+								);
+								this.showTransientToast(`⚠️ Nacho Flow: Configuration has ${errCount} validation error(s) — fix issues to restart engine.`);
+								return;
+							}
+
+							// Local engine: restart cleanly via native --config flag
+							if (this.processManager && this.shouldLocalEngineBeRunning()) {
+								const daemonUrl = await this.authManager.getBaseUrl();
+								const profileLabel = this.getProfileLabel(this.activeProfile);
+								this.showTransientToast(`🔄 Nacho Flow: Restarting local engine with updated ${profileLabel}...`);
+								const result = await this.processManager.restart(daemonUrl, profileUri.fsPath);
+								if (result.success) {
+									await this.initializeClients();
+									await this.syncSidebarState();
+									await this.loadDashboardData();
+								} else if (result.error) {
+									await this.syncSidebarState();
+									await this.loadDashboardData();
+									await this.handleEngineStartError(result);
+								}
+							}
+						};
+
+						const debounceMs = (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined) ? 0 : 500;
+						if (debounceMs === 0) {
+							await handleLocalSave();
+						} else {
+							if (this.saveDebounceTimer) {
+								clearTimeout(this.saveDebounceTimer);
+							}
+							this.saveDebounceTimer = setTimeout(() => {
+								this.saveDebounceTimer = null;
+								handleLocalSave().catch(() => {});
+							}, debounceMs);
 						}
 					}
 				}
@@ -263,6 +334,10 @@ export class ExtensionController {
 				await this.addProfile();
 			}),
 
+			vscode.commands.registerCommand('nacho-flow.cloneProfile', async (profileId?: string) => {
+				await this.cloneProfile(profileId);
+			}),
+
 			vscode.commands.registerCommand('nacho-flow.deleteProfile', async (profileId?: string) => {
 				await this.deleteProfile(profileId);
 			}),
@@ -323,13 +398,14 @@ export class ExtensionController {
 						const result = await this.processManager.start(daemonUrl, configPath);
 						if (result.success) {
 							await this.authManager.setLocalEngineRunning(true);
-						} else if (result.error) {
-							await this.handleEngineStartError(result);
 						}
 						await this.initializeClients();
 						await this.syncSidebarState();
 						await this.updateStats();
 						await this.loadDashboardData();
+						if (!result.success && result.error) {
+							await this.handleEngineStartError(result);
+						}
 						break;
 					}
 					case 'restartEngine': {
@@ -350,13 +426,14 @@ export class ExtensionController {
 						const result = await this.processManager.restart(daemonUrl, configPath);
 						if (result.success) {
 							await this.authManager.setLocalEngineRunning(true);
-						} else if (result.error) {
-							await this.handleEngineStartError(result);
 						}
 						await this.initializeClients();
 						await this.syncSidebarState();
 						await this.updateStats();
 						await this.loadDashboardData();
+						if (!result.success && result.error) {
+							await this.handleEngineStartError(result);
+						}
 						break;
 					}
 					case 'stopEngine': {
@@ -457,6 +534,9 @@ export class ExtensionController {
 					case 'addProfile':
 						await this.addProfile();
 						break;
+					case 'cloneProfile':
+						await this.cloneProfile(message.profileId);
+						break;
 					case 'deleteProfile':
 						await this.deleteProfile(message.profileId);
 						break;
@@ -480,6 +560,13 @@ export class ExtensionController {
 					case 'editActiveProfile':
 						await this.editActiveProfileFile();
 						break;
+					case 'findProviderReferences': {
+						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+						const doc = await vscode.workspace.openTextDocument(profileUri);
+						await vscode.window.showTextDocument(doc, { preview: false });
+						await vscode.commands.executeCommand('nacho-flow.findProviderReferences', message.providerId);
+						break;
+					}
 					case 'hotSwapPreset': {
 						const presetId = message.presetId as any;
 						if (presetId) {
@@ -504,6 +591,19 @@ export class ExtensionController {
 
 	private isLocalEngineOffline(): boolean {
 		return this.authManager.getEngineMode() === 'local' && (!this.processManager || !this.processManager.isRunning());
+	}
+
+	private shouldLocalEngineBeRunning(): boolean {
+		if (this.isRemoteHost()) {
+			return false;
+		}
+		const isProcessActive = Boolean(this.processManager && this.processManager.isRunning());
+		const isIntentActive = Boolean(
+			this.authManager &&
+			typeof (this.authManager as any).isLocalEngineRunning === 'function' &&
+			(this.authManager as any).isLocalEngineRunning()
+		);
+		return isProcessActive || isIntentActive;
 	}
 
 	private async resumeLocalEngine(): Promise<void> {
@@ -605,6 +705,17 @@ export class ExtensionController {
 							displayName = key.charAt(0).toUpperCase() + key.slice(1);
 						}
 
+						let usageCount = 0;
+						if (Array.isArray(config.tiers)) {
+							usageCount += config.tiers.filter((t: any) => t.provider === key).length;
+						}
+						if (config.default_tier?.provider === key) {
+							usageCount += 1;
+						}
+						if (Array.isArray(config.fairy_dust?.entries)) {
+							usageCount += config.fairy_dust.entries.filter((e: any) => e.provider === key).length;
+						}
+
 						providers.push({
 							id: key,
 							name: displayName,
@@ -613,7 +724,8 @@ export class ExtensionController {
 							baseUrl: pConfig?.base_url || '',
 							models: tierModels,
 							active: isActive,
-							circuitState
+							circuitState,
+							usageCount
 						});
 					}
 				}
@@ -1679,8 +1791,8 @@ export class ExtensionController {
 			await vscode.workspace.fs.writeFile(profileUri, templateBytes);
 			vscode.window.showInformationMessage(`🌮 ${profileLabel} reset to factory default template (v${templateVersion})!`);
 
-			// If local engine is running and this is the active profile, restart cleanly
-			if (this.processManager && this.processManager.isRunning() && this.activeProfile === profileId) {
+			// If local engine is running or intended to run and this is the active profile, restart cleanly
+			if (this.processManager && this.shouldLocalEngineBeRunning() && this.activeProfile === profileId) {
 				const daemonUrl = await this.authManager.getBaseUrl();
 				await this.processManager.restart(daemonUrl, profileUri.fsPath);
 			}
@@ -1693,10 +1805,21 @@ export class ExtensionController {
 	}
 
 	public async addProfile(): Promise<void> {
+		await this.createOrCloneProfile();
+	}
+
+	public async cloneProfile(sourceProfileId?: string): Promise<void> {
+		const sourceId = sourceProfileId || this.activeProfile;
+		await this.createOrCloneProfile({ cloneSourceId: sourceId });
+	}
+
+	private async createOrCloneProfile(options?: { cloneSourceId?: string }): Promise<void> {
 		if (this.isRemoteHost()) {
 			vscode.window.showInformationMessage('Nacho Flow: Profile management is disabled in remote server mode.');
 			return;
 		}
+
+		if (!this.context.globalStorageUri || !this.context.extensionUri) return;
 
 		const existing = await this.getAvailableProfiles();
 		const maxNum = existing.reduce((max, p) => (p.number > max ? p.number : max), 0);
@@ -1704,7 +1827,6 @@ export class ExtensionController {
 		const newId = `profile${nextNum}`;
 		const filename = `${newId}.yaml`;
 
-		if (!this.context.globalStorageUri || !this.context.extensionUri) return;
 		const profilesDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'profiles');
 		try {
 			await vscode.workspace.fs.createDirectory(profilesDir);
@@ -1712,10 +1834,20 @@ export class ExtensionController {
 
 		const targetUri = vscode.Uri.joinPath(profilesDir, filename);
 
-		// Copy from default template
+		const isClone = !!options?.cloneSourceId;
+		const sourceId = options?.cloneSourceId || this.activeProfile;
+		const sourceLabel = this.getProfileLabel(sourceId);
+
+		// Read source bytes (either from source profile for clone, or template for add)
 		try {
-			const templateUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
-			const data = await vscode.workspace.fs.readFile(templateUri);
+			let sourceUri: vscode.Uri;
+			if (isClone) {
+				const resolved = await this.resolveProfileUri(sourceId);
+				sourceUri = resolved.uri;
+			} else {
+				sourceUri = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'profiles', 'profile1.yaml');
+			}
+			const data = await vscode.workspace.fs.readFile(sourceUri);
 			await vscode.workspace.fs.writeFile(targetUri, data);
 		} catch (err) {
 			vscode.window.showErrorMessage(`Nacho Flow: Failed to create ${filename}: ${err}`);
@@ -1723,10 +1855,12 @@ export class ExtensionController {
 		}
 
 		// Prompt user for optional custom name
+		const defaultValue = isClone ? `${sourceLabel} Copy`.slice(0, 24) : `Profile ${nextNum}`;
+		const title = isClone ? `🌮 Cloned ${sourceLabel} -> Profile ${nextNum}` : `🌮 Created Profile ${nextNum}`;
 		const enteredName = await vscode.window.showInputBox({
-			title: `🌮 Created Profile ${nextNum}`,
+			title,
 			prompt: `Enter a custom name for Profile ${nextNum} (max 24 characters), or press Enter to keep default:`,
-			value: `Profile ${nextNum}`,
+			value: defaultValue,
 			validateInput: (val: string) => {
 				if (val && val.trim().length > 24) {
 					return 'Name must be 24 characters or less';
@@ -1735,7 +1869,7 @@ export class ExtensionController {
 			}
 		});
 
-		if (enteredName && enteredName.trim() && enteredName.trim() !== `Profile ${nextNum}`) {
+		if (enteredName && enteredName.trim() && (isClone || enteredName.trim() !== `Profile ${nextNum}`)) {
 			await this.setProfileName(newId, enteredName.trim());
 		}
 
@@ -1748,7 +1882,11 @@ export class ExtensionController {
 			await vscode.window.showTextDocument(doc);
 		} catch (_) {}
 
-		this.showTransientToast(`🌮 Created and switched to ${this.getProfileLabel(newId)}!`);
+		if (isClone) {
+			this.showTransientToast(`🌮 Cloned ${sourceLabel} to ${this.getProfileLabel(newId)}!`);
+		} else {
+			this.showTransientToast(`🌮 Created and switched to ${this.getProfileLabel(newId)}!`);
+		}
 	}
 
 	public async renameProfile(profileId?: string): Promise<void> {
@@ -1888,6 +2026,11 @@ export class ExtensionController {
 				action: 'add'
 			});
 			items.push({
+				label: '$(copy) Clone Active Profile...',
+				description: `Duplicate ${this.getProfileLabel(this.activeProfile)}`,
+				action: 'clone'
+			});
+			items.push({
 				label: '$(trash) Delete Profile (－)',
 				description: 'Delete a custom profile',
 				action: 'delete'
@@ -1906,6 +2049,10 @@ export class ExtensionController {
 
 			if (selected.action === 'add') {
 				await this.addProfile();
+				return;
+			}
+			if (selected.action === 'clone') {
+				await this.cloneProfile();
 				return;
 			}
 			if (selected.action === 'delete') {
@@ -1987,9 +2134,9 @@ export class ExtensionController {
 		this.statusBar.setActiveProfile(this.activeProfile, this.getProfileLabel(this.activeProfile));
 		const locationHint = isWorkspace ? ' (Workspace Override)' : '';
 
-		// If local engine is running, restart cleanly with --config <configPath>
+		// If local engine is running or intended to run, restart cleanly with --config <configPath>
 		const daemonUrl = await this.authManager.getBaseUrl();
-		if (this.processManager && this.processManager.isRunning()) {
+		if (this.processManager && this.shouldLocalEngineBeRunning()) {
 			if (this.sidebarProvider) {
 				this.sidebarProvider.updateEngineStatus({ starting: true });
 			}
@@ -2001,10 +2148,14 @@ export class ExtensionController {
 			if (result.success) {
 				await this.authManager.setLocalEngineRunning(true);
 				this.showTransientToast(`🌮 Switched to ${profileLabel}${locationHint}!`);
-			} else if (result.error) {
-				await this.handleEngineStartError(result);
 			}
 			await this.initializeClients();
+			await this.loadDashboardData();
+			await this.syncSidebarState();
+			if (!result.success && result.error) {
+				await this.handleEngineStartError(result);
+			}
+			return;
 		} else {
 			this.showTransientToast(`🌮 Selected ${profileLabel}${locationHint} (Engine offline)`);
 		}
@@ -2413,6 +2564,10 @@ export class ExtensionController {
 	}
 
 	public dispose(): void {
+		if (this.saveDebounceTimer) {
+			clearTimeout(this.saveDebounceTimer);
+			this.saveDebounceTimer = null;
+		}
 		if (this.telemetryPoller) {
 			this.telemetryPoller.dispose();
 			this.telemetryPoller = null;
@@ -2424,5 +2579,6 @@ export class ExtensionController {
 		if (this.processManager) {
 			this.processManager.dispose();
 		}
+		this.diagnosticCollection?.dispose?.();
 	}
 }

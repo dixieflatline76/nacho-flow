@@ -695,6 +695,197 @@ describe('ProcessManager', () => {
 
 			expect(mockOutputChannel.appendLine).toHaveBeenCalledWith('[ProcessManager] Engine stopped cleanly.');
 		});
+
+		it('should not null out childProcess when delayed exit event fires from previous process', async () => {
+			let exitHandlerA: any;
+			const mockChildA: any = {
+				pid: 1111,
+				stdout: { on: jest.fn() },
+				stderr: { on: jest.fn() },
+				on: jest.fn((event, fn) => {
+					if (event === 'exit') exitHandlerA = fn;
+				}),
+				kill: jest.fn(),
+				killed: false
+			};
+			const mockChildB: any = {
+				pid: 2222,
+				stdout: { on: jest.fn() },
+				stderr: { on: jest.fn() },
+				on: jest.fn(),
+				kill: jest.fn(),
+				killed: false
+			};
+
+			jest.spyOn(processManager, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			let healthCalls = 0;
+			jest.spyOn(processManager, 'checkHealth').mockImplementation(async () => {
+				healthCalls++;
+				return healthCalls % 2 === 0;
+			});
+
+			// Start Process A
+			(child_process.spawn as jest.Mock).mockReturnValueOnce(mockChildA);
+			await processManager.start('http://127.0.0.1:8000');
+			expect((processManager as any).childProcess).toBe(mockChildA);
+
+			// Start Process B (e.g. during restart)
+			(child_process.spawn as jest.Mock).mockReturnValueOnce(mockChildB);
+			await processManager.start('http://127.0.0.1:8000');
+			expect((processManager as any).childProcess).toBe(mockChildB);
+			expect(processManager.isRunning()).toBe(true);
+
+			// Stale Process A exit event fires asynchronously
+			if (exitHandlerA) {
+				exitHandlerA(0, null);
+			}
+
+			// Must NOT wipe out Process B!
+			expect((processManager as any).childProcess).toBe(mockChildB);
+			expect(processManager.isRunning()).toBe(true);
+		});
+
+		it('should terminate unresponsive child process when startup health check times out', async () => {
+			jest.spyOn(processManager, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			const mockChild: any = {
+				pid: 5555,
+				stdout: { on: jest.fn() },
+				stderr: { on: jest.fn() },
+				on: jest.fn(),
+				kill: jest.fn(),
+				killed: false
+			};
+			(child_process.spawn as jest.Mock).mockReturnValue(mockChild);
+			jest.spyOn(processManager, 'checkHealth').mockResolvedValue(false);
+
+			const setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation((cb: any) => {
+				cb();
+				return 0 as any;
+			});
+
+			const res = await processManager.start('http://127.0.0.1:8000');
+			expect(res.success).toBe(false);
+			expect(res.error).toContain('timed out waiting for health check');
+			// Child must be terminated so it does not leak holding port 8000
+			expect(mockChild.kill).toHaveBeenCalled();
+			expect(processManager.isRunning()).toBe(false);
+
+			setTimeoutSpy.mockRestore();
+		});
+
+		it('should reap Windows orphan on port when verified as nacho-flow.exe', () => {
+			const originalPlatform = process.platform;
+			Object.defineProperty(process, 'platform', { value: 'win32' });
+
+			const execSyncSpy = (child_process.execSync as jest.Mock).mockImplementation((cmd: string) => {
+				if (cmd.includes('netstat')) {
+					return Buffer.from(
+						'  TCP    127.0.0.1:8000         0.0.0.0:0              LISTENING       4321\r\n' +
+						'  TCP    127.0.0.1:8000         127.0.0.1:54321        ESTABLISHED     4321\r\n' +
+						'  TCP    127.0.0.1:9000         0.0.0.0:0              LISTENING       8888\r\n'
+					);
+				}
+				if (cmd.includes('tasklist') && cmd.includes('4321')) {
+					return Buffer.from('"nacho-flow.exe","4321","Console","1","30,000 K"');
+				}
+				if (cmd.includes('tasklist') && cmd.includes('8888')) {
+					return Buffer.from('"svchost.exe","8888","Services","0","12,000 K"');
+				}
+				return Buffer.from('');
+			});
+
+			(processManager as any).reapOrphanOnPort(8000);
+
+			// Should kill verified nacho-flow.exe PID 4321
+			expect(execSyncSpy).toHaveBeenCalledWith(expect.stringContaining('taskkill /pid 4321 /f /t'), expect.anything());
+			// Should NOT kill port 9000 or svchost.exe PID 8888
+			expect(execSyncSpy).not.toHaveBeenCalledWith(expect.stringContaining('taskkill /pid 8888'), expect.anything());
+
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
+		it('should reap Unix orphan on port when verified as nacho-flow and spare other processes', () => {
+			const originalPlatform = process.platform;
+			Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+			const execSyncSpy = (child_process.execSync as jest.Mock).mockImplementation((cmd: string) => {
+				if (cmd.includes('lsof')) {
+					return '7654\n9999\n';
+				}
+				if (cmd.includes('ps -p 7654')) {
+					return '/opt/homebrew/bin/nacho-flow\n';
+				}
+				if (cmd.includes('ps -p 9999')) {
+					return '/usr/local/bin/python3\n';
+				}
+				return '';
+			});
+
+			(processManager as any).reapOrphanOnPort(8000);
+
+			// Verified nacho-flow PID 7654 must be killed via kill -9 inside child_process.execSync
+			expect(execSyncSpy).toHaveBeenCalledWith('kill -9 7654', { stdio: 'ignore' });
+			// Non-nacho PID 9999 (python3) must NEVER be killed
+			expect(execSyncSpy).not.toHaveBeenCalledWith('kill -9 9999', { stdio: 'ignore' });
+
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
+		it('should fall back to fuser when lsof returns no PIDs on Unix', () => {
+			const originalPlatform = process.platform;
+			Object.defineProperty(process, 'platform', { value: 'linux' });
+
+			const execSyncSpy = (child_process.execSync as jest.Mock).mockImplementation((cmd: string) => {
+				if (cmd.includes('lsof')) {
+					return '';
+				}
+				if (cmd.includes('fuser')) {
+					return '8765\n';
+				}
+				if (cmd.includes('ps -p 8765')) {
+					return 'nacho-flow\n';
+				}
+				return '';
+			});
+
+			(processManager as any).reapOrphanOnPort(8000);
+
+			expect(execSyncSpy).toHaveBeenCalledWith('kill -9 8765', { stdio: 'ignore' });
+
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+		});
+
+		it('should not silently re-attach to stale process on restart if port remains occupied', async () => {
+			jest.spyOn(processManager, 'resolveBinary').mockReturnValue({
+				command: '/mock/bin/nacho-flow',
+				args: []
+			});
+			// Engine port remains healthy (stale process stuck)
+			jest.spyOn(processManager, 'checkHealth').mockResolvedValue(true);
+
+			// restart should NOT claim success by attaching to the stale process
+			(child_process.spawn as jest.Mock).mockImplementation(() => {
+				throw new Error('EADDRINUSE');
+			});
+
+			const res = await processManager.restart('http://127.0.0.1:8000', '/test/profile5.yaml');
+			expect(res.success).toBe(false);
+			expect(processManager.isEngineAttached()).toBe(false);
+		});
+
+		it('should resolve log dir across both Windows and POSIX profile paths', () => {
+			const winLogDir = processManager.resolveLogDir('C:\\Users\\test\\profiles\\profile1.yaml');
+			expect(winLogDir.replace(/\\/g, '/')).toBe('C:/Users/test/profiles/logs');
+
+			const posixLogDir = processManager.resolveLogDir('/home/user/.nacho/config.yaml');
+			expect(posixLogDir.replace(/\\/g, '/')).toBe('/home/user/.nacho/logs');
+		});
 	});
 
 	describe('parseStartupError', () => {

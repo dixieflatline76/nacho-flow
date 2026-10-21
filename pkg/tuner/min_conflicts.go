@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
@@ -326,8 +325,8 @@ func (opt *MinConflictsOptimizer) Optimize(records []telemetry.TurnRecord, curre
 	var evalBuf MultiTierReplayResult
 	var consecutiveStagnations int
 	lastBest := bestConflict
-	// #nosec G404 - pseudo-random epsilon perturbation for heuristic search
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// #nosec G404 - deterministic pseudo-random epsilon perturbation for reproducible heuristic search
+	rng := rand.New(rand.NewSource(42))
 
 	recoveryStats := AnalyzeRecovery(trajectories)
 	rc := repairContext{

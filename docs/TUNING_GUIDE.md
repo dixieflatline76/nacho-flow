@@ -613,7 +613,11 @@ nacho-flow tune --apply
 | `--apply` | `false` | Atomically writes synthesized rules to config file with `.bak.<timestamp>` backup. |
 
 > [!TIP]
-> **1-Click Auto-Tuning in VS Code**: You can also trigger the empirical optimizer, review recommended rule diffs, and hot-reload `config.yaml` with one click directly from the **Nacho Flow Analytics Dashboard** webview inside the [VS Code Companion Extension](EXTENSION_USER_GUIDE.md).
+> **1-Click Auto-Tuning in VS Code**: You can also trigger the empirical optimizer, review recommended rule diffs, and hot-reload `config.yaml` with one click directly from the **Nacho Flow Analytics Dashboard** webview inside the [VS Code Companion Extension](EXTENSION_USER_GUIDE.md). The interactive UI provides:
+> - **Traffic & Stall Telemetry**: High-context (>100k) spend tracking, read-burst stall detection, and projected NTS token compression savings.
+> - **Model Failure & Recovery Analysis**: Real empirical self-healing rates (e.g. 27% Haiku vs 60% Sonnet healed in ~1.0 turns).
+> - **Per-Tier Health Badges**: Live coding scores, reasoning effort levels, vision/tool retry cleanliness, and friction keyword alerts.
+> - **Selective Rule Optimization**: Green/red YAML rule diffs with *Quick Presets* (*Rules Only*, *Select All*, *Deselect All*) and 1-click atomic apply to `config.yaml`.
 
 ![Nacho Flow VS Code Auto-Tuner UI Recommendation Banner](images/vscode-autotuner-showcase.png)
 

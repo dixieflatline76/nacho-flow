@@ -43,6 +43,11 @@ describe('SidebarViewProvider', () => {
       expect(mockWebviewView.webview.html).toContain('<!DOCTYPE html>');
       expect(mockWebviewView.webview.html).toContain('🌮 Nacho Flow');
       expect(mockWebviewView.webview.html).toContain('qwen3-coder:30b');
+      expect(mockWebviewView.webview.html).toContain('kilocode.kilo-code');
+      expect(mockWebviewView.webview.html).toContain('btn-clone-profile');
+      expect(mockWebviewView.webview.html).toContain('brand-logo-svg kilo');
+      expect(mockWebviewView.webview.html).toContain('Install Kilo');
+      expect(mockWebviewView.webview.html).toContain('Kilo Code, or Cursor');
       expect(mockWebviewView.webview.onDidReceiveMessage).toHaveBeenCalledWith(messageHandler);
     });
   });
