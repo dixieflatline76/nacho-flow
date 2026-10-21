@@ -564,8 +564,72 @@ export function resolveRouteTarget(
 	return undefined;
 }
 
+function findUnquotedCommentStart(lineText: string, startIndex: number): number {
+	let inSingle = false;
+	let inDouble = false;
+	for (let i = startIndex; i < lineText.length; i++) {
+		const ch = lineText[i];
+		if (ch === "'" && !inDouble) {
+			inSingle = !inSingle;
+		} else if (ch === '"' && !inSingle) {
+			inDouble = !inDouble;
+		} else if (ch === '#' && !inSingle && !inDouble) {
+			return i;
+		}
+	}
+	return lineText.length;
+}
+
+function applyScalarCompletionRange(
+	item: vscode.CompletionItem,
+	rawValue: string,
+	lineText: string,
+	lineNumber: number,
+	cursorChar: number,
+	keyName: string,
+	preferQuotedWhenEmpty: boolean
+): void {
+	const keyRegex = new RegExp(`^(\\s*(?:-\\s*)?${keyName}\\s*:\\s*)`);
+	const match = lineText.match(keyRegex);
+	if (!match || cursorChar < match[1].length) {
+		return;
+	}
+	const valStart = match[1].length;
+	const commentStart = findUnquotedCommentStart(lineText, valStart);
+	const rawSection = lineText.slice(valStart, commentStart);
+	const trimmedVal = rawSection.trimEnd();
+	const valEnd = valStart + trimmedVal.length;
+	const hasOpeningQuote = trimmedVal.startsWith('"') || trimmedVal.startsWith("'");
+
+	if (hasOpeningQuote) {
+		const q = trimmedVal[0];
+		const hasClosingQuote = trimmedVal.length >= 2 && trimmedVal.endsWith(q);
+		if (cursorChar > valStart && (!hasClosingQuote || cursorChar < valEnd)) {
+			const innerStart = valStart + 1;
+			const innerEnd = hasClosingQuote ? valEnd - 1 : Math.max(valEnd, cursorChar);
+			const prefix = lineText.slice(innerStart, Math.max(innerStart, cursorChar));
+			(item as any).range = new vscode.Range(lineNumber, innerStart, lineNumber, innerEnd);
+			item.insertText = rawValue;
+			(item as any).filterText = prefix ? `${prefix} ${rawValue}` : rawValue;
+			return;
+		}
+		const replaceEnd = Math.max(valEnd, cursorChar);
+		const prefix = lineText.slice(valStart, Math.max(valStart, cursorChar));
+		(item as any).range = new vscode.Range(lineNumber, valStart, lineNumber, replaceEnd);
+		item.insertText = `${q}${rawValue}${q}`;
+		(item as any).filterText = prefix ? `${prefix} ${rawValue}` : rawValue;
+		return;
+	}
+
+	const replaceEnd = Math.max(valEnd, cursorChar);
+	const prefix = lineText.slice(valStart, Math.max(valStart, cursorChar));
+	(item as any).range = new vscode.Range(lineNumber, valStart, lineNumber, replaceEnd);
+	item.insertText = preferQuotedWhenEmpty && trimmedVal.length === 0 ? `"${rawValue}"` : rawValue;
+	(item as any).filterText = prefix ? `${prefix} ${rawValue}` : rawValue;
+}
+
 /**
- * Completion provider for provider IDs, rescue tier names, live models, reasoning effort, and DSL variables.
+ * Completion provider for provider IDs, provider types, rescue tier names, live models, reasoning effort, and DSL variables.
  */
 export class NachoCompletionItemProvider implements vscode.CompletionItemProvider {
 	async provideCompletionItems(
@@ -578,20 +642,49 @@ export class NachoCompletionItemProvider implements vscode.CompletionItemProvide
 		const fullText = document.getText();
 		const index = parseConfigSymbolIndex(fullText);
 
+		// 0. type: completions (provider type: openrouter, anthropic, openai_compatible)
+		if (/^\s*(?:-\s*)?type\s*:/.test(lineUntilCursor)) {
+			const providerTypes: Array<{ id: string; detail: string; doc: string }> = [
+				{
+					id: 'openrouter',
+					detail: 'OpenRouter unified cloud gateway (vendor/model IDs)',
+					doc: 'Routes requests to OpenRouter (`https://openrouter.ai/api/v1`) using canonical `vendor/model` identifiers and live OpenRouter pricing/benchmark curation.'
+				},
+				{
+					id: 'anthropic',
+					detail: 'Direct Anthropic Messages API (claude-* wire IDs)',
+					doc: 'Routes requests directly to Anthropic (`https://api.anthropic.com/v1/messages`) using native `x-api-key` headers and hyphenated `claude-*` wire model IDs.'
+				},
+				{
+					id: 'openai_compatible',
+					detail: 'OpenAI-compatible endpoint (Ollama, vLLM, llama.cpp, OpenAI)',
+					doc: 'Routes requests to any `/v1/chat/completions` OpenAI-compatible server (local Ollama/vLLM/llama.cpp when `local: true`, or cloud OpenAI-compatible endpoints).'
+				}
+			];
+			return providerTypes.map((pt) => {
+				const item = new vscode.CompletionItem(pt.id, vscode.CompletionItemKind.EnumMember);
+				item.detail = pt.detail;
+				item.documentation = new vscode.MarkdownString(pt.doc);
+				applyScalarCompletionRange(item, pt.id, lineText, position.line, position.character, 'type', false);
+				return item;
+			});
+		}
+
 		// 1. provider: completions
-		if (/provider\s*:\s*["']?[^"']*$/.test(lineUntilCursor)) {
+		if (/^\s*(?:-\s*)?provider\s*:/.test(lineUntilCursor)) {
 			const items: vscode.CompletionItem[] = [];
 			for (const [id, def] of index.providers) {
 				const item = new vscode.CompletionItem(id, vscode.CompletionItemKind.Reference);
 				item.detail = `${def.type || 'provider'} • ${def.baseUrl || 'no base url'}`;
 				item.documentation = new vscode.MarkdownString(`**Nacho Flow Provider Definition**\n- Base URL: \`${def.baseUrl}\`\n- Type: \`${def.type}\``);
+				applyScalarCompletionRange(item, id, lineText, position.line, position.character, 'provider', false);
 				items.push(item);
 			}
 			return items;
 		}
 
 		// 2. rescue_tier: completions
-		if (/rescue_tier\s*:\s*["']?[^"']*$/.test(lineUntilCursor)) {
+		if (/^\s*(?:-\s*)?rescue_tier\s*:/.test(lineUntilCursor)) {
 			const items: vscode.CompletionItem[] = [];
 			const quoteMatch = lineUntilCursor.match(/rescue_tier\s*:\s*(["'])/);
 			const alreadyHasQuote = !!quoteMatch;
@@ -607,13 +700,14 @@ export class NachoCompletionItemProvider implements vscode.CompletionItemProvide
 				const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Reference);
 				item.detail = `Rescue Tier • Provider: ${tierDef?.provider || 'unknown'}`;
 				item.insertText = label;
+				applyScalarCompletionRange(item, name, lineText, position.line, position.character, 'rescue_tier', true);
 				items.push(item);
 			}
 			return items;
 		}
 
 		// 3. model: completions (with live discovery)
-		if (/model\s*:\s*["']?[^"']*$/.test(lineUntilCursor)) {
+		if (/^\s*(?:-\s*)?model\s*:/.test(lineUntilCursor)) {
 			const targetProviderId = resolveRouteTarget(index, undefined, position.line)?.provider;
 
 			if (targetProviderId) {
@@ -633,6 +727,7 @@ export class NachoCompletionItemProvider implements vscode.CompletionItemProvide
 								const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Value);
 								item.detail = `Discovered on ${targetProviderId} (${disc.latencyMs}ms)`;
 								item.insertText = label;
+								applyScalarCompletionRange(item, m, lineText, position.line, position.character, 'model', true);
 								return item;
 							});
 						}
@@ -644,10 +739,11 @@ export class NachoCompletionItemProvider implements vscode.CompletionItemProvide
 		}
 
 		// 4. reasoning_effort: completions
-		if (/reasoning_effort\s*:\s*["']?[^"']*$/.test(lineUntilCursor)) {
+		if (/^\s*(?:-\s*)?reasoning_effort\s*:/.test(lineUntilCursor)) {
 			return ['low', 'medium', 'high', 'max'].map((effort) => {
 				const item = new vscode.CompletionItem(effort, vscode.CompletionItemKind.EnumMember);
 				item.detail = `Reasoning effort level: ${effort}`;
+				applyScalarCompletionRange(item, effort, lineText, position.line, position.character, 'reasoning_effort', false);
 				return item;
 			});
 		}

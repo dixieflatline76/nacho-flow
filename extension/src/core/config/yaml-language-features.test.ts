@@ -274,6 +274,17 @@ default_tier:
   describe('NachoCompletionItemProvider', () => {
     const provider = new NachoCompletionItemProvider();
 
+    it('should complete provider types after type: (including inside and after quotes)', async () => {
+      const doc = createMockDoc(sampleConfigYaml);
+      // Line 4 is `    type: "openai_compatible"`
+      const itemsInside = await provider.provideCompletionItems(doc, new vscode.Position(4, 15));
+      expect(itemsInside.map((i) => i.label)).toEqual(['openrouter', 'anthropic', 'openai_compatible']);
+
+      // Cursor after closing quote (`    type: "openai_compatible"|`)
+      const itemsAfter = await provider.provideCompletionItems(doc, new vscode.Position(4, 29));
+      expect(itemsAfter.map((i) => i.label)).toEqual(['openrouter', 'anthropic', 'openai_compatible']);
+    });
+
     it('should complete provider IDs after provider:', async () => {
       const doc = createMockDoc(sampleConfigYaml);
       const items = await provider.provideCompletionItems(doc, new vscode.Position(8, 14));
