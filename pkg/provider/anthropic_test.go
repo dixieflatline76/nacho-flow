@@ -648,6 +648,124 @@ func TestBuildRequest_ReasoningEffortToThinking(t *testing.T) {
 		}
 	})
 
+	// Claude Haiku 5.5 uses adaptive thinking + summarized display + output_config.effort
+	t.Run("Claude Haiku 5.5 Adaptive Thinking", func(t *testing.T) {
+		openAIJSON := `{
+			"model": "claude-haiku-5-5",
+			"messages": [{"role": "user", "content": "Explain quantum computing"}],
+			"reasoning_effort": "medium"
+		}`
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", []byte(openAIJSON))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		bodyBytes, _ := io.ReadAll(outReq.Body)
+		var raw struct {
+			Model    string `json:"model"`
+			Thinking struct {
+				Type    string `json:"type"`
+				Display string `json:"display"`
+			} `json:"thinking"`
+			OutputConfig struct {
+				Effort string `json:"effort"`
+			} `json:"output_config"`
+			Temperature *float64 `json:"temperature"`
+			TopP        *float64 `json:"top_p"`
+		}
+		if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+			t.Fatalf("failed unmarshaling output: %v", err)
+		}
+
+		if raw.Model != "claude-haiku-5-5" {
+			t.Errorf("expected model claude-haiku-5-5, got %s", raw.Model)
+		}
+		if raw.Thinking.Type != "adaptive" || raw.Thinking.Display != "summarized" {
+			t.Errorf("expected thinking adaptive with display summarized, got: %+v", raw.Thinking)
+		}
+		if raw.OutputConfig.Effort != "medium" {
+			t.Errorf("expected output_config.effort medium, got: %+v", raw.OutputConfig)
+		}
+		if raw.Temperature != nil || raw.TopP != nil {
+			t.Errorf("expected temperature and top_p omitted for Haiku 5.5, got temp=%v, top_p=%v", raw.Temperature, raw.TopP)
+		}
+	})
+
+	t.Run("Claude Haiku 5.5 Normalization and High Effort", func(t *testing.T) {
+		openAIJSON := `{
+			"model": "anthropic/claude-haiku-5.5",
+			"messages": [{"role": "user", "content": "Quick sort implementation"}],
+			"reasoning_effort": "high"
+		}`
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "anthropic/claude-haiku-5.5", []byte(openAIJSON))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		bodyBytes, _ := io.ReadAll(outReq.Body)
+		var raw struct {
+			Model    string `json:"model"`
+			Thinking struct {
+				Type    string `json:"type"`
+				Display string `json:"display"`
+			} `json:"thinking"`
+			OutputConfig struct {
+				Effort string `json:"effort"`
+			} `json:"output_config"`
+		}
+		if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+			t.Fatalf("failed unmarshaling output: %v", err)
+		}
+
+		if raw.Model != "claude-haiku-5-5" {
+			t.Errorf("expected normalized model claude-haiku-5-5, got %s", raw.Model)
+		}
+		if raw.Thinking.Type != "adaptive" || raw.Thinking.Display != "summarized" {
+			t.Errorf("expected adaptive summarized thinking, got: %+v", raw.Thinking)
+		}
+		if raw.OutputConfig.Effort != "high" {
+			t.Errorf("expected output_config.effort high, got: %+v", raw.OutputConfig)
+		}
+	})
+
+	t.Run("Claude Haiku 5.5 Disabled Reasoning", func(t *testing.T) {
+		openAIJSON := `{
+			"model": "claude-haiku-5-5",
+			"messages": [{"role": "user", "content": "Ping"}],
+			"reasoning_effort": "none"
+		}`
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", []byte(openAIJSON))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		bodyBytes, _ := io.ReadAll(outReq.Body)
+		var raw struct {
+			Thinking struct {
+				Type string `json:"type"`
+			} `json:"thinking"`
+			OutputConfig *struct {
+				Effort string `json:"effort"`
+			} `json:"output_config"`
+		}
+		if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+			t.Fatalf("failed unmarshaling output: %v", err)
+		}
+
+		if raw.Thinking.Type != "disabled" {
+			t.Errorf("expected thinking disabled, got: %+v", raw.Thinking)
+		}
+		if raw.OutputConfig != nil {
+			t.Errorf("expected nil output_config when thinking disabled, got: %+v", raw.OutputConfig)
+		}
+	})
+
 	// Legacy / Claude 4 models use enabled thinking + budget_tokens
 	t.Run("Claude 4 Budget Thinking", func(t *testing.T) {
 		openAIJSON := `{

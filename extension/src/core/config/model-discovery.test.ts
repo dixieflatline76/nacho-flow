@@ -254,6 +254,10 @@ describe('ModelDiscovery', () => {
     const result = await discoverModels('https://api.anthropic.com');
 
     expect(result.online).toBe(true);
+    expect(result.models).toContain('claude-haiku-5-5');
+    expect(result.models).toContain('claude-sonnet-5-5');
+    expect(result.models).toContain('claude-opus-5-5');
+    expect(result.models).toContain('claude-fable-5-1');
     expect(result.models).toContain('claude-sonnet-4-6');
     expect(result.models).toContain('claude-opus-4-6');
     expect(result.models).toContain('claude-sonnet-4-5-20250929');

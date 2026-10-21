@@ -156,7 +156,7 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 
 	const lines = text.split(/\r?\n/);
 
-	type TopSection = 'none' | 'providers' | 'tiers' | 'default_tier' | 'kickstart' | 'fairy_dust' | 'other';
+	type TopSection = 'none' | 'providers' | 'tiers' | 'default_tier' | 'kickstart' | 'thought_slap' | 'cycle_killer' | 'fairy_dust' | 'other';
 	let currentSection: TopSection = 'none';
 
 	let currentProviderDef: Partial<ProviderSymbolDef> | null = null;
@@ -238,6 +238,8 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 					blockRange: { startLine: lineIdx, startCharacter: 0, endLine: lineIdx, endCharacter: rawLine.length }
 				};
 			} else if (key === 'kickstart') currentSection = 'kickstart';
+			else if (key === 'thought_slap') currentSection = 'thought_slap';
+			else if (key === 'cycle_killer') currentSection = 'cycle_killer';
 			else if (key === 'fairy_dust') currentSection = 'fairy_dust';
 			else currentSection = 'other';
 
@@ -442,8 +444,8 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 					});
 				}
 			}
-		} else if (currentSection === 'kickstart') {
-			const rescueTierMatch = rawLine.match(/^\s+rescue_tier\s*:\s*(.*)/);
+		} else if (currentSection === 'kickstart' || currentSection === 'thought_slap' || currentSection === 'cycle_killer' || currentSection === 'other') {
+			const rescueTierMatch = rawLine.match(/^\s*rescue_tier\s*:\s*(.*)/);
 			if (rescueTierMatch) {
 				const valStart = rawLine.indexOf(rescueTierMatch[1]);
 				const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);

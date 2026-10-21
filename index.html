@@ -537,11 +537,34 @@
             <div class="extension-card glass">
                 <div class="extension-badge">ALL-IN-ONE VS CODE EXTENSION</div>
                 <h3>Carries the Engine Inside (Zero Go Setup)</h3>
-                <p>The companion extension bundles and supervises the native Go routing binary directly. 1-click start/stop, live daemon logs, and instant preset hot-swap (Standard / Zoo Code / Cline) without restarting the proxy or dropping active streams.</p>
+                <p>The companion extension bundles and supervises the native Go routing binary directly. 1-click start/stop, live daemon logs, and instant profile hot-swap with zero downtime without restarting the proxy or dropping active agent streams.</p>
                 <div class="extension-tags">
                     <span class="ext-tag">🚀 Bundled Native Binary</span>
                     <span class="ext-tag">⚡ Zero-Polling SSE HUD</span>
-                    <span class="ext-tag">📋 1-Click Preset Switcher</span>
+                    <span class="ext-tag">📋 Zero-Downtime Hot Reload</span>
+                </div>
+            </div>
+
+            <div class="extension-card glass">
+                <div class="extension-badge">🧠 INTERACTIVE YAML CONFIG ASSIST</div>
+                <h3>Language Intelligence for Agent Routing</h3>
+                <p>Edit routing profiles with full IDE language intelligence. Click inline CodeLenses to ping endpoints, pick rescue tiers, and choose models. Get live 60s-cached <code>/v1/models</code> autocomplete with seamless <code>ENV_*</code> key expansion, real-time semantic diagnostics, and 1-click Quick Fixes.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">⚡ Live CodeLenses</span>
+                    <span class="ext-tag">🔍 /v1/models Autocomplete</span>
+                    <span class="ext-tag">🛡️ Pre-Flight Save Gate</span>
+                    <span class="ext-tag">💡 1-Click Quick Fixes</span>
+                </div>
+            </div>
+
+            <div class="extension-card glass">
+                <div class="extension-badge">🎛️ PROFILE STUDIO &amp; ACTION TOOLBAR</div>
+                <h3>Instant Profile Switching &amp; 1-Click Cloning</h3>
+                <p>Hot-swap instantly between bundled profiles (Standard Hybrid, Deep Reasoning &amp; Thought Slap, Anthropic Native) or create unlimited custom slots. 1-click <code>＋</code> Add, <code>⧉</code> Clone, <code>✏️</code> Rename, <code>－</code> Delete, <code>Reset</code> to factory default, or inspect customizations via side-by-side <code>vscode.diff</code>.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">⧉ 1-Click Profile Cloning</span>
+                    <span class="ext-tag">🔍 Side-by-Side Diff</span>
+                    <span class="ext-tag">🔄 Instant Dropdown Switcher</span>
                 </div>
             </div>
 
@@ -558,7 +581,7 @@
 
             <div class="extension-card glass">
                 <div class="extension-badge">⚡ AGENT PAIRING &amp; REMOTE GATEWAY</div>
-                <h3>Instant Setup for Zoo Code, Cline &amp; Cursor</h3>
+                <h3>Instant Setup for Zoo Code, Cline &amp; Kilo</h3>
                 <p>1-click copy pre-configured OpenAI Base URLs, API keys, and model identifiers directly into your agent harness. Seamlessly switch between local GPU inference and remote home-lab/team GPU servers with Bearer Auth.</p>
                 <div class="extension-tags">
                     <span class="ext-tag">📋 1-Click Agent Pairing</span>
@@ -577,6 +600,50 @@
                     <span class="ext-tag">🛡️ 100% Raw Stream Bypass</span>
                 </div>
             </div>
+
+            <div class="extension-card glass">
+                <div class="extension-badge">🎛️ 1-CLICK AUTO-TUNER &amp; ROUTE OPTIMIZER</div>
+                <h3>Trajectory Replay &amp; Empirical Multi-Tier Policy Synthesis</h3>
+                <p>Replay millions of recorded developer turns in memory at 37M turns/sec. Automatically detect high-context (&gt;100k) spend and read-burst stalls, evaluate empirical model self-recovery rates (27% Haiku vs 60% Sonnet), calibrate dynamic retry bounds, and selectively apply multi-tier routing diffs directly into <code>config.yaml</code>.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">⚡ 37M Turns/sec Replay</span>
+                    <span class="ext-tag">🔍 Read-Burst Stall Detection</span>
+                    <span class="ext-tag">📊 Model Self-Recovery Rates</span>
+                    <span class="ext-tag">🛡️ Selective Diff Apply</span>
+                </div>
+            </div>
+
+            <div class="extension-card glass">
+                <div class="extension-badge">🛡️ CIRCUIT BREAKER &amp; PROVIDER RESILIENCE</div>
+                <h3>Autonomous Error Budgets &amp; Canary Recovery</h3>
+                <p>Monitor real-time Closed, Open, and Half-Open circuit breaker states across all configured local and cloud backends. Automatically bypasses failing providers during outages or rate-limits (429) to keep agent loops unblocked, with 1-click canary probes and manual reset in the dashboard.</p>
+                <div class="extension-tags">
+                    <span class="ext-tag">🚦 Closed / Open / Half-Open</span>
+                    <span class="ext-tag">🔄 1-Click Canary Reset</span>
+                    <span class="ext-tag">🛡️ 100% Loop Stall Protection</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Interactive YAML Config Assist UI Showcase Frame -->
+        <div class="extension-preview-frame" id="config-assist-preview">
+            <div class="extension-preview-header">
+                <div class="terminal-dots">
+                    <span class="dot-red"></span>
+                    <span class="dot-yellow"></span>
+                    <span class="dot-green"></span>
+                </div>
+                <div class="extension-preview-title" id="config-assist-title">Visual Studio Code — Live /v1/models Discovery &amp; Autocomplete</div>
+                <div class="extension-preview-badge" style="color: #38bdf8;">● CONFIG INTELLIGENCE</div>
+            </div>
+            <div class="install-tabs" style="justify-content: flex-start; padding: 0.75rem 1rem 0; margin-bottom: 0; background: rgba(15, 17, 24, 0.95); border-bottom: 1px solid rgba(255, 255, 255, 0.08); overflow-x: auto; flex-wrap: nowrap; gap: 0.5rem;">
+                <button class="tab-btn active" onclick="switchConfigPreview('models', this)">🔍 /v1/models Discovery</button>
+                <button class="tab-btn" onclick="switchConfigPreview('providers', this)">⚡ Provider CodeLenses</button>
+                <button class="tab-btn" onclick="switchConfigPreview('references', this)">📋 Find References</button>
+                <button class="tab-btn" onclick="switchConfigPreview('peek', this)">🔎 Inline Peek Editor</button>
+                <button class="tab-btn" onclick="switchConfigPreview('switch-provider', this)">🔄 Switch Provider</button>
+            </div>
+            <img id="config-assist-img" src="images/vscode-config-assist-models.png" alt="Nacho Flow VS Code Interactive YAML Config Assist - Inline CodeLenses, Live /v1/models Discovery, and Pre-Flight Validation" class="extension-preview-img" loading="lazy">
         </div>
 
         <!-- 1-Click Auto-Tune UI Showcase Frame -->
@@ -587,10 +654,10 @@
                     <span class="dot-yellow"></span>
                     <span class="dot-green"></span>
                 </div>
-                <div class="extension-preview-title">Visual Studio Code — 1-Click Auto-Tune &amp; Rule Diff Review</div>
+                <div class="extension-preview-title">Visual Studio Code — Auto-Tuner: Route Optimization, Model Self-Recovery &amp; Dynamic Retry Bounds</div>
                 <div class="extension-preview-badge" style="color: #c084fc;">● LOG REPLAY OPTIMIZER</div>
             </div>
-            <img src="images/vscode-autotuner-showcase.png" alt="Nacho Flow VS Code 1-Click Auto-Tune - Replaying Sessions, Pruning Tiers, and 1-Click Diff Apply" class="extension-preview-img" loading="lazy">
+            <img src="images/vscode-autotuner-showcase.png?v=1.2.0" alt="Nacho Flow VS Code Auto-Tuner - Replaying Sessions, Model Self-Recovery Analysis, High-Context Spend Tracking, and 1-Click Policy Apply" class="extension-preview-img" loading="lazy">
         </div>
 
         <div style="text-align: center; margin-top: 2rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
@@ -703,7 +770,7 @@
 
         <div class="ide-card glass">
             <div class="install-tabs">
-                <button class="tab-btn active" onclick="switchIdeTab('zoocode', this)">Zoo Code / Cline</button>
+                <button class="tab-btn active" onclick="switchIdeTab('zoocode', this)">Zoo Code / Cline / Kilo</button>
                 <button class="tab-btn" onclick="switchIdeTab('opencode', this)">OpenCode</button>
                 <button class="tab-btn" onclick="switchIdeTab('aider', this)">Aider</button>
                 <button class="tab-btn" onclick="switchIdeTab('cursor', this)">Cursor</button>
@@ -794,7 +861,7 @@ Model ID: nacho-hybrid</code></pre>
         };
 
         const ideConfigs = {
-            zoocode: `# In Zoo Code / Cline Provider Settings:\nProvider: OpenAI Compatible\nBase URL: http://127.0.0.1:8000/v1\nAPI Key:  sk-nacho-secret-key\nModel ID: nacho-hybrid`,
+            zoocode: `# In Zoo Code / Cline / Kilo Provider Settings:\nProvider: OpenAI Compatible\nBase URL: http://127.0.0.1:8000/v1\nAPI Key:  sk-nacho-secret-key\nModel ID: nacho-hybrid`,
             opencode: `# Run OpenCode in terminal:\nexport OPENAI_BASE_URL="http://127.0.0.1:8000/v1"\nexport OPENAI_API_KEY="sk-nacho-secret-key"\nopencode --model openai/nacho-hybrid`,
             aider: `# Run Aider in terminal:\nexport OPENAI_API_BASE="http://127.0.0.1:8000/v1"\nexport OPENAI_API_KEY="sk-nacho-secret-key"\naider --model openai/nacho-hybrid`,
             cursor: `# In Cursor Settings -> Models:\nOpenAI API Base: http://localhost:8000/v1\nOpenAI API Key:  sk-nacho-secret-key\nCustom Model:    nacho-hybrid`,
@@ -831,6 +898,39 @@ Model ID: nacho-hybrid</code></pre>
             const btn = event.target;
             btn.innerText = 'Copied!';
             setTimeout(() => btn.innerText = 'Copy', 1500);
+        }
+
+        const configPreviews = {
+            'models': {
+                img: 'images/vscode-config-assist-models.png',
+                title: 'Visual Studio Code — Live /v1/models Discovery &amp; Autocomplete (309ms)'
+            },
+            'providers': {
+                img: 'images/vscode-config-assist-providers.png',
+                title: 'Visual Studio Code — Provider Health, Ping Endpoint &amp; ENV_ Key Resolution'
+            },
+            'references': {
+                img: 'images/vscode-config-assist-references.png',
+                title: 'Visual Studio Code — CodeLens Provider References QuickPick (9 Tier Usages)'
+            },
+            'peek': {
+                img: 'images/vscode-config-assist-peek.png',
+                title: 'Visual Studio Code — Inline Peek References Editor (Shift+F12)'
+            },
+            'switch-provider': {
+                img: 'images/vscode-config-assist-switch-provider.png',
+                title: 'Visual Studio Code — Switch Provider CodeLens QuickPick'
+            }
+        };
+
+        function switchConfigPreview(type, btn) {
+            btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const p = configPreviews[type];
+            if (p) {
+                document.getElementById('config-assist-img').src = p.img;
+                document.getElementById('config-assist-title').innerHTML = p.title;
+            }
         }
 
         // Dynamically fetch and display latest release version

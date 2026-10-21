@@ -699,6 +699,44 @@ tiers:
       expect(proposedNames).not.toContain('default_tier');
       expect(proposedNames).toContain('"Tier 1"');
     });
+
+    it('should provide only Pick Rescue Tier lens for rescue_tier and not Switch Provider or Pick Model', () => {
+      const rescueYaml = `
+providers:
+  p1:
+    base_url: "http://127.0.0.1:8080/v1"
+tiers:
+  - name: "Tier 1: Haiku 5.5 (medium reasoning)"
+    provider: p1
+    model: "claude-3-5-haiku"
+thought_slap:
+  max_attempts: 1
+  rescue_tier: "Tier 1: Haiku 5.5 (medium reasoning)"
+`;
+      const doc = createMockDoc(rescueYaml);
+      const lenses = lensProvider.provideCodeLenses(doc);
+
+      const rescueLenses = lenses.filter(
+        (l) => l.command?.command === 'nacho-flow.pickRescueTier'
+      );
+      expect(rescueLenses.length).toBe(1);
+      expect(rescueLenses[0].command?.title).toBe('🚑 Pick Rescue Tier');
+
+      // Only the tier definition itself should have Switch Provider and Pick Model (not rescue_tier)
+      const switchProviderLenses = lenses.filter(
+        (l) =>
+          l.command?.command === 'nacho-flow.pickProvider' &&
+          l.command?.arguments?.[0]?.tierName === 'Tier 1: Haiku 5.5 (medium reasoning)'
+      );
+      expect(switchProviderLenses.length).toBe(1);
+
+      const pickModelLenses = lenses.filter(
+        (l) =>
+          l.command?.command === 'nacho-flow.pickModel' &&
+          l.command?.arguments?.[0]?.tierName === 'Tier 1: Haiku 5.5 (medium reasoning)'
+      );
+      expect(pickModelLenses.length).toBe(1);
+    });
   });
 
   describe('NachoDocumentLinkProvider', () => {
@@ -767,7 +805,7 @@ tiers:
       const pickProvHandler = pickProvCall[1];
 
       const mockEdit = jest.fn().mockImplementation((cb: (builder: any) => void) => {
-        cb({ replace: jest.fn() });
+        cb({ replace: jest.fn(), insert: jest.fn() });
         return Promise.resolve(true);
       });
       const doc = createMockDoc(sampleConfigYaml);

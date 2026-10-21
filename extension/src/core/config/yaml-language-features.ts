@@ -1040,6 +1040,19 @@ export class NachoCodeLensProvider implements vscode.CodeLensProvider {
 			);
 		}
 
+		// Rescue Tiers (Thought Slap)
+		for (const usage of index.rescueTierUsages) {
+			const range = toVsCodeRange(usage.valueRange);
+
+			lenses.push(
+				new vscode.CodeLens(range, {
+					title: '🚑 Pick Rescue Tier',
+					command: 'nacho-flow.pickRescueTier',
+					arguments: [{ range: usage.valueRange }]
+				})
+			);
+		}
+
 		return lenses;
 	}
 }
