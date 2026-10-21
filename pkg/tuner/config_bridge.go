@@ -79,7 +79,8 @@ func ResolveModelBenchmark(model string) (codingIndex float64, toolReliability f
 // ResolveModelCapabilities resolves verified vision and tool calling support from the curated catalog.
 func ResolveModelCapabilities(model string) (supportsVision bool, supportsTools bool) {
 	if p, ok := curation.DefaultManager().Lookup(model); ok {
-		return p.SupportsVision, p.SupportsTools
+		return p.SupportsVision || p.TierRole == curation.RoleVisionWorkhorse,
+			p.SupportsTools || p.ToolReliability > 0
 	}
 	// Default to no-vision, tool-capable for uncatalogued models
 	return false, true

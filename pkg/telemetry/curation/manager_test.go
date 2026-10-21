@@ -696,17 +696,20 @@ func TestCatalog_AnthropicProviderBindings(t *testing.T) {
 	}
 
 	expectedActiveAnthropicModels := map[string]string{
-		"anthropic/claude-haiku-4.5": "claude-haiku-4-5",
+		"anthropic/claude-haiku-4.5":  "claude-haiku-4-5",
+		"anthropic/claude-haiku-5.5":  "claude-haiku-5-5",
 		"anthropic/claude-sonnet-4":   "claude-sonnet-4-0",
 		"anthropic/claude-sonnet-4.5": "claude-sonnet-4-5",
 		"anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
 		"anthropic/claude-sonnet-5":   "claude-sonnet-5",
+		"anthropic/claude-sonnet-5.5": "claude-sonnet-5-5",
 		"anthropic/claude-opus-4.1":   "claude-opus-4-1",
 		"anthropic/claude-opus-4.5":   "claude-opus-4-5",
 		"anthropic/claude-opus-4.6":   "claude-opus-4-6",
 		"anthropic/claude-opus-4.7":   "claude-opus-4-7",
 		"anthropic/claude-opus-4.8":   "claude-opus-4-8",
 		"anthropic/claude-opus-5":     "claude-opus-5",
+		"anthropic/claude-opus-5.5":   "claude-opus-5-5",
 		"anthropic/claude-fable-5":    "claude-fable-5",
 		"anthropic/claude-fable-5.1":  "claude-fable-5-1",
 	}
@@ -734,6 +737,10 @@ func TestCatalog_AnthropicProviderBindings(t *testing.T) {
 		if binding.ModelID != expectedWireID {
 			t.Errorf("model %q: expected Anthropic wire ID %q, got %q", canonicalID, expectedWireID, binding.ModelID)
 		}
+		if !profile.SupportsVision || !profile.SupportsTools {
+			t.Errorf("model %q: expected supports_vision=true and supports_tools=true, got vision=%v tools=%v",
+				canonicalID, profile.SupportsVision, profile.SupportsTools)
+		}
 	}
 
 	// Verify Sonnet 5 coding index restored to 71.5 and retains tier_4_frontier
@@ -760,19 +767,29 @@ func TestCatalog_AnthropicProviderBindings(t *testing.T) {
 		}
 	}
 
-	// Verify estimated 5.5 models do NOT have providers.anthropic
-	estimated55 := []string{
-		"anthropic/claude-haiku-5.5",
-		"anthropic/claude-sonnet-5.5",
-		"anthropic/claude-opus-5.5",
+	// Verify estimated 5.5 models resolve via LookupForPlatform(PlatformAnthropic, ...) for pricing/quality
+	// of user-configured tiers (e.g. profile3.yaml), while being excluded from CandidateModelsForPlatform.
+	estimated55 := map[string]string{
+		"anthropic/claude-haiku-5.5":  "claude-haiku-5-5",
+		"anthropic/claude-sonnet-5.5": "claude-sonnet-5-5",
+		"anthropic/claude-opus-5.5":   "claude-opus-5-5",
 	}
-	for _, id := range estimated55 {
-		if p, exists := cat.Models[id]; exists {
-			if _, hasAnthropic := p.Providers[contract.PlatformAnthropic]; hasAnthropic {
-				t.Errorf("estimated model %q must NOT have providers.anthropic binding", id)
-			}
-			if p.BenchmarkSource != BenchmarkSourceEstimated {
-				t.Errorf("model %q expected benchmark_source %q, got %q", id, BenchmarkSourceEstimated, p.BenchmarkSource)
+	for id, wireID := range estimated55 {
+		p, exists := cat.Models[id]
+		if !exists {
+			t.Fatalf("expected estimated model %q in catalog", id)
+		}
+		if p.BenchmarkSource != BenchmarkSourceEstimated {
+			t.Errorf("model %q expected benchmark_source %q, got %q", id, BenchmarkSourceEstimated, p.BenchmarkSource)
+		}
+		if resolved, ok := mgr.LookupForPlatform(contract.PlatformAnthropic, wireID); !ok || resolved.ModelID != wireID {
+			t.Errorf("expected LookupForPlatform(PlatformAnthropic, %q) to resolve %q, got %+v, ok=%v", wireID, wireID, resolved, ok)
+		}
+	}
+	for _, role := range []TierRole{RoleCodingWorkhorse, RoleDeepReasoner, RoleGeneral} {
+		for _, cand := range mgr.CandidateModelsForPlatform(role, contract.PlatformAnthropic) {
+			if cand.BenchmarkSource == BenchmarkSourceEstimated {
+				t.Errorf("CandidateModelsForPlatform(%s, PlatformAnthropic) must exclude estimated model %q", role, cand.ModelID)
 			}
 		}
 	}
@@ -938,10 +955,14 @@ func TestFormatModelForPlatform(t *testing.T) {
 	if formatted != "anthropic/claude-sonnet-5" {
 		t.Errorf("Local: expected returned modelID anthropic/claude-sonnet-5 even when ok=false, got %q", formatted)
 	}
-	// Uncataloged model on Local passes through (e.g. ad-hoc ollama model)
+	// Uncataloged model on Local passes through (e.g. ad-hoc ollama model) without rewriting to OpenRouter ID
 	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformLocal, "ollama/my-finetune:8b")
 	if !ok || formatted != "ollama/my-finetune:8b" {
 		t.Errorf("Local uncataloged: expected ollama/my-finetune:8b, true; got %q, %v", formatted, ok)
+	}
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformLocal, "gemma4:12b-it-qat")
+	if !ok || formatted != "gemma4:12b-it-qat" {
+		t.Errorf("Local Ollama tag: expected gemma4:12b-it-qat preserved verbatim, got %q, %v", formatted, ok)
 	}
 
 	// 3. PlatformAnthropic
@@ -953,15 +974,23 @@ func TestFormatModelForPlatform(t *testing.T) {
 	if !ok || formatted != "claude-opus-4-7" {
 		t.Errorf("Anthropic by wire ID: expected claude-opus-4-7, true; got %q, %v", formatted, ok)
 	}
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformAnthropic, "claude-sonnet-4-5-20250929")
+	if !ok || formatted != "claude-sonnet-4-5" {
+		t.Errorf("Anthropic date-stamped wire ID: expected claude-sonnet-4-5, true; got %q, %v", formatted, ok)
+	}
 	// Non-Anthropic model
 	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformAnthropic, "openai/gpt-4o")
 	if ok || formatted != "" {
 		t.Errorf("Anthropic non-binding: expected empty string and false, got %q, %v", formatted, ok)
 	}
-	// Uncataloged model on Anthropic
+	// Uncataloged model on Anthropic (even if sharing token like "sonnet")
 	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformAnthropic, "random-unknown")
 	if ok || formatted != "" {
 		t.Errorf("Anthropic uncataloged: expected empty string and false, got %q, %v", formatted, ok)
+	}
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformAnthropic, "custom/my-sonnet-clone")
+	if ok || formatted != "" {
+		t.Errorf("Anthropic token-overlapping uncataloged: expected empty string and false, got %q, %v", formatted, ok)
 	}
 
 	// 4. PlatformOpenAICompatible and other platforms return "", false
@@ -1006,6 +1035,9 @@ func TestIsSameModel(t *testing.T) {
 	}
 	if mgr.IsSameModel("anthropic/claude-sonnet-5", "openai/gpt-4o") {
 		t.Errorf("expected distinct models to report false")
+	}
+	if mgr.IsSameModel("gemma4:12b-it-qat", "gemma4:26b-a4b-it-qat") {
+		t.Errorf("expected distinct local Ollama tags gemma4:12b-it-qat and gemma4:26b-a4b-it-qat to report false")
 	}
 
 	// 4. Uncataloged models
@@ -1118,6 +1150,55 @@ func TestParetoLadders_Anthropic(t *testing.T) {
 		t.Errorf("expected 0 Pareto candidates for PlatformOpenAICompatible, got %d", len(got))
 	}
 }
+
+func TestLookupStrict(t *testing.T) {
+	mgr := DefaultManager()
+	if mgr == nil {
+		t.Fatalf("expected DefaultManager to be non-nil")
+	}
+
+	// 1. Deterministic matches (canonical, bare, wire ID, non-size :tag, -YYYYMMDD date stamp, normalized)
+	strictHits := map[string]string{
+		"anthropic/claude-sonnet-5":    "anthropic/claude-sonnet-5",
+		"claude-sonnet-5":              "anthropic/claude-sonnet-5",
+		"anthropic/claude-sonnet-5:v1": "anthropic/claude-sonnet-5",
+		"claude-sonnet-4-5-20250929":   "anthropic/claude-sonnet-4.5",
+		"claude-haiku-4-5-20251001":    "anthropic/claude-haiku-4.5",
+		"claude-opus-4-7":              "anthropic/claude-opus-4.7",
+		"z-ai/glm-5.3-flash":           "z-ai/glm-5.3-flash",
+	}
+	for input, expectedCanonical := range strictHits {
+		p, ok := mgr.LookupStrict(input)
+		if !ok {
+			t.Errorf("expected LookupStrict(%q) to succeed", input)
+			continue
+		}
+		canon := p.CanonicalID
+		if canon == "" {
+			canon = p.ModelID
+		}
+		if canon != expectedCanonical {
+			t.Errorf("LookupStrict(%q) resolved to %q, expected %q", input, canon, expectedCanonical)
+		}
+	}
+
+	// 2. Fuzzy / substring / token-overlap and Ollama :size tags must NOT match in LookupStrict
+	strictMisses := []string{
+		"",
+		"   ",
+		"gemma4:12b-it-qat",
+		"gemma4:26b-a4b-it-qat",
+		"custom/my-sonnet-clone",
+		"internal-sonnet-deployment-1234",
+		"vendor/unknown-flash-model",
+	}
+	for _, input := range strictMisses {
+		if p, ok := mgr.LookupStrict(input); ok {
+			t.Errorf("expected LookupStrict(%q) to return false, but matched %q", input, p.ModelID)
+		}
+	}
+}
+
 
 
 

@@ -331,8 +331,8 @@ func ConvertProfileToCandidate(p curation.ModelCuratedProfile) CandidateModel {
 		CompletionCostPerMillion: p.CompletionCostPerMillion,
 		ComprehensiveRate:        compRate,
 		ContextLength:            0, // Default unconstrained in static profile
-		SupportsVision:           p.SupportsVision,
-		SupportsTools:            p.SupportsTools,
+		SupportsVision:           p.SupportsVision || p.TierRole == curation.RoleVisionWorkhorse,
+		SupportsTools:            p.SupportsTools || p.ToolReliability > 0,
 		IsOpenWeights:            p.IsOpenWeights,
 		IsFree:                   p.PromptCostPerMillion == 0 && p.CompletionCostPerMillion == 0,
 		TierRole:                 string(p.TierRole),

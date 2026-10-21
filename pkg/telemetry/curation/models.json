@@ -114,6 +114,8 @@
         "tier_4_frontier",
         "tier_3_workhorse"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai",
       "providers": {
@@ -133,6 +135,8 @@
         "tier_4_frontier",
         "tier_3_workhorse"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai",
       "providers": {
@@ -202,11 +206,18 @@
       "name": "Anthropic: Claude Haiku 5.5",
       "tier_role": "general",
       "coding_index": 64,
-      "tool_reliability": 0,
+      "tool_reliability": 85,
       "prompt_cost_per_million": 1,
       "completion_cost_per_million": 5,
       "recommended_tiers": null,
-      "benchmark_source": "estimated"
+      "supports_vision": true,
+      "supports_tools": true,
+      "benchmark_source": "estimated",
+      "providers": {
+        "anthropic": {
+          "model_id": "claude-haiku-5-5"
+        }
+      }
     },
     "anthropic/claude-opus-4.1": {
       "name": "Anthropic: Claude Opus 4.1",
@@ -218,6 +229,8 @@
       "recommended_tiers": [
         "tier_4_frontier"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "providers": {
         "anthropic": {
           "model_id": "claude-opus-4-1"
@@ -245,6 +258,8 @@
       "recommended_tiers": [
         "tier_4_frontier"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "providers": {
         "anthropic": {
           "model_id": "claude-opus-4-5"
@@ -272,6 +287,8 @@
       "recommended_tiers": [
         "tier_4_frontier"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "providers": {
         "anthropic": {
           "model_id": "claude-opus-4-6"
@@ -299,6 +316,8 @@
       "recommended_tiers": [
         "tier_4_frontier"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai",
       "providers": {
@@ -330,6 +349,8 @@
       "recommended_tiers": [
         "tier_4_frontier"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai",
       "providers": {
@@ -378,13 +399,20 @@
       "name": "Anthropic: Claude Opus 5.5",
       "tier_role": "deep_reasoner",
       "coding_index": 82,
-      "tool_reliability": 0,
-      "prompt_cost_per_million": 15,
-      "completion_cost_per_million": 75,
+      "tool_reliability": 90,
+      "prompt_cost_per_million": 5,
+      "completion_cost_per_million": 25,
       "recommended_tiers": [
         "tier_4_frontier"
       ],
-      "benchmark_source": "estimated"
+      "supports_vision": true,
+      "supports_tools": true,
+      "benchmark_source": "estimated",
+      "providers": {
+        "anthropic": {
+          "model_id": "claude-opus-5-5"
+        }
+      }
     },
     "anthropic/claude-opus-5:batch": {
       "name": "Anthropic: Claude Opus 5 (batch)",
@@ -412,6 +440,8 @@
         "tier_4_frontier",
         "tier_3_workhorse"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai",
       "providers": {
@@ -431,6 +461,8 @@
         "tier_4_frontier",
         "tier_3_workhorse"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai",
       "providers": {
@@ -464,6 +496,8 @@
         "tier_4_frontier",
         "tier_3_workhorse"
       ],
+      "supports_vision": true,
+      "supports_tools": true,
       "benchmark_source": "artificial_analysis",
       "provenance_url": "https://artificialanalysis.ai",
       "providers": {
@@ -514,14 +548,21 @@
       "name": "Anthropic: Claude Sonnet 5.5",
       "tier_role": "coding_workhorse",
       "coding_index": 77,
-      "tool_reliability": 0,
+      "tool_reliability": 90,
       "prompt_cost_per_million": 3,
       "completion_cost_per_million": 15,
       "recommended_tiers": [
         "tier_4_frontier",
         "tier_3_workhorse"
       ],
-      "benchmark_source": "estimated"
+      "supports_vision": true,
+      "supports_tools": true,
+      "benchmark_source": "estimated",
+      "providers": {
+        "anthropic": {
+          "model_id": "claude-sonnet-5-5"
+        }
+      }
     },
     "anthropic/claude-sonnet-5:batch": {
       "name": "Anthropic: Claude Sonnet 5 (batch)",

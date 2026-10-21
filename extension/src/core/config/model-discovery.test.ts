@@ -258,14 +258,18 @@ describe('ModelDiscovery', () => {
     expect(result.models).toContain('claude-sonnet-5-5');
     expect(result.models).toContain('claude-opus-5-5');
     expect(result.models).toContain('claude-fable-5-1');
+    expect(result.models).toContain('claude-sonnet-5');
+    expect(result.models).toContain('claude-opus-5');
+    expect(result.models).toContain('claude-opus-4-8');
+    expect(result.models).toContain('claude-opus-4-7');
     expect(result.models).toContain('claude-sonnet-4-6');
     expect(result.models).toContain('claude-opus-4-6');
-    expect(result.models).toContain('claude-sonnet-4-5-20250929');
-    expect(result.models).toContain('claude-haiku-4-5-20251001');
-    expect(result.models).toContain('claude-3-7-sonnet-20250219');
-    expect(result.models).toContain('claude-3-5-sonnet-20241022');
-    expect(result.models).toContain('claude-3-5-haiku-20241022');
-    expect(result.models).toContain('claude-3-opus-20240229');
+    expect(result.models).toContain('claude-sonnet-4-5');
+    expect(result.models).toContain('claude-haiku-4-5');
+    expect(result.models).not.toContain('claude-3-7-sonnet-20250219');
+    expect(result.models).not.toContain('claude-3-5-sonnet-20241022');
+    expect(result.models).not.toContain('claude-3-5-haiku-20241022');
+    expect(result.models).not.toContain('claude-3-opus-20240229');
     expect(result.models.length).toBe(ANTHROPIC_STANDARD_MODELS.length);
   });
 

@@ -287,9 +287,27 @@ func (m *Manager) loadInitialCatalog() {
 	setCatalog(&embedCat)
 }
 
-// Lookup retrieves a curated model profile lock-free from the active catalog.
-// It performs exact, case-insensitive, normalized, and data-driven family lookups.
-func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
+// stripTrailingDateSuffix removes a trailing -YYYYMMDD date stamp (e.g. "-20250929") if present.
+func stripTrailingDateSuffix(s string) (string, bool) {
+	if len(s) <= 9 {
+		return s, false
+	}
+	suffix := s[len(s)-9:]
+	if suffix[0] != '-' || suffix[1] != '2' || suffix[2] != '0' {
+		return s, false
+	}
+	for i := 3; i < 9; i++ {
+		if suffix[i] < '0' || suffix[i] > '9' {
+			return s, false
+		}
+	}
+	return s[:len(s)-9], true
+}
+
+// LookupStrict retrieves a curated model profile lock-free from the active catalog
+// using only deterministic key, alias, provider-binding, and normalized matches (steps 1-4),
+// without substring or token-overlap heuristics.
+func (m *Manager) LookupStrict(modelID string) (ModelCuratedProfile, bool) {
 	if m == nil {
 		return ModelCuratedProfile{}, false
 	}
@@ -329,7 +347,76 @@ func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
 		return p, true
 	}
 
-	// 3. Strip tags if present
+	// If base has a colon tag that encodes a parameter size (e.g. Ollama "gemma4:12b-it-qat"),
+	// do not strip the size suffix in strict mode as that would conflate distinct model sizes.
+	hasSizeColonTag := false
+	if colon := strings.Index(base, ":"); colon >= 0 {
+		if ExtractParameterSize(base[colon+1:]) > 0 {
+			hasSizeColonTag = true
+		} else {
+			// 3. Strip non-size tags if present (e.g. :v1, :free, :batch)
+			untagged := base[:colon]
+			if p, ok := idx.exactMap[untagged]; ok {
+				return p, true
+			}
+			if p, ok := idx.exactMap[strings.ToLower(untagged)]; ok {
+				return p, true
+			}
+		}
+	}
+
+	// 3b. Strip trailing -YYYYMMDD date suffix if present (e.g. claude-sonnet-4-5-20250929)
+	if undated, stripped := stripTrailingDateSuffix(base); stripped {
+		if p, ok := idx.exactMap[undated]; ok {
+			return p, true
+		}
+		if p, ok := idx.exactMap[strings.ToLower(undated)]; ok {
+			return p, true
+		}
+		if p, ok := idx.normalizedMap[normalizeModelKey(undated)]; ok {
+			return p, true
+		}
+	}
+
+	// 4. Normalized key match (punctuation stripped)
+	if !hasSizeColonTag {
+		norm := normalizeModelKey(trimmed)
+		if p, ok := idx.normalizedMap[norm]; ok {
+			return p, true
+		}
+		if p, ok := idx.normalizedMap[normalizeModelKey(base)]; ok {
+			return p, true
+		}
+	}
+
+	return ModelCuratedProfile{}, false
+}
+
+// Lookup retrieves a curated model profile lock-free from the active catalog.
+// It performs exact, case-insensitive, normalized, and data-driven family lookups.
+func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
+	if m == nil {
+		return ModelCuratedProfile{}, false
+	}
+	trimmed := strings.TrimSpace(modelID)
+	if trimmed == "" {
+		return ModelCuratedProfile{}, false
+	}
+
+	if p, ok := m.LookupStrict(trimmed); ok {
+		return p, true
+	}
+
+	idx := m.activeIndex.Load()
+	if idx == nil {
+		return ModelCuratedProfile{}, false
+	}
+
+	lower := strings.ToLower(trimmed)
+	base := trimmed
+	if slash := strings.LastIndex(base, "/"); slash >= 0 {
+		base = base[slash+1:]
+	}
 	if colon := strings.Index(base, ":"); colon >= 0 {
 		untagged := base[:colon]
 		if p, ok := idx.exactMap[untagged]; ok {
@@ -339,8 +426,6 @@ func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
 			return p, true
 		}
 	}
-
-	// 4. Normalized key match (punctuation stripped)
 	norm := normalizeModelKey(trimmed)
 	if p, ok := idx.normalizedMap[norm]; ok {
 		return p, true
@@ -398,7 +483,15 @@ func (m *Manager) LookupForPlatform(platform contract.Platform, modelID string) 
 	if !ok || !policy.HasCuratedCatalog {
 		return ModelCuratedProfile{}, false
 	}
-	profile, found := m.Lookup(modelID)
+	var (
+		profile ModelCuratedProfile
+		found   bool
+	)
+	if policy.RequiresProviderBinding {
+		profile, found = m.LookupStrict(modelID)
+	} else {
+		profile, found = m.Lookup(modelID)
+	}
 	if !found {
 		return ModelCuratedProfile{}, false
 	}
@@ -430,18 +523,35 @@ func (m *Manager) FormatModelForPlatform(platform contract.Platform, modelID str
 	if m == nil {
 		return "", false
 	}
+	trimmed := strings.TrimSpace(modelID)
+	if trimmed == "" {
+		return "", false
+	}
 	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
 	if !ok || !policy.HasCuratedCatalog {
 		return "", false
 	}
-	if p, found := m.LookupForPlatform(platform, modelID); found {
-		return p.ModelID, true
+	profile, found := m.LookupStrict(trimmed)
+	if found {
+		if policy.RequiresOpenWeights && !profile.IsOpenWeights {
+			return profile.ModelID, false
+		}
+		if policy.RequiresProviderBinding && profile.BenchmarkSource == BenchmarkSourceEstimated {
+			return "", false
+		}
+		if binding, hasBinding := profile.Providers[platform]; hasBinding && binding.ModelID != "" {
+			return binding.ModelID, true
+		}
+		if policy.RequiresProviderBinding {
+			return "", false
+		}
+		if policy.RequiresOpenWeights {
+			return trimmed, true
+		}
+		return profile.ModelID, true
 	}
 	if policy.AllowUncatalogedModels {
-		if p, found := m.Lookup(modelID); found {
-			return p.ModelID, false
-		}
-		return modelID, true
+		return trimmed, true
 	}
 	return "", false
 }
@@ -454,8 +564,8 @@ func (m *Manager) IsSameModel(a, b string) bool {
 	if m == nil {
 		return false
 	}
-	pa, okA := m.Lookup(a)
-	pb, okB := m.Lookup(b)
+	pa, okA := m.LookupStrict(a)
+	pb, okB := m.LookupStrict(b)
 	if okA && okB {
 		canonA := pa.CanonicalID
 		if canonA == "" {
