@@ -25,11 +25,12 @@ var (
 
 const (
 	// TypeAnthropic is the provider type identifier for native Anthropic Messages API endpoints.
-	TypeAnthropic             contract.ProviderType = "anthropic"
-	AnthropicAPIVersion                             = "2023-06-01"
-	AnthropicBetaCaching                            = "prompt-caching-2024-07-31"
-	DefaultAnthropicMaxTokens                       = 8192
-	DefaultAnthropicBaseURL                         = "https://api.anthropic.com"
+	TypeAnthropic                    contract.ProviderType = "anthropic"
+	AnthropicAPIVersion                                    = "2023-06-01"
+	AnthropicBetaCaching                                   = "prompt-caching-2024-07-31"
+	DefaultAnthropicMaxTokens                              = 8192
+	DefaultAdaptiveThinkingMaxTokens                       = 16384
+	DefaultAnthropicBaseURL                                = "https://api.anthropic.com"
 )
 
 func init() {
@@ -268,6 +269,9 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 			}
 			outputConfig = &fastAnthropicOutputConfig{
 				Effort: effort,
+			}
+			if maxTokens < DefaultAdaptiveThinkingMaxTokens {
+				maxTokens = DefaultAdaptiveThinkingMaxTokens
 			}
 			isThinkingModel = true
 		}

@@ -71,7 +71,7 @@ Routine turns run on your local GPU at full speed, while complex reasoning autom
     - *Proven Benchmark Record*: 89 turns, 14.6 minutes, 93% test coverage, 0 race conditions, 100% pass rate on full Las Vegas Blackjack Monte Carlo simulation.
   - **Profile 3 (Anthropic Native Benchmark)**: Direct first-party Anthropic Messages API pipeline (`https://api.anthropic.com`):
     - Zero intermediary proxy latency with native prompt caching (`cache_control`) and multimodal vision.
-    - Claude Sonnet 5.5 Turn 0 Architecture → Claude Haiku 5.5 Fast Workhorse (Medium & High reasoning, guarded by real-time test failure inspection `!HasTestFail`) → Claude Sonnet 5.5 Error Escalation → Claude Sonnet 5.5 High Reasoning → Claude Opus 5.5 On-Demand override.
+    - Claude Sonnet 5.5 Turn 0 Architecture → Claude Haiku 5.5 Fast Workhorse (Low & Medium reasoning, guarded by real-time test failure inspection `!HasTestFail`) → Claude Sonnet 5.5 Error Escalation → Claude Sonnet 5.5 High Reasoning → Claude Opus 5.5 On-Demand override.
     - *Speed Record*: Completed full autonomous project build in **39 turns in 8.3 minutes** with a 100% test pass rate.
 - **Provider Status**: Real-time health chips for local engines (llama.cpp, Ollama, vLLM) and cloud APIs (OpenRouter, DeepSeek, Anthropic).
 - **Agent Setup**: 1-click copy for Base URL, API Key, and Model ID, plus 1-click Marketplace installers for **Zoo Code**, **Cline**, and **Kilo Code**.

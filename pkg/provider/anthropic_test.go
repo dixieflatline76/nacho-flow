@@ -646,6 +646,9 @@ func TestBuildRequest_ReasoningEffortToThinking(t *testing.T) {
 		if raw.OutputConfig.Effort != "medium" {
 			t.Errorf("expected output_config.effort medium, got: %+v", raw.OutputConfig)
 		}
+		if raw.MaxTokens != provider.DefaultAdaptiveThinkingMaxTokens {
+			t.Errorf("expected adaptive thinking max_tokens %d, got %d", provider.DefaultAdaptiveThinkingMaxTokens, raw.MaxTokens)
+		}
 	})
 
 	// Claude Haiku 5.5 uses adaptive thinking + summarized display + output_config.effort
@@ -1503,6 +1506,22 @@ func TestBuildRequest_ThinkingDefaults(t *testing.T) {
 		}
 		if raw.MaxTokens != 8192+4096 {
 			t.Fatalf("expected bumped max_tokens %d, got %d", 8192+4096, raw.MaxTokens)
+		}
+		// Explicit max_tokens higher than DefaultAdaptiveThinkingMaxTokens should be preserved
+		openAIHighMax := `{"messages": [{"role": "user", "content": "hi"}], "reasoning_effort": "high", "max_tokens": 32768}`
+		outReqHigh, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", []byte(openAIHighMax))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bodyHigh, _ := io.ReadAll(outReqHigh.Body)
+		var rawHigh struct {
+			MaxTokens int `json:"max_tokens"`
+		}
+		if err := json.Unmarshal(bodyHigh, &rawHigh); err != nil {
+			t.Fatalf("failed unmarshaling output: %v", err)
+		}
+		if rawHigh.MaxTokens != 32768 {
+			t.Fatalf("expected explicit max_tokens 32768 preserved, got %d", rawHigh.MaxTokens)
 		}
 	})
 }
