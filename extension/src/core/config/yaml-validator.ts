@@ -460,12 +460,36 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 		}
 	}
 
-	// 7. INVALID_WHEN_EXPR & UNREACHABLE_TIER
+	// 7. MISSING_TIER_MODEL, INVALID_WHEN_EXPR & UNREACHABLE_TIER
 	let catchAllReached = false;
 	let catchAllTierName = '';
 
+	const resolveMissingModelRange = (modelRange: SourceRange | undefined, fallbackRange: SourceRange): SourceRange => {
+		if (modelRange) {
+			const mLine = modelRange.startLine;
+			const rawMLine = lines[mLine] || '';
+			const firstNonWs = rawMLine.search(/\S/);
+			return {
+				startLine: mLine,
+				startCharacter: firstNonWs !== -1 ? firstNonWs : modelRange.startCharacter,
+				endLine: mLine,
+				endCharacter: Math.max(rawMLine.length, modelRange.endCharacter)
+			};
+		}
+		return fallbackRange;
+	};
+
 	for (const tier of index.tiers.values()) {
 		const tierLabel = tier.name || 'unnamed';
+		if (!tier.model || !tier.model.trim()) {
+			issues.push({
+				ruleId: 'MISSING_TIER_MODEL',
+				message: `tier '${tierLabel}' is missing required 'model'`,
+				severity: 'Error',
+				range: resolveMissingModelRange(tier.modelValueRange, tier.nameValueRange)
+			});
+		}
+
 		if (catchAllReached) {
 			issues.push({
 				ruleId: 'UNREACHABLE_TIER',
@@ -541,6 +565,21 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 					});
 				}
 			}
+		}
+	}
+
+	if (index.defaultTier) {
+		const dt = index.defaultTier;
+		if ((dt.name || dt.provider || dt.modelValueRange) && (!dt.model || !dt.model.trim())) {
+			const msg = dt.name
+				? `default_tier '${dt.name}' is missing required 'model'`
+				: `default_tier is missing required 'model'`;
+			issues.push({
+				ruleId: 'MISSING_TIER_MODEL',
+				message: msg,
+				severity: 'Error',
+				range: resolveMissingModelRange(dt.modelValueRange, dt.nameValueRange || dt.blockRange)
+			});
 		}
 	}
 

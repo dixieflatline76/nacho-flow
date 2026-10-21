@@ -1074,6 +1074,15 @@ export class NachoCodeActionProvider implements vscode.CodeActionProvider {
 				};
 				actions.push(pickTierAction);
 			}
+
+			if (issue.ruleId === 'MISSING_TIER_MODEL') {
+				const pickModelAction = new vscode.CodeAction('🧠 Pick model from provider...', vscode.CodeActionKind.QuickFix);
+				pickModelAction.command = {
+					title: 'Pick Model',
+					command: 'nacho-flow.pickModel'
+				};
+				actions.push(pickModelAction);
+			}
 		}
 
 		return actions;

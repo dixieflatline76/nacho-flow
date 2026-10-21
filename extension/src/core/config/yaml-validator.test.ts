@@ -36,6 +36,7 @@ tiers:
 default_tier:
   name: "Default Catch-All"
   provider: openrouter_cloud
+  model: "z-ai/glm-5.3-flash"
 `;
 
     const issues = validateNachoConfigYaml(validYaml);
@@ -258,14 +259,17 @@ providers:
 tiers:
   - name: "Tier 1: Complex Expression"
     provider: llamacpp
+    model: "qwen-32b"
     when: "!any(Keywords, { # in ['debug', 'refactor'] }) && ClientID == 'cline'"
 
   - name: "Tier 2: Thought Slap & Cooling Down"
     provider: llamacpp
+    model: "qwen-32b"
     when: "SessionThoughtSlapCount > 0 && !IsModelCoolingDown(\\"qwen-32b\\")"
 
   - name: "Tier 3: Tools & Context"
     provider: llamacpp
+    model: "qwen-32b"
     when: "InteractiveTool in ['write_to_file', 'replace_file_content'] && CycleBreakerReason != ''"
 `;
     const issues = validateNachoConfigYaml(autoTunerYaml);
@@ -428,6 +432,30 @@ providers:
       const issues = validateNachoConfigYaml(yaml);
       const errors = issues.filter((i) => i.severity === 'Error');
       expect(errors).toHaveLength(0);
+    });
+
+    it('flags missing or empty model on tiers and default_tier as MISSING_TIER_MODEL', () => {
+      const yaml = `
+providers:
+  or:
+    type: "openrouter"
+
+tiers:
+  - name: "Tier 1"
+    provider: "or"
+    model: ""
+    when: "true"
+
+default_tier:
+  name: "Fallback"
+  provider: "or"
+  model: ""
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const modelIssues = issues.filter((i) => i.ruleId === 'MISSING_TIER_MODEL');
+      expect(modelIssues).toHaveLength(2);
+      expect(modelIssues[0].message).toBe("tier 'Tier 1' is missing required 'model'");
+      expect(modelIssues[1].message).toBe("default_tier 'Fallback' is missing required 'model'");
     });
   });
 });
