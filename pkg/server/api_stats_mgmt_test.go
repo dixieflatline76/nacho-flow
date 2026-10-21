@@ -844,7 +844,7 @@ func TestAPI_Coverage_ComprehensiveBranches(t *testing.T) {
 		t.Errorf("expected 400 for dry_run validation error, got %d", wDryRunValErr.Code)
 	}
 
-	dryRunInvalidExpr := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "local"}}, "tiers": [{"name": "T1", "provider": "p", "when": "invalid == expr +++"}]}`
+	dryRunInvalidExpr := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "local"}}, "tiers": [{"name": "T1", "model": "test-model", "provider": "p", "when": "invalid == expr +++"}]}`
 	reqDryRunExprErr := httptest.NewRequest(http.MethodPut, "/api/v1/config?dry_run=true", strings.NewReader(dryRunInvalidExpr))
 	wDryRunExprErr := httptest.NewRecorder()
 	srvNilReg.handleConfigUpdate(wDryRunExprErr, reqDryRunExprErr)
@@ -852,7 +852,7 @@ func TestAPI_Coverage_ComprehensiveBranches(t *testing.T) {
 		t.Errorf("expected 400 for dry_run invalid expression, got %d", wDryRunExprErr.Code)
 	}
 
-	dryRunValid := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "local"}}, "tiers": [{"name": "T1", "provider": "p", "when": "Tokens > 0"}]}`
+	dryRunValid := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "local"}}, "tiers": [{"name": "T1", "model": "test-model", "provider": "p", "when": "Tokens > 0"}]}`
 	reqDryRunOK := httptest.NewRequest(http.MethodPut, "/api/v1/config?dry_run=true", strings.NewReader(dryRunValid))
 	wDryRunOK := httptest.NewRecorder()
 	srvNilReg.handleConfigUpdate(wDryRunOK, reqDryRunOK)

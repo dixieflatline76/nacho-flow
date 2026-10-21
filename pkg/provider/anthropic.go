@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,11 @@ import (
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/wirejson"
+)
+
+var (
+	ErrMissingModel          = errors.New("anthropic request is missing required model identifier")
+	adaptiveThinkingFamilies = []string{"sonnet-", "opus-", "haiku-", "fable-", "mythos-"}
 )
 
 const (
@@ -107,12 +113,12 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		return nil, fmt.Errorf("failed to parse incoming OpenAI request body: %w", err)
 	}
 
-	targetModel := normalizeAnthropicModel(model)
+	targetModel := strings.TrimSpace(model)
 	if targetModel == "" {
-		targetModel = normalizeAnthropicModel(openAIReq.Model)
+		targetModel = strings.TrimSpace(openAIReq.Model)
 	}
 	if targetModel == "" {
-		targetModel = "claude-sonnet-5"
+		return nil, ErrMissingModel
 	}
 
 	// 1. Extract and hoist system messages using string builder
@@ -207,18 +213,10 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 
 	// Thinking / temperature sanitization
 	mLower := strings.ToLower(targetModel)
-	isClaude5 := strings.Contains(mLower, "sonnet-5") ||
-		strings.Contains(mLower, "opus-5") ||
-		strings.Contains(mLower, "fable-5") ||
-		strings.Contains(mLower, "haiku-5") ||
-		strings.Contains(mLower, "mythos-5") ||
-		strings.Contains(mLower, "opus-4.7") ||
-		strings.Contains(mLower, "opus-4-7") ||
-		strings.Contains(mLower, "opus-4.8") ||
-		strings.Contains(mLower, "opus-4-8")
+	isAdaptiveThinking := isAdaptiveThinkingAnthropicModel(mLower)
 
 	isThinkingModel := strings.Contains(mLower, "thinking") ||
-		isClaude5 ||
+		isAdaptiveThinking ||
 		strings.Contains(mLower, "sonnet-4") ||
 		strings.Contains(mLower, "opus-4")
 
@@ -230,7 +228,7 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 	var thinking *fastAnthropicThinking
 	var outputConfig *fastAnthropicOutputConfig
 
-	if isClaude5 {
+	if isAdaptiveThinking {
 		if effort == "none" || effort == "off" || effort == "disabled" {
 			thinking = &fastAnthropicThinking{
 				Type: "disabled",
@@ -266,8 +264,8 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		isThinkingModel = true
 	}
 
-	if isThinkingModel || isClaude5 {
-		// Anthropic rejects assistant prefill when thinking is enabled or on Claude 5
+	if isThinkingModel || isAdaptiveThinking {
+		// Anthropic rejects assistant prefill when thinking is enabled or on adaptive thinking models
 		if len(anthropicMsgs) > 0 && anthropicMsgs[len(anthropicMsgs)-1].Role == "assistant" {
 			anthropicMsgs = anthropicMsgs[:len(anthropicMsgs)-1]
 		}
@@ -900,21 +898,33 @@ func normalizeAnthropicBaseURL(u string) string {
 	return cleaned
 }
 
-func normalizeAnthropicModel(model string) string {
-	cleaned := strings.TrimPrefix(strings.TrimSpace(model), "anthropic/")
-	mLower := strings.ToLower(cleaned)
-	switch {
-	case strings.HasPrefix(mLower, "claude-3-7-sonnet"),
-		strings.HasPrefix(mLower, "claude-3.7-sonnet"):
-		return "claude-sonnet-5"
-	case strings.HasPrefix(mLower, "claude-3-opus"),
-		strings.HasPrefix(mLower, "claude-3.0-opus"):
-		return "claude-opus-5"
-	case strings.HasPrefix(mLower, "claude-haiku-5.5"),
-		strings.HasPrefix(mLower, "haiku-5.5"),
-		strings.HasPrefix(mLower, "haiku-5-5"):
-		return "claude-haiku-5-5"
-	default:
-		return cleaned
+// IsAdaptiveThinkingAnthropicModel returns true if the model family uses Anthropic's
+// adaptive thinking parameter schema (Claude 5+ and Opus 4.7/4.8).
+func IsAdaptiveThinkingAnthropicModel(m string) bool {
+	return isAdaptiveThinkingAnthropicModel(strings.ToLower(m))
+}
+
+func isAdaptiveThinkingAnthropicModel(mLower string) bool {
+	if strings.Contains(mLower, "opus-4-7") || strings.Contains(mLower, "opus-4.7") ||
+		strings.Contains(mLower, "opus-4-8") || strings.Contains(mLower, "opus-4.8") {
+		return true
 	}
+	for _, fam := range adaptiveThinkingFamilies {
+		rest := mLower
+		for {
+			idx := strings.Index(rest, fam)
+			if idx == -1 {
+				break
+			}
+			afterIdx := idx + len(fam)
+			if afterIdx < len(rest) {
+				c := rest[afterIdx]
+				if c >= '5' && c <= '9' {
+					return true
+				}
+			}
+			rest = rest[afterIdx:]
+		}
+	}
+	return false
 }

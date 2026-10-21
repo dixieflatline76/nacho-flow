@@ -114,6 +114,7 @@ providers:
     type: "local"
 tiers:
   - name: "Local"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "Tokens < 8000"
 `
@@ -147,6 +148,7 @@ providers:
     type: "local"
 tiers:
   - name: "Local Fast"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "Tokens < 4000"
 `
@@ -244,10 +246,12 @@ providers:
     type: "local"
 tiers:
   - name: "Local"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "Tokens < 8000"
 default_tier:
   name: "Fallback"
+  model: "llama-3-8b"
   provider: "ollama"
 `
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
@@ -295,10 +299,12 @@ providers:
     type: "cloud"
 tiers:
   - name: "Cloud"
+    model: "anthropic/claude-sonnet-5"
     provider: "openrouter"
     when: "Tokens < 8000"
 default_tier:
   name: "Fallback"
+  model: "anthropic/claude-sonnet-5"
   provider: "openrouter"
 `
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
@@ -351,10 +357,12 @@ providers:
     type: "cloud"
 tiers:
   - name: "Cloud"
+    model: "anthropic/claude-sonnet-5"
     provider: "openrouter"
     when: "Tokens < 8000"
 default_tier:
   name: "Fallback"
+  model: "anthropic/claude-sonnet-5"
   provider: "openrouter"
 `
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
@@ -458,6 +466,7 @@ providers:
     type: "local"
 tiers:
   - name: "Local"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "Tokens < 8000"
 `
@@ -498,7 +507,7 @@ tiers:
 
 	// Error path 3: bad optimizer analysis or config
 	badCfgPath := filepath.Join(tmpDir, "bad_cfg_for_tune.yaml")
-	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: 'http://127.0.0.1:11434'\n    type: 'local'\ntiers:\n  - name: 'T1'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
+	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: 'http://127.0.0.1:11434'\n    type: 'local'\ntiers:\n  - name: 'T1'\n    model: 'llama-3-8b'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
 	if err := runTune([]string{"-config", badCfgPath, "-traffic-log", trafficLogPath}); err == nil {
 		t.Errorf("expected error for bad tier expression in tune, got nil")
 	}
@@ -569,6 +578,7 @@ providers:
     type: "local"
 tiers:
   - name: "Bad Tier"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "invalid expression syntax !!!"
 `
@@ -605,6 +615,7 @@ providers:
     type: "local"
 tiers:
   - name: "Bad Tier"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "invalid tier expression syntax !!!"
 `

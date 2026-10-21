@@ -305,7 +305,7 @@ func TestAPI_Config_PutHotReload_And_DryRun(t *testing.T) {
 			"openrouter": {"base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-***", "type": "cloud"}
 		},
 		"tiers": [
-			{"name": "Tier 1", "provider": "ollama", "when": "Tokens < 16000"}
+			{"name": "Tier 1", "model": "test-model", "provider": "ollama", "when": "Tokens < 16000"}
 		]
 	}`
 
@@ -326,7 +326,7 @@ func TestAPI_Config_PutHotReload_And_DryRun(t *testing.T) {
 	invalidPayload := `{
 		"port": 8000,
 		"providers": {"ollama": {"base_url": "http://127.0.0.1:11434", "type": "local"}},
-		"tiers": [{"name": "Tier 1", "provider": "ollama", "when": "Tokens < 16000 && invalid_var_name"}]
+		"tiers": [{"name": "Tier 1", "model": "test-model", "provider": "ollama", "when": "Tokens < 16000 && invalid_var_name"}]
 	}`
 	req = httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(invalidPayload))
 	req.Header.Set("Authorization", "Bearer test-secret-token")
@@ -346,7 +346,7 @@ func TestAPI_Config_PutHotReload_And_DryRun(t *testing.T) {
 			"openrouter": {"base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-***", "type": "cloud"}
 		},
 		"tiers": [
-			{"name": "Tier 1 New", "provider": "ollama", "when": "Tokens < 24000"}
+			{"name": "Tier 1 New", "model": "test-model", "provider": "ollama", "when": "Tokens < 24000"}
 		]
 	}`
 	req = httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(validPayload))
@@ -721,7 +721,7 @@ func TestAPI_Watchdog_AutoRollback(t *testing.T) {
 	newPayload := `{
 		"port": 8000,
 		"providers": {"ollama": {"base_url": "http://127.0.0.1:11434", "type": "local"}},
-		"tiers": [{"name": "New Experimental Tier", "provider": "ollama", "when": "Tokens > 0"}]
+		"tiers": [{"name": "New Experimental Tier", "model": "test-model", "provider": "ollama", "when": "Tokens > 0"}]
 	}`
 	req := httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(newPayload))
 	req.Header.Set("Authorization", "Bearer test-secret-token")

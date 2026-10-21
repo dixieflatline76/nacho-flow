@@ -721,8 +721,8 @@ func TestBuildRequest_ReasoningEffortToThinking(t *testing.T) {
 			t.Fatalf("failed unmarshaling output: %v", err)
 		}
 
-		if raw.Model != "claude-haiku-5-5" {
-			t.Errorf("expected normalized model claude-haiku-5-5, got %s", raw.Model)
+		if raw.Model != "anthropic/claude-haiku-5.5" {
+			t.Errorf("expected verbatim model anthropic/claude-haiku-5.5, got %s", raw.Model)
 		}
 		if raw.Thinking.Type != "adaptive" || raw.Thinking.Display != "summarized" {
 			t.Errorf("expected adaptive summarized thinking, got: %+v", raw.Thinking)
@@ -818,7 +818,8 @@ func TestBuildRequest_ReasoningEffortToThinking(t *testing.T) {
 		var raw struct {
 			Model    string `json:"model"`
 			Thinking struct {
-				Type string `json:"type"`
+				Type         string `json:"type"`
+				BudgetTokens int    `json:"budget_tokens"`
 			} `json:"thinking"`
 			OutputConfig struct {
 				Effort string `json:"effort"`
@@ -828,11 +829,11 @@ func TestBuildRequest_ReasoningEffortToThinking(t *testing.T) {
 			t.Fatalf("failed unmarshaling output: %v", err)
 		}
 
-		if raw.Model != "claude-sonnet-5" {
-			t.Errorf("expected legacy model to be normalized to claude-sonnet-5, got %s", raw.Model)
+		if raw.Model != "claude-3-7-sonnet-20250219" {
+			t.Errorf("expected verbatim model claude-3-7-sonnet-20250219, got %s", raw.Model)
 		}
-		if raw.Thinking.Type != "adaptive" || raw.OutputConfig.Effort != "medium" {
-			t.Errorf("expected adaptive thinking for normalized claude-sonnet-5, got: %+v %+v", raw.Thinking, raw.OutputConfig)
+		if raw.Thinking.Type != "enabled" || raw.Thinking.BudgetTokens != 4096 {
+			t.Errorf("expected budget thinking for claude-3-7-sonnet-20250219, got: %+v", raw.Thinking)
 		}
 	})
 }
@@ -1062,8 +1063,7 @@ func TestAnthropicProvider_CoverageExtensions(t *testing.T) {
 			"stop": ["END", "STOP"]
 		}`
 		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-		// Test empty model fallback to "claude-sonnet-5"
-		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "", []byte(openAIJSON))
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-sonnet-5", []byte(openAIJSON))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1097,8 +1097,8 @@ func TestAnthropicProvider_CoverageExtensions(t *testing.T) {
 			StopSequences []string `json:"stop_sequences"`
 		}
 		_ = json.NewDecoder(outReq.Body).Decode(&raw)
-		if raw.Model != "claude-opus-5" {
-			t.Errorf("expected claude-opus-5, got %s", raw.Model)
+		if raw.Model != "anthropic/claude-3-opus" {
+			t.Errorf("expected anthropic/claude-3-opus, got %s", raw.Model)
 		}
 		if len(raw.StopSequences) != 1 || raw.StopSequences[0] != "HALT" {
 			t.Errorf("expected stop sequences [HALT], got: %v", raw.StopSequences)
@@ -1369,3 +1369,141 @@ func TestBuildRequest_ToolSchemaNoHTMLEscaping(t *testing.T) {
 		t.Errorf("BuildUpstreamRequest did not preserve literal characters in tool schema: %s", string(body))
 	}
 }
+
+func TestBuildRequest_SendsModelVerbatim(t *testing.T) {
+	cfg := contract.ProviderConfig{
+		BaseURL: "https://api.anthropic.com",
+		APIKey:  "test-anthropic-key",
+		Type:    contract.ProviderTypeAnthropic,
+	}
+	p := provider.NewAnthropicProvider("anthropic-direct", cfg)
+
+	testCases := []string{
+		"claude-3-7-sonnet-20250219",
+		"anthropic/claude-opus-4.7",
+		"claude-opus-4.7",
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc, func(t *testing.T) {
+			openAIJSON := `{"messages": [{"role": "user", "content": "hi"}]}`
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+			outReq, err := p.BuildUpstreamRequest(context.Background(), req, tc, []byte(openAIJSON))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			bodyBytes, _ := io.ReadAll(outReq.Body)
+			var raw struct {
+				Model string `json:"model"`
+			}
+			if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+				t.Fatalf("failed unmarshaling output: %v", err)
+			}
+			if raw.Model != tc {
+				t.Fatalf("expected verbatim model %q, got %q", tc, raw.Model)
+			}
+		})
+	}
+
+	// Also verify that an empty model string (and empty request body model) returns error
+	t.Run("EmptyModelRejected", func(t *testing.T) {
+		openAIJSON := `{"messages": [{"role": "user", "content": "hi"}]}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		_, err := p.BuildUpstreamRequest(context.Background(), req, "", []byte(openAIJSON))
+		if err == nil {
+			t.Fatal("expected error on empty model, got nil")
+		}
+		if !strings.Contains(err.Error(), "missing required model identifier") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+}
+
+func TestIsAdaptiveThinkingAnthropicModel(t *testing.T) {
+	cases := []struct {
+		model    string
+		expected bool
+	}{
+		{"claude-3-5-haiku-20241022", false},
+		{"claude-sonnet-4-5-20250929", false},
+		{"claude-3-opus-20240229", false},
+		{"claude-opus-4-6", false},
+		{"claude-haiku-5-5", true},
+		{"claude-sonnet-5-5", true},
+		{"claude-opus-5-5", true},
+		{"claude-opus-4-7", true},
+		{"claude-opus-4.7", true},
+		{"claude-opus-4-8", true},
+		{"claude-opus-4.8", true},
+		{"claude-sonnet-5", true},
+		{"claude-sonnet-6", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.model, func(t *testing.T) {
+			actual := provider.IsAdaptiveThinkingAnthropicModel(tc.model)
+			if actual != tc.expected {
+				t.Fatalf("for model %q expected %v, got %v", tc.model, tc.expected, actual)
+			}
+		})
+	}
+}
+
+func TestBuildRequest_ThinkingDefaults(t *testing.T) {
+	cfg := contract.ProviderConfig{
+		BaseURL: "https://api.anthropic.com",
+		APIKey:  "test-anthropic-key",
+		Type:    contract.ProviderTypeAnthropic,
+	}
+	p := provider.NewAnthropicProvider("anthropic-direct", cfg)
+
+	// empty effort on adaptive model -> thinking omitted
+	t.Run("EmptyEffortAdaptiveModel", func(t *testing.T) {
+		openAIJSON := `{"messages": [{"role": "user", "content": "hi"}]}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-sonnet-5", []byte(openAIJSON))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bodyBytes, _ := io.ReadAll(outReq.Body)
+		var raw struct {
+			Thinking *struct {
+				Type string `json:"type"`
+			} `json:"thinking"`
+		}
+		if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+			t.Fatalf("failed unmarshaling output: %v", err)
+		}
+		if raw.Thinking != nil {
+			t.Fatalf("expected nil thinking for empty effort, got %+v", raw.Thinking)
+		}
+	})
+
+	// budget bump applied
+	t.Run("BudgetBumpApplied", func(t *testing.T) {
+		openAIJSON := `{"messages": [{"role": "user", "content": "hi"}], "reasoning_effort": "high", "max_tokens": 1000}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-3-opus", []byte(openAIJSON))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bodyBytes, _ := io.ReadAll(outReq.Body)
+		var raw struct {
+			MaxTokens int `json:"max_tokens"`
+			Thinking  *struct {
+				Type         string `json:"type"`
+				BudgetTokens int    `json:"budget_tokens"`
+			} `json:"thinking"`
+		}
+		if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+			t.Fatalf("failed unmarshaling output: %v", err)
+		}
+		if raw.Thinking == nil || raw.Thinking.BudgetTokens != 8192 {
+			t.Fatalf("expected budget 8192, got %+v", raw.Thinking)
+		}
+		if raw.MaxTokens != 8192+4096 {
+			t.Fatalf("expected bumped max_tokens %d, got %d", 8192+4096, raw.MaxTokens)
+		}
+	})
+}
+

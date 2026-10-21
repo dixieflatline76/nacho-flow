@@ -30,15 +30,18 @@ func TestValidateConfig_Valid(t *testing.T) {
 		Tiers: []contract.Tier{
 			{
 				Name:     "Local Tier",
+				Model:    "llama-3-8b",
 				Provider: "ollama",
 			},
 			{
 				Name:     "Cloud Tier",
+				Model:    "anthropic/claude-sonnet-5",
 				Provider: "openrouter",
 			},
 		},
 		DefaultTier: contract.Tier{
 			Name:     "Default",
+			Model:    "anthropic/claude-sonnet-5",
 			Provider: "openrouter",
 		},
 	}
@@ -135,6 +138,7 @@ func TestValidateConfig_UnknownTierProvider(t *testing.T) {
 		Tiers: []contract.Tier{
 			{
 				Name:     "Unknown Tier",
+				Model:    "llama-3-8b",
 				Provider: "vllm-nonexistent",
 			},
 		},
@@ -158,6 +162,7 @@ func TestValidateConfig_UnknownDefaultTierProvider(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{
 			Name:     "Default",
+			Model:    "anthropic/claude-sonnet-5",
 			Provider: "cloud-ghost",
 		},
 	}
@@ -180,6 +185,7 @@ func TestValidateConfig_UnknownFairyDustProvider(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{
 			Name:     "Default",
+			Model:    "llama-3-8b",
 			Provider: "ollama",
 		},
 		FairyDust: contract.FairyDustConfig{
@@ -295,11 +301,13 @@ func TestValidateConfig_Phase2Rules(t *testing.T) {
 			Tiers: []contract.Tier{
 				{
 					Name:     "Tier 1",
+					Model:    "test-model",
 					Provider: "mock",
 				},
 			},
 			DefaultTier: contract.Tier{
 				Name:     "Default",
+				Model:    "test-model",
 				Provider: "mock",
 			},
 		}
@@ -421,3 +429,78 @@ func TestValidateRawYAML_AllEdgeCases(t *testing.T) {
 		}
 	}
 }
+
+func TestValidation_EmptyTierModelRejected(t *testing.T) {
+	baseCfg := func() *contract.Config {
+		return &contract.Config{
+			Providers: map[string]contract.ProviderConfig{
+				"ollama": {
+					BaseURL: "http://127.0.0.1:11434",
+					Type:    contract.ProviderTypeLocal,
+				},
+			},
+			Tiers: []contract.Tier{
+				{
+					Name:     "Tier1",
+					Model:    "llama-3-8b",
+					Provider: "ollama",
+				},
+			},
+			DefaultTier: contract.Tier{
+				Name:     "Default",
+				Model:    "llama-3-8b",
+				Provider: "ollama",
+			},
+		}
+	}
+
+	t.Run("empty model in tier", func(t *testing.T) {
+		cfg := baseCfg()
+		cfg.Tiers[0].Model = ""
+		err := config.ValidateConfig(cfg)
+		if err == nil {
+			t.Fatal("expected error for empty tier model, got nil")
+		}
+		if !strings.Contains(err.Error(), "tier 'Tier1' is missing required 'model'") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("whitespace model in tier", func(t *testing.T) {
+		cfg := baseCfg()
+		cfg.Tiers[0].Model = "   "
+		err := config.ValidateConfig(cfg)
+		if err == nil {
+			t.Fatal("expected error for whitespace tier model, got nil")
+		}
+		if !strings.Contains(err.Error(), "tier 'Tier1' is missing required 'model'") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("empty model in default_tier", func(t *testing.T) {
+		cfg := baseCfg()
+		cfg.DefaultTier.Model = ""
+		err := config.ValidateConfig(cfg)
+		if err == nil {
+			t.Fatal("expected error for empty default_tier model, got nil")
+		}
+		if !strings.Contains(err.Error(), "default_tier 'Default' is missing required 'model'") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("empty model in unnamed default_tier", func(t *testing.T) {
+		cfg := baseCfg()
+		cfg.DefaultTier.Name = ""
+		cfg.DefaultTier.Model = ""
+		err := config.ValidateConfig(cfg)
+		if err == nil {
+			t.Fatal("expected error for empty default_tier model, got nil")
+		}
+		if !strings.Contains(err.Error(), "default_tier is missing required 'model'") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+}
+

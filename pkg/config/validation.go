@@ -144,8 +144,11 @@ func ValidateConfig(cfg *contract.Config) error {
 		}
 	}
 
-	// Validate that all tiers reference existing providers, valid when variables, and valid thought_slap overrides
+	// Validate that all tiers declare a model, reference existing providers, valid when variables, and valid thought_slap overrides
 	for _, tier := range cfg.Tiers {
+		if strings.TrimSpace(tier.Model) == "" {
+			return fmt.Errorf("config error: tier '%s' is missing required 'model'", tier.Name)
+		}
 		if tier.When != "" {
 			if strings.Contains(tier.When, "SessionKickstarted") {
 				return fmt.Errorf("config error: tier '%s' when expression uses removed DSL variable 'SessionKickstarted'; rename to 'SessionReadSlapped'. See CHANGELOG v1.5", tier.Name)
@@ -169,6 +172,15 @@ func ValidateConfig(cfg *contract.Config) error {
 			if _, exists := cfg.Providers[tier.Provider]; !exists {
 				return fmt.Errorf("config error: tier '%s' references unknown provider '%s'", tier.Name, tier.Provider)
 			}
+		}
+	}
+
+	if cfg.DefaultTier.Name != "" || cfg.DefaultTier.Provider != "" || cfg.DefaultTier.Model != "" {
+		if strings.TrimSpace(cfg.DefaultTier.Model) == "" {
+			if cfg.DefaultTier.Name != "" {
+				return fmt.Errorf("config error: default_tier '%s' is missing required 'model'", cfg.DefaultTier.Name)
+			}
+			return fmt.Errorf("config error: default_tier is missing required 'model'")
 		}
 	}
 

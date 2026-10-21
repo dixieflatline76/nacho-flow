@@ -102,3 +102,23 @@ func BenchmarkAnthropic_TranslateResponseBody(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkIsAdaptiveThinkingAnthropicModel(b *testing.B) {
+	models := []string{
+		"claude-sonnet-5",
+		"claude-3-7-sonnet-20250219",
+		"claude-opus-4-7",
+		"claude-haiku-5-5",
+		"claude-3-5-haiku-20241022",
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		for _, m := range models {
+			_ = provider.IsAdaptiveThinkingAnthropicModel(m)
+		}
+	}
+}
+
