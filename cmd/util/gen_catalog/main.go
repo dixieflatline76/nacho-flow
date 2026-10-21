@@ -190,9 +190,14 @@ func run(args []string, apiURL string) error {
 				for id, existingProfile := range existingCatalog.Models {
 					if _, exists := catalog.Models[id]; !exists {
 						catalog.Models[id] = existingProfile
-					} else if len(existingProfile.Aliases) > 0 && len(catalog.Models[id].Aliases) == 0 {
+					} else {
 						p := catalog.Models[id]
-						p.Aliases = existingProfile.Aliases
+						if len(existingProfile.Aliases) > 0 && len(p.Aliases) == 0 {
+							p.Aliases = existingProfile.Aliases
+						}
+						if len(existingProfile.Providers) > 0 && len(p.Providers) == 0 {
+							p.Providers = existingProfile.Providers
+						}
 						catalog.Models[id] = p
 					}
 				}

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -687,3 +688,334 @@ func TestCurationManager_RegisterDynamicModels(t *testing.T) {
 		t.Errorf("expected RecommendedTiers preserved from existing")
 	}
 }
+
+func TestCatalog_AnthropicProviderBindings(t *testing.T) {
+	mgr := DefaultManager()
+	if mgr == nil {
+		t.Fatalf("expected DefaultManager to be non-nil")
+	}
+
+	expectedActiveAnthropicModels := map[string]string{
+		"anthropic/claude-haiku-4.5": "claude-haiku-4-5",
+		"anthropic/claude-sonnet-4":   "claude-sonnet-4-0",
+		"anthropic/claude-sonnet-4.5": "claude-sonnet-4-5",
+		"anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
+		"anthropic/claude-sonnet-5":   "claude-sonnet-5",
+		"anthropic/claude-opus-4.1":   "claude-opus-4-1",
+		"anthropic/claude-opus-4.5":   "claude-opus-4-5",
+		"anthropic/claude-opus-4.6":   "claude-opus-4-6",
+		"anthropic/claude-opus-4.7":   "claude-opus-4-7",
+		"anthropic/claude-opus-4.8":   "claude-opus-4-8",
+		"anthropic/claude-opus-5":     "claude-opus-5",
+		"anthropic/claude-fable-5":    "claude-fable-5",
+		"anthropic/claude-fable-5.1":  "claude-fable-5-1",
+	}
+
+	cat := mgr.GetActiveCatalog()
+	if cat == nil || cat.Models == nil {
+		t.Fatalf("expected active catalog with models")
+	}
+
+	for canonicalID, expectedWireID := range expectedActiveAnthropicModels {
+		profile, ok := cat.Models[canonicalID]
+		if !ok {
+			t.Fatalf("expected active Anthropic model %q to exist in catalog", canonicalID)
+		}
+
+		if profile.Providers == nil {
+			t.Fatalf("expected model %q to have Providers map", canonicalID)
+		}
+
+		binding, ok := profile.Providers[contract.PlatformAnthropic]
+		if !ok {
+			t.Fatalf("expected model %q to have binding for platform anthropic", canonicalID)
+		}
+
+		if binding.ModelID != expectedWireID {
+			t.Errorf("model %q: expected Anthropic wire ID %q, got %q", canonicalID, expectedWireID, binding.ModelID)
+		}
+	}
+
+	// Verify Sonnet 5 coding index restored to 71.5 and retains tier_4_frontier
+	sonnet5, ok := cat.Models["anthropic/claude-sonnet-5"]
+	if !ok {
+		t.Fatalf("expected anthropic/claude-sonnet-5 in catalog")
+	}
+	if sonnet5.CodingIndex != 71.5 {
+		t.Errorf("expected anthropic/claude-sonnet-5 coding_index 71.5, got %f", sonnet5.CodingIndex)
+	}
+	if !slices.Contains(sonnet5.RecommendedTiers, contract.TierIDFrontier) {
+		t.Errorf("expected anthropic/claude-sonnet-5 to contain tier_4_frontier in recommended_tiers")
+	}
+	if !sonnet5.IsFrontier() {
+		t.Errorf("expected anthropic/claude-sonnet-5 to report IsFrontier() == true")
+	}
+
+	// Verify :batch models do NOT have providers.anthropic
+	for id, p := range cat.Models {
+		if strings.HasPrefix(id, "anthropic/") && strings.Contains(id, ":batch") {
+			if _, hasAnthropic := p.Providers[contract.PlatformAnthropic]; hasAnthropic {
+				t.Errorf("batch model %q should NOT have providers.anthropic", id)
+			}
+		}
+	}
+
+	// Verify estimated 5.5 models do NOT have providers.anthropic
+	estimated55 := []string{
+		"anthropic/claude-haiku-5.5",
+		"anthropic/claude-sonnet-5.5",
+		"anthropic/claude-opus-5.5",
+	}
+	for _, id := range estimated55 {
+		if p, exists := cat.Models[id]; exists {
+			if _, hasAnthropic := p.Providers[contract.PlatformAnthropic]; hasAnthropic {
+				t.Errorf("estimated model %q must NOT have providers.anthropic binding", id)
+			}
+			if p.BenchmarkSource != BenchmarkSourceEstimated {
+				t.Errorf("model %q expected benchmark_source %q, got %q", id, BenchmarkSourceEstimated, p.BenchmarkSource)
+			}
+		}
+	}
+}
+
+func TestLookup_HyphenWireIDsResolveToCanonical(t *testing.T) {
+	mgr := DefaultManager()
+	if mgr == nil {
+		t.Fatalf("expected DefaultManager to be non-nil")
+	}
+
+	wireTests := []struct {
+		wireID            string
+		expectedCanonical string
+	}{
+		{"claude-sonnet-5", "anthropic/claude-sonnet-5"},
+		{"CLAUDE-SONNET-5", "anthropic/claude-sonnet-5"},
+		{"claude-sonnet-4-0", "anthropic/claude-sonnet-4"},
+		{"claude-sonnet-4-5", "anthropic/claude-sonnet-4.5"},
+		{"claude-sonnet-4-6", "anthropic/claude-sonnet-4.6"},
+		{"claude-haiku-4-5", "anthropic/claude-haiku-4.5"},
+		{"claude-opus-4-1", "anthropic/claude-opus-4.1"},
+		{"claude-opus-4-5", "anthropic/claude-opus-4.5"},
+		{"claude-opus-4-6", "anthropic/claude-opus-4.6"},
+		{"claude-opus-4-7", "anthropic/claude-opus-4.7"},
+		{"claude-opus-4-8", "anthropic/claude-opus-4.8"},
+		{"claude-opus-5", "anthropic/claude-opus-5"},
+		{"claude-fable-5", "anthropic/claude-fable-5"},
+		{"claude-fable-5-1", "anthropic/claude-fable-5.1"},
+	}
+
+	for _, tc := range wireTests {
+		p, found := mgr.Lookup(tc.wireID)
+		if !found {
+			t.Errorf("wire ID %q failed to resolve via Lookup", tc.wireID)
+			continue
+		}
+		canon := p.CanonicalID
+		if canon == "" {
+			canon = p.ModelID
+		}
+		if canon != tc.expectedCanonical {
+			t.Errorf("wire ID %q resolved to %q, expected %q", tc.wireID, canon, tc.expectedCanonical)
+		}
+	}
+}
+
+func TestLookupForPlatform_AnthropicOverridesPriceAndWireID(t *testing.T) {
+	mgr := DefaultManager()
+	if mgr == nil {
+		t.Fatalf("expected DefaultManager to be non-nil")
+	}
+
+	// 1. Existing catalog model lookup with PlatformAnthropic
+	p, ok := mgr.LookupForPlatform(contract.PlatformAnthropic, "anthropic/claude-sonnet-5")
+	if !ok {
+		t.Fatalf("expected LookupForPlatform to succeed for anthropic/claude-sonnet-5 on platform anthropic")
+	}
+	if p.ModelID != "claude-sonnet-5" {
+		t.Errorf("expected ModelID to be wire ID claude-sonnet-5, got %q", p.ModelID)
+	}
+	if p.PromptCostPerMillion != 3.0 || p.CompletionCostPerMillion != 15.0 {
+		t.Errorf("expected base prices 3.0/15.0, got %f/%f", p.PromptCostPerMillion, p.CompletionCostPerMillion)
+	}
+
+	// 2. Lookup by wire ID on PlatformAnthropic
+	pWire, ok := mgr.LookupForPlatform(contract.PlatformAnthropic, "claude-sonnet-5")
+	if !ok {
+		t.Fatalf("expected LookupForPlatform to succeed for claude-sonnet-5 on platform anthropic")
+	}
+	if pWire.ModelID != "claude-sonnet-5" {
+		t.Errorf("expected ModelID claude-sonnet-5, got %q", pWire.ModelID)
+	}
+
+	// 3. Dynamic model with overridden prices in ProviderBinding (using isolated manager)
+	isolatedMgr := NewManager(t.TempDir(), "")
+	customPrompt := 4.5
+	customComp := 22.5
+	isolatedMgr.RegisterDynamicModels(map[string]ModelCuratedProfile{
+		"custom/override-model": {
+			Name:                     "Custom Override Model",
+			TierRole:                 RoleCodingWorkhorse,
+			PromptCostPerMillion:     2.0,
+			CompletionCostPerMillion: 10.0,
+			Providers: map[contract.Platform]ProviderBinding{
+				contract.PlatformAnthropic: {
+					ModelID:                  "claude-custom-override",
+					PromptCostPerMillion:     &customPrompt,
+					CompletionCostPerMillion: &customComp,
+				},
+			},
+		},
+	})
+
+	pOverride, ok := isolatedMgr.LookupForPlatform(contract.PlatformAnthropic, "custom/override-model")
+	if !ok {
+		t.Fatalf("expected dynamic model to resolve on platform anthropic")
+	}
+	if pOverride.ModelID != "claude-custom-override" {
+		t.Errorf("expected wire ID claude-custom-override, got %q", pOverride.ModelID)
+	}
+	if pOverride.PromptCostPerMillion != customPrompt {
+		t.Errorf("expected overridden prompt price %f, got %f", customPrompt, pOverride.PromptCostPerMillion)
+	}
+	if pOverride.CompletionCostPerMillion != customComp {
+		t.Errorf("expected overridden completion price %f, got %f", customComp, pOverride.CompletionCostPerMillion)
+	}
+
+	// 4. Negative lookups
+	if _, ok := mgr.LookupForPlatform(contract.PlatformAnthropic, "openai/gpt-4o"); ok {
+		t.Errorf("expected gpt-4o to fail LookupForPlatform on platform anthropic")
+	}
+	if _, ok := mgr.LookupForPlatform(contract.PlatformOpenRouter, "anthropic/claude-sonnet-5"); ok {
+		t.Errorf("expected openrouter to return false when no openrouter binding entry exists")
+	}
+	if _, ok := mgr.LookupForPlatform(contract.PlatformLocal, "anthropic/claude-sonnet-5"); ok {
+		t.Errorf("expected local to return false for cloud model without local binding")
+	}
+	if _, ok := mgr.LookupForPlatform(contract.PlatformAnthropic, "non-existent-model"); ok {
+		t.Errorf("expected non-existent model to return false")
+	}
+}
+
+func TestFormatModelForPlatform(t *testing.T) {
+	mgr := DefaultManager()
+	if mgr == nil {
+		t.Fatalf("expected DefaultManager to be non-nil")
+	}
+
+	// 1. PlatformOpenRouter or empty platform ("")
+	formatted, ok := mgr.FormatModelForPlatform(contract.PlatformOpenRouter, "claude-sonnet-5")
+	if !ok || formatted != "anthropic/claude-sonnet-5" {
+		t.Errorf("OpenRouter: expected anthropic/claude-sonnet-5, true; got %q, %v", formatted, ok)
+	}
+	formatted, ok = mgr.FormatModelForPlatform("", "claude-sonnet-5")
+	if !ok || formatted != "anthropic/claude-sonnet-5" {
+		t.Errorf("Empty platform: expected anthropic/claude-sonnet-5, true; got %q, %v", formatted, ok)
+	}
+	// Uncataloged model on OpenRouter / empty platform passes through
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformOpenRouter, "vendor/unknown-spot-model")
+	if !ok || formatted != "vendor/unknown-spot-model" {
+		t.Errorf("OpenRouter uncataloged: expected vendor/unknown-spot-model, true; got %q, %v", formatted, ok)
+	}
+	formatted, ok = mgr.FormatModelForPlatform("", "unregistered-model")
+	if !ok || formatted != "unregistered-model" {
+		t.Errorf("Empty platform uncataloged: expected unregistered-model, true; got %q, %v", formatted, ok)
+	}
+
+	// 2. PlatformLocal
+	// Open weights in catalog: ok == true
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformLocal, "meta-llama/llama-3.3-70b-instruct")
+	if !ok {
+		t.Errorf("Local: expected llama-3.3-70b-instruct to be allowed (open weights)")
+	}
+	// Closed weights in catalog: ok == false (IsOpenWeights is false)
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformLocal, "anthropic/claude-sonnet-5")
+	if ok {
+		t.Errorf("Local: expected claude-sonnet-5 to be rejected on local platform, got ok=true")
+	}
+	if formatted != "anthropic/claude-sonnet-5" {
+		t.Errorf("Local: expected returned modelID anthropic/claude-sonnet-5 even when ok=false, got %q", formatted)
+	}
+	// Uncataloged model on Local passes through (e.g. ad-hoc ollama model)
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformLocal, "ollama/my-finetune:8b")
+	if !ok || formatted != "ollama/my-finetune:8b" {
+		t.Errorf("Local uncataloged: expected ollama/my-finetune:8b, true; got %q, %v", formatted, ok)
+	}
+
+	// 3. PlatformAnthropic
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformAnthropic, "anthropic/claude-sonnet-5")
+	if !ok || formatted != "claude-sonnet-5" {
+		t.Errorf("Anthropic: expected claude-sonnet-5, true; got %q, %v", formatted, ok)
+	}
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformAnthropic, "claude-opus-4-7")
+	if !ok || formatted != "claude-opus-4-7" {
+		t.Errorf("Anthropic by wire ID: expected claude-opus-4-7, true; got %q, %v", formatted, ok)
+	}
+	// Non-Anthropic model
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformAnthropic, "openai/gpt-4o")
+	if ok || formatted != "" {
+		t.Errorf("Anthropic non-binding: expected empty string and false, got %q, %v", formatted, ok)
+	}
+	// Uncataloged model on Anthropic
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformAnthropic, "random-unknown")
+	if ok || formatted != "" {
+		t.Errorf("Anthropic uncataloged: expected empty string and false, got %q, %v", formatted, ok)
+	}
+
+	// 4. PlatformOpenAICompatible and other platforms return "", false
+	formatted, ok = mgr.FormatModelForPlatform(contract.PlatformOpenAICompatible, "anthropic/claude-sonnet-5")
+	if ok || formatted != "" {
+		t.Errorf("OpenAICompatible: expected empty string and false, got %q, %v", formatted, ok)
+	}
+	formatted, ok = mgr.FormatModelForPlatform(contract.Platform("unrecognized_platform"), "anthropic/claude-sonnet-5")
+	if ok || formatted != "" {
+		t.Errorf("Unknown platform: expected empty string and false, got %q, %v", formatted, ok)
+	}
+}
+
+func TestIsSameModel(t *testing.T) {
+	mgr := DefaultManager()
+	if mgr == nil {
+		t.Fatalf("expected DefaultManager to be non-nil")
+	}
+
+	// 1. EqualFold fast-path
+	if !mgr.IsSameModel("claude-sonnet-5", "CLAUDE-SONNET-5") {
+		t.Errorf("expected case-insensitive match")
+	}
+
+	// 2. Canonical vs Wire ID cross-syntax
+	if !mgr.IsSameModel("anthropic/claude-sonnet-5", "claude-sonnet-5") {
+		t.Errorf("expected anthropic/claude-sonnet-5 and claude-sonnet-5 to be same model")
+	}
+	if !mgr.IsSameModel("claude-sonnet-5", "anthropic/claude-sonnet-5") {
+		t.Errorf("expected symmetry in IsSameModel")
+	}
+	if !mgr.IsSameModel("claude-opus-4-7", "anthropic/claude-opus-4.7") {
+		t.Errorf("expected claude-opus-4-7 and anthropic/claude-opus-4.7 to be same model")
+	}
+	if !mgr.IsSameModel("claude-haiku-4-5", "anthropic/claude-haiku-4.5") {
+		t.Errorf("expected claude-haiku-4-5 and anthropic/claude-haiku-4.5 to be same model")
+	}
+
+	// 3. Distinct models
+	if mgr.IsSameModel("claude-sonnet-5", "claude-opus-5") {
+		t.Errorf("expected distinct models to report false")
+	}
+	if mgr.IsSameModel("anthropic/claude-sonnet-5", "openai/gpt-4o") {
+		t.Errorf("expected distinct models to report false")
+	}
+
+	// 4. Uncataloged models
+	if !mgr.IsSameModel("my-org/custom-model", "my-org/custom-model") {
+		t.Errorf("expected identical uncataloged models to report true")
+	}
+	if mgr.IsSameModel("my-org/custom-model-1", "my-org/custom-model-2") {
+		t.Errorf("expected different uncataloged models to report false")
+	}
+
+	// 5. One cataloged, one uncataloged
+	if mgr.IsSameModel("anthropic/claude-sonnet-5", "my-org/custom-model") {
+		t.Errorf("expected cataloged and uncataloged models to report false")
+	}
+}
+

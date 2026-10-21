@@ -119,14 +119,18 @@ func buildCatalogIndex(cat *CuratedCatalog) *catalogIndex {
 		m[k] = p
 	}
 
+	primaryKeys := make(map[string]struct{}, len(cat.Models)*2)
 	sortedKeys := make([]string, 0, len(cat.Models))
 	for id := range cat.Models {
 		sortedKeys = append(sortedKeys, id)
+		primaryKeys[id] = struct{}{}
+		primaryKeys[strings.ToLower(id)] = struct{}{}
 	}
 	sort.Strings(sortedKeys)
 
 	for _, id := range sortedKeys {
 		profile := cat.Models[id]
+		profile.CanonicalID = id
 		if slash := strings.Index(id, "/"); slash >= 0 {
 			idx.namespaces[strings.ToLower(id[:slash])] = struct{}{}
 		}
@@ -177,6 +181,48 @@ func buildCatalogIndex(cat *CuratedCatalog) *catalogIndex {
 				putIfBetter(idx.exactMap, prefixed, profile, id)
 				putIfBetter(idx.exactMap, strings.ToLower(prefixed), profile, id)
 				putIfBetter(idx.normalizedMap, normalizeModelKey(prefixed), profile, id)
+			}
+		}
+
+		// Index provider bindings (e.g. providers.anthropic wire_model_id -> canonical profile)
+		// First-writer-wins on collision; never overwrite primary keys.
+		for _, b := range profile.Providers {
+			if len(b.ModelID) < 3 {
+				continue
+			}
+			wireID := b.ModelID
+			lowerWire := strings.ToLower(wireID)
+			if _, isPrimary := primaryKeys[wireID]; !isPrimary {
+				if _, exists := idx.exactMap[wireID]; !exists {
+					idx.exactMap[wireID] = profile
+				}
+			}
+			if _, isPrimary := primaryKeys[lowerWire]; !isPrimary {
+				if _, exists := idx.exactMap[lowerWire]; !exists {
+					idx.exactMap[lowerWire] = profile
+				}
+			}
+			normWire := normalizeModelKey(wireID)
+			if _, exists := idx.normalizedMap[normWire]; !exists {
+				idx.normalizedMap[normWire] = profile
+			}
+			if slash := strings.Index(id, "/"); slash >= 0 && !strings.Contains(wireID, "/") {
+				prefixed := id[:slash+1] + wireID
+				if _, isPrimary := primaryKeys[prefixed]; !isPrimary {
+					if _, exists := idx.exactMap[prefixed]; !exists {
+						idx.exactMap[prefixed] = profile
+					}
+				}
+				lowerPrefixed := strings.ToLower(prefixed)
+				if _, isPrimary := primaryKeys[lowerPrefixed]; !isPrimary {
+					if _, exists := idx.exactMap[lowerPrefixed]; !exists {
+						idx.exactMap[lowerPrefixed] = profile
+					}
+				}
+				normPrefixed := normalizeModelKey(prefixed)
+				if _, exists := idx.normalizedMap[normPrefixed]; !exists {
+					idx.normalizedMap[normPrefixed] = profile
+				}
 			}
 		}
 
@@ -342,6 +388,83 @@ func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
 	return ModelCuratedProfile{}, false
 }
 
+// LookupForPlatform retrieves a curated profile for a given platform, applying provider-specific
+// wire model ID and pricing overrides when present in Providers.
+func (m *Manager) LookupForPlatform(platform contract.Platform, modelID string) (ModelCuratedProfile, bool) {
+	if m == nil {
+		return ModelCuratedProfile{}, false
+	}
+	profile, ok := m.Lookup(modelID)
+	if !ok {
+		return ModelCuratedProfile{}, false
+	}
+	binding, ok := profile.Providers[platform]
+	if !ok {
+		return ModelCuratedProfile{}, false
+	}
+	cp := profile
+	cp.ModelID = binding.ModelID
+	if binding.PromptCostPerMillion != nil {
+		cp.PromptCostPerMillion = *binding.PromptCostPerMillion
+	}
+	if binding.CompletionCostPerMillion != nil {
+		cp.CompletionCostPerMillion = *binding.CompletionCostPerMillion
+	}
+	return cp, true
+}
+
+// FormatModelForPlatform formats a model identifier for a specific platform family.
+func (m *Manager) FormatModelForPlatform(platform contract.Platform, modelID string) (string, bool) {
+	if m == nil {
+		return "", false
+	}
+	switch platform {
+	case contract.PlatformOpenRouter, "":
+		if p, ok := m.Lookup(modelID); ok {
+			return p.ModelID, true
+		}
+		return modelID, true
+	case contract.PlatformLocal:
+		if p, ok := m.Lookup(modelID); ok {
+			return p.ModelID, p.IsOpenWeights
+		}
+		return modelID, true
+	case contract.PlatformAnthropic:
+		if p, ok := m.LookupForPlatform(platform, modelID); ok {
+			return p.ModelID, true
+		}
+		return "", false
+	case contract.PlatformOpenAICompatible:
+		return "", false
+	default:
+		return "", false
+	}
+}
+
+// IsSameModel reports whether two model identifiers resolve to the same underlying canonical model.
+func (m *Manager) IsSameModel(a, b string) bool {
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	if m == nil {
+		return false
+	}
+	pa, okA := m.Lookup(a)
+	pb, okB := m.Lookup(b)
+	if okA && okB {
+		canonA := pa.CanonicalID
+		if canonA == "" {
+			canonA = pa.ModelID
+		}
+		canonB := pb.CanonicalID
+		if canonB == "" {
+			canonB = pb.ModelID
+		}
+		return strings.EqualFold(canonA, canonB)
+	}
+	return strings.EqualFold(a, b)
+}
+
 // GetActiveCatalog returns a pointer to the currently loaded CuratedCatalog.
 func (m *Manager) GetActiveCatalog() *CuratedCatalog {
 	return m.activeCatalog.Load()
@@ -484,6 +607,11 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 			continue
 		}
 
+		// Skip estimated benchmark models from candidate pools
+		if p.BenchmarkSource == BenchmarkSourceEstimated {
+			continue
+		}
+
 		if isLocal {
 			// Local tier: candidate must be an open-weights model capable of local inference
 			if !p.IsOpenWeights {
@@ -507,8 +635,14 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 			if role == RoleCodingWorkhorse && p.TierRole != RoleCodingWorkhorse && p.CodingIndex < 65.0 {
 				continue
 			}
-			if role == RoleDeepReasoner && !p.IsFrontier() {
-				continue
+			if role == RoleDeepReasoner {
+				if !isLocal {
+					if p.TierRole != RoleDeepReasoner {
+						continue
+					}
+				} else if !p.IsFrontier() {
+					continue
+				}
 			}
 		}
 

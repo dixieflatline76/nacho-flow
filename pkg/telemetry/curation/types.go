@@ -1,6 +1,7 @@
 package curation
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
@@ -17,23 +18,53 @@ const (
 	RoleGeneral         TierRole = "general"
 )
 
+const BenchmarkSourceEstimated = "estimated"
+
+// ProviderBinding holds platform-specific overrides for a logical model when a
+// direct vendor platform uses a different wire ID or price than the canonical (OpenRouter) entry.
+type ProviderBinding struct {
+	ModelID                  string   `json:"model_id"`
+	PromptCostPerMillion     *float64 `json:"prompt_cost_per_million,omitempty"`
+	CompletionCostPerMillion *float64 `json:"completion_cost_per_million,omitempty"`
+}
+
+// UnmarshalJSON supports both model_id and wire_model_id for provider bindings.
+func (b *ProviderBinding) UnmarshalJSON(data []byte) error {
+	type Alias ProviderBinding
+	aux := struct {
+		WireModelID string `json:"wire_model_id"`
+		*Alias
+	}{
+		Alias: (*Alias)(b),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if b.ModelID == "" && aux.WireModelID != "" {
+		b.ModelID = aux.WireModelID
+	}
+	return nil
+}
+
 // ModelCuratedProfile stores verified benchmarks, tier recommendations, and tool reliability metrics.
 type ModelCuratedProfile struct {
-	ModelID                  string   `json:"model_id,omitempty"`
-	Name                     string   `json:"name"`
-	Aliases                  []string `json:"aliases,omitempty"`
-	TierRole                 TierRole `json:"tier_role"`
-	CodingIndex              float64  `json:"coding_index"`     // Artificial Analysis / SWE-bench index
-	ToolReliability          float64  `json:"tool_reliability"` // 0.0 - 100.0%
-	PromptCostPerMillion     float64  `json:"prompt_cost_per_million,omitempty"`
-	CompletionCostPerMillion float64  `json:"completion_cost_per_million,omitempty"`
-	RecommendedTiers         []string `json:"recommended_tiers"` // e.g. ["tier_1_vision", "tier_3_workhorse"]
-	SupportsVision           bool     `json:"supports_vision,omitempty"`
-	SupportsTools            bool     `json:"supports_tools,omitempty"`
-	IsOpenWeights            bool     `json:"is_open_weights,omitempty"` // Capable of local execution (Ollama, vLLM, llama.cpp)
-	Notes                    string   `json:"notes,omitempty"`
-	BenchmarkSource          string   `json:"benchmark_source,omitempty"` // e.g. "artificial_analysis"
-	ProvenanceURL            string   `json:"provenance_url,omitempty"`   // e.g. "https://artificialanalysis.ai"
+	ModelID                  string                                 `json:"model_id,omitempty"`
+	CanonicalID              string                                 `json:"-"`
+	Name                     string                                 `json:"name"`
+	Aliases                  []string                               `json:"aliases,omitempty"`
+	TierRole                 TierRole                               `json:"tier_role"`
+	CodingIndex              float64                                `json:"coding_index"`     // Artificial Analysis / SWE-bench index
+	ToolReliability          float64                                `json:"tool_reliability"` // 0.0 - 100.0%
+	PromptCostPerMillion     float64                                `json:"prompt_cost_per_million,omitempty"`
+	CompletionCostPerMillion float64                                `json:"completion_cost_per_million,omitempty"`
+	RecommendedTiers         []string                               `json:"recommended_tiers"` // e.g. ["tier_1_vision", "tier_3_workhorse"]
+	SupportsVision           bool                                   `json:"supports_vision,omitempty"`
+	SupportsTools            bool                                   `json:"supports_tools,omitempty"`
+	IsOpenWeights            bool                                   `json:"is_open_weights,omitempty"` // Capable of local execution (Ollama, vLLM, llama.cpp)
+	Notes                    string                                 `json:"notes,omitempty"`
+	BenchmarkSource          string                                 `json:"benchmark_source,omitempty"` // e.g. "artificial_analysis"
+	ProvenanceURL            string                                 `json:"provenance_url,omitempty"`   // e.g. "https://artificialanalysis.ai"
+	Providers                map[contract.Platform]ProviderBinding `json:"providers,omitempty"`
 }
 
 // IsFrontier reports whether the curated profile represents a true frontier capability class
