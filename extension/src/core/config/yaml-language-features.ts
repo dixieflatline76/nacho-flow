@@ -740,7 +740,7 @@ export class NachoCompletionItemProvider implements vscode.CompletionItemProvide
 
 		// 4. reasoning_effort: completions
 		if (/^\s*(?:-\s*)?reasoning_effort\s*:/.test(lineUntilCursor)) {
-			return ['low', 'medium', 'high', 'max'].map((effort) => {
+			return ['none', 'low', 'medium', 'high', 'max'].map((effort) => {
 				const item = new vscode.CompletionItem(effort, vscode.CompletionItemKind.EnumMember);
 				item.detail = `Reasoning effort level: ${effort}`;
 				applyScalarCompletionRange(item, effort, lineText, position.line, position.character, 'reasoning_effort', false);

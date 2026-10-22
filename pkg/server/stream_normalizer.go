@@ -247,7 +247,7 @@ type StreamNormalizer struct {
 	deferTerminal           bool
 	suppressPrelude         bool
 	preludeSuppressed       bool
-	cmdHeaderBuf            [1024]byte
+	cmdHeaderBuf            [4096]byte
 	cmdHeaderLen            int
 }
 

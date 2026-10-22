@@ -4,8 +4,10 @@
 package provider_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/nts"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 )
 
@@ -1524,4 +1527,432 @@ func TestBuildRequest_ThinkingDefaults(t *testing.T) {
 			t.Fatalf("expected explicit max_tokens 32768 preserved, got %d", rawHigh.MaxTokens)
 		}
 	})
+}
+
+func simulateAnthropicThinkingToolStream(t *testing.T, p *provider.AnthropicProvider, thinkingChunks []string, signature, redactedData string, toolIDs []string) {
+	t.Helper()
+	var sb strings.Builder
+	sb.WriteString("event: message_start\n")
+	sb.WriteString(`data: {"type":"message_start","message":{"id":"msg_1","model":"claude-haiku-5-5-20261001","usage":{"input_tokens":100,"output_tokens":10}}}` + "\n\n")
+
+	idx := 0
+	if signature != "" || len(thinkingChunks) > 0 {
+		sb.WriteString("event: content_block_start\n")
+		sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_start","index":%d,"content_block":{"type":"thinking","thinking":""}}`+"\n\n", idx))
+		for _, ch := range thinkingChunks {
+			escaped, _ := json.Marshal(ch)
+			sb.WriteString("event: content_block_delta\n")
+			sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_delta","index":%d,"delta":{"type":"thinking_delta","thinking":%s}}`+"\n\n", idx, string(escaped)))
+		}
+		if signature != "" {
+			sb.WriteString("event: content_block_delta\n")
+			sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_delta","index":%d,"delta":{"type":"signature_delta","signature":%q}}`+"\n\n", idx, signature))
+		}
+		sb.WriteString("event: content_block_stop\n")
+		sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_stop","index":%d}`+"\n\n", idx))
+		idx++
+	}
+
+	if redactedData != "" {
+		sb.WriteString("event: content_block_start\n")
+		sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_start","index":%d,"content_block":{"type":"redacted_thinking","data":%q}}`+"\n\n", idx, redactedData))
+		sb.WriteString("event: content_block_stop\n")
+		sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_stop","index":%d}`+"\n\n", idx))
+		idx++
+	}
+
+	for _, id := range toolIDs {
+		sb.WriteString("event: content_block_start\n")
+		sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_start","index":%d,"content_block":{"type":"tool_use","id":%q,"name":"read_file"}}`+"\n\n", idx, id))
+		sb.WriteString("event: content_block_delta\n")
+		sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_delta","index":%d,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"main.go\"}"}}`+"\n\n", idx))
+		sb.WriteString("event: content_block_stop\n")
+		sb.WriteString(fmt.Sprintf(`data: {"type":"content_block_stop","index":%d}`+"\n\n", idx))
+		idx++
+	}
+
+	sb.WriteString("event: message_delta\n")
+	sb.WriteString(`data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":42}}` + "\n\n")
+	sb.WriteString("event: message_stop\n")
+	sb.WriteString(`data: {"type":"message_stop"}` + "\n\n")
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(sb.String())),
+	}
+	stream := p.WrapResponseStream(resp)
+	_, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatalf("failed reading wrapped stream: %v", err)
+	}
+	_ = stream.Close()
+}
+
+func TestAnthropicProvider_ThinkingPreservation_WithNTS_And_Fallback(t *testing.T) {
+	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
+		BaseURL: "https://api.anthropic.com",
+		APIKey:  "sk-ant-test",
+		Type:    provider.TypeAnthropic,
+	})
+
+	// Simulate 5 streamed tool-calling turns with signed thinking blocks
+	// Turn 1: Kickoff (>400 bytes of reasoning so NTS pins it as kickoff anchor)
+	kickoffThought := strings.Repeat("Architectural kickoff analysis of the repository layout and types.\n", 8)
+	simulateAnthropicThinkingToolStream(t, p, []string{kickoffThought[:200], kickoffThought[200:]}, "sig_turn_1", "", []string{"toolu_1a", "toolu_1b"})
+
+	// Turn 2: Historical turn that NTS will prune (older than last 3 turns)
+	turn2Thought := strings.Repeat("Checking intermediate helper file.\n", 8)
+	simulateAnthropicThinkingToolStream(t, p, []string{turn2Thought}, "sig_turn_2", "", []string{"toolu_2"})
+
+	// Turns 3, 4, 5: Recent 3 turns that NTS will preserve
+	for i := 3; i <= 5; i++ {
+		thought := fmt.Sprintf("Step %d detailed analysis with \"quotes\" and\nnewlines. %s", i, strings.Repeat("x", 220))
+		simulateAnthropicThinkingToolStream(t, p, []string{thought[:50], thought[50:]}, fmt.Sprintf("sig_turn_%d", i), "", []string{fmt.Sprintf("toolu_%d", i)})
+	}
+
+	// Build 5-turn OpenAI conversation where client echoes reasoning_content
+	buildMsgs := func(includeReasoning bool) []map[string]interface{} {
+		var msgs []map[string]interface{}
+		msgs = append(msgs, map[string]interface{}{"role": "user", "content": "Fix the bug"})
+
+		thoughts := []string{
+			kickoffThought,
+			turn2Thought,
+			fmt.Sprintf("Step 3 detailed analysis with \"quotes\" and\nnewlines. %s", strings.Repeat("x", 220)),
+			fmt.Sprintf("Step 4 detailed analysis with \"quotes\" and\nnewlines. %s", strings.Repeat("x", 220)),
+			fmt.Sprintf("Step 5 detailed analysis with \"quotes\" and\nnewlines. %s", strings.Repeat("x", 220)),
+		}
+		// Notice Turn 1 sends toolu_1b BEFORE toolu_1a to test Enhancement 2 (reversed parallel tool IDs)
+		toolCallsPerTurn := [][]map[string]interface{}{
+			{
+				{"id": "toolu_1b", "type": "function", "function": map[string]interface{}{"name": "read_file", "arguments": `{"path":"b.go"}`}},
+				{"id": "toolu_1a", "type": "function", "function": map[string]interface{}{"name": "read_file", "arguments": `{"path":"a.go"}`}},
+			},
+			{{"id": "toolu_2", "type": "function", "function": map[string]interface{}{"name": "read_file", "arguments": `{"path":"2.go"}`}}},
+			{{"id": "toolu_3", "type": "function", "function": map[string]interface{}{"name": "read_file", "arguments": `{"path":"3.go"}`}}},
+			{{"id": "toolu_4", "type": "function", "function": map[string]interface{}{"name": "read_file", "arguments": `{"path":"4.go"}`}}},
+			{{"id": "toolu_5", "type": "function", "function": map[string]interface{}{"name": "read_file", "arguments": `{"path":"5.go"}`}}},
+		}
+
+		for idx := 0; idx < 5; idx++ {
+			asst := map[string]interface{}{
+				"role":       "assistant",
+				"content":    "",
+				"tool_calls": toolCallsPerTurn[idx],
+			}
+			if includeReasoning {
+				asst["reasoning_content"] = thoughts[idx]
+			}
+			msgs = append(msgs, asst)
+			for _, tc := range toolCallsPerTurn[idx] {
+				msgs = append(msgs, map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": tc["id"],
+					"content":      "package main",
+				})
+			}
+		}
+		return msgs
+	}
+
+	t.Run("ModeA_NTS_Compacted_Payload", func(t *testing.T) {
+		payloadMap := map[string]interface{}{
+			"model":            "claude-haiku-5-5",
+			"reasoning_effort": "low",
+			"messages":         buildMsgs(true),
+		}
+		rawBytes, _ := json.Marshal(payloadMap)
+
+		// Run real Stage 1 NTS compaction (KeepRecentReasoningTurns = 3, PreserveKickoff = true)
+		ntsCfg := nts.DefaultConfig()
+		ntsCfg.StripHistoricalReasoning = true
+		ntsCfg.KeepRecentReasoningTurns = 3
+		tr := nts.NewTransformer(ntsCfg)
+		compactedBytes, _, err := tr.TransformOpenAI(rawBytes)
+		if err != nil {
+			t.Fatalf("NTS TransformOpenAI failed: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", compactedBytes)
+		if err != nil {
+			t.Fatalf("BuildUpstreamRequest failed: %v", err)
+		}
+		outBytes, _ := io.ReadAll(outReq.Body)
+
+		var anthropicPayload struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content []struct {
+					Type      string  `json:"type"`
+					Thinking  *string `json:"thinking"`
+					Signature string  `json:"signature"`
+					ID        string  `json:"id"`
+				} `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(outBytes, &anthropicPayload); err != nil {
+			t.Fatalf("failed unmarshaling anthropic payload: %v", err)
+		}
+
+		// Assistant messages in anthropicPayload.Messages are at indices 1, 3, 5, 7, 9
+		expectedSigs := map[int]string{
+			1: "sig_turn_1", // Kickoff preserved by NTS
+			3: "",           // Pruned by NTS (thinking block cleared!)
+			5: "sig_turn_3", // Recent 3 preserved by NTS
+			7: "sig_turn_4", // Recent 3 preserved by NTS
+			9: "sig_turn_5", // Recent 3 preserved by NTS
+		}
+
+		for msgIdx, wantSig := range expectedSigs {
+			asstMsg := anthropicPayload.Messages[msgIdx]
+			if asstMsg.Role != "assistant" {
+				t.Fatalf("expected assistant at index %d, got %s", msgIdx, asstMsg.Role)
+			}
+			firstBlock := asstMsg.Content[0]
+			if wantSig == "" {
+				if firstBlock.Type == "thinking" {
+					t.Errorf("turn at msgIdx %d should have thinking block cleared, but got sig %q", msgIdx, firstBlock.Signature)
+				}
+			} else {
+				if firstBlock.Type != "thinking" || firstBlock.Signature != wantSig {
+					t.Errorf("turn at msgIdx %d expected first block thinking with sig %q, got type=%q sig=%q", msgIdx, wantSig, firstBlock.Type, firstBlock.Signature)
+				}
+				// Ensure parallel tool calls in Turn 1 did NOT duplicate the thinking block
+				thinkingCount := 0
+				for _, b := range asstMsg.Content {
+					if b.Type == "thinking" {
+						thinkingCount++
+					}
+				}
+				if thinkingCount != 1 {
+					t.Errorf("expected exactly 1 thinking block at msgIdx %d, got %d", msgIdx, thinkingCount)
+				}
+			}
+		}
+
+		// Verify unescaped thinking text on Turn 3 matches exact original string
+		turn3Thinking := *anthropicPayload.Messages[5].Content[0].Thinking
+		if !strings.Contains(turn3Thinking, "with \"quotes\" and\nnewlines.") {
+			t.Errorf("expected properly unescaped thinking text on Turn 3, got %q", turn3Thinking)
+		}
+	})
+
+	t.Run("ModeB_ClientStripsReasoning_FallbackWindow", func(t *testing.T) {
+		payloadMap := map[string]interface{}{
+			"model":            "claude-haiku-5-5",
+			"reasoning_effort": "low",
+			"messages":         buildMsgs(false), // Client stripped all reasoning_content!
+		}
+		rawBytes, _ := json.Marshal(payloadMap)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", rawBytes)
+		if err != nil {
+			t.Fatalf("BuildUpstreamRequest failed: %v", err)
+		}
+		outBytes, _ := io.ReadAll(outReq.Body)
+
+		var anthropicPayload struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content []struct {
+					Type      string `json:"type"`
+					Signature string `json:"signature"`
+				} `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(outBytes, &anthropicPayload); err != nil {
+			t.Fatalf("failed unmarshaling anthropic payload: %v", err)
+		}
+
+		// Mode B should still keep Turn 1 (Kickoff) + Turns 3, 4, 5 (last 3) and clear Turn 2!
+		expectedSigs := map[int]string{
+			1: "sig_turn_1",
+			3: "",
+			5: "sig_turn_3",
+			7: "sig_turn_4",
+			9: "sig_turn_5",
+		}
+		for msgIdx, wantSig := range expectedSigs {
+			firstBlock := anthropicPayload.Messages[msgIdx].Content[0]
+			if wantSig == "" {
+				if firstBlock.Type == "thinking" {
+					t.Errorf("Mode B: expected msgIdx %d thinking cleared, got %q", msgIdx, firstBlock.Signature)
+				}
+			} else if firstBlock.Type != "thinking" || firstBlock.Signature != wantSig {
+				t.Errorf("Mode B: msgIdx %d expected sig %q, got type=%q sig=%q", msgIdx, wantSig, firstBlock.Type, firstBlock.Signature)
+			}
+		}
+	})
+
+	t.Run("ModeB_Over512Messages_PreservesKickoffAndTail3", func(t *testing.T) {
+		var longMsgs []map[string]interface{}
+		longMsgs = append(longMsgs, map[string]interface{}{"role": "user", "content": "Start long session"})
+
+		// Turn 1 at index 1 (Kickoff) + Turn 2 at index 3 (intermediate pruned)
+		baseTurns := buildMsgs(false)[1:] // 5 assistant + tool pairs
+		longMsgs = append(longMsgs, baseTurns[:4]...)
+
+		// Insert 520 plain user/assistant turns so the tail 3 cached turns sit past message index 525 (> 512)
+		for k := 0; k < 260; k++ {
+			longMsgs = append(longMsgs,
+				map[string]interface{}{"role": "user", "content": "ping"},
+				map[string]interface{}{"role": "assistant", "content": "pong"},
+			)
+		}
+
+		// Append Turns 3, 4, 5 at the very end (> 512 index)
+		longMsgs = append(longMsgs, baseTurns[4:]...)
+
+		payloadMap := map[string]interface{}{
+			"model":            "claude-haiku-5-5",
+			"reasoning_effort": "low",
+			"messages":         longMsgs,
+		}
+		rawBytes, _ := json.Marshal(payloadMap)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", rawBytes)
+		if err != nil {
+			t.Fatalf("BuildUpstreamRequest failed on >512 messages: %v", err)
+		}
+		outBytes, _ := io.ReadAll(outReq.Body)
+
+		if !bytes.Contains(outBytes, []byte(`"sig_turn_1"`)) {
+			t.Errorf("expected Kickoff sig_turn_1 preserved in >512 message conversation")
+		}
+		if bytes.Contains(outBytes, []byte(`"sig_turn_2"`)) {
+			t.Errorf("expected intermediate sig_turn_2 cleared in >512 message conversation")
+		}
+		for _, tailSig := range []string{"sig_turn_3", "sig_turn_4", "sig_turn_5"} {
+			if !bytes.Contains(outBytes, []byte(tailSig)) {
+				t.Errorf("expected tail signature %q (>512 index) preserved in Mode B", tailSig)
+			}
+		}
+	})
+
+	t.Run("ThinkingDisabled_SkipsRehydration", func(t *testing.T) {
+		payloadMap := map[string]interface{}{
+			"model":            "claude-haiku-5-5",
+			"reasoning_effort": "none",
+			"messages":         buildMsgs(true),
+		}
+		rawBytes, _ := json.Marshal(payloadMap)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", rawBytes)
+		if err != nil {
+			t.Fatalf("BuildUpstreamRequest failed: %v", err)
+		}
+		outBytes, _ := io.ReadAll(outReq.Body)
+		if bytes.Contains(outBytes, []byte(`"signature"`)) {
+			t.Errorf("expected zero thinking signatures when reasoning_effort is 'none', got: %s", string(outBytes))
+		}
+	})
+}
+
+func TestAnthropicProvider_EmptyThinkingSignatureOnly_And_Redacted_And_Eviction(t *testing.T) {
+	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
+		BaseURL: "https://api.anthropic.com",
+		APIKey:  "sk-ant-test",
+		Type:    provider.TypeAnthropic,
+	})
+
+	// 1. Haiku 5.5 signature-only block (empty thinking text + valid signature) + redacted_thinking
+	simulateAnthropicThinkingToolStream(t, p, nil, "sig_empty_haiku", "redacted_payload_xyz", []string{"toolu_empty_1", "toolu_empty_2"})
+
+	// Test split parallel tool calls across consecutive assistant messages (merged by translateMessagesFast)
+	openAIJSON := `{
+		"model": "claude-haiku-5-5",
+		"reasoning_effort": "low",
+		"messages": [
+			{"role": "user", "content": "Run checks"},
+			{
+				"role": "assistant",
+				"content": "",
+				"tool_calls": [{"id": "toolu_empty_1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+			},
+			{
+				"role": "assistant",
+				"content": "",
+				"tool_calls": [{"id": "toolu_empty_2", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+			},
+			{"role": "tool", "tool_call_id": "toolu_empty_1", "content": "ok1"},
+			{"role": "tool", "tool_call_id": "toolu_empty_2", "content": "ok2"}
+		]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	outReq, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", []byte(openAIJSON))
+	if err != nil {
+		t.Fatalf("BuildUpstreamRequest failed: %v", err)
+	}
+	outBytes, _ := io.ReadAll(outReq.Body)
+
+	// Verify `"thinking":""` is explicitly serialized on the wire (not omitted by omitempty)
+	if !bytes.Contains(outBytes, []byte(`"type":"thinking","thinking":"","signature":"sig_empty_haiku"`)) {
+		t.Errorf("expected explicit empty thinking field in serialized JSON, got: %s", string(outBytes))
+	}
+	if !bytes.Contains(outBytes, []byte(`"type":"redacted_thinking","data":"redacted_payload_xyz"`)) {
+		t.Errorf("expected redacted_thinking block in serialized JSON, got: %s", string(outBytes))
+	}
+	// Verify split consecutive assistant messages were merged and thinking blocks were deduplicated
+	if bytes.Count(outBytes, []byte(`"sig_empty_haiku"`)) != 1 {
+		t.Errorf("expected deduplicated thinking block across merged assistant messages, count=%d", bytes.Count(outBytes, []byte(`"sig_empty_haiku"`)))
+	}
+
+	// 2. Test Unary (TranslateResponseBody) capture + Ring Buffer eviction (> 256 entries)
+	for i := 0; i < 260; i++ {
+		unaryResp := fmt.Sprintf(`{
+			"id": "msg_%d",
+			"type": "message",
+			"role": "assistant",
+			"model": "claude-haiku-5-5",
+			"stop_reason": "tool_use",
+			"content": [
+				{"type": "thinking", "thinking": "unary thought %d", "signature": "sig_unary_%d"},
+				{"type": "redacted_thinking", "data": "redacted_unary_%d"},
+				{"type": "tool_use", "id": "toolu_unary_%d", "name": "read_file", "input": {}}
+			],
+			"usage": {"input_tokens": 10, "output_tokens": 10}
+		}`, i, i, i, i, i)
+		if _, err := p.TranslateResponseBody(http.StatusOK, []byte(unaryResp)); err != nil {
+			t.Fatalf("TranslateResponseBody failed at %d: %v", i, err)
+		}
+	}
+
+	// toolu_empty_1 (oldest) should be evicted after 260 new entries, while toolu_unary_259 (newest) is present
+	checkEvictionJSON := `{
+		"model": "claude-haiku-5-5",
+		"reasoning_effort": "low",
+		"messages": [
+			{"role": "user", "content": "Check"},
+			{
+				"role": "assistant",
+				"reasoning_content": "kept",
+				"content": "",
+				"tool_calls": [{"id": "toolu_empty_1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+			},
+			{"role": "tool", "tool_call_id": "toolu_empty_1", "content": "ok"},
+			{
+				"role": "assistant",
+				"reasoning_content": "unary thought 259",
+				"content": "",
+				"tool_calls": [{"id": "toolu_unary_259", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+			},
+			{"role": "tool", "tool_call_id": "toolu_unary_259", "content": "ok"}
+		]
+	}`
+	outReq2, err := p.BuildUpstreamRequest(context.Background(), req, "claude-haiku-5-5", []byte(checkEvictionJSON))
+	if err != nil {
+		t.Fatalf("BuildUpstreamRequest failed: %v", err)
+	}
+	outBytes2, _ := io.ReadAll(outReq2.Body)
+	if bytes.Contains(outBytes2, []byte(`"sig_empty_haiku"`)) {
+		t.Errorf("expected oldest entry toolu_empty_1 to be evicted from 256-slot ring buffer")
+	}
+	if !bytes.Contains(outBytes2, []byte(`"sig_unary_259"`)) {
+		t.Errorf("expected newest entry toolu_unary_259 to be present in ring buffer")
+	}
 }

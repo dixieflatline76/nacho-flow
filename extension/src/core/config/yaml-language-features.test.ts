@@ -346,7 +346,7 @@ fairy_dust:
     it('should complete reasoning_effort enums', async () => {
       const doc = createMockDoc(sampleConfigYaml);
       const items = await provider.provideCompletionItems(doc, new vscode.Position(10, 22));
-      expect(items.map((i) => i.label)).toEqual(['low', 'medium', 'high', 'max']);
+      expect(items.map((i) => i.label)).toEqual(['none', 'low', 'medium', 'high', 'max']);
     });
 
     it('should complete RequestContext variables and DSL keywords in when:', async () => {

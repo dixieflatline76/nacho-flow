@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 )
 
@@ -222,6 +224,38 @@ func TestStreamAdapter_ZeroAllocDelta(t *testing.T) {
 	})
 	if allocs != 0 {
 		t.Fatalf("expected 0 allocs per streaming token delta on active stream, got %f", allocs)
+	}
+}
+
+func TestStreamAdapter_ZeroAllocThinkingDelta(t *testing.T) {
+	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
+		BaseURL: "https://api.anthropic.com",
+		Type:    provider.TypeAnthropic,
+	})
+	var streamBuf bytes.Buffer
+	streamBuf.WriteString("event: content_block_start\n" +
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}` + "\n\n")
+	chunk := []byte("event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"step "}}` + "\n\n")
+	for i := 0; i < 2000; i++ {
+		streamBuf.Write(chunk)
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader(streamBuf.Bytes())),
+	}
+	adapter := p.WrapResponseStream(resp)
+	defer func() { _ = adapter.Close() }()
+
+	var buf [256]byte
+	// Prime the adapter past content_block_start and first thinking_delta
+	_, _ = adapter.Read(buf[:])
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		_, _ = adapter.Read(buf[:])
+	})
+	if allocs != 0 {
+		t.Fatalf("expected 0 allocs per streaming thinking_delta with active cache, got %f", allocs)
 	}
 }
 

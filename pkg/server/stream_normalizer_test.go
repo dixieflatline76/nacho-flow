@@ -2228,3 +2228,43 @@ func TestStreamNormalizer_AnthropicMultiChunk_BashFileWrite_ExemptFromCycleKille
 		t.Fatalf("expected bash file write to be exempt from cycle killer, but triggered violation: %s", reason)
 	}
 }
+
+func TestStreamNormalizer_AnthropicMultiChunk_PowerShellPatch_ExemptFromCycleKiller(t *testing.T) {
+	for _, headerChunk := range []string{
+		`\"command\":\"$d=(Get-Location).Path; function Rep($f,$pairs){ $s=[IO.File]::ReadAllText($f); [IO.File]::WriteAllText($f,$s) }\n`,
+		`\"command\":\"$f='internal/strategy/strategy.go'; $s=Get-Content -Raw $f; $s=$s.Replace(\n`,
+	} {
+		enabled := true
+		cb := shield.GetCycleBreaker(&contract.CycleBreakerConfig{Enabled: &enabled})
+
+		var streamData strings.Builder
+		streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_ps_1\",\"function\":{\"name\":\"bash\",\"arguments\":\"\"}}]}}]}\n\n")
+		streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{")
+		streamData.WriteString(headerChunk)
+		streamData.WriteString("\"}}]}}]}\n\n")
+
+		for i := 0; i < 20; i++ {
+			streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{cH, cH, cH, cH, cH, cH, cH, cH, cH, cH},\\n\"}}]}}]}\n\n")
+		}
+		streamData.WriteString("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"}\"}}]}}]}\n\n")
+		streamData.WriteString("data: [DONE]\n\n")
+
+		norm := NewStreamNormalizer(io.NopCloser(strings.NewReader(streamData.String())))
+		norm.SetCycleBreaker(cb)
+
+		buf := make([]byte, 4096)
+		for {
+			_, err := norm.Read(buf)
+			if err != nil {
+				break
+			}
+		}
+
+		violated, reason := norm.CheckCycleViolation()
+		norm.Close()
+		shield.PutCycleBreaker(cb)
+		if violated {
+			t.Fatalf("expected PowerShell file patch (%s) to be exempt from cycle killer, but triggered violation: %s", headerChunk, reason)
+		}
+	}
+}

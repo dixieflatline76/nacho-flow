@@ -3605,6 +3605,7 @@ providers:
 tiers:
   - name: "Tier 1"
     provider: "ghost_provider"
+    model: "llama-3-8b"
 `
       };
 
@@ -3628,6 +3629,7 @@ providers:
 tiers:
   - name: "Tier 1"
     provider: "llamacpp"
+    model: "llama-3-8b"
 `
       };
 

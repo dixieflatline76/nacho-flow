@@ -81,10 +81,19 @@ type ShellCatalog struct {
 	Windows ShellEnvironment `json:"windows"`
 }
 
+// CompositePattern defines a multi-token shell write rule requiring at least one token from RequireAny
+// and at least one token from WithAny.
+type CompositePattern struct {
+	RequireAny []string `json:"require_any"`
+	WithAny    []string `json:"with_any"`
+}
+
 // ShellEnvironment contains OS-specific shell write indicators.
 type ShellEnvironment struct {
 	WriteCommands      []string            `json:"write_commands"`
 	WritePipes         []string            `json:"write_pipes"`
+	WritePatterns      []string            `json:"write_patterns,omitempty"`
+	CompositePatterns  []CompositePattern  `json:"composite_patterns,omitempty"`
 	ContextualCommands map[string][]string `json:"contextual_commands"`
 	Redirections       []string            `json:"redirections"`
 }

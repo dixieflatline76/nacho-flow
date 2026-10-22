@@ -154,6 +154,20 @@ func TestRegistry_DetectShellWrite(t *testing.T) {
 		{`{"timeout": 60000, "cmd": "echo 'ok' > output.log"}`, true},
 		{`python -c "open('test.txt', 'w').write('hello')"`, true},
 		{`node -e "require('fs').writeFileSync('test.txt', 'hello')"`, true},
+		{`$d=(Get-Location).Path; function Rep($f,$pairs){ $p=Join-Path $d $f; $s=[IO.File]::ReadAllText($p); [IO.File]::WriteAllText($p,$s) }`, true},
+		{`[System.IO.File]::WriteAllLines("out.txt", $lines)`, true},
+		{`[IO.File]::AppendAllText("log.txt", "entry")`, true},
+		{`$f="internal/strategy/strategy.go"; $s=Get-Content -Raw $f; $s=$s.Replace('old','new')`, true},
+		{`$s = Get-Content file.go; $s -replace 'foo','bar'`, true},
+		{"$content = @\"\npackage strategy\n\"@", true},
+		{"@'\npackage strategy\n'@ | Set-Content strategy.go", true},
+		{`{"command": "$content = @\"\npackage strategy\n\"@"}`, true},
+		{`Get-Content README.md`, false},
+		{`[IO.File]::ReadAllText("README.md")`, false},
+		{`[System.IO.File]::ReadAllLines("foo.go")`, false},
+		{`[IO.File]::Exists("config.json")`, false},
+		{`python script.py`, false},
+		{`node index.js`, false},
 	}
 
 	for _, tt := range tests {
@@ -213,7 +227,7 @@ func TestRegistry_Reload(t *testing.T) {
 			Data: []byte(`{"id":"test","name":"Test Agent","version":"1.0.1","write_tools":["new_write"],"read_tools":["new_read"],"command_tools":["new_cmd"]}`),
 		},
 		"shell.json": &fstest.MapFile{
-			Data: []byte(`{"version":"1.0.1","unix":{"write_commands":["new_touch"],"write_pipes":[],"contextual_commands":{},"redirections":[]},"windows":{"write_commands":[],"write_pipes":[],"contextual_commands":{},"redirections":[]}}`),
+			Data: []byte(`{"version":"1.0.1","unix":{"write_commands":["new_touch"],"write_pipes":[],"contextual_commands":{},"redirections":[]},"windows":{"write_commands":[],"write_pipes":[],"write_patterns":["custom_write_api("],"composite_patterns":[{"require_any":["custom_read("],"with_any":[".custom_mutate("]}],"contextual_commands":{},"redirections":[]}}`),
 		},
 		"reasoning.json": &fstest.MapFile{
 			Data: []byte(`{"version":"1.0.1","canonical_open":{"<think>":["<new_think>"]},"canonical_close":{"</think>":["</new_think>"]},"strip_delimiters":[],"reasoning_fields":["reasoning_content"],"extra_byte_markers":[]}`),
@@ -229,6 +243,15 @@ func TestRegistry_Reload(t *testing.T) {
 	}
 	if !reg.DetectShellWrite("new_touch file.txt") {
 		t.Errorf("expected new_touch to trigger shell write after reload")
+	}
+	if !reg.DetectShellWrite("custom_write_api('file.txt')") {
+		t.Errorf("expected custom_write_api( write_pattern to trigger shell write after reload")
+	}
+	if !reg.DetectShellWrite("$x = custom_read('file.txt'); $x.custom_mutate('a','b')") {
+		t.Errorf("expected composite_pattern to trigger shell write after reload")
+	}
+	if reg.DetectShellWrite("$x = custom_read('file.txt')") {
+		t.Errorf("expected standalone custom_read( without with_any to return false")
 	}
 	if reg.TagReplacer().Replace("<new_think>") != "<think>" {
 		t.Errorf("expected <new_think> to be canonicalized after reload")
