@@ -38,7 +38,8 @@ func main() {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") || strings.HasPrefix(e.Name(), "zz_generated_") {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(providerDir, e.Name()))
+		// #nosec G304 - tool reads repository provider source files
+		raw, err := os.ReadFile(filepath.Clean(filepath.Join(providerDir, e.Name())))
 		if err != nil {
 			continue
 		}

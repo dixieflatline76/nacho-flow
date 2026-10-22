@@ -811,4 +811,3 @@ func TestOptimize_OpenAICompatiblePlatformNoReplacement(t *testing.T) {
 		}
 	}
 }
-

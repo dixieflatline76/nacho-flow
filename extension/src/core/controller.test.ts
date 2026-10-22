@@ -61,6 +61,7 @@ jest.mock('vscode', () => ({
     findFiles: jest.fn().mockResolvedValue([]),
     openTextDocument: jest.fn(),
     onDidSaveTextDocument: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+    onDidChangeTextDocument: jest.fn().mockReturnValue({ dispose: jest.fn() }),
     fs: {
       stat: jest.fn().mockRejectedValue(new Error('File not found')),
       createDirectory: jest.fn().mockResolvedValue(undefined),
@@ -3544,7 +3545,8 @@ other_key:
         const restartSpy = jest.fn().mockResolvedValue({ success: true });
         (extensionController as any).processManager = {
           isRunning: jest.fn().mockReturnValue(true),
-          restart: restartSpy
+          restart: restartSpy,
+          dispose: jest.fn()
         };
         (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
           uri: { fsPath: '/test/profile1.yaml' }
@@ -3572,6 +3574,120 @@ other_key:
       } finally {
         process.env.NODE_ENV = origEnv;
         process.env.JEST_WORKER_ID = origWorker;
+        jest.useRealTimers();
+      }
+    });
+
+    it('should use 2000ms debounce when files.autoSave is enabled, cancel on keystroke, guard doc.isDirty, support doc.isClosed, and debounce remote mode', async () => {
+      try {
+        jest.useFakeTimers();
+        (vscode.workspace.getConfiguration as jest.Mock).mockImplementation((section?: string) => ({
+          get: jest.fn().mockImplementation((key: string, defaultVal?: any) => {
+            if (section === 'files' && key === 'autoSave') {
+              return 'afterDelay';
+            }
+            return defaultVal;
+          }),
+          update: jest.fn().mockResolvedValue(undefined)
+        }));
+
+        await extensionController.initialize();
+        (extensionController as any)._forceDebounceInTest = true;
+        (extensionController as any).activeProfile = 'profile1';
+        (extensionController as any).authManager = {
+          getEngineMode: jest.fn().mockReturnValue('local'),
+          isLocalEngineRunning: jest.fn().mockReturnValue(true),
+          getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+          getAuthToken: jest.fn().mockResolvedValue(null)
+        };
+        const restartSpy = jest.fn().mockResolvedValue({ success: true });
+        (extensionController as any).processManager = {
+          isRunning: jest.fn().mockReturnValue(true),
+          restart: restartSpy,
+          dispose: jest.fn()
+        };
+        (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+          uri: { fsPath: '/test/profile1.yaml' }
+        });
+        (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).showTransientToast = jest.fn();
+
+        const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+        const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+        const changeListeners = (vscode.workspace.onDidChangeTextDocument as jest.Mock).mock.calls;
+        const lastChangeListener = changeListeners[changeListeners.length - 1][0];
+
+        const doc: any = {
+          fileName: '/test/profile1.yaml',
+          uri: { fsPath: '/test/profile1.yaml', toString: () => 'file:///test/profile1.yaml' },
+          isDirty: false,
+          isClosed: false,
+          getText: () => 'port: 8000\n'
+        };
+
+        // 1. Auto-save triggers 2000ms timer; typing at 800ms cancels it
+        await lastSaveListener(doc);
+        jest.advanceTimersByTime(800);
+        expect(restartSpy).not.toHaveBeenCalled();
+
+        lastChangeListener({ document: doc, contentChanges: [{ text: 'a' }] });
+        jest.advanceTimersByTime(2000);
+        await Promise.resolve();
+        expect(restartSpy).not.toHaveBeenCalled();
+
+        // 2. If doc.isDirty is true when timer expires, reload is skipped
+        await lastSaveListener(doc);
+        doc.isDirty = true;
+        jest.advanceTimersByTime(2100);
+        await Promise.resolve();
+        expect(restartSpy).not.toHaveBeenCalled();
+
+        // 3. Clean save with doc.isClosed = true uses savedText snapshot after 2000ms
+        doc.isDirty = false;
+        await lastSaveListener(doc);
+        doc.isClosed = true;
+        doc.getText = () => {
+          throw new Error('Document is closed');
+        };
+        jest.advanceTimersByTime(1500);
+        expect(restartSpy).not.toHaveBeenCalled();
+        jest.advanceTimersByTime(600);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(restartSpy).toHaveBeenCalledTimes(1);
+
+        // 4. Remote mode also respects _testSaveDebounceMs override, rapid double-save resets timer, and dispose clears active timer
+        (extensionController as any)._testSaveDebounceMs = 300;
+        (extensionController as any).authManager.getEngineMode = jest.fn().mockReturnValue('remote');
+        (extensionController as any).isRemoteHost = jest.fn().mockReturnValue(true);
+        const updateConfigSpy = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).restClient = {
+          updateConfigYaml: updateConfigSpy
+        };
+        doc.isClosed = false;
+        doc.getText = () => 'port: 9000\n';
+
+        await lastSaveListener(doc);
+        jest.advanceTimersByTime(200);
+        // Second rapid save resets the 300ms timer
+        await lastSaveListener(doc);
+        jest.advanceTimersByTime(200);
+        expect(updateConfigSpy).not.toHaveBeenCalled();
+        jest.advanceTimersByTime(150);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(updateConfigSpy).toHaveBeenCalledWith('port: 9000\n');
+
+        // 5. Disposing controller while a save debounce timer is pending cancels it
+        updateConfigSpy.mockClear();
+        await lastSaveListener(doc);
+        extensionController.dispose();
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+        expect(updateConfigSpy).not.toHaveBeenCalled();
+      } finally {
         jest.useRealTimers();
       }
     });

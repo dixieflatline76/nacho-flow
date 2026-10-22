@@ -602,9 +602,9 @@ type mockPlatformPricingProvider struct {
 	prices           map[string]ModelMetadata
 }
 
-func (m *mockPlatformPricingProvider) Name() string               { return m.name }
+func (m *mockPlatformPricingProvider) Name() string                { return m.name }
 func (m *mockPlatformPricingProvider) Platform() contract.Platform { return m.platform }
-func (m *mockPlatformPricingProvider) IsCatalogDerived() bool     { return m.isCatalogDerived }
+func (m *mockPlatformPricingProvider) IsCatalogDerived() bool      { return m.isCatalogDerived }
 func (m *mockPlatformPricingProvider) FetchPricing(_ context.Context) (map[string]ModelMetadata, error) {
 	return m.prices, nil
 }

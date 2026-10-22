@@ -1386,6 +1386,7 @@ func hashState(cfg *MultiTierConfig) uint64 {
 		for i := 0; i < len(t.ReasoningEffort); i++ {
 			h = (h ^ uint64(t.ReasoningEffort[i])) * prime
 		}
+		// #nosec G115 - MessageCountMax is a non-negative configuration limit
 		h = (h ^ uint64(t.MessageCountMax)) * prime
 		if t.RequiresTestFail {
 			h = (h ^ 0x08) * prime

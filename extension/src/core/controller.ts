@@ -32,7 +32,22 @@ export class ExtensionController {
 	private activeProfile: string = 'profile1';
 	private lastKnownServerVersion: string = '';
 	private saveDebounceTimer: NodeJS.Timeout | null = null;
+	private pendingSaveDocUri: string | null = null;
+	private _forceDebounceInTest: boolean = false;
+	private _testSaveDebounceMs?: number;
 	private diagnosticCollection?: vscode.DiagnosticCollection;
+
+	private getSaveDebounceMs(): number {
+		if (this._testSaveDebounceMs !== undefined) {
+			return this._testSaveDebounceMs;
+		}
+		if (!this._forceDebounceInTest && (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined)) {
+			return 0;
+		}
+		const autoSave = vscode.workspace.getConfiguration?.('files')?.get<string>('autoSave', 'off');
+		const isAutoSaveEnabled = autoSave === 'afterDelay' || autoSave === 'onFocusChange' || autoSave === 'onWindowChange';
+		return isAutoSaveEnabled ? 2000 : 500;
+	}
 
 	public get activePreset(): string {
 		return this.activeProfile;
@@ -94,6 +109,19 @@ export class ExtensionController {
 			registerYamlLanguageFeatures(this.context, this.diagnosticCollection);
 		}
 
+		// Cancel any pending config hot-reload/restart debounce timer when user resumes typing
+		if (typeof vscode.workspace.onDidChangeTextDocument === 'function') {
+			this.context.subscriptions.push(
+				vscode.workspace.onDidChangeTextDocument((e) => {
+					if (this.saveDebounceTimer && e?.document?.uri?.toString() === this.pendingSaveDocUri) {
+						clearTimeout(this.saveDebounceTimer);
+						this.saveDebounceTimer = null;
+						this.pendingSaveDocUri = null;
+					}
+				})
+			);
+		}
+
 		// Auto-sync configuration to daemon when config is saved
 		this.context.subscriptions.push(
 			vscode.workspace.onDidSaveTextDocument(async (doc) => {
@@ -130,17 +158,24 @@ export class ExtensionController {
 				}
 
 				if (isActiveProfileFile || isExplicitEditTarget || isProfileUriMatch) {
-					if (isRemote) {
-						try {
-							await this.restClient.updateConfigYaml(doc.getText());
-							this.showTransientToast(`🌮 Nacho Flow: Remote server configuration updated and hot-reloaded!`);
-							await this.loadDashboardData();
-							await this.syncSidebarState();
-						} catch (err: any) {
-							vscode.window.showErrorMessage(`Nacho Flow: Failed to update remote config: ${err.message || err}`);
+					const savedText = typeof doc.getText === 'function' ? doc.getText() : '';
+
+					const executeConfigSave = async () => {
+						if (!doc.isClosed && doc.isDirty) {
+							return;
 						}
-					} else {
-						const handleLocalSave = async () => {
+						const yamlText = (!doc.isClosed && typeof doc.getText === 'function') ? doc.getText() : savedText;
+
+						if (isRemote) {
+							try {
+								await this.restClient!.updateConfigYaml(yamlText);
+								this.showTransientToast(`🌮 Nacho Flow: Remote server configuration updated and hot-reloaded!`);
+								await this.loadDashboardData();
+								await this.syncSidebarState();
+							} catch (err: any) {
+								vscode.window.showErrorMessage(`Nacho Flow: Failed to update remote config: ${err.message || err}`);
+							}
+						} else {
 							const profileUri = resolvedProfileUri || (await this.resolveProfileUri(this.activeProfile)).uri;
 							const normDocPath = path.resolve(doc.uri.fsPath).toLowerCase();
 							const normProfilePath = path.resolve(profileUri.fsPath).toLowerCase();
@@ -148,14 +183,14 @@ export class ExtensionController {
 
 							if (isShadowConfig && normDocPath !== normProfilePath) {
 								try {
-									await vscode.workspace.fs.writeFile(profileUri, Buffer.from(doc.getText(), 'utf8'));
+									await vscode.workspace.fs.writeFile(profileUri, Buffer.from(yamlText, 'utf8'));
 								} catch (err: any) {
 									vscode.window.showErrorMessage(`Nacho Flow: Failed to persist config to ${profileUri.fsPath}: ${err.message || err}`);
 								}
 							}
 
 							// Pre-Flight Save Gate: validate YAML configuration before restarting engine
-							const validationIssues = validateNachoConfigYaml(doc.getText());
+							const validationIssues = validateNachoConfigYaml(yamlText);
 							const hasValidationErrors = validationIssues.some((i) => i.severity === 'Error');
 
 							if (this.diagnosticCollection && typeof (vscode as any).Range === 'function' && typeof (vscode as any).Diagnostic === 'function') {
@@ -201,20 +236,22 @@ export class ExtensionController {
 									await this.handleEngineStartError(result);
 								}
 							}
-						};
-
-						const debounceMs = (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined) ? 0 : 500;
-						if (debounceMs === 0) {
-							await handleLocalSave();
-						} else {
-							if (this.saveDebounceTimer) {
-								clearTimeout(this.saveDebounceTimer);
-							}
-							this.saveDebounceTimer = setTimeout(() => {
-								this.saveDebounceTimer = null;
-								handleLocalSave().catch(() => {});
-							}, debounceMs);
 						}
+					};
+
+					const debounceMs = this.getSaveDebounceMs();
+					if (debounceMs === 0) {
+						await executeConfigSave();
+					} else {
+						if (this.saveDebounceTimer) {
+							clearTimeout(this.saveDebounceTimer);
+						}
+						this.pendingSaveDocUri = doc.uri.toString();
+						this.saveDebounceTimer = setTimeout(() => {
+							this.saveDebounceTimer = null;
+							this.pendingSaveDocUri = null;
+							executeConfigSave().catch(() => {});
+						}, debounceMs);
 					}
 				}
 			})
@@ -2560,6 +2597,7 @@ export class ExtensionController {
 			clearTimeout(this.saveDebounceTimer);
 			this.saveDebounceTimer = null;
 		}
+		this.pendingSaveDocUri = null;
 		if (this.telemetryPoller) {
 			this.telemetryPoller.dispose();
 			this.telemetryPoller = null;
@@ -2568,7 +2606,7 @@ export class ExtensionController {
 		if (this.sseClient) {
 			this.sseClient.disconnect();
 		}
-		if (this.processManager) {
+		if (this.processManager && typeof this.processManager.dispose === 'function') {
 			this.processManager.dispose();
 		}
 		this.diagnosticCollection?.dispose?.();

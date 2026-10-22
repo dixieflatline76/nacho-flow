@@ -1198,7 +1198,3 @@ func TestLookupStrict(t *testing.T) {
 		}
 	}
 }
-
-
-
-

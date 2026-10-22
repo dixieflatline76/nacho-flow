@@ -39,7 +39,7 @@
 - **Wire-speed core:** < 0.19ms routing overhead, <!-- BENCHMARK:README_CORE_START -->30,000+ req/s (peak 30,284 req/s)<!-- BENCHMARK:README_CORE_END -->, lock-free atomic RCU state, zero heap churn during proxying
 - **Zero runtime dependencies:** Single static binary, `CGO_ENABLED=0`, no Node or Python required
 <!-- COVERAGE:SUMMARY_START -->
-* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (95.8% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
+* **🧪 Engineered for Reliability**: Strictly $\ge 95.0\%\text{--}100\%$ statement test coverage across all packages (94.9% global coverage), 100% race-detector clean (`-race`), and static security audited (`gosec`).
 <!-- COVERAGE:SUMMARY_END -->
 
 > [!TIP]

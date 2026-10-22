@@ -391,4 +391,3 @@ func TestRun_PreservesCuratedFieldsAndEstimatedScores(t *testing.T) {
 		t.Errorf("expected BenchmarkSource %q preserved, got %q", curation.BenchmarkSourceEstimated, s55.BenchmarkSource)
 	}
 }
-
