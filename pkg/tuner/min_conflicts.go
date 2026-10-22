@@ -466,16 +466,23 @@ func (opt *MinConflictsOptimizer) dispatchRepairMove(
 	}
 }
 
-// findImmediateNeighbors returns the non-disabled predecessor and successor tiers for the given index.
+// isLateralOrKickoffTier returns true if the tier is a specialized phase-gate (MessageCountMax > 0)
+// or modality/kickstart gate rather than part of the main retry escalation ladder.
+func isLateralOrKickoffTier(t *TierReplayConfig) bool {
+	return t != nil && (t.RequiresKickstart || t.RequiresImages || t.MessageCountMax > 0)
+}
+
+// findImmediateNeighbors returns the non-disabled cascade predecessor and successor tiers for the given index,
+// skipping lateral and phase-gated kickoff tiers.
 func findImmediateNeighbors(tiers []TierReplayConfig, idx int) (pred, succ *TierReplayConfig) {
 	for j := idx - 1; j >= 0; j-- {
-		if !tiers[j].IsDisabled {
+		if !tiers[j].IsDisabled && !isLateralOrKickoffTier(&tiers[j]) {
 			pred = &tiers[j]
 			break
 		}
 	}
 	for j := idx + 1; j < len(tiers); j++ {
-		if !tiers[j].IsDisabled {
+		if !tiers[j].IsDisabled && !isLateralOrKickoffTier(&tiers[j]) {
 			succ = &tiers[j]
 			break
 		}
@@ -592,6 +599,9 @@ func (opt *MinConflictsOptimizer) repairTokens(currentCfg *MultiTierConfig, tier
 
 // repairRetries explores candidate retry bounds for a tier.
 func (opt *MinConflictsOptimizer) repairRetries(currentCfg *MultiTierConfig, tierIdx int, rc *repairContext) {
+	if currentCfg.Tiers[tierIdx].MessageCountMax > 0 {
+		return
+	}
 	cands := RetryCandidateValues
 	model := currentCfg.Tiers[tierIdx].Model
 	if rc.recoveryStats != nil && model != "" {
@@ -638,7 +648,7 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 	var immediatePred *TierReplayConfig
 	for j := tierIdx - 1; j >= 0; j-- {
 		pred := &currentCfg.Tiers[j]
-		if pred.IsDisabled || pred.RequiresKickstart || pred.RequiresImages {
+		if pred.IsDisabled || isLateralOrKickoffTier(pred) {
 			continue
 		}
 		isEscalation := false
@@ -655,15 +665,17 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 		}
 	}
 
-	isFrontier := currentCfg.Tiers[tierIdx].IsFrontier || IsFrontierModel(currentCfg.Tiers[tierIdx].Model)
-	isEscalationTier := currentCfg.Tiers[tierIdx].RetryFloor > 0 || (immediatePred != nil && immediatePred.CodingIndex >= 70.0)
+	t := &currentCfg.Tiers[tierIdx]
+	immediateNeighborPred, immediateSucc := findImmediateNeighbors(currentCfg.Tiers, tierIdx)
 
-	// Invariance Guard: Do NOT prune an escalation tier if it steps reasoning effort
-	// over its predecessor (e.g. glm-5.3-flash low -> high -> max).
-	isReasoningEscalation := immediatePred != nil &&
-		immediatePred.Model == currentCfg.Tiers[tierIdx].Model &&
-		immediatePred.ReasoningEffort != currentCfg.Tiers[tierIdx].ReasoningEffort &&
-		currentCfg.Tiers[tierIdx].ReasoningEffort != ""
+	isFrontier := t.IsFrontier || IsFrontierModel(t.Model)
+	isEscalationTier := !isLateralOrKickoffTier(t) && (t.RetryFloor > 0 || (immediatePred != nil && immediatePred.CodingIndex >= 70.0))
+
+	// Invariance Guard: Do NOT prune or replace a tier that is part of a same-model reasoning effort chain
+	// (e.g. Haiku 5.5 low -> medium, or glm-5.3-flash low -> high -> max).
+	isReasoningEscalation := (immediatePred != nil && immediatePred.Model == t.Model && immediatePred.ReasoningEffort != t.ReasoningEffort && t.ReasoningEffort != "") ||
+		(immediateNeighborPred != nil && immediateNeighborPred.Model == t.Model && immediateNeighborPred.ReasoningEffort != t.ReasoningEffort && t.ReasoningEffort != "") ||
+		(immediateSucc != nil && immediateSucc.Model == t.Model && immediateSucc.ReasoningEffort != t.ReasoningEffort && t.ReasoningEffort != "")
 
 	// Autonomous Tier Pruning Candidate:
 	// Try disabling this intermediate escalation tier entirely.
@@ -676,7 +688,7 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 	}
 
 	// Invariance Guard: Do not perform single-tier model candidate replacement
-	// on an intermediate tier in a same-model reasoning chain
+	// on a tier in a same-model reasoning chain
 	if isReasoningEscalation {
 		return
 	}
@@ -714,8 +726,6 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 
 	pipeline := NewDefaultFilterPipeline()
 	scorer := &CompositeValueScorer{}
-
-	_, immediateSucc := findImmediateNeighbors(currentCfg.Tiers, tierIdx)
 
 	for _, cand := range candidates {
 		if curation.DefaultManager().IsSameModel(cand.ModelID, currentCfg.Tiers[tierIdx].Model) {
@@ -794,9 +804,12 @@ func (opt *MinConflictsOptimizer) repairModelOrPrune(currentCfg *MultiTierConfig
 	}
 }
 
-// repairKeyword explores assigning domain keywords to individual tiers.
+// repairKeyword explores assigning domain keywords to individual local GPU tiers.
 func (opt *MinConflictsOptimizer) repairKeyword(currentCfg *MultiTierConfig, kw string, rc *repairContext) {
 	for tIdx := 0; tIdx < len(currentCfg.Tiers); tIdx++ {
+		if !currentCfg.Tiers[tIdx].IsLocal || isLateralOrKickoffTier(&currentCfg.Tiers[tIdx]) {
+			continue
+		}
 		candCfg := NewCandidateBuilder(currentCfg).
 			WithExcludedKeyword(tIdx, kw).
 			Build()

@@ -353,8 +353,8 @@ func EvaluateFleetWithAttribution(
 						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:tokens", selectedTierIdx))
 					}
 
-					// Candidate 2: Tightening Retry Bound (only if retriesBeforeTurn >= 1)
-					if retriesBeforeTurn >= 1 {
+					// Candidate 2: Tightening Retry Bound (only if retriesBeforeTurn >= 1 and not a phase-gated kickoff tier)
+					if retriesBeforeTurn >= 1 && targetTier.MessageCountMax == 0 {
 						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:retries", selectedTierIdx))
 					}
 
@@ -399,10 +399,12 @@ func EvaluateFleetWithAttribution(
 						repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("tier_%d:model", selectedTierIdx))
 					}
 
-					// Candidate 6: Monitored Keyword Exclusions
-					for _, kw := range monitoredKeywords {
-						if !containsKeyword(targetTier.ExcludedKeywords, kw) && containsKeyword(turn.Keywords, kw) {
-							repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("keyword:%s", kw))
+					// Candidate 6: Monitored Keyword Exclusions (restricted strictly to local GPU tiers)
+					if targetTier.IsLocal && !isLateralOrKickoffTier(targetTier) {
+						for _, kw := range monitoredKeywords {
+							if !containsKeyword(targetTier.ExcludedKeywords, kw) && containsKeyword(turn.Keywords, kw) {
+								repairVarsBuf = append(repairVarsBuf, fmt.Sprintf("keyword:%s", kw))
+							}
 						}
 					}
 
