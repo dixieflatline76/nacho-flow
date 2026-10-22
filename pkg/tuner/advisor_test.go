@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 )
 
 // Test 3.1: Advisory report generation contains key diff and projections
@@ -68,7 +69,7 @@ func TestAdvisor_GeneratesReport(t *testing.T) {
 
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -124,7 +125,7 @@ func TestAdvisor_FrictionModalities(t *testing.T) {
 
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {BaseURL: "https://openrouter.ai/api/v1", Type: contract.ProviderTypeCloud},
+			"openrouter": {BaseURL: "https://openrouter.ai/api/v1", Type: provider.TypeOpenRouter},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Cloud Workhorse", Provider: "openrouter", When: "true"},

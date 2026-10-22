@@ -191,7 +191,8 @@ port: 8000
 providers:
   ollama:
     base_url: http://localhost:11434
-    type: local
+    type: openai_compatible
+    local: true
 tiers:
   - name: Tier 1
     model: test-model
@@ -256,7 +257,7 @@ nts:
 func TestAPI_Stats_ConfigYamlEndpoint(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	yamlContent := "port: 9000\nproviders:\n  p1:\n    base_url: http://localhost:8000\n    type: local\n"
+	yamlContent := "port: 9000\nproviders:\n  p1:\n    base_url: http://localhost:8000\n    type: openai_compatible\n    local: true\n"
 	_ = os.WriteFile(configPath, []byte(yamlContent), 0600)
 
 	srv := NewServerWithTelemetry(nil, nil, nil, nil, nil, nil, nil)
@@ -441,7 +442,7 @@ func TestAPI_Stats_ConfigUpdate_Success(t *testing.T) {
 	validJSON := `{
 		"port": 8000,
 		"providers": {
-			"ollama": { "base_url": "http://localhost:11434", "type": "local" }
+			"ollama": { "base_url": "http://localhost:11434", "type": "openai_compatible", "local": true }
 		},
 		"tiers": [
 			{ "name": "T1", "model": "m1", "provider": "ollama", "when": "Tokens < 100" }
@@ -460,7 +461,8 @@ port: 8000
 providers:
   ollama:
     base_url: http://localhost:11434
-    type: local
+    type: openai_compatible
+    local: true
 tiers:
   - name: T1
     model: m1
@@ -664,7 +666,7 @@ func TestAPI_Coverage_ComprehensiveBranches(t *testing.T) {
 	}
 
 	// 2. handleConfigUpdate: Apply error (e.g. unknown tier provider)
-	invalidTierProv := `{"providers": {"ollama": {"base_url": "http://localhost:11434", "type": "local"}}, "tiers": [{"name": "T1", "provider": "missing", "when": "Tokens > 0"}]}`
+	invalidTierProv := `{"providers": {"ollama": {"base_url": "http://localhost:11434", "type": "openai_compatible", "local": true}}, "tiers": [{"name": "T1", "provider": "missing", "when": "Tokens > 0"}]}`
 	reqApplyErr := httptest.NewRequest(http.MethodPut, "/api/v1/config", strings.NewReader(invalidTierProv))
 	wApplyErr := httptest.NewRecorder()
 	srv.handleConfigUpdate(wApplyErr, reqApplyErr)
@@ -683,7 +685,7 @@ func TestAPI_Coverage_ComprehensiveBranches(t *testing.T) {
 	// 4. handleAPICircuits: non-GET & GET with registry
 	testCfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"prov1": {BaseURL: "http://localhost:8000", Type: contract.ProviderTypeLocal},
+			"prov1": {BaseURL: "http://localhost:8000", Type: provider.TypeOpenAICompatible, Local: true},
 		},
 	}
 	reg := provider.NewRegistryFromConfig(testCfg)
@@ -844,7 +846,7 @@ func TestAPI_Coverage_ComprehensiveBranches(t *testing.T) {
 		t.Errorf("expected 400 for dry_run validation error, got %d", wDryRunValErr.Code)
 	}
 
-	dryRunInvalidExpr := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "local"}}, "tiers": [{"name": "T1", "provider": "p", "when": "invalid == expr +++"}]}`
+	dryRunInvalidExpr := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "openai_compatible", "local": true}}, "tiers": [{"name": "T1", "model": "test-model", "provider": "p", "when": "invalid == expr +++"}]}`
 	reqDryRunExprErr := httptest.NewRequest(http.MethodPut, "/api/v1/config?dry_run=true", strings.NewReader(dryRunInvalidExpr))
 	wDryRunExprErr := httptest.NewRecorder()
 	srvNilReg.handleConfigUpdate(wDryRunExprErr, reqDryRunExprErr)
@@ -852,7 +854,7 @@ func TestAPI_Coverage_ComprehensiveBranches(t *testing.T) {
 		t.Errorf("expected 400 for dry_run invalid expression, got %d", wDryRunExprErr.Code)
 	}
 
-	dryRunValid := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "local"}}, "tiers": [{"name": "T1", "provider": "p", "when": "Tokens > 0"}]}`
+	dryRunValid := `{"providers": {"p": {"base_url": "http://localhost:8000", "type": "openai_compatible", "local": true}}, "tiers": [{"name": "T1", "model": "test-model", "provider": "p", "when": "Tokens > 0"}]}`
 	reqDryRunOK := httptest.NewRequest(http.MethodPut, "/api/v1/config?dry_run=true", strings.NewReader(dryRunValid))
 	wDryRunOK := httptest.NewRecorder()
 	srvNilReg.handleConfigUpdate(wDryRunOK, reqDryRunOK)
@@ -884,11 +886,12 @@ func TestApplyConfig_ResolvesEnvVars(t *testing.T) {
 			"openrouter": {
 				BaseURL: "https://openrouter.ai/api/v1",
 				APIKey:  "ENV_TEST_OPENROUTER_APPLY_KEY",
-				Type:    "cloud",
+				Type:    provider.TypeOpenRouter,
 			},
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434",
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{

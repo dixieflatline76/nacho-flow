@@ -14,6 +14,7 @@ import (
 
 // AnthropicPricingProvider populates Anthropic pricing and capabilities from the curated catalog.
 type AnthropicPricingProvider struct {
+	id  string
 	mgr *curation.Manager
 }
 
@@ -27,15 +28,33 @@ func NewAnthropicPricingProviderWithManager(mgr *curation.Manager) *AnthropicPri
 	if mgr == nil {
 		mgr = curation.DefaultManager()
 	}
-	return &AnthropicPricingProvider{mgr: mgr}
+	return &AnthropicPricingProvider{
+		id:  string(contract.PlatformAnthropic),
+		mgr: mgr,
+	}
 }
 
-// Name returns the provider identifier "anthropic".
+// Name returns the configured provider identifier (defaults to "anthropic").
 func (p *AnthropicPricingProvider) Name() string {
-	return string(contract.ProviderTypeAnthropic)
+	if p.id != "" {
+		return p.id
+	}
+	return string(contract.PlatformAnthropic)
 }
 
-// FetchPricing extracts all Anthropic models from the curated catalog and indexes them by both full ID and base ID.
+// Platform returns contract.PlatformAnthropic.
+func (p *AnthropicPricingProvider) Platform() contract.Platform {
+	return contract.PlatformAnthropic
+}
+
+// IsCatalogDerived reports that this pricing provider reads directly from the curated catalog
+// and must not feed its entries back into RegisterDynamicModels.
+func (p *AnthropicPricingProvider) IsCatalogDerived() bool {
+	return true
+}
+
+// FetchPricing extracts active Anthropic models with Providers[PlatformAnthropic] bindings from the curated catalog
+// and indexes them strictly by their Anthropic wire model ID and bare aliases (never under "anthropic/..." keys).
 func (p *AnthropicPricingProvider) FetchPricing(ctx context.Context) (map[string]ModelMetadata, error) {
 	cat := p.mgr.GetActiveCatalog()
 	if cat == nil || len(cat.Models) == 0 {
@@ -43,19 +62,32 @@ func (p *AnthropicPricingProvider) FetchPricing(ctx context.Context) (map[string
 	}
 
 	results := make(map[string]ModelMetadata, len(cat.Models))
+	provName := p.Name()
 	for id, profile := range cat.Models {
-		idLower := strings.ToLower(id)
-		if !strings.HasPrefix(idLower, "anthropic/") {
+		if strings.Contains(id, ":batch") || strings.Contains(id, "-batch") {
 			continue
+		}
+		binding, hasBinding := profile.Providers[contract.PlatformAnthropic]
+		if !hasBinding || binding.ModelID == "" {
+			continue
+		}
+
+		promptCost := profile.PromptCostPerMillion
+		if binding.PromptCostPerMillion != nil {
+			promptCost = *binding.PromptCostPerMillion
+		}
+		compCost := profile.CompletionCostPerMillion
+		if binding.CompletionCostPerMillion != nil {
+			compCost = *binding.CompletionCostPerMillion
 		}
 
 		meta := ModelMetadata{
 			ModelPricing: ModelPricing{
-				PromptCostPerMillion:     profile.PromptCostPerMillion,
-				CompletionCostPerMillion: profile.CompletionCostPerMillion,
+				PromptCostPerMillion:     promptCost,
+				CompletionCostPerMillion: compCost,
 			},
-			ModelID:           id,
-			Provider:          string(contract.ProviderTypeAnthropic),
+			ModelID:           binding.ModelID,
+			Provider:          provName,
 			Name:              profile.Name,
 			SupportsVision:    profile.SupportsVision,
 			SupportsTools:     profile.SupportsTools,
@@ -64,37 +96,16 @@ func (p *AnthropicPricingProvider) FetchPricing(ctx context.Context) (map[string
 			AgenticIndex:      profile.ToolReliability,
 		}
 
-		// Index by full key (e.g. "anthropic/claude-3-7-sonnet")
-		results[id] = meta
+		results[binding.ModelID] = meta
 
-		// Index by bare model name (e.g. "claude-3-7-sonnet")
-		baseID := id
-		if slash := strings.LastIndex(id, "/"); slash >= 0 {
-			baseID = id[slash+1:]
-		}
-		if _, exists := results[baseID]; !exists {
-			bareMeta := meta
-			bareMeta.ModelID = baseID
-			results[baseID] = bareMeta
-		}
-
-		// Dynamically index catalog-defined aliases (e.g. "claude-3-7-sonnet-20250219")
 		for _, alias := range profile.Aliases {
-			if alias == "" {
+			if alias == "" || strings.Contains(alias, "/") {
 				continue
 			}
 			if _, exists := results[alias]; !exists {
 				aliasMeta := meta
 				aliasMeta.ModelID = alias
 				results[alias] = aliasMeta
-			}
-			if !strings.Contains(alias, "/") {
-				fullAlias := "anthropic/" + alias
-				if _, exists := results[fullAlias]; !exists {
-					fullMeta := meta
-					fullMeta.ModelID = fullAlias
-					results[fullAlias] = fullMeta
-				}
 			}
 		}
 	}
@@ -103,7 +114,7 @@ func (p *AnthropicPricingProvider) FetchPricing(ctx context.Context) (map[string
 }
 
 func init() {
-	RegisterPricingFactory(string(contract.ProviderTypeAnthropic), func(id string, cfg contract.ProviderConfig, defaultInterval time.Duration) (PricingProvider, time.Duration) {
+	RegisterPricingFactory(string(contract.PlatformAnthropic), func(id string, cfg contract.ProviderConfig, defaultInterval time.Duration) (PricingProvider, time.Duration) {
 		interval := defaultInterval
 		if interval == 0 {
 			interval = 24 * time.Hour
@@ -113,6 +124,10 @@ func init() {
 				interval = parsed
 			}
 		}
-		return NewAnthropicPricingProvider(), interval
+		prov := NewAnthropicPricingProvider()
+		if id != "" {
+			prov.id = id
+		}
+		return prov, interval
 	})
 }

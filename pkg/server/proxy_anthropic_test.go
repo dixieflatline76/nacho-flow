@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 )
@@ -60,7 +61,7 @@ func TestProxy_Anthropic_NonStreaming(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic-direct": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockAnthropic.URL,
 				APIKey:  "sk-ant-test-token-xyz",
 			},
@@ -217,7 +218,7 @@ func TestProxy_Anthropic_Streaming(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic-stream": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockAnthropic.URL,
 				APIKey:  "sk-ant-test-stream",
 			},
@@ -315,7 +316,7 @@ func TestProxy_Anthropic_ToolUse(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic-tools": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockAnthropic.URL,
 				APIKey:  "sk-ant-tool-key",
 			},
@@ -419,7 +420,7 @@ func TestProxy_Anthropic_ErrorHandling(t *testing.T) {
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
 			"anthropic-err": {
-				Type:    contract.ProviderTypeAnthropic,
+				Type:    provider.TypeAnthropic,
 				BaseURL: mockAnthropic.URL,
 				APIKey:  "sk-ant-test",
 			},
@@ -465,5 +466,78 @@ func TestProxy_Anthropic_ErrorHandling(t *testing.T) {
 	}
 	if errResp.Error.Type != "invalid_request_error" {
 		t.Errorf("Expected error type 'invalid_request_error', got '%s'", errResp.Error.Type)
+	}
+}
+
+// TestDispatch_4xxNotRetriedOnDefaultTier verifies that an upstream 4xx error (e.g. 404 Not Found
+// caused by retired or invalid model identifier) is immediately passed through to the client
+// and NOT retried on the default tier.
+func TestDispatch_4xxNotRetriedOnDefaultTier(t *testing.T) {
+	mockPrimary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{
+			"type": "error",
+			"error": {
+				"type": "not_found_error",
+				"message": "model not found: claude-3-7-sonnet-20250219"
+			}
+		}`))
+	}))
+	defer mockPrimary.Close()
+
+	defaultHits := 0
+	mockDefault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultHits++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_default","type":"message","role":"assistant","content":[{"type":"text","text":"from default"}]}`))
+	}))
+	defer mockDefault.Close()
+
+	cfg := &contract.Config{
+		Port: 8000,
+		Providers: map[string]contract.ProviderConfig{
+			"primary-prov": {
+				Type:    provider.TypeAnthropic,
+				BaseURL: mockPrimary.URL,
+				APIKey:  "sk-ant-test",
+			},
+			"default-prov": {
+				Type:    provider.TypeAnthropic,
+				BaseURL: mockDefault.URL,
+				APIKey:  "sk-ant-test",
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:     "Primary Tier",
+				Model:    "claude-3-7-sonnet-20250219",
+				Provider: "primary-prov",
+				When:     "true",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:     "Default Tier",
+			Model:    "claude-sonnet-5",
+			Provider: "default-prov",
+		},
+	}
+
+	evaluator, _ := strategy.NewExprEvaluator(cfg.Tiers, cfg.DefaultTier)
+	classifier := router.NewClassifier()
+	sanitizer := router.NewSanitizer()
+	srv := NewServer(cfg, evaluator, classifier, sanitizer)
+
+	reqPayload := `{"model": "nacho-hybrid", "messages": [{"role": "user", "content": "hi"}]}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(reqPayload))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("Expected status 404, got %d. Body: %s", rec.Code, rec.Body.String())
+	}
+	if defaultHits != 0 {
+		t.Fatalf("Expected 0 hits on default tier, got %d", defaultHits)
 	}
 }

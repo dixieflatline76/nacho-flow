@@ -42,6 +42,13 @@ type PricingProvider interface {
 	FetchPricing(ctx context.Context) (map[string]ModelMetadata, error)
 }
 
+// PlatformPricingProvider extends PricingProvider with platform identity and catalog-feedback policy.
+type PlatformPricingProvider interface {
+	PricingProvider
+	Platform() contract.Platform
+	IsCatalogDerived() bool // true = data comes from curated catalog; never fed back into RegisterDynamicModels
+}
+
 type providerEntry struct {
 	provider PricingProvider
 	interval time.Duration
@@ -50,13 +57,15 @@ type providerEntry struct {
 
 // PricingOracle manages lock-free model pricing lookup, capability ranking, and async background sync.
 type PricingOracle struct {
-	providers   map[string]*providerEntry
-	metadataMap atomic.Pointer[map[string]ModelMetadata]
-	lastSynced  atomic.Int64
-	classifier  *Classifier
-	mu          sync.Mutex
-	rootCtx     context.Context
-	defaultInt  time.Duration
+	providers         map[string]*providerEntry
+	metadataMap       atomic.Pointer[map[string]ModelMetadata]
+	providerPlatforms atomic.Pointer[map[string]contract.Platform]
+	platformResolver  atomic.Pointer[contract.PlatformResolver]
+	lastSynced        atomic.Int64
+	classifier        *Classifier
+	mu                sync.Mutex
+	rootCtx           context.Context
+	defaultInt        time.Duration
 }
 
 // NewPricingOracle creates a new initialized PricingOracle.
@@ -67,6 +76,8 @@ func NewPricingOracle() *PricingOracle {
 	}
 	emptyMap := make(map[string]ModelMetadata)
 	oracle.metadataMap.Store(&emptyMap)
+	emptyPlats := make(map[string]contract.Platform)
+	oracle.providerPlatforms.Store(&emptyPlats)
 	return oracle
 }
 
@@ -88,6 +99,47 @@ func (o *PricingOracle) SetClassifier(c *Classifier) {
 	}
 }
 
+// SetPlatformResolver configures the lock-free PlatformResolver used to map provider IDs to platforms.
+func (o *PricingOracle) SetPlatformResolver(r contract.PlatformResolver) {
+	if o == nil {
+		return
+	}
+	o.platformResolver.Store(&r)
+}
+
+func (o *PricingOracle) resolvePlatform(providerID string) contract.Platform {
+	if providerID == "" {
+		return ""
+	}
+	if platMapPtr := o.providerPlatforms.Load(); platMapPtr != nil {
+		if plat, ok := (*platMapPtr)[providerID]; ok {
+			return plat
+		}
+	}
+	if resPtr := o.platformResolver.Load(); resPtr != nil && *resPtr != nil {
+		if plat, ok := (*resPtr).Platform(providerID); ok {
+			return plat
+		}
+	}
+	if _, ok := contract.LookupPlatformCatalogPolicy(contract.Platform(providerID)); ok {
+		return contract.Platform(providerID)
+	}
+	lower := strings.ToLower(providerID)
+	if platMapPtr := o.providerPlatforms.Load(); platMapPtr != nil {
+		if plat, ok := (*platMapPtr)[lower]; ok {
+			return plat
+		}
+	}
+	return contract.Platform(lower)
+}
+
+func (o *PricingOracle) catalog() *curation.Manager {
+	if o.classifier != nil && o.classifier.gallery != nil {
+		return o.classifier.gallery
+	}
+	return curation.DefaultManager()
+}
+
 // RegisterProvider registers or updates a pricing provider plugin with its sync interval.
 // If a provider is re-registered (e.g. during config hot-reload), old runners are gracefully stopped.
 func (o *PricingOracle) RegisterProvider(p PricingProvider, syncInterval time.Duration) {
@@ -104,6 +156,19 @@ func (o *PricingOracle) RegisterProvider(p PricingProvider, syncInterval time.Du
 		interval: syncInterval,
 	}
 	o.providers[name] = entry
+
+	if pp, ok := p.(PlatformPricingProvider); ok {
+		curPlats := o.providerPlatforms.Load()
+		nextPlats := make(map[string]contract.Platform)
+		if curPlats != nil {
+			for k, v := range *curPlats {
+				nextPlats[k] = v
+			}
+		}
+		nextPlats[name] = pp.Platform()
+		nextPlats[p.Name()] = pp.Platform()
+		o.providerPlatforms.Store(&nextPlats)
+	}
 
 	// If background sync is already active, launch runner immediately
 	if o.rootCtx != nil {
@@ -168,6 +233,22 @@ func (o *PricingOracle) updateProviderData(providerName string, newPrices map[st
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
+	lowerProv := strings.ToLower(providerName)
+	var plat contract.Platform
+	isCatalogDerived := false
+	if entry, ok := o.providers[lowerProv]; ok && entry != nil {
+		if pp, ok := entry.provider.(PlatformPricingProvider); ok {
+			plat = pp.Platform()
+			isCatalogDerived = pp.IsCatalogDerived()
+		}
+	}
+	if plat == "" {
+		plat = o.resolvePlatform(lowerProv)
+		if plat == contract.PlatformAnthropic {
+			isCatalogDerived = true
+		}
+	}
+
 	currentPtr := o.metadataMap.Load()
 	mergedMap := make(map[string]ModelMetadata)
 	if currentPtr != nil {
@@ -181,17 +262,25 @@ func (o *PricingOracle) updateProviderData(providerName string, newPrices map[st
 			meta.ModelID = modelID
 		}
 		if meta.Provider == "" {
-			meta.Provider = strings.ToLower(providerName)
+			meta.Provider = lowerProv
 		}
-		key := fmt.Sprintf("%s%s%s", strings.ToLower(providerName), contract.PricingNamespaceSeparator, modelID)
+		key := fmt.Sprintf("%s%s%s", lowerProv, contract.PricingNamespaceSeparator, modelID)
 		mergedMap[key] = meta
-		if _, exists := mergedMap[modelID]; !exists {
+		if plat != "" && string(plat) != lowerProv {
+			platKey := fmt.Sprintf("%s%s%s", string(plat), contract.PricingNamespaceSeparator, modelID)
+			mergedMap[platKey] = meta
+		}
+		if existing, exists := mergedMap[modelID]; !exists || strings.EqualFold(existing.Provider, meta.Provider) {
 			mergedMap[modelID] = meta
 		}
 	}
 
 	o.metadataMap.Store(&mergedMap)
 	o.lastSynced.Store(time.Now().UnixNano())
+
+	if isCatalogDerived {
+		return
+	}
 
 	// Dynamically register discovered endpoints with curation manager
 	dynamicProfiles := make(map[string]curation.ModelCuratedProfile, len(newPrices))
@@ -211,11 +300,7 @@ func (o *PricingOracle) updateProviderData(providerName string, newPrices map[st
 			BenchmarkSource:          "live_oracle",
 		}
 	}
-	if o.classifier != nil && o.classifier.gallery != nil {
-		o.classifier.gallery.RegisterDynamicModels(dynamicProfiles)
-	} else {
-		curation.DefaultManager().RegisterDynamicModels(dynamicProfiles)
-	}
+	o.catalog().RegisterDynamicModels(dynamicProfiles)
 }
 
 // LastSynced returns the UTC timestamp of the most recent successful pricing sync.
@@ -269,26 +354,44 @@ func (o *PricingOracle) GetModelMetadata(provider, model string) (ModelMetadata,
 	}
 	m := *mPtr
 
-	// Priority 1a: Direct model key match (zero allocations)
-	if meta, ok := m[model]; ok {
-		return meta, true
-	}
-
-	// Priority 1b: Namespaced key match (provider::model) via zeroalloc composite lookup
+	// Priority 1a: Namespaced key match (provider::model or platform::model) via zeroalloc composite lookup (0 allocs)
 	if provider != "" {
 		if meta, ok := zeroalloc.LookupCompositeKey(m, provider, contract.PricingNamespaceSeparator, model); ok {
 			return meta, true
 		}
+		if plat := o.resolvePlatform(provider); plat != "" && string(plat) != provider {
+			if meta, ok := zeroalloc.LookupCompositeKey(m, string(plat), contract.PricingNamespaceSeparator, model); ok {
+				return meta, true
+			}
+		}
 	}
 
-	// Priority 2: Fall back to Curated Gallery / Catalog for native or unmapped providers
+	// Priority 1b: Direct bare model key match (0 allocs)
+	if meta, ok := m[model]; ok {
+		if provider == "" || meta.Provider == "" || strings.EqualFold(meta.Provider, provider) {
+			return meta, true
+		}
+		reqPlat := o.resolvePlatform(provider)
+		reqPolicy, knownReq := contract.LookupPlatformCatalogPolicy(reqPlat)
+		if !knownReq || !reqPolicy.RequiresProviderBinding || o.resolvePlatform(meta.Provider) == reqPlat {
+			return meta, true
+		}
+	}
+
+	// Priority 2: Platform-aware Curated Catalog fallback via declarative PlatformCatalogPolicy
+	reqPlat := o.resolvePlatform(provider)
 	if o.classifier != nil && o.classifier.gallery != nil {
-		if profile, found := o.classifier.gallery.Lookup(model); found {
+		if profile, found := o.classifier.gallery.LookupForPlatform(reqPlat, model); found {
 			return modelMetadataFromCuratedProfile(profile), true
 		}
-	} else if (provider == "" || strings.EqualFold(provider, string(contract.ProviderTypeAnthropic))) &&
-		(strings.EqualFold(provider, string(contract.ProviderTypeAnthropic)) || strings.HasPrefix(strings.ToLower(model), "claude") || strings.HasPrefix(strings.ToLower(model), "anthropic/")) {
-		if profile, found := curation.DefaultManager().Lookup(model); found {
+	} else if reqPlat != "" {
+		if policy, ok := contract.LookupPlatformCatalogPolicy(reqPlat); ok && policy.RequiresProviderBinding {
+			if profile, found := curation.DefaultManager().LookupForPlatform(reqPlat, model); found {
+				return modelMetadataFromCuratedProfile(profile), true
+			}
+		}
+	} else if provider == "" {
+		if profile, found := curation.DefaultManager().Lookup(model); found && len(profile.Providers) > 0 {
 			return modelMetadataFromCuratedProfile(profile), true
 		}
 	}
@@ -342,12 +445,14 @@ func (o *PricingOracle) CalculateCost(provider, model string, promptTokens, comp
 // benchmark model. It checks live OpenRouter pricing data first (populated by background
 // sync), and falls back to hardcoded snapshot constants if unavailable.
 func (o *PricingOracle) resolveBenchmarkRates() (promptRate, completionRate float64) {
-	if pricing, found := o.GetPrice(contract.ProviderOpenRouter, contract.DefaultBenchmarkModel); found {
-		if pricing.PromptCostPerMillion > 0 {
-			promptRate = pricing.PromptCostPerMillion
-		}
-		if pricing.CompletionCostPerMillion > 0 {
-			completionRate = pricing.CompletionCostPerMillion
+	if mPtr := o.metadataMap.Load(); mPtr != nil {
+		m := *mPtr
+		if meta, found := zeroalloc.LookupCompositeKey(m, contract.ProviderOpenRouter, contract.PricingNamespaceSeparator, contract.DefaultBenchmarkModel); found {
+			promptRate = meta.PromptCostPerMillion
+			completionRate = meta.CompletionCostPerMillion
+		} else if meta, found := m[contract.DefaultBenchmarkModel]; found {
+			promptRate = meta.PromptCostPerMillion
+			completionRate = meta.CompletionCostPerMillion
 		}
 	}
 	if promptRate <= 0 {

@@ -42,12 +42,32 @@
       "description": "Upstream LLM providers (local llama-server, vLLM, Ollama, OpenRouter, Anthropic)",
       "additionalProperties": {
         "type": "object",
-        "required": ["type", "base_url"],
+        "required": ["type"],
+        "allOf": [
+          {
+            "if": {
+              "properties": { "type": { "const": "openai_compatible" } }
+            },
+            "then": {
+              "required": ["base_url"]
+            },
+            "else": {
+              "not": { "required": ["local"] },
+              "properties": {
+                "local": false
+              }
+            }
+          }
+        ],
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["local", "cloud", "anthropic", "openrouter", "mock"],
+            "enum": ["openai_compatible", "anthropic", "openrouter"],
             "description": "Provider execution type"
+          },
+          "local": {
+            "type": "boolean",
+            "description": "Flag indicating if the provider is a locally running model server (only valid for openai_compatible)"
           },
           "base_url": {
             "type": "string",
@@ -113,7 +133,7 @@
           },
           "reasoning_effort": {
             "type": "string",
-            "enum": ["low", "medium", "high", "max"],
+            "enum": ["none", "low", "medium", "high", "max"],
             "description": "Reasoning effort budget passed to reasoning models"
           },
           "temperature": {
@@ -194,7 +214,7 @@
         "name": { "type": "string" },
         "provider": { "type": "string" },
         "model": { "type": "string" },
-        "reasoning_effort": { "type": "string", "enum": ["low", "medium", "high", "max"] },
+        "reasoning_effort": { "type": "string", "enum": ["none", "low", "medium", "high", "max"] },
         "temperature": { "type": "number" },
         "max_tokens": { "type": "integer" }
       }
@@ -242,7 +262,7 @@
               "priority": { "type": "integer" },
               "prompt": { "type": "string" },
               "prompt_override": { "type": "string" },
-              "reasoning_effort": { "type": "string", "enum": ["low", "medium", "high", "max"] }
+              "reasoning_effort": { "type": "string", "enum": ["none", "low", "medium", "high", "max"] }
             }
           }
         }

@@ -15,23 +15,28 @@ func TestProviderConfig_IsLocal(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "local provider",
-			p:        contract.ProviderConfig{Type: contract.ProviderTypeLocal},
+			name:     "local flag true",
+			p:        contract.ProviderConfig{Type: "openai_compatible", Local: true},
 			expected: true,
 		},
 		{
-			name:     "cloud provider",
-			p:        contract.ProviderConfig{Type: contract.ProviderTypeCloud},
+			name:     "local flag false on openai_compatible",
+			p:        contract.ProviderConfig{Type: "openai_compatible", Local: false},
 			expected: false,
 		},
 		{
-			name:     "empty type",
-			p:        contract.ProviderConfig{Type: ""},
+			name:     "anthropic provider",
+			p:        contract.ProviderConfig{Type: "anthropic"},
 			expected: false,
 		},
 		{
-			name:     "arbitrary unknown type",
-			p:        contract.ProviderConfig{Type: "other"},
+			name:     "openrouter provider",
+			p:        contract.ProviderConfig{Type: "openrouter"},
+			expected: false,
+		},
+		{
+			name:     "empty struct",
+			p:        contract.ProviderConfig{},
 			expected: false,
 		},
 	}

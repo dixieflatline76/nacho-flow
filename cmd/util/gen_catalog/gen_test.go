@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
@@ -281,4 +282,112 @@ func TestRun_FullExecution(t *testing.T) {
 	defer func() { logFatal = oldLogFatal }()
 	logFatal = func(format string, v ...interface{}) {}
 	main()
+}
+
+func TestRun_PreservesCuratedFieldsAndEstimatedScores(t *testing.T) {
+	tempDir := t.TempDir()
+	outFile := tempDir + "/models.json"
+	embedFile := tempDir + "/embed_models.json"
+
+	seedCatalog := curation.CuratedCatalog{
+		Version: "v1.0.0",
+		Models: map[string]curation.ModelCuratedProfile{
+			"anthropic/claude-sonnet-5": {
+				Name:                     "Anthropic: Claude Sonnet 5",
+				Aliases:                  []string{"claude-sonnet-5-latest"},
+				TierRole:                 curation.RoleCodingWorkhorse,
+				CodingIndex:              71.5,
+				ToolReliability:          92.0,
+				PromptCostPerMillion:     3.0,
+				CompletionCostPerMillion: 15.0,
+				RecommendedTiers:         []string{contract.TierIDFrontier, contract.TierIDWorkhorse},
+				BenchmarkSource:          "artificial_analysis",
+				ProvenanceURL:            "https://artificialanalysis.ai",
+				Providers: map[contract.Platform]curation.ProviderBinding{
+					contract.PlatformAnthropic: {ModelID: "claude-sonnet-5"},
+				},
+			},
+			"anthropic/claude-sonnet-5.5": {
+				Name:                     "Anthropic: Claude Sonnet 5.5",
+				TierRole:                 curation.RoleCodingWorkhorse,
+				CodingIndex:              77.0,
+				PromptCostPerMillion:     3.0,
+				CompletionCostPerMillion: 15.0,
+				BenchmarkSource:          curation.BenchmarkSourceEstimated,
+			},
+		},
+	}
+	seedBytes, _ := json.MarshalIndent(seedCatalog, "", "  ")
+	if err := os.WriteFile(outFile, seedBytes, 0600); err != nil {
+		t.Fatalf("failed to seed models.json: %v", err)
+	}
+
+	mockResponse := map[string]interface{}{
+		"data": []map[string]interface{}{
+			{
+				"id":   "anthropic/claude-sonnet-5",
+				"name": "Anthropic: Claude Sonnet 5",
+				"pricing": map[string]interface{}{
+					"prompt":     "0.0000035",
+					"completion": "0.0000175",
+				},
+				"benchmarks": map[string]interface{}{
+					"artificial_analysis": map[string]interface{}{
+						"coding_index": 72.0,
+					},
+				},
+			},
+			{
+				"id":   "anthropic/claude-sonnet-5.5",
+				"name": "Anthropic: Claude Sonnet 5.5",
+				"pricing": map[string]interface{}{
+					"prompt":     "0.000003",
+					"completion": "0.000015",
+				},
+				"benchmarks": map[string]interface{}{
+					"artificial_analysis": map[string]interface{}{
+						"coding_index": 88.0,
+					},
+				},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	if err := run([]string{"-version", "v1.1.0", "-out", outFile, "-embed-out", embedFile}, server.URL); err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	mergedBytes, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("failed to read merged models.json: %v", err)
+	}
+	var merged curation.CuratedCatalog
+	if err := json.Unmarshal(mergedBytes, &merged); err != nil {
+		t.Fatalf("failed to unmarshal merged catalog: %v", err)
+	}
+
+	s5 := merged.Models["anthropic/claude-sonnet-5"]
+	if s5.Providers[contract.PlatformAnthropic].ModelID != "claude-sonnet-5" {
+		t.Errorf("expected Providers[anthropic] preserved, got %+v", s5.Providers)
+	}
+	if len(s5.Aliases) != 1 || s5.Aliases[0] != "claude-sonnet-5-latest" {
+		t.Errorf("expected Aliases preserved, got %v", s5.Aliases)
+	}
+	if s5.CodingIndex != 72.0 {
+		t.Errorf("expected live coding_index 72.0 applied on non-estimated model, got %f", s5.CodingIndex)
+	}
+
+	s55 := merged.Models["anthropic/claude-sonnet-5.5"]
+	if s55.CodingIndex != 77.0 {
+		t.Errorf("expected estimated coding_index 77.0 preserved, got %f", s55.CodingIndex)
+	}
+	if s55.BenchmarkSource != curation.BenchmarkSourceEstimated {
+		t.Errorf("expected BenchmarkSource %q preserved, got %q", curation.BenchmarkSourceEstimated, s55.BenchmarkSource)
+	}
 }

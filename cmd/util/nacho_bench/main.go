@@ -247,11 +247,12 @@ func setupTestServer(enableAuth bool, simulateMarkdownTools bool, enableTrafficL
 		Providers: map[string]contract.ProviderConfig{
 			"mock_local": {
 				BaseURL: mockUpstream.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 			"mock_cloud": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{

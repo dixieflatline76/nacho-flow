@@ -13,15 +13,12 @@ host: "0.0.0.0" # Bind address (default: 127.0.0.1 for local isolation, 0.0.0.0 
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
   openrouter:
-    base_url: "https://openrouter.ai/api/v1"
     api_key: "ENV_OPENROUTER_API_KEY"
-    type: "cloud"
-    headers:
-      HTTP-Referer: "https://github.com/dixieflatline76/nacho-flow"
-      X-Title: "nacho-flow"
+    type: "openrouter"
 
 # =============================================================================
 # 🔥 HEATSEEKER LIVE MODEL DEALS

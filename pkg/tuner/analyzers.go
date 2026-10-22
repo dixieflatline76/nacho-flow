@@ -1,11 +1,40 @@
 package tuner
 
 import (
+	"encoding/json"
+	"io/fs"
 	"sort"
+	"strings"
 
+	"github.com/dixieflatline76/nacho-flow/data"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 )
+
+type stopwordsCatalog struct {
+	Version   string   `json:"version"`
+	Stopwords []string `json:"stopwords"`
+}
+
+var ignoredFrictionStopwords = loadIgnoredStopwords()
+
+func loadIgnoredStopwords() map[string]struct{} {
+	m := make(map[string]struct{}, 512)
+	raw, err := fs.ReadFile(data.CatalogFS, "stopwords.json")
+	if err != nil {
+		return m
+	}
+	var cat stopwordsCatalog
+	if err := json.Unmarshal(raw, &cat); err != nil {
+		return m
+	}
+	for _, w := range cat.Stopwords {
+		if clean := strings.ToLower(strings.TrimSpace(w)); clean != "" {
+			m[clean] = struct{}{}
+		}
+	}
+	return m
+}
 
 // ModalityRiskAnalyzer evaluates empirical failure rates for multimodal images and tool calls.
 type ModalityRiskAnalyzer struct {
@@ -116,6 +145,9 @@ func (a *KeywordRiskAnalyzer) Analyze(records []telemetry.TurnRecord) []string {
 			totalLocalRetries++
 		}
 		for _, kw := range r.Keywords {
+			if _, ignored := ignoredFrictionStopwords[kw]; ignored {
+				continue
+			}
 			if stats[kw] == nil {
 				stats[kw] = &kwStat{}
 			}

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "unix": {
     "write_commands": [
       "touch", "mkdir", "rm", "rmdir", "cp", "mv", "truncate", "install", 
@@ -14,7 +14,13 @@
       "git": ["checkout --", "checkout .", "restore ", "restore\t", "apply ", "apply\t"],
       "go": ["mod init", "mod tidy"],
       "npm": ["init", "create "],
-      "cargo": ["new ", "init"]
+      "cargo": ["new ", "init"],
+      "python": ["open(", "path(", ".write", "'''", "\"\"\"", "\\\"\\\"\\\""],
+      "python3": ["open(", "path(", ".write", "'''", "\"\"\"", "\\\"\\\"\\\""],
+      "py": ["open(", "path(", ".write", "'''", "\"\"\"", "\\\"\\\"\\\""],
+      "node": ["writefile", "createwritestream", "fs.", "node:fs"],
+      "bun": ["writefile", "createwritestream", "fs.", "node:fs"],
+      "deno": ["writefile", "createwritestream", "fs.", "node:fs", "deno.write"]
     },
     "redirections": [">", ">>", "<<"]
   },
@@ -27,6 +33,27 @@
     "write_pipes": [
       "| out-file", "| set-content", "| add-content", "| tee-object"
     ],
+    "write_patterns": [
+      "writealltext", "writeallbytes", "writealllines",
+      "appendalltext", "appendalllines", "io.streamwriter",
+      "::create(", "::openwrite(", "::delete(", "::copy(", "::move(", "::replace(",
+      "@\"\n", "@\"\r", "@'\n", "@'\r",
+      "@\\\"\\n", "@\\\"\\r", "@'\\n", "@'\\r", "@\\\"", "@\\n"
+    ],
+    "composite_patterns": [
+      {
+        "require_any": ["get-content", "readalltext", "readalllines"],
+        "with_any": [".replace(", "-replace"]
+      }
+    ],
+    "contextual_commands": {
+      "python": ["open(", "path(", ".write", "'''", "\"\"\"", "\\\"\\\"\\\""],
+      "python3": ["open(", "path(", ".write", "'''", "\"\"\"", "\\\"\\\"\\\""],
+      "py": ["open(", "path(", ".write", "'''", "\"\"\"", "\\\"\\\"\\\""],
+      "node": ["writefile", "createwritestream", "fs.", "node:fs"],
+      "bun": ["writefile", "createwritestream", "fs.", "node:fs"],
+      "deno": ["writefile", "createwritestream", "fs.", "node:fs", "deno.write"]
+    },
     "redirections": [">", ">>"]
   }
 }

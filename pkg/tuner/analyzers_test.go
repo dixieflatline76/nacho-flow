@@ -273,6 +273,33 @@ func TestKeywordRiskAnalyzer_ZeroBaselineWithFriction(t *testing.T) {
 	}
 }
 
+func TestKeywordRiskAnalyzer_StopwordsFiltered(t *testing.T) {
+	policy := DefaultTuningPolicy()
+	analyzer := NewKeywordRiskAnalyzer(policy)
+
+	var records []telemetry.TurnRecord
+	for i := 0; i < 40; i++ {
+		records = append(records, telemetry.TurnRecord{
+			IsLocal:  true,
+			Keywords: []string{"ui", "css"},
+			IsRetry:  false,
+		})
+	}
+	// 20 retried turns containing stopwords ("below", "content", "reminders", "environment", "todo", "workspace", "vscode") alongside real domain word "kubernetes"
+	for i := 0; i < 20; i++ {
+		records = append(records, telemetry.TurnRecord{
+			IsLocal:  true,
+			Keywords: []string{"below", "content", "reminders", "environment", "todo", "workspace", "vscode", "the", "error", "file", "kubernetes"},
+			IsRetry:  true,
+		})
+	}
+
+	highFriction := analyzer.Analyze(records)
+	if len(highFriction) != 1 || highFriction[0] != "kubernetes" {
+		t.Errorf("Expected stopwords to be filtered leaving only ['kubernetes'], got: %v", highFriction)
+	}
+}
+
 func TestContextCliffAnalyzer_RespectsMaxContext(t *testing.T) {
 	policy := DefaultTuningPolicy()
 	analyzer := NewContextCliffAnalyzer(policy)

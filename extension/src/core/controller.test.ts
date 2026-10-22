@@ -61,6 +61,7 @@ jest.mock('vscode', () => ({
     findFiles: jest.fn().mockResolvedValue([]),
     openTextDocument: jest.fn(),
     onDidSaveTextDocument: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+    onDidChangeTextDocument: jest.fn().mockReturnValue({ dispose: jest.fn() }),
     fs: {
       stat: jest.fn().mockRejectedValue(new Error('File not found')),
       createDirectory: jest.fn().mockResolvedValue(undefined),
@@ -1804,15 +1805,15 @@ default_tier:
         getHealth: jest.fn().mockResolvedValue({ version: '0.6.0' }),
         getConfig: jest.fn().mockResolvedValue({
           providers: {
-            ollama: { type: 'local' },
-            openrouter: { base_url: 'https://openrouter.ai/api/v1' },
-            vllm: { base_url: 'http://192.168.0.101:8000/v1', type: 'local' },
-            sglang: { base_url: 'http://192.168.0.102:8000/v1', type: 'local' },
-            llamacpp: { base_url: 'http://127.0.0.1:8080/v1', type: 'local' },
-            openai: { base_url: 'https://api.openai.com/v1' },
-            anthropic: { base_url: 'https://api.anthropic.com/v1' },
-            deepseek: { base_url: 'https://api.deepseek.com/v1' },
-            customai: { base_url: 'http://localhost:9000/v1' }
+            ollama: { type: 'openai_compatible', local: true },
+            openrouter: { base_url: 'https://openrouter.ai/api/v1', type: 'openrouter' },
+            vllm: { base_url: 'http://192.168.0.101:8000/v1', type: 'openai_compatible', local: true },
+            sglang: { base_url: 'http://192.168.0.102:8000/v1', type: 'openai_compatible', local: true },
+            llamacpp: { base_url: 'http://127.0.0.1:8080/v1', type: 'openai_compatible', local: true },
+            openai: { base_url: 'https://api.openai.com/v1', type: 'openai_compatible' },
+            anthropic: { type: 'anthropic' },
+            deepseek: { base_url: 'https://api.deepseek.com/v1', type: 'openai_compatible' },
+            customai: { base_url: 'http://localhost:9000/v1', type: 'openai_compatible' }
           },
           tiers: [
             { name: 'Tier 2: Local', provider: 'ollama', model: 'gemma4:12b-it-qat' },
@@ -1846,6 +1847,39 @@ default_tier:
           expect.objectContaining({ id: 'anthropic', name: 'Anthropic' }),
           expect.objectContaining({ id: 'deepseek', name: 'DeepSeek' }),
           expect.objectContaining({ id: 'customai', name: 'Customai' })
+        ])
+      }));
+    });
+
+    it('asserts provider locality ignores provider key and strictly reflects local property (§1.6)', async () => {
+      const mockSidebar = { updateState: jest.fn(), updateEngineStatus: jest.fn() };
+      (extensionController as any).sidebarProvider = mockSidebar;
+      (extensionController as any).engineMode = 'remote';
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('remote'),
+        getRemoteUrl: jest.fn().mockReturnValue('http://127.0.0.1:8000'),
+        getRemoteToken: jest.fn().mockResolvedValue('token-123'),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue('token-123')
+      };
+      (extensionController as any).restClient = {
+        getHealth: jest.fn().mockResolvedValue({ version: '1.6.1' }),
+        getConfig: jest.fn().mockResolvedValue({
+          providers: {
+            ollama: { type: 'openai_compatible', base_url: 'http://127.0.0.1:11434' }, // local omitted -> cloud despite key 'ollama'
+            custom_local: { type: 'openai_compatible', base_url: 'http://127.0.0.1:8080', local: true }, // local: true -> local
+            openrouter: { type: 'openrouter' } // cloud
+          }
+        }),
+        getCircuits: jest.fn().mockResolvedValue({ circuits: [] })
+      };
+
+      await (extensionController as any).syncSidebarState();
+      expect(mockSidebar.updateState).toHaveBeenCalledWith(expect.objectContaining({
+        providers: expect.arrayContaining([
+          expect.objectContaining({ id: 'ollama', type: 'cloud' }),
+          expect.objectContaining({ id: 'custom_local', type: 'local' }),
+          expect.objectContaining({ id: 'openrouter', type: 'cloud' })
         ])
       }));
     });
@@ -3511,7 +3545,8 @@ other_key:
         const restartSpy = jest.fn().mockResolvedValue({ success: true });
         (extensionController as any).processManager = {
           isRunning: jest.fn().mockReturnValue(true),
-          restart: restartSpy
+          restart: restartSpy,
+          dispose: jest.fn()
         };
         (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
           uri: { fsPath: '/test/profile1.yaml' }
@@ -3543,6 +3578,120 @@ other_key:
       }
     });
 
+    it('should use 2000ms debounce when files.autoSave is enabled, cancel on keystroke, guard doc.isDirty, support doc.isClosed, and debounce remote mode', async () => {
+      try {
+        jest.useFakeTimers();
+        (vscode.workspace.getConfiguration as jest.Mock).mockImplementation((section?: string) => ({
+          get: jest.fn().mockImplementation((key: string, defaultVal?: any) => {
+            if (section === 'files' && key === 'autoSave') {
+              return 'afterDelay';
+            }
+            return defaultVal;
+          }),
+          update: jest.fn().mockResolvedValue(undefined)
+        }));
+
+        await extensionController.initialize();
+        (extensionController as any)._forceDebounceInTest = true;
+        (extensionController as any).activeProfile = 'profile1';
+        (extensionController as any).authManager = {
+          getEngineMode: jest.fn().mockReturnValue('local'),
+          isLocalEngineRunning: jest.fn().mockReturnValue(true),
+          getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+          getAuthToken: jest.fn().mockResolvedValue(null)
+        };
+        const restartSpy = jest.fn().mockResolvedValue({ success: true });
+        (extensionController as any).processManager = {
+          isRunning: jest.fn().mockReturnValue(true),
+          restart: restartSpy,
+          dispose: jest.fn()
+        };
+        (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+          uri: { fsPath: '/test/profile1.yaml' }
+        });
+        (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).loadDashboardData = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).showTransientToast = jest.fn();
+
+        const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+        const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+        const changeListeners = (vscode.workspace.onDidChangeTextDocument as jest.Mock).mock.calls;
+        const lastChangeListener = changeListeners[changeListeners.length - 1][0];
+
+        const doc: any = {
+          fileName: '/test/profile1.yaml',
+          uri: { fsPath: '/test/profile1.yaml', toString: () => 'file:///test/profile1.yaml' },
+          isDirty: false,
+          isClosed: false,
+          getText: () => 'port: 8000\n'
+        };
+
+        // 1. Auto-save triggers 2000ms timer; typing at 800ms cancels it
+        await lastSaveListener(doc);
+        jest.advanceTimersByTime(800);
+        expect(restartSpy).not.toHaveBeenCalled();
+
+        lastChangeListener({ document: doc, contentChanges: [{ text: 'a' }] });
+        jest.advanceTimersByTime(2000);
+        await Promise.resolve();
+        expect(restartSpy).not.toHaveBeenCalled();
+
+        // 2. If doc.isDirty is true when timer expires, reload is skipped
+        await lastSaveListener(doc);
+        doc.isDirty = true;
+        jest.advanceTimersByTime(2100);
+        await Promise.resolve();
+        expect(restartSpy).not.toHaveBeenCalled();
+
+        // 3. Clean save with doc.isClosed = true uses savedText snapshot after 2000ms
+        doc.isDirty = false;
+        await lastSaveListener(doc);
+        doc.isClosed = true;
+        doc.getText = () => {
+          throw new Error('Document is closed');
+        };
+        jest.advanceTimersByTime(1500);
+        expect(restartSpy).not.toHaveBeenCalled();
+        jest.advanceTimersByTime(600);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(restartSpy).toHaveBeenCalledTimes(1);
+
+        // 4. Remote mode also respects _testSaveDebounceMs override, rapid double-save resets timer, and dispose clears active timer
+        (extensionController as any)._testSaveDebounceMs = 300;
+        (extensionController as any).authManager.getEngineMode = jest.fn().mockReturnValue('remote');
+        (extensionController as any).isRemoteHost = jest.fn().mockReturnValue(true);
+        const updateConfigSpy = jest.fn().mockResolvedValue(undefined);
+        (extensionController as any).restClient = {
+          updateConfigYaml: updateConfigSpy
+        };
+        doc.isClosed = false;
+        doc.getText = () => 'port: 9000\n';
+
+        await lastSaveListener(doc);
+        jest.advanceTimersByTime(200);
+        // Second rapid save resets the 300ms timer
+        await lastSaveListener(doc);
+        jest.advanceTimersByTime(200);
+        expect(updateConfigSpy).not.toHaveBeenCalled();
+        jest.advanceTimersByTime(150);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(updateConfigSpy).toHaveBeenCalledWith('port: 9000\n');
+
+        // 5. Disposing controller while a save debounce timer is pending cancels it
+        updateConfigSpy.mockClear();
+        await lastSaveListener(doc);
+        extensionController.dispose();
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+        expect(updateConfigSpy).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('should pause local restart when Pre-Flight Save Gate detects validation errors', async () => {
       await extensionController.initialize();
 
@@ -3566,11 +3715,13 @@ other_key:
 providers:
   llamacpp:
     base_url: "http://127.0.0.1:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "Tier 1"
     provider: "ghost_provider"
+    model: "llama-3-8b"
 `
       };
 
@@ -3588,11 +3739,13 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://127.0.0.1:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "Tier 1"
     provider: "llamacpp"
+    model: "llama-3-8b"
 `
       };
 
@@ -3617,7 +3770,8 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://127.0.0.1:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "T1"

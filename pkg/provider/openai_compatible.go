@@ -14,8 +14,28 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
-// GenericLLMProvider adapts any contract.ProviderConfig into an LLMProvider.
-type GenericLLMProvider struct {
+// TypeOpenAICompatible is the provider type identifier for OpenAI-compatible wire-protocol endpoints.
+const TypeOpenAICompatible contract.ProviderType = "openai_compatible"
+
+func init() {
+	RegisterDescriptor(Descriptor{
+		Type:           TypeOpenAICompatible,
+		DefaultBaseURL: "", // required in config
+		AllowsLocal:    true,
+		Platform: func(cfg contract.ProviderConfig) contract.Platform {
+			if cfg.Local {
+				return contract.PlatformLocal
+			}
+			return contract.PlatformOpenAICompatible
+		},
+		New: func(id string, cfg contract.ProviderConfig) LLMProvider {
+			return NewOpenAICompatibleProvider(id, cfg)
+		},
+	})
+}
+
+// OpenAICompatibleProvider adapts any contract.ProviderConfig into an LLMProvider.
+type OpenAICompatibleProvider struct {
 	id             string
 	name           string
 	config         contract.ProviderConfig
@@ -23,8 +43,8 @@ type GenericLLMProvider struct {
 	circuitBreaker *CircuitBreaker
 }
 
-// NewGenericLLMProvider creates a new generic provider instance.
-func NewGenericLLMProvider(id string, cfg contract.ProviderConfig) *GenericLLMProvider {
+// NewOpenAICompatibleProvider creates a new OpenAI-compatible provider instance.
+func NewOpenAICompatibleProvider(id string, cfg contract.ProviderConfig) *OpenAICompatibleProvider {
 	name := id
 	if strings.Contains(strings.ToLower(id), "ollama") {
 		name = "Ollama Local GPU"
@@ -34,7 +54,7 @@ func NewGenericLLMProvider(id string, cfg contract.ProviderConfig) *GenericLLMPr
 		name = "Langdock Enterprise"
 	}
 
-	return &GenericLLMProvider{
+	return &OpenAICompatibleProvider{
 		id:             id,
 		name:           name,
 		config:         cfg,
@@ -44,31 +64,38 @@ func NewGenericLLMProvider(id string, cfg contract.ProviderConfig) *GenericLLMPr
 }
 
 // CircuitBreaker returns the circuit breaker protecting this provider.
-func (p *GenericLLMProvider) CircuitBreaker() *CircuitBreaker {
+func (p *OpenAICompatibleProvider) CircuitBreaker() *CircuitBreaker {
 	if p.circuitBreaker == nil {
 		p.circuitBreaker = NewCircuitBreaker(DefaultFailureThreshold, DefaultCooldownDuration)
 	}
 	return p.circuitBreaker
 }
 
-func (p *GenericLLMProvider) ID() string {
+func (p *OpenAICompatibleProvider) ID() string {
 	return p.id
 }
 
-func (p *GenericLLMProvider) Name() string {
+func (p *OpenAICompatibleProvider) Name() string {
 	return p.name
 }
 
-func (p *GenericLLMProvider) BaseURL() string {
+func (p *OpenAICompatibleProvider) BaseURL() string {
 	return p.config.BaseURL
 }
 
-func (p *GenericLLMProvider) IsLocal() bool {
-	return p.config.IsLocal()
+func (p *OpenAICompatibleProvider) IsLocal() bool {
+	return p.config.Local
+}
+
+func (p *OpenAICompatibleProvider) Platform() contract.Platform {
+	if p.config.Local {
+		return contract.PlatformLocal
+	}
+	return contract.PlatformOpenAICompatible
 }
 
 // GetAPIKey returns the resolved API key.
-func (p *GenericLLMProvider) GetAPIKey() string {
+func (p *OpenAICompatibleProvider) GetAPIKey() string {
 	return p.config.APIKey
 }
 
@@ -79,12 +106,12 @@ var genericWireDeclarator = &WireDeclarator{
 }
 
 // WireDeclarator returns standard OpenAI-compatible declarative wire formatting rules.
-func (p *GenericLLMProvider) WireDeclarator() *WireDeclarator {
+func (p *OpenAICompatibleProvider) WireDeclarator() *WireDeclarator {
 	return genericWireDeclarator
 }
 
 // GetHeaders returns custom headers configured for this provider.
-func (p *GenericLLMProvider) GetHeaders() map[string]string {
+func (p *OpenAICompatibleProvider) GetHeaders() map[string]string {
 	if p.config.Headers == nil {
 		return map[string]string{}
 	}
@@ -92,7 +119,7 @@ func (p *GenericLLMProvider) GetHeaders() map[string]string {
 }
 
 // Ping checks if the provider endpoint is reachable.
-func (p *GenericLLMProvider) Ping(ctx context.Context) error {
+func (p *OpenAICompatibleProvider) Ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.config.BaseURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create ping request: %w", err)
@@ -111,7 +138,7 @@ func (p *GenericLLMProvider) Ping(ctx context.Context) error {
 }
 
 // BuildUpstreamRequest constructs a standard OpenAI-compatible ChatCompletion HTTP request.
-func (p *GenericLLMProvider) BuildUpstreamRequest(ctx context.Context, r *http.Request, model string, body []byte) (*http.Request, error) {
+func (p *OpenAICompatibleProvider) BuildUpstreamRequest(ctx context.Context, r *http.Request, model string, body []byte) (*http.Request, error) {
 	targetURL, err := url.Parse(p.config.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid target URL for provider '%s': %w", p.id, err)
@@ -155,12 +182,12 @@ func (p *GenericLLMProvider) BuildUpstreamRequest(ctx context.Context, r *http.R
 }
 
 // WrapResponseStream passes through the raw response stream unmodified for standard OpenAI providers.
-func (p *GenericLLMProvider) WrapResponseStream(resp *http.Response) io.ReadCloser {
+func (p *OpenAICompatibleProvider) WrapResponseStream(resp *http.Response) io.ReadCloser {
 	return resp.Body
 }
 
 // TranslateResponseBody passes through the response bytes unmodified for standard OpenAI providers.
-func (p *GenericLLMProvider) TranslateResponseBody(statusCode int, body []byte) ([]byte, error) {
+func (p *OpenAICompatibleProvider) TranslateResponseBody(statusCode int, body []byte) ([]byte, error) {
 	return body, nil
 }
 

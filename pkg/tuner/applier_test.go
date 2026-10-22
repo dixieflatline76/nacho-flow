@@ -16,7 +16,8 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local Fast"
     provider: "ollama"
@@ -63,7 +64,8 @@ port: 8000
 providers:
   custom:
     base_url: "http://127.0.0.1:5000"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "My Local Tier"
     provider: "custom"
@@ -106,7 +108,8 @@ port: 8000
 providers:
   vllm:
     base_url: "http://127.0.0.1:8000"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "vLLM Workhorse"
     provider: "vllm"
@@ -149,7 +152,7 @@ port: 8000
 providers:
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
-    type: "cloud"
+    type: "openrouter"
 tiers:
   - name: "Cloud Claude Sonnet"
     provider: "openrouter"
@@ -233,7 +236,8 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local GPU"
     provider: "ollama"
@@ -361,7 +365,8 @@ func TestApplyTuning_SingleLocalTierFallback(t *testing.T) {
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Existing Local Tier"
     provider: "ollama"

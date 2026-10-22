@@ -40,13 +40,27 @@ type AnthropicStreamAdapter struct {
 	cacheReadInputTokens     int
 	hasEmittedUsage          bool
 	hasEmittedDone           bool
+
+	cache              *thinkingBlockCache
+	thinkingBuf        bytes.Buffer
+	signatureBuf       bytes.Buffer
+	turnThinkingBlocks []cachedThinkingBlock
+	turnToolIDs        []string
+	hasFlushedCache    bool
 }
 
 // NewAnthropicStreamAdapter creates a new stream adapter wrapping an Anthropic HTTP response body.
 func NewAnthropicStreamAdapter(r io.ReadCloser) *AnthropicStreamAdapter {
+	return NewAnthropicStreamAdapterWithCache(r, nil)
+}
+
+// NewAnthropicStreamAdapterWithCache creates a new stream adapter that also captures signed
+// thinking and redacted_thinking blocks into the provided bounded cache keyed by tool_use IDs.
+func NewAnthropicStreamAdapterWithCache(r io.ReadCloser, cache *thinkingBlockCache) *AnthropicStreamAdapter {
 	a := &AnthropicStreamAdapter{
 		upstream: r,
 		reader:   bufio.NewReaderSize(r, 32*1024),
+		cache:    cache,
 	}
 	a.outBuf.Grow(1024)
 	return a
@@ -65,6 +79,7 @@ func (a *AnthropicStreamAdapter) Read(p []byte) (n int, err error) {
 		if readErr != nil {
 			if readErr == io.EOF {
 				a.eofReached = true
+				a.flushThinkingCache()
 				if !a.hasEmittedUsage && (a.inputTokens > 0 || a.outputTokens > 0) {
 					a.emitUsage()
 					a.hasEmittedUsage = true
@@ -98,6 +113,7 @@ func (a *AnthropicStreamAdapter) Close() error {
 		return nil
 	}
 	a.closed = true
+	a.flushThinkingCache()
 	if a.upstream != nil {
 		return a.upstream.Close()
 	}
@@ -137,6 +153,15 @@ func (a *AnthropicStreamAdapter) dispatchData(payload []byte) {
 			a.outBuf.WriteString(`data: {"choices":[{"index":0,"delta":{"reasoning_content":`)
 			a.outBuf.Write(quotedThinking)
 			a.outBuf.WriteString("}}]}\n\n")
+			if a.cache != nil && len(quotedThinking) >= 2 {
+				a.thinkingBuf.Write(quotedThinking[1 : len(quotedThinking)-1])
+			}
+			return
+		}
+		if quotedSig, ok := zeroalloc.ExtractQuotedField(payload, []byte(`"signature":`)); ok {
+			if a.cache != nil && len(quotedSig) >= 2 {
+				a.signatureBuf.Write(quotedSig[1 : len(quotedSig)-1])
+			}
 			return
 		}
 		if quotedArgs, ok := zeroalloc.ExtractQuotedField(payload, []byte(`"partial_json":`)); ok {
@@ -175,10 +200,38 @@ func (a *AnthropicStreamAdapter) dispatchData(payload []byte) {
 		if sse.ContentBlock != nil {
 			a.currentBlockIndex = sse.Index
 			a.currentBlockType = sse.ContentBlock.Type
-			if sse.ContentBlock.Type == "tool_use" {
+			switch sse.ContentBlock.Type {
+			case "tool_use":
 				a.currentToolID = sse.ContentBlock.ID
 				a.currentToolName = sse.ContentBlock.Name
+				if a.cache != nil && sse.ContentBlock.ID != "" {
+					a.turnToolIDs = append(a.turnToolIDs, sse.ContentBlock.ID)
+				}
 				a.emitToolStart(a.toolCallIndex, sse.ContentBlock.ID, sse.ContentBlock.Name)
+			case "thinking":
+				if a.cache != nil {
+					a.thinkingBuf.Reset()
+					a.signatureBuf.Reset()
+					if a.thinkingBuf.Cap() < 16*1024 {
+						a.thinkingBuf.Grow(16 * 1024)
+					}
+					if a.signatureBuf.Cap() < 1024 {
+						a.signatureBuf.Grow(1024)
+					}
+					if sse.ContentBlock.Thinking != "" {
+						writeEscapedInner(&a.thinkingBuf, sse.ContentBlock.Thinking)
+					}
+					if sse.ContentBlock.Signature != "" {
+						a.signatureBuf.WriteString(sse.ContentBlock.Signature)
+					}
+				}
+			case "redacted_thinking":
+				if a.cache != nil && sse.ContentBlock.Data != "" {
+					a.turnThinkingBlocks = append(a.turnThinkingBlocks, cachedThinkingBlock{
+						Type: "redacted_thinking",
+						Data: sse.ContentBlock.Data,
+					})
+				}
 			}
 		}
 
@@ -196,13 +249,26 @@ func (a *AnthropicStreamAdapter) dispatchData(payload []byte) {
 			case "thinking_delta":
 				if sse.Delta.Thinking != "" {
 					a.emitReasoningDelta(sse.Delta.Thinking)
+					if a.cache != nil {
+						writeEscapedInner(&a.thinkingBuf, sse.Delta.Thinking)
+					}
+				}
+			case "signature_delta":
+				if a.cache != nil && sse.Delta.Signature != "" {
+					a.signatureBuf.WriteString(sse.Delta.Signature)
 				}
 			}
 		}
 
 	case "content_block_stop":
-		if a.currentBlockType == "tool_use" {
+		switch a.currentBlockType {
+		case "tool_use":
 			a.toolCallIndex++
+			a.currentBlockType = ""
+		case "thinking":
+			a.finalizeThinkingBlock()
+			a.currentBlockType = ""
+		default:
 			a.currentBlockType = ""
 		}
 
@@ -220,6 +286,7 @@ func (a *AnthropicStreamAdapter) dispatchData(payload []byte) {
 		}
 
 	case "message_stop":
+		a.flushThinkingCache()
 		if !a.hasEmittedUsage {
 			a.emitUsage()
 			a.hasEmittedUsage = true
@@ -303,6 +370,62 @@ func writeJSONStringDirect(buf *bytes.Buffer, s string) {
 	zeroalloc.WriteEscapedJSONString(buf, s)
 }
 
+func (a *AnthropicStreamAdapter) finalizeThinkingBlock() {
+	if a.cache != nil && a.signatureBuf.Len() > 0 {
+		a.turnThinkingBlocks = append(a.turnThinkingBlocks, cachedThinkingBlock{
+			Type:      "thinking",
+			Thinking:  unescapeJSONInnerBytes(a.thinkingBuf.Bytes()),
+			Signature: a.signatureBuf.String(),
+		})
+	}
+	a.thinkingBuf.Reset()
+	a.signatureBuf.Reset()
+}
+
+func (a *AnthropicStreamAdapter) flushThinkingCache() {
+	if a.hasFlushedCache || a.cache == nil {
+		return
+	}
+	if a.currentBlockType == "thinking" && a.signatureBuf.Len() > 0 {
+		a.finalizeThinkingBlock()
+		a.currentBlockType = ""
+	}
+	a.hasFlushedCache = true
+	if len(a.turnToolIDs) == 0 || len(a.turnThinkingBlocks) == 0 {
+		return
+	}
+	for _, id := range a.turnToolIDs {
+		a.cache.Put(id, a.turnThinkingBlocks)
+	}
+}
+
+func writeEscapedInner(buf *bytes.Buffer, s string) {
+	var tmp bytes.Buffer
+	zeroalloc.WriteEscapedJSONString(&tmp, s)
+	b := tmp.Bytes()
+	if len(b) >= 2 {
+		buf.Write(b[1 : len(b)-1])
+	}
+}
+
+func unescapeJSONInnerBytes(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	if bytes.IndexByte(raw, '\\') == -1 {
+		return string(raw)
+	}
+	quoted := make([]byte, 0, len(raw)+2)
+	quoted = append(quoted, '"')
+	quoted = append(quoted, raw...)
+	quoted = append(quoted, '"')
+	var unescaped string
+	if err := json.Unmarshal(quoted, &unescaped); err == nil {
+		return unescaped
+	}
+	return string(raw)
+}
+
 // ----------------- Typed Fast SSE JSON Structs -----------------
 
 type fastAnthropicSSE struct {
@@ -322,16 +445,20 @@ type fastSSEMessage struct {
 }
 
 type fastSSEContentBlock struct {
-	Type string `json:"type"`
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
-	Text string `json:"text,omitempty"`
+	Type      string `json:"type"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Data      string `json:"data,omitempty"`
 }
 
 type fastSSEDelta struct {
 	Type        string  `json:"type"`
 	Text        string  `json:"text,omitempty"`
 	Thinking    string  `json:"thinking,omitempty"`
+	Signature   string  `json:"signature,omitempty"`
 	PartialJSON string  `json:"partial_json,omitempty"`
 	StopReason  *string `json:"stop_reason,omitempty"`
 }

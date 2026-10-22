@@ -7,21 +7,115 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 	"github.com/dixieflatline76/nacho-flow/pkg/wirejson"
 )
 
-const (
-	AnthropicAPIVersion       = "2023-06-01"
-	AnthropicBetaCaching      = "prompt-caching-2024-07-31"
-	DefaultAnthropicMaxTokens = 8192
+var (
+	ErrMissingModel          = errors.New("anthropic request is missing required model identifier")
+	adaptiveThinkingFamilies = []string{"sonnet-", "opus-", "haiku-", "fable-", "mythos-"}
 )
+
+// TypeAnthropic is the provider type identifier for native Anthropic Messages API endpoints.
+const TypeAnthropic contract.ProviderType = "anthropic"
+
+const (
+	AnthropicAPIVersion              = "2023-06-01"
+	AnthropicBetaCaching             = "prompt-caching-2024-07-31"
+	DefaultAnthropicMaxTokens        = 8192
+	DefaultAdaptiveThinkingMaxTokens = 16384
+	DefaultAnthropicBaseURL          = "https://api.anthropic.com"
+	maxCachedThinkingTurns           = 256
+	defaultKeepRecentThinkingTurns   = 3
+)
+
+type cachedThinkingBlock struct {
+	Type      string
+	Thinking  string
+	Signature string
+	Data      string
+}
+
+type thinkingBlockCache struct {
+	mu      sync.RWMutex
+	entries map[string][]cachedThinkingBlock
+	order   [maxCachedThinkingTurns]string
+	head    int
+	count   int
+}
+
+func newThinkingBlockCache() *thinkingBlockCache {
+	return &thinkingBlockCache{
+		entries: make(map[string][]cachedThinkingBlock, maxCachedThinkingTurns),
+	}
+}
+
+func (c *thinkingBlockCache) Put(toolUseID string, blocks []cachedThinkingBlock) {
+	if c == nil || toolUseID == "" || len(blocks) == 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if _, exists := c.entries[toolUseID]; exists {
+		c.entries[toolUseID] = blocks
+		return
+	}
+
+	if c.count == maxCachedThinkingTurns {
+		oldest := c.order[c.head]
+		delete(c.entries, oldest)
+		c.order[c.head] = toolUseID
+		c.head = (c.head + 1) % maxCachedThinkingTurns
+	} else {
+		idx := (c.head + c.count) % maxCachedThinkingTurns
+		c.order[idx] = toolUseID
+		c.count++
+	}
+	c.entries[toolUseID] = blocks
+}
+
+func (c *thinkingBlockCache) Get(toolUseID string) ([]cachedThinkingBlock, bool) {
+	if c == nil || toolUseID == "" {
+		return nil, false
+	}
+	c.mu.RLock()
+	blocks, ok := c.entries[toolUseID]
+	c.mu.RUnlock()
+	return blocks, ok
+}
+
+func (c *thinkingBlockCache) Len() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	n := c.count
+	c.mu.RUnlock()
+	return n
+}
+
+func init() {
+	RegisterDescriptor(Descriptor{
+		Type:           TypeAnthropic,
+		DefaultBaseURL: DefaultAnthropicBaseURL,
+		AllowsLocal:    false,
+		Platform: func(cfg contract.ProviderConfig) contract.Platform {
+			return contract.PlatformAnthropic
+		},
+		New: func(id string, cfg contract.ProviderConfig) LLMProvider {
+			return NewAnthropicProvider(id, cfg)
+		},
+	})
+}
 
 // AnthropicProvider implements native Anthropic Messages API connectivity
 // with zero-allocation slicing and direct wire payload formatting.
@@ -31,6 +125,7 @@ type AnthropicProvider struct {
 	config         contract.ProviderConfig
 	client         *http.Client
 	circuitBreaker *CircuitBreaker
+	thinkingCache  *thinkingBlockCache
 }
 
 // NewAnthropicProvider instantiates a new Anthropic provider.
@@ -39,12 +134,19 @@ func NewAnthropicProvider(id string, cfg contract.ProviderConfig) *AnthropicProv
 	if strings.Contains(strings.ToLower(id), "anthropic") {
 		name = "Anthropic Direct"
 	}
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	if baseURL == "" {
+		cfg.BaseURL = DefaultAnthropicBaseURL
+	} else {
+		cfg.BaseURL = baseURL
+	}
 	return &AnthropicProvider{
 		id:             id,
 		name:           name,
 		config:         cfg,
 		client:         &http.Client{Timeout: 10 * time.Second},
 		circuitBreaker: NewCircuitBreaker(DefaultFailureThreshold, DefaultCooldownDuration),
+		thinkingCache:  newThinkingBlockCache(),
 	}
 }
 
@@ -62,6 +164,10 @@ func (p *AnthropicProvider) BaseURL() string {
 
 func (p *AnthropicProvider) IsLocal() bool {
 	return false
+}
+
+func (p *AnthropicProvider) Platform() contract.Platform {
+	return contract.PlatformAnthropic
 }
 
 func (p *AnthropicProvider) GetAPIKey() string {
@@ -96,7 +202,7 @@ func (p *AnthropicProvider) Ping(ctx context.Context) error {
 
 // WrapResponseStream adapts the raw upstream Anthropic SSE stream into OpenAI SSE chunks.
 func (p *AnthropicProvider) WrapResponseStream(resp *http.Response) io.ReadCloser {
-	return NewAnthropicStreamAdapter(resp.Body)
+	return NewAnthropicStreamAdapterWithCache(resp.Body, p.thinkingCache)
 }
 
 // BuildUpstreamRequest converts incoming OpenAI ChatCompletion JSON into Anthropic Messages API format
@@ -107,12 +213,12 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		return nil, fmt.Errorf("failed to parse incoming OpenAI request body: %w", err)
 	}
 
-	targetModel := normalizeAnthropicModel(model)
+	targetModel := strings.TrimSpace(model)
 	if targetModel == "" {
-		targetModel = normalizeAnthropicModel(openAIReq.Model)
+		targetModel = strings.TrimSpace(openAIReq.Model)
 	}
 	if targetModel == "" {
-		targetModel = "claude-sonnet-5"
+		return nil, ErrMissingModel
 	}
 
 	// 1. Extract and hoist system messages using string builder
@@ -145,13 +251,7 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		}
 	}
 
-	// 2. Translate conversation turns & enforce strict alternation with zero-alloc tool grouping
-	anthropicMsgs, err := translateMessagesFast(nonSystemMsgs)
-	if err != nil {
-		return nil, fmt.Errorf("failed translating messages: %w", err)
-	}
-
-	// 3. Translate tool definitions (slicing parameters raw, 0 allocs)
+	// 2. Translate tool definitions (slicing parameters raw, 0 allocs)
 	var anthropicTools []fastAnthropicTool
 	if len(openAIReq.Tools) > 0 {
 		anthropicTools = make([]fastAnthropicTool, 0, len(openAIReq.Tools))
@@ -176,14 +276,14 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		}
 	}
 
-	// 4. Translate tool_choice
+	// 3. Translate tool_choice
 	toolChoice, isNone := translateToolChoiceFast(openAIReq.ToolChoice)
 	if isNone {
 		anthropicTools = nil
 		toolChoice = nil
 	}
 
-	// 5. Max tokens resolution
+	// 4. Max tokens resolution
 	maxTokens := DefaultAnthropicMaxTokens
 	if openAIReq.MaxTokens != nil && *openAIReq.MaxTokens > 0 {
 		maxTokens = *openAIReq.MaxTokens
@@ -191,7 +291,7 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		maxTokens = *openAIReq.MaxCompletionTokens
 	}
 
-	// 6. Stop sequences
+	// 5. Stop sequences
 	var stopSeqs []string
 	if len(openAIReq.Stop) > 0 {
 		var singleStop string
@@ -205,20 +305,12 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		}
 	}
 
-	// Thinking / temperature sanitization
+	// 6. Thinking / temperature sanitization
 	mLower := strings.ToLower(targetModel)
-	isClaude5 := strings.Contains(mLower, "sonnet-5") ||
-		strings.Contains(mLower, "opus-5") ||
-		strings.Contains(mLower, "fable-5") ||
-		strings.Contains(mLower, "haiku-5") ||
-		strings.Contains(mLower, "mythos-5") ||
-		strings.Contains(mLower, "opus-4.7") ||
-		strings.Contains(mLower, "opus-4-7") ||
-		strings.Contains(mLower, "opus-4.8") ||
-		strings.Contains(mLower, "opus-4-8")
+	isAdaptiveThinking := isAdaptiveThinkingAnthropicModel(mLower)
 
 	isThinkingModel := strings.Contains(mLower, "thinking") ||
-		isClaude5 ||
+		isAdaptiveThinking ||
 		strings.Contains(mLower, "sonnet-4") ||
 		strings.Contains(mLower, "opus-4")
 
@@ -230,7 +322,7 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 	var thinking *fastAnthropicThinking
 	var outputConfig *fastAnthropicOutputConfig
 
-	if isClaude5 {
+	if isAdaptiveThinking {
 		if effort == "none" || effort == "off" || effort == "disabled" {
 			thinking = &fastAnthropicThinking{
 				Type: "disabled",
@@ -243,6 +335,9 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 			}
 			outputConfig = &fastAnthropicOutputConfig{
 				Effort: effort,
+			}
+			if maxTokens < DefaultAdaptiveThinkingMaxTokens {
+				maxTokens = DefaultAdaptiveThinkingMaxTokens
 			}
 			isThinkingModel = true
 		}
@@ -266,8 +361,16 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		isThinkingModel = true
 	}
 
-	if isThinkingModel || isClaude5 {
-		// Anthropic rejects assistant prefill when thinking is enabled or on Claude 5
+	includeThinking := !(thinking != nil && thinking.Type == "disabled")
+
+	// 7. Translate conversation turns & enforce strict alternation with zero-alloc tool grouping
+	anthropicMsgs, err := p.translateMessagesFast(nonSystemMsgs, includeThinking)
+	if err != nil {
+		return nil, fmt.Errorf("failed translating messages: %w", err)
+	}
+
+	if isThinkingModel || isAdaptiveThinking {
+		// Anthropic rejects assistant prefill when thinking is enabled or on adaptive thinking models
 		if len(anthropicMsgs) > 0 && anthropicMsgs[len(anthropicMsgs)-1].Role == "assistant" {
 			anthropicMsgs = anthropicMsgs[:len(anthropicMsgs)-1]
 		}
@@ -284,10 +387,10 @@ func (p *AnthropicProvider) BuildUpstreamRequest(ctx context.Context, r *http.Re
 		}
 	}
 
-	// 7. Prompt caching on second-to-last user message
+	// 8. Prompt caching on second-to-last user message
 	injectConversationCacheBreakpointFast(anthropicMsgs)
 
-	// 8. Assemble typed Anthropic request
+	// 9. Assemble typed Anthropic request
 	anthropicReq := fastAnthropicReq{
 		Model:         targetModel,
 		Messages:      anthropicMsgs,
@@ -363,6 +466,7 @@ func (p *AnthropicProvider) TranslateResponseBody(statusCode int, body []byte) (
 	var textBuilder strings.Builder
 	var reasoningBuilder strings.Builder
 	var toolCalls []fastOpenAIToolCallOut
+	var capturedThinking []cachedThinkingBlock
 
 	for _, block := range aResp.Content {
 		switch block.Type {
@@ -370,6 +474,20 @@ func (p *AnthropicProvider) TranslateResponseBody(statusCode int, body []byte) (
 			textBuilder.WriteString(block.Text)
 		case "thinking":
 			reasoningBuilder.WriteString(block.Thinking)
+			if p.thinkingCache != nil && block.Signature != "" {
+				capturedThinking = append(capturedThinking, cachedThinkingBlock{
+					Type:      "thinking",
+					Thinking:  block.Thinking,
+					Signature: block.Signature,
+				})
+			}
+		case "redacted_thinking":
+			if p.thinkingCache != nil && block.Data != "" {
+				capturedThinking = append(capturedThinking, cachedThinkingBlock{
+					Type: "redacted_thinking",
+					Data: block.Data,
+				})
+			}
 		case "tool_use":
 			toolCalls = append(toolCalls, fastOpenAIToolCallOut{
 				ID:   block.ID,
@@ -379,6 +497,12 @@ func (p *AnthropicProvider) TranslateResponseBody(statusCode int, body []byte) (
 					Arguments: string(block.Input),
 				},
 			})
+		}
+	}
+
+	if p.thinkingCache != nil && len(capturedThinking) > 0 && len(toolCalls) > 0 {
+		for _, tc := range toolCalls {
+			p.thinkingCache.Put(tc.ID, capturedThinking)
 		}
 	}
 
@@ -448,11 +572,24 @@ type fastAnthropicOutputConfig struct {
 }
 
 type fastOpenAIMsg struct {
-	Role       string               `json:"role"`
-	Content    json.RawMessage      `json:"content"`
-	ToolCalls  []fastOpenAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string               `json:"tool_call_id,omitempty"`
-	Name       string               `json:"name,omitempty"`
+	Role             string               `json:"role"`
+	Content          json.RawMessage      `json:"content"`
+	ReasoningContent string               `json:"reasoning_content,omitempty"`
+	Reasoning        string               `json:"reasoning,omitempty"`
+	Reason           string               `json:"reason,omitempty"`
+	ToolCalls        []fastOpenAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string               `json:"tool_call_id,omitempty"`
+	Name             string               `json:"name,omitempty"`
+}
+
+func (m *fastOpenAIMsg) hasReasoning() bool {
+	if m.ReasoningContent != "" || m.Reasoning != "" || m.Reason != "" {
+		return true
+	}
+	if len(m.Content) > 0 && bytes.IndexByte(m.Content, '<') != -1 {
+		return bytes.Contains(m.Content, []byte("<think>")) || bytes.Contains(m.Content, []byte("<thinking>"))
+	}
+	return false
 }
 
 type fastOpenAIToolCall struct {
@@ -501,6 +638,9 @@ type fastAnthropicMessage struct {
 type fastAnthropicContentBlock struct {
 	Type         string               `json:"type"`
 	Text         string               `json:"text,omitempty"`
+	Thinking     *string              `json:"thinking,omitempty"`
+	Signature    string               `json:"signature,omitempty"`
+	Data         string               `json:"data,omitempty"`
 	Source       *fastAnthropicSource `json:"source,omitempty"`
 	ID           string               `json:"id,omitempty"`
 	Name         string               `json:"name,omitempty"`
@@ -546,12 +686,14 @@ type fastAnthropicResp struct {
 }
 
 type fastAnthropicRespBlock struct {
-	Type     string          `json:"type"`
-	Text     string          `json:"text,omitempty"`
-	Thinking string          `json:"thinking,omitempty"`
-	ID       string          `json:"id,omitempty"`
-	Name     string          `json:"name,omitempty"`
-	Input    json.RawMessage `json:"input,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Thinking  string          `json:"thinking,omitempty"`
+	Signature string          `json:"signature,omitempty"`
+	Data      string          `json:"data,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
 }
 
 type fastAnthropicRespUsage struct {
@@ -653,12 +795,65 @@ func extractTextContentFast(raw json.RawMessage) string {
 	return ""
 }
 
-func translateMessagesFast(rawMsgs []fastOpenAIMsg) ([]fastAnthropicMessage, error) {
+func (p *AnthropicProvider) translateMessagesFast(rawMsgs []fastOpenAIMsg, includeThinking bool) ([]fastAnthropicMessage, error) {
 	var translated []fastAnthropicMessage
 
-	for _, m := range rawMsgs {
+	hasCache := includeThinking && p != nil && p.thinkingCache != nil && p.thinkingCache.Len() > 0
+	var anyHasPayloadReasoning bool
+	kickoffIdx := -1
+	recentIdx := [defaultKeepRecentThinkingTurns]int{-1, -1, -1}
+
+	if hasCache {
+		for i := range rawMsgs {
+			if rawMsgs[i].Role == "assistant" && rawMsgs[i].hasReasoning() {
+				anyHasPayloadReasoning = true
+				break
+			}
+		}
+		if !anyHasPayloadReasoning {
+			// Mode B Fallback: Client stripped all reasoning_content from historical messages.
+			// Preserve the first cached assistant turn (Kickoff Anchor) + the last 3 cached assistant turns
+			// across any conversation length using a 3-slot rolling ring (32 bytes stack, 0 heap allocs).
+			cachedCount := 0
+			for i := range rawMsgs {
+				if rawMsgs[i].Role != "assistant" || len(rawMsgs[i].ToolCalls) == 0 {
+					continue
+				}
+				for _, tc := range rawMsgs[i].ToolCalls {
+					if _, ok := p.thinkingCache.Get(tc.ID); ok {
+						if kickoffIdx == -1 {
+							kickoffIdx = i
+						}
+						recentIdx[cachedCount%defaultKeepRecentThinkingTurns] = i
+						cachedCount++
+						break
+					}
+				}
+			}
+		}
+	}
+
+	for i, m := range rawMsgs {
 		role := m.Role
-		blocks, err := convertMessageContentFast(m)
+		var cachedBlocks []cachedThinkingBlock
+		if hasCache && role == "assistant" && len(m.ToolCalls) > 0 {
+			shouldRehydrate := false
+			if anyHasPayloadReasoning {
+				shouldRehydrate = m.hasReasoning()
+			} else {
+				shouldRehydrate = i == kickoffIdx || i == recentIdx[0] || i == recentIdx[1] || i == recentIdx[2]
+			}
+			if shouldRehydrate {
+				for _, tc := range m.ToolCalls {
+					if cb, ok := p.thinkingCache.Get(tc.ID); ok {
+						cachedBlocks = cb
+						break
+					}
+				}
+			}
+		}
+
+		blocks, err := convertMessageContentFast(m, cachedBlocks)
 		if err != nil {
 			return nil, err
 		}
@@ -673,7 +868,10 @@ func translateMessagesFast(rawMsgs []fastOpenAIMsg) ([]fastAnthropicMessage, err
 		}
 
 		if len(translated) > 0 && translated[len(translated)-1].Role == role {
-			// Merge consecutive same-role turns
+			// Merge consecutive same-role turns (deduplicating thinking blocks if parallel tool calls were split)
+			if role == "assistant" && len(cachedBlocks) > 0 {
+				blocks = stripDuplicateThinkingBlocks(translated[len(translated)-1].Content, blocks)
+			}
 			translated[len(translated)-1].Content = append(translated[len(translated)-1].Content, blocks...)
 		} else {
 			translated = append(translated, fastAnthropicMessage{
@@ -698,7 +896,27 @@ func translateMessagesFast(rawMsgs []fastOpenAIMsg) ([]fastAnthropicMessage, err
 	return translated, nil
 }
 
-func convertMessageContentFast(m fastOpenAIMsg) ([]fastAnthropicContentBlock, error) {
+func stripDuplicateThinkingBlocks(existing, incoming []fastAnthropicContentBlock) []fastAnthropicContentBlock {
+	var filtered []fastAnthropicContentBlock
+	for _, b := range incoming {
+		if b.Type == "thinking" || b.Type == "redacted_thinking" {
+			dup := false
+			for _, ex := range existing {
+				if ex.Type == b.Type && ((b.Type == "thinking" && ex.Signature == b.Signature) || (b.Type == "redacted_thinking" && ex.Data == b.Data)) {
+					dup = true
+					break
+				}
+			}
+			if dup {
+				continue
+			}
+		}
+		filtered = append(filtered, b)
+	}
+	return filtered
+}
+
+func convertMessageContentFast(m fastOpenAIMsg, cachedThinking []cachedThinkingBlock) ([]fastAnthropicContentBlock, error) {
 	var blocks []fastAnthropicContentBlock
 
 	if m.Role == "tool" {
@@ -713,6 +931,22 @@ func convertMessageContentFast(m fastOpenAIMsg) ([]fastAnthropicContentBlock, er
 
 	// Assistant message with tool calls
 	if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+		for _, cb := range cachedThinking {
+			switch cb.Type {
+			case "thinking":
+				thinkingCopy := cb.Thinking
+				blocks = append(blocks, fastAnthropicContentBlock{
+					Type:      "thinking",
+					Thinking:  &thinkingCopy,
+					Signature: cb.Signature,
+				})
+			case "redacted_thinking":
+				blocks = append(blocks, fastAnthropicContentBlock{
+					Type: "redacted_thinking",
+					Data: cb.Data,
+				})
+			}
+		}
 		text := extractTextContentFast(m.Content)
 		if strings.TrimSpace(text) != "" {
 			blocks = append(blocks, fastAnthropicContentBlock{
@@ -895,26 +1129,38 @@ func normalizeAnthropicBaseURL(u string) string {
 	cleaned := strings.TrimRight(strings.TrimSpace(u), "/")
 	cleaned = strings.TrimSuffix(cleaned, "/v1")
 	if cleaned == "" {
-		return "https://api.anthropic.com"
+		return DefaultAnthropicBaseURL
 	}
 	return cleaned
 }
 
-func normalizeAnthropicModel(model string) string {
-	cleaned := strings.TrimPrefix(strings.TrimSpace(model), "anthropic/")
-	mLower := strings.ToLower(cleaned)
-	switch {
-	case strings.HasPrefix(mLower, "claude-3-7-sonnet"),
-		strings.HasPrefix(mLower, "claude-3.7-sonnet"):
-		return "claude-sonnet-5"
-	case strings.HasPrefix(mLower, "claude-3-opus"),
-		strings.HasPrefix(mLower, "claude-3.0-opus"):
-		return "claude-opus-5"
-	case strings.HasPrefix(mLower, "claude-haiku-5.5"),
-		strings.HasPrefix(mLower, "haiku-5.5"),
-		strings.HasPrefix(mLower, "haiku-5-5"):
-		return "claude-haiku-5-5"
-	default:
-		return cleaned
+// IsAdaptiveThinkingAnthropicModel returns true if the model family uses Anthropic's
+// adaptive thinking parameter schema (Claude 5+ and Opus 4.7/4.8).
+func IsAdaptiveThinkingAnthropicModel(m string) bool {
+	return isAdaptiveThinkingAnthropicModel(strings.ToLower(m))
+}
+
+func isAdaptiveThinkingAnthropicModel(mLower string) bool {
+	if strings.Contains(mLower, "opus-4-7") || strings.Contains(mLower, "opus-4.7") ||
+		strings.Contains(mLower, "opus-4-8") || strings.Contains(mLower, "opus-4.8") {
+		return true
 	}
+	for _, fam := range adaptiveThinkingFamilies {
+		rest := mLower
+		for {
+			idx := strings.Index(rest, fam)
+			if idx == -1 {
+				break
+			}
+			afterIdx := idx + len(fam)
+			if afterIdx < len(rest) {
+				c := rest[afterIdx]
+				if c >= '5' && c <= '9' {
+					return true
+				}
+			}
+			rest = rest[afterIdx:]
+		}
+	}
+	return false
 }

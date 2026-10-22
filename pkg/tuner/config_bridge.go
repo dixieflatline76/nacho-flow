@@ -4,15 +4,57 @@ import (
 	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
-// ResolveModelRates resolves realistic prompt and completion rates per million tokens.
-// It queries the canonical curated catalog dynamically without hardcoded switches.
-// The comprehensive rate represents a blended rate: prompt + 0.25 * completion.
-func ResolveModelRates(model string, isLocal bool) (promptCost, compCost, compRate float64) {
+// ResolveProviderPlatform resolves the contract.Platform for a configured provider ID via
+// PlatformResolver or provider.ResolvePlatform(cfg).
+func ResolveProviderPlatform(providerID string, isLocal bool, providers map[string]contract.ProviderConfig, resolver ...contract.PlatformResolver) contract.Platform {
 	if isLocal {
+		return contract.PlatformLocal
+	}
+	if len(resolver) > 0 && resolver[0] != nil && providerID != "" {
+		if plat, ok := resolver[0].Platform(providerID); ok {
+			return plat
+		}
+	}
+	if len(providers) > 0 && providerID != "" {
+		if p, ok := providers[providerID]; ok {
+			if plat, ok := provider.ResolvePlatform(p); ok {
+				return plat
+			}
+		}
+		for k, p := range providers {
+			if strings.EqualFold(k, providerID) {
+				if plat, ok := provider.ResolvePlatform(p); ok {
+					return plat
+				}
+			}
+		}
+	}
+	if providerID == "" {
+		return contract.PlatformOpenRouter
+	}
+	lower := contract.Platform(strings.ToLower(strings.TrimSpace(providerID)))
+	if _, ok := contract.LookupPlatformCatalogPolicy(lower); ok {
+		return lower
+	}
+	return contract.PlatformOpenRouter
+}
+
+// ResolveModelRates resolves realistic prompt and completion rates per million tokens for a platform.
+// It queries the canonical curated catalog dynamically via LookupForPlatform without hardcoded switches.
+// The comprehensive rate represents a blended rate: prompt + 0.25 * completion.
+func ResolveModelRates(platform contract.Platform, model string) (promptCost, compCost, compRate float64) {
+	if policy, ok := contract.LookupPlatformCatalogPolicy(platform); ok && policy.RequiresOpenWeights {
 		return 0, 0, 0
+	}
+	if p, ok := curation.DefaultManager().LookupForPlatform(platform, model); ok && p.PromptCostPerMillion > 0 {
+		promptCost = p.PromptCostPerMillion
+		compCost = p.CompletionCostPerMillion
+		compRate = ResolveComprehensiveRate(promptCost, compCost, 0)
+		return promptCost, compCost, compRate
 	}
 	if p, ok := curation.DefaultManager().Lookup(model); ok && p.PromptCostPerMillion > 0 {
 		promptCost = p.PromptCostPerMillion
@@ -37,7 +79,8 @@ func ResolveModelBenchmark(model string) (codingIndex float64, toolReliability f
 // ResolveModelCapabilities resolves verified vision and tool calling support from the curated catalog.
 func ResolveModelCapabilities(model string) (supportsVision bool, supportsTools bool) {
 	if p, ok := curation.DefaultManager().Lookup(model); ok {
-		return p.SupportsVision, p.SupportsTools
+		return p.SupportsVision || p.TierRole == curation.RoleVisionWorkhorse,
+			p.SupportsTools || p.ToolReliability > 0
 	}
 	// Default to no-vision, tool-capable for uncatalogued models
 	return false, true
@@ -45,7 +88,7 @@ func ResolveModelCapabilities(model string) (supportsVision bool, supportsTools 
 
 // ExtractRoutingState converts a contract.Config into an editable MultiTierConfig
 // for the Min-Conflicts optimizer.
-func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) MultiTierConfig {
+func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string, resolver ...contract.PlatformResolver) MultiTierConfig {
 	if cfg == nil || len(cfg.Tiers) == 0 {
 		return MultiTierConfig{}
 	}
@@ -55,7 +98,8 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 	// Tiers 0 .. len(cfg.Tiers)-1 are cascade tiers
 	for _, tier := range cfg.Tiers {
 		isLocal := IsLocalTier(tier, cfg.Providers)
-		promptCost, compCost, compRate := ResolveModelRates(tier.Model, isLocal)
+		plat := ResolveProviderPlatform(tier.Provider, isLocal, cfg.Providers, resolver...)
+		promptCost, compCost, compRate := ResolveModelRates(plat, tier.Model)
 		codingIndex, toolReliability := ResolveModelBenchmark(tier.Model)
 		codingIndex = EffectiveCodingIndex(codingIndex, tier.ReasoningEffort)
 
@@ -111,6 +155,7 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 		result.Tiers = append(result.Tiers, TierReplayConfig{
 			TierName:                 tier.Name,
 			Provider:                 tier.Provider,
+			Platform:                 plat,
 			Model:                    tier.Model,
 			ReasoningEffort:          tier.ReasoningEffort,
 			IsLocal:                  isLocal,
@@ -142,7 +187,8 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 
 	// Default fallback tier (unconditional sink)
 	defLocal := IsLocalTier(cfg.DefaultTier, cfg.Providers)
-	defPrompt, defComp, defRate := ResolveModelRates(cfg.DefaultTier.Model, defLocal)
+	defPlat := ResolveProviderPlatform(cfg.DefaultTier.Provider, defLocal, cfg.Providers, resolver...)
+	defPrompt, defComp, defRate := ResolveModelRates(defPlat, cfg.DefaultTier.Model)
 	defCoding, defTool := ResolveModelBenchmark(cfg.DefaultTier.Model)
 	defCoding = EffectiveCodingIndex(defCoding, cfg.DefaultTier.ReasoningEffort)
 	defVision, defTools := ResolveModelCapabilities(cfg.DefaultTier.Model)
@@ -168,6 +214,7 @@ func ExtractRoutingState(cfg *contract.Config, monitoredKeywords []string) Multi
 	result.DefaultTier = TierReplayConfig{
 		TierName:                 cfg.DefaultTier.Name,
 		Provider:                 cfg.DefaultTier.Provider,
+		Platform:                 defPlat,
 		Model:                    cfg.DefaultTier.Model,
 		ReasoningEffort:          cfg.DefaultTier.ReasoningEffort,
 		IsLocal:                  defLocal,

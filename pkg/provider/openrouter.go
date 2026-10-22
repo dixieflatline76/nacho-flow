@@ -14,6 +14,9 @@ import (
 )
 
 const (
+	// TypeOpenRouter is the provider type identifier for OpenRouter aggregator endpoints.
+	TypeOpenRouter contract.ProviderType = "openrouter"
+
 	// DefaultOpenRouterBaseURL is the standard API base URL for OpenRouter.
 	DefaultOpenRouterBaseURL = "https://openrouter.ai/api/v1"
 
@@ -44,6 +47,8 @@ func NewOpenRouterProvider(id string, cfg contract.ProviderConfig) *OpenRouterPr
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	if baseURL == "" {
 		cfg.BaseURL = DefaultOpenRouterBaseURL
+	} else {
+		cfg.BaseURL = baseURL
 	}
 	return &OpenRouterProvider{
 		id:             id,
@@ -52,6 +57,20 @@ func NewOpenRouterProvider(id string, cfg contract.ProviderConfig) *OpenRouterPr
 		client:         &http.Client{Timeout: 10 * time.Second},
 		circuitBreaker: NewCircuitBreaker(DefaultFailureThreshold, DefaultCooldownDuration),
 	}
+}
+
+func init() {
+	RegisterDescriptor(Descriptor{
+		Type:           TypeOpenRouter,
+		DefaultBaseURL: DefaultOpenRouterBaseURL,
+		AllowsLocal:    false,
+		Platform: func(cfg contract.ProviderConfig) contract.Platform {
+			return contract.PlatformOpenRouter
+		},
+		New: func(id string, cfg contract.ProviderConfig) LLMProvider {
+			return NewOpenRouterProvider(id, cfg)
+		},
+	})
 }
 
 func (p *OpenRouterProvider) ID() string {
@@ -68,6 +87,10 @@ func (p *OpenRouterProvider) BaseURL() string {
 
 func (p *OpenRouterProvider) IsLocal() bool {
 	return false
+}
+
+func (p *OpenRouterProvider) Platform() contract.Platform {
+	return contract.PlatformOpenRouter
 }
 
 func (p *OpenRouterProvider) GetAPIKey() string {

@@ -5,5 +5,5 @@ package data
 
 import "embed"
 
-//go:embed agents/*.json shell.json reasoning.json
+//go:embed agents/*.json shell.json reasoning.json stopwords.json
 var CatalogFS embed.FS

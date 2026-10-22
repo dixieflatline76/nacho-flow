@@ -20,6 +20,8 @@ export interface ProviderSymbolDef {
 	typeRange?: SourceRange;
 	baseUrl?: string;
 	baseUrlRange?: SourceRange;
+	local?: boolean;
+	localRange?: SourceRange;
 	apiKey?: string;
 }
 
@@ -293,6 +295,14 @@ export function parseConfigSymbolIndex(text: string): ConfigSymbolIndex {
 					const valStart = rawLine.indexOf(apiKeyMatch[1]);
 					const { value } = extractInnerValueRange(rawLine, lineIdx, valStart);
 					currentProviderDef.apiKey = value;
+				}
+
+				const localMatch = rawLine.match(/local\s*:\s*(.*)/);
+				if (localMatch) {
+					const valStart = rawLine.indexOf(localMatch[1]);
+					const { value, range } = extractInnerValueRange(rawLine, lineIdx, valStart);
+					currentProviderDef.local = value.toLowerCase() === 'true';
+					currentProviderDef.localRange = range;
 				}
 			}
 		} else if (currentSection === 'tiers') {

@@ -100,17 +100,17 @@ func TestRegistry_OpenRouterInstantiation(t *testing.T) {
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
 			"openrouter_explicit": {
-				Type:    contract.ProviderTypeOpenRouter,
+				Type:    TypeOpenRouter,
 				BaseURL: "https://openrouter.ai/api/v1",
 				APIKey:  "key1",
 			},
-			"openrouter_legacy_cloud": {
-				Type:    contract.ProviderTypeCloud,
+			"openrouter_compat": {
+				Type:    TypeOpenAICompatible,
 				BaseURL: "https://openrouter.ai/api/v1",
 				APIKey:  "key2",
 			},
 			"generic_cloud": {
-				Type:    contract.ProviderTypeCloud,
+				Type:    TypeOpenAICompatible,
 				BaseURL: "https://api.openai.com/v1",
 				APIKey:  "key3",
 			},
@@ -127,14 +127,21 @@ func TestRegistry_OpenRouterInstantiation(t *testing.T) {
 	if !ok1 || wdp1.WireDeclarator().Dialect != ReasoningDialectNested {
 		t.Errorf("expected openrouter_explicit to declare ReasoningDialectNested")
 	}
-
-	p2, ok2 := reg.Get("openrouter_legacy_cloud")
-	if !ok2 {
-		t.Fatalf("expected openrouter_legacy_cloud to be found")
+	if p1.Platform() != contract.PlatformOpenRouter {
+		t.Errorf("expected platform openrouter, got %s", p1.Platform())
 	}
+
+	p2, ok2 := reg.Get("openrouter_compat")
+	if !ok2 {
+		t.Fatalf("expected openrouter_compat to be found")
+	}
+	// With type: openai_compatible, no URL sniffing occurs - must be OpenAICompatibleProvider (Flat dialect)
 	wdp2, ok2 := p2.(WireDeclaratorProvider)
-	if !ok2 || wdp2.WireDeclarator().Dialect != ReasoningDialectNested {
-		t.Errorf("expected openrouter_legacy_cloud to declare ReasoningDialectNested")
+	if !ok2 || wdp2.WireDeclarator().Dialect != ReasoningDialectFlat {
+		t.Errorf("expected openrouter_compat with openai_compatible type to declare ReasoningDialectFlat")
+	}
+	if p2.Platform() != contract.PlatformOpenAICompatible {
+		t.Errorf("expected platform openai_compatible, got %s", p2.Platform())
 	}
 
 	p3, ok3 := reg.Get("generic_cloud")
@@ -144,6 +151,9 @@ func TestRegistry_OpenRouterInstantiation(t *testing.T) {
 	wdp3, ok3 := p3.(WireDeclaratorProvider)
 	if !ok3 || wdp3.WireDeclarator().Dialect != ReasoningDialectFlat {
 		t.Errorf("expected generic_cloud to declare ReasoningDialectFlat")
+	}
+	if p3.Platform() != contract.PlatformOpenAICompatible {
+		t.Errorf("expected platform openai_compatible, got %s", p3.Platform())
 	}
 }
 

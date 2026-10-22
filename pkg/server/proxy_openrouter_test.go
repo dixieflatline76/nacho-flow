@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/router"
 	"github.com/dixieflatline76/nacho-flow/pkg/strategy"
 )
@@ -40,7 +41,7 @@ func TestProxy_OpenRouter_EndToEnd(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"openrouter": {
 				BaseURL: mockOpenRouter.URL,
-				Type:    contract.ProviderTypeOpenRouter,
+				Type:    provider.TypeOpenRouter,
 				APIKey:  "sk-or-test-key",
 			},
 		},

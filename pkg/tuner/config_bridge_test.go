@@ -4,8 +4,13 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/dixieflatline76/nacho-flow/pkg/config"
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
+	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
 func TestResolveModelRates_DataDriven(t *testing.T) {
@@ -17,7 +22,7 @@ func TestResolveModelRates_DataDriven(t *testing.T) {
 		"local/deepseek-v3",
 	}
 	for _, lm := range localModels {
-		pCost, cCost, cRate := ResolveModelRates(lm, true)
+		pCost, cCost, cRate := ResolveModelRates(contract.PlatformLocal, lm)
 		if pCost != 0 || cCost != 0 || cRate != 0 {
 			t.Errorf("Expected local model %s to have 0 rates, got: %f, %f, %f", lm, pCost, cCost, cRate)
 		}
@@ -32,7 +37,7 @@ func TestResolveModelRates_DataDriven(t *testing.T) {
 	}
 
 	for _, cm := range cloudModels {
-		p, c, r := ResolveModelRates(cm, false)
+		p, c, r := ResolveModelRates(contract.PlatformOpenRouter, cm)
 		if p <= 0 {
 			t.Errorf("Model %s: expected positive prompt cost, got %f", cm, p)
 		}
@@ -47,7 +52,7 @@ func TestResolveModelRates_DataDriven(t *testing.T) {
 
 	// 3. Uncatalogued model fallback
 	defRate := DefaultTuningPolicy().CostPerMillionCloud
-	pUnk, cUnk, rUnk := ResolveModelRates("custom-org/my-unseen-model-v1", false)
+	pUnk, cUnk, rUnk := ResolveModelRates(contract.PlatformOpenRouter, "custom-org/my-unseen-model-v1")
 	if pUnk != defRate {
 		t.Errorf("Expected uncatalogued model prompt to equal defRate %f, got %f", defRate, pUnk)
 	}
@@ -93,8 +98,8 @@ func TestExtractRoutingState_Comprehensive(t *testing.T) {
 
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -182,7 +187,7 @@ func TestExtractRoutingState_Comprehensive(t *testing.T) {
 func TestExtractRoutingState_LocalFallbacks(t *testing.T) {
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {Type: contract.ProviderTypeLocal},
+			"ollama": {Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -214,10 +219,11 @@ func TestExtractRoutingState_LocalFallbacks(t *testing.T) {
 }
 
 func TestNoHardcodedModelSwitchesInTunerSource(t *testing.T) {
-	files := []string{"config_bridge.go", "fleet_dominance.go", "min_conflicts.go"}
+	files := []string{"config_bridge.go", "candidate_matcher.go", "fleet_dominance.go", "min_conflicts.go"}
 	forbiddenLiterals := []string{
 		"\"opus\"", "\"sonnet\"", "\"haiku\"", "\"deepseek\"", "\"qwen\"",
 		"\"gemini\"", "\"gpt-4\"", "\"gpt-5\"", "\"o1\"", "\"o3\"", "\"r1\"",
+		"\"claude\"", "\"anthropic\"", "\"openrouter\"",
 	}
 
 	for _, file := range files {
@@ -227,7 +233,7 @@ func TestNoHardcodedModelSwitchesInTunerSource(t *testing.T) {
 		}
 		src := string(content)
 
-		if file == "config_bridge.go" {
+		if file == "config_bridge.go" || file == "candidate_matcher.go" {
 			if strings.Contains(src, "switch ") || strings.Contains(src, "switch{") {
 				t.Errorf("Maintenance nightmare detected: %s still contains hardcoded switch statements!", file)
 			}
@@ -504,5 +510,124 @@ func TestCheckHardConstraints_EdgeCases(t *testing.T) {
 	}
 	if !CheckHardConstraints(validCfg) {
 		t.Errorf("expected valid config to pass CheckHardConstraints")
+	}
+}
+
+func TestResolveModelCapabilities_StaticCatalogOutOfProcess(t *testing.T) {
+	// Models with tool_reliability > 0 in static catalog must resolve supportsTools == true
+	// even when out-of-process CLI runs without live OpenRouterPricingProvider overlay.
+	_, glmTools := ResolveModelCapabilities("z-ai/glm-5.3-flash")
+	if !glmTools {
+		t.Errorf("expected z-ai/glm-5.3-flash to resolve supportsTools == true from static catalog")
+	}
+
+	// Vision workhorse models in static catalog must resolve supportsVision == true and supportsTools == true.
+	gemVision, gemTools := ResolveModelCapabilities("google/gemini-3.8-flash")
+	if !gemVision || !gemTools {
+		t.Errorf("expected google/gemini-3.8-flash to resolve supportsVision=true, supportsTools=true; got %v, %v", gemVision, gemTools)
+	}
+
+	// Anthropic wire IDs (including 5.5 models in profile3.yaml / config.yaml) must resolve both capabilities.
+	for _, m := range []string{"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-sonnet-5", "claude-opus-4-8"} {
+		vis, tools := ResolveModelCapabilities(m)
+		if !vis || !tools {
+			t.Errorf("expected %s to resolve supportsVision=true, supportsTools=true; got %v, %v", m, vis, tools)
+		}
+	}
+
+	// ConvertProfileToCandidate must also propagate inferred capabilities from static catalog.
+	if p, ok := curation.DefaultManager().LookupStrict("z-ai/glm-5.3-flash"); ok {
+		cand := ConvertProfileToCandidate(p)
+		if !cand.SupportsTools {
+			t.Errorf("expected ConvertProfileToCandidate(z-ai/glm-5.3-flash).SupportsTools == true")
+		}
+	} else {
+		t.Fatalf("expected z-ai/glm-5.3-flash in catalog")
+	}
+}
+
+func TestRealProfiles_EndToEndSmoke(t *testing.T) {
+	profilePaths := []string{
+		"../../config.yaml",
+		"../../extension/resources/profiles/profile1.yaml",
+		"../../extension/resources/profiles/profile2.yaml",
+		"../../extension/resources/profiles/profile3.yaml",
+	}
+
+	now := time.Now()
+	entries := []telemetry.TurnRecord{
+		{
+			Timestamp:        now,
+			SessionID:        "smoke-session-1",
+			Tokens:           4000,
+			HasTools:         true,
+			TargetModel:      "z-ai/glm-5.3-flash",
+			StatusCode:       200,
+			HasWriteProgress: true,
+			RootPromptHash:   1001,
+		},
+		{
+			Timestamp:        now.Add(5 * time.Second),
+			SessionID:        "smoke-session-1",
+			Tokens:           12000,
+			HasTools:         true,
+			IsRetry:          true,
+			Retries:          3,
+			TargetModel:      "z-ai/glm-5.3-flash",
+			StatusCode:       200,
+			HasWriteProgress: true,
+			RootPromptHash:   1001,
+		},
+	}
+
+	for _, path := range profilePaths {
+		t.Run(path, func(t *testing.T) {
+			cfg, err := config.LoadConfig(path)
+			if err != nil {
+				t.Fatalf("LoadConfig(%s) failed: %v", path, err)
+			}
+
+			state := ExtractRoutingState(cfg, nil)
+			if len(state.Tiers) == 0 {
+				t.Fatalf("expected non-empty tiers in %s", path)
+			}
+
+			for _, tier := range state.Tiers {
+				if !tier.SupportsTools {
+					t.Errorf("%s tier %q (model %q) expected SupportsTools=true, got false", path, tier.TierName, tier.Model)
+				}
+				if !tier.IsLocal && (tier.PromptCostPerMillion <= 0 || tier.CompletionCostPerMillion <= 0) {
+					t.Errorf("%s cloud tier %q (model %q, platform %q) has zero pricing: prompt=%f comp=%f",
+						path, tier.TierName, tier.Model, tier.Platform, tier.PromptCostPerMillion, tier.CompletionCostPerMillion)
+				}
+			}
+
+			opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
+			res, err := opt.Optimize(entries, cfg)
+			if err != nil {
+				t.Fatalf("Optimize(%s) failed: %v", path, err)
+			}
+			if res.CurrentCostUSD <= 0 {
+				t.Errorf("%s expected CurrentCostUSD > 0, got %f", path, res.CurrentCostUSD)
+			}
+
+			for i, tr := range res.Tiers {
+				plat := state.Tiers[i].EffectivePlatform()
+				if tr.RecommendedModel != "" && !curation.DefaultManager().IsSameModel(tr.RecommendedModel, tr.OriginalModel) {
+					if _, ok := curation.DefaultManager().FormatModelForPlatform(plat, tr.RecommendedModel); !ok {
+						t.Errorf("%s tier %q (platform %q) recommended incompatible model %q",
+							path, tr.TierName, plat, tr.RecommendedModel)
+					}
+				}
+			}
+			if res.DefaultTier != nil && res.DefaultTier.RecommendedModel != "" &&
+				!curation.DefaultManager().IsSameModel(res.DefaultTier.RecommendedModel, res.DefaultTier.OriginalModel) {
+				plat := state.DefaultTier.EffectivePlatform()
+				if _, ok := curation.DefaultManager().FormatModelForPlatform(plat, res.DefaultTier.RecommendedModel); !ok {
+					t.Errorf("%s default_tier (platform %q) recommended incompatible model %q",
+						path, plat, res.DefaultTier.RecommendedModel)
+				}
+			}
+		})
 	}
 }

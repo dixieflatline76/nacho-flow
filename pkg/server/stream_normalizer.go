@@ -247,7 +247,7 @@ type StreamNormalizer struct {
 	deferTerminal           bool
 	suppressPrelude         bool
 	preludeSuppressed       bool
-	cmdHeaderBuf            [1024]byte
+	cmdHeaderBuf            [4096]byte
 	cmdHeaderLen            int
 }
 
@@ -989,6 +989,7 @@ func (s *StreamNormalizer) extractAndRecordToolCalls(raw json.RawMessage) {
 		if s.currentToolCategory == shield.ToolCategoryCommand && s.cmdHeaderLen < len(s.cmdHeaderBuf) {
 			n := copy(s.cmdHeaderBuf[s.cmdHeaderLen:], fn.Arguments)
 			s.cmdHeaderLen += n
+			// #nosec G103 - zero-allocation string view over bounded cmdHeaderBuf byte buffer
 			header := unsafe.String(&s.cmdHeaderBuf[0], s.cmdHeaderLen)
 			if router.DetectShellWrite(header) {
 				s.currentToolCategory = shield.ToolCategoryFileWrite

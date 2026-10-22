@@ -17,7 +17,7 @@ func BenchmarkAnthropic_BuildUpstreamRequest(b *testing.B) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
 		APIKey:  "sk-ant-bench",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	openAIJSON := []byte(`{
@@ -66,7 +66,7 @@ func BenchmarkAnthropic_BuildUpstreamRequest(b *testing.B) {
 func BenchmarkAnthropic_TranslateResponseBody(b *testing.B) {
 	p := provider.NewAnthropicProvider("anthropic", contract.ProviderConfig{
 		BaseURL: "https://api.anthropic.com",
-		Type:    contract.ProviderTypeAnthropic,
+		Type:    provider.TypeAnthropic,
 	})
 
 	anthropicJSON := []byte(`{
@@ -99,6 +99,25 @@ func BenchmarkAnthropic_TranslateResponseBody(b *testing.B) {
 		_, err := p.TranslateResponseBody(http.StatusOK, anthropicJSON)
 		if err != nil {
 			b.Fatalf("TranslateResponseBody failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkIsAdaptiveThinkingAnthropicModel(b *testing.B) {
+	models := []string{
+		"claude-sonnet-5",
+		"claude-3-7-sonnet-20250219",
+		"claude-opus-4-7",
+		"claude-haiku-5-5",
+		"claude-3-5-haiku-20241022",
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		for _, m := range models {
+			_ = provider.IsAdaptiveThinkingAnthropicModel(m)
 		}
 	}
 }

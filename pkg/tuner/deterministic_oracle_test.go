@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
@@ -383,8 +384,8 @@ func TestMinConflicts_DeterministicOracleMatrix(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -494,8 +495,8 @@ func TestReplayVsExprEquivalence(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -749,8 +750,8 @@ func TestMinConflicts_DeterministicOracle_EdgeCasesMatrix(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -969,8 +970,8 @@ func TestDeterministicOracle_Archetype5_ModelReplacement(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 

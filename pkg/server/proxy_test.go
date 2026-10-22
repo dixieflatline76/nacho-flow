@@ -166,7 +166,7 @@ func TestProxy_DynamicProvider_LangdockAuthAndHeaders(t *testing.T) {
 			"langdock": {
 				BaseURL: mockUpstream.URL,
 				APIKey:  "secret-langdock-token",
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 				Headers: map[string]string{
 					"X-Langdock-Org": "engineering-dept",
 				},
@@ -226,6 +226,7 @@ func TestProxy_DynamicProvider_OpenRouterHeaders(t *testing.T) {
 			"openrouter": {
 				BaseURL: mockUpstream.URL,
 				APIKey:  "sk-or-token-xyz",
+				Type:    provider.TypeOpenRouter,
 				Headers: map[string]string{
 					"HTTP-Referer": "https://spicebox.dev",
 					"X-Title":      "nacho-flow",
@@ -288,7 +289,8 @@ func TestProxy_DynamicProvider_LocalGPU_ZeroAuth(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"local_gpu": {
 				BaseURL: mockUpstream.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -385,7 +387,8 @@ func TestProxy_LocalModel_MarkdownToolCallNormalization(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
 				BaseURL: mockOllama.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -454,7 +457,7 @@ func TestProxy_DynamicPricingSavings_CalculatedFromOracle(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+			"mock_local": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Model: "qwen2.5-coder:14b", Provider: "mock_local", When: "Tokens < 16000"},
@@ -604,7 +607,8 @@ func TestProxy_UpstreamErrorHandler(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"dead_server": {
 				BaseURL: "http://127.0.0.1:54321/v1", // Dead port
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -639,7 +643,7 @@ func TestProxy_ReasoningEffortAndTierMetadata(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"mock_cloud": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 				APIKey:  "test-key",
 			},
 		},
@@ -675,7 +679,8 @@ func TestProxy_InvalidTargetURL_Returns500(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"bad_url": {
 				BaseURL: "://invalid-url-syntax",
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -730,7 +735,7 @@ func TestProxy_EvaluatorError_FallbackToDefault(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"mock_p": {BaseURL: mockUpstream.URL, Type: "local"},
+			"mock_p": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		DefaultTier: contract.Tier{
 			Name:     "Default Fallback Tier",
@@ -785,7 +790,7 @@ func TestProxy_CloudPricingDifferential(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"cloud_gw": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 				APIKey:  "cloud-key",
 			},
 		},
@@ -829,7 +834,7 @@ func BenchmarkProxy_ChatCompletions_RawPassThrough(b *testing.B) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"local_gpu": {BaseURL: mockUpstream.URL, Type: "local"},
+			"local_gpu": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Model: "qwen2.5-coder:14b", Provider: "local_gpu", When: "Tokens < 16000"},
@@ -877,7 +882,7 @@ func BenchmarkProxy_ChatCompletions_ToolNormalization(b *testing.B) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"local_gpu": {BaseURL: mockUpstream.URL, Type: "local"},
+			"local_gpu": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Model: "qwen2.5-coder:14b", Provider: "local_gpu", When: "Tokens < 16000"},
@@ -934,7 +939,7 @@ func TestProxy_NonStreaming_ReasoningModelNormalization(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"mock_cloud": {BaseURL: mockUpstream.URL, Type: "cloud"},
+			"mock_cloud": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Tier 3", Model: "deepseek-r1", Provider: "mock_cloud", When: "true"},
@@ -990,7 +995,7 @@ func TestProxy_LiveSSE_ReasoningStreamNormalization(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"mock_cloud": {BaseURL: mockUpstream.URL, Type: "cloud"},
+			"mock_cloud": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Tier 3", Model: "deepseek-r1", Provider: "mock_cloud", When: "true"},
@@ -1035,7 +1040,7 @@ func TestProxy_APIKeyHeaderAuth(t *testing.T) {
 		Port:      8000,
 		AuthToken: "secret-test-token",
 		Providers: map[string]contract.ProviderConfig{
-			"p": {BaseURL: mockUpstream.URL, Type: "local"},
+			"p": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{Name: "T", Model: "m", Provider: "p", When: "true"},
@@ -1096,8 +1101,8 @@ func TestProxy_NonStreaming_EmptyContent_FallsBackToCloud(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"local_p": {BaseURL: mockLocal.URL, Type: "local"},
-			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+			"local_p": {BaseURL: mockLocal.URL, Type: provider.TypeOpenAICompatible, Local: true},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Tier Local", Model: "qwen-local", Provider: "local_p", When: "true"},
@@ -1146,8 +1151,8 @@ func TestProxy_Streaming_ImmediateDone_FallsBackToCloud(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"local_p": {BaseURL: mockLocal.URL, Type: "local"},
-			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+			"local_p": {BaseURL: mockLocal.URL, Type: provider.TypeOpenAICompatible, Local: true},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Tier Local", Model: "qwen-local", Provider: "local_p", When: "true"},
@@ -1189,8 +1194,8 @@ func TestProxy_CircuitBreaker_BypassesDownProvider(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"dead_local": {BaseURL: deadLocalURL, Type: "local"},
-			"cloud_p":    {BaseURL: mockCloud.URL, Type: "cloud"},
+			"dead_local": {BaseURL: deadLocalURL, Type: provider.TypeOpenAICompatible, Local: true},
+			"cloud_p":    {BaseURL: mockCloud.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Tier Local", Model: "qwen-local", Provider: "dead_local", When: "true"},
@@ -1258,8 +1263,8 @@ func TestProxy_SessionRetry_AutoEscalatesToCloud(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"local_p": {BaseURL: mockLocal.URL, Type: "local"},
-			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+			"local_p": {BaseURL: mockLocal.URL, Type: provider.TypeOpenAICompatible, Local: true},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Tier Local", Model: "qwen-local", Provider: "local_p", When: "Retries < 2"},
@@ -1319,8 +1324,8 @@ func TestProxy_AgentChurnDuringTestFailureEscalates(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"local_p": {BaseURL: mockLocal.URL, Type: "local"},
-			"cloud_p": {BaseURL: mockCloud.URL, Type: "cloud"},
+			"local_p": {BaseURL: mockLocal.URL, Type: provider.TypeOpenAICompatible, Local: true},
+			"cloud_p": {BaseURL: mockCloud.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Tier Local", Model: "qwen-local", Provider: "local_p", When: "Retries < 2"},
@@ -1445,6 +1450,7 @@ func (p *plainMockProvider) ID() string                     { return p.id }
 func (p *plainMockProvider) Name() string                   { return p.id }
 func (p *plainMockProvider) BaseURL() string                { return "http://localhost" }
 func (p *plainMockProvider) IsLocal() bool                  { return false }
+func (p *plainMockProvider) Platform() contract.Platform    { return contract.PlatformOpenAICompatible }
 func (p *plainMockProvider) Ping(ctx context.Context) error { return nil }
 
 func TestProxy_NonCircuitBreakerProvider_Fallbacks(t *testing.T) {
@@ -1514,7 +1520,7 @@ func TestProxy_ReasoningEffort_Injection(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"mock": {BaseURL: mockUpstream.URL},
+			"mock": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -1553,7 +1559,7 @@ func TestProxy_NonStreaming_ReasonFieldAndEstimatorCalibration(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"mock": {BaseURL: mockUpstream.URL},
+			"mock": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "T1", Model: "m1", Provider: "mock", When: "true"},
@@ -1586,7 +1592,7 @@ func TestProxy_MissingProvider_FallbackToDefaultTier(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"default_prov": {BaseURL: mockDefaultUpstream.URL},
+			"default_prov": {BaseURL: mockDefaultUpstream.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Missing Tier", Model: "m1", Provider: "non_existent_prov", When: "true"},
@@ -1625,13 +1631,13 @@ func TestProxy_RecordTelemetry_VisionTier4(t *testing.T) {
 		Model:    "gemini-vision",
 		Provider: "google",
 	}
-	p := provider.NewGenericLLMProvider("google", contract.ProviderConfig{Type: "cloud"})
+	p := provider.NewOpenAICompatibleProvider("google", contract.ProviderConfig{Type: provider.TypeOpenAICompatible, BaseURL: "https://generativelanguage.googleapis.com"})
 	reqCtx := contract.RequestContext{Tokens: 1000}
 	usage := StreamUsage{PromptTokens: 800, CompletionTokens: 200, TotalTokens: 1000}
 	srv.recordTelemetry(tier, p, reqCtx, usage, 200, time.Now(), false, slog.Default(), 0, 0)
 
 	// Also local tier 1
-	pLocal := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{Type: "local"})
+	pLocal := provider.NewOpenAICompatibleProvider("ollama", contract.ProviderConfig{Type: provider.TypeOpenAICompatible, Local: true, BaseURL: "http://localhost:11434"})
 	tierLocal := contract.Tier{Name: "Local Default", Model: "qwen", Provider: "ollama"}
 	srv.recordTelemetry(tierLocal, pLocal, reqCtx, usage, 200, time.Now(), false, slog.Default(), 0, 0)
 }
@@ -1666,7 +1672,7 @@ func TestProxy_RecordTelemetry_SessionFields(t *testing.T) {
 		Model:    "qwen2.5-coder:14b",
 		Provider: "ollama",
 	}
-	p := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{Type: "local"})
+	p := provider.NewOpenAICompatibleProvider("ollama", contract.ProviderConfig{Type: provider.TypeOpenAICompatible, Local: true, BaseURL: "http://localhost:11434"})
 
 	reqCtx := contract.RequestContext{
 		Tokens:             1200,
@@ -1736,7 +1742,8 @@ func TestProxy_ClientDetectionInPipeline(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"mock": {
 				BaseURL: mockUpstream.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -1854,7 +1861,7 @@ func TestProxy_StreamingUsage_DualRateCostAccounting(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"mock_cloud": {
 				BaseURL: upstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -1933,7 +1940,8 @@ func TestServer_NonStreamingAgentShieldFallback(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"mock": {
 				BaseURL: ts.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		AgentShield: contract.AgentShieldConfig{
@@ -2086,7 +2094,7 @@ func TestServer_AgentShield_RegistryIntegration(t *testing.T) {
 	disabled := false
 	newCfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"mock": {Type: "local", BaseURL: "http://localhost:8000"},
+			"mock": {Type: provider.TypeOpenAICompatible, Local: true, BaseURL: "http://localhost:8000"},
 		},
 		DefaultTier: contract.Tier{
 			Model:    "mock-model",
@@ -2232,7 +2240,7 @@ func TestServer_ProxyHelpers(t *testing.T) {
 	emptySrv.SetDiskStore(nil)
 
 	// 6. allowProvider / recordProviderSuccess / recordProviderFailure
-	cbProv := provider.NewGenericLLMProvider("ollama", contract.ProviderConfig{BaseURL: "http://localhost:11434"})
+	cbProv := provider.NewOpenAICompatibleProvider("ollama", contract.ProviderConfig{Type: provider.TypeOpenAICompatible, Local: true, BaseURL: "http://localhost:11434"})
 	if !srv.allowProvider(cbProv) {
 		t.Errorf("expected allowProvider true")
 	}
@@ -2251,7 +2259,7 @@ func TestProxy_AgentShield_NonStreamingRescue(t *testing.T) {
 	cfg := &contract.Config{
 		Port: 8000,
 		Providers: map[string]contract.ProviderConfig{
-			"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+			"mock_local": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Model: "qwen", Provider: "mock_local", When: "true"},
@@ -2299,7 +2307,7 @@ func TestProxy_Phase3_DirectivesAndFeatureFlags(t *testing.T) {
 		cfg := &contract.Config{
 			Port: 8000,
 			Providers: map[string]contract.ProviderConfig{
-				"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+				"mock_local": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 			},
 			Tiers: []contract.Tier{
 				{Name: "Local GPU", Model: "qwen", Provider: "mock_local", When: "true"},
@@ -2334,7 +2342,7 @@ func TestProxy_Phase3_DirectivesAndFeatureFlags(t *testing.T) {
 		cfg := &contract.Config{
 			Port: 8000,
 			Providers: map[string]contract.ProviderConfig{
-				"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+				"mock_local": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 			},
 			Tiers: []contract.Tier{
 				{Name: "Raw Tier", Model: "qwen", Provider: "mock_local", Raw: &rawTrue, When: "true"},
@@ -2366,7 +2374,7 @@ func TestProxy_Phase3_DirectivesAndFeatureFlags(t *testing.T) {
 		cfg := &contract.Config{
 			Port: 8000,
 			Providers: map[string]contract.ProviderConfig{
-				"mock_local": {BaseURL: mockUpstream.URL, Type: "local"},
+				"mock_local": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible, Local: true},
 			},
 			Tiers: []contract.Tier{
 				{Name: "No Shield Tier", Model: "qwen", Provider: "mock_local", Shield: &shieldFalse, When: "true"},
@@ -2617,7 +2625,7 @@ func TestProxy_NTSTokenSaver_CompactsToolOutputAndRecordsTelemetry(t *testing.T)
 		Providers: map[string]contract.ProviderConfig{
 			"mock": {
 				BaseURL: mockUpstream.URL,
-				Type:    "cloud",
+				Type:    provider.TypeOpenAICompatible,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -2756,7 +2764,7 @@ func TestProxy_NTSTokenSaver_AnthropicMessages(t *testing.T) {
 		Port: 8000,
 		NTS:  contract.NTSConfig{Enabled: &bTrue2},
 		Providers: map[string]contract.ProviderConfig{
-			"mock": {BaseURL: mockUpstream.URL, Type: "cloud"},
+			"mock": {BaseURL: mockUpstream.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Sonnet", Model: "claude-3-5-sonnet", Provider: "mock", When: "true"},
@@ -2933,7 +2941,8 @@ func TestServer_NTS_HotReload_EndToEnd_BoilerplateProof(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"mock": {
 				BaseURL: mockUpstream.URL,
-				Type:    "local",
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -3033,7 +3042,8 @@ func TestProxy_LocalProvider_InboundHistoryScrubbed(t *testing.T) {
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
-				Type:    contract.ProviderTypeLocal,
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 				BaseURL: mockOllama.URL,
 			},
 		},
@@ -3092,7 +3102,7 @@ func TestProxy_CloudProvider_HistoryPreserved(t *testing.T) {
 		},
 		Providers: map[string]contract.ProviderConfig{
 			"openai": {
-				Type:    contract.ProviderTypeCloud,
+				Type:    provider.TypeOpenAICompatible,
 				BaseURL: mockCloud.URL,
 			},
 		},
@@ -3156,8 +3166,8 @@ func TestPipeline_IngressNTSCompaction_RoutesToLowerTier(t *testing.T) {
 			ResolveCR: &bTrue,
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"local-prov": {BaseURL: mockLocal.URL, Type: contract.ProviderTypeLocal},
-			"cloud-prov": {BaseURL: mockCloud.URL, Type: contract.ProviderTypeCloud},
+			"local-prov": {BaseURL: mockLocal.URL, Type: provider.TypeOpenAICompatible, Local: true},
+			"cloud-prov": {BaseURL: mockCloud.URL, Type: provider.TypeOpenAICompatible},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -3273,10 +3283,16 @@ type mockSimpleLLMProvider struct {
 	headers map[string]string
 }
 
-func (m *mockSimpleLLMProvider) ID() string                    { return m.id }
-func (m *mockSimpleLLMProvider) Name() string                  { return m.name }
-func (m *mockSimpleLLMProvider) BaseURL() string               { return m.baseURL }
-func (m *mockSimpleLLMProvider) IsLocal() bool                 { return m.isLocal }
+func (m *mockSimpleLLMProvider) ID() string      { return m.id }
+func (m *mockSimpleLLMProvider) Name() string    { return m.name }
+func (m *mockSimpleLLMProvider) BaseURL() string { return m.baseURL }
+func (m *mockSimpleLLMProvider) IsLocal() bool   { return m.isLocal }
+func (m *mockSimpleLLMProvider) Platform() contract.Platform {
+	if m.isLocal {
+		return contract.PlatformLocal
+	}
+	return contract.PlatformOpenAICompatible
+}
 func (m *mockSimpleLLMProvider) GetAPIKey() string             { return m.apiKey }
 func (m *mockSimpleLLMProvider) GetHeaders() map[string]string { return m.headers }
 

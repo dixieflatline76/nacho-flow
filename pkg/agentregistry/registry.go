@@ -31,6 +31,8 @@ type Registry struct {
 	allKnownTools              map[string]struct{}
 	shellWriteCommands         map[string]struct{}
 	shellWritePipes            []string
+	shellWritePatterns         []string
+	compositePatterns          []CompositePattern
 	contextualCommands         map[string][]string
 	redirections               []string
 	writeTagByteMarkers        [][]byte
@@ -334,6 +336,10 @@ func (r *Registry) loadShell(sysFS fs.FS) error {
 		return fmt.Errorf("failed to parse shell.json: %w", err)
 	}
 
+	seenPipes := make(map[string]struct{})
+	seenPatterns := make(map[string]struct{})
+	seenContextFlags := make(map[string]map[string]struct{})
+
 	for _, env := range []ShellEnvironment{catalog.Unix, catalog.Windows} {
 		for _, cmd := range env.WriteCommands {
 			lower := strings.ToLower(strings.TrimSpace(cmd))
@@ -341,9 +347,60 @@ func (r *Registry) loadShell(sysFS fs.FS) error {
 				r.shellWriteCommands[lower] = struct{}{}
 			}
 		}
-		r.shellWritePipes = append(r.shellWritePipes, env.WritePipes...)
+		for _, pipe := range env.WritePipes {
+			lower := strings.ToLower(pipe)
+			if lower != "" {
+				if _, ok := seenPipes[lower]; !ok {
+					seenPipes[lower] = struct{}{}
+					r.shellWritePipes = append(r.shellWritePipes, lower)
+				}
+			}
+		}
+		for _, pat := range env.WritePatterns {
+			lower := strings.ToLower(pat)
+			if lower != "" {
+				if _, ok := seenPatterns[lower]; !ok {
+					seenPatterns[lower] = struct{}{}
+					r.shellWritePatterns = append(r.shellWritePatterns, lower)
+				}
+			}
+		}
+		for _, comp := range env.CompositePatterns {
+			norm := CompositePattern{
+				RequireAny: make([]string, 0, len(comp.RequireAny)),
+				WithAny:    make([]string, 0, len(comp.WithAny)),
+			}
+			for _, req := range comp.RequireAny {
+				if lower := strings.ToLower(req); lower != "" {
+					norm.RequireAny = append(norm.RequireAny, lower)
+				}
+			}
+			for _, w := range comp.WithAny {
+				if lower := strings.ToLower(w); lower != "" {
+					norm.WithAny = append(norm.WithAny, lower)
+				}
+			}
+			if len(norm.RequireAny) > 0 && len(norm.WithAny) > 0 {
+				r.compositePatterns = append(r.compositePatterns, norm)
+			}
+		}
 		for k, v := range env.ContextualCommands {
-			r.contextualCommands[strings.ToLower(k)] = append(r.contextualCommands[strings.ToLower(k)], v...)
+			baseKey := strings.ToLower(strings.TrimSpace(k))
+			if baseKey == "" {
+				continue
+			}
+			if seenContextFlags[baseKey] == nil {
+				seenContextFlags[baseKey] = make(map[string]struct{})
+			}
+			for _, flag := range v {
+				lowerFlag := strings.ToLower(flag)
+				if lowerFlag != "" {
+					if _, ok := seenContextFlags[baseKey][lowerFlag]; !ok {
+						seenContextFlags[baseKey][lowerFlag] = struct{}{}
+						r.contextualCommands[baseKey] = append(r.contextualCommands[baseKey], lowerFlag)
+					}
+				}
+			}
 		}
 		r.redirections = append(r.redirections, env.Redirections...)
 	}
@@ -368,6 +425,8 @@ func (r *Registry) Reload(sysFS fs.FS) error {
 	r.allKnownTools = newReg.allKnownTools
 	r.shellWriteCommands = newReg.shellWriteCommands
 	r.shellWritePipes = newReg.shellWritePipes
+	r.shellWritePatterns = newReg.shellWritePatterns
+	r.compositePatterns = newReg.compositePatterns
 	r.contextualCommands = newReg.contextualCommands
 	r.redirections = newReg.redirections
 	r.writeTagByteMarkers = newReg.writeTagByteMarkers
@@ -835,24 +894,39 @@ func (r *Registry) DetectShellWrite(cmd string) bool {
 		}
 	}
 
-	// 6. Script-based inline file writing / code generation (Python/Node/Bun/Deno)
-	if (containsCommandWord(trimmed, "python") || containsCommandWord(trimmed, "python3") || containsCommandWord(trimmed, "py")) &&
-		(containsFold(trimmed, "open(") ||
-			containsFold(trimmed, "path(") ||
-			containsFold(trimmed, ".write") ||
-			containsFold(trimmed, "'''") ||
-			containsFold(trimmed, "\"\"\"") ||
-			containsFold(trimmed, `\"\"\"`)) {
-		return true
-	}
-	if (containsCommandWord(trimmed, "node") || containsCommandWord(trimmed, "bun") || containsCommandWord(trimmed, "deno")) &&
-		(containsFold(trimmed, "writefile") ||
-			containsFold(trimmed, "createwritestream") ||
-			containsFold(trimmed, "fs.") ||
-			containsFold(trimmed, "node:fs")) {
-		return true
+	// 6. Substring write patterns (e.g. PowerShell .NET methods, here-strings)
+	for _, pat := range r.shellWritePatterns {
+		if containsFold(trimmed, pat) {
+			return true
+		}
 	}
 
+	// 7. Composite multi-token patterns (e.g. read-modify-write pipelines)
+	for _, comp := range r.compositePatterns {
+		if matchesComposite(trimmed, comp) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func matchesComposite(s string, comp CompositePattern) bool {
+	matchedReq := false
+	for _, r := range comp.RequireAny {
+		if containsFold(s, r) {
+			matchedReq = true
+			break
+		}
+	}
+	if !matchedReq {
+		return false
+	}
+	for _, w := range comp.WithAny {
+		if containsFold(s, w) {
+			return true
+		}
+	}
 	return false
 }
 

@@ -18,7 +18,14 @@ import {
 } from './yaml-language-features';
 import * as modelDiscovery from './model-discovery';
 
-jest.mock('./model-discovery');
+jest.mock('./model-discovery', () => {
+  const actual = jest.requireActual('./model-discovery');
+  return {
+    ...actual,
+    discoverModels: jest.fn(),
+    clearModelDiscoveryCache: jest.fn()
+  };
+});
 
 jest.mock('vscode', () => {
   class MockRange {
@@ -186,7 +193,7 @@ describe('YamlLanguageFeatures', () => {
 providers:
   llamacpp_local:
     base_url: "http://127.0.0.1:8080/v1"
-    type: "local"
+    type: "openai_compatible"
 
 tiers:
   - name: "Tier 1: Coding"
@@ -267,6 +274,17 @@ default_tier:
   describe('NachoCompletionItemProvider', () => {
     const provider = new NachoCompletionItemProvider();
 
+    it('should complete provider types after type: (including inside and after quotes)', async () => {
+      const doc = createMockDoc(sampleConfigYaml);
+      // Line 4 is `    type: "openai_compatible"`
+      const itemsInside = await provider.provideCompletionItems(doc, new vscode.Position(4, 15));
+      expect(itemsInside.map((i) => i.label)).toEqual(['openrouter', 'anthropic', 'openai_compatible']);
+
+      // Cursor after closing quote (`    type: "openai_compatible"|`)
+      const itemsAfter = await provider.provideCompletionItems(doc, new vscode.Position(4, 29));
+      expect(itemsAfter.map((i) => i.label)).toEqual(['openrouter', 'anthropic', 'openai_compatible']);
+    });
+
     it('should complete provider IDs after provider:', async () => {
       const doc = createMockDoc(sampleConfigYaml);
       const items = await provider.provideCompletionItems(doc, new vscode.Position(8, 14));
@@ -292,7 +310,7 @@ default_tier:
       const items = await provider.provideCompletionItems(doc, new vscode.Position(9, 11));
       expect(items.length).toBe(2);
       expect(items.some((i) => (i.label as string).includes('qwen-32b-q8'))).toBe(true);
-      expect(modelDiscovery.discoverModels).toHaveBeenCalledWith('http://127.0.0.1:8080/v1', { apiKey: undefined, providerType: 'local' });
+      expect(modelDiscovery.discoverModels).toHaveBeenCalledWith('http://127.0.0.1:8080/v1', { apiKey: undefined, providerType: 'openai_compatible' });
     });
 
     it('discovers live models when completing model inside a fairy_dust entry', async () => {
@@ -328,7 +346,7 @@ fairy_dust:
     it('should complete reasoning_effort enums', async () => {
       const doc = createMockDoc(sampleConfigYaml);
       const items = await provider.provideCompletionItems(doc, new vscode.Position(10, 22));
-      expect(items.map((i) => i.label)).toEqual(['low', 'medium', 'high', 'max']);
+      expect(items.map((i) => i.label)).toEqual(['none', 'low', 'medium', 'high', 'max']);
     });
 
     it('should complete RequestContext variables and DSL keywords in when:', async () => {
@@ -554,7 +572,7 @@ fairy_dust:
 providers:
   llamacpp:
     base_url: "http://localhost:8080/v1"
-    type: "local"
+    type: "openai_compatible"
 
 tiers:
   - name: "Tier 1"
@@ -576,7 +594,7 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://localhost:8080/v1"
-    type: "local"
+    type: "openai_compatible"
 
 tiers:
   - name: "Tier 1"
@@ -605,6 +623,21 @@ tiers:
       expect(lenses.some((l) => l.command?.title.includes('Ping Endpoint'))).toBe(true);
       expect(lenses.some((l) => l.command?.title.includes('Switch Provider'))).toBe(true);
       expect(lenses.some((l) => l.command?.title.includes('Pick Model'))).toBe(true);
+    });
+
+    it('provides Ping Endpoint lenses for openrouter and anthropic when base_url is omitted', () => {
+      const omittedDoc = createMockDoc(`
+providers:
+  or:
+    type: "openrouter"
+  claude:
+    type: "anthropic"
+`);
+      const lenses = lensProvider.provideCodeLenses(omittedDoc);
+      const pingLenses = lenses.filter((l) => l.command?.command === 'nacho-flow.pingProviderEndpoint');
+      expect(pingLenses).toHaveLength(2);
+      expect(pingLenses[0].command?.arguments).toEqual(['https://openrouter.ai/api/v1', 'or']);
+      expect(pingLenses[1].command?.arguments).toEqual(['https://api.anthropic.com', 'claude']);
     });
 
     it('should use nacho-flow.findProviderReferences for both refCount > 0 and refCount === 0', () => {
@@ -1111,7 +1144,7 @@ tiers:
       const brokenProvDoc = createMockDoc(`
 providers:
   no_url:
-    type: "local"
+    type: "openai_compatible"
 tiers:
   - name: "Tier broken"
     provider: no_url
@@ -1382,6 +1415,41 @@ tiers:
       });
       await pickRescue({ range: { startLine: 9, startCharacter: 18, endLine: 9, endCharacter: 24 } });
       expect(lastReplacedText).toBe('Tier B');
+
+      // Case D: Provider with omitted base_url (openrouter / anthropic)
+      const omittedBaseDoc = createMockDoc(`
+providers:
+  my_or:
+    type: "openrouter"
+    api_key: "sk-or-test"
+  my_claude:
+    type: "anthropic"
+    api_key: "sk-ant-test"
+tiers:
+  - name: "Tier OR"
+    provider: my_or
+    model: "anthropic/claude-sonnet-5"
+  - name: "Tier Anthropic"
+    provider: my_claude
+    model: "claude-sonnet-5"
+`);
+      mockActiveEd.document = omittedBaseDoc;
+
+      (modelDiscovery.discoverModels as jest.Mock).mockResolvedValueOnce({
+        online: true,
+        latencyMs: 15,
+        models: ['anthropic/claude-opus-5']
+      });
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+        label: 'anthropic/claude-opus-5',
+        modelId: 'anthropic/claude-opus-5'
+      });
+      await pickModel({ tierName: 'Tier OR' });
+      expect(modelDiscovery.discoverModels).toHaveBeenCalledWith('https://openrouter.ai/api/v1', {
+        apiKey: 'sk-or-test',
+        providerType: 'openrouter'
+      });
+      expect(lastReplacedText).toBe('anthropic/claude-opus-5');
     });
 
     it('should extract all route targets and resolve route target correctly', () => {

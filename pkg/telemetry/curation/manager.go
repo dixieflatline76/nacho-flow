@@ -119,14 +119,18 @@ func buildCatalogIndex(cat *CuratedCatalog) *catalogIndex {
 		m[k] = p
 	}
 
+	primaryKeys := make(map[string]struct{}, len(cat.Models)*2)
 	sortedKeys := make([]string, 0, len(cat.Models))
 	for id := range cat.Models {
 		sortedKeys = append(sortedKeys, id)
+		primaryKeys[id] = struct{}{}
+		primaryKeys[strings.ToLower(id)] = struct{}{}
 	}
 	sort.Strings(sortedKeys)
 
 	for _, id := range sortedKeys {
 		profile := cat.Models[id]
+		profile.CanonicalID = id
 		if slash := strings.Index(id, "/"); slash >= 0 {
 			idx.namespaces[strings.ToLower(id[:slash])] = struct{}{}
 		}
@@ -177,6 +181,48 @@ func buildCatalogIndex(cat *CuratedCatalog) *catalogIndex {
 				putIfBetter(idx.exactMap, prefixed, profile, id)
 				putIfBetter(idx.exactMap, strings.ToLower(prefixed), profile, id)
 				putIfBetter(idx.normalizedMap, normalizeModelKey(prefixed), profile, id)
+			}
+		}
+
+		// Index provider bindings (e.g. providers.anthropic wire_model_id -> canonical profile)
+		// First-writer-wins on collision; never overwrite primary keys.
+		for _, b := range profile.Providers {
+			if len(b.ModelID) < 3 {
+				continue
+			}
+			wireID := b.ModelID
+			lowerWire := strings.ToLower(wireID)
+			if _, isPrimary := primaryKeys[wireID]; !isPrimary {
+				if _, exists := idx.exactMap[wireID]; !exists {
+					idx.exactMap[wireID] = profile
+				}
+			}
+			if _, isPrimary := primaryKeys[lowerWire]; !isPrimary {
+				if _, exists := idx.exactMap[lowerWire]; !exists {
+					idx.exactMap[lowerWire] = profile
+				}
+			}
+			normWire := normalizeModelKey(wireID)
+			if _, exists := idx.normalizedMap[normWire]; !exists {
+				idx.normalizedMap[normWire] = profile
+			}
+			if slash := strings.Index(id, "/"); slash >= 0 && !strings.Contains(wireID, "/") {
+				prefixed := id[:slash+1] + wireID
+				if _, isPrimary := primaryKeys[prefixed]; !isPrimary {
+					if _, exists := idx.exactMap[prefixed]; !exists {
+						idx.exactMap[prefixed] = profile
+					}
+				}
+				lowerPrefixed := strings.ToLower(prefixed)
+				if _, isPrimary := primaryKeys[lowerPrefixed]; !isPrimary {
+					if _, exists := idx.exactMap[lowerPrefixed]; !exists {
+						idx.exactMap[lowerPrefixed] = profile
+					}
+				}
+				normPrefixed := normalizeModelKey(prefixed)
+				if _, exists := idx.normalizedMap[normPrefixed]; !exists {
+					idx.normalizedMap[normPrefixed] = profile
+				}
 			}
 		}
 
@@ -241,9 +287,27 @@ func (m *Manager) loadInitialCatalog() {
 	setCatalog(&embedCat)
 }
 
-// Lookup retrieves a curated model profile lock-free from the active catalog.
-// It performs exact, case-insensitive, normalized, and data-driven family lookups.
-func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
+// stripTrailingDateSuffix removes a trailing -YYYYMMDD date stamp (e.g. "-20250929") if present.
+func stripTrailingDateSuffix(s string) (string, bool) {
+	if len(s) <= 9 {
+		return s, false
+	}
+	suffix := s[len(s)-9:]
+	if suffix[0] != '-' || suffix[1] != '2' || suffix[2] != '0' {
+		return s, false
+	}
+	for i := 3; i < 9; i++ {
+		if suffix[i] < '0' || suffix[i] > '9' {
+			return s, false
+		}
+	}
+	return s[:len(s)-9], true
+}
+
+// LookupStrict retrieves a curated model profile lock-free from the active catalog
+// using only deterministic key, alias, provider-binding, and normalized matches (steps 1-4),
+// without substring or token-overlap heuristics.
+func (m *Manager) LookupStrict(modelID string) (ModelCuratedProfile, bool) {
 	if m == nil {
 		return ModelCuratedProfile{}, false
 	}
@@ -283,7 +347,76 @@ func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
 		return p, true
 	}
 
-	// 3. Strip tags if present
+	// If base has a colon tag that encodes a parameter size (e.g. Ollama "gemma4:12b-it-qat"),
+	// do not strip the size suffix in strict mode as that would conflate distinct model sizes.
+	hasSizeColonTag := false
+	if colon := strings.Index(base, ":"); colon >= 0 {
+		if ExtractParameterSize(base[colon+1:]) > 0 {
+			hasSizeColonTag = true
+		} else {
+			// 3. Strip non-size tags if present (e.g. :v1, :free, :batch)
+			untagged := base[:colon]
+			if p, ok := idx.exactMap[untagged]; ok {
+				return p, true
+			}
+			if p, ok := idx.exactMap[strings.ToLower(untagged)]; ok {
+				return p, true
+			}
+		}
+	}
+
+	// 3b. Strip trailing -YYYYMMDD date suffix if present (e.g. claude-sonnet-4-5-20250929)
+	if undated, stripped := stripTrailingDateSuffix(base); stripped {
+		if p, ok := idx.exactMap[undated]; ok {
+			return p, true
+		}
+		if p, ok := idx.exactMap[strings.ToLower(undated)]; ok {
+			return p, true
+		}
+		if p, ok := idx.normalizedMap[normalizeModelKey(undated)]; ok {
+			return p, true
+		}
+	}
+
+	// 4. Normalized key match (punctuation stripped)
+	if !hasSizeColonTag {
+		norm := normalizeModelKey(trimmed)
+		if p, ok := idx.normalizedMap[norm]; ok {
+			return p, true
+		}
+		if p, ok := idx.normalizedMap[normalizeModelKey(base)]; ok {
+			return p, true
+		}
+	}
+
+	return ModelCuratedProfile{}, false
+}
+
+// Lookup retrieves a curated model profile lock-free from the active catalog.
+// It performs exact, case-insensitive, normalized, and data-driven family lookups.
+func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
+	if m == nil {
+		return ModelCuratedProfile{}, false
+	}
+	trimmed := strings.TrimSpace(modelID)
+	if trimmed == "" {
+		return ModelCuratedProfile{}, false
+	}
+
+	if p, ok := m.LookupStrict(trimmed); ok {
+		return p, true
+	}
+
+	idx := m.activeIndex.Load()
+	if idx == nil {
+		return ModelCuratedProfile{}, false
+	}
+
+	lower := strings.ToLower(trimmed)
+	base := trimmed
+	if slash := strings.LastIndex(base, "/"); slash >= 0 {
+		base = base[slash+1:]
+	}
 	if colon := strings.Index(base, ":"); colon >= 0 {
 		untagged := base[:colon]
 		if p, ok := idx.exactMap[untagged]; ok {
@@ -293,8 +426,6 @@ func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
 			return p, true
 		}
 	}
-
-	// 4. Normalized key match (punctuation stripped)
 	norm := normalizeModelKey(trimmed)
 	if p, ok := idx.normalizedMap[norm]; ok {
 		return p, true
@@ -342,6 +473,113 @@ func (m *Manager) Lookup(modelID string) (ModelCuratedProfile, bool) {
 	return ModelCuratedProfile{}, false
 }
 
+// LookupForPlatform retrieves a curated profile for a given platform using its declarative
+// PlatformCatalogPolicy, applying provider-specific wire model ID and pricing overrides when present.
+func (m *Manager) LookupForPlatform(platform contract.Platform, modelID string) (ModelCuratedProfile, bool) {
+	if m == nil {
+		return ModelCuratedProfile{}, false
+	}
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.HasCuratedCatalog {
+		return ModelCuratedProfile{}, false
+	}
+	var (
+		profile ModelCuratedProfile
+		found   bool
+	)
+	if policy.RequiresProviderBinding {
+		profile, found = m.LookupStrict(modelID)
+	} else {
+		profile, found = m.Lookup(modelID)
+	}
+	if !found {
+		return ModelCuratedProfile{}, false
+	}
+	if policy.RequiresOpenWeights && !profile.IsOpenWeights {
+		return ModelCuratedProfile{}, false
+	}
+	if binding, hasBinding := profile.Providers[platform]; hasBinding {
+		profile.ModelID = binding.ModelID
+		if binding.PromptCostPerMillion != nil {
+			profile.PromptCostPerMillion = *binding.PromptCostPerMillion
+		}
+		if binding.CompletionCostPerMillion != nil {
+			profile.CompletionCostPerMillion = *binding.CompletionCostPerMillion
+		}
+		return profile, true
+	}
+	if policy.RequiresProviderBinding {
+		return ModelCuratedProfile{}, false
+	}
+	if policy.RequiresOpenWeights {
+		profile.PromptCostPerMillion = 0
+		profile.CompletionCostPerMillion = 0
+	}
+	return profile, true
+}
+
+// FormatModelForPlatform formats a model identifier for a specific platform family using its PlatformCatalogPolicy.
+func (m *Manager) FormatModelForPlatform(platform contract.Platform, modelID string) (string, bool) {
+	if m == nil {
+		return "", false
+	}
+	trimmed := strings.TrimSpace(modelID)
+	if trimmed == "" {
+		return "", false
+	}
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.HasCuratedCatalog {
+		return "", false
+	}
+	profile, found := m.LookupStrict(trimmed)
+	if found {
+		if policy.RequiresOpenWeights && !profile.IsOpenWeights {
+			return profile.ModelID, false
+		}
+		if policy.RequiresProviderBinding && profile.BenchmarkSource == BenchmarkSourceEstimated {
+			return "", false
+		}
+		if binding, hasBinding := profile.Providers[platform]; hasBinding && binding.ModelID != "" {
+			return binding.ModelID, true
+		}
+		if policy.RequiresProviderBinding {
+			return "", false
+		}
+		if policy.RequiresOpenWeights {
+			return trimmed, true
+		}
+		return profile.ModelID, true
+	}
+	if policy.AllowUncatalogedModels {
+		return trimmed, true
+	}
+	return "", false
+}
+
+// IsSameModel reports whether two model identifiers resolve to the same underlying canonical model.
+func (m *Manager) IsSameModel(a, b string) bool {
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	if m == nil {
+		return false
+	}
+	pa, okA := m.LookupStrict(a)
+	pb, okB := m.LookupStrict(b)
+	if okA && okB {
+		canonA := pa.CanonicalID
+		if canonA == "" {
+			canonA = pa.ModelID
+		}
+		canonB := pb.CanonicalID
+		if canonB == "" {
+			canonB = pb.ModelID
+		}
+		return strings.EqualFold(canonA, canonB)
+	}
+	return strings.EqualFold(a, b)
+}
+
 // GetActiveCatalog returns a pointer to the currently loaded CuratedCatalog.
 func (m *Manager) GetActiveCatalog() *CuratedCatalog {
 	return m.activeCatalog.Load()
@@ -369,24 +607,7 @@ func (m *Manager) RegisterDynamicModels(models map[string]ModelCuratedProfile) {
 			p.ModelID = id
 		}
 		if existing, exists := newModels[id]; exists {
-			if !p.SupportsVision && existing.SupportsVision {
-				p.SupportsVision = true
-			}
-			if !p.SupportsTools && existing.SupportsTools {
-				p.SupportsTools = true
-			}
-			if p.CodingIndex == 0 && existing.CodingIndex > 0 {
-				p.CodingIndex = existing.CodingIndex
-			}
-			if p.ToolReliability == 0 && existing.ToolReliability > 0 {
-				p.ToolReliability = existing.ToolReliability
-			}
-			if len(p.RecommendedTiers) == 0 && len(existing.RecommendedTiers) > 0 {
-				p.RecommendedTiers = existing.RecommendedTiers
-			}
-			if (p.TierRole == "" || p.TierRole == RoleGeneral) && existing.TierRole != "" && existing.TierRole != RoleGeneral {
-				p.TierRole = existing.TierRole
-			}
+			p = existing.MergeDynamicOverlay(p)
 		}
 		newModels[id] = p
 	}
@@ -466,7 +687,20 @@ func ExtractParameterSize(modelID string) float64 {
 
 // CandidateModels returns filtered candidate models matching the specified tier role and deployment mode.
 func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedProfile {
+	if isLocal {
+		return m.CandidateModelsForPlatform(role, contract.PlatformLocal)
+	}
+	return m.CandidateModelsForPlatform(role, contract.PlatformOpenRouter)
+}
+
+// CandidateModelsForPlatform returns filtered candidate models for a given TierRole and Platform
+// using the platform's declarative PlatformCatalogPolicy.
+func (m *Manager) CandidateModelsForPlatform(role TierRole, platform contract.Platform) []ModelCuratedProfile {
 	if m == nil {
+		return nil
+	}
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.AllowRecommendations {
 		return nil
 	}
 	cat := m.activeCatalog.Load()
@@ -484,7 +718,12 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 			continue
 		}
 
-		if isLocal {
+		// Skip estimated benchmark models from candidate pools
+		if p.BenchmarkSource == BenchmarkSourceEstimated {
+			continue
+		}
+
+		if policy.RequiresOpenWeights {
 			// Local tier: candidate must be an open-weights model capable of local inference
 			if !p.IsOpenWeights {
 				continue
@@ -499,6 +738,18 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 			}
 		}
 
+		if binding, hasBinding := p.Providers[platform]; hasBinding {
+			p.ModelID = binding.ModelID
+			if binding.PromptCostPerMillion != nil {
+				p.PromptCostPerMillion = *binding.PromptCostPerMillion
+			}
+			if binding.CompletionCostPerMillion != nil {
+				p.CompletionCostPerMillion = *binding.CompletionCostPerMillion
+			}
+		} else if policy.RequiresProviderBinding {
+			continue
+		}
+
 		// Role matching
 		if role != "" && role != RoleGeneral {
 			if role == RoleVisionWorkhorse && !p.SupportsVision && p.TierRole != RoleVisionWorkhorse {
@@ -507,8 +758,14 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 			if role == RoleCodingWorkhorse && p.TierRole != RoleCodingWorkhorse && p.CodingIndex < 65.0 {
 				continue
 			}
-			if role == RoleDeepReasoner && !p.IsFrontier() {
-				continue
+			if role == RoleDeepReasoner {
+				if !policy.RequiresOpenWeights {
+					if p.TierRole != RoleDeepReasoner {
+						continue
+					}
+				} else if !p.IsFrontier() {
+					continue
+				}
 			}
 		}
 
@@ -518,16 +775,22 @@ func (m *Manager) CandidateModels(role TierRole, isLocal bool) []ModelCuratedPro
 	return candidates
 }
 
-// ParetoCandidates filters candidate models down to the Pareto-optimal frontier.
-// For local models (isLocal == true), candidates are bounded by localVRAMGB or currentModelID's parameter class.
-// For cloud models, candidates are pruned to the non-dominated set across (BlendedCost, CodingIndex).
-func (m *Manager) ParetoCandidates(role TierRole, isLocal bool, currentModelID string, localVRAMGB int) []ModelCuratedProfile {
-	allCandidates := m.CandidateModels(role, isLocal)
+// ParetoCandidates filters candidate models down to the Pareto-optimal frontier for the given platform.
+// Driven by contract.LookupPlatformCatalogPolicy(platform) with zero hardcoded platform switches.
+func (m *Manager) ParetoCandidates(role TierRole, platform contract.Platform, currentModelID string, localVRAMGB int) []ModelCuratedProfile {
+	if m == nil {
+		return nil
+	}
+	policy, ok := contract.LookupPlatformCatalogPolicy(platform)
+	if !ok || !policy.AllowRecommendations {
+		return nil
+	}
+	allCandidates := m.CandidateModelsForPlatform(role, platform)
 	if len(allCandidates) == 0 {
 		return nil
 	}
 
-	if isLocal {
+	if policy.RequiresOpenWeights {
 		// Determine maximum parameter ceiling
 		maxParams := 8.0 // default baseline ceiling
 		if localVRAMGB > 0 {

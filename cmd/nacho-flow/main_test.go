@@ -111,9 +111,11 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "Tokens < 8000"
 `
@@ -144,9 +146,11 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local Fast"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "Tokens < 4000"
 `
@@ -191,7 +195,8 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
 
@@ -241,13 +246,16 @@ port: 59998
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "Tokens < 8000"
 default_tier:
   name: "Fallback"
+  model: "llama-3-8b"
   provider: "ollama"
 `
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
@@ -292,13 +300,15 @@ providers:
   openrouter:
     base_url: "http://127.0.0.1:11434"
     api_key: "sk-or-test"
-    type: "cloud"
+    type: "openrouter"
 tiers:
   - name: "Cloud"
+    model: "anthropic/claude-sonnet-5"
     provider: "openrouter"
     when: "Tokens < 8000"
 default_tier:
   name: "Fallback"
+  model: "anthropic/claude-sonnet-5"
   provider: "openrouter"
 `
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
@@ -348,13 +358,15 @@ host: "127.0.0.1"
 providers:
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
-    type: "cloud"
+    type: "openrouter"
 tiers:
   - name: "Cloud"
+    model: "anthropic/claude-sonnet-5"
     provider: "openrouter"
     when: "Tokens < 8000"
 default_tier:
   name: "Fallback"
+  model: "anthropic/claude-sonnet-5"
   provider: "openrouter"
 `
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
@@ -421,7 +433,8 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	_ = os.WriteFile(cfgPath, []byte(validCfg), 0600)
 	trafficLogPath := filepath.Join(tmpDir, "traffic.jsonl")
@@ -455,9 +468,11 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Local"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "Tokens < 8000"
 `
@@ -498,7 +513,7 @@ tiers:
 
 	// Error path 3: bad optimizer analysis or config
 	badCfgPath := filepath.Join(tmpDir, "bad_cfg_for_tune.yaml")
-	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: 'http://127.0.0.1:11434'\n    type: 'local'\ntiers:\n  - name: 'T1'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
+	_ = os.WriteFile(badCfgPath, []byte("port: 8000\nproviders:\n  p1:\n    base_url: 'http://127.0.0.1:11434'\n    type: 'local'\ntiers:\n  - name: 'T1'\n    model: 'llama-3-8b'\n    provider: 'p1'\n    when: 'invalid ???'\n"), 0600)
 	if err := runTune([]string{"-config", badCfgPath, "-traffic-log", trafficLogPath}); err == nil {
 		t.Errorf("expected error for bad tier expression in tune, got nil")
 	}
@@ -566,9 +581,11 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Bad Tier"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "invalid expression syntax !!!"
 `
@@ -602,9 +619,11 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 tiers:
   - name: "Bad Tier"
+    model: "llama-3-8b"
     provider: "ollama"
     when: "invalid tier expression syntax !!!"
 `
@@ -646,7 +665,8 @@ port: -1
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
 	*configPathFlag = cfgPath
@@ -676,7 +696,8 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
 
@@ -726,7 +747,8 @@ port: 8000
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	_ = os.WriteFile(cfgPath, []byte(validCfg), 0600)
 	trafficLogPath := filepath.Join(tmpDir, "traffic.jsonl")
@@ -814,7 +836,7 @@ providers:
   mock_provider:
     api_key: "sk-test-key"
     base_url: "http://127.0.0.1:11434"
-    type: "cloud"
+    type: "openai_compatible"
 `
 	_ = os.WriteFile(cfgPath, []byte(validCfg), 0600)
 	*configPathFlag = cfgPath
@@ -839,7 +861,7 @@ providers:
   openrouter:
     api_key: "sk-or-live-key"
     base_url: "http://127.0.0.1:59993/v1"
-    type: "cloud"
+    type: "openrouter"
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgContent), 0600)
 	*configPathFlag = cfgPath
@@ -962,7 +984,8 @@ port: 59970
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	_ = os.WriteFile(cfgPath, []byte(cfg1), 0600)
 	*configPathFlag = cfgPath
@@ -991,7 +1014,8 @@ port: 59970
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 `
 	_ = os.WriteFile(cfgPath, []byte(cfgSkip), 0600)
 	if fi, err := os.Stat(cfgPath); err == nil {
@@ -1011,10 +1035,11 @@ port: 59970
 providers:
   ollama:
     base_url: "http://127.0.0.1:11434"
-    type: "local"
+    type: "openai_compatible"
+    local: true
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
-    type: "cloud"
+    type: "openrouter"
 `
 	p.mu.Lock()
 	if p.server != nil {
@@ -1104,7 +1129,7 @@ func TestProgram_Run_PortInUse(t *testing.T) {
 port: %d
 providers:
   test_prov:
-    type: cloud
+    type: openai_compatible
     base_url: http://127.0.0.1:1234
 default_tier:
   provider: test_prov
@@ -1151,7 +1176,7 @@ func TestAsyncRun_NilSlogAndError(t *testing.T) {
 port: %d
 providers:
   p:
-    type: cloud
+    type: openai_compatible
     base_url: http://127.0.0.1:1234
 default_tier:
   provider: p
@@ -1210,7 +1235,7 @@ func TestRun_RecentRoutesHydration(t *testing.T) {
 port: %d
 providers:
   p:
-    type: cloud
+    type: openai_compatible
     base_url: http://127.0.0.1:1234
 default_tier:
   provider: p

@@ -28,12 +28,13 @@ func setupTestServer(t *testing.T) (*Server, *telemetry.RingBufferSink, *telemet
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434",
-				Type:    contract.ProviderTypeLocal,
+				Type:    provider.TypeOpenAICompatible,
+				Local:   true,
 			},
 			"openrouter": {
 				BaseURL: "https://openrouter.ai/api/v1",
 				APIKey:  "sk-or-v1-real-secret-key-12345",
-				Type:    contract.ProviderTypeCloud,
+				Type:    provider.TypeOpenRouter,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -301,11 +302,11 @@ func TestAPI_Config_PutHotReload_And_DryRun(t *testing.T) {
 		"port": 8000,
 		"auth_token": "test-sec***",
 		"providers": {
-			"ollama": {"base_url": "http://127.0.0.1:11434", "type": "local"},
-			"openrouter": {"base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-***", "type": "cloud"}
+			"ollama": {"base_url": "http://127.0.0.1:11434", "type": "openai_compatible", "local": true},
+			"openrouter": {"base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-***", "type": "openrouter"}
 		},
 		"tiers": [
-			{"name": "Tier 1", "provider": "ollama", "when": "Tokens < 16000"}
+			{"name": "Tier 1", "model": "test-model", "provider": "ollama", "when": "Tokens < 16000"}
 		]
 	}`
 
@@ -325,8 +326,8 @@ func TestAPI_Config_PutHotReload_And_DryRun(t *testing.T) {
 	// 2. Put with invalid expr
 	invalidPayload := `{
 		"port": 8000,
-		"providers": {"ollama": {"base_url": "http://127.0.0.1:11434", "type": "local"}},
-		"tiers": [{"name": "Tier 1", "provider": "ollama", "when": "Tokens < 16000 && invalid_var_name"}]
+		"providers": {"ollama": {"base_url": "http://127.0.0.1:11434", "type": "openai_compatible", "local": true}},
+		"tiers": [{"name": "Tier 1", "model": "test-model", "provider": "ollama", "when": "Tokens < 16000 && invalid_var_name"}]
 	}`
 	req = httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(invalidPayload))
 	req.Header.Set("Authorization", "Bearer test-secret-token")
@@ -342,11 +343,11 @@ func TestAPI_Config_PutHotReload_And_DryRun(t *testing.T) {
 		"port": 8000,
 		"auth_token": "test-sec***",
 		"providers": {
-			"ollama": {"base_url": "http://127.0.0.1:11434", "type": "local"},
-			"openrouter": {"base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-***", "type": "cloud"}
+			"ollama": {"base_url": "http://127.0.0.1:11434", "type": "openai_compatible", "local": true},
+			"openrouter": {"base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-***", "type": "openrouter"}
 		},
 		"tiers": [
-			{"name": "Tier 1 New", "provider": "ollama", "when": "Tokens < 24000"}
+			{"name": "Tier 1 New", "model": "test-model", "provider": "ollama", "when": "Tokens < 24000"}
 		]
 	}`
 	req = httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(validPayload))
@@ -383,7 +384,7 @@ func TestAPI_Config_NTS_HotReload(t *testing.T) {
 		"providers": {
 			"openrouter": {
 				"base_url": "https://openrouter.ai/api/v1",
-				"type": "cloud",
+				"type": "openrouter",
 				"api_key": "sk-or-v1-real-secret-key-12345"
 			}
 		},
@@ -669,7 +670,7 @@ func TestAPI_Config_PutValidationErrors(t *testing.T) {
 		},
 		{
 			name:    "Missing Base URL",
-			payload: `{"providers": {"ollama": {"base_url": "", "type": "local"}}}`,
+			payload: `{"providers": {"ollama": {"base_url": "", "type": "openai_compatible", "local": true}}}`,
 		},
 		{
 			name:    "Missing Provider Type",
@@ -681,7 +682,7 @@ func TestAPI_Config_PutValidationErrors(t *testing.T) {
 		},
 		{
 			name:    "Unknown Tier Provider Reference",
-			payload: `{"providers": {"ollama": {"base_url": "http://localhost:11434", "type": "local"}}, "tiers": [{"name": "T1", "provider": "nonexistent", "when": "Tokens > 0"}]}`,
+			payload: `{"providers": {"ollama": {"base_url": "http://localhost:11434", "type": "openai_compatible", "local": true}}, "tiers": [{"name": "T1", "provider": "nonexistent", "when": "Tokens > 0"}]}`,
 		},
 	}
 
@@ -720,8 +721,8 @@ func TestAPI_Watchdog_AutoRollback(t *testing.T) {
 	// Hot reload new config
 	newPayload := `{
 		"port": 8000,
-		"providers": {"ollama": {"base_url": "http://127.0.0.1:11434", "type": "local"}},
-		"tiers": [{"name": "New Experimental Tier", "provider": "ollama", "when": "Tokens > 0"}]
+		"providers": {"ollama": {"base_url": "http://127.0.0.1:11434", "type": "openai_compatible", "local": true}},
+		"tiers": [{"name": "New Experimental Tier", "model": "test-model", "provider": "ollama", "when": "Tokens > 0"}]
 	}`
 	req := httptest.NewRequest(http.MethodPut, contract.PathAPIConfig, bytes.NewBufferString(newPayload))
 	req.Header.Set("Authorization", "Bearer test-secret-token")

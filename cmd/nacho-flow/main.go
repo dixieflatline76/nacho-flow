@@ -198,16 +198,22 @@ func (p *program) run(s service.Service) error {
 	reg := provider.NewRegistryFromConfig(cfg)
 
 	// 2. Setup Curated Gallery, Classifier, and Pricing Oracle with OpenRouter Plugin
-	curationMgr := curation.NewManager("", "")
+	curationMgr := curation.DefaultManager()
 	modelClassifier := telemetry.NewClassifier(curationMgr)
 	oracle := telemetry.NewPricingOracleWithClassifier(modelClassifier)
+	oracle.SetPlatformResolver(reg)
 	for id, p := range cfg.Providers {
-		factory, ok := telemetry.LookupPricingFactory(id)
-		if !ok && p.Type != "" {
-			factory, ok = telemetry.LookupPricingFactory(string(p.Type))
+		platform, ok := reg.Platform(id)
+		if !ok {
+			continue
 		}
+		factory, ok := telemetry.LookupPricingFactory(string(platform))
 		if ok {
-			prov, syncInterval := factory(id, p, 0)
+			effectiveCfg := p
+			if provInstance, ok := reg.Get(id); ok {
+				effectiveCfg.BaseURL = provInstance.BaseURL()
+			}
+			prov, syncInterval := factory(id, effectiveCfg, 0)
 			oracle.RegisterProvider(prov, syncInterval)
 		}
 	}
@@ -473,7 +479,7 @@ func runTune(args []string) error {
 		if *writeOnlyFlag || cfg.Kickstart.ReadSlap.WriteOnly {
 			policy.WriteOnly = true
 		}
-		optimizer = tuner.NewMinConflictsOptimizer(policy)
+		optimizer = tuner.NewMinConflictsOptimizer(policy, provider.NewRegistryFromConfig(cfg))
 	}
 	result, err := optimizer.Optimize(records, cfg)
 	if err != nil {

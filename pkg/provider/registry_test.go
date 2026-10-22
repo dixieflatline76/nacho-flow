@@ -13,18 +13,18 @@ import (
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
 )
 
-// Test 2.1: GenericLLMProvider capabilities
-func TestGenericLLMProvider_Capabilities(t *testing.T) {
+// Test 2.1: OpenAICompatibleProvider capabilities
+func TestOpenAICompatibleProvider_Capabilities(t *testing.T) {
 	pCfg := contract.ProviderConfig{
 		BaseURL: "https://api.langdock.com/v1",
 		APIKey:  "secret-langdock-key",
-		Type:    "cloud",
+		Type:    TypeOpenAICompatible,
 		Headers: map[string]string{
 			"X-Langdock-Org": "engineering",
 		},
 	}
 
-	p := NewGenericLLMProvider("langdock", pCfg)
+	p := NewOpenAICompatibleProvider("langdock", pCfg)
 
 	if p.ID() != "langdock" {
 		t.Errorf("Expected ID 'langdock', got '%s'", p.ID())
@@ -64,20 +64,21 @@ func TestGenericLLMProvider_Capabilities(t *testing.T) {
 	}
 
 	// Lazy init of circuit breaker if nil
-	pNilCB := &GenericLLMProvider{}
+	pNilCB := &OpenAICompatibleProvider{}
 	if cb := pNilCB.CircuitBreaker(); cb == nil {
 		t.Errorf("Expected lazy initialization of circuit breaker, got nil")
 	}
 }
 
 // Test 2.2: Local provider characteristics
-func TestGenericLLMProvider_LocalCharacteristics(t *testing.T) {
+func TestOpenAICompatibleProvider_LocalCharacteristics(t *testing.T) {
 	pCfg := contract.ProviderConfig{
 		BaseURL: "http://127.0.0.1:11434/v1",
-		Type:    "local",
+		Type:    TypeOpenAICompatible,
+		Local:   true,
 	}
 
-	p := NewGenericLLMProvider("ollama", pCfg)
+	p := NewOpenAICompatibleProvider("ollama", pCfg)
 
 	if !p.IsLocal() {
 		t.Errorf("Expected IsLocal to be true for Ollama")
@@ -100,8 +101,9 @@ func TestRegistry_RegisterAndGet_Concurrency(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			providerID := fmt.Sprintf("provider-%d", id)
-			p := NewGenericLLMProvider(providerID, contract.ProviderConfig{
+			p := NewOpenAICompatibleProvider(providerID, contract.ProviderConfig{
 				BaseURL: fmt.Sprintf("http://127.0.0.1:%d/v1", 8000+id),
+				Type:    TypeOpenAICompatible,
 			})
 			reg.Register(p)
 
@@ -125,10 +127,12 @@ func TestRegistry_NewFromConfig(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"ollama": {
 				BaseURL: "http://127.0.0.1:11434/v1",
-				Type:    "local",
+				Type:    TypeOpenAICompatible,
+				Local:   true,
 			},
 			"openrouter": {
 				BaseURL: "https://openrouter.ai/api/v1",
+				Type:    TypeOpenRouter,
 				APIKey:  "sk-or-test",
 			},
 		},
@@ -148,7 +152,7 @@ func TestRegistry_NewFromConfig(t *testing.T) {
 }
 
 // Test 2.5: Provider Name resolution
-func TestGenericLLMProvider_Names(t *testing.T) {
+func TestOpenAICompatibleProvider_Names(t *testing.T) {
 	cases := []struct {
 		id           string
 		expectedName string
@@ -160,7 +164,7 @@ func TestGenericLLMProvider_Names(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		p := NewGenericLLMProvider(c.id, contract.ProviderConfig{BaseURL: "http://localhost"})
+		p := NewOpenAICompatibleProvider(c.id, contract.ProviderConfig{BaseURL: "http://localhost", Type: TypeOpenAICompatible})
 		if p.Name() != c.expectedName {
 			t.Errorf("For id '%s', expected Name '%s', got '%s'", c.id, c.expectedName, p.Name())
 		}
@@ -168,7 +172,7 @@ func TestGenericLLMProvider_Names(t *testing.T) {
 }
 
 // Test 2.6: Ping health check
-func TestGenericLLMProvider_Ping(t *testing.T) {
+func TestOpenAICompatibleProvider_Ping(t *testing.T) {
 	// Success case
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth := r.Header.Get("Authorization"); auth != "Bearer test-key" {
@@ -178,9 +182,10 @@ func TestGenericLLMProvider_Ping(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	p := NewGenericLLMProvider("test", contract.ProviderConfig{
+	p := NewOpenAICompatibleProvider("test", contract.ProviderConfig{
 		BaseURL: ts.URL,
 		APIKey:  "test-key",
+		Type:    TypeOpenAICompatible,
 	})
 
 	if err := p.Ping(context.Background()); err != nil {
@@ -188,16 +193,18 @@ func TestGenericLLMProvider_Ping(t *testing.T) {
 	}
 
 	// Failure case: unreachable endpoint
-	pBroken := NewGenericLLMProvider("broken", contract.ProviderConfig{
+	pBroken := NewOpenAICompatibleProvider("broken", contract.ProviderConfig{
 		BaseURL: "http://127.0.0.1:54321/unreachable",
+		Type:    TypeOpenAICompatible,
 	})
 	if err := pBroken.Ping(context.Background()); err == nil {
 		t.Errorf("Expected ping to fail for unreachable URL, got nil")
 	}
 
 	// Failure case: invalid URL syntax
-	pInvalidURL := NewGenericLLMProvider("invalid", contract.ProviderConfig{
+	pInvalidURL := NewOpenAICompatibleProvider("invalid", contract.ProviderConfig{
 		BaseURL: "http://\x7f",
+		Type:    TypeOpenAICompatible,
 	})
 	if err := pInvalidURL.Ping(context.Background()); err == nil {
 		t.Errorf("Expected ping to fail for invalid URL, got nil")
@@ -216,8 +223,8 @@ func TestRegistry_NilConfig(t *testing.T) {
 }
 
 func TestRegistry_CircuitsStatusAndReset(t *testing.T) {
-	p1 := NewGenericLLMProvider("p1", contract.ProviderConfig{BaseURL: "http://localhost:8001"})
-	p2 := NewGenericLLMProvider("p2", contract.ProviderConfig{BaseURL: "http://localhost:8002"})
+	p1 := NewOpenAICompatibleProvider("p1", contract.ProviderConfig{BaseURL: "http://localhost:8001", Type: TypeOpenAICompatible})
+	p2 := NewOpenAICompatibleProvider("p2", contract.ProviderConfig{BaseURL: "http://localhost:8002", Type: TypeOpenAICompatible})
 
 	reg := NewRegistry()
 	reg.Register(p1)
@@ -266,11 +273,12 @@ func TestRegistry_CircuitsStatusAndReset(t *testing.T) {
 	}
 }
 
-func TestGenericLLMProvider_BuildUpstreamRequest_And_Stream(t *testing.T) {
+func TestOpenAICompatibleProvider_BuildUpstreamRequest_And_Stream(t *testing.T) {
 	// 1. Cloud provider with Auth and Custom Headers
-	pCloud := NewGenericLLMProvider("cloud", contract.ProviderConfig{
+	pCloud := NewOpenAICompatibleProvider("cloud", contract.ProviderConfig{
 		BaseURL: "https://api.openai.com/v1",
 		APIKey:  "sk-test-123",
+		Type:    TypeOpenAICompatible,
 		Headers: map[string]string{
 			"X-Custom-Header": "custom-val",
 		},
@@ -298,9 +306,10 @@ func TestGenericLLMProvider_BuildUpstreamRequest_And_Stream(t *testing.T) {
 	}
 
 	// 2. Local provider strips Authorization
-	pLocal := NewGenericLLMProvider("ollama", contract.ProviderConfig{
+	pLocal := NewOpenAICompatibleProvider("ollama", contract.ProviderConfig{
 		BaseURL: "http://127.0.0.1:11434",
-		Type:    contract.ProviderTypeLocal,
+		Type:    TypeOpenAICompatible,
+		Local:   true,
 	})
 	inReqLocal := httptest.NewRequest(http.MethodPost, "/chat/completions", nil)
 	inReqLocal.Header.Set("Authorization", "Bearer unwanted-token")
@@ -317,8 +326,9 @@ func TestGenericLLMProvider_BuildUpstreamRequest_And_Stream(t *testing.T) {
 	}
 
 	// 3. Invalid target URL
-	pBad := NewGenericLLMProvider("bad", contract.ProviderConfig{
+	pBad := NewOpenAICompatibleProvider("bad", contract.ProviderConfig{
 		BaseURL: "::://bad url",
+		Type:    TypeOpenAICompatible,
 	})
 	if _, err := pBad.BuildUpstreamRequest(context.Background(), inReq, "gpt-4o", nil); err == nil {
 		t.Errorf("expected error for invalid target URL")
@@ -355,5 +365,175 @@ func TestGenericLLMProvider_BuildUpstreamRequest_And_Stream(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("singleJoiningSlash(%q, %q) = %q, want %q", tc.a, tc.b, got, tc.want)
 		}
+	}
+}
+
+func TestRegistry_ProviderTypesAndPlatforms(t *testing.T) {
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"prov_openai": {
+				Type:    TypeOpenAICompatible,
+				BaseURL: "https://api.openai.com/v1",
+			},
+			"prov_local": {
+				Type:    TypeOpenAICompatible,
+				BaseURL: "http://127.0.0.1:11434/v1",
+				Local:   true,
+			},
+			"prov_anthropic": {
+				Type:   TypeAnthropic,
+				APIKey: "sk-ant-test",
+			},
+			"prov_openrouter": {
+				Type:   TypeOpenRouter,
+				APIKey: "sk-or-test",
+			},
+		},
+	}
+
+	reg := NewRegistryFromConfig(cfg)
+
+	// Check openai_compatible non-local
+	pOpenAI, ok := reg.Get("prov_openai")
+	if !ok {
+		t.Fatalf("expected prov_openai registered")
+	}
+	if _, ok := pOpenAI.(*OpenAICompatibleProvider); !ok {
+		t.Errorf("expected *OpenAICompatibleProvider, got %T", pOpenAI)
+	}
+	if pOpenAI.Platform() != contract.PlatformOpenAICompatible {
+		t.Errorf("expected PlatformOpenAICompatible, got %s", pOpenAI.Platform())
+	}
+	if plat, found := reg.Platform("prov_openai"); !found || plat != contract.PlatformOpenAICompatible {
+		t.Errorf("reg.Platform(prov_openai) = (%s, %v), want (%s, true)", plat, found, contract.PlatformOpenAICompatible)
+	}
+
+	// Check openai_compatible local
+	pLocal, ok := reg.Get("prov_local")
+	if !ok {
+		t.Fatalf("expected prov_local registered")
+	}
+	if _, ok := pLocal.(*OpenAICompatibleProvider); !ok {
+		t.Errorf("expected *OpenAICompatibleProvider, got %T", pLocal)
+	}
+	if pLocal.Platform() != contract.PlatformLocal {
+		t.Errorf("expected PlatformLocal, got %s", pLocal.Platform())
+	}
+	if plat, found := reg.Platform("prov_local"); !found || plat != contract.PlatformLocal {
+		t.Errorf("reg.Platform(prov_local) = (%s, %v), want (%s, true)", plat, found, contract.PlatformLocal)
+	}
+
+	// Check anthropic
+	pAnthropic, ok := reg.Get("prov_anthropic")
+	if !ok {
+		t.Fatalf("expected prov_anthropic registered")
+	}
+	if _, ok := pAnthropic.(*AnthropicProvider); !ok {
+		t.Errorf("expected *AnthropicProvider, got %T", pAnthropic)
+	}
+	if pAnthropic.Platform() != contract.PlatformAnthropic {
+		t.Errorf("expected PlatformAnthropic, got %s", pAnthropic.Platform())
+	}
+	if plat, found := reg.Platform("prov_anthropic"); !found || plat != contract.PlatformAnthropic {
+		t.Errorf("reg.Platform(prov_anthropic) = (%s, %v), want (%s, true)", plat, found, contract.PlatformAnthropic)
+	}
+
+	// Check openrouter
+	pOR, ok := reg.Get("prov_openrouter")
+	if !ok {
+		t.Fatalf("expected prov_openrouter registered")
+	}
+	if _, ok := pOR.(*OpenRouterProvider); !ok {
+		t.Errorf("expected *OpenRouterProvider, got %T", pOR)
+	}
+	if pOR.Platform() != contract.PlatformOpenRouter {
+		t.Errorf("expected PlatformOpenRouter, got %s", pOR.Platform())
+	}
+	if plat, found := reg.Platform("prov_openrouter"); !found || plat != contract.PlatformOpenRouter {
+		t.Errorf("reg.Platform(prov_openrouter) = (%s, %v), want (%s, true)", plat, found, contract.PlatformOpenRouter)
+	}
+
+	// Unknown provider ID
+	if plat, found := reg.Platform("unknown"); found || plat != "" {
+		t.Errorf("reg.Platform(unknown) = (%s, %v), want ('', false)", plat, found)
+	}
+}
+
+func TestRegistry_NoInference(t *testing.T) {
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			// openai_compatible with openrouter.ai URL -> MUST remain OpenAICompatibleProvider / PlatformOpenAICompatible
+			"gateway": {
+				Type:    TypeOpenAICompatible,
+				BaseURL: "https://openrouter.ai/api/v1",
+			},
+			// provider ID openrouter with type: openai_compatible -> MUST remain OpenAICompatibleProvider
+			"openrouter": {
+				Type:    TypeOpenAICompatible,
+				BaseURL: "https://custom-proxy.internal/v1",
+			},
+		},
+	}
+
+	reg := NewRegistryFromConfig(cfg)
+
+	pGateway, ok := reg.Get("gateway")
+	if !ok {
+		t.Fatalf("expected gateway registered")
+	}
+	if _, ok := pGateway.(*OpenAICompatibleProvider); !ok {
+		t.Errorf("expected *OpenAICompatibleProvider for gateway, got %T", pGateway)
+	}
+	if pGateway.Platform() != contract.PlatformOpenAICompatible {
+		t.Errorf("expected PlatformOpenAICompatible, got %s (did URL sniff trigger?)", pGateway.Platform())
+	}
+
+	pOR, ok := reg.Get("openrouter")
+	if !ok {
+		t.Fatalf("expected openrouter registered")
+	}
+	if _, ok := pOR.(*OpenAICompatibleProvider); !ok {
+		t.Errorf("expected *OpenAICompatibleProvider for openrouter ID, got %T", pOR)
+	}
+	if pOR.Platform() != contract.PlatformOpenAICompatible {
+		t.Errorf("expected PlatformOpenAICompatible, got %s (did ID sniff trigger?)", pOR.Platform())
+	}
+}
+
+func TestProvider_DefaultBaseURLs(t *testing.T) {
+	// Anthropic defaults vs override
+	pAntDefault := NewAnthropicProvider("ant1", contract.ProviderConfig{
+		Type:   TypeAnthropic,
+		APIKey: "key",
+	})
+	if pAntDefault.BaseURL() != DefaultAnthropicBaseURL {
+		t.Errorf("expected default %s, got %s", DefaultAnthropicBaseURL, pAntDefault.BaseURL())
+	}
+
+	pAntCustom := NewAnthropicProvider("ant2", contract.ProviderConfig{
+		Type:    TypeAnthropic,
+		BaseURL: "https://custom.anthropic.internal",
+		APIKey:  "key",
+	})
+	if pAntCustom.BaseURL() != "https://custom.anthropic.internal" {
+		t.Errorf("expected custom URL, got %s", pAntCustom.BaseURL())
+	}
+
+	// OpenRouter defaults vs override
+	pORDefault := NewOpenRouterProvider("or1", contract.ProviderConfig{
+		Type:   TypeOpenRouter,
+		APIKey: "key",
+	})
+	if pORDefault.BaseURL() != DefaultOpenRouterBaseURL {
+		t.Errorf("expected default %s, got %s", DefaultOpenRouterBaseURL, pORDefault.BaseURL())
+	}
+
+	pORCustom := NewOpenRouterProvider("or2", contract.ProviderConfig{
+		Type:    TypeOpenRouter,
+		BaseURL: "https://custom.openrouter.internal/v1",
+		APIKey:  "key",
+	})
+	if pORCustom.BaseURL() != "https://custom.openrouter.internal/v1" {
+		t.Errorf("expected custom URL, got %s", pORCustom.BaseURL())
 	}
 }

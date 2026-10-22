@@ -905,8 +905,8 @@ func TestReplay_MessageCountMax_HistoricalZeroFallback(t *testing.T) {
 	traj := SessionTrajectory{
 		SessionID: "sess-msg-fallback",
 		Turns: []telemetry.TurnRecord{
-			{Timestamp: now, Tokens: 1000, MessageCount: 0, RootPromptHash: 0x1},                   // turn 0: estMsgCount = (0+1)*2 = 2 <= 4 -> Tier 0
-			{Timestamp: now.Add(5 * time.Second), Tokens: 1000, MessageCount: 0, RootPromptHash: 0x1}, // turn 1: estMsgCount = (1+1)*2 = 4 <= 4 -> Tier 0
+			{Timestamp: now, Tokens: 1000, MessageCount: 0, RootPromptHash: 0x1},                       // turn 0: estMsgCount = (0+1)*2 = 2 <= 4 -> Tier 0
+			{Timestamp: now.Add(5 * time.Second), Tokens: 1000, MessageCount: 0, RootPromptHash: 0x1},  // turn 1: estMsgCount = (1+1)*2 = 4 <= 4 -> Tier 0
 			{Timestamp: now.Add(10 * time.Second), Tokens: 1000, MessageCount: 0, RootPromptHash: 0x1}, // turn 2: estMsgCount = (2+1)*2 = 6 > 4 -> Tier 1
 		},
 	}
@@ -943,8 +943,8 @@ func TestReplay_TestFailGuards(t *testing.T) {
 	traj := SessionTrajectory{
 		SessionID: "sess-testfail",
 		Turns: []telemetry.TurnRecord{
-			{Timestamp: now, Tokens: 1000, HasTestFail: false, RootPromptHash: 0x2}, // Turn 0: clean -> Tier 0 (ProhibitsTestFail)
-			{Timestamp: now.Add(5 * time.Second), Tokens: 1000, HasTestFail: true, RootPromptHash: 0x2},  // Turn 1: failure -> Tier 1 (RequiresTestFail)
+			{Timestamp: now, Tokens: 1000, HasTestFail: false, RootPromptHash: 0x2},                     // Turn 0: clean -> Tier 0 (ProhibitsTestFail)
+			{Timestamp: now.Add(5 * time.Second), Tokens: 1000, HasTestFail: true, RootPromptHash: 0x2}, // Turn 1: failure -> Tier 1 (RequiresTestFail)
 		},
 	}
 
@@ -1122,5 +1122,3 @@ func TestReplay_ActiveRepair_HoldsRetries(t *testing.T) {
 		t.Errorf("expected 1 turn on Tier 1 (Turn 4), got %d", res.TierStats[1].TurnsRouted)
 	}
 }
-
-

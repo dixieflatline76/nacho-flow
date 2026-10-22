@@ -207,4 +207,3 @@ func TestSessionGrouper_IgnoresTitleAndDiagnosticSessions(t *testing.T) {
 		t.Errorf("Expected trajectory for 'ses_valid_coding', got: %+v", trajectories)
 	}
 }
-

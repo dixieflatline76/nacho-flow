@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/expr-lang/expr"
 )
@@ -227,7 +228,7 @@ func TestOptimizer_PreservesGuardrails(t *testing.T) {
 
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -263,7 +264,7 @@ func TestOptimizer_RespectsMaxContext(t *testing.T) {
 
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -330,13 +331,13 @@ func TestOptimizer_CloudRetriesDoNotInflateAvoidedRetries(t *testing.T) {
 // Test IsLocalTier detector covering various local and cloud configurations
 func TestIsLocalTier_Detection(t *testing.T) {
 	providers := map[string]contract.ProviderConfig{
-		"ollama":       {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
-		"vllm":         {BaseURL: "http://gpu-rig.tailscale:8000/v1", Type: contract.ProviderTypeLocal},
-		"lmstudio":     {BaseURL: "http://127.0.0.1:1234/v1", Type: contract.ProviderTypeLocal},
-		"custom_local": {BaseURL: "http://192.168.1.50:8080/v1", Type: contract.ProviderTypeLocal},
-		"openrouter":   {BaseURL: "https://openrouter.ai/api/v1", Type: contract.ProviderTypeCloud},
-		"anthropic":    {BaseURL: "https://api.anthropic.com/v1", Type: contract.ProviderTypeCloud},
-		"openai":       {BaseURL: "https://api.openai.com/v1", Type: contract.ProviderTypeCloud},
+		"ollama":       {BaseURL: "http://127.0.0.1:11434", Type: provider.TypeOpenAICompatible, Local: true},
+		"vllm":         {BaseURL: "http://gpu-rig.tailscale:8000/v1", Type: provider.TypeOpenAICompatible, Local: true},
+		"lmstudio":     {BaseURL: "http://127.0.0.1:1234/v1", Type: provider.TypeOpenAICompatible, Local: true},
+		"custom_local": {BaseURL: "http://192.168.1.50:8080/v1", Type: provider.TypeOpenAICompatible, Local: true},
+		"openrouter":   {BaseURL: "https://openrouter.ai/api/v1", Type: provider.TypeOpenRouter},
+		"anthropic":    {BaseURL: "https://api.anthropic.com/v1", Type: provider.TypeAnthropic},
+		"openai":       {BaseURL: "https://api.openai.com/v1", Type: provider.TypeOpenAICompatible},
 	}
 
 	tests := []struct {
@@ -405,7 +406,7 @@ func TestOptimizer_ZeroRecords(t *testing.T) {
 	// Zero records with existing tier
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Provider: "ollama", When: "Tokens < 8000 && Retries < 2"},
@@ -422,7 +423,7 @@ func TestOptimizer_ZeroRecords(t *testing.T) {
 	// Zero records with malformed existing when
 	badCfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: contract.ProviderTypeLocal},
+			"ollama": {BaseURL: "http://127.0.0.1:11434", Type: provider.TypeOpenAICompatible, Local: true},
 		},
 		Tiers: []contract.Tier{
 			{Name: "Local GPU", Provider: "ollama", When: "Tokens < && bad"},

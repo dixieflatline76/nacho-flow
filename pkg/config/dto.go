@@ -10,6 +10,7 @@ import (
 // SanitizedProviderDTO represents an LLM provider configuration with masked credentials.
 type SanitizedProviderDTO struct {
 	BaseURL             string
+	Local               bool
 	Key                 string
 	Type                contract.ProviderType
 	Headers             map[string]string
@@ -61,6 +62,7 @@ func ToPublicDTO(cfg *contract.Config) *SanitizedConfigDTO {
 	for id, p := range cfg.Providers {
 		dto.Providers[id] = SanitizedProviderDTO{
 			BaseURL:             p.BaseURL,
+			Local:               p.Local,
 			Key:                 MaskSecret(p.APIKey),
 			Type:                p.Type,
 			Headers:             p.Headers,
@@ -79,8 +81,12 @@ func (d *SanitizedConfigDTO) ToMap() map[string]any {
 	}
 	providers := make(map[string]any, len(d.Providers))
 	for id, p := range d.Providers {
-		pMap := map[string]any{
-			"base_url": p.BaseURL,
+		pMap := map[string]any{}
+		if p.BaseURL != "" {
+			pMap["base_url"] = p.BaseURL
+		}
+		if p.Local {
+			pMap["local"] = true
 		}
 		if p.Key != "" {
 			pMap["api_key"] = p.Key
@@ -148,8 +154,12 @@ func SerializeConfigYAML(cfg *contract.Config) ([]byte, error) {
 
 	providers := make(map[string]any, len(cfg.Providers))
 	for id, p := range cfg.Providers {
-		pMap := map[string]any{
-			"base_url": p.BaseURL,
+		pMap := map[string]any{}
+		if p.BaseURL != "" {
+			pMap["base_url"] = p.BaseURL
+		}
+		if p.Local {
+			pMap["local"] = true
 		}
 		if p.APIKey != "" {
 			pMap["api_key"] = p.APIKey

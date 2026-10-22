@@ -5,9 +5,11 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"gopkg.in/yaml.v3"
 )
 
@@ -104,26 +106,36 @@ func ValidateConfig(cfg *contract.Config) error {
 	}
 
 	for id, p := range cfg.Providers {
-		if strings.TrimSpace(p.BaseURL) == "" {
-			return fmt.Errorf("config error: provider '%s' is missing required 'base_url'", id)
+		// 1. Check legacy removed types
+		if string(p.Type) == "local" {
+			return fmt.Errorf("provider %q: type \"local\" was removed; use type: openai_compatible with local: true", id)
 		}
-		if p.Type != contract.ProviderTypeLocal && p.Type != contract.ProviderTypeCloud && p.Type != contract.ProviderTypeAnthropic && p.Type != contract.ProviderTypeOpenRouter {
-			return fmt.Errorf(
-				"provider %q: 'type' is required and must be 'local', 'cloud', 'anthropic', or 'openrouter' (got %q).\n"+
-					"  Example for local engines (Ollama, vLLM, LM Studio, llama.cpp):\n"+
-					"    %s:\n"+
-					"      base_url: %s\n"+
-					"      type: local\n"+
-					"  Example for cloud APIs (OpenRouter, OpenAI):\n"+
-					"    %s:\n"+
-					"      base_url: %s\n"+
-					"      type: cloud\n"+
-					"  Example for native Anthropic API:\n"+
-					"    %s:\n"+
-					"      base_url: %s\n"+
-					"      type: anthropic",
-				id, p.Type, id, p.BaseURL, id, p.BaseURL, id, p.BaseURL,
-			)
+		if string(p.Type) == "cloud" {
+			return fmt.Errorf("provider %q: type \"cloud\" was removed; use type: openai_compatible, or type: openrouter for OpenRouter", id)
+		}
+
+		// 2. Check type is required and valid via registered provider descriptors
+		desc, ok := provider.LookupDescriptor(p.Type)
+		if !ok {
+			return fmt.Errorf("provider %q: type is required and must be one of openai_compatible, anthropic, openrouter", id)
+		}
+
+		// 3. local is only valid for provider types that allow local inference
+		if p.Local && !desc.AllowsLocal {
+			return fmt.Errorf("provider %q: local is only valid for type openai_compatible", id)
+		}
+
+		// 4. base_url is required when the provider descriptor has no default base_url
+		if desc.DefaultBaseURL == "" && strings.TrimSpace(p.BaseURL) == "" {
+			return fmt.Errorf("provider %q: base_url is required for type %s", id, p.Type)
+		}
+
+		// 5. base_url must be an absolute http(s) URL if set
+		if strings.TrimSpace(p.BaseURL) != "" {
+			u, err := url.Parse(strings.TrimSpace(p.BaseURL))
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return fmt.Errorf("provider %q: base_url must be an absolute http(s) URL", id)
+			}
 		}
 	}
 
@@ -144,8 +156,11 @@ func ValidateConfig(cfg *contract.Config) error {
 		}
 	}
 
-	// Validate that all tiers reference existing providers, valid when variables, and valid thought_slap overrides
+	// Validate that all tiers declare a model, reference existing providers, valid when variables, and valid thought_slap overrides
 	for _, tier := range cfg.Tiers {
+		if strings.TrimSpace(tier.Model) == "" {
+			return fmt.Errorf("config error: tier '%s' is missing required 'model'", tier.Name)
+		}
 		if tier.When != "" {
 			if strings.Contains(tier.When, "SessionKickstarted") {
 				return fmt.Errorf("config error: tier '%s' when expression uses removed DSL variable 'SessionKickstarted'; rename to 'SessionReadSlapped'. See CHANGELOG v1.5", tier.Name)
@@ -169,6 +184,15 @@ func ValidateConfig(cfg *contract.Config) error {
 			if _, exists := cfg.Providers[tier.Provider]; !exists {
 				return fmt.Errorf("config error: tier '%s' references unknown provider '%s'", tier.Name, tier.Provider)
 			}
+		}
+	}
+
+	if cfg.DefaultTier.Name != "" || cfg.DefaultTier.Provider != "" || cfg.DefaultTier.Model != "" {
+		if strings.TrimSpace(cfg.DefaultTier.Model) == "" {
+			if cfg.DefaultTier.Name != "" {
+				return fmt.Errorf("config error: default_tier '%s' is missing required 'model'", cfg.DefaultTier.Name)
+			}
+			return fmt.Errorf("config error: default_tier is missing required 'model'")
 		}
 	}
 

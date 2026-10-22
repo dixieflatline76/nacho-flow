@@ -14,13 +14,14 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
 
 // GenerateCatalog pulls OpenRouter models, blends verified Artificial Analysis ratings, and generates catalog JSON.
 func GenerateCatalog(ctx context.Context, apiURL, version string) (*curation.CuratedCatalog, error) {
 	if apiURL == "" {
-		apiURL = fmt.Sprintf("%s%s", contract.OpenRouterProduction, contract.OpenRouterModelsPath)
+		apiURL = fmt.Sprintf("%s%s", provider.DefaultOpenRouterBaseURL, contract.OpenRouterModelsPath)
 	}
 	if version == "" {
 		version = contract.DefaultCatalogVersion
@@ -187,12 +188,10 @@ func run(args []string, apiURL string) error {
 			var existingCatalog curation.CuratedCatalog
 			if jsonErr := json.Unmarshal(existingData, &existingCatalog); jsonErr == nil {
 				for id, existingProfile := range existingCatalog.Models {
-					if _, exists := catalog.Models[id]; !exists {
+					if p, exists := catalog.Models[id]; exists {
+						catalog.Models[id] = existingProfile.MergeDynamicOverlay(p)
+					} else {
 						catalog.Models[id] = existingProfile
-					} else if len(existingProfile.Aliases) > 0 && len(catalog.Models[id].Aliases) == 0 {
-						p := catalog.Models[id]
-						p.Aliases = existingProfile.Aliases
-						catalog.Models[id] = p
 					}
 				}
 			}

@@ -63,7 +63,6 @@ const (
 const (
 	ProviderOpenRouter   = "openrouter"
 	ProviderOllama       = "ollama"
-	OpenRouterProduction = "https://openrouter.ai"
 	OpenRouterModelsPath = "/api/v1/models"
 )
 

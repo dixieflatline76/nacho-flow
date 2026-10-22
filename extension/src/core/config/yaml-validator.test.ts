@@ -9,10 +9,11 @@ port: 8000
 providers:
   llamacpp_local:
     base_url: "http://127.0.0.1:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
   openrouter_cloud:
     base_url: "https://openrouter.ai/api/v1"
-    type: "cloud"
+    type: "openrouter"
 
 kickstart:
   thought_slap:
@@ -35,6 +36,7 @@ tiers:
 default_tier:
   name: "Default Catch-All"
   provider: openrouter_cloud
+  model: "z-ai/glm-5.3-flash"
 `;
 
     const issues = validateNachoConfigYaml(validYaml);
@@ -79,7 +81,7 @@ providers:
     const issues = validateNachoConfigYaml(invalidType);
     const issue = issues.find((i) => i.ruleId === 'INVALID_PROVIDER_TYPE');
     expect(issue).toBeDefined();
-    expect(issue?.message).toContain('unsupported_type');
+    expect(issue?.message).toBe('provider "my_prov": type is required and must be one of openai_compatible, anthropic, openrouter');
     expect(issue?.quickFixes?.length).toBeGreaterThan(0);
   });
 
@@ -87,10 +89,11 @@ providers:
     const missingBase = `
 providers:
   my_prov:
-    type: "local"
+    type: "openai_compatible"
 `;
     const issues = validateNachoConfigYaml(missingBase);
     expect(issues.some((i) => i.ruleId === 'MISSING_BASE_URL')).toBe(true);
+    expect(issues.find((i) => i.ruleId === 'MISSING_BASE_URL')?.message).toBe('provider "my_prov": base_url is required for type openai_compatible');
   });
 
   it('should flag unknown provider references in tiers, default_tier, and fairy_dust', () => {
@@ -98,7 +101,8 @@ providers:
 providers:
   llamacpp:
     base_url: "http://localhost:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "Tier 1"
@@ -128,7 +132,8 @@ fairy_dust:
 providers:
   llamacpp:
     base_url: "http://localhost:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 kickstart:
   thought_slap:
@@ -150,7 +155,8 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://localhost:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 kickstart:
   enabled: true
@@ -173,7 +179,8 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://localhost:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "Tier 1"
@@ -246,19 +253,23 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://localhost:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "Tier 1: Complex Expression"
     provider: llamacpp
+    model: "qwen-32b"
     when: "!any(Keywords, { # in ['debug', 'refactor'] }) && ClientID == 'cline'"
 
   - name: "Tier 2: Thought Slap & Cooling Down"
     provider: llamacpp
+    model: "qwen-32b"
     when: "SessionThoughtSlapCount > 0 && !IsModelCoolingDown(\\"qwen-32b\\")"
 
   - name: "Tier 3: Tools & Context"
     provider: llamacpp
+    model: "qwen-32b"
     when: "InteractiveTool in ['write_to_file', 'replace_file_content'] && CycleBreakerReason != ''"
 `;
     const issues = validateNachoConfigYaml(autoTunerYaml);
@@ -271,7 +282,8 @@ tiers:
 providers:
   llamacpp:
     base_url: "http://localhost:8080/v1"
-    type: "local"
+    type: "openai_compatible"
+    local: true
 
 tiers:
   - name: "Tier Test"
@@ -297,7 +309,8 @@ tiers:
       'providers: # top-level providers comment',
       '\tllamacpp:',
       '    base_url: "http://localhost:8080/v1"',
-      '    type: "local"',
+      '    type: "openai_compatible"',
+      '    local: true',
       'tiers:',
       '  - name: "Tier 1"',
       '    provider: llamacpp',
@@ -313,6 +326,137 @@ tiers:
     expect(tabIssue).toBeDefined();
     expect(tabIssue?.quickFixes?.[0].replacement.endsWith('\r')).toBe(false);
     expect(tabIssue?.quickFixes?.[0].range.endCharacter).toBe('  llamacpp:'.length - 1);
+  });
+
+  describe('Provider Taxonomy & Validation Table (§1.3)', () => {
+    it('flags type: local with exact removed message', () => {
+      const yaml = `
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    type: "local"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'REMOVED_PROVIDER_TYPE');
+      expect(issue).toBeDefined();
+      expect(issue?.message).toBe('provider "ollama": type "local" was removed; use type: openai_compatible with local: true');
+    });
+
+    it('flags type: cloud with exact removed message', () => {
+      const yaml = `
+providers:
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    type: "cloud"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'REMOVED_PROVIDER_TYPE');
+      expect(issue).toBeDefined();
+      expect(issue?.message).toBe('provider "openrouter": type "cloud" was removed; use type: openai_compatible, or type: openrouter for OpenRouter');
+    });
+
+    it('flags missing type with exact message', () => {
+      const yaml = `
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'INVALID_PROVIDER_TYPE');
+      expect(issue).toBeDefined();
+      expect(issue?.message).toBe('provider "ollama": type is required and must be one of openai_compatible, anthropic, openrouter');
+    });
+
+    it('flags openai_compatible without base_url with exact message', () => {
+      const yaml = `
+providers:
+  ollama:
+    type: "openai_compatible"
+    local: true
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'MISSING_BASE_URL');
+      expect(issue).toBeDefined();
+      expect(issue?.message).toBe('provider "ollama": base_url is required for type openai_compatible');
+    });
+
+    it('flags local: true on anthropic with exact message', () => {
+      const yaml = `
+providers:
+  claude:
+    type: "anthropic"
+    local: true
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'INVALID_PROVIDER_LOCAL');
+      expect(issue).toBeDefined();
+      expect(issue?.message).toBe('provider "claude": local is only valid for type openai_compatible');
+    });
+
+    it('flags local: true on openrouter with exact message', () => {
+      const yaml = `
+providers:
+  or:
+    type: "openrouter"
+    local: true
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'INVALID_PROVIDER_LOCAL');
+      expect(issue).toBeDefined();
+      expect(issue?.message).toBe('provider "or": local is only valid for type openai_compatible');
+    });
+
+    it('flags base_url when not absolute http(s) URL with exact message', () => {
+      const yaml = `
+providers:
+  my_prov:
+    type: "openai_compatible"
+    base_url: "not-a-valid-url"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'INVALID_BASE_URL');
+      expect(issue).toBeDefined();
+      expect(issue?.message).toBe('provider "my_prov": base_url must be an absolute http(s) URL');
+    });
+
+    it('allows openrouter and anthropic without base_url', () => {
+      const yaml = `
+providers:
+  or:
+    type: "openrouter"
+    api_key: "sk-or-test"
+  claude:
+    type: "anthropic"
+    api_key: "sk-ant-test"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const errors = issues.filter((i) => i.severity === 'Error');
+      expect(errors).toHaveLength(0);
+    });
+
+    it('flags missing or empty model on tiers and default_tier as MISSING_TIER_MODEL', () => {
+      const yaml = `
+providers:
+  or:
+    type: "openrouter"
+
+tiers:
+  - name: "Tier 1"
+    provider: "or"
+    model: ""
+    when: "true"
+
+default_tier:
+  name: "Fallback"
+  provider: "or"
+  model: ""
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const modelIssues = issues.filter((i) => i.ruleId === 'MISSING_TIER_MODEL');
+      expect(modelIssues).toHaveLength(2);
+      expect(modelIssues[0].message).toBe("tier 'Tier 1' is missing required 'model'");
+      expect(modelIssues[1].message).toBe("default_tier 'Fallback' is missing required 'model'");
+    });
   });
 });
 

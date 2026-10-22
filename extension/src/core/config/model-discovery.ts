@@ -21,14 +21,18 @@ export const ANTHROPIC_STANDARD_MODELS = [
 	'claude-sonnet-5-5',
 	'claude-opus-5-5',
 	'claude-fable-5-1',
+	'claude-fable-5',
+	'claude-sonnet-5',
+	'claude-opus-5',
+	'claude-opus-4-8',
+	'claude-opus-4-7',
 	'claude-sonnet-4-6',
 	'claude-opus-4-6',
-	'claude-sonnet-4-5-20250929',
-	'claude-haiku-4-5-20251001',
-	'claude-3-7-sonnet-20250219',
-	'claude-3-5-sonnet-20241022',
-	'claude-3-5-haiku-20241022',
-	'claude-3-opus-20240229'
+	'claude-sonnet-4-5',
+	'claude-opus-4-5',
+	'claude-haiku-4-5',
+	'claude-opus-4-1',
+	'claude-sonnet-4-0'
 ];
 
 const DEFAULT_TIMEOUT_MS = 1500;
@@ -46,6 +50,23 @@ const discoveryCache = new Map<string, CacheEntry>();
  */
 export function clearModelDiscoveryCache(): void {
 	discoveryCache.clear();
+}
+
+/**
+ * Resolves the effective base URL for a provider symbol definition,
+ * applying platform defaults when base_url is omitted.
+ */
+export function resolveEffectiveBaseUrl(provDef?: { baseUrl?: string; type?: string }): string {
+	if (provDef?.baseUrl && provDef.baseUrl.trim()) {
+		return provDef.baseUrl.trim();
+	}
+	if (provDef?.type === 'openrouter') {
+		return 'https://openrouter.ai/api/v1';
+	}
+	if (provDef?.type === 'anthropic') {
+		return 'https://api.anthropic.com';
+	}
+	return '';
 }
 
 interface RawHttpResponse {

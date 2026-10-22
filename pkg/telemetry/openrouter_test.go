@@ -129,7 +129,7 @@ func TestOpenRouterPricingProvider_ErrorsAndEdgeCases(t *testing.T) {
 	}
 
 	// 2. Name & Default constructor
-	defaultProvider := NewOpenRouterPricingProvider("test-key")
+	defaultProvider := NewOpenRouterPricingProviderWithURL("https://openrouter.ai/api/v1", "test-key")
 	if defaultProvider.Name() != "openrouter" {
 		t.Errorf("Expected Name 'openrouter', got '%s'", defaultProvider.Name())
 	}

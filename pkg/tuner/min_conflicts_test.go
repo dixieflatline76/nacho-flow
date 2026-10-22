@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dixieflatline76/nacho-flow/pkg/contract"
+	"github.com/dixieflatline76/nacho-flow/pkg/provider"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry"
 	"github.com/dixieflatline76/nacho-flow/pkg/telemetry/curation"
 )
@@ -72,8 +73,8 @@ func TestMinConflicts_Convergence(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -149,8 +150,8 @@ func TestMinConflicts_RealLifeTraffic(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -243,8 +244,8 @@ func TestDisabledTierImmunity_PreservesFalse(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -315,8 +316,8 @@ func TestZeroTrafficTier_PreservesOriginalRule(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -363,7 +364,7 @@ func TestModelBenchmarkIntegration_AndDualPricing(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -447,8 +448,8 @@ func TestOptimalRouting_NoChangeRecommendedWhenAlreadyOptimal(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -510,7 +511,7 @@ func TestMinConflicts_ModelSubstitution_OverpricedTier(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -574,7 +575,7 @@ func TestMinConflicts_ModelSubstitution_UnderperformingTier(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -629,8 +630,8 @@ func TestMinConflicts_LocalVRAM_Budgeting(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -789,8 +790,8 @@ func TestMinConflicts_MultiTierCascade_LocalContextCliff(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -874,7 +875,7 @@ func TestMinConflicts_EscalationAntiDuplication(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -936,7 +937,7 @@ func TestMinConflicts_DefaultTier_RestoresFlashWithoutPriceSpike(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -1097,8 +1098,8 @@ func TestMinConflicts_AlreadyOptimalConfig(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
@@ -1218,8 +1219,8 @@ func TestMinConflicts_AllRepairBranches(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -1265,8 +1266,8 @@ func TestMinConflicts_RepairRetries(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "google/gemini-3.8-flash", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(policy)
@@ -1297,7 +1298,7 @@ func TestMinConflicts_RepairDefaultTierModel(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "deepseek/deepseek-v4-pro", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(policy)
@@ -1328,7 +1329,7 @@ func TestMinConflicts_RepairCloudModel(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "google/gemini-3.8-flash", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(policy)
@@ -1362,8 +1363,8 @@ func TestMinConflicts_RepairTools(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "google/gemini-3.8-flash", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(policy)
@@ -1403,8 +1404,8 @@ func TestMinConflicts_RepairImages(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "google/gemini-3.8-flash", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(policy)
@@ -1445,8 +1446,8 @@ func TestMinConflicts_RepairKeywords(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "google/gemini-3.8-flash", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(policy)
@@ -1504,7 +1505,7 @@ func TestMinConflicts_LegacySessionFallback(t *testing.T) {
 			When: "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {Type: contract.ProviderTypeLocal},
+			"ollama": {Type: provider.TypeOpenAICompatible, Local: true},
 		},
 	}
 	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
@@ -1545,8 +1546,8 @@ func TestMinConflicts_MoreThan8Keywords(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "google/gemini-3.8-flash", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(policy)
@@ -1571,8 +1572,8 @@ func TestMinConflicts_EmptyRecords_InvalidAST(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "google/gemini-3.8-flash", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
@@ -1609,8 +1610,8 @@ func TestMinConflicts_TierASTParseErrorOnFinalSynthesis(t *testing.T) {
 		},
 		DefaultTier: contract.Tier{Name: "Def", Provider: "openrouter", Model: "google/gemini-3.8-flash", When: "true"},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama":     {Type: contract.ProviderTypeLocal},
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"ollama":     {Type: provider.TypeOpenAICompatible, Local: true},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(DefaultTuningPolicy())
@@ -1651,7 +1652,7 @@ func TestMinConflicts_DefaultTier_FrontierAndLocalProtection(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 	opt := NewMinConflictsOptimizer(policy)
@@ -1684,7 +1685,7 @@ func TestMinConflicts_DefaultTier_FrontierAndLocalProtection(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"ollama": {Type: contract.ProviderTypeLocal},
+			"ollama": {Type: provider.TypeOpenAICompatible, Local: true},
 		},
 	}
 	_, _ = opt.Optimize(recordsLocal, cfgLocal)
@@ -1781,7 +1782,7 @@ func TestMinConflicts_AutonomousTierPruning(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -1892,7 +1893,7 @@ func TestMinConflicts_LoosensRetryForReadBursts(t *testing.T) {
 			When:     "true",
 		},
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 	}
 
@@ -1951,7 +1952,7 @@ func TestMinConflicts_ReasoningEscalationRepair_DefaultTier(t *testing.T) {
 		Providers: map[string]contract.ProviderConfig{
 			"llama_cluster": {
 				BaseURL: "http://127.0.0.1:8080/v1",
-				Type:    contract.ProviderTypeLocal,
+				Type:    provider.TypeOpenAICompatible, Local: true,
 			},
 		},
 		Tiers: []contract.Tier{
@@ -2049,7 +2050,7 @@ func TestMinConflicts_ProviderScopedModelSubstitution(t *testing.T) {
 	// Scenario A: provider: "openrouter"
 	cfgOpenRouter := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {BaseURL: "https://openrouter.ai/api/v1", Type: contract.ProviderTypeCloud},
+			"openrouter": {BaseURL: "https://openrouter.ai/api/v1", Type: provider.TypeOpenRouter},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -2080,7 +2081,7 @@ func TestMinConflicts_ProviderScopedModelSubstitution(t *testing.T) {
 	// Scenario B: provider: "anthropic"
 	cfgAnthropic := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"anthropic": {BaseURL: "https://api.anthropic.com", Type: contract.ProviderTypeAnthropic},
+			"anthropic": {BaseURL: "https://api.anthropic.com", Type: provider.TypeAnthropic},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -2123,7 +2124,7 @@ func TestMinConflicts_ReasoningEscalation_PrefersSameModelOverSwap(t *testing.T)
 
 	cfg := &contract.Config{
 		Providers: map[string]contract.ProviderConfig{
-			"openrouter": {Type: contract.ProviderTypeCloud},
+			"openrouter": {Type: provider.TypeOpenRouter},
 		},
 		Tiers: []contract.Tier{
 			{
@@ -2199,3 +2200,161 @@ func TestMinConflicts_ReasoningEscalation_PrefersSameModelOverSwap(t *testing.T)
 	}
 }
 
+func TestMinConflicts_Profile3_KickoffAndHaikuWorkhorsePreserved(t *testing.T) {
+	policy := DefaultTuningPolicy()
+	policy.MinOccurrences = 2
+	opt := NewMinConflictsOptimizer(policy)
+
+	cfg := &contract.Config{
+		Providers: map[string]contract.ProviderConfig{
+			"anthropic": {
+				Type: provider.TypeAnthropic,
+			},
+		},
+		Kickstart: contract.KickstartConfig{
+			ReadSlap: contract.ReadSlapConfig{
+				WriteOnly: true,
+			},
+		},
+		Tiers: []contract.Tier{
+			{
+				Name:            "Turn 0 Architecture Kickoff (Claude Sonnet 5.5)",
+				Provider:        "anthropic",
+				Model:           "claude-sonnet-5-5",
+				ReasoningEffort: "medium",
+				When:            "MessageCount <= 6",
+			},
+			{
+				Name:            "Tier 1: Haiku 5.5 (low reasoning)",
+				Provider:        "anthropic",
+				Model:           "claude-haiku-5-5",
+				ReasoningEffort: "low",
+				When:            "Retries < 2 && !HasTestFail",
+			},
+			{
+				Name:            "Tier 1: Haiku 5.5 (medium reasoning)",
+				Provider:        "anthropic",
+				Model:           "claude-haiku-5-5",
+				ReasoningEffort: "medium",
+				When:            "Retries < 4 && !HasTestFail",
+			},
+			{
+				Name:            "Tier 2: Claude Sonnet 5.5 (Escalation)",
+				Provider:        "anthropic",
+				Model:           "claude-sonnet-5-5",
+				ReasoningEffort: "medium",
+				When:            "Retries < 6",
+			},
+			{
+				Name:            "Tier 3: Claude Sonnet 5.5 (High Reasoning Escalation)",
+				Provider:        "anthropic",
+				Model:           "claude-sonnet-5-5",
+				ReasoningEffort: "high",
+				When:            "Retries >= 6",
+			},
+			{
+				Name:            "Tier 4: Claude Opus 5.5 (Nuclear Option)",
+				Provider:        "anthropic",
+				Model:           "claude-opus-5-5",
+				ReasoningEffort: "medium",
+				When:            "false",
+			},
+		},
+		DefaultTier: contract.Tier{
+			Name:            "Default: Claude Sonnet 5.5",
+			Provider:        "anthropic",
+			Model:           "claude-sonnet-5-5",
+			ReasoningEffort: "medium",
+			When:            "true",
+		},
+	}
+
+	now := time.Now().UTC()
+	var records []telemetry.TurnRecord
+
+	// Include some historical local retry turns with stopwords ("below", "content") and domain word ("kubernetes")
+	// to verify neither stopwords nor domain keywords pollute Profile 3's cloud/kickoff tiers.
+	for i := 0; i < 10; i++ {
+		records = append(records, telemetry.TurnRecord{
+			Timestamp:      now.Add(time.Duration(i) * time.Second),
+			SessionID:      fmt.Sprintf("local-hist-%d", i),
+			Tokens:         4000,
+			IsLocal:        true,
+			IsRetry:        true,
+			Keywords:       []string{"below", "content", "kubernetes"},
+			RootPromptHash: uint64(5000 + i),
+		})
+	}
+
+	// Simulate 5 multi-turn Profile 3 sessions (Kickoff turns 1..3, Haiku turns 4..10 with occasional retries)
+	for s := 1; s <= 5; s++ {
+		sessID := fmt.Sprintf("p3-sess-%d", s)
+		for turnIdx := 0; turnIdx < 10; turnIdx++ {
+			msgCount := (turnIdx + 1) * 2
+			isRetry := turnIdx == 1 || turnIdx == 5 || turnIdx == 6
+			hasWrite := !isRetry && turnIdx >= 2
+			records = append(records, telemetry.TurnRecord{
+				Timestamp:        now.Add(time.Duration(s*100+turnIdx) * time.Second),
+				SessionID:        sessID,
+				Tokens:           10000 + turnIdx*5000,
+				MessageCount:     msgCount,
+				IsLocal:          false,
+				IsRetry:          isRetry,
+				HasTools:         true,
+				HasWriteProgress: hasWrite,
+				Keywords:         []string{"below", "content", "kubernetes"},
+				RootPromptHash:   uint64(6000 + s),
+				CostSpentUSD:     0.02,
+			})
+		}
+	}
+
+	res, err := opt.Optimize(records, cfg)
+	if err != nil {
+		t.Fatalf("Optimize failed: %v", err)
+	}
+
+	// 1. Turn 0 Kickoff must preserve "MessageCount <= 6" with zero Retries or Keywords injected
+	if res.Tiers[0].SynthesizedRule != "MessageCount <= 6" {
+		t.Errorf("Expected Turn 0 Kickoff rule to remain 'MessageCount <= 6', got %q", res.Tiers[0].SynthesizedRule)
+	}
+	if res.Tiers[0].IsDisabled {
+		t.Errorf("Turn 0 Kickoff must not be disabled")
+	}
+
+	// 2. Haiku workhorse tiers (index 1 and 2) must NOT be pruned or have keywords injected
+	for _, idx := range []int{1, 2} {
+		tRes := res.Tiers[idx]
+		if tRes.IsDisabled || tRes.SynthesizedRule == "false" {
+			t.Errorf("Expected %q (tier %d) to be preserved, but it was pruned: rule=%q benefit=%q",
+				tRes.TierName, idx, tRes.SynthesizedRule, tRes.ModelBenefit)
+		}
+		if strings.Contains(tRes.SynthesizedRule, "Keywords") {
+			t.Errorf("Expected no keyword exclusions on cloud tier %q, got %q", tRes.TierName, tRes.SynthesizedRule)
+		}
+	}
+
+	// 3. Also verify single-workhorse Profile 3 layout (Turn 0 Sonnet -> Single Haiku Workhorse -> Sonnet Escalation)
+	singleHaikuCfg := *cfg
+	singleHaikuCfg.Tiers = []contract.Tier{
+		cfg.Tiers[0], // Turn 0 Architecture Kickoff (Claude Sonnet 5.5)
+		{
+			Name:     "Tier 1: Claude Haiku 5.5 (Workhorse)",
+			Provider: "anthropic",
+			Model:    "claude-haiku-5-5",
+			When:     "Retries < 2 && !HasTestFail",
+		},
+		cfg.Tiers[3], // Tier 2: Claude Sonnet 5.5 (Escalation)
+		cfg.Tiers[4], // Tier 3: Claude Sonnet 5.5 (High Reasoning Escalation)
+	}
+	resSingle, err := opt.Optimize(records, &singleHaikuCfg)
+	if err != nil {
+		t.Fatalf("Optimize single-Haiku failed: %v", err)
+	}
+	if resSingle.Tiers[1].IsDisabled || resSingle.Tiers[1].SynthesizedRule == "false" {
+		t.Errorf("Expected single Haiku workhorse tier to be preserved after Turn 0 Kickoff, got pruned: %+v", resSingle.Tiers[1])
+	}
+	if strings.Contains(resSingle.Tiers[1].SynthesizedRule, "Keywords") {
+		t.Errorf("Expected no keyword exclusions on single Haiku workhorse tier, got %q", resSingle.Tiers[1].SynthesizedRule)
+	}
+}
