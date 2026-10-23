@@ -36,6 +36,7 @@ export class ExtensionController {
 	private _forceDebounceInTest: boolean = false;
 	private _testSaveDebounceMs?: number;
 	private diagnosticCollection?: vscode.DiagnosticCollection;
+	private isSavingBeforeEngineStart = false;
 
 	private getSaveDebounceMs(): number {
 		if (this._testSaveDebounceMs !== undefined) {
@@ -91,7 +92,11 @@ export class ExtensionController {
 
 		// Create Output Channel for live engine logs
 		this.outputChannel = vscode.window.createOutputChannel('Nacho Flow Model Dispatcher');
-		if (!this.processManager) {
+		if (this.processManager) {
+			if (typeof this.processManager.setOutputChannel === 'function') {
+				this.processManager.setOutputChannel(this.outputChannel);
+			}
+		} else {
 			this.processManager = new ProcessManager(this.context.extensionUri, this.outputChannel, this.context.globalStorageUri);
 		}
 
@@ -211,6 +216,12 @@ export class ExtensionController {
 								this.diagnosticCollection.set(doc.uri, diagnostics);
 							}
 
+							// When saved explicitly before an engine launch/restart, update diagnostics
+							// but suppress the duplicate restart scheduled from onDidSaveTextDocument
+							if (this.isSavingBeforeEngineStart) {
+								return;
+							}
+
 							if (hasValidationErrors) {
 								const errCount = validationIssues.filter((i) => i.severity === 'Error').length;
 								this.outputChannel?.appendLine(
@@ -240,7 +251,7 @@ export class ExtensionController {
 					};
 
 					const debounceMs = this.getSaveDebounceMs();
-					if (debounceMs === 0) {
+					if (debounceMs === 0 || this.isSavingBeforeEngineStart) {
 						await executeConfigSave();
 					} else {
 						if (this.saveDebounceTimer) {
@@ -431,6 +442,7 @@ export class ExtensionController {
 						}
 						this.showTransientToast('▶️ Nacho Flow: Starting Model Dispatcher...');
 						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+						await this.ensureActiveConfigSaved(profileUri);
 						const configPath = profileUri.fsPath;
 						const result = await this.processManager.start(daemonUrl, configPath);
 						if (result.success) {
@@ -459,6 +471,7 @@ export class ExtensionController {
 						}
 						this.showTransientToast('🔄 Nacho Flow: Restarting Model Dispatcher...');
 						const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+						await this.ensureActiveConfigSaved(profileUri);
 						const configPath = profileUri.fsPath;
 						const result = await this.processManager.restart(daemonUrl, configPath);
 						if (result.success) {
@@ -653,13 +666,52 @@ export class ExtensionController {
 			return;
 		}
 		const { uri: profileUri } = await this.resolveProfileUri(this.activeProfile);
+		await this.ensureActiveConfigSaved(profileUri);
 		const configPath = profileUri.fsPath;
 		this.outputChannel?.appendLine(`[Controller] Auto-resuming local engine with profile '${this.activeProfile}' at ${configPath}`);
 		const result = await this.processManager.start(daemonUrl, configPath);
 		// Note: isLocalEngineRunning is already true (precondition checked above); no need to re-persist on success.
 		if (!result.success && result.error) {
 			this.outputChannel?.appendLine(`[Controller] Auto-resume failed: ${result.error}`);
+			await this.handleEngineStartError(result);
+			await this.syncSidebarState();
 		}
+	}
+
+	public async ensureActiveConfigSaved(profileUri: vscode.Uri): Promise<boolean> {
+		const targetPath = profileUri?.fsPath?.toLowerCase();
+		if (!targetPath) return true;
+
+		// Cancel any pending debounced save-restart timer before starting or restarting the engine
+		if (this.saveDebounceTimer) {
+			clearTimeout(this.saveDebounceTimer);
+			this.saveDebounceTimer = null;
+			this.pendingSaveDocUri = null;
+		}
+
+		const openDoc = vscode.workspace.textDocuments?.find(
+			(d) =>
+				d?.isDirty &&
+				(d.uri.fsPath.toLowerCase() === targetPath ||
+					(this.activeConfigDocUri && d.uri.toString() === this.activeConfigDocUri.toString()))
+		);
+		if (openDoc) {
+			this.isSavingBeforeEngineStart = true;
+			try {
+				this.outputChannel?.appendLine(
+					`[Controller] Saving unsaved changes in ${path.basename(openDoc.fileName)} before engine start...`
+				);
+				return await openDoc.save();
+			} finally {
+				if (this.saveDebounceTimer) {
+					clearTimeout(this.saveDebounceTimer);
+					this.saveDebounceTimer = null;
+					this.pendingSaveDocUri = null;
+				}
+				this.isSavingBeforeEngineStart = false;
+			}
+		}
+		return true;
 	}
 
 	public async syncSidebarState(): Promise<void> {

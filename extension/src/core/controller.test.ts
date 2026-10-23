@@ -3794,5 +3794,215 @@ tiers:
       extensionController.dispose();
       expect(mockCollection.dispose).toHaveBeenCalled();
     });
+
+    it('should wire live outputChannel to real processManager instance in initialize', async () => {
+      const freshController = new ExtensionController(mockContext);
+      const preInitChannel = (freshController as any).processManager.outputChannel;
+      expect(preInitChannel).toBeDefined();
+
+      await freshController.initialize();
+
+      const liveChannel = (freshController as any).processManager.outputChannel;
+      expect(liveChannel).toBe((freshController as any).outputChannel);
+      expect(liveChannel).not.toBe(preInitChannel);
+    });
+
+    it('should save dirty config document before engine start in ensureActiveConfigSaved', async () => {
+      const saveSpy = jest.fn().mockResolvedValue(true);
+      const dirtyDoc = {
+        uri: { fsPath: '/test/profile1.yaml', toString: () => 'file:///test/profile1.yaml' },
+        fileName: '/test/profile1.yaml',
+        isDirty: true,
+        save: saveSpy
+      };
+      (vscode.workspace as any).textDocuments = [dirtyDoc];
+
+      const profileUri: any = { fsPath: '/test/profile1.yaml' };
+      const saved = await (extensionController as any).ensureActiveConfigSaved(profileUri);
+
+      expect(saved).toBe(true);
+      expect(saveSpy).toHaveBeenCalled();
+      delete (vscode.workspace as any).textDocuments;
+    });
+
+    it('should safely handle unmocked textDocuments in ensureActiveConfigSaved', async () => {
+      delete (vscode.workspace as any).textDocuments;
+      const profileUri: any = { fsPath: '/test/profile1.yaml' };
+      const saved = await (extensionController as any).ensureActiveConfigSaved(profileUri);
+      expect(saved).toBe(true);
+    });
+
+    it('should surface startup error to user in resumeLocalEngine', async () => {
+      const handleErrSpy = jest.spyOn(extensionController as any, 'handleEngineStartError').mockResolvedValue(undefined);
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(false),
+        isLocalUrl: jest.fn().mockReturnValue(true),
+        start: jest.fn().mockResolvedValue({
+          success: false,
+          error: 'Configuration error: invalid provider',
+          parsedError: { type: 'CONFIG_ERROR', message: 'Configuration error: invalid provider', rawError: '' }
+        })
+      };
+      (extensionController as any).authManager = {
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000')
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+
+      await (extensionController as any).resumeLocalEngine();
+
+      expect(handleErrSpy).toHaveBeenCalledWith(expect.objectContaining({
+        success: false,
+        error: 'Configuration error: invalid provider'
+      }));
+    });
+
+    it('should immediately run executeConfigSave and update diagnostics without duplicate restart when isSavingBeforeEngineStart is true', async () => {
+      await extensionController.initialize();
+      (extensionController as any)._testSaveDebounceMs = 500;
+      (extensionController as any).isSavingBeforeEngineStart = true;
+
+      const mockCollection = { set: jest.fn(), delete: jest.fn(), dispose: jest.fn() };
+      (extensionController as any).diagnosticCollection = mockCollection;
+      (extensionController as any).activeProfile = 'profile1';
+
+      const restartSpy = jest.fn();
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        restart: restartSpy
+      };
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000')
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+
+      const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+
+      const doc = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => 'file:///test/profile1.yaml' },
+        getText: () => 'version: "1.1.0"\nproviders:\n  p1:\n    type: local\n    base_url: http://localhost:11434\n'
+      };
+
+      await lastSaveListener(doc);
+
+      // Verify diagnostics set immediately
+      expect(mockCollection.set).toHaveBeenCalledWith(doc.uri, expect.any(Array));
+      // Verify duplicate restart was suppressed
+      expect(restartSpy).not.toHaveBeenCalled();
+      // Verify no debounce timer was armed
+      expect((extensionController as any).saveDebounceTimer).toBeNull();
+    });
+
+    it('should save dirty config document, update diagnostics synchronously, and restart engine once from sidebar restartEngine message', async () => {
+      await extensionController.initialize();
+      (extensionController as any)._testSaveDebounceMs = 500;
+
+      const mockCollection = { set: jest.fn(), delete: jest.fn(), dispose: jest.fn() };
+      (extensionController as any).diagnosticCollection = mockCollection;
+      (extensionController as any).activeProfile = 'profile1';
+
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        isLocalUrl: jest.fn().mockReturnValue(true),
+        restart: restartSpy
+      };
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(''),
+        setLocalEngineRunning: jest.fn().mockResolvedValue(undefined)
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+
+      const dirtyDoc: any = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => 'file:///test/profile1.yaml' },
+        isDirty: true,
+        getText: () => 'version: "1.1.0"\nproviders:\n  p1:\n    type: local\n    base_url: http://localhost:11434\n',
+        save: jest.fn()
+      };
+      dirtyDoc.save.mockImplementation(async () => {
+        dirtyDoc.isDirty = false;
+        const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+        const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+        await lastSaveListener(dirtyDoc);
+        return true;
+      });
+      (vscode.workspace as any).textDocuments = [dirtyDoc];
+
+      const onMessage = (SidebarViewProvider as any).getLastMessageCallback();
+      await onMessage({ command: 'restartEngine' });
+
+      expect(dirtyDoc.save).toHaveBeenCalled();
+      expect(mockCollection.set).toHaveBeenCalledWith(dirtyDoc.uri, expect.any(Array));
+      expect(restartSpy).toHaveBeenCalledTimes(1);
+      expect((extensionController as any).saveDebounceTimer).toBeNull();
+
+      delete (vscode.workspace as any).textDocuments;
+    });
+
+    it('should cancel active saveDebounceTimer when manual restartEngine message is received from sidebar', async () => {
+      await extensionController.initialize();
+      (extensionController as any)._testSaveDebounceMs = 500;
+
+      const restartSpy = jest.fn().mockResolvedValue({ success: true });
+      (extensionController as any).processManager = {
+        isRunning: jest.fn().mockReturnValue(true),
+        isLocalUrl: jest.fn().mockReturnValue(true),
+        restart: restartSpy
+      };
+      (extensionController as any).authManager = {
+        getEngineMode: jest.fn().mockReturnValue('local'),
+        isLocalEngineRunning: jest.fn().mockReturnValue(true),
+        getBaseUrl: jest.fn().mockResolvedValue('http://127.0.0.1:8000'),
+        getAuthToken: jest.fn().mockResolvedValue(''),
+        setLocalEngineRunning: jest.fn().mockResolvedValue(undefined)
+      };
+      (extensionController as any).resolveProfileUri = jest.fn().mockResolvedValue({
+        uri: { fsPath: '/test/profile1.yaml' }
+      });
+      (extensionController as any).initializeClients = jest.fn().mockResolvedValue(undefined);
+      (extensionController as any).syncSidebarState = jest.fn().mockResolvedValue(undefined);
+
+      const savedDoc = {
+        fileName: '/test/profile1.yaml',
+        uri: { fsPath: '/test/profile1.yaml', toString: () => 'file:///test/profile1.yaml' },
+        isDirty: false,
+        getText: () => 'version: "1.1.0"\nproviders:\n  p1:\n    type: local\n    base_url: http://localhost:11434\n'
+      };
+      (vscode.workspace as any).textDocuments = [savedDoc];
+
+      // Trigger standard save (outside engine start) so saveDebounceTimer is armed
+      const saveListeners = (vscode.workspace.onDidSaveTextDocument as jest.Mock).mock.calls;
+      const lastSaveListener = saveListeners[saveListeners.length - 1][0];
+      await lastSaveListener(savedDoc);
+
+      expect((extensionController as any).saveDebounceTimer).not.toBeNull();
+
+      // Send restartEngine message from sidebar while saveDebounceTimer is ticking
+      const onMessage = (SidebarViewProvider as any).getLastMessageCallback();
+      await onMessage({ command: 'restartEngine' });
+
+      // Verify timer was cancelled by ensureActiveConfigSaved
+      expect((extensionController as any).saveDebounceTimer).toBeNull();
+      expect(restartSpy).toHaveBeenCalledTimes(1);
+
+      delete (vscode.workspace as any).textDocuments;
+    });
   });
 });

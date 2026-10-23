@@ -47,13 +47,34 @@ export function parseStartupError(stderr: string, stdout: string = '', defaultPo
 		combined.includes('[FATAL:CONFIG_ERROR]') ||
 		combined.includes('yaml: unmarshal errors') ||
 		combined.includes('Config load error') ||
+		combined.includes('Configuration error:') ||
 		combined.includes('no providers defined in configuration')
 	) {
-		const cleaned = stderr
-			.split('\n')
-			.map((line) => line.replace(/^\[FATAL:CONFIG_ERROR\]\s*/, '').trim())
-			.filter((line) => line.length > 0 && !line.startsWith('time='))
-			.join(' ');
+		const sourceStream = stderr.trim().length > 0 ? stderr : stdout;
+
+		// Clean and deduplicate lines to extract direct errors and preserve multi-line yaml details
+		const seen = new Set<string>();
+		const cleanedLines: string[] = [];
+		for (const rawLine of sourceStream.split('\n')) {
+			const line = rawLine
+				.replace(/^\[FATAL:CONFIG_ERROR\]\s*/, '')
+				.replace(/^Configuration error:\s*/i, '')
+				.trim();
+			if (
+				line.length > 0 &&
+				!line.startsWith('time=') &&
+				!line.startsWith('🌮') &&
+				!line.includes('spicebox.dev') &&
+				!line.includes('To fix your configuration:') &&
+				!line.includes('No configuration file found') &&
+				!line.match(/^\d+\.\s+/) &&
+				!seen.has(line)
+			) {
+				seen.add(line);
+				cleanedLines.push(line);
+			}
+		}
+		const cleaned = cleanedLines.join(' ');
 		return {
 			type: 'CONFIG_ERROR',
 			message: `Configuration error in config.yaml: ${cleaned || 'Invalid YAML format or schema validation failed.'}`,
@@ -121,6 +142,10 @@ export class ProcessManager {
 		this.extensionUri = extensionUri;
 		this.outputChannel = outputChannel;
 		this.globalStorageUri = globalStorageUri;
+	}
+
+	public setOutputChannel(outputChannel: vscode.OutputChannel): void {
+		this.outputChannel = outputChannel;
 	}
 
 	/**
@@ -361,6 +386,8 @@ export class ProcessManager {
 
 				// Check if process crashed prematurely
 				if (!this.childProcess) {
+					// Wait a tiny tick to ensure any trailing stderr chunk from process exit is flushed into lastStderr
+					await new Promise((r) => setTimeout(r, 50));
 					const errorDetail = this.lastStderr.join('').trim();
 					const stdoutDetail = this.lastStdout.join('').trim();
 					const parsed = parseStartupError(errorDetail, stdoutDetail, targetPort);

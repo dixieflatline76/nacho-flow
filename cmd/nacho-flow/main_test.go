@@ -39,6 +39,21 @@ func captureStdout(f func()) string {
 	return buf.String()
 }
 
+func captureStderr(f func()) string {
+	old := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	f()
+
+	_ = w.Close()
+	os.Stderr = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	return buf.String()
+}
+
 func TestVersionOutput(t *testing.T) {
 	oldArgs := os.Args
 	defer func() {
@@ -563,12 +578,19 @@ func TestHandleServiceControl(t *testing.T) {
 func TestProgram_Run_ErrorPaths(t *testing.T) {
 	mock := &mockService{}
 
-	// 1. Missing config path in interactive mode prints help and returns nil
+	// 1. Missing config path in interactive mode prints help to stderr and returns error
 	*configPathFlag = filepath.Join(t.TempDir(), "nonexistent.yaml")
 	p := &program{}
-	out := captureStdout(func() {
-		_ = p.run(mock)
+	var runErr error
+	out := captureStderr(func() {
+		runErr = p.run(mock)
 	})
+	if runErr == nil {
+		t.Errorf("expected error for missing config path, got nil")
+	}
+	if !bytes.Contains([]byte(out), []byte("[FATAL:CONFIG_ERROR]")) {
+		t.Errorf("expected [FATAL:CONFIG_ERROR] in stderr, got: %s", out)
+	}
 	if !bytes.Contains([]byte(out), []byte("No configuration file found")) {
 		t.Errorf("expected interactive help message, got: %s", out)
 	}
@@ -630,15 +652,28 @@ tiers:
 	_ = os.WriteFile(badCfgPath, []byte(cfgContent), 0600)
 	*configPathFlag = badCfgPath
 
+	oldExit := osExit
+	var lastExitCode int
+	osExit = func(code int) {
+		lastExitCode = code
+	}
+	defer func() { osExit = oldExit }()
+
 	// 1. Test asyncRun with slog present
 	p := &program{
 		slog: slog.Default(),
 	}
 	p.asyncRun(mock)
+	if lastExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", lastExitCode)
+	}
 
 	// 2. Test asyncRun with slog nil
 	pNoLog := &program{}
 	pNoLog.asyncRun(mock)
+	if lastExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", lastExitCode)
+	}
 
 	// 3. Test Start method
 	exitCh := make(chan struct{})
@@ -1191,6 +1226,10 @@ tiers:
 	*configPathFlag = cfgPath
 	defer func() { *configPathFlag = "" }()
 
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { osExit = oldExit }()
+
 	exitCh := make(chan struct{})
 	p := &program{
 		onExit: exitCh,
@@ -1205,6 +1244,38 @@ tiers:
 		// Succeeded in completing asyncRun with nil slog
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for asyncRun to exit")
+	}
+}
+
+func TestProgram_ConfigError_WritesToRouterLog(t *testing.T) {
+	tempLogDir := t.TempDir()
+	*logDirFlag = tempLogDir
+	defer func() { *logDirFlag = "" }()
+
+	*configPathFlag = filepath.Join(tempLogDir, "missing_config.yaml")
+	defer func() { *configPathFlag = "" }()
+
+	p := &program{}
+	mock := &mockService{}
+	_ = captureStderr(func() {
+		_ = p.run(mock)
+	})
+
+	// Close logger so contents flush to router.log
+	p.mu.Lock()
+	closer := p.logCloser
+	p.mu.Unlock()
+	if closer != nil {
+		_ = closer.Close()
+	}
+
+	logFile := filepath.Join(tempLogDir, contract.DefaultRouterLogFileName)
+	content, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read router.log: %v", err)
+	}
+	if !bytes.Contains(content, []byte("Config load error")) {
+		t.Errorf("expected router.log to contain 'Config load error', got:\n%s", string(content))
 	}
 }
 
@@ -1318,5 +1389,168 @@ func TestFetchDeals_NetworkAndBadStatus(t *testing.T) {
 	_, err = fetchDeals(ts.URL, "")
 	if err == nil || !strings.Contains(err.Error(), "HTTP 500") {
 		t.Fatalf("expected HTTP 500 error, got %v", err)
+	}
+}
+
+func TestProgram_AsyncRun_InteractiveConfigError(t *testing.T) {
+	origInteractive := serviceInteractiveFunc
+	serviceInteractiveFunc = func() bool { return true }
+	defer func() { serviceInteractiveFunc = origInteractive }()
+
+	tempLogDir := t.TempDir()
+	*logDirFlag = tempLogDir
+	defer func() { *logDirFlag = "" }()
+
+	cfgPath := filepath.Join(tempLogDir, "config.yaml")
+	cfgContent := `
+version: "1.1.0"
+port: 8000
+providers:
+  lumo:
+    type: local
+    base_url: https://lumo.proton.me/api/ai/v1
+default_tier:
+  provider: lumo
+  model: test-model
+tiers:
+  - name: tier1
+    provider: lumo
+    model: test-model
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
+		t.Fatalf("failed to write config.yaml: %v", err)
+	}
+	*configPathFlag = cfgPath
+	defer func() { *configPathFlag = "" }()
+
+	exitCode := -1
+	oldExit := osExit
+	osExit = func(code int) {
+		exitCode = code
+	}
+	defer func() { osExit = oldExit }()
+
+	exitCh := make(chan struct{})
+	p := &program{
+		onExit: exitCh,
+	}
+	mock := &mockService{}
+
+	var stderrOut string
+	stderrOut = captureStderr(func() {
+		p.asyncRun(mock)
+		select {
+		case <-exitCh:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for asyncRun to exit")
+		}
+	})
+
+	// 1. [FATAL:CONFIG_ERROR] with actionable guidance is emitted to os.Stderr
+	if !strings.Contains(stderrOut, "[FATAL:CONFIG_ERROR]") {
+		t.Errorf("expected stderr to contain '[FATAL:CONFIG_ERROR]', got:\n%s", stderrOut)
+	}
+	if !strings.Contains(stderrOut, `type "local" was removed`) {
+		t.Errorf("expected stderr to contain 'type \"local\" was removed', got:\n%s", stderrOut)
+	}
+	// Verify interactive banner was printed
+	if !strings.Contains(stderrOut, "To fix your configuration:") {
+		t.Errorf("expected stderr to contain interactive banner, got:\n%s", stderrOut)
+	}
+
+	// 2. "Config load error" is flushed and persisted to router.log
+	logFile := filepath.Join(tempLogDir, contract.DefaultRouterLogFileName)
+	content, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read router.log: %v", err)
+	}
+	if !bytes.Contains(content, []byte("Config load error")) {
+		t.Errorf("expected router.log to contain 'Config load error', got:\n%s", string(content))
+	}
+
+	// 3. osExit(1) is invoked
+	if exitCode != 1 {
+		t.Errorf("expected osExit(1), got osExit(%d)", exitCode)
+	}
+}
+
+func TestProgram_AsyncRun_InteractiveYAMLUnmarshalError(t *testing.T) {
+	origInteractive := serviceInteractiveFunc
+	serviceInteractiveFunc = func() bool { return true }
+	defer func() { serviceInteractiveFunc = origInteractive }()
+
+	tempLogDir := t.TempDir()
+	*logDirFlag = tempLogDir
+	defer func() { *logDirFlag = "" }()
+
+	cfgPath := filepath.Join(tempLogDir, "config.yaml")
+	cfgContent := `
+version: "1.1.0"
+port: [8000, 8001]
+providers:
+  lumo:
+    type: openai_compatible
+    base_url: https://lumo.proton.me/api/ai/v1
+default_tier:
+  provider: lumo
+  model: test-model
+tiers:
+  - name: tier1
+    provider: lumo
+    model: test-model
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
+		t.Fatalf("failed to write config.yaml: %v", err)
+	}
+	*configPathFlag = cfgPath
+	defer func() { *configPathFlag = "" }()
+
+	exitCode := -1
+	oldExit := osExit
+	osExit = func(code int) {
+		exitCode = code
+	}
+	defer func() { osExit = oldExit }()
+
+	exitCh := make(chan struct{})
+	p := &program{
+		onExit: exitCh,
+	}
+	mock := &mockService{}
+
+	var stderrOut string
+	stderrOut = captureStderr(func() {
+		p.asyncRun(mock)
+		select {
+		case <-exitCh:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for asyncRun to exit")
+		}
+	})
+
+	// 1. [FATAL:CONFIG_ERROR] with multi-line yaml unmarshal error is emitted to os.Stderr
+	if !strings.Contains(stderrOut, "[FATAL:CONFIG_ERROR]") {
+		t.Errorf("expected stderr to contain '[FATAL:CONFIG_ERROR]', got:\n%s", stderrOut)
+	}
+	if !strings.Contains(stderrOut, "yaml: unmarshal errors:") {
+		t.Errorf("expected stderr to contain 'yaml: unmarshal errors:', got:\n%s", stderrOut)
+	}
+	if !strings.Contains(stderrOut, "cannot unmarshal !!seq into int") {
+		t.Errorf("expected stderr to contain 'cannot unmarshal !!seq into int', got:\n%s", stderrOut)
+	}
+
+	// 2. "Config load error" is flushed and persisted to router.log
+	logFile := filepath.Join(tempLogDir, contract.DefaultRouterLogFileName)
+	content, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read router.log: %v", err)
+	}
+	if !bytes.Contains(content, []byte("Config load error")) {
+		t.Errorf("expected router.log to contain 'Config load error', got:\n%s", string(content))
+	}
+
+	// 3. osExit(1) is invoked
+	if exitCode != 1 {
+		t.Errorf("expected osExit(1), got osExit(%d)", exitCode)
 	}
 }

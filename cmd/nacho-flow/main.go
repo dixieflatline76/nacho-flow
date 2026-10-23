@@ -66,6 +66,7 @@ var (
 	applyTuningFunc        = tuner.ApplyTuning
 	serviceNewFunc         = service.New
 	serviceInteractiveFunc = service.Interactive
+	osExit                 = os.Exit
 )
 
 type program struct {
@@ -90,6 +91,7 @@ func (p *program) asyncRun(s service.Service) {
 	defer func() {
 		p.mu.Lock()
 		ch := p.onExit
+		p.onExit = nil
 		p.mu.Unlock()
 		if ch != nil {
 			close(ch)
@@ -103,6 +105,21 @@ func (p *program) asyncRun(s service.Service) {
 			sl = slog.Default()
 		}
 		sl.Error("Fatal runtime error", slog.Any("error", err))
+
+		// 1. Flush logs and stop background workers cleanly
+		_ = p.Stop(s)
+
+		// 2. Unblock any waiters on onExit before exiting
+		p.mu.Lock()
+		ch := p.onExit
+		p.onExit = nil
+		p.mu.Unlock()
+		if ch != nil {
+			close(ch)
+		}
+
+		// 3. Terminate process immediately with exit code 1
+		osExit(1)
 	}
 }
 
@@ -162,21 +179,21 @@ func (p *program) run(s service.Service) error {
 	rawCfgPath := *configPathFlag
 	cfg, err := config.LoadConfig(rawCfgPath)
 	if err != nil {
-		if serviceInteractiveFunc() {
-			fmt.Printf("\n🌮 Nacho Flow %s (https://spicebox.dev/nacho-flow/)\n\n", contract.Version)
-			if strings.Contains(err.Error(), "could not find") {
-				fmt.Println("No configuration file found. To get started:")
-			} else {
-				fmt.Printf("Configuration error: %v\n\n", err)
-				fmt.Println("To fix your configuration:")
-			}
-			fmt.Println("  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml")
-			fmt.Println("  2. Run 'nacho-flow -help' for available options.")
-			fmt.Println("  3. View documentation at https://spicebox.dev/nacho-flow/docs.html")
-			return nil
-		}
 		fmt.Fprintf(os.Stderr, "[FATAL:CONFIG_ERROR] %v\n", err)
-		appLogger.Error("Config load error", slog.Any("error", err))
+		if appLogger != nil {
+			appLogger.Error("Config load error", slog.Any("error", err))
+		}
+		if serviceInteractiveFunc() {
+			fmt.Fprintf(os.Stderr, "\n🌮 Nacho Flow %s (https://spicebox.dev/nacho-flow/)\n\n", contract.Version)
+			if strings.Contains(err.Error(), "could not find") {
+				fmt.Fprintln(os.Stderr, "No configuration file found. To get started:")
+			} else {
+				fmt.Fprintln(os.Stderr, "To fix your configuration:")
+			}
+			fmt.Fprintln(os.Stderr, "  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml")
+			fmt.Fprintln(os.Stderr, "  2. Run 'nacho-flow -help' for available options.")
+			fmt.Fprintln(os.Stderr, "  3. View documentation at https://spicebox.dev/nacho-flow/docs.html")
+		}
 		return err
 	}
 

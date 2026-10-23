@@ -886,6 +886,12 @@ describe('ProcessManager', () => {
 			const posixLogDir = processManager.resolveLogDir('/home/user/.nacho/config.yaml');
 			expect(posixLogDir.replace(/\\/g, '/')).toBe('/home/user/.nacho/logs');
 		});
+
+		it('should update outputChannel when setOutputChannel is called', () => {
+			const newChannel: any = { append: jest.fn(), appendLine: jest.fn() };
+			processManager.setOutputChannel(newChannel);
+			expect((processManager as any).outputChannel).toBe(newChannel);
+		});
 	});
 
 	describe('parseStartupError', () => {
@@ -911,6 +917,65 @@ describe('ProcessManager', () => {
 			expect(parsed.type).toBe('CONFIG_ERROR');
 			expect(parsed.message).toContain('Configuration error in config.yaml');
 			expect(parsed.message).toContain('"type" is required');
+		});
+
+		it('should extract single message without duplication when both FATAL:CONFIG_ERROR and interactive text exist in stderr', () => {
+			const stderr = `
+[FATAL:CONFIG_ERROR] provider "lumo": invalid field "api_key_secret"
+
+🌮 Nacho Flow 1.7.0 (https://spicebox.dev/nacho-flow/)
+
+To fix your configuration:
+  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml
+  2. Run 'nacho-flow -help' for available options.
+`;
+			const parsed = parseStartupError(stderr, '', 8000);
+			expect(parsed.type).toBe('CONFIG_ERROR');
+			expect(parsed.message).toBe('Configuration error in config.yaml: provider "lumo": invalid field "api_key_secret"');
+		});
+
+		it('should preserve multi-line yaml unmarshal details when parsing FATAL:CONFIG_ERROR', () => {
+			const stderr = `
+[FATAL:CONFIG_ERROR] failed to parse config file: yaml: unmarshal errors:
+  line 14: field api_key_secret not found in type config.ProviderConfig
+
+🌮 Nacho Flow 1.7.0 (https://spicebox.dev/nacho-flow/)
+
+To fix your configuration:
+  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml
+  2. Run 'nacho-flow -help' for available options.
+`;
+			const parsed = parseStartupError(stderr, '', 8000);
+			expect(parsed.type).toBe('CONFIG_ERROR');
+			expect(parsed.message).toBe('Configuration error in config.yaml: failed to parse config file: yaml: unmarshal errors: line 14: field api_key_secret not found in type config.ProviderConfig');
+		});
+
+		it('should cleanly deduplicate repeated error lines in fallback mode and omit missing file header', () => {
+			const stdout = `
+Configuration error: provider "lumo": invalid field "api_key_secret"
+Configuration error: provider "lumo": invalid field "api_key_secret"
+No configuration file found. To get started:
+`;
+			const parsed = parseStartupError('', stdout, 8000);
+			expect(parsed.type).toBe('CONFIG_ERROR');
+			expect(parsed.message).toBe('Configuration error in config.yaml: provider "lumo": invalid field "api_key_secret"');
+		});
+
+		it('should extract error details from stdout when stderr is empty and strip CLI banners', () => {
+			const stdout = `
+🌮 Nacho Flow 1.7.0 (https://spicebox.dev/nacho-flow/)
+
+Configuration error: provider "lumo": invalid field "api_key_secret"
+To fix your configuration:
+  1. Create a config.yaml or specify one with: nacho-flow -config path/to/config.yaml
+  2. Run 'nacho-flow -help' for available options.
+`;
+			const parsed = parseStartupError('', stdout, 8000);
+			expect(parsed.type).toBe('CONFIG_ERROR');
+			expect(parsed.message).toContain('provider "lumo": invalid field "api_key_secret"');
+			expect(parsed.message).not.toContain('🌮');
+			expect(parsed.message).not.toContain('spicebox.dev');
+			expect(parsed.message).not.toContain('To fix your configuration:');
 		});
 
 		it('should accurately parse RULE_ERROR token', () => {
