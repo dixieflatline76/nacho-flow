@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { parseConfigSymbolIndex, SourceRange, ProviderSymbolDef, ConfigSymbolIndex } from './config-symbol-index';
-import { validateNachoConfigYaml } from './yaml-validator';
+import { validateNachoConfigYaml, SECTION_ALLOWED_KEYS, resolveYamlSection, computeMultilineBlockLines } from './yaml-validator';
 import { discoverModels, resolveEffectiveBaseUrl } from './model-discovery';
 
 export const REQUEST_CONTEXT_DOCS: Record<string, string> = {
@@ -71,9 +71,9 @@ export const CONFIG_KEY_DOCS: Record<string, ConfigDocItem> = {
 		title: '🌐 `host` *(Bind Address)*',
 		desc: 'Network interface bind address (e.g. `"127.0.0.1"` for local isolation, `"0.0.0.0"` for LAN access).'
 	},
-	bind_address: {
-		title: '🌐 `bind_address` *(Bind Address)*',
-		desc: 'Network interface bind address (alias for `host`).'
+	auth_token: {
+		title: '🔑 `auth_token` *(Gateway Client Auth Token)*',
+		desc: 'Optional Bearer authentication token required from clients connecting to the Nacho Flow gateway. Supports environment variable expansion (e.g. `"${NACHO_AUTH_TOKEN}"`).'
 	},
 	providers: {
 		title: '🔌 `providers` *(Upstream Providers)*',
@@ -410,6 +410,110 @@ export const CONFIG_KEY_DOCS: Record<string, ConfigDocItem> = {
 	strip_boilerplate: {
 		title: '🧹 `strip_boilerplate` *(Strip Terminal Boilerplate)*',
 		desc: 'Strips common repetitive terminal headers and package manager boilerplates.'
+	},
+
+	// Provider properties
+	type: {
+		title: '🔌 `type` *(Provider Execution Protocol)*',
+		desc: 'Upstream provider protocol: `"openai_compatible"` (Ollama, vLLM, llama.cpp, OpenAI), `"anthropic"` (direct Claude Messages API), or `"openrouter"` (unified cloud gateway).'
+	},
+	base_url: {
+		title: '🌐 `base_url` *(Provider Endpoint URL)*',
+		desc: 'HTTP/HTTPS base URL endpoint of the upstream provider (e.g. `"http://127.0.0.1:8080/v1"` or `"https://openrouter.ai/api/v1"`).'
+	},
+	local: {
+		title: '💻 `local` *(Local Inference Engine)*',
+		desc: 'When `true`, designates a locally running model server with $0 token cost and local hardware metrics (only valid for `type: openai_compatible`).'
+	},
+	api_key: {
+		title: '🔐 `api_key` *(API Key / Secret)*',
+		desc: 'Upstream provider authentication key or environment variable reference (e.g. `"${OPENROUTER_API_KEY}"`).'
+	},
+	headers: {
+		title: '📨 `headers` *(Custom HTTP Headers)*',
+		desc: 'Custom HTTP headers map sent with every request dispatched to this provider (e.g. `HTTP-Referer: "https://myproject"`, `X-Title: "MyAgent"`).'
+	},
+	pricing_sync_interval: {
+		title: '⏱️ `pricing_sync_interval` *(Pricing Sync Cadence)*',
+		desc: 'Periodic duration string for refreshing model catalog and pricing from provider (e.g. `"24h"`, `"1h"`).'
+	},
+
+	// Common properties
+	name: {
+		title: '🏷️ `name` *(Identifier / Label)*',
+		desc: 'Unique descriptive name or identifier for a tier, reviewer entry, or profile.'
+	},
+	enabled: {
+		title: '🔘 `enabled` *(Feature Toggle)*',
+		desc: 'Master toggle (`true` / `false`) enabling or disabling this component or defense sub-strategy.'
+	},
+
+	// Kickstart properties
+	max_attempts: {
+		title: '🔁 `max_attempts` *(Max Recovery Attempts)*',
+		desc: 'Maximum consecutive recovery attempts when reasoning output is truncated (default: `1`, range: `1..3`).'
+	},
+	max_failures: {
+		title: '⚠️ `max_failures` *(Max Failed Tool Attempts)*',
+		desc: 'Maximum consecutive failed tool executions tolerated before Read Slap engages (default: `3`).'
+	},
+	write_only: {
+		title: '✍️ `write_only` *(Write-Only Progress Mode)*',
+		desc: 'When `true`, only file write operations reset the idle counter; terminal reads do not count as progress (default: `false`).'
+	},
+	custom_write_tools: {
+		title: '🛠️ `custom_write_tools` *(Custom Write Tools)*',
+		desc: 'List of additional tool names classified as write actions resetting the Read Slap counter (e.g. `[\'apply_patch\', \'create_file\']`).'
+	},
+
+	// Router properties
+	enable_in_prompt_directives: {
+		title: '🔀 `enable_in_prompt_directives` *(In-Prompt Directives)*',
+		desc: 'When `true`, enables in-flight prompt directives like `#nacho:tier=NAME` and `#nacho:raw=true` (default: `true`).'
+	},
+
+	// Normalizer sub-strategies
+	markdown: {
+		title: '📝 `markdown` *(Strip Markdown Wrapping)*',
+		desc: 'Strip markdown code block fences (```json) wrapping bare tool call arguments (default: `true`).'
+	},
+	bare_json: {
+		title: '📦 `bare_json` *(Unescape Bare JSON)*',
+		desc: 'Unescape raw JSON strings emitted inside tool arguments (default: `true`).'
+	},
+	react: {
+		title: '🔄 `react` *(ReAct Normalizer)*',
+		desc: 'Convert ReAct Thought/Action blocks to OpenAI-compatible tool calls (default: `true`).'
+	},
+	think: {
+		title: '💭 `think` *(Strip Reasoning Tags)*',
+		desc: 'Strip DeepSeek/Qwen `<think>` reasoning tags from tool call arguments (default: `true`).'
+	},
+
+	// Cycle breaker flat token & repetition thresholds
+	write_tools: {
+		title: '🛠️ `write_tools` *(Lane Write Tools)*',
+		desc: 'List of tool names classified as file write operations in tool streaming lanes (default: `[\'write_to_file\', \'apply_diff\']`).'
+	},
+	max_content_tokens: {
+		title: '📝 `max_content_tokens` *(Direct Prose Token Limit)*',
+		desc: 'Flat token limit for the content/prose streaming lane before cycle breaker terminates the stream.'
+	},
+	max_thinking_tokens: {
+		title: '🧠 `max_thinking_tokens` *(Direct Reasoning Token Limit)*',
+		desc: 'Flat token limit for the thinking/reasoning streaming lane before cycle breaker terminates the stream.'
+	},
+	max_tool_tokens: {
+		title: '🔧 `max_tool_tokens` *(Direct Tool Argument Token Limit)*',
+		desc: 'Flat token limit for the tool argument streaming lane before cycle breaker terminates the stream.'
+	},
+	thinking_repetition_threshold: {
+		title: '🔁 `thinking_repetition_threshold` *(Thinking Repetition Threshold)*',
+		desc: 'Threshold count of repeated phrases in reasoning/thinking lane triggering stream break.'
+	},
+	thinking_budget_repetition_threshold: {
+		title: '🪙 `thinking_budget_repetition_threshold` *(Thinking Budget Repeat Threshold)*',
+		desc: 'Threshold count of repeated phrases allowed in reasoning lane under cooperative token budget.'
 	}
 };
 
@@ -628,8 +732,10 @@ function applyScalarCompletionRange(
 	(item as any).filterText = prefix ? `${prefix} ${rawValue}` : rawValue;
 }
 
+export { SECTION_ALLOWED_KEYS, resolveYamlSection } from './yaml-validator';
+
 /**
- * Completion provider for provider IDs, provider types, rescue tier names, live models, reasoning effort, and DSL variables.
+ * Completion provider for YAML keys, provider IDs, provider types, rescue tier names, live models, reasoning effort, and DSL variables.
  */
 export class NachoCompletionItemProvider implements vscode.CompletionItemProvider {
 	async provideCompletionItems(
@@ -641,6 +747,47 @@ export class NachoCompletionItemProvider implements vscode.CompletionItemProvide
 		const lineUntilCursor = lineText.slice(0, position.character);
 		const fullText = document.getText();
 		const index = parseConfigSymbolIndex(fullText);
+
+		if (lineText.trim().startsWith('#')) {
+			return [];
+		}
+
+		const lines = fullText.split(/\r?\n/);
+		const multilineLines = computeMultilineBlockLines(lines);
+		if (multilineLines[position.line]) {
+			return [];
+		}
+
+		// Key completions when cursor is on the key side (before colon or on a line without colon)
+		const colonIndex = lineText.indexOf(':');
+		const isKeyPosition = colonIndex === -1 || position.character <= colonIndex;
+		const hasColonAfterCursor = colonIndex !== -1 && colonIndex >= position.character;
+
+		if (isKeyPosition) {
+			// Don't trigger key completions on completely empty unindented lines before the user types anything
+			if (colonIndex === -1 && lineUntilCursor.trim().length === 0 && position.character === 0) {
+				return [];
+			}
+			const section = resolveYamlSection(lines, position.line, position.character);
+			const allowedKeys = SECTION_ALLOWED_KEYS[section];
+			if (allowedKeys && allowedKeys.length > 0) {
+				const currentWordRange = document.getWordRangeAtPosition(position, /[a-zA-Z0-9_-]+/);
+				const keyItems = allowedKeys.map((key) => {
+					const item = new vscode.CompletionItem(key, vscode.CompletionItemKind.Property);
+					item.insertText = hasColonAfterCursor ? key : `${key}: `;
+					if (CONFIG_KEY_DOCS[key]) {
+						item.detail = CONFIG_KEY_DOCS[key].title;
+						item.documentation = new vscode.MarkdownString(CONFIG_KEY_DOCS[key].desc);
+					}
+					if (currentWordRange) {
+						item.range = currentWordRange;
+					}
+					return item;
+				});
+
+				return keyItems;
+			}
+		}
 
 		// 0. type: completions (provider type: openrouter, anthropic, openai_compatible)
 		if (/^\s*(?:-\s*)?type\s*:/.test(lineUntilCursor)) {
@@ -782,32 +929,10 @@ export class NachoHoverProvider implements vscode.HoverProvider {
 		if (!range) return null;
 
 		const word = document.getText(range);
-
-		// 1. RequestContext variable hover
-		if (REQUEST_CONTEXT_DOCS[word]) {
-			const md = new vscode.MarkdownString();
-			md.appendMarkdown(`### \`${word}\` *(Nacho Flow RequestContext)*\n\n`);
-			md.appendMarkdown(`${REQUEST_CONTEXT_DOCS[word]}\n\n`);
-			md.appendMarkdown('*Used in tier `when:` condition expressions.*');
-			return new vscode.Hover(md, range);
-		}
-
-		// 1b. Config key documentation hover (fairy_dust, agent_shield, cycle_killer, nts, deals, etc.)
-		if (CONFIG_KEY_DOCS[word]) {
-			const info = CONFIG_KEY_DOCS[word];
-			const md = new vscode.MarkdownString();
-			md.appendMarkdown(`### ${info.title}\n\n`);
-			md.appendMarkdown(`${info.desc}\n\n`);
-			if (info.detail) {
-				md.appendMarkdown(`${info.detail}\n`);
-			}
-			return new vscode.Hover(md, range);
-		}
-
 		const fullText = document.getText();
 		const index = parseConfigSymbolIndex(fullText);
 
-		// 2. Provider definition hover
+		// 1. Provider definition hover
 		const provDef = index.providers.get(word);
 		if (provDef && isPositionInRange(position, provDef.idRange)) {
 			const usages = index.providerUsages.filter((u) => u.providerId === word);
@@ -819,7 +944,7 @@ export class NachoHoverProvider implements vscode.HoverProvider {
 			return new vscode.Hover(md, range);
 		}
 
-		// 3. Provider usage hover
+		// 2. Provider usage hover
 		const provUsage = index.providerUsages.find((u) => u.providerId === word && isPositionInRange(position, u.valueRange));
 		if (provUsage) {
 			const target = index.providers.get(word);
@@ -833,7 +958,7 @@ export class NachoHoverProvider implements vscode.HoverProvider {
 			return new vscode.Hover(md, range);
 		}
 
-		// 4. Rescue tier usage hover
+		// 3. Rescue tier usage hover
 		const rescueUsage = index.rescueTierUsages.find((u) => isPositionInRange(position, u.valueRange));
 		if (rescueUsage) {
 			const targetTier = index.tiers.get(rescueUsage.tierName) || (index.defaultTier?.name === rescueUsage.tierName ? index.defaultTier : undefined);
@@ -846,6 +971,31 @@ export class NachoHoverProvider implements vscode.HoverProvider {
 				md.appendMarkdown(`⚠️ **Unresolved:** Tier \`${rescueUsage.tierName}\` is not defined in \`tiers:\`.\n`);
 			}
 			return new vscode.Hover(md, toVsCodeRange(rescueUsage.valueRange));
+		}
+
+		const lineText = document.lineAt(position.line).text;
+		const colonIndex = lineText.indexOf(':');
+		const isKeyPosition = colonIndex !== -1 && position.character <= colonIndex;
+
+		// 4. RequestContext variable hover (guarded: only inside when: condition expressions on the value side)
+		if (!isKeyPosition && /^\s*(?:-\s*)?when\s*:/.test(lineText) && REQUEST_CONTEXT_DOCS[word]) {
+			const md = new vscode.MarkdownString();
+			md.appendMarkdown(`### \`${word}\` *(Nacho Flow RequestContext)*\n\n`);
+			md.appendMarkdown(`${REQUEST_CONTEXT_DOCS[word]}\n\n`);
+			md.appendMarkdown('*Used in tier `when:` condition expressions.*');
+			return new vscode.Hover(md, range);
+		}
+
+		// 5. Config key documentation hover (guarded: only for YAML mapping keys, not scalar values)
+		if (isKeyPosition && CONFIG_KEY_DOCS[word]) {
+			const info = CONFIG_KEY_DOCS[word];
+			const md = new vscode.MarkdownString();
+			md.appendMarkdown(`### ${info.title}\n\n`);
+			md.appendMarkdown(`${info.desc}\n\n`);
+			if (info.detail) {
+				md.appendMarkdown(`${info.detail}\n`);
+			}
+			return new vscode.Hover(md, range);
 		}
 
 		return null;
