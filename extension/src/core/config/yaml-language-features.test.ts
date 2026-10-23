@@ -362,6 +362,87 @@ fairy_dust:
       const items = await provider.provideCompletionItems(doc, new vscode.Position(0, 0));
       expect(items).toEqual([]);
     });
+
+    it('should complete root YAML configuration keys when typing at root level', async () => {
+      const doc = createMockDoc('p');
+      const items = await provider.provideCompletionItems(doc, new vscode.Position(0, 1));
+      expect(items.length).toBeGreaterThan(0);
+      expect(items.some((i) => i.label === 'providers')).toBe(true);
+      expect(items.some((i) => i.label === 'port')).toBe(true);
+      expect(items.some((i) => i.label === 'auth_token')).toBe(true);
+      expect(items.some((i) => i.label === 'router')).toBe(true);
+      const portItem = items.find((i) => i.label === 'port');
+      expect(portItem?.insertText).toBe('port: ');
+      expect(portItem?.detail).toContain('Gateway Port');
+    });
+
+    it('should complete section-specific keys inside provider and tier blocks', async () => {
+      const sectionYaml = `
+providers:
+  my_prov:
+    
+tiers:
+  - 
+`;
+      const doc = createMockDoc(sectionYaml);
+      // Under my_prov: (line 3, col 4)
+      const provItems = await provider.provideCompletionItems(doc, new vscode.Position(3, 4));
+      expect(provItems.some((i) => i.label === 'base_url')).toBe(true);
+      expect(provItems.some((i) => i.label === 'type')).toBe(true);
+      expect(provItems.some((i) => i.label === 'headers')).toBe(true);
+      expect(provItems.some((i) => i.label === 'pricing_sync_interval')).toBe(true);
+      // admin_port and telemetry must NOT be suggested
+      expect(provItems.some((i) => i.label === 'admin_port')).toBe(false);
+      expect(provItems.some((i) => i.label === 'telemetry')).toBe(false);
+
+      // Inside tier block (line 6, col 4)
+      const tierItems = await provider.provideCompletionItems(doc, new vscode.Position(6, 4));
+      expect(tierItems.some((i) => i.label === 'name')).toBe(true);
+      expect(tierItems.some((i) => i.label === 'provider')).toBe(true);
+      expect(tierItems.some((i) => i.label === 'model')).toBe(true);
+      expect(tierItems.some((i) => i.label === 'thought_slap')).toBe(true);
+      // Removed phantom keys must not be present
+      expect(tierItems.some((i) => i.label === 'temperature')).toBe(false);
+      expect(tierItems.some((i) => i.label === 'max_tokens')).toBe(false);
+    });
+
+    it('should guard against duplicate colons when completing existing keys (Guardrail 4)', async () => {
+      const existingKeyDoc = createMockDoc(`
+providers:
+  my_prov:
+    type: "openai_compatible"
+`);
+      // Cursor is on "type" before colon (line 3, col 6)
+      const itemsWithColon = await provider.provideCompletionItems(existingKeyDoc, new vscode.Position(3, 6));
+      const typeItem = itemsWithColon.find((i) => i.label === 'type');
+      expect(typeItem).toBeDefined();
+      expect(typeItem?.insertText).toBe('type'); // Without ': '
+
+      // On line without colon:
+      const noColonDoc = createMockDoc(`
+providers:
+  my_prov:
+    typ
+`);
+      const itemsWithoutColon = await provider.provideCompletionItems(noColonDoc, new vscode.Position(3, 7));
+      const typeItemWithout = itemsWithoutColon.find((i) => i.label === 'type');
+      expect(typeItemWithout).toBeDefined();
+      expect(typeItemWithout?.insertText).toBe('type: ');
+    });
+
+    it('should return empty completions when typing inside a multiline block scalar or string', async () => {
+      const blockDoc = createMockDoc(`
+fairy_dust:
+  entries:
+    - name: "Reviewer"
+      prompt: >
+        MANDATORY: tool call
+        p
+`);
+      // Line 6 has "        p" inside the block scalar
+      const items = await provider.provideCompletionItems(blockDoc, new vscode.Position(6, 9));
+      expect(items).toEqual([]);
+    });
   });
 
   describe('NachoHoverProvider', () => {
@@ -373,6 +454,18 @@ fairy_dust:
       expect(hover).toBeDefined();
       expect((hover?.contents as any).value).toContain('Tokens');
       expect((hover?.contents as any).value).toContain(REQUEST_CONTEXT_DOCS['Tokens']);
+    });
+
+    it('should NOT provide RequestContext DSL hovers when matching words appear outside when: lines', () => {
+      const doc = createMockDoc(`
+tiers:
+  - name: "Tokens Workhorse"
+    provider: "p1"
+    model: "qwen"
+`);
+      // Hovering on "Tokens" inside name: "Tokens Workhorse" (line 2, col 14)
+      const hover = hoverProvider.provideHover(doc, new vscode.Position(2, 14));
+      expect(hover).toBeNull();
     });
 
     it('should provide hover details for provider definitions', () => {
@@ -395,6 +488,29 @@ fairy_dust:
       const hover = hoverProvider.provideHover(doc, new vscode.Position(13, 25)); // "Tier 2: Reasoning"
       expect(hover).toBeDefined();
       expect((hover?.contents as any).value).toContain('Rescue Tier Reference');
+    });
+
+    it('should resolve provider reference before key documentation for provider: local', () => {
+      const doc = createMockDoc(`
+providers:
+  local:
+    type: "openai_compatible"
+    base_url: "http://localhost:8080/v1"
+tiers:
+  - name: "T1"
+    provider: local
+`);
+      // Hovering on the value "local" (line 7, col 16)
+      const valHover = hoverProvider.provideHover(doc, new vscode.Position(7, 16));
+      expect(valHover).toBeDefined();
+      expect((valHover?.contents as any).value).toContain('Provider Reference: `local`');
+      // Must NOT return CONFIG_KEY_DOCS['local'] (which is about Local / Embedded Provider Flag)
+      expect((valHover?.contents as any).value).not.toContain('Local / Embedded Provider Flag');
+
+      // Hovering on the key "provider" (line 7, col 6) before colon
+      const keyHover = hoverProvider.provideHover(doc, new vscode.Position(7, 6));
+      expect(keyHover).toBeDefined();
+      expect((keyHover?.contents as any).value).toContain('Tier Provider');
     });
 
     it('should provide rich documentation for configuration keys (fairy_dust, agent_shield, cycle_killer, nts, deals)', () => {
@@ -436,6 +552,61 @@ fairy_dust:
       const fairyHover = hoverProvider.provideHover(doc, new vscode.Position(10, 2));
       expect(fairyHover).toBeDefined();
       expect((fairyHover?.contents as any).value).toContain('fairy_dust');
+    });
+
+    it('should provide rich documentation for new configuration keys', () => {
+      const newKeysYaml = `
+auth_token: "secret-token"
+router:
+  enable_in_prompt_directives: true
+providers:
+  p1:
+    type: "openai_compatible"
+    base_url: "http://localhost:8080"
+    headers:
+      X-Title: "Test"
+    pricing_sync_interval: "1h"
+cycle_breaker:
+  max_content_tokens: 4096
+  max_thinking_tokens: 2048
+  max_tool_tokens: 1024
+  thinking_repetition_threshold: 4
+  thinking_budget_repetition_threshold: 6
+normalizers:
+  markdown: true
+  bare_json: true
+  react: true
+  think: true
+`;
+      const doc = createMockDoc(newKeysYaml);
+
+      const authHover = hoverProvider.provideHover(doc, new vscode.Position(1, 4));
+      expect(authHover).toBeDefined();
+      expect((authHover?.contents as any).value).toContain('Gateway Client Auth Token');
+
+      const routerHover = hoverProvider.provideHover(doc, new vscode.Position(3, 4));
+      expect(routerHover).toBeDefined();
+      expect((routerHover?.contents as any).value).toContain('enable_in_prompt_directives');
+
+      const headersHover = hoverProvider.provideHover(doc, new vscode.Position(8, 6));
+      expect(headersHover).toBeDefined();
+      expect((headersHover?.contents as any).value).toContain('headers');
+
+      const pricingHover = hoverProvider.provideHover(doc, new vscode.Position(10, 6));
+      expect(pricingHover).toBeDefined();
+      expect((pricingHover?.contents as any).value).toContain('pricing_sync_interval');
+
+      const maxTokensHover = hoverProvider.provideHover(doc, new vscode.Position(12, 4));
+      expect(maxTokensHover).toBeDefined();
+      expect((maxTokensHover?.contents as any).value).toContain('max_content_tokens');
+
+      const thinkRepHover = hoverProvider.provideHover(doc, new vscode.Position(15, 4));
+      expect(thinkRepHover).toBeDefined();
+      expect((thinkRepHover?.contents as any).value).toContain('thinking_repetition_threshold');
+
+      const mdHover = hoverProvider.provideHover(doc, new vscode.Position(18, 4));
+      expect(mdHover).toBeDefined();
+      expect((mdHover?.contents as any).value).toContain('markdown');
     });
 
     it('should return null when hovering outside recognized tokens', () => {

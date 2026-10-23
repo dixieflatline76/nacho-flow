@@ -144,11 +144,21 @@ func TestProgram_AsyncRun_Execution(t *testing.T) {
 	serviceInteractiveFunc = func() bool { return false }
 	*configPathFlag = "/invalid/nonexistent/config.yaml"
 
+	oldExit := osExit
+	var lastExitCode int
+	osExit = func(code int) {
+		lastExitCode = code
+	}
+	defer func() { osExit = oldExit }()
+
 	var p *program
 	errOutput := captureStderrLocal(func() {
 		p = &program{}
 		p.asyncRun(nil)
 	})
+	if lastExitCode != 1 {
+		t.Errorf("expected exit code 1 from asyncRun, got: %d", lastExitCode)
+	}
 	// Close the lumberjack log rotator so TempDir cleanup can delete the file
 	if p.logCloser != nil {
 		_ = p.logCloser.Close()
@@ -178,6 +188,10 @@ func TestProgram_Run_LogDirFlag_NoWorkspacePollution(t *testing.T) {
 		*configPathFlag = oldConfig
 		_ = os.Chdir(origDir)
 	}()
+
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { osExit = oldExit }()
 
 	tmpWorkspace := t.TempDir()
 	customLogDir := filepath.Join(t.TempDir(), "presets", "logs")

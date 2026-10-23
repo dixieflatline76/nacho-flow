@@ -156,6 +156,374 @@ function findClosestMatch(target: string, candidates: string[]): string | undefi
 	return bestMatch;
 }
 
+export const SECTION_ALLOWED_KEYS: Record<string, string[]> = {
+	root: [
+		'version',
+		'port',
+		'host',
+		'auth_token',
+		'router',
+		'deals',
+		'agent_shield',
+		'cycle_killer',
+		'cycle_breaker',
+		'kickstart',
+		'fairy_dust',
+		'nts',
+		'providers',
+		'tiers',
+		'default_tier'
+	],
+	provider: [
+		'type',
+		'base_url',
+		'local',
+		'api_key',
+		'headers',
+		'pricing_sync_interval'
+	],
+	tier: [
+		'name',
+		'provider',
+		'model',
+		'when',
+		'reasoning_effort',
+		'strip_images',
+		'has_vision',
+		'strip_tools',
+		'has_tools',
+		'max_context',
+		'raw',
+		'shield',
+		'normalizer',
+		'normalizers',
+		'cycle_killer',
+		'cycle_breaker',
+		'thought_slap'
+	],
+	default_tier: [
+		'name',
+		'provider',
+		'model',
+		'when',
+		'reasoning_effort',
+		'strip_images',
+		'has_vision',
+		'strip_tools',
+		'has_tools',
+		'max_context',
+		'raw',
+		'shield',
+		'normalizer',
+		'normalizers',
+		'cycle_killer',
+		'cycle_breaker',
+		'thought_slap'
+	],
+	kickstart: [
+		'read_slap',
+		'thought_slap'
+	],
+	'kickstart.read_slap': [
+		'enabled',
+		'threshold',
+		'max_slaps',
+		'max_failures',
+		'write_only',
+		'custom_write_tools',
+		'prompt_override'
+	],
+	'kickstart.thought_slap': [
+		'max_attempts',
+		'rescue_tier',
+		'prompt_override'
+	],
+	'tier.thought_slap': [
+		'max_attempts',
+		'rescue_tier',
+		'prompt_override'
+	],
+	fairy_dust: [
+		'enabled',
+		'entries'
+	],
+	'fairy_dust.entry': [
+		'name',
+		'provider',
+		'model',
+		'frequency',
+		'max_per_session',
+		'priority',
+		'prompt',
+		'reasoning_effort'
+	],
+	deals: [
+		'enabled',
+		'alert_threshold_pct',
+		'min_coding_index',
+		'require_tools',
+		'exclude_batch',
+		'exclude_free'
+	],
+	agent_shield: [
+		'enabled',
+		'tail_buffer_bytes',
+		'question_heuristics',
+		'mode_switch_heuristics',
+		'error_signatures'
+	],
+	router: [
+		'enable_in_prompt_directives'
+	],
+	normalizers: [
+		'enabled',
+		'markdown',
+		'bare_json',
+		'react',
+		'think'
+	],
+	cycle_breaker: [
+		'enabled',
+		'phrase_length',
+		'budget_max_repeats',
+		'model_cooldown_seconds',
+		'retry_floor',
+		'max_retries',
+		'correction_prompt',
+		'thinking_lane',
+		'reasoning_lane',
+		'content_lane',
+		'tool_lane',
+		'max_content_tokens',
+		'max_thinking_tokens',
+		'max_tool_tokens',
+		'max_write_tokens',
+		'repetition_window',
+		'repetition_threshold',
+		'thinking_repetition_threshold',
+		'budget_repetition_threshold',
+		'thinking_budget_repetition_threshold'
+	],
+	lane: [
+		'max_tokens',
+		'phrase_length',
+		'max_repeats',
+		'budget_max_repeats',
+		'repetition_window',
+		'repetition_threshold',
+		'budget_repetition_threshold'
+	],
+	tool_lane: [
+		'max_tokens',
+		'phrase_length',
+		'max_repeats',
+		'budget_max_repeats',
+		'repetition_window',
+		'repetition_threshold',
+		'budget_repetition_threshold',
+		'max_write_tokens',
+		'write_tools'
+	],
+	nts: [
+		'enabled',
+		'strip_ansi',
+		'resolve_cr',
+		'deduplicate_lines',
+		'dedup_threshold',
+		'strip_boilerplate',
+		'normalize_whitespace',
+		'preserve_file_reads',
+		'preserve_file_writes',
+		'preserve_cache_control',
+		'compact_stale_file_reads',
+		'stale_read_depth',
+		'strip_historical_reasoning',
+		'keep_recent_reasoning_turns',
+		'deduplicate_reminders',
+		'reminders_refresh_interval',
+		'collapse_verbose_tests',
+		'deduplicate_tool_outputs',
+		'min_duplicate_output_bytes'
+	]
+};
+
+/**
+ * Computes a boolean mask for all lines in the document indicating whether each line
+ * is part of a multiline block scalar (> or |) or an open multiline quoted string (" or ').
+ */
+export function computeMultilineBlockLines(lines: string[]): boolean[] {
+	const isMultiline = new Array<boolean>(lines.length).fill(false);
+	let blockScalarIndent: number | null = null;
+	let inQuote: '"' | "'" | null = null;
+
+	for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+		const line = lines[lineIdx];
+		const trimmed = line.trim();
+
+		// 1. If currently inside a multiline quote (" or ')
+		if (inQuote !== null) {
+			isMultiline[lineIdx] = true;
+			for (let c = 0; c < line.length; c++) {
+				const char = line[c];
+				if (char === inQuote) {
+					if (inQuote === '"' && line[c - 1] === '\\') continue;
+					if (inQuote === "'" && line[c + 1] === "'") {
+						c++;
+						continue;
+					}
+					inQuote = null;
+					break;
+				}
+			}
+			continue;
+		}
+
+		// 2. If currently inside a block scalar (> or |)
+		if (blockScalarIndent !== null) {
+			if (!trimmed) {
+				// Empty or blank lines inside a block scalar remain part of the scalar
+				isMultiline[lineIdx] = true;
+				continue;
+			}
+			const currentIndent = line.match(/^(\s*)/)?.[1].length || 0;
+			if (currentIndent > blockScalarIndent) {
+				isMultiline[lineIdx] = true;
+				continue;
+			} else {
+				// Indentation dropped back to or below block scalar header -> block scalar ended
+				blockScalarIndent = null;
+			}
+		}
+
+		// 3. Check if this line starts a block scalar (> or |)
+		// e.g. "prompt: >", "prompt: |", "  - prompt: >-", "prompt: |2"
+		const scalarMatch = line.match(/^(\s*)(?:-\s*)?[a-zA-Z0-9_-]+\s*:\s*[>|][+-]?[0-9]?\s*(?:#.*)?$/);
+		if (scalarMatch) {
+			blockScalarIndent = scalarMatch[1].length;
+			continue;
+		}
+
+		// 4. Check if this line starts an unclosed quote
+		for (let c = 0; c < line.length; c++) {
+			const char = line[c];
+			if (!inQuote) {
+				if (char === '#' && (c === 0 || /\s/.test(line[c - 1]))) {
+					break; // Rest of line is comment
+				}
+				if (char === '"' || char === "'") {
+					inQuote = char;
+				}
+			} else if (char === inQuote) {
+				if (inQuote === '"' && line[c - 1] === '\\') continue;
+				if (inQuote === "'" && line[c + 1] === "'") {
+					c++;
+					continue;
+				}
+				inQuote = null;
+			}
+		}
+	}
+
+	return isMultiline;
+}
+
+/**
+ * Resolves the configuration section context for a given line based on YAML indentation and enclosing parent headers.
+ */
+export function resolveYamlSection(lines: string[], currentLineIdx: number, currentCharacter: number = 0): string {
+	if (currentLineIdx < 0 || currentLineIdx >= lines.length) return 'root';
+	const rawLine = lines[currentLineIdx] || '';
+	const currentLeadingWs = rawLine.match(/^(\s*)/)?.[1].length || 0;
+	const isBlankLine = !rawLine.trim();
+	const targetIndent = isBlankLine && currentCharacter > 0 ? currentCharacter : currentLeadingWs;
+
+	if (targetIndent === 0 && !rawLine.trim().startsWith('-')) {
+		return 'root';
+	}
+
+	let nearestParentKey = '';
+	let rootSection = '';
+	let maxIndent = targetIndent;
+
+	for (let i = currentLineIdx - 1; i >= 0; i--) {
+		const prev = lines[i];
+		const trimmed = prev.trim();
+		if (!trimmed || trimmed.startsWith('#')) continue;
+
+		const prevLeadingWs = prev.match(/^(\s*)/)?.[1].length || 0;
+
+		if (prevLeadingWs === 0) {
+			const rootMatch = prev.match(/^([a-zA-Z0-9_-]+)\s*:/);
+			if (rootMatch) {
+				rootSection = rootMatch[1];
+				if (!nearestParentKey) {
+					nearestParentKey = rootSection;
+				}
+				break;
+			}
+		}
+
+		// Only lines without a scalar value after ':' can be enclosing parent mapping blocks
+		const blockHeaderMatch = prev.match(/^(\s*)(?:-\s*)?([a-zA-Z0-9_-]+)\s*:\s*(?:#.*)?$/);
+		if (blockHeaderMatch && prevLeadingWs < maxIndent) {
+			if (!nearestParentKey) {
+				nearestParentKey = blockHeaderMatch[2];
+			}
+			maxIndent = prevLeadingWs;
+		} else if (trimmed.startsWith('-') && prevLeadingWs < maxIndent) {
+			// Stepping out of the enclosing sequence item (e.g. '    - name: "Reviewer"')
+			maxIndent = prevLeadingWs;
+		}
+	}
+
+	if (!rootSection) {
+		rootSection = nearestParentKey || 'root';
+	}
+
+	if (rootSection === 'providers') {
+		if (nearestParentKey === 'headers') return 'headers';
+		if (nearestParentKey === 'providers') return 'providers';
+		return 'provider';
+	}
+	if (rootSection === 'tiers') {
+		if (nearestParentKey === 'normalizers') return 'normalizers';
+		if (nearestParentKey === 'cycle_killer' || nearestParentKey === 'cycle_breaker') return 'cycle_breaker';
+		if (nearestParentKey === 'thinking_lane' || nearestParentKey === 'reasoning_lane' || nearestParentKey === 'content_lane') return 'lane';
+		if (nearestParentKey === 'tool_lane') return 'tool_lane';
+		if (nearestParentKey === 'thought_slap') return 'tier.thought_slap';
+		return 'tier';
+	}
+	if (rootSection === 'default_tier') {
+		if (nearestParentKey === 'normalizers') return 'normalizers';
+		if (nearestParentKey === 'cycle_killer' || nearestParentKey === 'cycle_breaker') return 'cycle_breaker';
+		if (nearestParentKey === 'thinking_lane' || nearestParentKey === 'reasoning_lane' || nearestParentKey === 'content_lane') return 'lane';
+		if (nearestParentKey === 'tool_lane') return 'tool_lane';
+		if (nearestParentKey === 'thought_slap') return 'tier.thought_slap';
+		return 'default_tier';
+	}
+	if (rootSection === 'kickstart') {
+		if (nearestParentKey === 'read_slap') return 'kickstart.read_slap';
+		if (nearestParentKey === 'thought_slap') return 'kickstart.thought_slap';
+		return 'kickstart';
+	}
+	if (rootSection === 'fairy_dust') {
+		if (nearestParentKey === 'entries') return 'fairy_dust.entry';
+		return 'fairy_dust';
+	}
+	if (rootSection === 'cycle_killer' || rootSection === 'cycle_breaker') {
+		if (nearestParentKey === 'thinking_lane' || nearestParentKey === 'reasoning_lane' || nearestParentKey === 'content_lane') return 'lane';
+		if (nearestParentKey === 'tool_lane') return 'tool_lane';
+		return 'cycle_breaker';
+	}
+	if (rootSection === 'deals') return 'deals';
+	if (rootSection === 'agent_shield') return 'agent_shield';
+	if (rootSection === 'router') return 'router';
+	if (rootSection === 'normalizers') return 'normalizers';
+	if (rootSection === 'nts') return 'nts';
+
+	return 'root';
+}
+
 export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 	const issues: YamlValidationIssue[] = [];
 	if (!text || !text.trim()) {
@@ -583,5 +951,64 @@ export function validateNachoConfigYaml(text: string): YamlValidationIssue[] {
 		}
 	}
 
+	// 8. UNKNOWN_CONFIG_KEY check
+	const multilineLines = computeMultilineBlockLines(lines);
+
+	for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+		if (multilineLines[lineIdx]) continue;
+
+		const rawLine = lines[lineIdx];
+		const trimmed = rawLine.trim();
+		if (!trimmed || trimmed.startsWith('#')) continue;
+
+		const keyMatch = rawLine.match(/^(\s*)(?:-\s*)?([a-zA-Z0-9_-]+)\s*:/);
+		if (!keyMatch) continue;
+
+		const key = keyMatch[2];
+		const keyStartCol = rawLine.indexOf(key);
+
+		// Guardrail 2: Skip if line already has an error from REMOVED_LEGACY_KEY or REMOVED_PROVIDER_TYPE
+		if (issues.some((iss) => iss.range.startLine === lineIdx && (iss.ruleId === 'REMOVED_LEGACY_KEY' || iss.ruleId === 'REMOVED_PROVIDER_TYPE'))) {
+			continue;
+		}
+
+		// Resolve section
+		const section = resolveYamlSection(lines, lineIdx, keyStartCol);
+
+		// Guardrail 1: providers (depth 1) are user-defined provider IDs; headers (depth 3) are user-defined header names
+		if (section === 'providers' || section === 'headers') {
+			continue;
+		}
+
+		const allowed = SECTION_ALLOWED_KEYS[section];
+		if (allowed && !allowed.includes(key)) {
+			const closest = findClosestMatch(key, allowed);
+			const quickFixes: QuickFixAction[] = [];
+			const keyRange = {
+				startLine: lineIdx,
+				startCharacter: keyStartCol,
+				endLine: lineIdx,
+				endCharacter: keyStartCol + key.length
+			};
+
+			if (closest) {
+				quickFixes.push({
+					title: `Change to "${closest}"`,
+					replacement: closest,
+					range: keyRange
+				});
+			}
+
+			issues.push({
+				ruleId: 'UNKNOWN_CONFIG_KEY',
+				message: `Unknown configuration key '${key}' in ${section}.${closest ? ` Did you mean '${closest}'?` : ''}`,
+				severity: 'Warning',
+				range: keyRange,
+				quickFixes: quickFixes.length > 0 ? quickFixes : undefined
+			});
+		}
+	}
+
 	return issues;
 }
+

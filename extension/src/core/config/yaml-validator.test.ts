@@ -1,7 +1,7 @@
 import { validateNachoConfigYaml } from './yaml-validator';
 
 describe('NachoYamlValidator', () => {
-  it('should pass on a valid, complete Nacho Flow YAML configuration', () => {
+  it('should pass on a valid, complete Nacho Flow YAML configuration with 0 errors and 0 warnings', () => {
     const validYaml = `
 version: "1.1.0"
 port: 8000
@@ -17,8 +17,16 @@ providers:
 
 kickstart:
   thought_slap:
-    enabled: true
+    max_attempts: 1
     rescue_tier: "Tier 2: Reasoning"
+
+fairy_dust:
+  enabled: true
+  entries:
+    - name: "Reviewer"
+      provider: openrouter_cloud
+      model: "z-ai/glm-5.3-flash"
+      frequency: 10
 
 tiers:
   - name: "Tier 1: Fast Workhorse"
@@ -40,8 +48,7 @@ default_tier:
 `;
 
     const issues = validateNachoConfigYaml(validYaml);
-    const errors = issues.filter((i) => i.severity === 'Error');
-    expect(errors).toHaveLength(0);
+    expect(issues).toHaveLength(0);
   });
 
   // Guardrail 1: Minimal partial stubs like "port: 8080\n" must pass without error
@@ -458,5 +465,214 @@ default_tier:
       expect(modelIssues[1].message).toBe("default_tier 'Fallback' is missing required 'model'");
     });
   });
+
+  describe('Rule 8: UNKNOWN_CONFIG_KEY validation & edge cases', () => {
+    it('flags unknown top-level key with Warning and suggests closest match', () => {
+      const yaml = `
+version: "1.1.0"
+proivders:
+  p1:
+    type: "openai_compatible"
+    base_url: "http://localhost:8080"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+      expect(issue).toBeDefined();
+      expect(issue?.severity).toBe('Warning');
+      expect(issue?.message).toContain("Unknown configuration key 'proivders'");
+      expect(issue?.message).toContain("Did you mean 'providers'?");
+      expect(issue?.quickFixes).toBeDefined();
+      expect(issue?.quickFixes?.[0].title).toBe('Change to "providers"');
+    });
+
+    it('flags unknown key within a section and offers quick fix', () => {
+      const yaml = `
+providers:
+  p1:
+    type: "openai_compatible"
+    base_url: "http://localhost:8080"
+    api_key_secret: "my-key"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const issue = issues.find((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY' && i.message.includes('api_key_secret'));
+      expect(issue).toBeDefined();
+      expect(issue?.message).toContain("Did you mean 'api_key'?");
+      expect(issue?.quickFixes?.[0].title).toBe('Change to "api_key"');
+    });
+
+    it('does NOT flag dynamic provider IDs under providers: (depth 1)', () => {
+      const yaml = `
+providers:
+  ollama_local:
+    type: "openai_compatible"
+    base_url: "http://127.0.0.1:11434"
+  openrouter_cloud:
+    type: "openrouter"
+    api_key: "sk-or-test"
+  my_custom_vllm:
+    type: "openai_compatible"
+    base_url: "http://127.0.0.1:8000"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const unknownKeys = issues.filter((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+      expect(unknownKeys).toHaveLength(0);
+    });
+
+    it('does NOT flag arbitrary HTTP header keys under providers.<id>.headers: (depth 3)', () => {
+      const yaml = `
+providers:
+  openrouter_cloud:
+    type: "openrouter"
+    api_key: "sk-or-test"
+    headers:
+      HTTP-Referer: "https://nachoflow.ai"
+      X-Title: "Nacho Flow Agent"
+      Custom-Auth-Token: "abc-123"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const unknownKeys = issues.filter((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+      expect(unknownKeys).toHaveLength(0);
+    });
+
+    it('permits mapping block keys in tiers[].thought_slap and cycle_breaker lanes', () => {
+      const yaml = `
+tiers:
+  - name: "Reasoning Tier"
+    provider: "p1"
+    model: "qwen-32b"
+    thought_slap:
+      max_attempts: 3
+      rescue_tier: "Fallback Tier"
+      prompt_override: "Be concise"
+    cycle_breaker:
+      enabled: true
+      thinking_lane:
+        max_tokens: 4096
+        phrase_length: 5
+        max_repeats: 3
+        budget_max_repeats: 5
+      tool_lane:
+        max_tokens: 2048
+        max_write_tokens: 1024
+        write_tools: ["edit_file"]
+      max_content_tokens: 8192
+      thinking_repetition_threshold: 3
+      budget_repetition_threshold: 4
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const unknownKeys = issues.filter((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+      expect(unknownKeys).toHaveLength(0);
+    });
+
+    it('does NOT emit duplicate UNKNOWN_CONFIG_KEY on lines flagged with REMOVED_LEGACY_KEY', () => {
+      const yaml = `
+kickstart:
+  enabled: true
+  threshold: 0.8
+  max_failures: 2
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const legacyIssues = issues.filter((i) => i.ruleId === 'REMOVED_LEGACY_KEY');
+      const unknownIssues = issues.filter((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+      expect(legacyIssues.length).toBeGreaterThanOrEqual(2); // enabled & threshold
+      // Lines for 'enabled' and 'threshold' must not be doubly flagged as UNKNOWN_CONFIG_KEY
+      const enabledUnknown = unknownIssues.find((i) => i.range.startLine === legacyIssues[0].range.startLine);
+      expect(enabledUnknown).toBeUndefined();
+    });
+
+    it('does NOT flag valid keys under fairy_dust.entries items as unknown keys', () => {
+      const yaml = `
+providers:
+  p1:
+    type: "openai_compatible"
+    base_url: "http://localhost:8080"
+fairy_dust:
+  enabled: true
+  entries:
+    - name: "Reviewer"
+      provider: "p1"
+      model: "qwen-32b"
+      frequency: 10
+      max_per_session: 5
+      priority: 1
+      prompt: "Review carefully"
+      reasoning_effort: "low"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const unknownIssues = issues.filter((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+      expect(unknownIssues).toHaveLength(0);
+    });
+
+    it('allows when on default_tier without UNKNOWN_CONFIG_KEY warning', () => {
+      const yaml = `
+providers:
+  openrouter:
+    type: "openrouter"
+default_tier:
+  name: "Default Catch-All"
+  provider: "openrouter"
+  model: "z-ai/glm-5.3-flash"
+  reasoning_effort: "medium"
+  thought_slap: true
+  when: "true"
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const unknownIssues = issues.filter((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+      expect(unknownIssues).toHaveLength(0);
+    });
+
+    it('does NOT flag lines containing colons inside multiline block scalars or multiline quotes', () => {
+      const yaml = `
+providers:
+  p1:
+    type: "openai_compatible"
+    base_url: "http://localhost:8080"
+fairy_dust:
+  enabled: true
+  entries:
+    - name: "Tactical Code Review"
+      provider: "p1"
+      model: "claude-haiku-5-5"
+      frequency: 15
+      prompt: >
+        [QUALITY CHECKPOINT - ACTION REQUIRED]
+        You are an elite code reviewer consulted mid-flight. Your value is DIRECT CODE ACTIONS, NOT ESSAYS.
+        Do NOT write lengthy prose analysis, conversational reviews, or summaries.
+        MANDATORY: You must always emit an active tool call or an explicit status message.
+        (1) STUBS & DUMMY IMPLEMENTATIONS: Find any functions that discard parameters.
+        (2) LOOP & TERMINATION GUARDS: Inspect while/for loops.
+    - name: "Literal Block Check"
+      provider: "p1"
+      model: "claude-haiku-5-5"
+      frequency: 30
+      prompt: |
+        NOTE: This is a literal block.
+        REQUIRED: Execute checks immediately.
+    - name: "Quoted Multiline Check"
+      provider: "p1"
+      model: "claude-haiku-5-5"
+      frequency: 45
+      prompt: "
+        NOTICE: This is inside double quotes.
+        MANDATORY: Never fail here.
+      "
+`;
+      const issues = validateNachoConfigYaml(yaml);
+      const unknownIssues = issues.filter((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+      expect(unknownIssues).toHaveLength(0);
+    });
+
+    it('validates user profile5.yaml without any unknown key errors or false positives', () => {
+      const fs = require('fs');
+      const profilePath = 'C:/Users/karlk/AppData/Roaming/Code/User/globalStorage/dixieflatline76.nacho-flow/profiles/profile5.yaml';
+      if (fs.existsSync(profilePath)) {
+        const content = fs.readFileSync(profilePath, 'utf8');
+        const issues = validateNachoConfigYaml(content);
+        const unknownIssues = issues.filter((i) => i.ruleId === 'UNKNOWN_CONFIG_KEY');
+        expect(unknownIssues).toHaveLength(0);
+      }
+    });
+  });
 });
+
 
